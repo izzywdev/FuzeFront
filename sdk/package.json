@@ -1,0 +1,49 @@
+{
+  "name": "@apphub/sdk-react",
+  "version": "1.0.0",
+  "description": "React SDK for AppHub microfrontend platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "microfrontend",
+    "module-federation",
+    "react",
+    "sdk",
+    "apphub"
+  ],
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@types/node": "^20.9.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.8",
+    "eslint": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/apphub-platform.git",
+    "directory": "sdk"
+  },
+  "license": "MIT",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ]
+}

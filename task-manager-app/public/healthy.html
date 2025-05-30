@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager Health Check</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #0f0f23;
+            color: #6bcf7f;
+            font-family: monospace;
+            font-size: 18px;
+        }
+        .health-status {
+            text-align: center;
+        }
+        .status-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .status-details {
+            font-size: 14px;
+            color: #888;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="health-status">
+        <div class="status-icon">✅</div>
+        <div>Task Manager is healthy</div>
+        <div class="status-details">
+            Status: OK | Port: 3002
+        </div>
+    </div>
+    
+    <script>
+        // Send health status to parent if in iframe
+        if (window.parent !== window) {
+            window.parent.postMessage({ type: 'HEALTH_CHECK', status: 'healthy' }, '*');
+        }
+        
+        // Also respond to direct API calls
+        if (window.location.search.includes('json=true')) {
+            document.body.innerHTML = '{"status": "healthy", "service": "task-manager", "port": 3002}';
+            document.body.style.fontFamily = 'monospace';
+            document.body.style.fontSize = '14px';
+            document.body.style.color = '#6bcf7f';
+        }
+    </script>
+</body>
+</html> 
