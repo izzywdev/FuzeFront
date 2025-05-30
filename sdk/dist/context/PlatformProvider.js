@@ -40,12 +40,12 @@ export function PlatformProvider({ children, config, fallbackMode = false }) {
     isPlatformMode: !fallbackMode,
   })
   useEffect(() => {
-    // Try to detect if we're running inside the AppHub platform
+    // Try to detect if we're running inside the FrontFuse platform
     const isPlatform =
       !fallbackMode &&
       // Check for platform-specific global variables
       typeof window !== 'undefined' &&
-      window.__APPHUB_PLATFORM__ === true
+      window.__FRONTFUSE_PLATFORM__ === true
     dispatch({ type: 'SET_PLATFORM_MODE', payload: isPlatform })
     if (!isPlatform && fallbackMode) {
       // Set up fallback data for standalone development
@@ -65,12 +65,12 @@ export function PlatformProvider({ children, config, fallbackMode = false }) {
       dispatch({ type: 'SET_USER', payload: mockUser })
       dispatch({ type: 'SET_SESSION', payload: mockSession })
       console.log(
-        '🔧 AppHub SDK running in fallback mode (standalone development)'
+        '🔧 FrontFuse SDK running in fallback mode (standalone development)'
       )
     } else if (isPlatform) {
       // Try to get data from the platform context
       try {
-        const platformData = window.__APPHUB_CONTEXT__
+        const platformData = window.__FRONTFUSE_CONTEXT__
         if (platformData) {
           if (platformData.user)
             dispatch({ type: 'SET_USER', payload: platformData.user })
@@ -97,7 +97,7 @@ export function PlatformProvider({ children, config, fallbackMode = false }) {
   // Expose context to child microfrontends when in platform mode
   useEffect(() => {
     if (state.isPlatformMode && typeof window !== 'undefined') {
-      window.__APPHUB_CONTEXT__ = {
+      window.__FRONTFUSE_CONTEXT__ = {
         user: state.user,
         session: state.session,
         apps: state.apps,

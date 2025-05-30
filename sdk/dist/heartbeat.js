@@ -1,6 +1,6 @@
 /**
- * AppHub Heartbeat SDK
- * Allows microfrontends to report their status to the AppHub platform
+ * FrontFuse Heartbeat SDK
+ * Allows microfrontends to report their status to the FrontFuse platform
  */
 class AppHeartbeat {
   constructor(config) {
@@ -97,11 +97,11 @@ class AppHeartbeat {
  *
  * @example
  * ```typescript
- * import { createHeartbeat } from '@apphub/sdk';
+ * import { createHeartbeat } from '@frontfuse/sdk-react';
  *
  * const heartbeat = createHeartbeat({
  *   appId: 'my-app-uuid',
- *   backendUrl: 'https://apphub.example.com',
+ *   backendUrl: 'https://frontfuse.example.com',
  *   interval: 60000, // 1 minute
  *   metadata: { version: '1.0.0' }
  * });

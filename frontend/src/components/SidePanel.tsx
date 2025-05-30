@@ -1,5 +1,5 @@
 import React from 'react'
-import { useGlobalMenu, useCurrentUser } from '@apphub/shared'
+import { useGlobalMenu, useCurrentUser } from '@frontfuse/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 
 function SidePanel() {

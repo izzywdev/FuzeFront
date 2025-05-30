@@ -11,15 +11,16 @@ interface LanguageContextType {
 const translations = {
   en: {
     // Top bar
-    appHub: 'AppHub',
+    appHub: 'FrontFuse',
     switchToLight: 'Switch to light mode',
     switchToDark: 'Switch to dark mode',
 
     // Navigation
     dashboard: 'Dashboard',
-    help: 'Help',
+    admin: 'Admin',
     status: 'Status',
-    adminPanel: 'Admin Panel',
+    logout: 'Logout',
+    frontFuse: 'FrontFuse',
 
     // User menu
     profile: 'Profile',
@@ -37,15 +38,13 @@ const translations = {
     noAppsAvailable: 'No applications available',
 
     // Dashboard
-    welcomeMessage: 'Welcome to AppHub',
-    availableApps: 'Available Applications',
-    quickActions: 'Quick Actions',
-    viewDocumentation: 'View Documentation',
-    appUnavailable:
-      'is currently unavailable. Please try again later or contact support.',
+    welcome: 'Welcome',
+    welcomeMessage: 'Welcome to FrontFuse',
+    myApps: 'My Applications',
+    recentActivity: 'Recent Activity',
 
     // Auth
-    welcomeToAppHub: 'Welcome to AppHub',
+    welcomeToAppHub: 'Welcome to FrontFuse',
     signInMessage: 'Sign in to access your microfrontend platform',
     email: 'Email',
     password: 'Password',
@@ -80,18 +79,25 @@ const translations = {
     error: 'Error',
     success: 'Success',
     close: 'Close',
+
+    // New additions
+    addApp: 'Add Application',
+    welcomeToFrontFuse: 'Welcome to FrontFuse',
+    login: 'Login',
+    loginButton: 'Login',
   },
   he: {
     // Top bar
-    appHub: 'AppHub',
+    appHub: 'FrontFuse',
     switchToLight: 'עבור למצב בהיר',
     switchToDark: 'עבור למצב כהה',
 
     // Navigation
     dashboard: 'לוח בקרה',
-    help: 'עזרה',
+    admin: 'ניהול',
     status: 'סטטוס',
-    adminPanel: 'פאנל ניהול',
+    logout: 'התנתק',
+    frontFuse: 'FrontFuse',
 
     // User menu
     profile: 'פרופיל',
@@ -109,14 +115,13 @@ const translations = {
     noAppsAvailable: 'אין אפליקציות זמינות',
 
     // Dashboard
-    welcomeMessage: 'ברוכים הבאים ל-AppHub',
-    availableApps: 'אפליקציות זמינות',
-    quickActions: 'פעולות מהירות',
-    viewDocumentation: 'צפה בתיעוד',
-    appUnavailable: 'אינה זמינה כרגע. נסה שוב מאוחר יותר או צור קשר עם התמיכה.',
+    welcome: 'ברוך הבא',
+    welcomeMessage: 'ברוך הבא ל-FrontFuse',
+    myApps: 'האפליקציות שלי',
+    recentActivity: 'פעילות אחרונה',
 
     // Auth
-    welcomeToAppHub: 'ברוכים הבאים ל-AppHub',
+    welcomeToAppHub: 'ברוכים הבאים ל-FrontFuse',
     signInMessage: 'היכנס כדי לגשת לפלטפורמת המיקרו-פרונטאנד שלך',
     email: 'אימייל',
     password: 'סיסמה',
@@ -151,6 +156,12 @@ const translations = {
     error: 'שגיאה',
     success: 'הצלחה',
     close: 'סגור',
+
+    // New additions
+    addApp: 'הוסף אפליקציה',
+    welcomeToFrontFuse: 'ברוך הבא ל-FrontFuse',
+    login: 'התחבר',
+    loginButton: 'התחבר',
   },
 }
 

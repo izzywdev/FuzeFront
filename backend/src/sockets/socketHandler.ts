@@ -1,7 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io'
 import { Server as HTTPServer } from 'http'
 import jwt from 'jsonwebtoken'
-import { CommandEvent } from '@apphub/shared'
+import { CommandEvent } from '@frontfuse/shared'
 
 interface AuthenticatedSocket extends Socket {
   userId?: string

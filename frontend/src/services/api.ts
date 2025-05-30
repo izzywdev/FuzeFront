@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { App, User } from '@apphub/shared'
+import { App, User } from '@frontfuse/shared'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 

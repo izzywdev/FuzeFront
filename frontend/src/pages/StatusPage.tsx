@@ -59,7 +59,7 @@ function StatusPage() {
       <div style={{ marginBottom: '2rem' }}>
         <h1>🩺 System Status</h1>
         <p style={{ color: '#888', fontSize: '1.1rem' }}>
-          Real-time health monitoring for AppHub services
+          Real-time health monitoring for FrontFuse services
         </p>
       </div>
 

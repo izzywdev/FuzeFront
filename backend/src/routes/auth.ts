@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
-import { User } from '@apphub/shared'
+import { User } from '@frontfuse/shared'
 
 const router = express.Router()
 

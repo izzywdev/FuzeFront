@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useCurrentUser } from '@apphub/shared'
+import { useCurrentUser } from '@frontfuse/shared'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import AppSelector from './AppSelector'
@@ -14,7 +14,7 @@ function TopBar() {
   return (
     <div className="top-bar">
       <div className="logo">
-        <h2>🚀 {t('appHub')}</h2>
+        <h2>🚀 {t('frontFuse')}</h2>
       </div>
       <div style={{ flex: 1 }}></div> {/* Spacer */}
       <div

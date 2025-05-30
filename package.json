@@ -1,5 +1,5 @@
 {
-  "name": "apphub-platform",
+  "name": "frontfuse-platform",
   "version": "1.0.0",
   "description": "Microfrontend hosting platform with runtime Module Federation",
   "private": true,
@@ -36,15 +36,12 @@
     "concurrently": "^8.2.2",
     "husky": "^9.1.7",
     "lerna": "^8.2.2",
-    "lint-staged": "^16.1.0"
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.5.3"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,yml,yaml}": [
-      "prettier --write"
+    "*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
+      "npx prettier --write"
     ]
   }
 }

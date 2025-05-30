@@ -1,1 +1,1 @@
-{"version":3,"file":"useSocketBus.d.ts","sourceRoot":"","sources":["../../src/hooks/useSocketBus.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAAE,kBAAkB,EAAgB,MAAM,UAAU,CAAC;AAEjE,wBAAgB,YAAY,CAAC,KAAK,CAAC,EAAE,MAAM,GAAG,kBAAkB,CAyE/D"}
+{"version":3,"file":"useSocketBus.d.ts","sourceRoot":"","sources":["../../src/hooks/useSocketBus.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAAE,kBAAkB,EAAgB,MAAM,UAAU,CAAA;AAEhE,wBAAgB,YAAY,CAAC,KAAK,CAAC,EAAE,MAAM,GAAG,kBAAkB,CAmF/D"}

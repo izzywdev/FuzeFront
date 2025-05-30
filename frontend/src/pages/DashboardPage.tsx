@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useAppContext, useCurrentUser, App } from '@apphub/shared'
+import { useAppContext, useCurrentUser, App } from '@frontfuse/shared'
 import { fetchApps } from '../services/api'
 
 function DashboardPage() {
@@ -34,7 +34,7 @@ function DashboardPage() {
     <div style={{ padding: '2rem' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h1>
-          Welcome to AppHub{user?.firstName ? `, ${user.firstName}` : ''}!
+          Welcome to FrontFuse{user?.firstName ? `, ${user.firstName}` : ''}!
         </h1>
         <p style={{ color: '#888', fontSize: '1.1rem' }}>
           Your central hub for accessing all your applications
