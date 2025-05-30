@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged for staged files
+npx lint-staged
+
+# Run type checking for all packages
+echo "🔍 Running type checks..."
+cd frontend && npx tsc --noEmit --skipLibCheck
+cd ../backend && npx tsc --noEmit --skipLibCheck
+cd ../shared && npx tsc --noEmit --skipLibCheck
+cd ../sdk && npx tsc --noEmit --skipLibCheck
+cd ../task-manager-app && npx tsc --noEmit --skipLibCheck
+cd ..
+
+echo "✅ Pre-commit checks passed!"

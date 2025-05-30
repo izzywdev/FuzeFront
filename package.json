@@ -1,0 +1,50 @@
+{
+  "name": "apphub-platform",
+  "version": "1.0.0",
+  "description": "Microfrontend hosting platform with runtime Module Federation",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "shared",
+    "sdk"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && npm run install:frontend && npm run install:backend && npm run install:shared && npm run install:sdk",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && npm install",
+    "install:shared": "cd shared && npm install",
+    "install:sdk": "cd sdk && npm install",
+    "build": "lerna run build",
+    "test": "lerna run test",
+    "lint": "lerna run lint",
+    "type-check": "lerna run type-check",
+    "clean": "lerna clean",
+    "bootstrap": "lerna bootstrap",
+    "version": "lerna version",
+    "publish": "lerna publish",
+    "db:init": "cd backend && npm run db:init",
+    "db:seed": "cd backend && node scripts/seed.js",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
+    "lerna": "^8.2.2",
+    "lint-staged": "^16.1.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
