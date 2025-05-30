@@ -1,39 +1,36 @@
 {
-  "name": "@apphub/backend",
+  "name": "@frontfuse/backend",
   "version": "1.0.0",
-  "description": "AppHub platform backend API server",
+  "description": "FrontFuse platform backend API server",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest",
-    "db:migrate": "node scripts/migrate.js",
-    "db:seed": "node scripts/seed.js"
+    "type-check": "tsc --noEmit",
+    "db:init": "node scripts/init-db.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
     "sqlite3": "^5.1.6",
-    "socket.io": "^4.7.4",
-    "uuid": "^9.0.1",
-    "dotenv": "^16.3.1",
-    "@apphub/shared": "^1.0.0"
+    "helmet": "^7.0.0",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/cors": "^2.8.17",
-    "@types/jsonwebtoken": "^9.0.5",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/uuid": "^9.0.7",
-    "@types/node": "^20.9.0",
-    "typescript": "^5.0.0",
+    "@types/express": "^4.17.17",
+    "@types/cors": "^2.8.13",
+    "@types/jsonwebtoken": "^9.0.2",
+    "@types/bcryptjs": "^2.4.2",
+    "@types/uuid": "^9.0.2",
+    "@types/node": "^20.4.5",
+    "typescript": "^5.1.6",
     "nodemon": "^3.0.1",
     "ts-node": "^10.9.1",
-    "jest": "^29.7.0",
-    "@types/jest": "^29.5.8"
+    "@frontfuse/shared": "^1.0.0"
   }
 }

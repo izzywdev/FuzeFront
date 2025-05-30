@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react'
-import { useAppContext } from '@apphub/shared'
+import { useAppContext } from '@frontfuse/shared'
 import { loadApp, clearModuleCache } from '../utils/loadFederatedApp'
 import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
 

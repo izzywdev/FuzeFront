@@ -20,10 +20,10 @@ async function seedDatabase() {
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
           adminId,
-          'admin@apphub.dev',
+          'admin@frontfuse.dev',
           hashedPassword,
-          'Admin',
-          'User',
+          'System',
+          'Administrator',
           '["admin", "user"]',
         ],
         function (err) {
@@ -41,7 +41,14 @@ async function seedDatabase() {
       db.run(
         `INSERT OR REPLACE INTO users (id, email, password_hash, first_name, last_name, roles) 
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, 'user@apphub.dev', userPassword, 'Demo', 'User', '["user"]'],
+        [
+          userId,
+          'user@frontfuse.dev',
+          userPassword,
+          'Demo',
+          'User',
+          '["user"]',
+        ],
         function (err) {
           if (err) reject(err)
           else resolve()
@@ -126,8 +133,8 @@ async function seedDatabase() {
 
     console.log('✅ Database seeded successfully!')
     console.log('\n📋 Demo Accounts:')
-    console.log('Admin: admin@apphub.dev / admin123')
-    console.log('User:  user@apphub.dev / user123')
+    console.log('Admin: admin@frontfuse.dev / admin123')
+    console.log('User:  user@frontfuse.dev / user123')
     console.log(`\n📱 Created ${apps.length} demo apps`)
   } catch (error) {
     console.error('❌ Error seeding database:', error)

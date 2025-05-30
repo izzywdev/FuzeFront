@@ -84,7 +84,7 @@ app.use((req, res) => {
 })
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 AppHub backend server running on port ${PORT}`)
+  console.log(`🚀 FrontFuse backend server running on port ${PORT}`)
   console.log(
     `🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`
   )

@@ -1,4 +1,4 @@
-# AppHub Platform
+# FrontFuse Platform
 
 A modern microfrontend platform built with Node.js, TypeScript, React, and Vite, supporting multiple integration types including Module Federation, Iframe, and Web Components.
 
@@ -45,7 +45,7 @@ This is a monorepo managed with **Lerna** containing:
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd apphub-platform
+cd frontfuse-platform
 
 # Install all dependencies
 npm install
@@ -66,8 +66,8 @@ This will start:
 
 ### Demo Accounts
 
-- **Admin**: `admin@apphub.dev` / `admin123`
-- **User**: `user@apphub.dev` / `user123`
+- **Admin**: `admin@frontfuse.dev` / `admin123`
+- **User**: `user@frontfuse.dev` / `user123`
 
 ## 🔧 Development
 
@@ -117,7 +117,7 @@ The platform automatically assigns icons based on integration type:
 Apps can report their status using the heartbeat API:
 
 ```typescript
-import { createHeartbeat } from '@apphub/sdk'
+import { createHeartbeat } from '@frontfuse/sdk'
 
 const heartbeat = createHeartbeat({
   appId: 'your-app-uuid',
@@ -299,9 +299,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-- 📧 Email: support@apphub.dev
-- 📖 Documentation: [docs.apphub.dev](https://docs.apphub.dev)
-- 🐛 Issues: [GitHub Issues](https://github.com/your-org/apphub-platform/issues)
+- 📧 Email: support@frontfuse.dev
+- 📖 Documentation: [docs.frontfuse.dev](https://docs.frontfuse.dev)
+- 🐛 Issues: [GitHub Issues](https://github.com/your-org/frontfuse-platform/issues)
 
 ## 🗺️ Roadmap
 

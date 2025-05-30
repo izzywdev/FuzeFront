@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useCurrentUser } from '@apphub/shared'
+import { useCurrentUser } from '@frontfuse/shared'
 import { login } from '../services/api'
 
 function LoginPage() {
@@ -26,7 +26,7 @@ function LoginPage() {
 
   return (
     <div className="auth-form">
-      <h2>Welcome to AppHub</h2>
+      <h2>Welcome to FrontFuse</h2>
       <p>Sign in to access your microfrontend platform</p>
 
       <form onSubmit={handleSubmit}>
@@ -63,7 +63,7 @@ function LoginPage() {
 
       <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: '#ccc' }}>
         <p>Demo credentials:</p>
-        <p>Email: admin@apphub.dev</p>
+        <p>Email: admin@frontfuse.dev</p>
         <p>Password: admin123</p>
       </div>
     </div>

@@ -1,11 +1,11 @@
-# @apphub/sdk-react
+# @frontfuse/sdk-react
 
-React SDK for AppHub microfrontend platform, providing seamless integration with the AppHub container shell and runtime Module Federation capabilities.
+React SDK for FrontFuse microfrontend platform, providing seamless integration with the FrontFuse container shell and runtime Module Federation capabilities.
 
 ## Installation
 
 ```bash
-npm install @apphub/sdk-react
+npm install @frontfuse/sdk-react
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ Wrap your microfrontend app with the `PlatformProvider`:
 ```tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { PlatformProvider } from '@apphub/sdk-react'
+import { PlatformProvider } from '@frontfuse/sdk-react'
 import App from './App'
 
 const appConfig = {
@@ -44,7 +44,7 @@ import {
   useSession,
   useGlobalMenu,
   useSocketBus,
-} from '@apphub/sdk-react'
+} from '@frontfuse/sdk-react'
 
 function MyComponent() {
   const { user, isAuthenticated, hasRole } = useCurrentUser()
@@ -180,7 +180,7 @@ socket.emit('eventType', { data: 'value' }, 'target-app-id')
 Functions for dynamically loading federated modules at runtime.
 
 ```tsx
-import { loadApp, clearModuleCache } from '@apphub/sdk-react'
+import { loadApp, clearModuleCache } from '@frontfuse/sdk-react'
 
 // Load a federated module
 const module = await loadApp({
@@ -195,7 +195,7 @@ clearModuleCache()
 
 ## Development Mode
 
-The SDK includes a fallback mode for standalone development when not running inside the AppHub platform:
+The SDK includes a fallback mode for standalone development when not running inside the FrontFuse platform:
 
 ```tsx
 <PlatformProvider
@@ -224,7 +224,7 @@ import type {
   MenuItem,
   AppConfig,
   SocketBus,
-} from '@apphub/sdk-react'
+} from '@frontfuse/sdk-react'
 ```
 
 ## Integration Examples
@@ -344,7 +344,7 @@ Enable debug logging:
 
 ```tsx
 // In your app initialization
-window.__APPHUB_DEBUG__ = true
+window.__FRONTFUSE_DEBUG__ = true
 ```
 
 This will provide additional console logging for SDK operations.

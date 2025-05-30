@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { User } from '@apphub/shared'
+import { User } from '@frontfuse/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import { logout } from '../services/api'
 

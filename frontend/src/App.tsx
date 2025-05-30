@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useCurrentUser, useAppContext } from '@apphub/shared'
+import { useCurrentUser, useAppContext } from '@frontfuse/shared'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -178,8 +178,10 @@ function HelpPage() {
             backgroundColor: '#1a1a1a',
           }}
         >
-          <h3>🚀 Getting Started</h3>
-          <p>Learn how to use AppHub to access and manage your applications.</p>
+          <h3>Getting Started with FrontFuse</h3>
+          <p>
+            Learn how to use FrontFuse to access and manage your applications.
+          </p>
           <ul style={{ textAlign: 'left', color: '#ccc' }}>
             <li>Navigate using the app selector in the top bar</li>
             <li>Use the side menu for app-specific features</li>
@@ -195,8 +197,8 @@ function HelpPage() {
             backgroundColor: '#1a1a1a',
           }}
         >
-          <h3>🔧 For Developers</h3>
-          <p>Documentation for building microfrontends for AppHub.</p>
+          <h3>Developer Guide</h3>
+          <p>Documentation for building microfrontends for FrontFuse.</p>
           <ul style={{ textAlign: 'left', color: '#ccc' }}>
             <li>Module Federation setup guide</li>
             <li>SDK integration examples</li>
