@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
+import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function TopBar() {
   const { user } = useCurrentUser()
@@ -14,7 +15,16 @@ function TopBar() {
   return (
     <div className="top-bar">
       <div className="logo">
-        <h2>🚀 {t('frontFuse')}</h2>
+        <img
+          src={FrontFuseLogo}
+          alt="FrontFuse"
+          style={{
+            height: '32px',
+            width: 'auto',
+            marginRight: '8px',
+          }}
+        />
+        <h2>{t('frontFuse')}</h2>
       </div>
       <div style={{ flex: 1 }}></div> {/* Spacer */}
       <div
