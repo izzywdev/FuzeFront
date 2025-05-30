@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useCurrentUser } from '@frontfuse/shared'
 import { login } from '../services/api'
+import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function LoginPage() {
   const [email, setEmail] = useState('')
@@ -26,7 +27,25 @@ function LoginPage() {
 
   return (
     <div className="auth-form">
-      <h2>Welcome to FrontFuse</h2>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '24px',
+        }}
+      >
+        <img
+          src={FrontFuseLogo}
+          alt="FrontFuse"
+          style={{
+            height: '48px',
+            width: 'auto',
+            marginRight: '12px',
+          }}
+        />
+        <h2 style={{ margin: 0 }}>Welcome to FrontFuse</h2>
+      </div>
       <p>Sign in to access your microfrontend platform</p>
 
       <form onSubmit={handleSubmit}>

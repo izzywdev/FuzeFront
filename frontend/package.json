@@ -11,9 +11,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@frontfuse/shared": "^1.0.0",
+    "@originjs/vite-plugin-federation": "^1.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@frontfuse/shared": "^1.0.0",
+    "react-router-dom": "^7.6.1",
     "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
