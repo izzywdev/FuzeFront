@@ -35,6 +35,33 @@ When reporting security vulnerabilities, please include:
 
 ## 🛡️ Security Measures
 
+### Automated Security Scanning
+
+FrontFuse employs a comprehensive security scanning approach using **GitHub Advanced Security** and complementary tools:
+
+#### Primary Security Stack
+
+- **GitHub Advanced Security**: Native SAST, SCA, and secret scanning
+- **CodeQL**: Advanced static analysis for TypeScript/JavaScript
+- **Dependabot**: Automated dependency vulnerability detection and updates
+- **GitHub Secret Scanning**: Detects exposed API keys, tokens, and credentials
+
+#### Supplementary Security Tools
+
+- **Trivy**: Container vulnerability scanning for Docker images
+- **TruffleHog**: Additional secret detection across git history
+- **NPM Audit**: Node.js dependency vulnerability scanning
+- **CycloneDX**: Software Bill of Materials (SBOM) generation
+
+### Security Scanning Schedule
+
+Our automated security pipeline runs:
+
+- **On every pull request**: CodeQL analysis, dependency review, secret scanning
+- **On every push to master**: Full security suite including container scanning
+- **Weekly**: Comprehensive vulnerability scans via scheduled workflows
+- **Continuously**: Dependency monitoring and alert generation
+
 ### Code Security
 
 #### Frontend Security
@@ -78,15 +105,20 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 #### CI/CD Security Checks
 
-- **Dependency Scanning**: Automated vulnerability scanning in CI/CD pipeline
-- **Static Analysis**: Code security analysis on every pull request
-- **Container Scanning**: Docker image vulnerability scanning
-- **License Compliance**: Checking for dependencies with problematic licenses
+Our GitHub Actions pipeline includes:
+
+- **CodeQL Analysis**: Static application security testing (SAST)
+- **Dependency Review**: Vulnerability scanning for pull requests
+- **Container Scanning**: Docker image vulnerability detection with Trivy
+- **Secret Scanning**: Detection of exposed credentials and API keys
+- **License Compliance**: Verification of dependency licenses
+- **SBOM Generation**: Automated Software Bill of Materials creation
 
 #### Regular Audits
 
 - **npm audit**: Regular dependency vulnerability audits
-- **OWASP ZAP**: Web application security testing
+- **Container Scanning**: Docker image security assessment
+- **Static Code Analysis**: Automated code quality and security review
 - **Penetration Testing**: Periodic security assessments
 
 ## 🚨 Supported Versions
@@ -184,12 +216,30 @@ When contributing to FrontFuse, please ensure:
 
 ## 🛠️ Security Tools and Resources
 
-### Recommended Security Tools
+### Current Security Tools
 
-- **Static Analysis**: ESLint Security Plugin, Semgrep
-- **Dependency Scanning**: npm audit, Snyk, WhiteSource
-- **Dynamic Testing**: OWASP ZAP, Burp Suite
-- **Container Security**: Trivy, Clair, Anchore
+- **GitHub Advanced Security**: Primary security platform
+- **CodeQL**: Static application security testing
+- **Dependabot**: Dependency vulnerability management
+- **Trivy**: Container security scanning
+- **TruffleHog**: Secret detection
+- **CycloneDX**: SBOM generation
+
+### Running Security Scans Locally
+
+```bash
+# Run security audit across all packages
+npm run security
+
+# Fix vulnerable dependencies
+npm run security:fix
+
+# Generate Software Bill of Materials
+npm run security:sbom
+
+# Manual container scanning
+docker run --rm -v $(pwd):/tmp aquasec/trivy fs /tmp
+```
 
 ### Security Resources
 
