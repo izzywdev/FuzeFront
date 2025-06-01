@@ -1,0 +1,39 @@
+name: 'FrontFuse CodeQL Config'
+
+disable-default-queries: false
+
+queries:
+  - name: security-extended
+    uses: security-extended
+  - name: security-and-quality
+    uses: security-and-quality
+
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/*.min.js'
+  - '**/coverage/**'
+  - '**/.next/**'
+  - '**/public/**'
+
+paths:
+  - 'frontend/src'
+  - 'backend/src'
+  - 'shared/src'
+  - 'sdk/src'
+  - 'task-manager-app/src'
+
+# Module Federation specific patterns
+module-federation:
+  # Scan for unsafe dynamic imports
+  - pattern: 'import(.*variable.*)'
+  # Check for exposed module configurations
+  - pattern: 'ModuleFederationPlugin'
+  # Validate remote module loading
+  - pattern: 'loadRemote'
+
+# Security-focused query packs
+packs:
+  - codeql/javascript-queries:Security
+  - codeql/javascript-queries:AlertSuppression
