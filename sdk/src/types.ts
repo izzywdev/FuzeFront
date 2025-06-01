@@ -36,6 +36,9 @@ export interface MenuItem {
   action?: () => void
   children?: MenuItem[]
   visible?: boolean
+  category?: 'portal' | 'app'
+  appId?: string
+  order?: number
 }
 
 export interface SocketMessage {
@@ -109,10 +112,15 @@ export interface UseSessionResult {
 
 export interface UseGlobalMenuResult {
   menuItems: MenuItem[]
+  portalMenuItems: MenuItem[]
+  appMenuItems: MenuItem[]
   setMenuItems: (items: MenuItem[]) => void
   addMenuItem: (item: MenuItem) => void
   removeMenuItem: (id: string) => void
   updateMenuItem: (id: string, updates: Partial<MenuItem>) => void
+  addAppMenuItems: (appId: string, items: MenuItem[]) => void
+  removeAppMenuItems: (appId: string) => void
+  clearAllAppMenuItems: () => void
 }
 
 export interface UseSocketBusResult extends SocketBus {

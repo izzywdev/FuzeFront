@@ -35,6 +35,9 @@ export interface MenuItem {
   route?: string
   action?: () => void
   children?: MenuItem[]
+  category?: 'portal' | 'app'
+  appId?: string
+  order?: number
 }
 
 export interface SocketMessage {
