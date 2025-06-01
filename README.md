@@ -1,9 +1,12 @@
 # FrontFuse Platform
 
-A modern microfrontend platform built with Node.js, TypeScript, React, and Vite, supporting multiple integration types including Module Federation, Iframe, and Web Components.
+A modern microfrontend platform built with Node.js, TypeScript, React, and Vite, featuring **runtime Module Federation** for dynamic app discovery and loading with zero build-time dependencies.
 
 ## 🚀 Features
 
+- **🔗 Runtime Module Federation**: Apps can self-register and be loaded dynamically without rebuild
+- **📦 Zero Build-time Knowledge**: Hub has no knowledge of apps at compile time
+- **🔄 Dynamic App Discovery**: Apps register themselves via REST API at runtime
 - **Multi-Integration Support**: Module Federation, Iframe, and Web Components
 - **Real-time App Status**: WebSocket-based heartbeat system for live app monitoring
 - **Authentication & Authorization**: JWT-based auth with role management
@@ -13,134 +16,197 @@ A modern microfrontend platform built with Node.js, TypeScript, React, and Vite,
 - **Health Monitoring**: Real-time app health checks with visual indicators
 - **WebSocket Communication**: Real-time updates and notifications
 - **Smart Navigation**: Context-aware routing and deep linking
+- **🐳 Docker Support**: Containerized deployment for micro-frontends
+- **Graceful Shutdown**: Proper cleanup and port conflict handling
+- **Interactive API Documentation**: Swagger/OpenAPI documentation
+- **Comprehensive Help System**: Built-in guides and documentation
 
 ## 📦 Architecture
 
 This is a monorepo managed with **Lerna** containing:
 
 - **`backend/`** - Node.js/Express API server with SQLite database
-- **`frontend/`** - React/Vite main platform interface
+- **`frontend/`** - React/Vite main platform interface (Module Federation Container)
 - **`shared/`** - Shared types, contexts, and utilities
-- **`sdk/`** - React SDK for microfrontend integration
-- **`task-manager-app/`** - Example microfrontend application
+- **`sdk/`** - React SDK for microfrontend integration and self-registration
+- **`task-manager-app/`** - Example microfrontend with Module Federation
 
-## 🛠️ Tech Stack
+## 🎯 Quick Demo
 
-- **Backend**: Node.js, Express, TypeScript, SQLite, Socket.IO
-- **Frontend**: React, TypeScript, Vite, CSS Custom Properties
-- **Monorepo**: Lerna, npm workspaces
-- **Code Quality**: ESLint, Prettier, Husky, lint-staged, commitlint
-- **Integration**: Module Federation, Iframe, Web Components
-
-## 🏃‍♂️ Quick Start
-
-### Prerequisites
-
-- Node.js 18+
-- npm 8+
-- Git
-
-### Installation
+### Option 1: Development Mode
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd frontfuse-platform
-
 # Install all dependencies
-npm install
+npm run install:all
 
 # Initialize database
 npm run db:init
 npm run db:seed
 
-# Start development servers
-npm run dev
+# Start all services including the task manager demo
+npm run demo
 ```
 
-This will start:
+This starts:
 
-- Backend API server on `http://localhost:3001`
-- Frontend platform on `http://localhost:5173`
-- Task manager example on `http://localhost:3002`
+- **Hub Portal** on `http://localhost:5173` (Module Federation Container)
+- **Backend API** on `http://localhost:3001` (App Registry & WebSocket)
+- **Task Manager** on `http://localhost:3002` (Example Micro-frontend)
 
-### Demo Accounts
+### Option 2: Docker Mode
 
-- **Admin**: `admin@frontfuse.dev` / `admin123`
-- **User**: `user@frontfuse.dev` / `user123`
+```bash
+# Build and run all services with Docker
+npm run docker:build
+npm run docker:up
+```
 
-## 🔧 Development
+Access the platform at `http://localhost:3000`
+
+### What You'll See
+
+1. **Task Manager app automatically registers** itself with the hub when started
+2. **Real-time notification** appears in the hub when the app registers
+3. **App appears in the 9-dots selector** ready to be loaded
+4. **Click to load the app** using Module Federation (shared React instances)
+5. **Heartbeat system** keeps the app status updated in real-time
+
+## 🔗 Module Federation Implementation
+
+### 1. **Hub Portal (Container)**
+
+The frontend acts as a Module Federation container that:
+
+- Has no knowledge of apps at build time
+- Dynamically loads apps at runtime based on registry data
+- Shares React/React-DOM as singletons
+- Provides error boundaries and fallbacks
+
+### 2. **Apps (Remotes)**
+
+Each app (like task-manager-app) can:
+
+- **Self-register** with the hub via REST API
+- **Expose components** via Module Federation
+- **Send heartbeats** to maintain health status
+- **Share dependencies** for optimal performance
+
+### 3. **Dynamic Discovery Flow**
+
+```mermaid
+sequenceDiagram
+    participant A as App (Remote)
+    participant B as Backend API
+    participant H as Hub (Container)
+
+    A->>B: POST /api/apps/register
+    B->>H: WebSocket: app-registered
+    H->>H: Add app to registry
+    User->>H: Click app in selector
+    H->>A: Load remoteEntry.js
+    H->>H: Dynamic import('./App')
+    H->>User: Render federated component
+```
+
+## 🛠️ Tech Stack
+
+- **Backend**: Node.js, Express, TypeScript, SQLite, Socket.IO
+- **Frontend**: React, TypeScript, Vite, Module Federation
+- **Monorepo**: Lerna, npm workspaces
+- **Code Quality**: ESLint, Prettier, Husky, lint-staged, commitlint
+- **Integration**: Module Federation, Iframe, Web Components
+- **Containerization**: Docker, Docker Compose, Multi-stage builds
+
+## 🏃‍♂️ Development
 
 ### Available Scripts
 
 ```bash
 # Development
-npm run dev                 # Start all services
-npm run dev:backend        # Start backend only
-npm run dev:frontend       # Start frontend only
+npm run dev                 # Start backend + frontend
+npm run dev:all             # Start all services including task-manager
+npm run dev:backend         # Start backend only
+npm run dev:frontend        # Start frontend only
+npm run dev:task-manager    # Start task manager example
 
 # Building
-npm run build              # Build all packages
-npm run type-check         # Type check all packages
-npm run lint               # Lint all packages
+npm run build               # Build all packages
+npm run build:all           # Build all including task-manager
+npm run type-check          # Type check all packages
+npm run lint                # Lint all packages
 
 # Database
-npm run db:init            # Initialize database
-npm run db:seed            # Seed with demo data
+npm run db:init             # Initialize database
+npm run db:seed             # Seed with demo data
 
-# Version Management
-npm run version            # Version packages with Lerna
-npm run publish            # Publish packages
+# Docker
+npm run docker:build        # Build all Docker images
+npm run docker:up           # Start all services with Docker
+npm run docker:down         # Stop all Docker services
 ```
 
-### Package Scripts
+### Creating New Micro-frontends
 
-Each package has its own scripts:
+See the comprehensive guide: [MODULE_FEDERATION_GUIDE.md](./MODULE_FEDERATION_GUIDE.md)
+
+Quick setup:
 
 ```bash
-cd frontend && npm run dev     # Start frontend dev server
-cd backend && npm run dev      # Start backend dev server
-cd shared && npm run build     # Build shared package
-cd sdk && npm run build        # Build SDK package
+# 1. Create new Vite React app
+npm create vite@latest my-app -- --template react-ts
+
+# 2. Add Module Federation
+npm install @originjs/vite-plugin-federation --save-dev
+npm install @frontfuse/sdk-react
+
+# 3. Configure vite.config.ts with federation setup
+# 4. Add self-registration code
+# 5. Start and watch it auto-register with the hub!
 ```
 
-## 🎯 Default App Icons
+## 💓 Heartbeat & Self-Registration
 
-The platform automatically assigns icons based on integration type:
-
-- **Module Federation**: 🔗 (Link icon with blue gradient)
-- **Iframe**: 🖼️ (Frame icon with green gradient)
-- **Web Component**: ⚡ (Lightning icon with purple gradient)
-
-## 💓 Heartbeat System
-
-Apps can report their status using the heartbeat API:
+Apps using the FrontFuse SDK can self-register and maintain health status:
 
 ```typescript
-import { createHeartbeat } from '@frontfuse/sdk'
+import { createHeartbeat } from '@frontfuse/sdk-react'
 
-const heartbeat = createHeartbeat({
-  appId: 'your-app-uuid',
-  backendUrl: 'http://localhost:3001',
-  interval: 30000, // 30 seconds
-  metadata: { version: '1.0.0' },
-})
+// Auto-register when running standalone
+async function autoRegister() {
+  const response = await fetch('http://localhost:3001/api/apps/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'My App',
+      url: 'http://localhost:3003',
+      integrationType: 'module-federation',
+      remoteUrl: 'http://localhost:3003',
+      scope: 'myApp',
+      module: './App',
+    }),
+  })
 
-// Start sending heartbeats
-heartbeat.start()
+  if (response.ok) {
+    const app = await response.json()
 
-// Stop when app unloads
-window.addEventListener('beforeunload', () => {
-  heartbeat.stop()
-})
+    // Start heartbeat
+    const heartbeat = createHeartbeat({
+      appId: app.id,
+      backendUrl: 'http://localhost:3001',
+      interval: 30000,
+    })
+    heartbeat.start()
+  }
+}
 ```
 
 ## 🔌 Integration Types
 
-### Module Federation
+### 1. Module Federation (Recommended)
+
+**Best Performance** - Shared dependencies, type safety, rich integration
 
 ```typescript
-// App registration
 {
   integrationType: 'module-federation',
   remoteUrl: 'https://myapp.example.com',
@@ -149,26 +215,36 @@ window.addEventListener('beforeunload', () => {
 }
 ```
 
-### Iframe
+### 2. Iframe
+
+**Maximum Isolation** - Any technology, complete sandboxing
 
 ```typescript
-// App registration
 {
   integrationType: 'iframe',
   url: 'https://myapp.example.com'
 }
 ```
 
-### Web Component
+### 3. Web Component
+
+**Standards Based** - Framework agnostic, good encapsulation
 
 ```typescript
-// App registration
 {
   integrationType: 'web-component',
   remoteUrl: 'https://myapp.example.com/component.js',
   scope: 'my-web-component'
 }
 ```
+
+## 🎯 Default App Icons
+
+The platform automatically assigns icons based on integration type:
+
+- **Module Federation**: 🔗 (Link icon - best performance)
+- **Iframe**: 🖼️ (Frame icon - maximum isolation)
+- **Web Component**: ⚡ (Lightning icon - standards based)
 
 ## 🎨 Theming
 
@@ -243,7 +319,7 @@ chore(deps): Update dependencies
 
 - JWT-based authentication
 - Role-based access control (RBAC)
-- CORS configuration
+- CORS configuration for Module Federation
 - Helmet.js security headers
 - Input validation and sanitization
 
@@ -252,7 +328,7 @@ chore(deps): Update dependencies
 ### Production Build
 
 ```bash
-npm run build
+npm run build:all
 ```
 
 ### Environment Variables
@@ -266,7 +342,14 @@ DB_PATH=/path/to/database.sqlite
 FRONTEND_URL=https://your-domain.com
 
 # Frontend
-VITE_BACKEND_URL=https://api.your-domain.com
+VITE_API_URL=https://api.your-domain.com
+```
+
+### Docker Deployment
+
+```bash
+# Production deployment with Docker Compose
+docker-compose -f docker-compose.yml up -d
 ```
 
 ## 📊 Database Schema
@@ -274,7 +357,7 @@ VITE_BACKEND_URL=https://api.your-domain.com
 The platform uses SQLite with the following main tables:
 
 - **users** - User accounts and authentication
-- **apps** - Registered microfrontend applications
+- **apps** - Registered microfrontend applications with federation metadata
 - **sessions** - User sessions (if using session-based auth)
 
 ## 🤝 Contributing
@@ -293,6 +376,12 @@ The project uses Husky for Git hooks:
 - **pre-commit**: Runs linting, formatting, and type checking
 - **commit-msg**: Validates commit message format
 
+## 📖 Documentation
+
+- **[Module Federation Guide](./MODULE_FEDERATION_GUIDE.md)** - Complete implementation guide
+- **[Runtime Architecture](./Runtime_Module_Federation_Architecture.md)** - Technical architecture details
+- **API Documentation** - Available at `/api/docs` when backend is running
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -305,10 +394,175 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
+- [x] **Runtime Module Federation** - Zero build-time dependencies ✅
+- [x] **Self-registering Apps** - Dynamic discovery via REST API ✅
+- [x] **Docker Support** - Containerized micro-frontends ✅
+- [x] **Heartbeat System** - Real-time health monitoring ✅
 - [ ] Plugin system for custom integrations
 - [ ] Advanced analytics and monitoring
 - [ ] Multi-tenant support
-- [ ] Docker containerization
 - [ ] Kubernetes deployment manifests
 - [ ] Advanced caching strategies
 - [ ] Performance monitoring dashboard
+- [ ] CI/CD pipeline templates for new apps
+
+## 🛠️ Development Setup
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Git
+
+### Quick Start
+
+1. **Clone and install**:
+
+   ```bash
+   git clone <repository-url>
+   cd frontfuse
+   npm install
+   ```
+
+2. **Start development servers**:
+
+   ```bash
+   npm run dev
+   ```
+
+   This starts both frontend (port 5173) and backend (port 3001)
+
+3. **Access the platform**:
+   - **Main Platform**: http://localhost:5173
+   - **API Documentation**: http://localhost:3001/api-docs
+   - **Health Check**: http://localhost:3001/health
+
+### Port Conflict Resolution
+
+The backend now handles port conflicts gracefully:
+
+- **Automatic Port Detection**: Finds available ports starting from 3001
+- **Graceful Shutdown**: Clean shutdown with Ctrl+C
+- **Error Recovery**: Proper error handling and logging
+
+If you encounter port conflicts, the backend will:
+
+1. Detect the conflict
+2. Try the next available port (3002, 3003, etc.)
+3. Update all references automatically
+4. Display the new port in console output
+
+### Manual Cleanup (if needed)
+
+If you need to manually clean up port conflicts:
+
+**Windows**:
+
+```bash
+# From backend directory
+npm run cleanup
+
+# Or manually
+netstat -ano | findstr :3001
+taskkill /F /PID <process-id>
+```
+
+**Mac/Linux**:
+
+```bash
+# Find process using port
+lsof -ti:3001
+
+# Kill process
+kill -9 $(lsof -ti:3001)
+```
+
+## 📱 Running Individual Components
+
+### Backend Only
+
+```bash
+cd backend
+npm run dev
+```
+
+### Frontend Only
+
+```bash
+cd frontend
+npm run dev
+```
+
+### Task Manager Example App
+
+```bash
+cd task-manager-app
+npm run dev
+```
+
+## 🧪 Default Users
+
+The platform comes with pre-configured users:
+
+- **Admin User**:
+
+  - Email: `admin@frontfuse.dev`
+  - Password: `admin123`
+  - Roles: `admin`, `user`
+
+- **Regular User**:
+  - Email: `user@frontfuse.dev`
+  - Password: `user123`
+  - Roles: `user`
+
+## 📚 Documentation
+
+- **Help System**: Available in the platform at `/help`
+- **API Documentation**: http://localhost:3001/api-docs
+- **Developer Guide**: `/docs/developer-guide.md`
+
+## 🏗️ Creating Microfrontend Apps
+
+See the [Developer Guide](docs/developer-guide.md) for complete instructions on:
+
+- Setting up Module Federation
+- Using the FrontFuse SDK
+- Implementing authentication
+- Adding menu items
+- Deployment strategies
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Port Already in Use**:
+
+- The backend now handles this automatically
+- Use `npm run cleanup` if manual intervention needed
+
+**Module Federation Errors**:
+
+- Check that remoteUrl is accessible
+- Verify scope and module names match configuration
+
+**Authentication Issues**:
+
+- Clear browser localStorage
+- Check JWT token expiration
+- Verify user credentials
+
+### Debug Mode
+
+Enable debug logging:
+
+```bash
+DEBUG=frontfuse:* npm run dev
+```
+
+### Health Checks
+
+Monitor application health:
+
+```bash
+curl http://localhost:3001/health
+```

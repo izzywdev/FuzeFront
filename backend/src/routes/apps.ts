@@ -62,6 +62,51 @@ router.get('/health', authenticateToken, async (req: any, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /api/apps:
+ *   get:
+ *     summary: Get all registered applications
+ *     description: Retrieve a list of all registered applications with their health status
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: healthyOnly
+ *         schema:
+ *           type: string
+ *           enum: ['true', 'false']
+ *         description: If 'true', only return healthy applications
+ *         example: 'false'
+ *     responses:
+ *       200:
+ *         description: List of applications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/App'
+ *             example:
+ *               - id: "f0e9b957-5e89-456e-a768-f2166932a725"
+ *                 name: "Task Manager"
+ *                 url: "http://localhost:3002"
+ *                 iconUrl: "http://localhost:3002/icon.svg"
+ *                 isActive: true
+ *                 isHealthy: true
+ *                 integrationType: "module-federation"
+ *                 remoteUrl: "http://localhost:3002/assets/remoteEntry.js"
+ *                 scope: "taskManager"
+ *                 module: "./App"
+ *                 description: "Personal task management application"
+ *       500:
+ *         description: Failed to fetch applications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // GET /api/apps - Get all registered apps with health status
 router.get('/', authenticateToken, async (req: any, res) => {
   try {
@@ -112,6 +157,84 @@ router.get('/', authenticateToken, async (req: any, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /api/apps:
+ *   post:
+ *     summary: Register new application
+ *     description: Register a new microfrontend application (admin only)
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateAppRequest'
+ *           examples:
+ *             module-federation:
+ *               summary: Module Federation App
+ *               value:
+ *                 name: "My React App"
+ *                 url: "https://my-app.netlify.app"
+ *                 iconUrl: "https://my-app.netlify.app/icon.svg"
+ *                 integrationType: "module-federation"
+ *                 remoteUrl: "https://my-app.netlify.app/assets/remoteEntry.js"
+ *                 scope: "myApp"
+ *                 module: "./App"
+ *                 description: "A React microfrontend application"
+ *             iframe:
+ *               summary: Iframe App
+ *               value:
+ *                 name: "External Dashboard"
+ *                 url: "https://dashboard.example.com"
+ *                 iconUrl: "https://dashboard.example.com/favicon.ico"
+ *                 integrationType: "iframe"
+ *                 description: "External dashboard embedded via iframe"
+ *     responses:
+ *       201:
+ *         description: Application registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/App'
+ *       400:
+ *         description: Bad request - missing required fields or duplicate name
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             examples:
+ *               missing-fields:
+ *                 summary: Missing required fields
+ *                 value:
+ *                   error: "Name and URL are required"
+ *               duplicate-name:
+ *                 summary: Duplicate application name
+ *                 value:
+ *                   error: "An app with this name already exists"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Admin role required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Insufficient permissions"
+ *       500:
+ *         description: Failed to create application
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // POST /api/apps - Register new app (admin only)
 router.post(
   '/',
@@ -271,6 +394,118 @@ router.post('/:id/heartbeat', async (req: any, res) => {
   } catch (error: any) {
     console.error('Error processing heartbeat:', error)
     res.status(500).json({ error: 'Failed to process heartbeat' })
+  }
+})
+
+// POST /api/apps/register - Self-register app (no auth required for demo)
+router.post('/register', async (req: any, res) => {
+  try {
+    const {
+      name,
+      url,
+      iconUrl,
+      integrationType = 'module-federation',
+      remoteUrl,
+      scope,
+      module,
+      description,
+    } = req.body
+
+    if (!name || !url) {
+      return res.status(400).json({ error: 'Name and URL are required' })
+    }
+
+    // For module federation, require additional fields
+    if (integrationType === 'module-federation') {
+      if (!remoteUrl || !scope || !module) {
+        return res.status(400).json({
+          error: 'Module Federation apps require remoteUrl, scope, and module',
+        })
+      }
+    }
+
+    const appId = uuidv4()
+
+    await db.run(
+      `INSERT INTO apps (id, name, url, icon_url, integration_type, remote_url, scope, module, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        appId,
+        name,
+        url,
+        iconUrl,
+        integrationType,
+        remoteUrl,
+        scope,
+        module,
+        description,
+      ]
+    )
+
+    const newApp: App = {
+      id: appId,
+      name,
+      url,
+      iconUrl,
+      isActive: true,
+      integrationType,
+      remoteUrl,
+      scope,
+      module,
+      description,
+    }
+
+    // Emit WebSocket event to notify all connected clients
+    const io = req.app.get('io')
+    if (io) {
+      io.emit('app-registered', {
+        app: newApp,
+        timestamp: new Date().toISOString(),
+      })
+    }
+
+    console.log(`🚀 App "${name}" self-registered successfully`)
+
+    res.status(201).json(newApp)
+  } catch (error: any) {
+    console.error('Error in self-registration:', error)
+
+    // Check if it's a unique constraint violation
+    if (
+      error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      error.message?.includes('UNIQUE constraint failed')
+    ) {
+      // Return the existing app instead of an error
+      try {
+        const existingApp = await db.get<any>(
+          'SELECT * FROM apps WHERE name = ?',
+          [req.body.name]
+        )
+        if (existingApp) {
+          const app: App = {
+            id: existingApp.id,
+            name: existingApp.name,
+            url: existingApp.url,
+            iconUrl: existingApp.icon_url,
+            isActive: Boolean(existingApp.is_active),
+            integrationType: existingApp.integration_type,
+            remoteUrl: existingApp.remote_url,
+            scope: existingApp.scope,
+            module: existingApp.module,
+            description: existingApp.description,
+          }
+          return res.status(200).json(app)
+        }
+      } catch (fetchError) {
+        console.error('Error fetching existing app:', fetchError)
+      }
+
+      return res
+        .status(400)
+        .json({ error: 'An app with this name already exists' })
+    }
+
+    res.status(500).json({ error: 'Failed to register app' })
   }
 })
 

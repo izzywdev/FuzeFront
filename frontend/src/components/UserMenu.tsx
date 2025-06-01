@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { User } from '@frontfuse/shared'
+import { User, useCurrentUser } from '@frontfuse/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import { logout } from '../services/api'
 
@@ -11,13 +11,18 @@ function UserMenu({ user }: UserMenuProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [isNotificationOpen, setIsNotificationOpen] = useState(false)
   const { t } = useLanguage()
+  const { setUser } = useCurrentUser()
 
   const handleLogout = async () => {
     try {
       await logout()
-      window.location.reload()
+      setUser(null)
+      window.location.href = '/'
     } catch (error) {
       console.error('Logout failed:', error)
+      setUser(null)
+      localStorage.removeItem('authToken')
+      window.location.href = '/'
     }
   }
 
