@@ -14,8 +14,15 @@ type AppAction =
   | { type: 'SET_USER'; payload: User | null }
   | { type: 'SET_SESSION'; payload: Session | null }
   | { type: 'SET_APPS'; payload: App[] }
+  | { type: 'ADD_APP'; payload: App }
   | { type: 'SET_ACTIVE_APP'; payload: App | null }
   | { type: 'SET_MENU_ITEMS'; payload: MenuItem[] }
+  | {
+      type: 'ADD_APP_MENU_ITEMS'
+      payload: { appId: string; items: MenuItem[] }
+    }
+  | { type: 'REMOVE_APP_MENU_ITEMS'; payload: string } // appId
+  | { type: 'CLEAR_ALL_APP_MENU_ITEMS' }
   | { type: 'SET_LOADING'; payload: boolean }
   | {
       type: 'UPDATE_APP_STATUS'
@@ -28,8 +35,22 @@ const initialState: AppState = {
   apps: [],
   activeApp: null,
   menuItems: [
-    { id: 'dashboard', label: 'Dashboard', icon: '🏠', route: '/dashboard' },
-    { id: 'help', label: 'Help', icon: '❓', route: '/help' },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: '🏠',
+      route: '/dashboard',
+      category: 'portal',
+      order: 1,
+    },
+    {
+      id: 'help',
+      label: 'Help',
+      icon: '❓',
+      route: '/help',
+      category: 'portal',
+      order: 999, // Keep help at the bottom
+    },
   ],
   isLoading: false,
 }
@@ -42,10 +63,34 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, session: action.payload }
     case 'SET_APPS':
       return { ...state, apps: action.payload }
+    case 'ADD_APP':
+      // Check if app already exists to avoid duplicates
+      const existingApp = state.apps.find(app => app.id === action.payload.id)
+      if (existingApp) {
+        return state
+      }
+      return { ...state, apps: [...state.apps, action.payload] }
     case 'SET_ACTIVE_APP':
       return { ...state, activeApp: action.payload }
     case 'SET_MENU_ITEMS':
       return { ...state, menuItems: action.payload }
+    case 'ADD_APP_MENU_ITEMS':
+      return {
+        ...state,
+        menuItems: [...state.menuItems, ...action.payload.items],
+      }
+    case 'REMOVE_APP_MENU_ITEMS':
+      return {
+        ...state,
+        menuItems: state.menuItems.filter(
+          item => item.appId !== action.payload
+        ),
+      }
+    case 'CLEAR_ALL_APP_MENU_ITEMS':
+      return {
+        ...state,
+        menuItems: state.menuItems.filter(item => item.category === 'portal'),
+      }
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload }
     case 'UPDATE_APP_STATUS':
