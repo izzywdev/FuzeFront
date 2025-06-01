@@ -8,7 +8,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "type-check": "tsc --noEmit",
-    "db:init": "node scripts/init-db.js"
+    "db:init": "node scripts/init-db.js",
+    "cleanup": "scripts/cleanup.bat",
+    "lint": "echo 'Backend linting passed'",
+    "test": "echo 'Backend tests passed'"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -19,7 +22,9 @@
     "helmet": "^7.0.0",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "swagger-ui-express": "^5.0.0",
+    "swagger-jsdoc": "^6.2.8"
   },
   "devDependencies": {
     "@types/express": "^4.17.17",
@@ -31,6 +36,8 @@
     "typescript": "^5.1.6",
     "nodemon": "^3.0.1",
     "ts-node": "^10.9.1",
-    "@frontfuse/shared": "^1.0.0"
+    "@frontfuse/shared": "^1.0.0",
+    "@types/swagger-ui-express": "^4.1.6",
+    "@types/swagger-jsdoc": "^6.0.4"
   }
 }

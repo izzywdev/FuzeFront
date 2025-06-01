@@ -16,10 +16,19 @@ function LoginPage() {
     setError('')
 
     try {
-      const { user } = await login(email, password)
-      setUser(user)
+      const { token, user } = await login(email, password)
+
+      // Ensure token is stored and user is set
+      if (token && user) {
+        setUser(user)
+        // Force a page reload to ensure proper app initialization
+        window.location.href = '/dashboard'
+      } else {
+        throw new Error('Invalid response from server')
+      }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed')
+      console.error('Login error:', err)
+      setError(err.response?.data?.error || err.message || 'Login failed')
     } finally {
       setLoading(false)
     }

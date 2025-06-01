@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useCurrentUser, useAppContext } from '@frontfuse/shared'
+import { ChatProvider } from './contexts/ChatContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import AdminPage from './pages/AdminPage'
 import StatusPage from './pages/StatusPage'
+import HelpPage from './pages/HelpPage'
 import { FederatedAppLoader } from './components/FederatedAppLoader'
 import { getCurrentUser } from './services/api'
 import websocketService from './services/websocket'
@@ -18,14 +20,26 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const token = localStorage.getItem('token')
+        const token = localStorage.getItem('authToken')
+        console.log('Initializing auth - token found:', !!token)
+
         if (token) {
-          const user = await getCurrentUser()
-          dispatch({ type: 'SET_USER', payload: user })
+          try {
+            console.log('Attempting to get current user...')
+            const user = await getCurrentUser()
+            console.log('Successfully got user:', user.email)
+            dispatch({ type: 'SET_USER', payload: user })
+          } catch (userError) {
+            // Token is invalid or expired
+            console.error('Failed to get current user:', userError)
+            localStorage.removeItem('authToken')
+          }
+        } else {
+          console.log('No auth token found')
         }
       } catch (error) {
-        console.error('Failed to load user:', error)
-        localStorage.removeItem('token')
+        console.error('Failed to initialize auth:', error)
+        localStorage.removeItem('authToken')
       } finally {
         setIsLoading(false)
       }
@@ -58,11 +72,22 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         })
       }
 
+      // Listen for new app registrations
+      const handleAppRegistered = (data: { app: any; timestamp: string }) => {
+        console.log(`🚀 New app registered: ${data.app.name}`)
+        dispatch({
+          type: 'ADD_APP',
+          payload: data.app,
+        })
+      }
+
       websocketService.on('app-status-changed', handleAppStatusChange)
+      websocketService.on('app-registered', handleAppRegistered)
 
       // Cleanup on unmount
       return () => {
         websocketService.off('app-status-changed', handleAppStatusChange)
+        websocketService.off('app-registered', handleAppRegistered)
         websocketService.disconnect()
       }
     }
@@ -98,28 +123,36 @@ function App() {
 function AppContent() {
   const { isAuthenticated, user } = useCurrentUser()
 
+  console.log('AppContent - Authentication state:', {
+    isAuthenticated,
+    user: user?.email,
+  })
+
   if (!isAuthenticated) {
+    console.log('User not authenticated, showing login page')
     return <LoginPage />
   }
 
+  console.log('User authenticated, showing main app')
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/app/:appId" element={<AppRoute />} />
-        <Route path="/admin" element={<AdminRoute />} />
-        <Route path="/help" element={<HelpPage />} />
-        <Route path="/status" element={<StatusPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </Layout>
+    <ChatProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/app/:appId" element={<AppRoute />} />
+          <Route path="/admin" element={<AdminRoute />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/status" element={<StatusPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Layout>
+    </ChatProvider>
   )
 }
 
 // Component for loading federated apps
 function AppRoute() {
-  const urlParams = new URLSearchParams(window.location.search)
   const appId = window.location.pathname.split('/app/')[1]
 
   if (!appId) {
@@ -155,76 +188,6 @@ function AdminRoute() {
   }
 
   return <AdminPage />
-}
-
-// Help page component
-function HelpPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Help & Documentation</h1>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '2rem',
-          marginTop: '2rem',
-        }}
-      >
-        <div
-          style={{
-            padding: '1.5rem',
-            border: '1px solid #333',
-            borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
-          }}
-        >
-          <h3>Getting Started with FrontFuse</h3>
-          <p>
-            Learn how to use FrontFuse to access and manage your applications.
-          </p>
-          <ul style={{ textAlign: 'left', color: '#ccc' }}>
-            <li>Navigate using the app selector in the top bar</li>
-            <li>Use the side menu for app-specific features</li>
-            <li>Contact your admin to request new apps</li>
-          </ul>
-        </div>
-
-        <div
-          style={{
-            padding: '1.5rem',
-            border: '1px solid #333',
-            borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
-          }}
-        >
-          <h3>Developer Guide</h3>
-          <p>Documentation for building microfrontends for FrontFuse.</p>
-          <ul style={{ textAlign: 'left', color: '#ccc' }}>
-            <li>Module Federation setup guide</li>
-            <li>SDK integration examples</li>
-            <li>Platform API reference</li>
-          </ul>
-        </div>
-
-        <div
-          style={{
-            padding: '1.5rem',
-            border: '1px solid #333',
-            borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
-          }}
-        >
-          <h3>👥 Support</h3>
-          <p>Get help when you need it.</p>
-          <ul style={{ textAlign: 'left', color: '#ccc' }}>
-            <li>Contact IT support</li>
-            <li>Report bugs or issues</li>
-            <li>Request new features</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // 404 page

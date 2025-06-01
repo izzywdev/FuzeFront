@@ -1,0 +1,24 @@
+name: Auto Merge PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  check_suite:
+    types: [completed]
+
+jobs:
+  auto-merge:
+    name: Auto Merge PR
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable auto-merge
+        if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

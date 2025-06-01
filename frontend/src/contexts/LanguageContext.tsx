@@ -18,7 +18,11 @@ const translations = {
     // Navigation
     dashboard: 'Dashboard',
     admin: 'Admin',
+    adminPanel: 'Admin Panel',
     status: 'Status',
+    help: 'Help',
+    portal: 'Portal',
+    appMenu: 'App Menu',
     logout: 'Logout',
     frontFuse: 'FrontFuse',
 
@@ -95,7 +99,11 @@ const translations = {
     // Navigation
     dashboard: 'לוח בקרה',
     admin: 'ניהול',
+    adminPanel: 'ניהול ממשק',
     status: 'סטטוס',
+    help: 'עזרה',
+    portal: 'פורטל',
+    appMenu: 'תפריט אפליקציות',
     logout: 'התנתק',
     frontFuse: 'FrontFuse',
 

@@ -19,6 +19,20 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// Handle 401 responses (unauthorized)
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      // Token is invalid or expired
+      localStorage.removeItem('authToken')
+      // Reload the page to trigger re-authentication
+      window.location.reload()
+    }
+    return Promise.reject(error)
+  }
+)
+
 export const login = async (email: string, password: string) => {
   const response = await api.post('/auth/login', { email, password })
   const { token, user } = response.data
@@ -27,8 +41,14 @@ export const login = async (email: string, password: string) => {
 }
 
 export const logout = async () => {
-  await api.post('/auth/logout')
-  localStorage.removeItem('authToken')
+  try {
+    await api.post('/auth/logout')
+  } catch (error) {
+    // Even if logout fails on server, remove local token
+    console.error('Logout error:', error)
+  } finally {
+    localStorage.removeItem('authToken')
+  }
 }
 
 export const getCurrentUser = async (): Promise<User> => {
