@@ -362,25 +362,90 @@ The platform uses SQLite with the following main tables:
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/amazing-feature`
-3. Make your changes following the coding standards
-4. Commit using conventional commits: `git commit -m "feat(scope): Add amazing feature"`
-5. Push to the branch: `git push origin feat/amazing-feature`
-6. Open a Pull Request
+We welcome contributions from the community! FrontFuse is built by developers, for developers, and we appreciate all forms of contribution.
 
-### Pre-commit Hooks
+### Quick Start for Contributors
 
-The project uses Husky for Git hooks:
+1. **Read our policies**:
 
-- **pre-commit**: Runs linting, formatting, and type checking
-- **commit-msg**: Validates commit message format
+   - 📋 [Contributing Guide](CONTRIBUTING.md) - Comprehensive contribution guidelines
+   - 🤝 [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards and expectations
+   - 🔒 [Security Policy](SECURITY.md) - Security vulnerability reporting
 
-## 📖 Documentation
+2. **Set up your development environment**:
 
-- **[Module Federation Guide](./MODULE_FEDERATION_GUIDE.md)** - Complete implementation guide
-- **[Runtime Architecture](./Runtime_Module_Federation_Architecture.md)** - Technical architecture details
-- **API Documentation** - Available at `/api/docs` when backend is running
+   ```bash
+   git clone https://github.com/your-username/FrontFuse.git
+   cd FrontFuse
+   npm install
+   npm run dev
+   ```
+
+3. **Make your contribution**:
+   - 🐛 **Bug fixes**: Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+   - ✨ **New features**: Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+   - 📝 **Documentation**: Help improve our docs and guides
+   - 🧪 **Testing**: Add or improve test coverage
+   - 🔧 **Code quality**: Refactoring and performance improvements
+
+### Development Workflow
+
+We use a structured development workflow with automated quality checks:
+
+```bash
+# 1. Create feature branch
+git checkout -b feat/your-feature-name
+
+# 2. Make changes and test locally
+npm run type-check
+npm run lint
+npm run test
+npm run build
+
+# 3. Commit with conventional format
+git commit -m "feat(component): add new feature"
+
+# 4. Push and create PR
+git push origin feat/your-feature-name
+```
+
+### Automated Quality Assurance
+
+Every contribution goes through our comprehensive CI/CD pipeline:
+
+- ✅ **Linting & Type Checking**: Code quality validation
+- 🏗️ **Build Verification**: Ensures all components build successfully
+- 🧪 **Automated Testing**: Unit and integration tests
+- 🔒 **Security Scanning**: Vulnerability and dependency auditing
+- 📝 **Commit Message Validation**: Conventional commit compliance
+
+### Areas for Contribution
+
+- **🏗️ Core Platform**: Container shell and module federation improvements
+- **🔧 Backend API**: Authentication, app management, and API enhancements
+- **📦 SDK Development**: Developer experience tools and utilities
+- **📚 Documentation**: Guides, examples, and API documentation
+- **🧪 Testing**: Test coverage and quality assurance
+- **⚡ Performance**: Optimization and monitoring improvements
+- **🎨 UI/UX**: Design and accessibility enhancements
+
+### Recognition
+
+Contributors are recognized through:
+
+- 📝 README contributors section (coming soon)
+- 🎉 Release notes for significant contributions
+- 📊 GitHub contributor statistics
+- 🏆 Special mention for security disclosures
+
+### Community Support
+
+- 💬 **GitHub Discussions**: Ask questions and share ideas
+- 🐛 **GitHub Issues**: Report bugs and request features
+- 📖 **Documentation**: Comprehensive guides and examples
+- 👥 **Code Reviews**: Learn from experienced contributors
+
+---
 
 ## 📄 License
 
