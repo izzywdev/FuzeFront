@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react'
+import {
+  PlatformProvider,
+  useCurrentUser,
+  useGlobalMenu,
+} from '@frontfuse/sdk-react'
 import './App.css'
 
 // Simple heartbeat implementation for the task manager
@@ -44,6 +49,7 @@ interface Task {
   priority: 'low' | 'medium' | 'high'
   dueDate: string
   createdAt: string
+  userId?: string // Add userId to associate tasks with users
 }
 
 // Health check component for the /healthy route
@@ -88,24 +94,93 @@ function HealthCheck() {
   return null
 }
 
-function App() {
-  // Check if we're on the health check route
-  if (window.location.pathname === '/healthy') {
-    return <HealthCheck />
-  }
-
+function TaskManagerApp() {
+  const { user, isAuthenticated } = useCurrentUser()
+  const { addAppMenuItems, removeAppMenuItems } = useGlobalMenu()
   const [tasks, setTasks] = useState<Task[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all')
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
-    priority: 'medium' as const,
+    priority: 'medium' as 'low' | 'medium' | 'high',
     dueDate: '',
   })
 
   // Task Manager App ID from the database
   const APP_ID = 'f0e9b957-5e89-456e-a768-f2166932a725'
+
+  // Register app-specific menu items when component mounts
+  useEffect(() => {
+    const menuItems = [
+      {
+        id: 'tasks-all',
+        label: 'All Tasks',
+        icon: '📋',
+        action: () => setFilter('all'),
+        order: 1,
+      },
+      {
+        id: 'tasks-pending',
+        label: 'Pending Tasks',
+        icon: '⏳',
+        action: () => setFilter('pending'),
+        order: 2,
+      },
+      {
+        id: 'tasks-completed',
+        label: 'Completed Tasks',
+        icon: '✅',
+        action: () => setFilter('completed'),
+        order: 3,
+      },
+      {
+        id: 'tasks-add',
+        label: 'Add Task',
+        icon: '➕',
+        action: () => setShowAddForm(true),
+        order: 4,
+      },
+    ]
+
+    // Register menu items
+    if (addAppMenuItems) {
+      addAppMenuItems(APP_ID, menuItems)
+      console.log('📋 Task Manager menu items registered')
+    }
+
+    // Cleanup function to remove menu items when component unmounts
+    return () => {
+      if (removeAppMenuItems) {
+        removeAppMenuItems(APP_ID)
+        console.log('📋 Task Manager menu items removed')
+      }
+    }
+  }, [addAppMenuItems, removeAppMenuItems])
+
+  // Listen for cleanup events from platform
+  useEffect(() => {
+    const handleMenuCleanup = (event: CustomEvent) => {
+      if (event.detail.appId === APP_ID && removeAppMenuItems) {
+        removeAppMenuItems(APP_ID)
+        console.log('📋 Task Manager menu items cleaned up via event')
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener(
+        'app-menu-cleanup',
+        handleMenuCleanup as EventListener
+      )
+
+      return () => {
+        window.removeEventListener(
+          'app-menu-cleanup',
+          handleMenuCleanup as EventListener
+        )
+      }
+    }
+  }, [removeAppMenuItems])
 
   // Initialize heartbeat when app loads
   useEffect(() => {
@@ -132,21 +207,27 @@ function App() {
     }
   }, [])
 
-  // Load tasks from localStorage on mount
+  // Load user-specific tasks from localStorage
   useEffect(() => {
-    const savedTasks = localStorage.getItem('taskManager_tasks')
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks))
+    if (user) {
+      const storageKey = `taskManager_tasks_${user.id}`
+      const savedTasks = localStorage.getItem(storageKey)
+      if (savedTasks) {
+        setTasks(JSON.parse(savedTasks))
+      }
     }
-  }, [])
+  }, [user])
 
   // Save tasks to localStorage whenever tasks change
   useEffect(() => {
-    localStorage.setItem('taskManager_tasks', JSON.stringify(tasks))
-  }, [tasks])
+    if (user) {
+      const storageKey = `taskManager_tasks_${user.id}`
+      localStorage.setItem(storageKey, JSON.stringify(tasks))
+    }
+  }, [tasks, user])
 
   const addTask = () => {
-    if (!newTask.title.trim()) return
+    if (!newTask.title.trim() || !user) return
 
     const task: Task = {
       id: Date.now().toString(),
@@ -156,6 +237,7 @@ function App() {
       priority: newTask.priority,
       dueDate: newTask.dueDate,
       createdAt: new Date().toISOString(),
+      userId: user.id,
     }
 
     setTasks(prev => [task, ...prev])
@@ -194,69 +276,98 @@ function App() {
     }
   }
 
+  const getUserDisplayName = () => {
+    if (!user) return 'Guest User'
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`
+    }
+    if (user.firstName) {
+      return user.firstName
+    }
+    return user.email
+  }
+
   return (
     <div className="task-manager">
       <header className="header">
-        <h1>�� Task Manager</h1>
-        <p>Manage your tasks efficiently</p>
-      </header>
+        <div>
+          <h1>📋 Task Manager</h1>
+          {isAuthenticated && user ? (
+            <div className="user-info">
+              <span className="welcome-text">
+                Welcome back, <strong>{getUserDisplayName()}</strong>! 👋
+              </span>
+              <div className="user-details">
+                <small>
+                  📧 {user.email} |
+                  {user.roles.includes('admin') ? ' 👑 Admin' : ' 👤 User'} | 📊{' '}
+                  {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                </small>
+              </div>
+            </div>
+          ) : (
+            <div className="user-info">
+              <span className="welcome-text">
+                👤 Not authenticated - running in standalone mode
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="header-actions">
+          <div className="filter-buttons">
+            <button
+              className={filter === 'all' ? 'active' : ''}
+              onClick={() => setFilter('all')}
+            >
+              All ({tasks.length})
+            </button>
+            <button
+              className={filter === 'pending' ? 'active' : ''}
+              onClick={() => setFilter('pending')}
+            >
+              Pending ({tasks.filter(t => !t.completed).length})
+            </button>
+            <button
+              className={filter === 'completed' ? 'active' : ''}
+              onClick={() => setFilter('completed')}
+            >
+              Completed ({tasks.filter(t => t.completed).length})
+            </button>
+          </div>
 
-      <div className="controls">
-        <div className="filter-buttons">
           <button
-            className={filter === 'all' ? 'active' : ''}
-            onClick={() => setFilter('all')}
+            className="add-button"
+            onClick={() => setShowAddForm(!showAddForm)}
           >
-            All ({tasks.length})
-          </button>
-          <button
-            className={filter === 'pending' ? 'active' : ''}
-            onClick={() => setFilter('pending')}
-          >
-            Pending ({tasks.filter(t => !t.completed).length})
-          </button>
-          <button
-            className={filter === 'completed' ? 'active' : ''}
-            onClick={() => setFilter('completed')}
-          >
-            Completed ({tasks.filter(t => t.completed).length})
+            ➕ Add Task
           </button>
         </div>
-
-        <button
-          className="add-button"
-          onClick={() => setShowAddForm(!showAddForm)}
-        >
-          ➕ Add Task
-        </button>
-      </div>
+      </header>
 
       {showAddForm && (
         <div className="add-form">
           <h3>Add New Task</h3>
           <input
             type="text"
-            placeholder="Task title..."
+            placeholder="Task title"
             value={newTask.title}
-            onChange={e =>
-              setNewTask(prev => ({ ...prev, title: e.target.value }))
-            }
+            onChange={e => setNewTask({ ...newTask, title: e.target.value })}
           />
           <textarea
-            placeholder="Task description..."
+            placeholder="Task description"
             value={newTask.description}
             onChange={e =>
-              setNewTask(prev => ({ ...prev, description: e.target.value }))
+              setNewTask({ ...newTask, description: e.target.value })
             }
           />
           <div className="form-row">
             <select
               value={newTask.priority}
               onChange={e =>
-                setNewTask(prev => ({
-                  ...prev,
-                  priority: e.target.value as any,
-                }))
+                setNewTask({
+                  ...newTask,
+                  priority: e.target.value as 'low' | 'medium' | 'high',
+                })
               }
             >
               <option value="low">Low Priority</option>
@@ -267,90 +378,104 @@ function App() {
               type="date"
               value={newTask.dueDate}
               onChange={e =>
-                setNewTask(prev => ({ ...prev, dueDate: e.target.value }))
+                setNewTask({ ...newTask, dueDate: e.target.value })
               }
             />
           </div>
           <div className="form-actions">
-            <button onClick={addTask} className="save-button">
-              Save Task
-            </button>
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="cancel-button"
-            >
-              Cancel
-            </button>
+            <button onClick={addTask}>Add Task</button>
+            <button onClick={() => setShowAddForm(false)}>Cancel</button>
           </div>
         </div>
       )}
 
-      <div className="tasks-container">
+      <div className="task-list">
         {filteredTasks.length === 0 ? (
           <div className="empty-state">
-            <h3>No tasks found</h3>
             <p>
               {filter === 'all'
-                ? 'Add your first task to get started!'
-                : `No ${filter} tasks at the moment.`}
+                ? isAuthenticated && user
+                  ? `No tasks yet, ${user.firstName || 'there'}! Add one above. 📝`
+                  : 'No tasks yet! Add one above. 📝'
+                : filter === 'pending'
+                  ? 'No pending tasks! 🎉'
+                  : 'No completed tasks yet! 📋'}
             </p>
           </div>
         ) : (
-          <div className="tasks-list">
-            {filteredTasks.map(task => (
-              <div
-                key={task.id}
-                className={`task-card ${task.completed ? 'completed' : ''}`}
-              >
+          filteredTasks.map(task => (
+            <div
+              key={task.id}
+              className={`task ${task.completed ? 'completed' : ''}`}
+            >
+              <div className="task-content">
                 <div className="task-header">
-                  <div className="task-title-section">
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() => toggleTask(task.id)}
-                    />
-                    <h4 className={task.completed ? 'strikethrough' : ''}>
-                      {task.title}
-                    </h4>
-                  </div>
-                  <div className="task-actions">
+                  <h4 onClick={() => toggleTask(task.id)}>{task.title}</h4>
+                  <div className="task-meta">
                     <span
-                      className="priority-badge"
-                      style={{
-                        backgroundColor: getPriorityColor(task.priority),
-                      }}
+                      className="priority"
+                      style={{ color: getPriorityColor(task.priority) }}
                     >
-                      {task.priority}
+                      {task.priority.toUpperCase()}
                     </span>
-                    <button
-                      className="delete-button"
-                      onClick={() => deleteTask(task.id)}
-                    >
-                      🗑️
-                    </button>
+                    {task.dueDate && (
+                      <span className="due-date">Due: {task.dueDate}</span>
+                    )}
                   </div>
                 </div>
-
                 {task.description && (
                   <p className="task-description">{task.description}</p>
                 )}
-
-                <div className="task-meta">
-                  {task.dueDate && (
-                    <span className="due-date">
-                      📅 Due: {new Date(task.dueDate).toLocaleDateString()}
-                    </span>
-                  )}
-                  <span className="created-date">
+                <div className="task-footer">
+                  <small>
                     Created: {new Date(task.createdAt).toLocaleDateString()}
-                  </span>
+                  </small>
+                  {user && task.userId === user.id && (
+                    <small className="task-owner">Your task</small>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="task-actions">
+                <button
+                  className={`toggle-btn ${task.completed ? 'completed' : 'pending'}`}
+                  onClick={() => toggleTask(task.id)}
+                >
+                  {task.completed ? '✅' : '⭕'}
+                </button>
+                <button
+                  className="delete-btn"
+                  onClick={() => deleteTask(task.id)}
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
+  )
+}
+
+// Main App component with PlatformProvider wrapper
+function App() {
+  // Check if we're on the health check route
+  if (window.location.pathname === '/healthy') {
+    return <HealthCheck />
+  }
+
+  // App configuration for the SDK
+  const appConfig = {
+    id: 'f0e9b957-5e89-456e-a768-f2166932a725',
+    name: 'Task Manager',
+    version: '1.0.0',
+    description: 'A personal task management application',
+  }
+
+  return (
+    <PlatformProvider config={appConfig} fallbackMode={true}>
+      <TaskManagerApp />
+    </PlatformProvider>
   )
 }
 

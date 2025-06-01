@@ -7,18 +7,23 @@
     "frontend",
     "backend",
     "shared",
-    "sdk"
+    "sdk",
+    "task-manager-app"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
-    "install:all": "npm install && npm run install:frontend && npm run install:backend && npm run install:shared && npm run install:sdk",
+    "dev:task-manager": "cd task-manager-app && npm run dev",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:task-manager\"",
+    "install:all": "npm install && npm run install:frontend && npm run install:backend && npm run install:shared && npm run install:sdk && npm run install:task-manager",
     "install:frontend": "cd frontend && npm install",
     "install:backend": "cd backend && npm install",
     "install:shared": "cd shared && npm install",
     "install:sdk": "cd sdk && npm install",
+    "install:task-manager": "cd task-manager-app && npm install",
     "build": "lerna run build",
+    "build:all": "npm run build && cd task-manager-app && npm run build",
     "test": "lerna run test",
     "lint": "lerna run lint",
     "type-check": "lerna run type-check",
@@ -28,7 +33,14 @@
     "publish": "lerna publish",
     "db:init": "cd backend && npm run db:init",
     "db:seed": "cd backend && node scripts/seed.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "demo": "node scripts/demo.js",
+    "demo:install": "node scripts/demo.js install",
+    "demo:setup": "node scripts/demo.js setup",
+    "demo:start": "node scripts/demo.js start",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
