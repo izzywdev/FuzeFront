@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react'
-import { useAppContext } from '@frontfuse/shared'
+import { useAppContext, useCurrentUser } from '@frontfuse/shared'
 import { loadApp, clearModuleCache } from '../utils/loadFederatedApp'
 import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
 
@@ -39,6 +39,7 @@ const LoadingSpinner = () => (
 
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { state } = useAppContext()
+  const { user } = useCurrentUser()
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,6 +47,52 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const [retryKey, setRetryKey] = useState(0)
 
   const app = state.apps.find(a => a.id === appId)
+
+  // Set up platform context for federated apps
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Mark that we're running in FrontFuse platform
+      ;(window as any).__FRONTFUSE_PLATFORM__ = true
+
+      // Provide platform context for federated apps
+      ;(window as any).__FRONTFUSE_CONTEXT__ = {
+        user: user,
+        session: user
+          ? {
+              id: 'current-session',
+              userId: user.id,
+              tenantId: 'default-tenant',
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+            }
+          : null,
+        apps: state.apps,
+        activeApp: app,
+        menuItems: state.menuItems,
+        isLoading: state.isLoading,
+        isPlatformMode: true,
+      }
+
+      console.log('🔗 Platform context injected for federated app:', {
+        user: user?.email,
+        appId: app?.id,
+        appName: app?.name,
+      })
+    }
+  }, [user, app, state.apps, state.menuItems, state.isLoading])
+
+  // Clean up app-specific menu items when app changes or unmounts
+  useEffect(() => {
+    return () => {
+      // Clean up app-specific menu items when component unmounts
+      if (app?.id && typeof window !== 'undefined') {
+        // Notify that app menu should be cleaned up
+        const cleanupEvent = new CustomEvent('app-menu-cleanup', {
+          detail: { appId: app.id },
+        })
+        window.dispatchEvent(cleanupEvent)
+      }
+    }
+  }, [app?.id])
 
   useEffect(() => {
     let mounted = true

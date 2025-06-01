@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useCurrentUser } from '@frontfuse/shared'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../contexts/LanguageContext'
+import { useChat } from '../contexts/ChatContext'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
@@ -10,6 +11,7 @@ function TopBar() {
   const { user } = useCurrentUser()
   const { theme, toggleTheme } = useTheme()
   const { language, setLanguage, t } = useLanguage()
+  const { state: chatState, toggleChat } = useChat()
   const [isLanguageOpen, setIsLanguageOpen] = useState(false)
 
   return (
@@ -144,6 +146,21 @@ function TopBar() {
             </>
           )}
         </div>
+
+        {/* Chat Toggle */}
+        <button
+          className={`theme-toggle ${chatState.isOpen ? 'active' : ''}`}
+          onClick={toggleChat}
+          title={chatState.isOpen ? 'Close AI Assistant' : 'Open AI Assistant'}
+          style={{
+            backgroundColor: chatState.isOpen
+              ? 'var(--accent-color)'
+              : 'transparent',
+            color: chatState.isOpen ? 'white' : 'var(--text-primary)',
+          }}
+        >
+          🤖
+        </button>
 
         {/* Theme Toggle */}
         <button
