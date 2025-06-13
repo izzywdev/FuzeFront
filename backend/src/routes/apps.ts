@@ -2,7 +2,7 @@ import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
-import { App } from '@frontfuse/shared'
+import { App } from '../types/shared'
 
 const router = express.Router()
 

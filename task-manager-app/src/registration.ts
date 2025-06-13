@@ -1,4 +1,4 @@
-import { createHeartbeat } from '@frontfuse/sdk-react'
+import { createHeartbeat } from './lib/sdk'
 
 interface AppRegistrationConfig {
   name: string
@@ -13,15 +13,15 @@ interface AppRegistrationConfig {
 }
 
 /**
- * Register this app with the FrontFuse hub
+ * Register this app with the FuzeFront hub
  */
 export async function registerWithHub(
   config: AppRegistrationConfig
 ): Promise<string | null> {
-  const hubApiUrl = config.hubApiUrl || 'http://localhost:3001'
+  const hubApiUrl = config.hubApiUrl || 'http://localhost:3003'
 
   try {
-    console.log('🚀 Registering Task Manager app with FrontFuse hub...')
+    console.log('🚀 Registering Task Manager app with FuzeFront hub...')
 
     const response = await fetch(`${hubApiUrl}/api/apps/register`, {
       method: 'POST',
@@ -42,14 +42,14 @@ export async function registerWithHub(
 
     if (response.ok) {
       const app = await response.json()
-      console.log('✅ Successfully registered with FrontFuse hub:', app)
+      console.log('✅ Successfully registered with FuzeFront hub:', app)
       return app.id
     } else {
       const error = await response.json()
-      console.error('❌ Failed to register with FrontFuse hub:', error)
+      console.error('❌ Failed to register with FuzeFront hub:', error)
     }
   } catch (error) {
-    console.error('❌ Error registering with FrontFuse hub:', error)
+    console.error('❌ Error registering with FuzeFront hub:', error)
   }
 
   return null
@@ -60,7 +60,7 @@ export async function registerWithHub(
  */
 export function startHeartbeat(
   appId: string,
-  hubApiUrl: string = 'http://localhost:3001'
+  hubApiUrl: string = 'http://localhost:3003'
 ) {
   const heartbeat = createHeartbeat({
     appId,

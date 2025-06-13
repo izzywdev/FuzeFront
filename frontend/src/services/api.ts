@@ -1,7 +1,7 @@
 import axios from 'axios'
-import { App, User } from '@frontfuse/shared'
+import { App, User } from '../lib/shared'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3003'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -34,7 +34,7 @@ api.interceptors.response.use(
 )
 
 export const login = async (email: string, password: string) => {
-  const response = await api.post('/auth/login', { email, password })
+  const response = await api.post('/api/auth/login', { email, password })
   const { token, user } = response.data
   localStorage.setItem('authToken', token)
   return { token, user }
@@ -42,7 +42,7 @@ export const login = async (email: string, password: string) => {
 
 export const logout = async () => {
   try {
-    await api.post('/auth/logout')
+    await api.post('/api/auth/logout')
   } catch (error) {
     // Even if logout fails on server, remove local token
     console.error('Logout error:', error)
@@ -52,7 +52,7 @@ export const logout = async () => {
 }
 
 export const getCurrentUser = async (): Promise<User> => {
-  const response = await api.get('/auth/user')
+  const response = await api.get('/api/auth/user')
   return response.data.user
 }
 

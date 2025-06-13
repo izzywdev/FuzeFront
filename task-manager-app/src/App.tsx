@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import {
-  PlatformProvider,
-  useCurrentUser,
-  useGlobalMenu,
-} from '@frontfuse/sdk-react'
+import { PlatformProvider, useCurrentUser, useGlobalMenu } from './lib/sdk'
 import './App.css'
 
 // Simple heartbeat implementation for the task manager

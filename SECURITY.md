@@ -2,7 +2,7 @@
 
 ## 🔒 Reporting Security Vulnerabilities
 
-The FrontFuse team takes security seriously. We appreciate your efforts to responsibly disclose security vulnerabilities and will make every effort to acknowledge your contributions.
+The FuzeFront team takes security seriously. We appreciate your efforts to responsibly disclose security vulnerabilities and will make every effort to acknowledge your contributions.
 
 ### How to Report
 

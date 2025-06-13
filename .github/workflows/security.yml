@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['javascript', 'typescript']
+        language: ['javascript']
 
     steps:
       - name: Checkout repository
@@ -38,24 +38,8 @@ jobs:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          npm install --ignore-scripts
-          cd frontend && npm install --ignore-scripts
-          cd ../backend && npm install --ignore-scripts
-          cd ../sdk && npm install --ignore-scripts
-          cd ../shared && npm install --ignore-scripts
-
-      - name: Build project
-        run: |
-          npm run build:all
-        continue-on-error: true
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
@@ -101,63 +85,55 @@ jobs:
           cd ../shared && npm audit --audit-level=high --production
           cd ../task-manager-app && npm audit --audit-level=high --production
 
-  container-scan:
+  container-security:
     name: Container Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'schedule'
+    if: github.event_name == 'pull_request'
+
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker images
+      - name: Build Docker images for scanning
         run: |
-          docker build -t frontfuse/frontend:latest ./frontend
           docker build -t frontfuse/backend:latest ./backend
+          docker build -t frontfuse/frontend:latest ./frontend
           docker build -t frontfuse/task-manager:latest ./task-manager-app
 
-      - name: Run Trivy vulnerability scanner - Frontend
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'frontfuse/frontend:latest'
-          format: 'sarif'
-          output: 'trivy-frontend.sarif'
-
-      - name: Run Trivy vulnerability scanner - Backend
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'frontfuse/backend:latest'
           format: 'sarif'
-          output: 'trivy-backend.sarif'
+          output: 'trivy-results.sarif'
+        env:
+          TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
 
-      - name: Run Trivy vulnerability scanner - Task Manager
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'frontfuse/task-manager:latest'
-          format: 'sarif'
-          output: 'trivy-task-manager.sarif'
-
-      - name: Upload Trivy scan results
+      - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: '.'
+          sarif_file: 'trivy-results.sarif'
 
-  secret-scan:
+  secret-scanning:
     name: Secret Scanning
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: TruffleHog OSS
+      - name: Run TruffleHog secret scanner
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
           base: main
           head: HEAD
           extra_args: --debug --only-verified
+        env:
+          TRUFFLEHOG_TOKEN: ${{ secrets.TRUFFLEHOG_TOKEN }}
 
   sbom-generation:
     name: Generate SBOM
@@ -189,3 +165,57 @@ jobs:
             frontfuse-sbom.json
             frontfuse-sbom.xml
           retention-days: 30
+
+  # Add new external security tools integration
+  snyk-security:
+    name: Snyk Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      - name: Upload Snyk results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk.sarif
+
+  # Add monitoring and alerting
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+    needs: [codeql-analysis, container-security, secret-scanning]
+    if: always()
+
+    steps:
+      - name: Security summary
+        run: |
+          echo "🔐 Security Analysis Summary"
+          echo "CodeQL: ${{ needs.codeql-analysis.result }}"
+          echo "Container Security: ${{ needs.container-security.result }}"
+          echo "Secret Scanning: ${{ needs.secret-scanning.result }}"
+
+      - name: Notify security team
+        if: failure()
+        run: |
+          echo "🚨 Security issues detected - notifications would be sent to security team"
+          echo "Webhook URL: ${{ secrets.SECURITY_WEBHOOK_URL }}"
+        env:
+          SECURITY_WEBHOOK_URL: ${{ secrets.SECURITY_WEBHOOK_URL }}

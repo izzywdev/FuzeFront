@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useCurrentUser } from '@frontfuse/shared'
+import { useCurrentUser } from '../lib/shared'
 import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useChat } from '../contexts/ChatContext'

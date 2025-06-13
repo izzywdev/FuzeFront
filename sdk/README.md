@@ -1,74 +1,165 @@
-# @frontfuse/sdk-react
+# FuzeFront SDK - Developer Guide
 
-React SDK for FrontFuse microfrontend platform, providing seamless integration with the FrontFuse container shell and runtime Module Federation capabilities.
+[![npm version](https://badge.fury.io/js/%40fuzefront%2Fsdk-react.svg)](https://badge.fury.io/js/%40fuzefront%2Fsdk-react)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Installation
+The **FuzeFront SDK** enables seamless integration of React applications with the FuzeFront microfrontend platform, providing runtime Module Federation, self-registration, heartbeat monitoring, and menu injection capabilities.
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
-npm install @frontfuse/sdk-react
+npm install @fuzefront/sdk-react
+# or
+yarn add @fuzefront/sdk-react
 ```
 
-## Quick Start
+### Basic Setup
 
-### 1. Basic Setup
-
-Wrap your microfrontend app with the `PlatformProvider`:
+1. **Wrap your app with PlatformProvider**:
 
 ```tsx
 import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { PlatformProvider } from '@frontfuse/sdk-react'
-import App from './App'
+import { PlatformProvider } from '@fuzefront/sdk-react'
+import YourApp from './YourApp'
 
-const appConfig = {
-  id: 'my-app',
-  name: 'My Awesome App',
-  version: '1.0.0',
-  apiUrl: 'https://api.myapp.com',
-  wsUrl: 'wss://api.myapp.com',
+function App() {
+  return (
+    <PlatformProvider>
+      <YourApp />
+    </PlatformProvider>
+  )
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <PlatformProvider config={appConfig} fallbackMode={true}>
-    <App />
-  </PlatformProvider>
-)
+export default App
 ```
 
-### 2. Using Platform Hooks
+2. **Configure Module Federation** (vite.config.ts):
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import federation from '@originjs/vite-plugin-federation'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'your-app',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './App': './src/App',
+      },
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  build: {
+    target: 'esnext',
+  },
+})
+```
+
+3. **Self-register your app**:
 
 ```tsx
-import React from 'react'
-import {
-  useCurrentUser,
-  useSession,
-  useGlobalMenu,
-  useSocketBus,
-} from '@frontfuse/sdk-react'
+import { useEffect } from 'react'
+import { registerWithHub, createHeartbeat } from '@fuzefront/sdk-react'
 
-function MyComponent() {
-  const { user, isAuthenticated, hasRole } = useCurrentUser()
-  const { session, tenantId } = useSession()
-  const { addMenuItem } = useGlobalMenu()
-  const socket = useSocketBus()
+function YourApp() {
+  useEffect(() => {
+    const register = async () => {
+      const appId = await registerWithHub({
+        name: 'Your App',
+        url: 'http://localhost:3001',
+        integrationType: 'module-federation',
+        remoteUrl: 'http://localhost:3001/assets/remoteEntry.js',
+        scope: 'yourApp',
+        module: './App',
+        description: 'Your awesome microfrontend',
+      })
 
-  React.useEffect(() => {
-    // Add custom menu item
-    addMenuItem({
-      id: 'my-feature',
-      label: 'My Feature',
-      icon: '⭐',
-      action: () => console.log('Feature clicked!'),
-    })
+      if (appId) {
+        const heartbeat = createHeartbeat({
+          appId,
+          backendUrl: 'http://localhost:3003',
+          interval: 30000,
+        })
+        heartbeat.start()
+      }
+    }
 
-    // Listen for platform events
-    socket.on('user-updated', userData => {
-      console.log('User updated:', userData)
-    })
-
-    // Send events to other apps
-    socket.emit('data-changed', { type: 'customer', id: 123 })
+    register()
   }, [])
+
+  return <div>Your App Content</div>
+}
+```
+
+## 📖 Core Concepts
+
+### 1. **Platform Integration**
+
+FuzeFront supports three integration types:
+
+- **Module Federation**: Dynamic loading with shared dependencies
+- **Iframe**: Sandboxed embedding
+- **Web Components**: Custom element integration
+
+### 2. **Self-Registration**
+
+Apps can register themselves at runtime:
+
+```typescript
+import { registerWithHub } from '@fuzefront/sdk-react'
+
+const appId = await registerWithHub({
+  name: 'My App',
+  url: 'https://my-app.netlify.app',
+  integrationType: 'module-federation',
+  remoteUrl: 'https://my-app.netlify.app/assets/remoteEntry.js',
+  scope: 'myApp',
+  module: './App',
+  iconUrl: 'https://my-app.netlify.app/icon.svg',
+  description: 'A powerful React microfrontend',
+})
+```
+
+### 3. **Health Monitoring**
+
+Keep your app alive with heartbeats:
+
+```typescript
+import { createHeartbeat } from '@fuzefront/sdk-react'
+
+const heartbeat = createHeartbeat({
+  appId: 'your-app-id',
+  backendUrl: 'https://api.frontfuse.dev',
+  interval: 30000, // 30 seconds
+  metadata: {
+    version: '1.2.3',
+    buildTime: '2023-12-01T10:00:00Z',
+    capabilities: ['notifications', 'offline-mode'],
+  },
+})
+
+heartbeat.start()
+
+// Stop heartbeat when app unmounts
+heartbeat.stop()
+```
+
+## 🎯 Hooks API
+
+### useCurrentUser
+
+Access current user information:
+
+```tsx
+import { useCurrentUser } from '@fuzefront/sdk-react'
+
+function UserProfile() {
+  const { user, isAuthenticated, setUser } = useCurrentUser()
 
   if (!isAuthenticated) {
     return <div>Please log in</div>
@@ -76,74 +167,352 @@ function MyComponent() {
 
   return (
     <div>
-      <h1>Welcome, {user?.firstName}!</h1>
-      <p>Tenant: {tenantId}</p>
-      <p>Admin Access: {hasRole('admin') ? 'Yes' : 'No'}</p>
+      <h1>Welcome, {user.firstName}!</h1>
+      <p>Email: {user.email}</p>
+      <p>Roles: {user.roles.join(', ')}</p>
     </div>
   )
 }
 ```
 
-## API Reference
+### useGlobalMenu
 
-### PlatformProvider
-
-The main provider component that sets up platform context and handles fallback mode for standalone development.
+Inject menu items into the platform:
 
 ```tsx
-<PlatformProvider config={appConfig} fallbackMode={isDevelopment}>
-  <App />
-</PlatformProvider>
+import { useGlobalMenu } from '@fuzefront/sdk-react'
+
+function MyApp() {
+  const { addAppMenuItems, removeAppMenuItems } = useGlobalMenu()
+
+  useEffect(() => {
+    const menuItems = [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: '📊',
+        action: () => navigate('/dashboard'),
+        order: 1,
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        icon: '⚙️',
+        action: () => navigate('/settings'),
+        order: 2,
+      },
+    ]
+
+    addAppMenuItems('my-app-id', menuItems)
+
+    return () => removeAppMenuItems('my-app-id')
+  }, [])
+
+  return <div>App Content</div>
+}
 ```
 
-**Props:**
+### useSocketBus
 
-- `config: AppConfig` - App configuration object
-- `fallbackMode?: boolean` - Enable standalone development mode (default: false)
-
-### useCurrentUser()
-
-Hook for accessing current user information and authentication state.
+Real-time communication between apps:
 
 ```tsx
-const {
-  user, // User object or null
-  setUser, // Function to update user
-  isAuthenticated, // Boolean auth status
-  hasRole, // Function to check user roles
-} = useCurrentUser()
+import { useSocketBus } from '@frontfuse/sdk-react'
+
+function NotificationComponent() {
+  const { on, emit, isConnected } = useSocketBus()
+
+  useEffect(() => {
+    // Listen for notifications
+    on('notification', data => {
+      console.log('Received notification:', data)
+    })
+
+    // Send notification to other apps
+    emit(
+      'user-action',
+      {
+        action: 'button-clicked',
+        timestamp: Date.now(),
+      },
+      'target-app-id'
+    )
+  }, [on, emit])
+
+  return (
+    <div>
+      Connection status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+    </div>
+  )
+}
 ```
 
-### useSession()
+## 🔧 Advanced Configuration
 
-Hook for accessing session information.
+### Environment Detection
 
-```tsx
-const {
-  session, // Session object or null
-  setSession, // Function to update session
-  tenantId, // Current tenant ID
-  isExpired, // Boolean session expiry status
-} = useSession()
+```typescript
+// Check if running in FrontFuse platform
+const isPlatformMode = window.__FRONTFUSE_PLATFORM__ === true
+
+// Access platform context
+const platformContext = window.__FRONTFUSE_CONTEXT__
+
+if (isPlatformMode) {
+  console.log('Running in FrontFuse platform')
+  console.log('Current user:', platformContext.user)
+  console.log('Available apps:', platformContext.apps)
+} else {
+  console.log('Running standalone')
+}
 ```
 
-### useGlobalMenu()
-
-Hook for managing the platform's global navigation menu.
+### Custom Error Handling
 
 ```tsx
-const {
-  menuItems, // Array of current menu items
-  setMenuItems, // Replace all menu items
-  addMenuItem, // Add a single menu item
-  removeMenuItem, // Remove menu item by ID
-  updateMenuItem, // Update existing menu item
-} = useGlobalMenu()
+import { PlatformProvider } from '@frontfuse/sdk-react'
+
+function App() {
+  const handleError = (error: Error, errorInfo: any) => {
+    console.error('Platform error:', error, errorInfo)
+    // Send to error tracking service
+  }
+
+  return (
+    <PlatformProvider onError={handleError}>
+      <YourApp />
+    </PlatformProvider>
+  )
+}
 ```
 
-**Menu Item Structure:**
+### Development vs Production
+
+```typescript
+const config = {
+  hubApiUrl:
+    process.env.NODE_ENV === 'production'
+      ? 'https://api.frontfuse.dev'
+      : 'http://localhost:3003',
+
+  remoteUrl:
+    process.env.NODE_ENV === 'production'
+      ? 'https://my-app.netlify.app/assets/remoteEntry.js'
+      : 'http://localhost:3001/assets/remoteEntry.js',
+}
+```
+
+## 📱 Integration Examples
+
+### React Router Integration
 
 ```tsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useGlobalMenu } from '@frontfuse/sdk-react'
+
+function App() {
+  const { addAppMenuItems } = useGlobalMenu()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    addAppMenuItems('my-app', [
+      {
+        id: 'home',
+        label: 'Home',
+        icon: '🏠',
+        action: () => navigate('/'),
+        order: 1,
+      },
+      {
+        id: 'products',
+        label: 'Products',
+        icon: '📦',
+        action: () => navigate('/products'),
+        order: 2,
+      },
+    ])
+  }, [])
+
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/products" element={<ProductsPage />} />
+    </Routes>
+  )
+}
+```
+
+### State Management Integration
+
+```tsx
+import { useCurrentUser } from '@frontfuse/sdk-react'
+import { useAppStore } from './store'
+
+function AppWithStore() {
+  const { user } = useCurrentUser()
+  const setUser = useAppStore(state => state.setUser)
+
+  useEffect(() => {
+    if (user) {
+      setUser(user)
+    }
+  }, [user, setUser])
+
+  return <div>App with integrated state</div>
+}
+```
+
+## 🧪 Testing
+
+### Unit Testing
+
+```tsx
+import { render, screen } from '@testing-library/react'
+import { PlatformProvider } from '@frontfuse/sdk-react'
+import MyComponent from './MyComponent'
+
+// Mock platform context
+const mockPlatformContext = {
+  user: { id: '1', email: 'test@example.com', roles: ['user'] },
+  isAuthenticated: true,
+}
+
+test('renders component with platform context', () => {
+  render(
+    <PlatformProvider value={mockPlatformContext}>
+      <MyComponent />
+    </PlatformProvider>
+  )
+
+  expect(screen.getByText('Welcome')).toBeInTheDocument()
+})
+```
+
+### E2E Testing
+
+```typescript
+// cypress/integration/platform.spec.ts
+describe('FrontFuse Integration', () => {
+  it('should register app and show in platform', () => {
+    cy.visit('http://localhost:3001')
+    cy.wait(2000) // Wait for registration
+
+    cy.visit('http://localhost:5173') // Platform URL
+    cy.get('[data-testid="app-selector"]').click()
+    cy.contains('My App').should('be.visible')
+  })
+})
+```
+
+## 🚀 Deployment
+
+### Building for Production
+
+```bash
+# Build your app
+npm run build
+
+# The dist folder will contain:
+# - assets/remoteEntry.js (Module Federation entry)
+# - index.html (standalone version)
+# - other assets
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM node:18-alpine as builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### CDN Deployment
+
+```typescript
+// For CDN deployments, use absolute URLs
+const config = {
+  remoteUrl: 'https://cdn.example.com/my-app/assets/remoteEntry.js',
+  url: 'https://my-app.example.com',
+}
+```
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+1. **Module Federation not loading**:
+
+   ```
+   Error: Module not found
+   ```
+
+   - Check `remoteUrl` is accessible
+   - Verify `scope` and `module` names match your config
+   - Ensure shared dependencies are configured correctly
+
+2. **Heartbeat failing**:
+
+   ```
+   Failed to send heartbeat: 404
+   ```
+
+   - Verify `backendUrl` is correct
+   - Check if app is registered with correct ID
+   - Ensure backend is running and accessible
+
+3. **Menu items not appearing**:
+   - Verify app is registered and active
+   - Check `addAppMenuItems` is called with correct app ID
+   - Ensure component is mounted when calling the hook
+
+### Debug Mode
+
+```typescript
+// Enable debug logging
+localStorage.setItem('frontfuse:debug', 'true')
+
+// Check platform status
+console.log('Platform detected:', window.__FRONTFUSE_PLATFORM__)
+console.log('Platform context:', window.__FRONTFUSE_CONTEXT__)
+```
+
+## 📚 API Reference
+
+### Types
+
+```typescript
+interface User {
+  id: string
+  email: string
+  firstName?: string
+  lastName?: string
+  roles: string[]
+  defaultAppId?: string
+}
+
+interface App {
+  id: string
+  name: string
+  url: string
+  iconUrl?: string
+  isActive: boolean
+  isHealthy?: boolean
+  integrationType: 'module-federation' | 'iframe' | 'web-component'
+  remoteUrl?: string
+  scope?: string
+  module?: string
+  description?: string
+}
+
 interface MenuItem {
   id: string
   label: string
@@ -151,208 +520,27 @@ interface MenuItem {
   route?: string
   action?: () => void
   children?: MenuItem[]
-  visible?: boolean
+  category?: 'portal' | 'app'
+  appId?: string
+  order?: number
 }
 ```
 
-### useSocketBus()
+## 🤝 Contributing
 
-Hook for real-time communication between microfrontends.
+We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
-```tsx
-const {
-  on, // Subscribe to events
-  emit, // Send events
-  isConnected, // Connection status
-} = useSocketBus('my-app-id')
+## 📄 License
 
-// Listen for events
-socket.on('eventType', payload => {
-  console.log('Received:', payload)
-})
+MIT License - see [LICENSE](./LICENSE) for details.
 
-// Send events
-socket.emit('eventType', { data: 'value' }, 'target-app-id')
-```
+## 🔗 Links
 
-### Module Federation Loader
+- [Platform Documentation](https://docs.frontfuse.dev)
+- [GitHub Repository](https://github.com/frontfuse/platform)
+- [npm Package](https://www.npmjs.com/package/@frontfuse/sdk-react)
+- [Discord Community](https://discord.gg/frontfuse)
 
-Functions for dynamically loading federated modules at runtime.
+---
 
-```tsx
-import { loadApp, clearModuleCache } from '@frontfuse/sdk-react'
-
-// Load a federated module
-const module = await loadApp({
-  remoteUrl: 'https://my-remote-app.com',
-  scope: 'myRemoteApp',
-  module: './App',
-})
-
-// Clear cache (useful for development)
-clearModuleCache()
-```
-
-## Development Mode
-
-The SDK includes a fallback mode for standalone development when not running inside the FrontFuse platform:
-
-```tsx
-<PlatformProvider
-  config={appConfig}
-  fallbackMode={process.env.NODE_ENV === 'development'}
->
-  <App />
-</PlatformProvider>
-```
-
-In fallback mode:
-
-- Mock user and session data is provided
-- Socket events are logged to console
-- Platform detection is disabled
-
-## TypeScript Support
-
-The SDK is written in TypeScript and provides full type definitions:
-
-```tsx
-import type {
-  User,
-  Session,
-  App,
-  MenuItem,
-  AppConfig,
-  SocketBus,
-} from '@frontfuse/sdk-react'
-```
-
-## Integration Examples
-
-### Adding Custom Navigation
-
-```tsx
-function MyApp() {
-  const { addMenuItem, removeMenuItem } = useGlobalMenu()
-
-  React.useEffect(() => {
-    // Add menu items when component mounts
-    addMenuItem({
-      id: 'reports',
-      label: 'Reports',
-      icon: '📊',
-      children: [
-        {
-          id: 'sales-report',
-          label: 'Sales Report',
-          action: () => navigate('/reports/sales'),
-        },
-        {
-          id: 'analytics',
-          label: 'Analytics',
-          action: () => navigate('/reports/analytics'),
-        },
-      ],
-    })
-
-    // Cleanup when component unmounts
-    return () => {
-      removeMenuItem('reports')
-    }
-  }, [])
-}
-```
-
-### Cross-App Communication
-
-```tsx
-function CustomerComponent() {
-  const socket = useSocketBus()
-
-  const handleCustomerUpdate = (customerId: string) => {
-    // Notify other apps about customer update
-    socket.emit('customer-updated', {
-      customerId,
-      timestamp: Date.now(),
-    })
-  }
-
-  React.useEffect(() => {
-    // Listen for customer updates from other apps
-    socket.on('customer-updated', ({ customerId }) => {
-      console.log(`Customer ${customerId} was updated by another app`)
-      // Refresh customer data
-      refetchCustomerData(customerId)
-    })
-  }, [])
-}
-```
-
-### Role-Based Features
-
-```tsx
-function AdminPanel() {
-  const { hasRole } = useCurrentUser()
-
-  if (!hasRole('admin')) {
-    return <div>Access denied</div>
-  }
-
-  return (
-    <div>
-      <h2>Admin Panel</h2>
-      {/* Admin-only features */}
-    </div>
-  )
-}
-```
-
-## Best Practices
-
-1. **Always wrap your app** with `PlatformProvider`
-2. **Use fallback mode** during development
-3. **Clean up menu items** when components unmount
-4. **Namespace your events** to avoid conflicts
-5. **Handle authentication state** gracefully
-6. **Use TypeScript** for better development experience
-
-## Troubleshooting
-
-### Common Issues
-
-**Module Federation not working:**
-
-- Ensure your webpack config includes Module Federation plugin
-- Check that remote entry URLs are accessible
-- Verify scope and module names match your configuration
-
-**Socket events not received:**
-
-- Check WebSocket URL configuration
-- Verify authentication tokens are valid
-- Ensure event names match between sender and receiver
-
-**Menu items not appearing:**
-
-- Check if you're calling `addMenuItem` after component mount
-- Verify menu item IDs are unique
-- Ensure `visible` property is not set to `false`
-
-### Debug Mode
-
-Enable debug logging:
-
-```tsx
-// In your app initialization
-window.__FRONTFUSE_DEBUG__ = true
-```
-
-This will provide additional console logging for SDK operations.
-
-## Contributing
-
-Issues and pull requests are welcome! Please see the main repository for contribution guidelines.
-
-## License
-
-MIT
+Made with ❤️ by the FrontFuse team

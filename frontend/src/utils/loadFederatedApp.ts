@@ -1,4 +1,4 @@
-import { App } from '@frontfuse/shared'
+import { App } from '../lib/shared'
 
 interface LoadedModule {
   default: React.ComponentType<any>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useAppContext, useCurrentUser, App } from '@frontfuse/shared'
+import { useAppContext, useCurrentUser, App } from '../lib/shared'
 import { fetchApps } from '../services/api'
 
 function DashboardPage() {

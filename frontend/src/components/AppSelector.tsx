@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useAppContext, App } from '@frontfuse/shared'
+import { useAppContext, App } from '../lib/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import { fetchApps } from '../services/api'
 
