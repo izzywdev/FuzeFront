@@ -1,3 +1,6 @@
+// FuzeFront SDK - Main Export File
+// Auto-publishing test: version will be bumped automatically
+
 // Types
 export * from './types'
 

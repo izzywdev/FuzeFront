@@ -1,6 +1,6 @@
 # FuzeFront SDK - Developer Guide
 
-[![npm version](https://badge.fury.io/js/%40fuzefront%2Fsdk-react.svg)](https://badge.fury.io/js/%40fuzefront%2Fsdk-react)
+[![npm version](https://badge.fury.io/js/%40izzywdev%2Ffuzefront-sdk-react.svg)](https://badge.fury.io/js/%40izzywdev%2Ffuzefront-sdk-react)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 The **FuzeFront SDK** enables seamless integration of React applications with the FuzeFront microfrontend platform, providing runtime Module Federation, self-registration, heartbeat monitoring, and menu injection capabilities.
@@ -10,9 +10,9 @@ The **FuzeFront SDK** enables seamless integration of React applications with th
 ### Installation
 
 ```bash
-npm install @fuzefront/sdk-react
+npm install @izzywdev/fuzefront-sdk-react
 # or
-yarn add @fuzefront/sdk-react
+yarn add @izzywdev/fuzefront-sdk-react
 ```
 
 ### Basic Setup
@@ -21,7 +21,7 @@ yarn add @fuzefront/sdk-react
 
 ```tsx
 import React from 'react'
-import { PlatformProvider } from '@fuzefront/sdk-react'
+import { PlatformProvider } from '@izzywdev/fuzefront-sdk-react'
 import YourApp from './YourApp'
 
 function App() {
@@ -64,7 +64,7 @@ export default defineConfig({
 
 ```tsx
 import { useEffect } from 'react'
-import { registerWithHub, createHeartbeat } from '@fuzefront/sdk-react'
+import { registerWithHub, createHeartbeat } from '@izzywdev/fuzefront-sdk-react'
 
 function YourApp() {
   useEffect(() => {
@@ -156,7 +156,7 @@ heartbeat.stop()
 Access current user information:
 
 ```tsx
-import { useCurrentUser } from '@fuzefront/sdk-react'
+import { useCurrentUser } from '@izzywdev/fuzefront-sdk-react'
 
 function UserProfile() {
   const { user, isAuthenticated, setUser } = useCurrentUser()
@@ -180,7 +180,7 @@ function UserProfile() {
 Inject menu items into the platform:
 
 ```tsx
-import { useGlobalMenu } from '@fuzefront/sdk-react'
+import { useGlobalMenu } from '@izzywdev/fuzefront-sdk-react'
 
 function MyApp() {
   const { addAppMenuItems, removeAppMenuItems } = useGlobalMenu()

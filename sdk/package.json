@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/sdk-react",
+  "name": "@izzywdev/fuzefront-sdk-react",
   "version": "1.0.0",
   "description": "React SDK for FuzeFront microfrontend platform with Module Federation support",
   "main": "dist/index.js",
@@ -22,14 +22,14 @@
   ],
   "author": "FuzeFront Team <team@fuzefront.dev>",
   "license": "MIT",
-  "homepage": "https://github.com/izzywdev/FuzeFront#readme",
+  "homepage": "https://fuzefront.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/izzywdev/FuzeFront.git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
     "directory": "sdk"
   },
   "bugs": {
-    "url": "https://github.com/izzywdev/FuzeFront/issues"
+    "url": "mailto:team@fuzefront.dev"
   },
   "scripts": {
     "build": "rollup -c",
