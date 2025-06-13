@@ -12,6 +12,69 @@ const uuid_1 = require('uuid')
 const database_1 = require('../config/database')
 const auth_1 = require('../middleware/auth')
 const router = express_1.default.Router()
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: User login
+ *     description: Authenticate user with email and password, returns JWT token
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *           example:
+ *             email: "admin@frontfuse.dev"
+ *             password: "admin123"
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/LoginResponse'
+ *                 - type: object
+ *                   properties:
+ *                     sessionId:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Session identifier
+ *             example:
+ *               token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *               user:
+ *                 id: "550e8400-e29b-41d4-a716-446655440000"
+ *                 email: "admin@frontfuse.dev"
+ *                 firstName: "Admin"
+ *                 lastName: "User"
+ *                 roles: ["admin", "user"]
+ *               sessionId: "123e4567-e89b-12d3-a456-426614174000"
+ *       400:
+ *         description: Missing email or password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Email and password required"
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Invalid credentials"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // POST /auth/login - Mock login
 router.post('/login', async (req, res) => {
   try {
@@ -68,10 +131,76 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+/**
+ * @swagger
+ * /api/auth/user:
+ *   get:
+ *     summary: Get current user
+ *     description: Get information about the currently authenticated user
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *             example:
+ *               user:
+ *                 id: "550e8400-e29b-41d4-a716-446655440000"
+ *                 email: "admin@frontfuse.dev"
+ *                 firstName: "Admin"
+ *                 lastName: "User"
+ *                 roles: ["admin", "user"]
+ *       401:
+ *         description: Access token required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Invalid token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // GET /auth/user - Get current user
 router.get('/user', auth_1.authenticateToken, async (req, res) => {
   res.json({ user: req.user })
 })
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: User logout
+ *     description: Logout the current user and invalidate their session
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Logged out successfully"
+ *       500:
+ *         description: Logout failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // POST /auth/logout
 router.post('/logout', auth_1.authenticateToken, async (req, res) => {
   try {

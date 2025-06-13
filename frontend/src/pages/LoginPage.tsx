@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useCurrentUser } from '@frontfuse/shared'
+import { useCurrentUser } from '../lib/shared'
 import { login } from '../services/api'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
