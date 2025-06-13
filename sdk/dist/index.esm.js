@@ -9445,6 +9445,8 @@ function isModuleCached(config) {
   return moduleCache.has(cacheKey)
 }
 
+// FuzeFront SDK - Main Export File
+// Auto-publishing test: version will be bumped automatically
 // Types
 // Default export for convenience
 var index = {
