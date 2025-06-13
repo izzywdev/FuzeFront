@@ -1,4 +1,4 @@
-# FrontFuse Platform
+# FuzeFront Platform
 
 A modern microfrontend platform built with Node.js, TypeScript, React, and Vite, featuring **runtime Module Federation** for dynamic app discovery and loading with zero build-time dependencies.
 
@@ -157,7 +157,7 @@ npm create vite@latest my-app -- --template react-ts
 
 # 2. Add Module Federation
 npm install @originjs/vite-plugin-federation --save-dev
-npm install @frontfuse/sdk-react
+npm install @fuzefront/sdk-react
 
 # 3. Configure vite.config.ts with federation setup
 # 4. Add self-registration code
@@ -166,10 +166,10 @@ npm install @frontfuse/sdk-react
 
 ## 💓 Heartbeat & Self-Registration
 
-Apps using the FrontFuse SDK can self-register and maintain health status:
+Apps using the FuzeFront SDK can self-register and maintain health status:
 
 ```typescript
-import { createHeartbeat } from '@frontfuse/sdk-react'
+import { createHeartbeat } from '@fuzefront/sdk-react'
 
 // Auto-register when running standalone
 async function autoRegister() {
@@ -362,7 +362,7 @@ The platform uses SQLite with the following main tables:
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! FrontFuse is built by developers, for developers, and we appreciate all forms of contribution.
+We welcome contributions from the community! FuzeFront is built by developers, for developers, and we appreciate all forms of contribution.
 
 ### Quick Start for Contributors
 
@@ -375,9 +375,9 @@ We welcome contributions from the community! FrontFuse is built by developers, f
 2. **Set up your development environment**:
 
    ```bash
-   git clone https://github.com/your-username/FrontFuse.git
-   cd FrontFuse
-   npm install
+       git clone https://github.com/your-username/FuzeFront.git
+    cd FuzeFront
+    npm install
    npm run dev
    ```
 

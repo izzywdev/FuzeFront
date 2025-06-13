@@ -142,7 +142,7 @@ ${colors.yellow}Press Enter to start the demo, or Ctrl+C to exit...${colors.rese
 }
 
 function startDemo() {
-  logHeader('Starting FrontFuse Module Federation Demo')
+  logHeader('Starting FuzeFront Module Federation Demo')
 
   logStep(1, 'Starting Backend API server...')
   logStep(2, 'Starting Frontend Hub portal...')
@@ -176,7 +176,7 @@ function main() {
     `
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║               🔗 FrontFuse Module Federation Demo           ║
+║               🔗 FuzeFront Module Federation Demo           ║
 ║                                                              ║
 ║   Runtime App Discovery • Zero Build-time Dependencies      ║
 ║                                                              ║

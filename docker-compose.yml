@@ -9,9 +9,11 @@ services:
     ports:
       - '3001:3001'
     environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - DATABASE_URL=./database.sqlite
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3001}
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL:-./database.sqlite}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
     volumes:
       - backend_data:/app/data
     healthcheck:
@@ -28,7 +30,8 @@ services:
     ports:
       - '3000:3000'
     environment:
-      - VITE_API_URL=http://localhost:3001
+      - VITE_API_URL=${FRONTEND_URL:-http://localhost:3001}
+      - NODE_ENV=${NODE_ENV:-production}
     depends_on:
       - backend
     healthcheck:
@@ -45,7 +48,8 @@ services:
     ports:
       - '3002:3002'
     environment:
-      - FRONTFUSE_HUB_URL=http://backend:3001
+      - FRONTFUSE_HUB_URL=${FRONTEND_URL:-http://backend:3001}
+      - NODE_ENV=${NODE_ENV:-production}
     depends_on:
       - backend
     healthcheck:

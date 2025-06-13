@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useCurrentUser, useAppContext } from '@frontfuse/shared'
+import { useCurrentUser, useAppContext } from './lib/shared'
 import { ChatProvider } from './contexts/ChatContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'

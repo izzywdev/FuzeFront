@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { User } from '@frontfuse/shared'
+import { User } from '../types/shared'
 interface AuthenticatedRequest extends Request {
   user?: User
 }
