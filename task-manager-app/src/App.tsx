@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { PlatformProvider, useCurrentUser, useGlobalMenu } from './lib/sdk'
 import './App.css'
 
@@ -203,27 +203,36 @@ function TaskManagerApp() {
     }
   }, [])
 
-  // Load user-specific tasks from localStorage
+  // Sample tasks data
   useEffect(() => {
-    if (user) {
-      const storageKey = `taskManager_tasks_${user.id}`
-      const savedTasks = localStorage.getItem(storageKey)
-      if (savedTasks) {
-        setTasks(JSON.parse(savedTasks))
-      }
-    }
-  }, [user])
+    const sampleTasks: Task[] = [
+      {
+        id: '1',
+        title: 'Setup FuzeFront Platform',
+        description: 'Configure the platform with all necessary components',
+        completed: false,
+        priority: 'high',
+        dueDate: '2024-12-30',
+        createdAt: new Date().toISOString(),
+        userId: user?.id,
+      },
+      {
+        id: '2',
+        title: 'Test Task Manager',
+        description: 'Verify all task management features work correctly',
+        completed: true,
+        priority: 'medium',
+        dueDate: '2024-12-25',
+        createdAt: new Date().toISOString(),
+        userId: user?.id,
+      },
+    ]
 
-  // Save tasks to localStorage whenever tasks change
-  useEffect(() => {
-    if (user) {
-      const storageKey = `taskManager_tasks_${user.id}`
-      localStorage.setItem(storageKey, JSON.stringify(tasks))
-    }
-  }, [tasks, user])
+    setTasks(sampleTasks)
+  }, [user?.id])
 
   const addTask = () => {
-    if (!newTask.title.trim() || !user) return
+    if (!newTask.title.trim()) return
 
     const task: Task = {
       id: Date.now().toString(),
@@ -233,24 +242,24 @@ function TaskManagerApp() {
       priority: newTask.priority,
       dueDate: newTask.dueDate,
       createdAt: new Date().toISOString(),
-      userId: user.id,
+      userId: user?.id,
     }
 
-    setTasks(prev => [task, ...prev])
+    setTasks([...tasks, task])
     setNewTask({ title: '', description: '', priority: 'medium', dueDate: '' })
     setShowAddForm(false)
   }
 
   const toggleTask = (id: string) => {
-    setTasks(prev =>
-      prev.map(task =>
+    setTasks(
+      tasks.map(task =>
         task.id === id ? { ...task, completed: !task.completed } : task
       )
     )
   }
 
   const deleteTask = (id: string) => {
-    setTasks(prev => prev.filter(task => task.id !== id))
+    setTasks(tasks.filter(task => task.id !== id))
   }
 
   const filteredTasks = tasks.filter(task => {
@@ -262,214 +271,246 @@ function TaskManagerApp() {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high':
-        return '#ff6b6b'
+        return '#dc3545'
       case 'medium':
-        return '#ffd93d'
+        return '#ffc107'
       case 'low':
-        return '#6bcf7f'
+        return '#28a745'
       default:
-        return '#888'
+        return '#6c757d'
     }
   }
 
   const getUserDisplayName = () => {
     if (!user) return 'Guest User'
+
     if (user.firstName && user.lastName) {
       return `${user.firstName} ${user.lastName}`
-    }
-    if (user.firstName) {
+    } else if (user.firstName) {
       return user.firstName
+    } else {
+      return user.email
     }
-    return user.email
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="task-manager">
+        <div className="auth-required">
+          <h2>🔒 Authentication Required</h2>
+          <p>Please login to access the Task Manager</p>
+          <div className="auth-info">
+            <p>
+              <strong>Email:</strong> {user?.email || 'Not logged in'}
+            </p>
+            <p>
+              <strong>Roles:</strong> {user?.roles?.join(', ') || 'None'}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="task-manager">
-      <header className="header">
-        <div>
-          <h1>📋 Task Manager</h1>
-          {isAuthenticated && user ? (
-            <div className="user-info">
-              <span className="welcome-text">
-                Welcome back, <strong>{getUserDisplayName()}</strong>! 👋
-              </span>
-              <div className="user-details">
-                <small>
-                  📧 {user.email} |
-                  {user.roles.includes('admin') ? ' 👑 Admin' : ' 👤 User'} | 📊{' '}
-                  {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
-                </small>
-              </div>
-            </div>
-          ) : (
-            <div className="user-info">
-              <span className="welcome-text">
-                👤 Not authenticated - running in standalone mode
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="header-actions">
-          <div className="filter-buttons">
-            <button
-              className={filter === 'all' ? 'active' : ''}
-              onClick={() => setFilter('all')}
-            >
-              All ({tasks.length})
-            </button>
-            <button
-              className={filter === 'pending' ? 'active' : ''}
-              onClick={() => setFilter('pending')}
-            >
-              Pending ({tasks.filter(t => !t.completed).length})
-            </button>
-            <button
-              className={filter === 'completed' ? 'active' : ''}
-              onClick={() => setFilter('completed')}
-            >
-              Completed ({tasks.filter(t => t.completed).length})
-            </button>
+      {/* Header */}
+      <div className="app-header">
+        <div className="header-content">
+          <div className="app-info">
+            <h1>📋 Task Manager</h1>
+            <p>Manage your tasks efficiently</p>
           </div>
+          <div className="user-info">
+            <div className="user-avatar">
+              {getUserDisplayName().charAt(0).toUpperCase()}
+            </div>
+            <div className="user-details">
+              <div className="user-name">{getUserDisplayName()}</div>
+              <div className="user-email">{user?.email}</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
+      {/* Controls */}
+      <div className="controls">
+        <div className="filter-buttons">
           <button
-            className="add-button"
-            onClick={() => setShowAddForm(!showAddForm)}
+            className={filter === 'all' ? 'active' : ''}
+            onClick={() => setFilter('all')}
           >
-            ➕ Add Task
+            All ({tasks.length})
+          </button>
+          <button
+            className={filter === 'pending' ? 'active' : ''}
+            onClick={() => setFilter('pending')}
+          >
+            Pending ({tasks.filter(t => !t.completed).length})
+          </button>
+          <button
+            className={filter === 'completed' ? 'active' : ''}
+            onClick={() => setFilter('completed')}
+          >
+            Completed ({tasks.filter(t => t.completed).length})
           </button>
         </div>
-      </header>
 
+        <button className="add-task-btn" onClick={() => setShowAddForm(true)}>
+          ➕ Add Task
+        </button>
+      </div>
+
+      {/* Add Task Form */}
       {showAddForm && (
-        <div className="add-form">
+        <div className="add-task-form">
           <h3>Add New Task</h3>
-          <input
-            type="text"
-            placeholder="Task title"
-            value={newTask.title}
-            onChange={e => setNewTask({ ...newTask, title: e.target.value })}
-          />
-          <textarea
-            placeholder="Task description"
-            value={newTask.description}
-            onChange={e =>
-              setNewTask({ ...newTask, description: e.target.value })
-            }
-          />
-          <div className="form-row">
-            <select
-              value={newTask.priority}
-              onChange={e =>
-                setNewTask({
-                  ...newTask,
-                  priority: e.target.value as 'low' | 'medium' | 'high',
-                })
-              }
-            >
-              <option value="low">Low Priority</option>
-              <option value="medium">Medium Priority</option>
-              <option value="high">High Priority</option>
-            </select>
+          <div className="form-group">
+            <label>Title</label>
             <input
-              type="date"
-              value={newTask.dueDate}
-              onChange={e =>
-                setNewTask({ ...newTask, dueDate: e.target.value })
-              }
+              type="text"
+              value={newTask.title}
+              onChange={e => setNewTask({ ...newTask, title: e.target.value })}
+              placeholder="Enter task title"
             />
           </div>
+
+          <div className="form-group">
+            <label>Description</label>
+            <textarea
+              value={newTask.description}
+              onChange={e =>
+                setNewTask({ ...newTask, description: e.target.value })
+              }
+              placeholder="Enter task description"
+              rows={3}
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Priority</label>
+              <select
+                value={newTask.priority}
+                onChange={e =>
+                  setNewTask({
+                    ...newTask,
+                    priority: e.target.value as 'low' | 'medium' | 'high',
+                  })
+                }
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Due Date</label>
+              <input
+                type="date"
+                value={newTask.dueDate}
+                onChange={e =>
+                  setNewTask({ ...newTask, dueDate: e.target.value })
+                }
+              />
+            </div>
+          </div>
+
           <div className="form-actions">
-            <button onClick={addTask}>Add Task</button>
-            <button onClick={() => setShowAddForm(false)}>Cancel</button>
+            <button
+              className="cancel-btn"
+              onClick={() => setShowAddForm(false)}
+            >
+              Cancel
+            </button>
+            <button className="add-btn" onClick={addTask}>
+              Add Task
+            </button>
           </div>
         </div>
       )}
 
-      <div className="task-list">
+      {/* Tasks List */}
+      <div className="tasks-list">
         {filteredTasks.length === 0 ? (
-          <div className="empty-state">
-            <p>
-              {filter === 'all'
-                ? isAuthenticated && user
-                  ? `No tasks yet, ${user.firstName || 'there'}! Add one above. 📝`
-                  : 'No tasks yet! Add one above. 📝'
-                : filter === 'pending'
-                  ? 'No pending tasks! 🎉'
-                  : 'No completed tasks yet! 📋'}
-            </p>
+          <div className="no-tasks">
+            <p>No tasks found</p>
+            {filter !== 'all' && (
+              <button onClick={() => setFilter('all')}>Show All Tasks</button>
+            )}
           </div>
         ) : (
           filteredTasks.map(task => (
             <div
               key={task.id}
-              className={`task ${task.completed ? 'completed' : ''}`}
+              className={`task-item ${task.completed ? 'completed' : ''}`}
             >
               <div className="task-content">
                 <div className="task-header">
-                  <h4 onClick={() => toggleTask(task.id)}>{task.title}</h4>
-                  <div className="task-meta">
-                    <span
-                      className="priority"
-                      style={{ color: getPriorityColor(task.priority) }}
+                  <div className="task-title-row">
+                    <input
+                      type="checkbox"
+                      checked={task.completed}
+                      onChange={() => toggleTask(task.id)}
+                    />
+                    <h3 className="task-title">{task.title}</h3>
+                    <div
+                      className="priority-badge"
+                      style={{
+                        backgroundColor: getPriorityColor(task.priority),
+                      }}
                     >
-                      {task.priority.toUpperCase()}
-                    </span>
+                      {task.priority}
+                    </div>
+                  </div>
+
+                  {task.description && (
+                    <p className="task-description">{task.description}</p>
+                  )}
+
+                  <div className="task-meta">
                     {task.dueDate && (
-                      <span className="due-date">Due: {task.dueDate}</span>
+                      <span className="due-date">📅 Due: {task.dueDate}</span>
                     )}
+                    <span className="created-date">
+                      ⏰ Created:{' '}
+                      {new Date(task.createdAt).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
-                {task.description && (
-                  <p className="task-description">{task.description}</p>
-                )}
-                <div className="task-footer">
-                  <small>
-                    Created: {new Date(task.createdAt).toLocaleDateString()}
-                  </small>
-                  {user && task.userId === user.id && (
-                    <small className="task-owner">Your task</small>
-                  )}
+
+                <div className="task-actions">
+                  <button
+                    className="delete-btn"
+                    onClick={() => deleteTask(task.id)}
+                    title="Delete task"
+                  >
+                    🗑️
+                  </button>
                 </div>
-              </div>
-              <div className="task-actions">
-                <button
-                  className={`toggle-btn ${task.completed ? 'completed' : 'pending'}`}
-                  onClick={() => toggleTask(task.id)}
-                >
-                  {task.completed ? '✅' : '⭕'}
-                </button>
-                <button
-                  className="delete-btn"
-                  onClick={() => deleteTask(task.id)}
-                >
-                  🗑️
-                </button>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Footer */}
+      <div className="app-footer">
+        <p>Task Manager v1.0.0 | Part of FuzeFront Platform</p>
+      </div>
     </div>
   )
 }
 
-// Main App component with PlatformProvider wrapper
 function App() {
-  // Check if we're on the health check route
+  // Health check route
   if (window.location.pathname === '/healthy') {
     return <HealthCheck />
   }
 
-  // App configuration for the SDK
-  const appConfig = {
-    id: 'f0e9b957-5e89-456e-a768-f2166932a725',
-    name: 'Task Manager',
-    version: '1.0.0',
-    description: 'A personal task management application',
-  }
-
   return (
-    <PlatformProvider config={appConfig} fallbackMode={true}>
+    <PlatformProvider>
       <TaskManagerApp />
     </PlatformProvider>
   )

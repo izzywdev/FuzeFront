@@ -1,0 +1,6 @@
+[submodule "envmanager"]
+	path = envmanager
+	url = https://github.com/izzywdev/envmanager.git
+[submodule "FuzeInfra"]
+	path = FuzeInfra
+	url = https://github.com/izzywdev/FuzeInfra.git

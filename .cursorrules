@@ -1,0 +1,20 @@
+# FuzeFront Development Rules
+
+## Shared Infrastructure Rules
+- **NEVER restart, stop, or recreate shared infrastructure containers**
+- Shared infra containers include: shared-postgres, shared-mongodb, shared-redis, shared-kafka, shared-rabbitmq, shared-prometheus, shared-grafana, shared-elasticsearch, shared-neo4j
+- These containers should remain running across all development sessions
+- Use existing connections to shared services rather than spinning up new instances
+- If shared services are not running, start them with: `cd FuzeInfra && docker-compose -f docker-compose.shared-infra.yml up -d`
+
+## Database Rules
+- Always use the shared PostgreSQL database (shared-postgres) instead of SQLite
+- Database host: localhost:5432
+- Default database: fuzefront_platform
+- Use migration-based approach for schema changes
+
+## Development Workflow
+- Check shared infra status before starting development
+- Keep shared services running to maintain data persistence
+- Use environment manager (envmanager) for configuration management
+- Test against shared infrastructure, not isolated containers 

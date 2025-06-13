@@ -39,9 +39,9 @@ async function checkAppHealth(app) {
 // GET /api/apps/health - Check health of all registered apps
 router.get('/health', auth_1.authenticateToken, async (req, res) => {
   try {
-    const apps = await database_1.db.all(
-      'SELECT * FROM apps WHERE is_active = 1 ORDER BY name'
-    )
+    const apps = await (0, database_1.db)('apps')
+      .where('is_active', true)
+      .orderBy('name')
     const healthChecks = await Promise.all(
       apps.map(async app => {
         const isHealthy = await checkAppHealth(app)
@@ -109,9 +109,9 @@ router.get('/health', auth_1.authenticateToken, async (req, res) => {
 router.get('/', auth_1.authenticateToken, async (req, res) => {
   try {
     const { healthyOnly } = req.query
-    const apps = await database_1.db.all(
-      'SELECT * FROM apps WHERE is_active = 1 ORDER BY name'
-    )
+    const apps = await (0, database_1.db)('apps')
+      .where('is_active', true)
+      .orderBy('name')
     // Get health status for all apps
     const appsWithHealth = await Promise.all(
       apps.map(async app => {
@@ -248,21 +248,17 @@ router.post(
         return res.status(400).json({ error: 'Name and URL are required' })
       }
       const appId = (0, uuid_1.v4)()
-      await database_1.db.run(
-        `INSERT INTO apps (id, name, url, icon_url, integration_type, remote_url, scope, module, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          appId,
-          name,
-          url,
-          iconUrl,
-          integrationType,
-          remoteUrl,
-          scope,
-          module,
-          description,
-        ]
-      )
+      await (0, database_1.db)('apps').insert({
+        id: appId,
+        name,
+        url,
+        icon_url: iconUrl,
+        integration_type: integrationType,
+        remote_url: remoteUrl,
+        scope,
+        module,
+        description,
+      })
       const newApp = {
         id: appId,
         name,
@@ -302,10 +298,10 @@ router.put(
     try {
       const { id } = req.params
       const { isActive } = req.body
-      await database_1.db.run(
-        'UPDATE apps SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [isActive ? 1 : 0, id]
-      )
+      await (0, database_1.db)('apps').where('id', id).update({
+        is_active: isActive,
+        updated_at: database_1.db.fn.now(),
+      })
       res.json({ message: 'App status updated successfully' })
     } catch (error) {
       console.error('Error updating app status:', error)
@@ -321,7 +317,7 @@ router.delete(
   async (req, res) => {
     try {
       const { id } = req.params
-      await database_1.db.run('DELETE FROM apps WHERE id = ?', [id])
+      await (0, database_1.db)('apps').where('id', id).del()
       res.json({ message: 'App deleted successfully' })
     } catch (error) {
       console.error('Error deleting app:', error)
@@ -335,18 +331,17 @@ router.post('/:id/heartbeat', async (req, res) => {
     const { id } = req.params
     const { status = 'online', metadata = {} } = req.body
     // Verify app exists
-    const app = await database_1.db.get(
-      'SELECT * FROM apps WHERE id = ? AND is_active = 1',
-      [id]
-    )
+    const app = await (0, database_1.db)('apps')
+      .where('id', id)
+      .where('is_active', true)
+      .first()
     if (!app) {
       return res.status(404).json({ error: 'App not found or inactive' })
     }
     // Update app's last heartbeat timestamp
-    await database_1.db.run(
-      'UPDATE apps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [id]
-    )
+    await (0, database_1.db)('apps')
+      .where('id', id)
+      .update({ updated_at: database_1.db.fn.now() })
     // Emit WebSocket event to all connected clients
     const io = req.app.get('io')
     if (io) {
@@ -372,7 +367,7 @@ router.post('/:id/heartbeat', async (req, res) => {
 })
 // POST /api/apps/register - Self-register app (no auth required for demo)
 router.post('/register', async (req, res) => {
-  var _a
+  var _a, _b
   try {
     const {
       name,
@@ -396,21 +391,17 @@ router.post('/register', async (req, res) => {
       }
     }
     const appId = (0, uuid_1.v4)()
-    await database_1.db.run(
-      `INSERT INTO apps (id, name, url, icon_url, integration_type, remote_url, scope, module, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        appId,
-        name,
-        url,
-        iconUrl,
-        integrationType,
-        remoteUrl,
-        scope,
-        module,
-        description,
-      ]
-    )
+    await (0, database_1.db)('apps').insert({
+      id: appId,
+      name,
+      url,
+      icon_url: iconUrl,
+      integration_type: integrationType,
+      remote_url: remoteUrl,
+      scope,
+      module,
+      description,
+    })
     const newApp = {
       id: appId,
       name,
@@ -437,17 +428,20 @@ router.post('/register', async (req, res) => {
     console.error('Error in self-registration:', error)
     // Check if it's a unique constraint violation
     if (
-      error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      error.code === '23505' || // PostgreSQL unique violation
       ((_a = error.message) === null || _a === void 0
         ? void 0
-        : _a.includes('UNIQUE constraint failed'))
+        : _a.includes('duplicate key value')) ||
+      error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+      ((_b = error.message) === null || _b === void 0
+        ? void 0
+        : _b.includes('UNIQUE constraint failed'))
     ) {
       // Return the existing app instead of an error
       try {
-        const existingApp = await database_1.db.get(
-          'SELECT * FROM apps WHERE name = ?',
-          [req.body.name]
-        )
+        const existingApp = await (0, database_1.db)('apps')
+          .where('name', req.body.name)
+          .first()
         if (existingApp) {
           const app = {
             id: existingApp.id,
