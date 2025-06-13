@@ -1,21 +1,24 @@
-'use strict'
-
-Object.defineProperty(exports, '__esModule', { value: true })
-
-var jsxRuntime = require('react/jsx-runtime')
-var react = require('react')
-var require$$0 = require('fs')
-var require$$1 = require('url')
-var require$$2 = require('child_process')
-var require$$3 = require('http')
-var require$$4 = require('https')
-var require$$0$3 = require('stream')
-var require$$0$1 = require('zlib')
-var require$$0$2 = require('buffer')
-var require$$1$1 = require('crypto')
-var require$$0$4 = require('events')
-var require$$3$1 = require('net')
-var require$$4$1 = require('tls')
+import { jsx } from 'react/jsx-runtime'
+import {
+  createContext,
+  useReducer,
+  useEffect,
+  useContext,
+  useCallback,
+  useRef,
+} from 'react'
+import require$$0 from 'fs'
+import require$$1 from 'url'
+import require$$2 from 'child_process'
+import require$$3 from 'http'
+import require$$4 from 'https'
+import require$$0$3 from 'stream'
+import require$$0$1 from 'zlib'
+import require$$0$2 from 'buffer'
+import require$$1$1 from 'crypto'
+import require$$0$4 from 'events'
+import require$$3$1 from 'net'
+import require$$4$1 from 'tls'
 
 function _mergeNamespaces(n, m) {
   m.forEach(function (e) {
@@ -75,14 +78,14 @@ function platformReducer(state, action) {
       return state
   }
 }
-const PlatformContext = react.createContext(null)
+const PlatformContext = createContext(null)
 function PlatformProvider({ children, config, fallbackMode = false }) {
-  const [state, dispatch] = react.useReducer(platformReducer, {
+  const [state, dispatch] = useReducer(platformReducer, {
     ...initialState,
     config,
     isPlatformMode: !fallbackMode,
   })
-  react.useEffect(() => {
+  useEffect(() => {
     // Try to detect if we're running inside the FrontFuse platform
     const isPlatform =
       !fallbackMode &&
@@ -138,7 +141,7 @@ function PlatformProvider({ children, config, fallbackMode = false }) {
     }
   }, [fallbackMode])
   // Expose context to child microfrontends when in platform mode
-  react.useEffect(() => {
+  useEffect(() => {
     if (state.isPlatformMode && typeof window !== 'undefined') {
       window.__FRONTFUSE_CONTEXT__ = {
         user: state.user,
@@ -151,13 +154,13 @@ function PlatformProvider({ children, config, fallbackMode = false }) {
       }
     }
   }, [state])
-  return jsxRuntime.jsx(PlatformContext.Provider, {
+  return jsx(PlatformContext.Provider, {
     value: { state, dispatch },
     children: children,
   })
 }
 function usePlatformContext() {
-  const context = react.useContext(PlatformContext)
+  const context = useContext(PlatformContext)
   if (!context) {
     throw new Error('usePlatformContext must be used within a PlatformProvider')
   }
@@ -288,13 +291,13 @@ function createHeartbeat(config) {
 function useCurrentUser() {
   var _a
   const { state, dispatch } = usePlatformContext()
-  const setUser = react.useCallback(
+  const setUser = useCallback(
     user => {
       dispatch({ type: 'SET_USER', payload: user })
     },
     [dispatch]
   )
-  const hasRole = react.useCallback(
+  const hasRole = useCallback(
     role => {
       var _a, _b
       return (_b =
@@ -317,13 +320,13 @@ function useCurrentUser() {
 function useSession() {
   var _a
   const { state, dispatch } = usePlatformContext()
-  const setSession = react.useCallback(
+  const setSession = useCallback(
     session => {
       dispatch({ type: 'SET_SESSION', payload: session })
     },
     [dispatch]
   )
-  const isExpired = react.useCallback(() => {
+  const isExpired = useCallback(() => {
     if (!state.session) return true
     return new Date(state.session.expiresAt) <= new Date()
   }, [state.session])
@@ -345,13 +348,13 @@ function useGlobalMenu() {
   const appMenuItems = state.menuItems
     .filter(item => item.category === 'app')
     .sort((a, b) => (a.order || 0) - (b.order || 0))
-  const setMenuItems = react.useCallback(
+  const setMenuItems = useCallback(
     items => {
       dispatch({ type: 'SET_MENU_ITEMS', payload: items })
     },
     [dispatch]
   )
-  const addMenuItem = react.useCallback(
+  const addMenuItem = useCallback(
     item => {
       const newItems = [...state.menuItems]
       // Insert before 'help' which should always be last for portal items
@@ -370,14 +373,14 @@ function useGlobalMenu() {
     },
     [state.menuItems, setMenuItems]
   )
-  const removeMenuItem = react.useCallback(
+  const removeMenuItem = useCallback(
     id => {
       const newItems = state.menuItems.filter(item => item.id !== id)
       setMenuItems(newItems)
     },
     [state.menuItems, setMenuItems]
   )
-  const updateMenuItem = react.useCallback(
+  const updateMenuItem = useCallback(
     (id, updates) => {
       const newItems = state.menuItems.map(item =>
         item.id === id ? { ...item, ...updates } : item
@@ -386,7 +389,7 @@ function useGlobalMenu() {
     },
     [state.menuItems, setMenuItems]
   )
-  const addAppMenuItems = react.useCallback(
+  const addAppMenuItems = useCallback(
     (appId, items) => {
       // Mark items as app-specific and add appId
       const appMenuItems = items.map(item => ({
@@ -400,14 +403,14 @@ function useGlobalMenu() {
     },
     [state.menuItems, setMenuItems]
   )
-  const removeAppMenuItems = react.useCallback(
+  const removeAppMenuItems = useCallback(
     appId => {
       const newItems = state.menuItems.filter(item => item.appId !== appId)
       setMenuItems(newItems)
     },
     [state.menuItems, setMenuItems]
   )
-  const clearAllAppMenuItems = react.useCallback(() => {
+  const clearAllAppMenuItems = useCallback(() => {
     const newItems = state.menuItems.filter(
       item => item.category === 'portal' || !item.category
     )
@@ -9211,9 +9214,9 @@ Object.assign(lookup, {
 function useSocketBus(appId) {
   var _a, _b, _c
   const { state } = usePlatformContext()
-  const socketRef = react.useRef(null)
-  const handlersRef = react.useRef(new Map())
-  react.useEffect(() => {
+  const socketRef = useRef(null)
+  const handlersRef = useRef(new Map())
+  useEffect(() => {
     var _a, _b, _c
     // Don't initialize socket in fallback mode unless explicitly configured
     if (
@@ -9263,10 +9266,10 @@ function useSocketBus(appId) {
     (_b = state.config) === null || _b === void 0 ? void 0 : _b.id,
     appId,
   ])
-  const on = react.useCallback((eventType, handler) => {
+  const on = useCallback((eventType, handler) => {
     handlersRef.current.set(eventType, handler)
   }, [])
-  const emit = react.useCallback(
+  const emit = useCallback(
     (eventType, payload, targetAppId) => {
       if (socketRef.current && socketRef.current.connected) {
         const event = {
@@ -9454,17 +9457,19 @@ var index = {
   clearModuleCache,
 }
 
-exports.AppHeartbeat = AppHeartbeat
-exports.PlatformProvider = PlatformProvider
-exports.clearModuleCache = clearModuleCache
-exports.createHeartbeat = createHeartbeat
-exports.default = index
-exports.getCachedModule = getCachedModule
-exports.isModuleCached = isModuleCached
-exports.loadApp = loadApp
-exports.useCurrentUser = useCurrentUser
-exports.useGlobalMenu = useGlobalMenu
-exports.usePlatformContext = usePlatformContext
-exports.useSession = useSession
-exports.useSocketBus = useSocketBus
-//# sourceMappingURL=index.js.map
+export {
+  AppHeartbeat,
+  PlatformProvider,
+  clearModuleCache,
+  createHeartbeat,
+  index as default,
+  getCachedModule,
+  isModuleCached,
+  loadApp,
+  useCurrentUser,
+  useGlobalMenu,
+  usePlatformContext,
+  useSession,
+  useSocketBus,
+}
+//# sourceMappingURL=index.esm.js.map
