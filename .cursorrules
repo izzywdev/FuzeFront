@@ -17,4 +17,12 @@
 - Check shared infra status before starting development
 - Keep shared services running to maintain data persistence
 - Use environment manager (envmanager) for configuration management
-- Test against shared infrastructure, not isolated containers 
+- Test against shared infrastructure, not isolated containers
+
+## Documentation Rules
+- **ALWAYS export chat history before every commit**
+- Export chat conversations to `docs/chats/` folder
+- Use naming convention: `[YYYY-MM-DD]_[HH-mm]_chat.md`
+- Include conversation summary, key achievements, and technical details
+- Document any architectural decisions or important code changes
+- Chat histories serve as development documentation and decision records 
