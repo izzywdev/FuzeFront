@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { db } from '../config/database'
-import { User } from '@frontfuse/shared'
+import { User } from '../types/shared'
 
 interface AuthenticatedRequest extends Request {
   user?: User

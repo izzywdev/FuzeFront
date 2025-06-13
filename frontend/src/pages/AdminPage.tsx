@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useAppContext, App } from '@frontfuse/shared'
+import { useAppContext, App } from '../lib/shared'
 import {
   createApp,
   updateAppStatus,

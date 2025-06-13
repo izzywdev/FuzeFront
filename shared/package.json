@@ -1,7 +1,7 @@
 {
-  "name": "@frontfuse/shared",
+  "name": "@fuzefront/shared",
   "version": "1.0.0",
-  "description": "Shared state library for FrontFuse platform",
+  "description": "Shared state library for FuzeFront platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

@@ -22,12 +22,30 @@ type AppAction =
       payload: App[]
     }
   | {
+      type: 'ADD_APP'
+      payload: App
+    }
+  | {
       type: 'SET_ACTIVE_APP'
       payload: App | null
     }
   | {
       type: 'SET_MENU_ITEMS'
       payload: MenuItem[]
+    }
+  | {
+      type: 'ADD_APP_MENU_ITEMS'
+      payload: {
+        appId: string
+        items: MenuItem[]
+      }
+    }
+  | {
+      type: 'REMOVE_APP_MENU_ITEMS'
+      payload: string
+    }
+  | {
+      type: 'CLEAR_ALL_APP_MENU_ITEMS'
     }
   | {
       type: 'SET_LOADING'

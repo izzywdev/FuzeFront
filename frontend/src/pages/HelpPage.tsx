@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
-import { useCurrentUser } from '@frontfuse/shared'
+import { useCurrentUser } from '../lib/shared'
+import { useTheme } from '../contexts/ThemeContext'
 
 interface TabProps {
   id: string
