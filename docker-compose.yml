@@ -1,84 +1,218 @@
 version: '3.8'
 
+# External networks from shared infrastructure
+networks:
+  shared-infra:
+    external: true
+    name: shared-infra
+  fuzefront:
+    name: fuzefront
+    driver: bridge
+
 services:
-  # FrontFuse Backend API
-  backend:
+  # ================================
+  # BACKEND SERVICE
+  # ================================
+  fuzefront-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: fuzefront-backend
+    environment:
+      - NODE_ENV=production
+      - USE_POSTGRES=true
+      - DB_HOST=shared-postgres
+      - DB_PORT=5432
+      - DB_NAME=fuzefront_platform
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - JWT_SECRET=fuzefront-production-secret-change-this-in-production
+      - PORT=3001
+      - FRONTEND_URL=http://fuzefront-frontend:8080
     ports:
       - '3001:3001'
-    environment:
-      - NODE_ENV=${NODE_ENV:-production}
-      - PORT=${PORT:-3001}
-      - JWT_SECRET=${JWT_SECRET}
-      - DATABASE_URL=${DATABASE_URL:-./database.sqlite}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
-    volumes:
-      - backend_data:/app/data
+    networks:
+      - shared-infra # Connect to shared infrastructure
+      - fuzefront # Connect to FuzeFront internal network
+    depends_on:
+      - db-migration
+    restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/health']
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3001/health',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fuzefront-backend.rule=PathPrefix(`/api`)'
+      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3001'
 
-  # FrontFuse Frontend Hub
-  frontend:
+  # ================================
+  # FRONTEND SERVICE
+  # ================================
+  fuzefront-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - '3000:3000'
+      args:
+        - VITE_API_URL=http://localhost:3001
+        - VITE_APP_TITLE=FuzeFront Platform
+    container_name: fuzefront-frontend
     environment:
-      - VITE_API_URL=${FRONTEND_URL:-http://localhost:3001}
-      - NODE_ENV=${NODE_ENV:-production}
+      - NGINX_HOST=localhost
+      - NGINX_PORT=8080
+    ports:
+      - '8080:8080'
+    networks:
+      - fuzefront
     depends_on:
-      - backend
+      - fuzefront-backend
+    restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3000']
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:8080/health',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fuzefront-frontend.rule=Host(`fuzefront.local`)'
+      - 'traefik.http.services.fuzefront-frontend.loadbalancer.server.port=8080'
 
-  # Task Manager Micro-frontend
-  task-manager:
+  # ================================
+  # TASK MANAGER MICROFRONTEND
+  # ================================
+  fuzefront-taskmanager:
     build:
       context: ./task-manager-app
       dockerfile: Dockerfile
-    ports:
-      - '3002:3002'
+      args:
+        - VITE_API_URL=http://localhost:3001
+        - VITE_APP_TITLE=Task Manager - FuzeFront
+    container_name: fuzefront-taskmanager
     environment:
-      - FRONTFUSE_HUB_URL=${FRONTEND_URL:-http://backend:3001}
-      - NODE_ENV=${NODE_ENV:-production}
-    depends_on:
-      - backend
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3002']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Nginx reverse proxy (optional)
-  nginx:
-    image: nginx:alpine
+      - NGINX_HOST=localhost
+      - NGINX_PORT=3002
     ports:
-      - '80:80'
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - '3003:3002'
+    networks:
+      - fuzefront
     depends_on:
-      - frontend
-      - backend
-      - task-manager
+      - fuzefront-backend
+    restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost']
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3002/health',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fuzefront-taskmanager.rule=Host(`taskmanager.fuzefront.local`)'
+      - 'traefik.http.services.fuzefront-taskmanager.loadbalancer.server.port=3002'
 
+  # ================================
+  # DATABASE MIGRATION SERVICE
+  # ================================
+  db-migration:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    container_name: fuzefront-db-migration
+    environment:
+      - NODE_ENV=development
+      - USE_POSTGRES=true
+      - DB_HOST=shared-postgres
+      - DB_PORT=5432
+      - DB_NAME=fuzefront_platform
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    networks:
+      - shared-infra
+    command: >
+      sh -c "
+        echo 'Waiting for PostgreSQL to be ready...' &&
+        while ! nc -z shared-postgres 5432; do sleep 1; done &&
+        echo 'PostgreSQL is ready!' &&
+        echo 'Creating database if not exists...' &&
+        node -e \"
+          const { Client } = require('pg');
+          const client = new Client({
+            host: 'shared-postgres',
+            port: 5432,
+            database: 'postgres',
+            user: 'postgres',
+            password: 'postgres'
+          });
+          client.connect()
+            .then(() => client.query(\\\"SELECT 1 FROM pg_database WHERE datname = 'fuzefront_platform'\\\"))
+            .then(result => {
+              if (result.rows.length === 0) {
+                return client.query('CREATE DATABASE fuzefront_platform');
+              }
+            })
+            .then(() => console.log('Database ready'))
+            .catch(err => console.log('Database exists or error:', err.message))
+            .finally(() => client.end());
+        \" &&
+        echo 'Running migrations...' &&
+        npx knex migrate:latest &&
+        echo 'Running seeds...' &&
+        npx knex seed:run &&
+        echo 'Database initialization complete!'
+      "
+    depends_on:
+      - shared-postgres-check
+    restart: 'no'
+
+  # ================================
+  # SHARED INFRASTRUCTURE DEPENDENCY
+  # ================================
+  shared-postgres-check:
+    image: postgres:15-alpine
+    container_name: fuzefront-postgres-check
+    environment:
+      - PGPASSWORD=postgres
+    networks:
+      - shared-infra
+    command: >
+      sh -c "
+        echo 'Checking shared PostgreSQL availability...' &&
+        while ! pg_isready -h shared-postgres -p 5432 -U postgres; do
+          echo 'Waiting for shared-postgres...' &&
+          sleep 2
+        done &&
+        echo 'Shared PostgreSQL is ready!'
+      "
+    restart: 'no'
+
+# Volumes for persistent data (if needed locally)
 volumes:
-  backend_data:
-    driver: local
-
-networks:
-  default:
-    name: frontfuse-network
+  fuzefront_logs:
+    name: fuzefront_logs

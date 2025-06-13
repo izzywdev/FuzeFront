@@ -81,9 +81,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user
-    const userRow = await db.get<any>('SELECT * FROM users WHERE email = ?', [
-      email,
-    ])
+    const userRow = await db('users').where('email', email).first()
 
     if (!userRow) {
       return res.status(401).json({ error: 'Invalid credentials' })
@@ -107,10 +105,11 @@ router.post('/login', async (req, res) => {
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
-    await db.run(
-      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
-      [sessionId, userRow.id, expiresAt.toISOString()]
-    )
+    await db('sessions').insert({
+      id: sessionId,
+      user_id: userRow.id,
+      expires_at: expiresAt,
+    })
 
     const user: User = {
       id: userRow.id,
@@ -215,7 +214,7 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
       }
       // In a real app, you'd add this token to a blacklist
       // For now, we'll just remove the session
-      await db.run('DELETE FROM sessions WHERE user_id = ?', [decoded.userId])
+      await db('sessions').where('user_id', decoded.userId).del()
     }
 
     res.json({ message: 'Logged out successfully' })

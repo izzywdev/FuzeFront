@@ -6,8 +6,25 @@ import { App } from '../types/shared'
 
 const router = express.Router()
 
+// Database row interface for apps
+interface AppRow {
+  id: string
+  name: string
+  url: string
+  icon_url: string
+  is_active: boolean
+  integration_type: 'iframe' | 'module_federation' | 'spa'
+  remote_url: string
+  scope: string
+  module: string
+  description: string
+  metadata: string
+  created_at: Date
+  updated_at: Date
+}
+
 // Health check function for individual apps
-async function checkAppHealth(app: any): Promise<boolean> {
+async function checkAppHealth(app: AppRow): Promise<boolean> {
   try {
     const healthUrl = `${app.url}` // Check root URL instead of /healthy
     const controller = new AbortController()
@@ -38,12 +55,10 @@ async function checkAppHealth(app: any): Promise<boolean> {
 // GET /api/apps/health - Check health of all registered apps
 router.get('/health', authenticateToken, async (req: any, res) => {
   try {
-    const apps = await db.all<any>(
-      'SELECT * FROM apps WHERE is_active = 1 ORDER BY name'
-    )
+    const apps = await db('apps').where('is_active', true).orderBy('name')
 
     const healthChecks = await Promise.all(
-      apps.map(async app => {
+      apps.map(async (app: AppRow) => {
         const isHealthy = await checkAppHealth(app)
         return {
           id: app.id,
@@ -112,13 +127,11 @@ router.get('/', authenticateToken, async (req: any, res) => {
   try {
     const { healthyOnly } = req.query
 
-    const apps = await db.all<any>(
-      'SELECT * FROM apps WHERE is_active = 1 ORDER BY name'
-    )
+    const apps = await db('apps').where('is_active', true).orderBy('name')
 
     // Get health status for all apps
     const appsWithHealth = await Promise.all(
-      apps.map(async app => {
+      apps.map(async (app: AppRow) => {
         const isHealthy = await checkAppHealth(app)
         return {
           id: app.id,
@@ -141,9 +154,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
 
     // If healthyOnly is requested, filter by health status
     if (healthyOnly === 'true') {
-      const healthyApps = appsWithHealth.filter(app => app.isHealthy)
+      const healthyApps = appsWithHealth.filter((app: any) => app.isHealthy)
       res.json(
-        healthyApps.map(app => {
+        healthyApps.map((app: any) => {
           const { isHealthy, ...appWithoutHealth } = app
           return appWithoutHealth
         })
@@ -259,21 +272,17 @@ router.post(
 
       const appId = uuidv4()
 
-      await db.run(
-        `INSERT INTO apps (id, name, url, icon_url, integration_type, remote_url, scope, module, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          appId,
-          name,
-          url,
-          iconUrl,
-          integrationType,
-          remoteUrl,
-          scope,
-          module,
-          description,
-        ]
-      )
+      await db('apps').insert({
+        id: appId,
+        name,
+        url,
+        icon_url: iconUrl,
+        integration_type: integrationType,
+        remote_url: remoteUrl,
+        scope,
+        module,
+        description,
+      })
 
       const newApp: App = {
         id: appId,
@@ -317,10 +326,10 @@ router.put(
       const { id } = req.params
       const { isActive } = req.body
 
-      await db.run(
-        'UPDATE apps SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [isActive ? 1 : 0, id]
-      )
+      await db('apps').where('id', id).update({
+        is_active: isActive,
+        updated_at: db.fn.now(),
+      })
 
       res.json({ message: 'App status updated successfully' })
     } catch (error) {
@@ -339,7 +348,7 @@ router.delete(
     try {
       const { id } = req.params
 
-      await db.run('DELETE FROM apps WHERE id = ?', [id])
+      await db('apps').where('id', id).del()
 
       res.json({ message: 'App deleted successfully' })
     } catch (error) {
@@ -356,20 +365,17 @@ router.post('/:id/heartbeat', async (req: any, res) => {
     const { status = 'online', metadata = {} } = req.body
 
     // Verify app exists
-    const app = await db.get<any>(
-      'SELECT * FROM apps WHERE id = ? AND is_active = 1',
-      [id]
-    )
+    const app = await db('apps')
+      .where('id', id)
+      .where('is_active', true)
+      .first()
 
     if (!app) {
       return res.status(404).json({ error: 'App not found or inactive' })
     }
 
     // Update app's last heartbeat timestamp
-    await db.run(
-      'UPDATE apps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [id]
-    )
+    await db('apps').where('id', id).update({ updated_at: db.fn.now() })
 
     // Emit WebSocket event to all connected clients
     const io = req.app.get('io')
@@ -426,21 +432,17 @@ router.post('/register', async (req: any, res) => {
 
     const appId = uuidv4()
 
-    await db.run(
-      `INSERT INTO apps (id, name, url, icon_url, integration_type, remote_url, scope, module, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        appId,
-        name,
-        url,
-        iconUrl,
-        integrationType,
-        remoteUrl,
-        scope,
-        module,
-        description,
-      ]
-    )
+    await db('apps').insert({
+      id: appId,
+      name,
+      url,
+      icon_url: iconUrl,
+      integration_type: integrationType,
+      remote_url: remoteUrl,
+      scope,
+      module,
+      description,
+    })
 
     const newApp: App = {
       id: appId,
@@ -472,15 +474,17 @@ router.post('/register', async (req: any, res) => {
 
     // Check if it's a unique constraint violation
     if (
+      error.code === '23505' || // PostgreSQL unique violation
+      error.message?.includes('duplicate key value') ||
       error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
       error.message?.includes('UNIQUE constraint failed')
     ) {
       // Return the existing app instead of an error
       try {
-        const existingApp = await db.get<any>(
-          'SELECT * FROM apps WHERE name = ?',
-          [req.body.name]
-        )
+        const existingApp = await db('apps')
+          .where('name', req.body.name)
+          .first()
+
         if (existingApp) {
           const app: App = {
             id: existingApp.id,
