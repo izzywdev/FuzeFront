@@ -23,6 +23,7 @@
 - **ALWAYS export chat history before every commit**
 - Export chat conversations to `docs/chats/` folder
 - Use naming convention: `[YYYY-MM-DD]_[HH-mm]_chat.md`
+- Use the helper script: `.\scripts\export-chat.ps1 "Topic description"`
 - Include conversation summary, key achievements, and technical details
 - Document any architectural decisions or important code changes
 - Chat histories serve as development documentation and decision records 
