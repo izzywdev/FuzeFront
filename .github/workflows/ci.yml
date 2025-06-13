@@ -32,6 +32,7 @@ jobs:
           cd backend && npm ci
           cd ../frontend && npm ci  
           cd ../sdk && npm ci
+          cd ../api-client && npm ci
           cd ../task-manager-app && npm ci
 
       - name: Type checking
@@ -39,6 +40,7 @@ jobs:
           cd backend && npm run type-check
           cd ../frontend && npm run type-check
           cd ../sdk && npm run type-check
+          cd ../api-client && npm run type-check
 
       - name: Lint code
         run: |
@@ -241,6 +243,61 @@ jobs:
           git config --local user.name "GitHub Action"
           git add package.json package-lock.json
           git commit -m "chore(sdk): bump version to ${{ steps.version.outputs.VERSION }} [skip ci]" || exit 0
+          git push
+
+  publish-api-client:
+    name: Publish API Client
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, build]
+    if: (github.event_name == 'release' && github.event.action == 'published') || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install API Client dependencies
+        run: cd api-client && npm ci
+
+      - name: Build API Client
+        run: cd api-client && npm run build
+
+      - name: Handle versioning
+        id: version
+        run: |
+          cd api-client
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            # For releases, use the tag version
+            VERSION=${GITHUB_REF#refs/tags/v}
+            npm version $VERSION --no-git-tag-version
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+            echo "TAG=latest" >> $GITHUB_OUTPUT
+          else
+            # For master pushes, auto-increment patch version
+            NEW_VERSION=$(npm version patch --no-git-tag-version)
+            echo "VERSION=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
+            echo "TAG=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm
+        run: cd api-client && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          cd api-client
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json package-lock.json
+          git commit -m "chore(api-client): bump version to ${{ steps.version.outputs.VERSION }} [skip ci]" || exit 0
           git push
 
   deploy-docs:
