@@ -25,10 +25,17 @@ export const authenticateToken = async (
     }
 
     // Fetch user from database
-    const userRow = await db.get<any>(
-      'SELECT id, email, first_name, last_name, default_app_id, roles FROM users WHERE id = ?',
-      [decoded.userId]
-    )
+    const userRow = await db('users')
+      .select(
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'default_app_id',
+        'roles'
+      )
+      .where('id', decoded.userId)
+      .first()
 
     if (!userRow) {
       return res.status(401).json({ error: 'User not found' })

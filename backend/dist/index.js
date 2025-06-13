@@ -14,6 +14,7 @@ const dotenv_1 = __importDefault(require('dotenv'))
 const auth_1 = __importDefault(require('./routes/auth'))
 const apps_1 = __importDefault(require('./routes/apps'))
 const socketHandler_1 = require('./sockets/socketHandler')
+const database_1 = require('./config/database')
 // Load environment variables
 dotenv_1.default.config()
 const app = (0, express_1.default)()
@@ -223,14 +224,21 @@ app.get('/api/user', (req, res) => {
  */
 // Health check
 const startTime = Date.now()
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
+  const dbHealthy = await (0, database_1.checkDatabaseHealth)()
   res.json({
-    status: 'ok',
+    status: dbHealthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     uptime: uptime,
     version: process.env.npm_package_version || '1.0.0',
     environment: process.env.NODE_ENV || 'development',
+    database: {
+      status: dbHealthy ? 'connected' : 'disconnected',
+      type: 'PostgreSQL',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'fuzefront_platform',
+    },
     memory: {
       used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
@@ -256,10 +264,15 @@ function gracefulShutdown(signal) {
     }
     console.log('✅ HTTP server closed')
     // Close Socket.IO connections
-    io.close(() => {
+    io.close(async () => {
       console.log('✅ Socket.IO server closed')
-      // Close database connections if needed
-      console.log('✅ Database connections closed')
+      // Close database connections
+      try {
+        await (0, database_1.closeDatabase)()
+        console.log('✅ Database connections closed')
+      } catch (error) {
+        console.error('❌ Error closing database:', error)
+      }
       console.log('🎯 Graceful shutdown complete')
       process.exit(0)
     })
@@ -331,6 +344,9 @@ async function findAvailablePort(startPort, maxAttempts = 10) {
 // Start server with port conflict handling
 async function startServer() {
   try {
+    // Initialize database first
+    console.log('🔄 Starting FuzeFront Backend Server...')
+    await (0, database_1.initializeDatabase)()
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)
     if (availablePort !== portNumber) {
@@ -340,7 +356,7 @@ async function startServer() {
     }
     httpServer.listen(availablePort, () => {
       console.log(
-        `🚀 FrontFuse backend server running on port ${availablePort}`
+        `🚀 FuzeFront backend server running on port ${availablePort}`
       )
       console.log(
         `🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`
@@ -350,6 +366,7 @@ async function startServer() {
         `📚 API Documentation: http://localhost:${availablePort}/api-docs`
       )
       console.log(`💓 Health Check: http://localhost:${availablePort}/health`)
+      console.log(`🗄️  Database: PostgreSQL (shared-postgres)`)
       // Update PORT variable for other parts of the app
       process.env.PORT = availablePort.toString()
     })
