@@ -5,6 +5,7 @@ import { User } from '../types/shared'
 
 interface AuthenticatedRequest extends Request {
   user?: User
+  requestId?: string
 }
 
 export const authenticateToken = async (
@@ -12,17 +13,32 @@ export const authenticateToken = async (
   res: Response,
   next: NextFunction
 ) => {
+  const requestId = req.requestId || 'unknown'
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
 
+  console.log(`🔐 [${requestId}] Auth middleware - checking token:`, {
+    hasAuthHeader: !!authHeader,
+    hasToken: !!token,
+    tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
+    path: req.path,
+    method: req.method,
+  })
+
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' })
+    console.log(`❌ [${requestId}] No token provided`)
+    return res.status(401).json({ error: 'Access denied. No token provided.' })
   }
 
   try {
+    console.log(`🔍 [${requestId}] Verifying JWT token...`)
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string
     }
+
+    console.log(`✅ [${requestId}] Token verified, fetching user:`, {
+      userId: decoded.userId,
+    })
 
     // Fetch user from database
     const userRow = await db('users')
@@ -38,8 +54,17 @@ export const authenticateToken = async (
       .first()
 
     if (!userRow) {
+      console.log(`❌ [${requestId}] User not found in database:`, {
+        userId: decoded.userId,
+      })
       return res.status(401).json({ error: 'User not found' })
     }
+
+    console.log(`👤 [${requestId}] User authenticated:`, {
+      userId: userRow.id,
+      email: userRow.email,
+      roles: userRow.roles,
+    })
 
     const user: User = {
       id: userRow.id,
@@ -47,13 +72,19 @@ export const authenticateToken = async (
       firstName: userRow.first_name,
       lastName: userRow.last_name,
       defaultAppId: userRow.default_app_id,
-      roles: JSON.parse(userRow.roles || '["user"]'),
+      roles: Array.isArray(userRow.roles)
+        ? userRow.roles
+        : JSON.parse(userRow.roles || '["user"]'),
     }
 
     req.user = user
     next()
   } catch (error) {
-    return res.status(403).json({ error: 'Invalid token' })
+    console.log(`❌ [${requestId}] Token verification failed:`, {
+      error: error instanceof Error ? error.message : String(error),
+      tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
+    })
+    return res.status(401).json({ error: 'Invalid token.' })
   }
 }
 

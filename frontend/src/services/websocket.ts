@@ -9,8 +9,9 @@ class WebSocketService {
       return this.socket
     }
 
+    // Use the same base URL as API calls for WebSocket connection
     const backendUrl =
-      import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+      import.meta.env.VITE_BACKEND_URL || window.location.origin
 
     this.socket = io(backendUrl, {
       transports: ['websocket', 'polling'],

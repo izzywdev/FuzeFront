@@ -5514,7 +5514,6 @@ Object.defineProperty(WebSocket.prototype, 'CLOSED', {
   enumerable: true,
   value: readyStates.indexOf('CLOSED'),
 })
-
 ;[
   'binaryType',
   'bufferedAmount',

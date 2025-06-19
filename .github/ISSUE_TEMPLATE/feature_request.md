@@ -39,7 +39,7 @@ Which parts of FrontFuse would this feature affect?
 - [ ] Task Manager (Example App)
 - [ ] Documentation
 - [ ] CI/CD Pipeline
-- [ ] Other: ****\_\_\_****
+- [ ] Other: \***\*\_\_\_\*\***
 
 ### Technical Considerations
 
@@ -115,7 +115,7 @@ Who would benefit from this feature?
 - [ ] Backend developers
 - [ ] Platform administrators
 - [ ] End users
-- [ ] Other: ****\_\_\_****
+- [ ] Other: \***\*\_\_\_\*\***
 
 ### Effort Estimation
 

@@ -26,4 +26,119 @@
 - Use the helper script: `.\scripts\export-chat.ps1 "Topic description"`
 - Include conversation summary, key achievements, and technical details
 - Document any architectural decisions or important code changes
-- Chat histories serve as development documentation and decision records 
+- Chat histories serve as development documentation and decision records
+
+# FuzeFront Task Planning Rules
+
+## Epic and User Story Structure
+
+### Frontend-Related User Stories
+For each frontend user story, create the following subtasks:
+
+#### UX Design Subtasks
+- **Title**: "UX Design: [Component/Feature Name]"
+- **Details Must Include**:
+  - Figma component specifications
+  - Design system compliance (colors, typography, spacing)
+  - User interaction flows and states
+  - Responsive design considerations (mobile, tablet, desktop)
+  - Accessibility requirements (WCAG 2.1 AA compliance)
+  - Error states and loading states
+  - Animation and micro-interaction specifications
+  - Component variants and props
+  - Design tokens usage
+  - Dark/light theme support
+
+#### Frontend Implementation Subtasks
+Create one subtask per UI component with:
+- **Title**: "Frontend: [Specific Component Name]"
+- **Technical Details**:
+  - React component specifications
+  - Libraries to be used (specify versions)
+  - API endpoints called (link to Swagger/OpenAPI docs)
+  - External API documentation references
+  - State management approach (Context, Redux, Zustand)
+  - Algorithms implementation details
+  - Performance considerations (lazy loading, memoization)
+  - Testing requirements (unit, integration, e2e)
+  - TypeScript interfaces and types
+  - Error handling and fallback strategies
+  - Accessibility implementation (ARIA labels, keyboard navigation)
+
+### Backend-Related User Stories
+For each backend endpoint, create subtasks with:
+
+#### Backend API Subtasks
+- **Title**: "Backend API: [HTTP Method] [Endpoint Path]"
+- **Technical Specifications**:
+  - Complete OpenAPI/Swagger specification
+  - Request/Response schemas with examples
+  - Authentication and authorization requirements
+  - Rate limiting specifications
+  - Validation rules and error responses
+  - Database operations and queries
+  - External API integrations (with documentation links)
+  - Algorithms and business logic implementation
+  - Security considerations:
+    - Input sanitization and validation
+    - SQL injection prevention
+    - CSRF protection
+    - Data encryption requirements
+  - Performance optimizations:
+    - Database indexing strategies
+    - Caching implementation
+    - Pagination and filtering
+    - Query optimization
+  - DevOps considerations:
+    - Environment variables and secrets management
+    - Horizontal scaling requirements
+    - Database migration strategies
+    - Monitoring and logging requirements
+    - Health check implementations
+    - Container resource requirements
+
+### Security Standards
+- All endpoints must implement proper authentication
+- Input validation on all parameters
+- Output sanitization for XSS prevention
+- Rate limiting for abuse prevention
+- Audit logging for sensitive operations
+- HTTPS enforcement
+- CORS configuration
+
+### Performance Standards
+- API response times < 200ms for 95% of requests
+- Database query optimization
+- Proper indexing strategies
+- Caching where appropriate
+- Pagination for large datasets
+- Connection pooling for databases
+
+### Documentation Requirements
+- OpenAPI/Swagger for all endpoints
+- Component documentation in Storybook
+- API usage examples
+- Error code documentation
+- Security implementation guides
+
+### Testing Requirements
+- Unit tests for all components and functions
+- Integration tests for API endpoints
+- End-to-end tests for critical user flows
+- Performance testing for high-load scenarios
+- Security testing for vulnerability assessment
+
+### Accessibility Requirements
+- WCAG 2.1 AA compliance
+- Keyboard navigation support
+- Screen reader compatibility
+- High contrast mode support
+- Focus management
+- ARIA labels and descriptions
+
+### Internationalization
+- Text externalization for all user-facing strings
+- RTL language support consideration
+- Date/time formatting
+- Number and currency formatting
+- Locale-specific validations 

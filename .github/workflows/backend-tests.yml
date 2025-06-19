@@ -1,0 +1,131 @@
+name: Backend Authentication Tests
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: fuzefront_platform_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Set up test environment
+        working-directory: ./backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
+          USE_POSTGRES: true
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: fuzefront_platform_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          FRONTEND_URL: http://localhost:3000
+        run: |
+          echo "Setting up test database..."
+          npm run db:init || echo "Database initialization completed"
+
+      - name: Run authentication tests
+        working-directory: ./backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
+          USE_POSTGRES: true
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: fuzefront_platform_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          FRONTEND_URL: http://localhost:3000
+        run: |
+          echo "Running authentication tests..."
+          npm test -- --testPathPattern=auth --verbose
+
+      - name: Run production database tests
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+          JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
+          USE_POSTGRES: true
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: fuzefront_platform_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          FRONTEND_URL: http://localhost:8085
+        run: |
+          echo "Running production-like tests..."
+          npm test -- --testPathPattern=auth-production --verbose
+
+      - name: Generate test coverage
+        working-directory: ./backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
+          USE_POSTGRES: true
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: fuzefront_platform_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          FRONTEND_URL: http://localhost:3000
+        run: npm run test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage/lcov.info
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
+
+      - name: Archive test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.node-version }}
+          path: |
+            backend/coverage/
+            backend/test-results/
+          retention-days: 30

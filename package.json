@@ -38,6 +38,12 @@
     "test:backend": "cd backend && npm test",
     "test:shared": "cd shared && npm test",
     "test:sdk": "cd sdk && npm test",
+    "test:auth": "cd backend && npm run test:auth",
+    "test:auth:production": "cd backend && npm run test:auth:production",
+    "test:auth:live": "cd backend && npm run test:auth:live",
+    "test:auth:coverage": "cd backend && npm run test:coverage",
+    "test:backend:full": "bash scripts/run-backend-tests.sh",
+    "test:backend:full:win": "powershell -ExecutionPolicy Bypass -File scripts/run-backend-tests.ps1",
     "type-check": "npm run type-check:all",
     "type-check:all": "concurrently \"npm run type-check:frontend\" \"npm run type-check:backend\" \"npm run type-check:shared\" \"npm run type-check:sdk\" \"npm run type-check:task-manager\"",
     "type-check:frontend": "cd frontend && npm run type-check",
@@ -63,7 +69,12 @@
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:logs": "docker-compose logs -f",
+    "docker:prod:build": "docker-compose -f docker-compose.prod.yml build",
+    "docker:prod:up": "docker-compose -f docker-compose.prod.yml up -d",
+    "docker:prod:down": "docker-compose -f docker-compose.prod.yml down",
+    "docker:prod:logs": "docker-compose -f docker-compose.prod.yml logs -f",
+    "docker:prod:status": "docker-compose -f docker-compose.prod.yml ps"
   },
   "devDependencies": {
     "@commitlint/cli": "^18.0.0",

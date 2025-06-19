@@ -51,6 +51,9 @@ COPY --from=base --chown=backend:nodejs /app/node_modules ./node_modules
 # Copy built application
 COPY --from=build --chown=backend:nodejs /app/dist ./dist
 
+# Remove TypeScript declaration files to prevent conflicts
+RUN find ./dist -name "*.d.ts" -type f -delete
+
 # Copy package.json for version info
 COPY --chown=backend:nodejs package.json ./
 

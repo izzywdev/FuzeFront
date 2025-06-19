@@ -1,7 +1,7 @@
 import request from 'supertest'
 import express from 'express'
 import authRoutes from '../src/routes/auth'
-import { initializeDatabase } from '../src/database/init'
+import { db } from '../src/config/database'
 
 describe('Authentication Routes', () => {
   let app: express.Application
@@ -12,8 +12,45 @@ describe('Authentication Routes', () => {
     app.use(express.json())
     app.use('/api/auth', authRoutes)
 
-    // Initialize test database
-    await initializeDatabase()
+    // Set NODE_ENV to test for in-memory SQLite
+    process.env.NODE_ENV = 'test'
+    process.env.USE_POSTGRES = 'false'
+
+    // Create test tables directly without migrations
+    await db.schema.dropTableIfExists('sessions')
+    await db.schema.dropTableIfExists('apps')
+    await db.schema.dropTableIfExists('users')
+
+    // Create users table
+    await db.schema.createTable('users', table => {
+      table.string('id').primary()
+      table.string('email').unique().notNullable()
+      table.string('password_hash')
+      table.string('first_name')
+      table.string('last_name')
+      table.string('default_app_id')
+      table.json('roles').defaultTo('["user"]')
+      table.timestamps(true, true)
+    })
+
+    // Seed test user
+    const bcrypt = require('bcrypt')
+    const adminPasswordHash = await bcrypt.hash('admin123', 10)
+    await db('users').insert({
+      id: '8dbf6a1b-c0a1-462a-9bf5-934c8c7339c3',
+      email: 'admin@fuzefront.dev',
+      password_hash: adminPasswordHash,
+      first_name: 'Admin',
+      last_name: 'User',
+      roles: ['admin', 'user'],
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+  })
+
+  afterAll(async () => {
+    // Clean up database connection
+    await db.destroy()
   })
 
   describe('POST /api/auth/login', () => {
@@ -21,7 +58,7 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          email: 'admin@frontfuse.dev',
+          email: 'admin@fuzefront.dev',
           password: 'admin123',
         })
         .expect(200)
@@ -29,7 +66,7 @@ describe('Authentication Routes', () => {
       expect(response.body).toHaveProperty('token')
       expect(response.body).toHaveProperty('user')
       expect(response.body.token).toBeValidJWT()
-      expect(response.body.user.email).toBe('admin@frontfuse.dev')
+      expect(response.body.user.email).toBe('admin@fuzefront.dev')
       expect(response.body.user.roles).toContain('admin')
     })
 
@@ -37,7 +74,7 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          email: 'admin@frontfuse.dev',
+          email: 'admin@fuzefront.dev',
           password: 'wrongpassword',
         })
         .expect(401)
@@ -75,7 +112,7 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          email: 'admin@frontfuse.dev',
+          email: 'admin@fuzefront.dev',
         })
         .expect(400)
 
@@ -98,7 +135,7 @@ describe('Authentication Routes', () => {
     beforeAll(async () => {
       // Get auth token for protected route tests
       const loginResponse = await request(app).post('/api/auth/login').send({
-        email: 'admin@frontfuse.dev',
+        email: 'admin@fuzefront.dev',
         password: 'admin123',
       })
 
@@ -112,7 +149,7 @@ describe('Authentication Routes', () => {
         .expect(200)
 
       expect(response.body).toHaveProperty('user')
-      expect(response.body.user.email).toBe('admin@frontfuse.dev')
+      expect(response.body.user.email).toBe('admin@fuzefront.dev')
       expect(response.body.user.roles).toContain('admin')
     })
 
@@ -149,7 +186,7 @@ describe('Authentication Routes', () => {
     beforeEach(async () => {
       // Get fresh auth token for each test
       const loginResponse = await request(app).post('/api/auth/login').send({
-        email: 'admin@frontfuse.dev',
+        email: 'admin@fuzefront.dev',
         password: 'admin123',
       })
 
@@ -192,7 +229,7 @@ describe('Authentication Routes', () => {
       for (let i = 0; i < 10; i++) {
         requests.push(
           request(app).post('/api/auth/login').send({
-            email: 'admin@frontfuse.dev',
+            email: 'admin@fuzefront.dev',
             password: 'wrongpassword',
           })
         )
@@ -209,7 +246,7 @@ describe('Authentication Routes', () => {
   describe('Security Headers', () => {
     it('should include security headers in responses', async () => {
       const response = await request(app).post('/api/auth/login').send({
-        email: 'admin@frontfuse.dev',
+        email: 'admin@fuzefront.dev',
         password: 'admin123',
       })
 
@@ -237,7 +274,7 @@ describe('Authentication Routes', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send({
-          email: "admin@frontfuse.dev'; DROP TABLE users; --",
+          email: "admin@fuzefront.dev'; DROP TABLE users; --",
           password: 'admin123',
         })
         .expect(401)
@@ -253,7 +290,7 @@ describe('Authentication Routes', () => {
 
     beforeAll(async () => {
       const loginResponse = await request(app).post('/api/auth/login').send({
-        email: 'admin@frontfuse.dev',
+        email: 'admin@fuzefront.dev',
         password: 'admin123',
       })
 
@@ -277,7 +314,7 @@ describe('Authentication Routes', () => {
       expect(payload).toHaveProperty('email')
       expect(payload).toHaveProperty('iat')
       expect(payload).toHaveProperty('exp')
-      expect(payload.email).toBe('admin@frontfuse.dev')
+      expect(payload.email).toBe('admin@fuzefront.dev')
     })
   })
 })
