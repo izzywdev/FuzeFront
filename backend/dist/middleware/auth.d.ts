@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import { User } from '../types/shared'
 interface AuthenticatedRequest extends Request {
   user?: User
+  requestId?: string
 }
 export declare const authenticateToken: (
   req: AuthenticatedRequest,

@@ -33,11 +33,17 @@ const getDatabaseConfig = () => {
       },
       migrations: {
         tableName: 'knex_migrations',
-        directory: path_1.default.join(__dirname, '../migrations'),
-        extension: 'ts',
+        directory: path_1.default.join(
+          __dirname,
+          isProduction ? '../migrations' : '../migrations'
+        ),
+        extension: isProduction ? 'js' : 'ts',
       },
       seeds: {
-        directory: path_1.default.join(__dirname, '../seeds'),
+        directory: path_1.default.join(
+          __dirname,
+          isProduction ? '../seeds' : '../seeds'
+        ),
       },
     }
   } else {
@@ -50,11 +56,17 @@ const getDatabaseConfig = () => {
       useNullAsDefault: true,
       migrations: {
         tableName: 'knex_migrations',
-        directory: path_1.default.join(__dirname, '../migrations'),
-        extension: 'ts',
+        directory: path_1.default.join(
+          __dirname,
+          isProduction ? '../migrations' : '../migrations'
+        ),
+        extension: isProduction ? 'js' : 'ts',
       },
       seeds: {
-        directory: path_1.default.join(__dirname, '../seeds'),
+        directory: path_1.default.join(
+          __dirname,
+          isProduction ? '../seeds' : '../seeds'
+        ),
       },
     }
   }
