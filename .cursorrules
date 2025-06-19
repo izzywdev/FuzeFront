@@ -1,8 +1,30 @@
 # FuzeFront Development Rules
 
+## DNS-Based Architecture & Port Allocation Rules
+- **ALWAYS use DNS-based routing through nginx** - Services should be accessed via `fuzefront.dev.local`, not direct ports
+- **ALWAYS use port allocator** to prevent conflicts and assign ports systematically
+- **NO direct port mappings** in docker-compose.yml - services communicate internally through Docker networks
+- **Use FuzeInfra shared nginx** for reverse proxy and load balancing
+- Access pattern: `http://fuzefront.dev.local/` (frontend), `http://fuzefront.dev.local/api/` (backend), `http://fuzefront.dev.local/health` (health)
+
+## Port Allocation System
+- **Frontend services**: 3000-3999 range (FuzeFront frontend: 3001)
+- **Backend APIs**: 5000-5999 range (FuzeFront backend: 3002) 
+- **Database services**: 6000-6999 range
+- **Cache services**: 7000-7999 range
+- Use `cd FuzeInfra/tools/port-allocator && python port-allocator.py allocate <project-name> --num-ports <count>` to allocate ports
+- Update .env file with allocated ports using `cd envmanager && python env_manager.py add "BACKEND_PORT=<port>"`
+
+## Nginx Configuration
+- Main nginx runs on port 80/443 (`fuzeinfra-nginx` container)
+- Project configs in `FuzeInfra/infrastructure/shared-nginx/conf.d/`
+- Use `docker exec fuzeinfra-nginx nginx -s reload` after config changes
+- DNS resolver configured for dynamic upstream resolution
+- WebSocket support enabled for development
+
 ## Shared Infrastructure Rules
 - **NEVER restart, stop, or recreate shared infrastructure containers**
-- Shared infra containers include: shared-postgres, shared-mongodb, shared-redis, shared-kafka, shared-rabbitmq, shared-prometheus, shared-grafana, shared-elasticsearch, shared-neo4j
+- Shared infra containers include: shared-postgres, shared-mongodb, shared-redis, shared-kafka, shared-rabbitmq, shared-prometheus, shared-grafana, shared-elasticsearch, shared-neo4j, **fuzeinfra-nginx**
 - These containers should remain running across all development sessions
 - Use existing connections to shared services rather than spinning up new instances
 - If shared services are not running, start them with: `cd FuzeInfra && docker-compose -f docker-compose.shared-infra.yml up -d`
@@ -18,6 +40,14 @@
 - Keep shared services running to maintain data persistence
 - Use environment manager (envmanager) for configuration management
 - Test against shared infrastructure, not isolated containers
+- **Access services via DNS**: `http://fuzefront.dev.local` not `http://localhost:3010`
+
+## Docker Compose Rules
+- **NO port mappings** for internal services (frontend, backend, task manager)
+- Services connect via internal Docker networks (FuzeInfra, fuzefront)
+- Only expose ports for services that need external access (authentik, permit-pdp)
+- Use environment variables from .env file: `env_file: - .env`
+- Override specific variables in environment section: `PORT=${BACKEND_PORT:-3002}`
 
 ## Documentation Rules
 - **ALWAYS export chat history before every commit**

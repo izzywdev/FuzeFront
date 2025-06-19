@@ -18,6 +18,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fuzefront-backend
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - USE_POSTGRES=true
@@ -27,10 +29,11 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - JWT_SECRET=fuzefront-production-secret-change-this-in-production
-      - PORT=3001
+      - PORT=${BACKEND_PORT:-3002}
       - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
-    ports:
-      - '${BACKEND_PORT:-3001}:3001'
+      - PERMIT_API_KEY=${PERMIT_API_KEY}
+      - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
+      - PERMIT_PDP_URL=http://permit-pdp:7000
     networks:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront # Connect to FuzeFront internal network
@@ -44,7 +47,7 @@ services:
           '--no-verbose',
           '--tries=1',
           '--spider',
-          'http://localhost:3001/health',
+          'http://localhost:3002/health',
         ]
       interval: 30s
       timeout: 10s
@@ -53,7 +56,7 @@ services:
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.fuzefront-backend.rule=PathPrefix(`/api`)'
-      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3001'
+      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3002'
 
   # ================================
   # FRONTEND SERVICE
@@ -69,8 +72,6 @@ services:
     environment:
       - NGINX_HOST=localhost
       - NGINX_PORT=8080
-    ports:
-      - '${FRONTEND_PORT:-8080}:8080'
     networks:
       - FuzeInfra # Connect to shared infrastructure for nginx access
       - fuzefront # Connect to FuzeFront internal network
@@ -102,8 +103,6 @@ services:
     environment:
       - NGINX_HOST=localhost
       - NGINX_PORT=3002
-    ports:
-      - '${TASKMANAGER_PORT:-3003}:3002'
     networks:
       - FuzeInfra # Connect to shared infrastructure for nginx access
       - fuzefront # Connect to FuzeFront internal network

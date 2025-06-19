@@ -265,3 +265,180 @@ export const deleteApp = async (appId: string) => {
   const response = await api.delete(`/api/apps/${appId}`)
   return response.data
 }
+
+// Organization Management APIs
+export interface Organization {
+  id: string
+  name: string
+  slug: string
+  type: 'personal' | 'team' | 'enterprise'
+  description?: string
+  owner_id: string
+  is_active: boolean
+  settings: Record<string, any>
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+  member_count?: number
+  user_role?: 'owner' | 'admin' | 'member' | 'viewer'
+}
+
+export interface OrganizationMember {
+  id: string
+  user_id: string
+  organization_id: string
+  role: 'owner' | 'admin' | 'member' | 'viewer'
+  status: 'active' | 'pending' | 'suspended'
+  user: {
+    id: string
+    email: string
+    firstName?: string
+    lastName?: string
+  }
+  invited_at?: string
+  joined_at?: string
+}
+
+export const getOrganizations = async (): Promise<Organization[]> => {
+  const response = await api.get('/api/organizations')
+  return response.data
+}
+
+export const getOrganization = async (
+  organizationId: string
+): Promise<Organization> => {
+  const response = await api.get(`/api/organizations/${organizationId}`)
+  return response.data
+}
+
+export const createOrganization = async (data: {
+  name: string
+  description?: string
+  type?: 'personal' | 'team' | 'enterprise'
+}): Promise<Organization> => {
+  const response = await api.post('/api/organizations', data)
+  return response.data
+}
+
+export const updateOrganization = async (
+  organizationId: string,
+  data: Partial<Organization>
+): Promise<Organization> => {
+  const response = await api.put(`/api/organizations/${organizationId}`, data)
+  return response.data
+}
+
+export const deleteOrganization = async (
+  organizationId: string
+): Promise<void> => {
+  await api.delete(`/api/organizations/${organizationId}`)
+}
+
+export const getOrganizationMembers = async (
+  organizationId: string
+): Promise<OrganizationMember[]> => {
+  const response = await api.get(`/api/organizations/${organizationId}/members`)
+  return response.data
+}
+
+export const inviteOrganizationMember = async (
+  organizationId: string,
+  data: { email: string; role: 'admin' | 'member' | 'viewer' }
+): Promise<OrganizationMember> => {
+  const response = await api.post(
+    `/api/organizations/${organizationId}/members/invite`,
+    data
+  )
+  return response.data
+}
+
+export const updateMemberRole = async (
+  organizationId: string,
+  memberId: string,
+  role: 'admin' | 'member' | 'viewer'
+): Promise<OrganizationMember> => {
+  const response = await api.put(
+    `/api/organizations/${organizationId}/members/${memberId}`,
+    { role }
+  )
+  return response.data
+}
+
+export const removeMember = async (
+  organizationId: string,
+  memberId: string
+): Promise<void> => {
+  await api.delete(`/api/organizations/${organizationId}/members/${memberId}`)
+}
+
+// Permission Checking APIs
+export interface PermissionCheckRequest {
+  permissions: string[]
+  organizationId?: string
+  requireAll?: boolean
+}
+
+export interface PermissionCheckResponse {
+  allowed: boolean
+  permissions: Record<string, boolean>
+  user_roles: string[]
+  organization_role?: string
+}
+
+export const checkPermissions = async (
+  permissions: string | string[],
+  organizationId?: string,
+  requireAll = false
+): Promise<boolean> => {
+  const permissionArray = Array.isArray(permissions)
+    ? permissions
+    : [permissions]
+
+  const response = await api.post('/api/auth/check-permissions', {
+    permissions: permissionArray,
+    organizationId,
+    requireAll,
+  })
+
+  return response.data.allowed
+}
+
+export const checkUserPermissions = async (
+  userId: string,
+  permissions: string[],
+  organizationId?: string,
+  requireAll = false
+): Promise<PermissionCheckResponse> => {
+  const response = await api.post('/api/auth/check-user-permissions', {
+    userId,
+    permissions,
+    organizationId,
+    requireAll,
+  })
+
+  return response.data
+}
+
+export const getUserRoles = async (
+  organizationId?: string
+): Promise<string[]> => {
+  const params = organizationId ? { organizationId } : {}
+  const response = await api.get('/api/auth/user-roles', { params })
+  return response.data.roles
+}
+
+// Bulk permission operations
+export const bulkCheckPermissions = async (
+  checks: Array<{
+    permissions: string[]
+    organizationId?: string
+    requireAll?: boolean
+  }>
+): Promise<
+  Array<{ allowed: boolean; permissions: Record<string, boolean> }>
+> => {
+  const response = await api.post('/api/auth/bulk-check-permissions', {
+    checks,
+  })
+  return response.data
+}

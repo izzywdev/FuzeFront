@@ -8,7 +8,9 @@ Object.defineProperty(exports, '__esModule', { value: true })
 const express_1 = __importDefault(require('express'))
 const uuid_1 = require('uuid')
 const auth_1 = require('../middleware/auth')
+const permissions_1 = require('../middleware/permissions')
 const database_1 = __importDefault(require('../config/database'))
+const permit_1 = require('../utils/permit')
 const router = express_1.default.Router()
 // Input validation helpers
 function validateOrganizationInput(data) {
@@ -154,6 +156,30 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
       created_at: newOrganization.created_at,
       updated_at: newOrganization.updated_at,
     }
+    // Integrate with Permit.io asynchronously (don't block response)
+    Promise.all([
+      // 1. Ensure user is synced to Permit.io
+      (0, permit_1.syncUserToPermit)({
+        id: req.user.id,
+        email: req.user.email,
+        firstName: req.user.firstName,
+        lastName: req.user.lastName,
+        roles: req.user.roles || [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+      // 2. Create tenant for the organization
+      (0, permit_1.createTenantInPermit)(organization),
+      // 3. Assign owner role to the creator
+      (0, permit_1.assignOrganizationRole)(
+        req.user.id,
+        organizationId,
+        'owner'
+      ),
+    ]).catch(error => {
+      console.error('Error syncing organization to Permit.io:', error)
+      // Don't fail the API response, but log for monitoring
+    })
     res.status(201).json(organization)
   } catch (error) {
     console.error('Error creating organization:', error)
@@ -285,186 +311,206 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
   }
 })
 // GET /api/organizations/:id - Get organization by ID
-router.get('/:id', auth_1.authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params
-    // Check if user has access to this organization
-    const organization = await (0, database_1.default)('organizations')
-      .select('organizations.*')
-      .leftJoin('organization_memberships', function () {
-        this.on(
-          'organizations.id',
-          '=',
-          'organization_memberships.organization_id'
-        )
-          .andOn(
-            'organization_memberships.user_id',
+router.get(
+  '/:id',
+  auth_1.authenticateToken,
+  permissions_1.PermissionMiddleware.canReadOrganization,
+  async (req, res) => {
+    try {
+      const { id } = req.params
+      // Check if user has access to this organization
+      const organization = await (0, database_1.default)('organizations')
+        .select('organizations.*')
+        .leftJoin('organization_memberships', function () {
+          this.on(
+            'organizations.id',
             '=',
-            database_1.default.raw('?', [req.user.id])
+            'organization_memberships.organization_id'
           )
-          .andOn(
-            'organization_memberships.status',
-            '=',
-            database_1.default.raw('?', ['active'])
+            .andOn(
+              'organization_memberships.user_id',
+              '=',
+              database_1.default.raw('?', [req.user.id])
+            )
+            .andOn(
+              'organization_memberships.status',
+              '=',
+              database_1.default.raw('?', ['active'])
+            )
+        })
+        .where('organizations.id', id)
+        .where(function () {
+          // User can see organizations they are members of, or public organizations
+          this.whereNotNull('organization_memberships.id').orWhere(
+            'organizations.type',
+            'platform'
           )
-      })
-      .where('organizations.id', id)
-      .where(function () {
-        // User can see organizations they are members of, or public organizations
-        this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.type',
-          'platform'
-        )
-      })
-      .first()
-    if (!organization) {
-      return res
-        .status(404)
-        .json({ error: 'Organization not found or access denied' })
-    }
-    const result = {
-      id: organization.id,
-      name: organization.name,
-      slug: organization.slug,
-      parent_id: organization.parent_id,
-      owner_id: organization.owner_id,
-      type: organization.type,
-      settings: JSON.parse(organization.settings || '{}'),
-      metadata: JSON.parse(organization.metadata || '{}'),
-      is_active: organization.is_active,
-      created_at: organization.created_at,
-      updated_at: organization.updated_at,
-    }
-    res.json(result)
-  } catch (error) {
-    console.error('Error fetching organization:', error)
-    res.status(500).json({ error: 'Failed to fetch organization' })
-  }
-})
-// PUT /api/organizations/:id - Update organization
-router.put('/:id', auth_1.authenticateToken, async (req, res) => {
-  var _a
-  try {
-    const { id } = req.params
-    const input = sanitizeInput(req.body)
-    // Check if user has permission to update this organization
-    const membership = await (0, database_1.default)('organization_memberships')
-      .where('user_id', req.user.id)
-      .where('organization_id', id)
-      .where('status', 'active')
-      .whereIn('role', ['owner', 'admin'])
-      .first()
-    if (!membership) {
-      return res.status(403).json({
-        error: 'Insufficient permissions to update this organization',
-      })
-    }
-    // Validate input
-    const validationErrors = validateOrganizationInput(input)
-    if (validationErrors.length > 0) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        details: validationErrors,
-      })
-    }
-    // Check if slug conflicts with another organization
-    if (input.slug) {
-      const existingOrg = await (0, database_1.default)('organizations')
-        .where('slug', input.slug)
-        .where('id', '!=', id)
+        })
         .first()
-      if (existingOrg) {
+      if (!organization) {
+        return res
+          .status(404)
+          .json({ error: 'Organization not found or access denied' })
+      }
+      const result = {
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        parent_id: organization.parent_id,
+        owner_id: organization.owner_id,
+        type: organization.type,
+        settings: JSON.parse(organization.settings || '{}'),
+        metadata: JSON.parse(organization.metadata || '{}'),
+        is_active: organization.is_active,
+        created_at: organization.created_at,
+        updated_at: organization.updated_at,
+      }
+      res.json(result)
+    } catch (error) {
+      console.error('Error fetching organization:', error)
+      res.status(500).json({ error: 'Failed to fetch organization' })
+    }
+  }
+)
+// PUT /api/organizations/:id - Update organization
+router.put(
+  '/:id',
+  auth_1.authenticateToken,
+  permissions_1.PermissionMiddleware.canUpdateOrganization,
+  async (req, res) => {
+    var _a
+    try {
+      const { id } = req.params
+      const input = sanitizeInput(req.body)
+      // Check if user has permission to update this organization
+      const membership = await (0, database_1.default)(
+        'organization_memberships'
+      )
+        .where('user_id', req.user.id)
+        .where('organization_id', id)
+        .where('status', 'active')
+        .whereIn('role', ['owner', 'admin'])
+        .first()
+      if (!membership) {
+        return res.status(403).json({
+          error: 'Insufficient permissions to update this organization',
+        })
+      }
+      // Validate input
+      const validationErrors = validateOrganizationInput(input)
+      if (validationErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: validationErrors,
+        })
+      }
+      // Check if slug conflicts with another organization
+      if (input.slug) {
+        const existingOrg = await (0, database_1.default)('organizations')
+          .where('slug', input.slug)
+          .where('id', '!=', id)
+          .first()
+        if (existingOrg) {
+          return res.status(409).json({
+            error: 'An organization with this slug already exists',
+          })
+        }
+      }
+      // Update organization
+      await (0, database_1.default)('organizations')
+        .where('id', id)
+        .update({
+          name: input.name,
+          slug: input.slug,
+          settings: JSON.stringify(input.settings),
+          metadata: JSON.stringify(input.metadata),
+          updated_at: new Date(),
+        })
+      // Fetch updated organization
+      const updatedOrganization = await (0, database_1.default)('organizations')
+        .where('id', id)
+        .first()
+      const result = {
+        id: updatedOrganization.id,
+        name: updatedOrganization.name,
+        slug: updatedOrganization.slug,
+        parent_id: updatedOrganization.parent_id,
+        owner_id: updatedOrganization.owner_id,
+        type: updatedOrganization.type,
+        settings: JSON.parse(updatedOrganization.settings || '{}'),
+        metadata: JSON.parse(updatedOrganization.metadata || '{}'),
+        is_active: updatedOrganization.is_active,
+        created_at: updatedOrganization.created_at,
+        updated_at: updatedOrganization.updated_at,
+      }
+      res.json(result)
+    } catch (error) {
+      console.error('Error updating organization:', error)
+      if (
+        error.code === '23505' ||
+        ((_a = error.message) === null || _a === void 0
+          ? void 0
+          : _a.includes('duplicate key'))
+      ) {
         return res.status(409).json({
           error: 'An organization with this slug already exists',
         })
       }
+      res.status(500).json({ error: 'Failed to update organization' })
     }
-    // Update organization
-    await (0, database_1.default)('organizations')
-      .where('id', id)
-      .update({
-        name: input.name,
-        slug: input.slug,
-        settings: JSON.stringify(input.settings),
-        metadata: JSON.stringify(input.metadata),
+  }
+)
+// DELETE /api/organizations/:id - Deactivate organization
+router.delete(
+  '/:id',
+  auth_1.authenticateToken,
+  permissions_1.PermissionMiddleware.canDeleteOrganization,
+  async (req, res) => {
+    try {
+      const { id } = req.params
+      // Check if user is owner of this organization
+      const membership = await (0, database_1.default)(
+        'organization_memberships'
+      )
+        .where('user_id', req.user.id)
+        .where('organization_id', id)
+        .where('status', 'active')
+        .where('role', 'owner')
+        .first()
+      if (!membership) {
+        return res.status(403).json({
+          error: 'Only organization owners can deactivate organizations',
+        })
+      }
+      // Check for child organizations
+      const childOrganizations = await (0, database_1.default)('organizations')
+        .where('parent_id', id)
+        .where('is_active', true)
+        .count('* as count')
+        .first()
+      if (
+        parseInt(
+          (childOrganizations === null || childOrganizations === void 0
+            ? void 0
+            : childOrganizations.count) || '0'
+        ) > 0
+      ) {
+        return res.status(400).json({
+          error:
+            'Cannot deactivate organization with active child organizations',
+        })
+      }
+      // Deactivate organization (soft delete)
+      await (0, database_1.default)('organizations').where('id', id).update({
+        is_active: false,
         updated_at: new Date(),
       })
-    // Fetch updated organization
-    const updatedOrganization = await (0, database_1.default)('organizations')
-      .where('id', id)
-      .first()
-    const result = {
-      id: updatedOrganization.id,
-      name: updatedOrganization.name,
-      slug: updatedOrganization.slug,
-      parent_id: updatedOrganization.parent_id,
-      owner_id: updatedOrganization.owner_id,
-      type: updatedOrganization.type,
-      settings: JSON.parse(updatedOrganization.settings || '{}'),
-      metadata: JSON.parse(updatedOrganization.metadata || '{}'),
-      is_active: updatedOrganization.is_active,
-      created_at: updatedOrganization.created_at,
-      updated_at: updatedOrganization.updated_at,
+      res.json({ message: 'Organization deactivated successfully' })
+    } catch (error) {
+      console.error('Error deactivating organization:', error)
+      res.status(500).json({ error: 'Failed to deactivate organization' })
     }
-    res.json(result)
-  } catch (error) {
-    console.error('Error updating organization:', error)
-    if (
-      error.code === '23505' ||
-      ((_a = error.message) === null || _a === void 0
-        ? void 0
-        : _a.includes('duplicate key'))
-    ) {
-      return res.status(409).json({
-        error: 'An organization with this slug already exists',
-      })
-    }
-    res.status(500).json({ error: 'Failed to update organization' })
   }
-})
-// DELETE /api/organizations/:id - Deactivate organization
-router.delete('/:id', auth_1.authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params
-    // Check if user is owner of this organization
-    const membership = await (0, database_1.default)('organization_memberships')
-      .where('user_id', req.user.id)
-      .where('organization_id', id)
-      .where('status', 'active')
-      .where('role', 'owner')
-      .first()
-    if (!membership) {
-      return res.status(403).json({
-        error: 'Only organization owners can deactivate organizations',
-      })
-    }
-    // Check for child organizations
-    const childOrganizations = await (0, database_1.default)('organizations')
-      .where('parent_id', id)
-      .where('is_active', true)
-      .count('* as count')
-      .first()
-    if (
-      parseInt(
-        (childOrganizations === null || childOrganizations === void 0
-          ? void 0
-          : childOrganizations.count) || '0'
-      ) > 0
-    ) {
-      return res.status(400).json({
-        error: 'Cannot deactivate organization with active child organizations',
-      })
-    }
-    // Deactivate organization (soft delete)
-    await (0, database_1.default)('organizations').where('id', id).update({
-      is_active: false,
-      updated_at: new Date(),
-    })
-    res.json({ message: 'Organization deactivated successfully' })
-  } catch (error) {
-    console.error('Error deactivating organization:', error)
-    res.status(500).json({ error: 'Failed to deactivate organization' })
-  }
-})
+)
 exports.default = router
 //# sourceMappingURL=organizations.js.map

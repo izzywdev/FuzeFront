@@ -87,5 +87,8 @@
     "*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
       "npx prettier --write"
     ]
+  },
+  "dependencies": {
+    "axios": "^1.10.0"
   }
 }
