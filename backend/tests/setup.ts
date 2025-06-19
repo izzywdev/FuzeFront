@@ -1,42 +1,61 @@
-import { Database } from 'sqlite3'
 import path from 'path'
 
-// Mock environment variables
+// Mock environment variables for PostgreSQL testing
 process.env.NODE_ENV = 'test'
+process.env.USE_POSTGRES = 'true'
+process.env.DB_HOST = 'localhost'
+process.env.DB_PORT = '5432'
+process.env.DB_NAME = 'fuzefront_platform'
+process.env.DB_USER = 'postgres'
+process.env.DB_PASSWORD = 'postgres'
 process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only'
 process.env.FRONTEND_URL = 'http://localhost:3000'
 
 // Global test timeout
 jest.setTimeout(10000)
 
+// Use our custom migration script instead of Knex migrations
+const { applyAllMigrations } = require('../scripts/apply-all-migrations')
+import {
+  db,
+  waitForPostgres,
+  ensureDatabase,
+  runSeeds,
+  closeDatabase,
+} from '../src/config/database'
+
 // Global setup for all tests
 beforeAll(async () => {
-  // Initialize test database
-  const testDbPath = path.join(__dirname, '../test.sqlite')
-
-  // Clean up any existing test database
   try {
-    const fs = require('fs')
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
+    console.log('🔧 Setting up test database...')
+
+    // 1. Wait for PostgreSQL to be available
+    await waitForPostgres()
+
+    // 2. Ensure the database exists
+    await ensureDatabase()
+
+    // 3. Apply migrations using our custom script (bypasses Knex migration issues)
+    await applyAllMigrations()
+
+    // 4. Run seeds for test data
+    await runSeeds()
+
+    console.log('✅ Test database setup complete')
   } catch (error) {
-    // Ignore errors if file doesn't exist
+    console.error('❌ Test database setup failed:', error)
+    throw error
   }
 })
 
 // Clean up after all tests
 afterAll(async () => {
-  // Close any open connections
-  // Clean up test database
   try {
-    const fs = require('fs')
-    const testDbPath = path.join(__dirname, '../test.sqlite')
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath)
-    }
+    console.log('🧹 Cleaning up test database...')
+    await closeDatabase()
+    console.log('✅ Test database cleanup complete')
   } catch (error) {
-    console.warn('Error cleaning up test database:', error)
+    console.warn('⚠️ Error cleaning up test database:', error)
   }
 })
 

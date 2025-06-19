@@ -6,11 +6,14 @@ import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import AdminPage from './pages/AdminPage'
+import OrganizationPage from './pages/OrganizationPage'
 import StatusPage from './pages/StatusPage'
 import HelpPage from './pages/HelpPage'
+import TestPage from './pages/TestPage'
 import { FederatedAppLoader } from './components/FederatedAppLoader'
 import { getCurrentUser } from './services/api'
 import websocketService from './services/websocket'
+import { UserProfileManagement } from './components/UserProfileManagement'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -140,10 +143,13 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/organizations" element={<OrganizationPage />} />
+          <Route path="/profile" element={<UserProfileManagement />} />
           <Route path="/app/:appId" element={<AppRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/status" element={<StatusPage />} />
+          <Route path="/test" element={<TestPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Layout>

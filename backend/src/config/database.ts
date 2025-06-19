@@ -1,5 +1,6 @@
 import { Knex, knex } from 'knex'
 import path from 'path'
+import { Client } from 'pg'
 
 // Database configuration based on environment
 const getDatabaseConfig = (): Knex.Config => {
@@ -59,66 +60,164 @@ const getDatabaseConfig = (): Knex.Config => {
 // Create database instance
 export const db = knex(getDatabaseConfig())
 
-// Database initialization and migration runner
-export const initializeDatabase = async (): Promise<void> => {
-  try {
-    console.log('🔄 Initializing database connection...')
+// Database initialization functions
+export async function waitForPostgres(
+  maxRetries = 30,
+  retryDelay = 2000
+): Promise<void> {
+  console.log('🔍 Checking PostgreSQL availability...')
 
-    // Test the connection
-    await db.raw('SELECT 1')
-    console.log('✅ Database connection established')
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const client = new Client({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: 'postgres', // Connect to default database first
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+      })
 
-    // Check if we need to run migrations
-    console.log('🔄 Checking database schema...')
+      await client.connect()
+      await client.query('SELECT 1')
+      await client.end()
 
-    const migrationConfig = getDatabaseConfig()
-    const migrationsExists = await db.schema.hasTable('knex_migrations')
-
-    if (!migrationsExists) {
-      console.log('📦 Database schema not found. Running initial migrations...')
-      await db.migrate.latest()
-      console.log('✅ Database migrations completed')
-
-      console.log('🌱 Running database seeds...')
-      await db.seed.run()
-      console.log('✅ Database seeds completed')
-    } else {
-      console.log('🔄 Running pending migrations...')
-      const [batch, migrations] = await db.migrate.latest()
-
-      if (migrations.length === 0) {
-        console.log('✅ Database schema is up to date')
-      } else {
-        console.log(`✅ Ran ${migrations.length} migrations in batch ${batch}`)
-        migrations.forEach((migration: string) => {
-          console.log(`  - ${migration}`)
-        })
+      console.log('✅ PostgreSQL is ready!')
+      return
+    } catch (error) {
+      console.log(
+        `⏳ Waiting for PostgreSQL... (attempt ${i + 1}/${maxRetries})`
+      )
+      if (i === maxRetries - 1) {
+        throw new Error(
+          `Failed to connect to PostgreSQL after ${maxRetries} attempts: ${error}`
+        )
       }
+      await new Promise(resolve => setTimeout(resolve, retryDelay))
     }
+  }
+}
+
+export async function ensureDatabase(): Promise<void> {
+  console.log('🔧 Ensuring database exists...')
+
+  const client = new Client({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: 'postgres', // Connect to default database
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+  })
+
+  try {
+    await client.connect()
+
+    // Check if database exists
+    const result = await client.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [process.env.DB_NAME || 'fuzefront_platform']
+    )
+
+    if (result.rows.length === 0) {
+      console.log(
+        `📦 Creating database "${process.env.DB_NAME || 'fuzefront_platform'}"...`
+      )
+      await client.query(
+        `CREATE DATABASE "${process.env.DB_NAME || 'fuzefront_platform'}"`
+      )
+      console.log('✅ Database created successfully!')
+    } else {
+      console.log('✅ Database already exists')
+    }
+  } catch (error) {
+    console.error('❌ Error ensuring database:', error)
+    throw error
+  } finally {
+    await client.end()
+  }
+}
+
+export async function runMigrations(): Promise<void> {
+  console.log('🚀 Running database migrations...')
+
+  try {
+    const [batchNo, log] = await db.migrate.latest()
+
+    if (log.length === 0) {
+      console.log('✅ Database is already up to date')
+    } else {
+      console.log(`✅ Ran ${log.length} migration(s):`)
+      log.forEach((migration: string) => {
+        console.log(`  - ${migration}`)
+      })
+      console.log(`📦 Batch: ${batchNo}`)
+    }
+  } catch (error) {
+    console.error('❌ Migration failed:', error)
+    throw error
+  }
+}
+
+export async function runSeeds(): Promise<void> {
+  console.log('🌱 Running database seeds...')
+
+  try {
+    const [log] = await db.seed.run()
+
+    if (log.length === 0) {
+      console.log('✅ No seeds to run')
+    } else {
+      console.log(`✅ Ran ${log.length} seed(s):`)
+      log.forEach((seed: string) => {
+        console.log(`  - ${seed}`)
+      })
+    }
+  } catch (error) {
+    console.error('❌ Seeding failed:', error)
+    throw error
+  }
+}
+
+export async function initializeDatabase(): Promise<void> {
+  console.log('🔧 Initializing database...')
+
+  try {
+    // 1. Wait for PostgreSQL to be available
+    await waitForPostgres()
+
+    // 2. Ensure the database exists
+    await ensureDatabase()
+
+    // 3. Run migrations
+    await runMigrations()
+
+    // 4. Run seeds (only in development)
+    if (process.env.NODE_ENV !== 'production') {
+      await runSeeds()
+    }
+
+    console.log('✅ Database initialization complete!')
   } catch (error) {
     console.error('❌ Database initialization failed:', error)
     throw error
   }
 }
 
-// Graceful shutdown
-export const closeDatabase = async (): Promise<void> => {
-  try {
-    await db.destroy()
-    console.log('✅ Database connection closed')
-  } catch (error) {
-    console.error('❌ Error closing database connection:', error)
-  }
-}
-
-// Health check function
-export const checkDatabaseHealth = async (): Promise<boolean> => {
+export async function checkDatabaseHealth(): Promise<boolean> {
   try {
     await db.raw('SELECT 1')
     return true
   } catch (error) {
     console.error('❌ Database health check failed:', error)
     return false
+  }
+}
+
+export async function closeDatabase(): Promise<void> {
+  try {
+    await db.destroy()
+    console.log('🔌 Database connection closed')
+  } catch (error) {
+    console.error('❌ Error closing database:', error)
   }
 }
 
