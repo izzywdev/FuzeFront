@@ -1,0 +1,291 @@
+version: '3.8'
+
+# =============================================================================
+# FUZEFRONT PRODUCTION DEPLOYMENT
+# =============================================================================
+# This docker-compose file deploys FuzeFront as a separate Docker group
+# that other projects can depend on while relying on shared infrastructure.
+#
+# Usage:
+#   docker-compose -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+#   - Shared infrastructure must be running (postgres, etc.)
+#   - Run: cd FuzeInfra && docker-compose -f docker-compose.shared-infra.yml up -d
+# =============================================================================
+
+# External networks from shared infrastructure
+networks:
+  fuzeinfra:
+    external: true
+    name: FuzeInfra
+  fuzefront-prod:
+    name: fuzefront-prod
+    driver: bridge
+
+services:
+  # ================================
+  # BACKEND SERVICE
+  # ================================
+  fuzefront-backend-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+    image: fuzefront/backend:latest
+    container_name: fuzefront-backend-prod
+    environment:
+      - NODE_ENV=production
+      - USE_POSTGRES=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=fuzefront_platform_prod
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - JWT_SECRET=fuzefront-production-secret-change-this-in-production
+      - PORT=3001
+      - FRONTEND_URL=http://fuzefront-frontend-prod:8080
+      - CORS_ORIGINS=http://localhost:8080,http://fuzefront-frontend-prod:8080
+    ports:
+      - '3004:3001'
+    networks:
+      - fuzeinfra # Connect to shared infrastructure
+      - fuzefront-prod # Connect to FuzeFront production network
+    depends_on:
+      - fuzefront-db-migration-prod
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3001/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - 'com.fuzefront.service=backend'
+      - 'com.fuzefront.version=1.0.0'
+      - 'com.fuzefront.environment=production'
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=fuzefront-prod'
+      - 'traefik.http.routers.fuzefront-backend-prod.rule=PathPrefix(`/api`)'
+      - 'traefik.http.routers.fuzefront-backend-prod.entrypoints=web'
+      - 'traefik.http.services.fuzefront-backend-prod.loadbalancer.server.port=3001'
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ================================
+  # FRONTEND SERVICE
+  # ================================
+  fuzefront-frontend-prod:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://fuzefront-backend-prod:3001
+        - VITE_APP_TITLE=FuzeFront Platform
+        - NODE_ENV=production
+    image: fuzefront/frontend:latest
+    container_name: fuzefront-frontend-prod
+    environment:
+      - NGINX_HOST=localhost
+      - NGINX_PORT=8080
+    ports:
+      - '8085:8080'
+    networks:
+      - fuzefront-prod
+    depends_on:
+      - fuzefront-backend-prod
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://0.0.0.0:8080/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - 'com.fuzefront.service=frontend'
+      - 'com.fuzefront.version=1.0.0'
+      - 'com.fuzefront.environment=production'
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=fuzefront-prod'
+      - 'traefik.http.routers.fuzefront-frontend-prod.rule=Host(`fuzefront.local`) || Host(`localhost`)'
+      - 'traefik.http.routers.fuzefront-frontend-prod.entrypoints=web'
+      - 'traefik.http.services.fuzefront-frontend-prod.loadbalancer.server.port=8080'
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ================================
+  # TASK MANAGER MICROFRONTEND
+  # ================================
+  fuzefront-taskmanager-prod:
+    build:
+      context: ./task-manager-app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://fuzefront-backend-prod:3001
+        - VITE_APP_TITLE=Task Manager - FuzeFront
+        - NODE_ENV=production
+    image: fuzefront/taskmanager:latest
+    container_name: fuzefront-taskmanager-prod
+    environment:
+      - NGINX_HOST=localhost
+      - NGINX_PORT=3002
+    ports:
+      - '3003:3002'
+    networks:
+      - fuzefront-prod
+    depends_on:
+      - fuzefront-backend-prod
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3002/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - 'com.fuzefront.service=taskmanager'
+      - 'com.fuzefront.version=1.0.0'
+      - 'com.fuzefront.environment=production'
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=fuzefront-prod'
+      - 'traefik.http.routers.fuzefront-taskmanager-prod.rule=Host(`taskmanager.fuzefront.local`) || PathPrefix(`/taskmanager`)'
+      - 'traefik.http.routers.fuzefront-taskmanager-prod.entrypoints=web'
+      - 'traefik.http.services.fuzefront-taskmanager-prod.loadbalancer.server.port=3002'
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ================================
+  # DATABASE MIGRATION SERVICE
+  # ================================
+  fuzefront-db-migration-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    image: fuzefront/migration:latest
+    container_name: fuzefront-db-migration-prod
+    environment:
+      - NODE_ENV=production
+      - USE_POSTGRES=true
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=fuzefront_platform_prod
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    networks:
+      - fuzeinfra
+    command: >
+      sh -c "
+        echo '🔧 FuzeFront Database Migration Service - Production' &&
+        echo 'Waiting for PostgreSQL to be ready...' &&
+        while ! nc -z postgres 5432; do 
+          echo 'Waiting for postgres...' && 
+          sleep 2
+        done &&
+        echo '✅ PostgreSQL is ready!' &&
+        echo 'Creating production database if not exists...' &&
+        node -e \"
+          const { Client } = require('pg');
+          const client = new Client({
+            host: 'postgres',
+            port: 5432,
+            database: 'postgres',
+            user: 'postgres',
+            password: 'postgres'
+          });
+          client.connect()
+            .then(() => client.query(\\\"SELECT 1 FROM pg_database WHERE datname = 'fuzefront_platform_prod'\\\"))
+            .then(result => {
+              if (result.rows.length === 0) {
+                console.log('Creating production database...');
+                return client.query('CREATE DATABASE fuzefront_platform_prod');
+              } else {
+                console.log('Production database already exists');
+              }
+            })
+            .then(() => console.log('✅ Database ready'))
+            .catch(err => {
+              console.log('Database operation result:', err.message);
+              if (!err.message.includes('already exists')) throw err;
+            })
+            .finally(() => client.end());
+        \" &&
+        echo '🔄 Running migrations...' &&
+        npx knex migrate:latest &&
+        echo '🌱 Running seeds...' &&
+        npx knex seed:run &&
+        echo '✅ Database initialization complete!'
+      "
+    depends_on:
+      - fuzefront-postgres-check-prod
+    restart: 'no'
+    labels:
+      - 'com.fuzefront.service=migration'
+      - 'com.fuzefront.version=1.0.0'
+      - 'com.fuzefront.environment=production'
+
+  # ================================
+  # SHARED INFRASTRUCTURE DEPENDENCY
+  # ================================
+  fuzefront-postgres-check-prod:
+    image: postgres:15-alpine
+    container_name: fuzefront-postgres-check-prod
+    environment:
+      - PGPASSWORD=postgres
+    networks:
+      - fuzeinfra
+    command: >
+      sh -c "
+        echo '🔍 Checking shared PostgreSQL availability...' &&
+        while ! pg_isready -h postgres -p 5432 -U postgres; do
+          echo 'Waiting for postgres...' &&
+          sleep 2
+        done &&
+        echo '✅ Shared PostgreSQL is ready!'
+      "
+    restart: 'no'
+    labels:
+      - 'com.fuzefront.service=postgres-check'
+      - 'com.fuzefront.version=1.0.0'
+      - 'com.fuzefront.environment=production'
+
+# Volumes for persistent data
+volumes:
+  fuzefront_prod_logs:
+    name: fuzefront_prod_logs
+  fuzefront_prod_data:
+    name: fuzefront_prod_data

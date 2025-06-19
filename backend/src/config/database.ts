@@ -23,11 +23,14 @@ const getDatabaseConfig = (): Knex.Config => {
       },
       migrations: {
         tableName: 'knex_migrations',
-        directory: path.join(__dirname, '../migrations'),
-        extension: 'ts',
+        directory: path.join(
+          __dirname,
+          isProduction ? '../migrations' : '../migrations'
+        ),
+        extension: isProduction ? 'js' : 'ts',
       },
       seeds: {
-        directory: path.join(__dirname, '../seeds'),
+        directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
       },
     }
   } else {
@@ -40,11 +43,14 @@ const getDatabaseConfig = (): Knex.Config => {
       useNullAsDefault: true,
       migrations: {
         tableName: 'knex_migrations',
-        directory: path.join(__dirname, '../migrations'),
-        extension: 'ts',
+        directory: path.join(
+          __dirname,
+          isProduction ? '../migrations' : '../migrations'
+        ),
+        extension: isProduction ? 'js' : 'ts',
       },
       seeds: {
-        directory: path.join(__dirname, '../seeds'),
+        directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
       },
     }
   }

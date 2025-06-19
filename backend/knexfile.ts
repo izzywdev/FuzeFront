@@ -40,11 +40,11 @@ const config: { [key: string]: Knex.Config } = {
     },
     migrations: {
       tableName: 'knex_migrations',
-      directory: path.join(__dirname, 'src/migrations'),
-      extension: 'ts',
+      directory: path.join(__dirname, 'dist/migrations'),
+      extension: 'js',
     },
     seeds: {
-      directory: path.join(__dirname, 'src/seeds'),
+      directory: path.join(__dirname, 'dist/seeds'),
     },
   },
 }

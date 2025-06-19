@@ -15,9 +15,13 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Accept build arguments
+ARG VITE_API_URL=http://localhost:3001
+ARG VITE_APP_TITLE="FuzeFront Platform"
+
 # Set environment variables for build
-ENV VITE_API_URL=http://localhost:3001
-ENV VITE_APP_TITLE="FuzeFront Platform"
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_APP_TITLE=$VITE_APP_TITLE
 
 # Build the application
 RUN npm run build

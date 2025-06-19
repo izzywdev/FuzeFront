@@ -255,7 +255,7 @@ router.post(
   requireRole(['admin']),
   async (req: any, res) => {
     try {
-      const {
+      let {
         name,
         url,
         iconUrl,
@@ -266,8 +266,138 @@ router.post(
         description,
       } = req.body
 
-      if (!name || !url) {
-        return res.status(400).json({ error: 'Name and URL are required' })
+      // Input sanitization - trim whitespace from string fields
+      if (typeof name === 'string') name = name.trim()
+      if (typeof url === 'string') url = url.trim()
+      if (typeof iconUrl === 'string') iconUrl = iconUrl.trim()
+      if (typeof integrationType === 'string')
+        integrationType = integrationType.trim()
+      if (typeof remoteUrl === 'string') remoteUrl = remoteUrl.trim()
+      if (typeof scope === 'string') scope = scope.trim()
+      if (typeof module === 'string') module = module.trim()
+      if (typeof description === 'string') description = description.trim()
+
+      // Basic required field validation
+      if (!name || name.length === 0) {
+        return res
+          .status(400)
+          .json({ error: 'Name is required and cannot be empty' })
+      }
+
+      if (!url || url.length === 0) {
+        return res
+          .status(400)
+          .json({ error: 'URL is required and cannot be empty' })
+      }
+
+      // Length validation
+      if (name.length > 255) {
+        return res
+          .status(400)
+          .json({ error: 'App name is too long (maximum 255 characters)' })
+      }
+
+      if (url.length > 255) {
+        return res
+          .status(400)
+          .json({ error: 'URL is too long (maximum 255 characters)' })
+      }
+
+      // URL format validation
+      const urlRegex = /^https?:\/\/.+/i
+      if (!urlRegex.test(url)) {
+        return res
+          .status(400)
+          .json({ error: 'URL must be a valid HTTP or HTTPS URL' })
+      }
+
+      // Icon URL validation (if provided)
+      if (iconUrl && iconUrl.length > 0) {
+        if (iconUrl.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'Icon URL is too long (maximum 255 characters)' })
+        }
+        if (!urlRegex.test(iconUrl)) {
+          return res
+            .status(400)
+            .json({ error: 'Icon URL must be a valid HTTP or HTTPS URL' })
+        }
+      }
+
+      // Integration type validation
+      const validIntegrationTypes = [
+        'iframe',
+        'module-federation',
+        'module_federation',
+        'spa',
+        'web-component',
+      ]
+      if (!validIntegrationTypes.includes(integrationType)) {
+        return res.status(400).json({
+          error: `Invalid integration type. Must be one of: ${validIntegrationTypes.join(', ')}`,
+        })
+      }
+
+      // Store original integration type for response but normalize for database
+      const originalIntegrationType = integrationType
+      let dbIntegrationType = integrationType
+      if (integrationType === 'module-federation') {
+        dbIntegrationType = 'module_federation'
+      }
+
+      // Module federation specific validation
+      if (dbIntegrationType === 'module_federation') {
+        if (!remoteUrl || remoteUrl.length === 0) {
+          return res.status(400).json({
+            error: 'remoteUrl is required for module federation applications',
+          })
+        }
+
+        if (remoteUrl.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'remoteUrl is too long (maximum 255 characters)' })
+        }
+
+        if (!scope || scope.length === 0) {
+          return res.status(400).json({
+            error: 'scope is required for module federation applications',
+          })
+        }
+
+        if (scope.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'scope is too long (maximum 255 characters)' })
+        }
+
+        if (!module || module.length === 0) {
+          return res.status(400).json({
+            error: 'module is required for module federation applications',
+          })
+        }
+
+        if (module.length > 255) {
+          return res
+            .status(400)
+            .json({ error: 'module is too long (maximum 255 characters)' })
+        }
+
+        // Validate remoteUrl format
+        if (!urlRegex.test(remoteUrl)) {
+          return res.status(400).json({
+            error: 'remoteUrl must be a valid HTTP or HTTPS URL',
+          })
+        }
+      }
+
+      // Check for duplicate app name
+      const existingApp = await db('apps').where('name', name).first()
+      if (existingApp) {
+        return res
+          .status(409)
+          .json({ error: 'An app with this name already exists' })
       }
 
       const appId = uuidv4()
@@ -277,7 +407,7 @@ router.post(
         name,
         url,
         icon_url: iconUrl,
-        integration_type: integrationType,
+        integration_type: dbIntegrationType,
         remote_url: remoteUrl,
         scope,
         module,
@@ -290,7 +420,7 @@ router.post(
         url,
         iconUrl,
         isActive: true,
-        integrationType,
+        integrationType: originalIntegrationType,
         remoteUrl,
         scope,
         module,
@@ -301,13 +431,13 @@ router.post(
     } catch (error: any) {
       console.error('Error creating app:', error)
 
-      // Check if it's a unique constraint violation
+      // Check if it's a unique constraint violation (fallback)
       if (
         error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
         error.message?.includes('UNIQUE constraint failed')
       ) {
         return res
-          .status(400)
+          .status(409)
           .json({ error: 'An app with this name already exists' })
       }
 

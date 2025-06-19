@@ -15,11 +15,16 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:auth": "jest --testPathPattern=auth",
+    "test:auth:production": "jest --testPathPattern=auth-production",
+    "test:auth:live": "node scripts/test-auth.js",
+    "test:auth:live:prod": "node scripts/test-auth.js http://localhost:3004",
     "version": "echo $npm_package_version"
   },
   "dependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/pg": "^8.15.4",
+    "axios": "^1.6.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

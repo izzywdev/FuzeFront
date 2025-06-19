@@ -73,42 +73,106 @@ const router = express.Router()
  */
 // POST /auth/login - Mock login
 router.post('/login', async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  const startTime = Date.now()
+
+  console.log(`🔐 [${requestId}] Login request received:`, {
+    timestamp: new Date().toISOString(),
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    origin: req.get('Origin'),
+    referer: req.get('Referer'),
+    contentType: req.get('Content-Type'),
+    bodyKeys: Object.keys(req.body || {}),
+    hasEmail: !!req.body?.email,
+    hasPassword: !!req.body?.password,
+    emailDomain: req.body?.email ? req.body.email.split('@')[1] : 'none',
+  })
+
   try {
     const { email, password } = req.body
 
     if (!email || !password) {
+      console.log(`❌ [${requestId}] Missing credentials:`, {
+        hasEmail: !!email,
+        hasPassword: !!password,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(400).json({ error: 'Email and password required' })
     }
+
+    console.log(`🔍 [${requestId}] Looking up user:`, {
+      email,
+      passwordLength: password.length,
+    })
 
     // Find user
     const userRow = await db('users').where('email', email).first()
 
     if (!userRow) {
+      console.log(`❌ [${requestId}] User not found:`, {
+        email,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
 
+    console.log(`👤 [${requestId}] User found:`, {
+      userId: userRow.id,
+      email: userRow.email,
+      hasPasswordHash: !!userRow.password_hash,
+      roles: userRow.roles,
+    })
+
     // Verify password
+    console.log(`🔒 [${requestId}] Verifying password...`)
     const isValidPassword = await bcrypt.compare(
       password,
       userRow.password_hash
     )
+
     if (!isValidPassword) {
+      console.log(`❌ [${requestId}] Invalid password:`, {
+        email,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
+
+    console.log(`✅ [${requestId}] Password verified, generating token...`)
 
     // Generate JWT
     const token = jwt.sign({ userId: userRow.id }, process.env.JWT_SECRET!, {
       expiresIn: '24h',
     })
 
+    console.log(`🎫 [${requestId}] JWT token generated:`, {
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 20) + '...',
+    })
+
     // Create session
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    console.log(`💾 [${requestId}] Creating session:`, {
+      sessionId,
+      expiresAt: expiresAt.toISOString(),
+    })
 
     await db('sessions').insert({
       id: sessionId,
       user_id: userRow.id,
       expires_at: expiresAt,
+    })
+
+    // Debug logging for roles parsing
+    console.log(`🔍 [${requestId}] Parsing roles:`, {
+      rawRoles: userRow.roles,
+      rolesType: typeof userRow.roles,
+      rolesLength: userRow.roles?.length,
+      firstChar: userRow.roles?.[0],
+      fallback: '["user"]',
     })
 
     const user: User = {
@@ -117,8 +181,18 @@ router.post('/login', async (req, res) => {
       firstName: userRow.first_name,
       lastName: userRow.last_name,
       defaultAppId: userRow.default_app_id,
-      roles: JSON.parse(userRow.roles || '["user"]'),
+      roles: Array.isArray(userRow.roles)
+        ? userRow.roles
+        : JSON.parse(userRow.roles || '["user"]'),
     }
+
+    console.log(`🎉 [${requestId}] Login successful:`, {
+      userId: user.id,
+      email: user.email,
+      roles: user.roles,
+      sessionId,
+      responseTime: Date.now() - startTime,
+    })
 
     res.json({
       token,
@@ -126,7 +200,11 @@ router.post('/login', async (req, res) => {
       sessionId,
     })
   } catch (error) {
-    console.error('Login error:', error)
+    console.error(`💥 [${requestId}] Login error:`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      responseTime: Date.now() - startTime,
+    })
     res.status(500).json({ error: 'Internal server error' })
   }
 })
