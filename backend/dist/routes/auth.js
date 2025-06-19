@@ -77,26 +77,70 @@ const router = express_1.default.Router()
  */
 // POST /auth/login - Mock login
 router.post('/login', async (req, res) => {
+  var _a, _b, _c, _d, _e
+  const requestId = (0, uuid_1.v4)().substring(0, 8)
+  const startTime = Date.now()
+  console.log(`🔐 [${requestId}] Login request received:`, {
+    timestamp: new Date().toISOString(),
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    origin: req.get('Origin'),
+    referer: req.get('Referer'),
+    contentType: req.get('Content-Type'),
+    bodyKeys: Object.keys(req.body || {}),
+    hasEmail: !!((_a = req.body) === null || _a === void 0 ? void 0 : _a.email),
+    hasPassword: !!((_b = req.body) === null || _b === void 0
+      ? void 0
+      : _b.password),
+    emailDomain: ((_c = req.body) === null || _c === void 0 ? void 0 : _c.email)
+      ? req.body.email.split('@')[1]
+      : 'none',
+  })
   try {
     const { email, password } = req.body
     if (!email || !password) {
+      console.log(`❌ [${requestId}] Missing credentials:`, {
+        hasEmail: !!email,
+        hasPassword: !!password,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(400).json({ error: 'Email and password required' })
     }
+    console.log(`🔍 [${requestId}] Looking up user:`, {
+      email,
+      passwordLength: password.length,
+    })
     // Find user
     const userRow = await (0, database_1.db)('users')
       .where('email', email)
       .first()
     if (!userRow) {
+      console.log(`❌ [${requestId}] User not found:`, {
+        email,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
+    console.log(`👤 [${requestId}] User found:`, {
+      userId: userRow.id,
+      email: userRow.email,
+      hasPasswordHash: !!userRow.password_hash,
+      roles: userRow.roles,
+    })
     // Verify password
+    console.log(`🔒 [${requestId}] Verifying password...`)
     const isValidPassword = await bcryptjs_1.default.compare(
       password,
       userRow.password_hash
     )
     if (!isValidPassword) {
+      console.log(`❌ [${requestId}] Invalid password:`, {
+        email,
+        responseTime: Date.now() - startTime,
+      })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
+    console.log(`✅ [${requestId}] Password verified, generating token...`)
     // Generate JWT
     const token = jsonwebtoken_1.default.sign(
       { userId: userRow.id },
@@ -105,13 +149,31 @@ router.post('/login', async (req, res) => {
         expiresIn: '24h',
       }
     )
+    console.log(`🎫 [${requestId}] JWT token generated:`, {
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 20) + '...',
+    })
     // Create session
     const sessionId = (0, uuid_1.v4)()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    console.log(`💾 [${requestId}] Creating session:`, {
+      sessionId,
+      expiresAt: expiresAt.toISOString(),
+    })
     await (0, database_1.db)('sessions').insert({
       id: sessionId,
       user_id: userRow.id,
       expires_at: expiresAt,
+    })
+    // Debug logging for roles parsing
+    console.log(`🔍 [${requestId}] Parsing roles:`, {
+      rawRoles: userRow.roles,
+      rolesType: typeof userRow.roles,
+      rolesLength:
+        (_d = userRow.roles) === null || _d === void 0 ? void 0 : _d.length,
+      firstChar:
+        (_e = userRow.roles) === null || _e === void 0 ? void 0 : _e[0],
+      fallback: '["user"]',
     })
     const user = {
       id: userRow.id,
@@ -119,15 +181,28 @@ router.post('/login', async (req, res) => {
       firstName: userRow.first_name,
       lastName: userRow.last_name,
       defaultAppId: userRow.default_app_id,
-      roles: JSON.parse(userRow.roles || '["user"]'),
+      roles: Array.isArray(userRow.roles)
+        ? userRow.roles
+        : JSON.parse(userRow.roles || '["user"]'),
     }
+    console.log(`🎉 [${requestId}] Login successful:`, {
+      userId: user.id,
+      email: user.email,
+      roles: user.roles,
+      sessionId,
+      responseTime: Date.now() - startTime,
+    })
     res.json({
       token,
       user,
       sessionId,
     })
   } catch (error) {
-    console.error('Login error:', error)
+    console.error(`💥 [${requestId}] Login error:`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      responseTime: Date.now() - startTime,
+    })
     res.status(500).json({ error: 'Internal server error' })
   }
 })

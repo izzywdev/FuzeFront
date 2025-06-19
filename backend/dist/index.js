@@ -5,6 +5,7 @@ var __importDefault =
     return mod && mod.__esModule ? mod : { default: mod }
   }
 Object.defineProperty(exports, '__esModule', { value: true })
+// FuzeFront Backend - Updated 2025-06-19 13:15 - Auth & Health Fix
 const express_1 = __importDefault(require('express'))
 const cors_1 = __importDefault(require('cors'))
 const helmet_1 = __importDefault(require('helmet'))
@@ -13,6 +14,7 @@ const dotenv_1 = __importDefault(require('dotenv'))
 // Import routes
 const auth_1 = __importDefault(require('./routes/auth'))
 const apps_1 = __importDefault(require('./routes/apps'))
+const organizations_1 = __importDefault(require('./routes/organizations'))
 const socketHandler_1 = require('./sockets/socketHandler')
 const database_1 = require('./config/database')
 // Load environment variables
@@ -38,19 +40,52 @@ app.use(
 )
 app.use(
   (0, cors_1.default)({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: [
+      process.env.FRONTEND_URL || 'http://localhost:5173',
+      'http://localhost:8085', // Production frontend external URL
+      'http://localhost:3004', // Allow calls from external backend port
+      'http://fuzefront-frontend-prod:8080', // Internal container URL
+    ],
     credentials: true,
   })
 )
 app.use(express_1.default.json())
 app.use(express_1.default.urlencoded({ extended: true }))
-// Route logging middleware (development only)
-if (process.env.NODE_ENV === 'development') {
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path}`)
-    next()
+// Enhanced request logging middleware
+app.use((req, res, next) => {
+  const requestId = require('uuid').v4().substring(0, 8)
+  const startTime = Date.now()
+  // Add request ID to request object for tracking
+  req.requestId = requestId
+  console.log(`📥 [${requestId}] ${req.method} ${req.path}`, {
+    timestamp: new Date().toISOString(),
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    origin: req.get('Origin'),
+    referer: req.get('Referer'),
+    contentType: req.get('Content-Type'),
+    contentLength: req.get('Content-Length'),
+    authorization: req.get('Authorization') ? 'Bearer ***' : 'none',
+    query: Object.keys(req.query).length > 0 ? req.query : 'none',
+    bodySize: req.body ? JSON.stringify(req.body).length : 0,
   })
-}
+  // Log response when it finishes
+  const originalSend = res.send
+  res.send = function (data) {
+    const responseTime = Date.now() - startTime
+    console.log(
+      `📤 [${requestId}] ${req.method} ${req.path} - ${res.statusCode}`,
+      {
+        responseTime: `${responseTime}ms`,
+        statusCode: res.statusCode,
+        contentType: res.get('Content-Type'),
+        responseSize: data ? data.length : 0,
+      }
+    )
+    return originalSend.call(this, data)
+  }
+  next()
+})
 // Setup Swagger documentation
 try {
   // Only import and setup Swagger if packages are available
@@ -190,6 +225,7 @@ try {
 // Routes
 app.use('/api/auth', auth_1.default)
 app.use('/api/apps', apps_1.default)
+app.use('/api/organizations', organizations_1.default)
 // Serve static documentation files
 app.use('/docs', express_1.default.static('docs'))
 // User info route
@@ -224,7 +260,30 @@ app.get('/api/user', (req, res) => {
  */
 // Health check
 const startTime = Date.now()
+// Main health check endpoint (without /api prefix)
 app.get('/health', async (req, res) => {
+  const uptime = Math.floor((Date.now() - startTime) / 1000)
+  const dbHealthy = await (0, database_1.checkDatabaseHealth)()
+  res.json({
+    status: dbHealthy ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    uptime: uptime,
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    database: {
+      status: dbHealthy ? 'connected' : 'disconnected',
+      type: 'PostgreSQL',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'fuzefront_platform',
+    },
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+    },
+  })
+})
+// Add /api/health endpoint to match frontend expectations
+app.get('/api/health', async (req, res) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const dbHealthy = await (0, database_1.checkDatabaseHealth)()
   res.json({

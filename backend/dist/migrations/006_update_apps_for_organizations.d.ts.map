@@ -1,0 +1,1 @@
+{"version":3,"file":"006_update_apps_for_organizations.d.ts","sourceRoot":"","sources":["../../src/migrations/006_update_apps_for_organizations.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,IAAI,EAAE,MAAM,MAAM,CAAA;AAE3B,wBAAsB,EAAE,CAAC,IAAI,EAAE,IAAI,GAAG,OAAO,CAAC,IAAI,CAAC,CA4BlD;AAED,wBAAsB,IAAI,CAAC,IAAI,EAAE,IAAI,GAAG,OAAO,CAAC,IAAI,CAAC,CAgBpD"}

@@ -8,6 +8,7 @@ import dotenv from 'dotenv'
 // Import routes
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
+import organizationsRoutes from './routes/organizations'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -250,6 +251,7 @@ try {
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
+app.use('/api/organizations', organizationsRoutes)
 
 // Serve static documentation files
 app.use('/docs', express.static('docs'))

@@ -1,0 +1,1 @@
+{"version":3,"file":"005_create_organization_memberships_table.d.ts","sourceRoot":"","sources":["../../src/migrations/005_create_organization_memberships_table.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,IAAI,EAAE,MAAM,MAAM,CAAA;AAE3B,wBAAsB,EAAE,CAAC,IAAI,EAAE,IAAI,GAAG,OAAO,CAAC,IAAI,CAAC,CAqClD;AAED,wBAAsB,IAAI,CAAC,IAAI,EAAE,IAAI,GAAG,OAAO,CAAC,IAAI,CAAC,CAIpD"}
