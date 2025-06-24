@@ -1,0 +1,25 @@
+import React from 'react';
+import { PlatformProvider } from '@fuzefront/sdk';
+
+function App() {
+  return (
+    <PlatformProvider>
+      <div className="<%= projectName %>-app">
+        <header className="<%= projectName %>-header">
+          <h1><%= names(projectName).className %></h1>
+          <p>Welcome to your new micro-frontend!</p>
+        </header>
+        <main className="<%= projectName %>-main">
+          <p>
+            This is the <strong><%= names(projectName).className %></strong> micro-frontend.
+          </p>
+          <p>
+            Edit <code>src/App.tsx</code> and save to reload.
+          </p>
+        </main>
+      </div>
+    </PlatformProvider>
+  );
+}
+
+export default App; 

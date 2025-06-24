@@ -2,21 +2,35 @@ import { Knex, knex } from 'knex'
 import path from 'path'
 import { Client } from 'pg'
 
-// Database configuration based on environment
-const getDatabaseConfig = (): Knex.Config => {
+// Database credentials for FuzeFront dedicated user
+const FUZEFRONT_USER = 'fuzefront_user'
+const FUZEFRONT_PASSWORD = 'FuzeFront_2024_SecureDB_Pass!'
+
+// Database configuration based on environment and phase (migration vs runtime)
+const getDatabaseConfig = (useMigrationCredentials = false): Knex.Config => {
   const isProduction = process.env.NODE_ENV === 'production'
   const usePostgres = process.env.USE_POSTGRES === 'true' || !isProduction
 
   if (usePostgres) {
     // PostgreSQL configuration (shared infrastructure)
+    
+    // Use postgres user for migrations, fuzefront_user for runtime
+    const dbUser = useMigrationCredentials 
+      ? 'postgres' 
+      : (process.env.DB_USER || FUZEFRONT_USER)
+    
+    const dbPassword = useMigrationCredentials 
+      ? undefined  // postgres user has no password in FuzeInfra
+      : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+
     return {
       client: 'pg',
       connection: {
         host: process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.DB_PORT || '5432'),
         database: process.env.DB_NAME || 'fuzefront_platform',
-        user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'postgres',
+        user: dbUser,
+        ...(dbPassword && { password: dbPassword }),
       },
       pool: {
         min: 2,
@@ -57,35 +71,49 @@ const getDatabaseConfig = (): Knex.Config => {
   }
 }
 
-// Create database instance
-export const db = knex(getDatabaseConfig())
+// Create database instance (will be initialized with appropriate credentials)
+export let db: Knex
+
+// Initialize database connection with runtime credentials
+export function initializeDatabaseConnection(): void {
+  db = knex(getDatabaseConfig(false)) // Use fuzefront_user credentials
+}
 
 // Database initialization functions
 export async function waitForPostgres(
   maxRetries = 30,
-  retryDelay = 2000
+  retryDelay = 2000,
+  useMigrationCredentials = false
 ): Promise<void> {
   console.log('🔍 Checking PostgreSQL availability...')
 
+  const dbUser = useMigrationCredentials ? 'postgres' : (process.env.DB_USER || FUZEFRONT_USER)
+  const dbPassword = useMigrationCredentials ? undefined : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const client = new Client({
+      const clientConfig: any = {
         host: process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.DB_PORT || '5432'),
         database: 'postgres', // Connect to default database first
-        user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'postgres',
-      })
+        user: dbUser,
+      }
+      
+      if (dbPassword) {
+        clientConfig.password = dbPassword
+      }
+
+      const client = new Client(clientConfig)
 
       await client.connect()
       await client.query('SELECT 1')
       await client.end()
 
-      console.log('✅ PostgreSQL is ready!')
+      console.log(`✅ PostgreSQL is ready! (Connected as: ${dbUser})`)
       return
     } catch (error) {
       console.log(
-        `⏳ Waiting for PostgreSQL... (attempt ${i + 1}/${maxRetries})`
+        `⏳ Waiting for PostgreSQL... (attempt ${i + 1}/${maxRetries}) [User: ${dbUser}]`
       )
       if (i === maxRetries - 1) {
         throw new Error(
@@ -97,16 +125,24 @@ export async function waitForPostgres(
   }
 }
 
-export async function ensureDatabase(): Promise<void> {
+export async function ensureDatabase(useMigrationCredentials = false): Promise<void> {
   console.log('🔧 Ensuring database exists...')
 
-  const client = new Client({
+  const dbUser = useMigrationCredentials ? 'postgres' : (process.env.DB_USER || FUZEFRONT_USER)
+  const dbPassword = useMigrationCredentials ? undefined : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+
+  const clientConfig: any = {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     database: 'postgres', // Connect to default database
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-  })
+    user: dbUser,
+  }
+  
+  if (dbPassword) {
+    clientConfig.password = dbPassword
+  }
+
+  const client = new Client(clientConfig)
 
   try {
     await client.connect()
@@ -139,8 +175,11 @@ export async function ensureDatabase(): Promise<void> {
 export async function runMigrations(): Promise<void> {
   console.log('🚀 Running database migrations...')
 
+  // Create a temporary database instance with migration credentials (postgres user)
+  const migrationDb = knex(getDatabaseConfig(true))
+
   try {
-    const [batchNo, log] = await db.migrate.latest()
+    const [batchNo, log] = await migrationDb.migrate.latest()
 
     if (log.length === 0) {
       console.log('✅ Database is already up to date')
@@ -154,6 +193,8 @@ export async function runMigrations(): Promise<void> {
   } catch (error) {
     console.error('❌ Migration failed:', error)
     throw error
+  } finally {
+    await migrationDb.destroy()
   }
 }
 
@@ -181,21 +222,34 @@ export async function initializeDatabase(): Promise<void> {
   console.log('🔧 Initializing database...')
 
   try {
-    // 1. Wait for PostgreSQL to be available
-    await waitForPostgres()
+    // PHASE 1: Use postgres user for initial setup and migrations
+    console.log('📋 Phase 1: Database setup and migrations (postgres user)')
+    
+    // 1. Wait for PostgreSQL to be available with postgres user
+    await waitForPostgres(30, 2000, true)
 
-    // 2. Ensure the database exists
-    await ensureDatabase()
+    // 2. Ensure the database exists (using postgres user)
+    await ensureDatabase(true)
 
-    // 3. Run migrations
+    // 3. Run migrations (using postgres user) - this includes creating fuzefront_user
     await runMigrations()
 
-    // 4. Run seeds (only in development)
+    // PHASE 2: Switch to fuzefront_user for runtime operations
+    console.log('🔄 Phase 2: Switching to fuzefront_user for runtime operations')
+    
+    // 4. Verify fuzefront_user can connect
+    await waitForPostgres(10, 1000, false)
+    
+    // 5. Initialize runtime database connection with fuzefront_user
+    initializeDatabaseConnection()
+
+    // 6. Run seeds (only in development) using fuzefront_user
     if (process.env.NODE_ENV !== 'production') {
       await runSeeds()
     }
 
     console.log('✅ Database initialization complete!')
+    console.log('🎉 Ready to serve requests with fuzefront_user credentials')
   } catch (error) {
     console.error('❌ Database initialization failed:', error)
     throw error
@@ -215,10 +269,8 @@ export async function checkDatabaseHealth(): Promise<boolean> {
 export async function closeDatabase(): Promise<void> {
   try {
     await db.destroy()
-    console.log('🔌 Database connection closed')
+    console.log('✅ Database connection closed')
   } catch (error) {
     console.error('❌ Error closing database:', error)
   }
 }
-
-export default db

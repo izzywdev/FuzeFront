@@ -3,13 +3,8 @@ import jwt from 'jsonwebtoken'
 import { db } from '../config/database'
 import { User } from '../types/shared'
 
-interface AuthenticatedRequest extends Request {
-  user?: User
-  requestId?: string
-}
-
 export const authenticateToken = async (
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ) => {
@@ -89,12 +84,13 @@ export const authenticateToken = async (
 }
 
 export const requireRole = (roles: string[]) => {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: 'User not authenticated' })
     }
 
-    const hasRole = roles.some(role => req.user!.roles.includes(role))
+    const userRoles = req.user.roles || []
+    const hasRole = roles.some(role => userRoles.includes(role))
     if (!hasRole) {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
