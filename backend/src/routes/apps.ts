@@ -425,6 +425,10 @@ router.post(
         scope,
         module,
         description,
+        visibility: 'private',
+        marketplaceMetadata: {},
+        isMarketplaceApproved: false,
+        installCount: 0,
       }
 
       res.status(201).json(newApp)
@@ -585,6 +589,10 @@ router.post('/register', async (req: any, res) => {
       scope,
       module,
       description,
+      visibility: 'private',
+      marketplaceMetadata: {},
+      isMarketplaceApproved: false,
+      installCount: 0,
     }
 
     // Emit WebSocket event to notify all connected clients
@@ -627,6 +635,10 @@ router.post('/register', async (req: any, res) => {
             scope: existingApp.scope,
             module: existingApp.module,
             description: existingApp.description,
+            visibility: 'private',
+            marketplaceMetadata: {},
+            isMarketplaceApproved: false,
+            installCount: 0,
           }
           return res.status(200).json(app)
         }

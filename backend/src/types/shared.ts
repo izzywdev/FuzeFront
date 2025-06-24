@@ -7,11 +7,42 @@ export interface User {
   lastName?: string
 }
 
+export interface Organization {
+  id: string
+  name: string
+  slug: string
+  parent_id?: string
+  owner_id: string
+  type: 'platform' | 'organization'
+  settings: Record<string, any>
+  metadata: Record<string, any>
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface OrganizationMembership {
+  id: string
+  user_id: string
+  organization_id: string
+  role: 'owner' | 'admin' | 'member' | 'viewer'
+  status: 'active' | 'pending' | 'suspended' | 'revoked'
+  invited_by?: string
+  invited_at?: string
+  joined_at?: string
+  permissions: Record<string, any>
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+}
+
 export interface Session {
   id: string
   userId: string
   tenantId?: string
   expiresAt: Date
+  activeOrganizationId?: string
+  organizationContext: Record<string, any>
 }
 
 export interface App {
@@ -26,6 +57,12 @@ export interface App {
   scope?: string
   module?: string
   description?: string
+  organizationId?: string
+  visibility: 'private' | 'organization' | 'public' | 'marketplace'
+  marketplaceMetadata: Record<string, any>
+  isMarketplaceApproved: boolean
+  installCount: number
+  rating?: number
 }
 
 export interface MenuItem {

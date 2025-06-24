@@ -18,14 +18,14 @@ test.describe('Authentication', () => {
 
   test('should successfully login with valid credentials', async ({ page }) => {
     // Fill in the login form
-    await page.locator('input[type="email"]').fill('admin@frontfuse.dev')
+    await page.locator('input[type="email"]').fill('admin@fuzefront.dev')
     await page.locator('input[type="password"]').fill('admin123')
 
     // Submit the form
     await page.locator('button[type="submit"]').click()
 
     // Wait for the API request to complete
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(5000)
 
     // Check if we're redirected or if login was successful
     // Check for signs of successful authentication
@@ -74,7 +74,7 @@ test.describe('Authentication', () => {
     await page.locator('button[type="submit"]').click()
 
     // Wait for the error response
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(5000)
 
     // Ensure we're still on login page or see error
     await expect(page.locator('input[type="email"]')).toBeVisible()

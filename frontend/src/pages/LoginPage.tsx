@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useCurrentUser } from '../lib/shared'
-import { login } from '../services/api'
+import { authAPI, AuthMethods } from '../services/api'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function LoginPage() {
@@ -8,9 +8,54 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [authMethods, setAuthMethods] = useState<AuthMethods | null>(null)
   const [diagnostics, setDiagnostics] = useState<any>(null)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const { setUser } = useCurrentUser()
+
+  // Handle OIDC callback on page load
+  useEffect(() => {
+    const oidcResult = authAPI.handleOIDCCallback()
+    
+    if (oidcResult.error) {
+      setError(`Authentication failed: ${oidcResult.error}`)
+      return
+    }
+
+    if (oidcResult.token) {
+      console.log('🎉 OIDC authentication successful')
+      // Get user info and redirect
+      authAPI.getCurrentUser()
+        .then(user => {
+          setUser(user)
+          window.location.href = '/dashboard'
+        })
+        .catch(err => {
+          console.error('❌ Failed to get user after OIDC login:', err)
+          setError('Failed to get user information')
+        })
+      return
+    }
+
+    // Load authentication methods
+    loadAuthMethods()
+  }, [setUser])
+
+  const loadAuthMethods = async () => {
+    try {
+      const methods = await authAPI.getAuthMethods()
+      setAuthMethods(methods)
+      console.log('🔧 Available authentication methods:', methods)
+    } catch (error) {
+      console.error('❌ Failed to load auth methods:', error)
+      // Fallback to local auth only
+      setAuthMethods({
+        methods: ['local'],
+        oidcConfigured: false,
+        defaultMethod: 'local'
+      })
+    }
+  }
 
   // Log environment information on component mount
   useEffect(() => {
@@ -59,6 +104,67 @@ function LoginPage() {
         })
       })
   }, [])
+
+  const handleLocalLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    console.log('🎯 Local login form submitted:', {
+      email,
+      passwordLength: password.length,
+      timestamp: new Date().toISOString(),
+    })
+
+    setLoading(true)
+    setError('')
+
+    try {
+      console.log('🔄 Starting local login process...')
+      const { token, user } = await authAPI.login({ email, password })
+
+      console.log('🎉 Local login successful:', {
+        hasToken: !!token,
+        hasUser: !!user,
+        userEmail: user?.email,
+        userRoles: user?.roles,
+      })
+
+      if (token && user) {
+        console.log('👤 Setting user in context...')
+        setUser(user)
+        console.log('🔄 Redirecting to dashboard...')
+        window.location.href = '/dashboard'
+      } else {
+        throw new Error('Invalid response from server')
+      }
+    } catch (err: any) {
+      console.error('❌ Local login error:', err)
+      let errorMessage = err.response?.data?.error || err.message || 'Login failed'
+
+      if (err.code === 'NETWORK_ERROR' || !err.response) {
+        errorMessage += ' (Network connection failed - check if backend is running)'
+      } else if (err.response?.status === 500) {
+        errorMessage += ' (Server error - check backend logs)'
+      }
+
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOIDCLogin = async () => {
+    console.log('🔐 Starting OIDC login...')
+    setLoading(true)
+    setError('')
+
+    try {
+      await authAPI.loginWithOIDC()
+      // This will redirect to Authentik, so we won't reach here
+    } catch (err: any) {
+      console.error('❌ OIDC login error:', err)
+      setError('Failed to initiate OIDC login')
+      setLoading(false)
+    }
+  }
 
   const runNetworkDiagnostics = async () => {
     console.log('🔍 Running network diagnostics...')
@@ -142,73 +248,6 @@ function LoginPage() {
     setShowDiagnostics(true)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('🎯 Login form submitted:', {
-      email,
-      passwordLength: password.length,
-      timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      currentURL: window.location.href,
-    })
-
-    setLoading(true)
-    setError('')
-
-    try {
-      console.log('🔄 Starting login process...')
-      const { token, user } = await login(email, password)
-
-      console.log('🎉 Login successful:', {
-        hasToken: !!token,
-        hasUser: !!user,
-        userEmail: user?.email,
-        userRoles: user?.roles,
-      })
-
-      // Ensure token is stored and user is set
-      if (token && user) {
-        console.log('👤 Setting user in context...')
-        setUser(user)
-        console.log('🔄 Redirecting to dashboard...')
-        // Force a page reload to ensure proper app initialization
-        window.location.href = '/dashboard'
-      } else {
-        console.error('❌ Invalid response - missing token or user')
-        throw new Error('Invalid response from server')
-      }
-    } catch (err: any) {
-      console.error('❌ Login error in component:', {
-        error: err,
-        message: err.message,
-        code: err.code,
-        status: err.response?.status,
-        responseData: err.response?.data,
-        isAxiosError: err.isAxiosError,
-        stack: err.stack,
-      })
-
-      let errorMessage =
-        err.response?.data?.error || err.message || 'Login failed'
-
-      // Add more context for common errors
-      if (err.code === 'NETWORK_ERROR' || !err.response) {
-        errorMessage +=
-          ' (Network connection failed - check if backend is running)'
-      } else if (err.response?.status === 500) {
-        errorMessage += ' (Server error - check backend logs)'
-      } else if (err.response?.status === 404) {
-        errorMessage += ' (Login endpoint not found - check API configuration)'
-      }
-
-      console.log('📝 Setting error message:', errorMessage)
-      setError(errorMessage)
-    } finally {
-      console.log('🏁 Login process completed, setting loading to false')
-      setLoading(false)
-    }
-  }
-
   return (
     <div className="auth-form">
       <div
@@ -232,7 +271,64 @@ function LoginPage() {
       </div>
       <p>Sign in to access your microfrontend platform</p>
 
-      <form onSubmit={handleSubmit}>
+      {error && (
+        <div
+          style={{
+            color: 'red',
+            marginBottom: '1rem',
+            padding: '10px',
+            border: '1px solid red',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+          }}
+        >
+          <strong>Authentication Error:</strong>
+          <br />
+          {error}
+        </div>
+      )}
+
+      {/* OIDC Authentication Option */}
+      {authMethods?.oidcConfigured && (
+        <div style={{ marginBottom: '2rem' }}>
+          <button
+            type="button"
+            onClick={handleOIDCLogin}
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '12px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              marginBottom: '10px',
+            }}
+          >
+            {loading ? '🔄 Redirecting...' : '🔐 Sign in with Authentik'}
+          </button>
+          <p style={{ textAlign: 'center', color: '#666', fontSize: '14px' }}>
+            Single Sign-On via Authentik
+          </p>
+          
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            margin: '20px 0',
+            color: '#666' 
+          }}>
+            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ddd' }} />
+            <span style={{ padding: '0 15px', fontSize: '14px' }}>or</span>
+            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ddd' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Local Authentication Form */}
+      <form onSubmit={handleLocalLogin}>
         <div className="form-group">
           <label htmlFor="email">Email</label>
           <input
@@ -255,27 +351,27 @@ function LoginPage() {
           />
         </div>
 
-        {error && (
-          <div
-            style={{
-              color: 'red',
-              marginBottom: '1rem',
-              padding: '10px',
-              border: '1px solid red',
-              borderRadius: '4px',
-              backgroundColor: 'rgba(255, 0, 0, 0.1)',
-            }}
-          >
-            <strong>Login Error:</strong>
-            <br />
-            {error}
-          </div>
-        )}
-
         <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? 'Signing in...' : authMethods?.oidcConfigured ? 'Sign in with Email' : 'Sign In'}
         </button>
       </form>
+
+      {/* Authentication Methods Info */}
+      {authMethods && (
+        <div style={{ 
+          marginTop: '1rem', 
+          padding: '10px', 
+          backgroundColor: '#f8f9fa', 
+          borderRadius: '4px',
+          fontSize: '12px',
+          color: '#666'
+        }}>
+          <strong>Available Methods:</strong> {authMethods.methods.join(', ')}
+          {authMethods.oidcConfigured && (
+            <div>✅ OIDC configured with Authentik</div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: '1rem' }}>
         <button

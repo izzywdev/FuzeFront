@@ -8,12 +8,14 @@ import dotenv from 'dotenv'
 // Import routes
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
+import organizationsRoutes from './routes/organizations'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
   closeDatabase,
   checkDatabaseHealth,
 } from './config/database'
+import { oidcService } from './services/oidc'
 
 // Load environment variables
 dotenv.config()
@@ -250,6 +252,7 @@ try {
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
+app.use('/api/organizations', organizationsRoutes)
 
 // Serve static documentation files
 app.use('/docs', express.static('docs'))
@@ -463,6 +466,21 @@ async function startServer() {
     console.log('🔄 Starting FuzeFront Backend Server...')
     await initializeDatabase()
 
+    // Initialize OIDC service
+    try {
+      console.log('🔧 Initializing OIDC service...')
+      if (oidcService.isConfigured()) {
+        await oidcService.initialize()
+        console.log('✅ OIDC service initialized successfully')
+      } else {
+        console.log('⚠️  OIDC service not configured - local auth only')
+        console.log('💡 Set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET to enable OIDC')
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize OIDC service:', error)
+      console.log('⚠️  Continuing with local authentication only')
+    }
+
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)
 
@@ -485,6 +503,13 @@ async function startServer() {
       )
       console.log(`💓 Health Check: http://localhost:${availablePort}/health`)
       console.log(`🗄️  Database: PostgreSQL (shared-postgres)`)
+      
+      // Log authentication methods available
+      const authMethods = ['Local Database']
+      if (oidcService.isConfigured()) {
+        authMethods.push('OIDC (Authentik)')
+      }
+      console.log(`🔐 Authentication: ${authMethods.join(', ')}`)
 
       // Update PORT variable for other parts of the app
       process.env.PORT = availablePort.toString()

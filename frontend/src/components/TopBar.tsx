@@ -5,6 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useChat } from '../contexts/ChatContext'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
+import { OrganizationSelector } from './OrganizationSelector'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function TopBar() {
@@ -36,6 +37,7 @@ function TopBar() {
           gap: '12px',
         }}
       >
+        <OrganizationSelector compact={true} />
         <AppSelector />
 
         {/* Language Selector */}

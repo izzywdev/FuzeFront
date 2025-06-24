@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
+import { oidcService } from '../services/oidc'
+
 
 const router = express.Router()
 
@@ -249,7 +251,7 @@ router.post('/login', async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 // GET /auth/user - Get current user
-router.get('/user', authenticateToken, async (req: any, res) => {
+router.get('/user', authenticateToken, async (req, res) => {
   res.json({ user: req.user })
 })
 
@@ -299,6 +301,166 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Logout failed' })
   }
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/login:
+ *   get:
+ *     summary: Initiate OIDC login
+ *     description: Redirects to Authentik for OIDC authentication
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to Authentik login page
+ *       500:
+ *         description: OIDC not configured or server error
+ */
+router.get('/oidc/login', async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  console.log(`🔐 [${requestId}] OIDC login request received`)
+
+  try {
+    if (!oidcService.isConfigured()) {
+      console.log(`❌ [${requestId}] OIDC not configured`)
+      return res.status(500).json({ 
+        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.' 
+      })
+    }
+
+    const state = uuidv4()
+    const authUrl = oidcService.generateAuthUrl(state)
+    
+    console.log(`🔗 [${requestId}] Redirecting to Authentik:`, authUrl)
+    res.redirect(authUrl)
+  } catch (error) {
+    console.error(`❌ [${requestId}] OIDC login error:`, error)
+    res.status(500).json({ error: 'Failed to initiate OIDC login' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/callback:
+ *   get:
+ *     summary: OIDC callback handler
+ *     description: Handles the callback from Authentik after successful authentication
+ *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Authorization code from Authentik
+ *       - in: query
+ *         name: state
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: State parameter for CSRF protection
+ *     responses:
+ *       302:
+ *         description: Redirect to frontend with authentication token
+ *       400:
+ *         description: Missing code or state parameter
+ *       500:
+ *         description: Authentication failed
+ */
+router.get('/oidc/callback', async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  const { code, state, error } = req.query
+
+  console.log(`🔄 [${requestId}] OIDC callback received:`, {
+    hasCode: !!code,
+    hasState: !!state,
+    error,
+  })
+
+  try {
+    if (error) {
+      console.log(`❌ [${requestId}] OIDC error:`, error)
+      return res.redirect(`http://fuzefront.dev.local:8008/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+    }
+
+    if (!code || !state) {
+      console.log(`❌ [${requestId}] Missing code or state`)
+      return res.redirect(`http://fuzefront.dev.local:8008/?error=missing_parameters`)
+    }
+
+    // Handle the callback and get user
+    const user = await oidcService.handleCallback(code as string, state as string)
+    console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
+      expiresIn: '24h',
+    })
+
+    // Create session
+    const sessionId = uuidv4()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    await db('sessions').insert({
+      id: sessionId,
+      user_id: user.id,
+      expires_at: expiresAt,
+    })
+
+    console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email)
+
+    // Redirect to frontend with token
+    const frontendUrl = `http://fuzefront.dev.local:8008/?token=${token}&sessionId=${sessionId}`
+    res.redirect(frontendUrl)
+
+  } catch (error) {
+    console.error(`❌ [${requestId}] OIDC callback error:`, error)
+    res.redirect(`http://fuzefront.dev.local:8008/?error=authentication_failed`)
+  }
+})
+
+/**
+ * @swagger
+ * /api/auth/method:
+ *   get:
+ *     summary: Get available authentication methods
+ *     description: Returns which authentication methods are available
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Available authentication methods
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 methods:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   example: ["local", "oidc"]
+ *                 oidcConfigured:
+ *                   type: boolean
+ *                 defaultMethod:
+ *                   type: string
+ */
+router.get('/method', (req, res) => {
+  const oidcConfigured = oidcService.isConfigured()
+  
+  const methods = ['local'] // Always support local auth
+  if (oidcConfigured) {
+    methods.push('oidc')
+  }
+
+  res.json({
+    methods,
+    oidcConfigured,
+    defaultMethod: oidcConfigured ? 'oidc' : 'local',
+    oidcLoginUrl: oidcConfigured ? '/api/auth/oidc/login' : null,
+  })
 })
 
 export default router

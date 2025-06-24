@@ -23,7 +23,7 @@ A modern microfrontend platform built with Node.js, TypeScript, React, and Vite,
 
 ## 📦 Architecture
 
-This is a monorepo managed with **Lerna** containing:
+This is a monorepo managed with **npm workspaces** containing:
 
 - **`backend/`** - Node.js/Express API server with SQLite database
 - **`frontend/`** - React/Vite main platform interface (Module Federation Container)
@@ -112,7 +112,7 @@ sequenceDiagram
 
 - **Backend**: Node.js, Express, TypeScript, SQLite, Socket.IO
 - **Frontend**: React, TypeScript, Vite, Module Federation
-- **Monorepo**: Lerna, npm workspaces
+- **Monorepo**: npm workspaces, concurrently
 - **Code Quality**: ESLint, Prettier, Husky, lint-staged, commitlint
 - **Integration**: Module Federation, Iframe, Web Components
 - **Containerization**: Docker, Docker Compose, Multi-stage builds

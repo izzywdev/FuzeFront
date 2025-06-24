@@ -18,24 +18,26 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fuzefront-backend
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - USE_POSTGRES=true
-      - DB_HOST=postgres
+      - DB_HOST=fuzeinfra-postgres
       - DB_PORT=5432
       - DB_NAME=fuzefront_platform
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_USER=fuzefront_user
+      - DB_PASSWORD=FuzeFront_2024_SecureDB_Pass!
       - JWT_SECRET=fuzefront-production-secret-change-this-in-production
-      - PORT=3001
+      - PORT=${BACKEND_PORT:-3002}
       - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
-    ports:
-      - '${BACKEND_PORT:-3001}:3001'
+      - PERMIT_API_KEY=${PERMIT_API_KEY}
+      - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
+      - PERMIT_PDP_URL=http://permit-pdp:7000
     networks:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront # Connect to FuzeFront internal network
-    depends_on:
-      - db-migration
+    # Database initialization handled by backend startup process
     restart: unless-stopped
     healthcheck:
       test:
@@ -45,7 +47,7 @@ services:
           '--no-verbose',
           '--tries=1',
           '--spider',
-          'http://localhost:3001/health',
+          'http://localhost:3002/health',
         ]
       interval: 30s
       timeout: 10s
@@ -54,7 +56,7 @@ services:
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.fuzefront-backend.rule=PathPrefix(`/api`)'
-      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3001'
+      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3002'
 
   # ================================
   # FRONTEND SERVICE
@@ -70,8 +72,6 @@ services:
     environment:
       - NGINX_HOST=localhost
       - NGINX_PORT=8080
-    ports:
-      - '${FRONTEND_PORT:-8080}:8080'
     networks:
       - FuzeInfra # Connect to shared infrastructure for nginx access
       - fuzefront # Connect to FuzeFront internal network
@@ -103,8 +103,6 @@ services:
     environment:
       - NGINX_HOST=localhost
       - NGINX_PORT=3002
-    ports:
-      - '${TASKMANAGER_PORT:-3003}:3002'
     networks:
       - FuzeInfra # Connect to shared infrastructure for nginx access
       - fuzefront # Connect to FuzeFront internal network
@@ -123,82 +121,116 @@ services:
       - 'traefik.http.services.fuzefront-taskmanager.loadbalancer.server.port=3002'
 
   # ================================
-  # DATABASE MIGRATION SERVICE
+  # AUTHENTIK OIDC/OAuth2 AUTHENTICATION
   # ================================
-  db-migration:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: build
-    container_name: fuzefront-db-migration
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.2.2
+    container_name: fuzefront-authentik-server
+    command: server
     environment:
-      - NODE_ENV=development
-      - USE_POSTGRES=true
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=fuzefront_platform
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      # Use shared PostgreSQL from FuzeInfra
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-generate-random-secret-in-production}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-fuzefront.local}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: true
+      AUTHENTIK_ERROR_REPORTING__ENABLED: false
+      AUTHENTIK_DEFAULT_USER_CHANGE_EMAIL: true
+      AUTHENTIK_DEFAULT_USER_CHANGE_NAME: true
+      AUTHENTIK_DEFAULT_USER_CHANGE_USERNAME: true
+      AUTHENTIK_GDPR_COMPLIANCE: false
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+    ports:
+      - '${AUTHENTIK_PORT:-9000}:9000'
+      - '${AUTHENTIK_SSL_PORT:-9443}:9443'
     networks:
-      - FuzeInfra
-    command: >
-      sh -c "
-        echo 'Waiting for PostgreSQL to be ready...' &&
-        while ! nc -z postgres 5432; do sleep 1; done &&
-        echo 'PostgreSQL is ready!' &&
-        echo 'Creating database if not exists...' &&
-        node -e \"
-          const { Client } = require('pg');
-          const client = new Client({
-            host: 'postgres',
-            port: 5432,
-            database: 'postgres',
-            user: 'postgres',
-            password: 'postgres'
-          });
-          client.connect()
-            .then(() => client.query(\\\"SELECT 1 FROM pg_database WHERE datname = 'fuzefront_platform'\\\"))
-            .then(result => {
-              if (result.rows.length === 0) {
-                return client.query('CREATE DATABASE fuzefront_platform');
-              }
-            })
-            .then(() => console.log('Database ready'))
-            .catch(err => console.log('Database exists or error:', err.message))
-            .finally(() => client.end());
-        \" &&
-        echo 'Running migrations...' &&
-        npx knex migrate:latest &&
-        echo 'Running seeds...' &&
-        npx knex seed:run &&
-        echo 'Database initialization complete!'
-      "
-    depends_on:
-      - postgres-check
-    restart: 'no'
+      - FuzeInfra # Connect to shared infrastructure for PostgreSQL, Redis, and Traefik
+      - fuzefront # Connect to FuzeFront internal network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'ak', 'healthcheck']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.authentik.rule=Host(`auth.fuzefront.local`)'
+      - 'traefik.http.services.authentik.loadbalancer.server.port=9000'
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.2.2
+    container_name: fuzefront-authentik-worker
+    command: worker
+    environment:
+      # Use shared PostgreSQL and Redis from FuzeInfra
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-generate-random-secret-in-production}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_ERROR_REPORTING__ENABLED: false
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+      - authentik_certs:/certs
+    networks:
+      - FuzeInfra # Connect to shared infrastructure
+      - fuzefront
+    restart: unless-stopped
 
   # ================================
-  # SHARED INFRASTRUCTURE DEPENDENCY
+  # PERMIT.IO AUTHORIZATION (PDP)
   # ================================
-  postgres-check:
-    image: postgres:15-alpine
-    container_name: fuzefront-postgres-check
+  permit-pdp:
+    image: permitio/pdp-v2:latest
+    container_name: fuzefront-permit-pdp
+    env_file:
+      - .env
     environment:
-      - PGPASSWORD=postgres
+      PDP_API_KEY: ${PERMIT_API_KEY:-your-permit-api-key-here}
+      PDP_DEBUG: ${PERMIT_DEBUG:-True}
+      # Enable offline mode to avoid cloud connectivity issues
+      PDP_ENABLE_OFFLINE_MODE: true
+      OPAL_INLINE_OPA_ENABLED: true
+      # Disable cloud sync temporarily for development
+      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: false
+    ports:
+      - '${PERMIT_PDP_PORT:-7766}:7000' # Main PDP API
+      - '${PERMIT_OPA_PORT:-8181}:8181' # Direct OPA access (optional)
+    volumes:
+      - permit_pdp_backup:/app/backup # For offline mode backups
     networks:
-      - FuzeInfra
-    command: >
-      sh -c "
-        echo 'Checking shared PostgreSQL availability...' &&
-        while ! pg_isready -h postgres -p 5432 -U postgres; do
-          echo 'Waiting for postgres...' &&
-          sleep 2
-        done &&
-        echo 'Shared PostgreSQL is ready!'
-      "
-    restart: 'no'
+      - fuzefront
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:7000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 # Volumes for persistent data (if needed locally)
 volumes:
   fuzefront_logs:
     name: fuzefront_logs
+
+  # Authentik volumes
+  authentik_media:
+    name: fuzefront_authentik_media
+  authentik_custom_templates:
+    name: fuzefront_authentik_templates
+  authentik_certs:
+    name: fuzefront_authentik_certs
+
+  # Permit.io PDP volumes
+  permit_pdp_backup:
+    name: fuzefront_permit_pdp_backup
