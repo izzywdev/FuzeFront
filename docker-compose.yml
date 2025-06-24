@@ -23,11 +23,11 @@ services:
     environment:
       - NODE_ENV=production
       - USE_POSTGRES=true
-      - DB_HOST=postgres
+      - DB_HOST=fuzeinfra-postgres
       - DB_PORT=5432
       - DB_NAME=fuzefront_platform
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_USER=fuzefront_user
+      - DB_PASSWORD=FuzeFront_2024_SecureDB_Pass!
       - JWT_SECRET=fuzefront-production-secret-change-this-in-production
       - PORT=${BACKEND_PORT:-3002}
       - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
@@ -129,8 +129,8 @@ services:
     command: server
     environment:
       # Use shared PostgreSQL from FuzeInfra
-      AUTHENTIK_REDIS__HOST: shared-redis
-      AUTHENTIK_POSTGRESQL__HOST: shared-postgres
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
       AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
       AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -152,9 +152,6 @@ services:
     networks:
       - FuzeInfra # Connect to shared infrastructure for PostgreSQL, Redis, and Traefik
       - fuzefront # Connect to FuzeFront internal network
-    external_links:
-      - shared-postgres:shared-postgres
-      - shared-redis:shared-redis
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'ak', 'healthcheck']
@@ -173,8 +170,8 @@ services:
     command: worker
     environment:
       # Use shared PostgreSQL and Redis from FuzeInfra
-      AUTHENTIK_REDIS__HOST: shared-redis
-      AUTHENTIK_POSTGRESQL__HOST: shared-postgres
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
       AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
       AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -188,9 +185,6 @@ services:
     networks:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront
-    external_links:
-      - shared-postgres:shared-postgres
-      - shared-redis:shared-redis
     restart: unless-stopped
 
   # ================================
@@ -199,12 +193,16 @@ services:
   permit-pdp:
     image: permitio/pdp-v2:latest
     container_name: fuzefront-permit-pdp
+    env_file:
+      - .env
     environment:
       PDP_API_KEY: ${PERMIT_API_KEY:-your-permit-api-key-here}
       PDP_DEBUG: ${PERMIT_DEBUG:-True}
-      PDP_ENABLE_OFFLINE_MODE: ${PERMIT_OFFLINE_MODE:-false}
-      # Optional: Expose OPA for direct access
+      # Enable offline mode to avoid cloud connectivity issues
+      PDP_ENABLE_OFFLINE_MODE: true
       OPAL_INLINE_OPA_ENABLED: true
+      # Disable cloud sync temporarily for development
+      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: false
     ports:
       - '${PERMIT_PDP_PORT:-7766}:7000' # Main PDP API
       - '${PERMIT_OPA_PORT:-8181}:8181' # Direct OPA access (optional)

@@ -11,7 +11,8 @@ interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
 
 // Use relative URLs since nginx proxies /api/ to backend
 // This works both in development (via nginx proxy) and production
-const API_BASE_URL = ''
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://fuzefront.dev.local'
+const API_URL = `${API_BASE_URL}/api`
 
 console.log('🔧 API Configuration:', {
   API_BASE_URL,
@@ -41,7 +42,7 @@ fetch('/api/health')
   })
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -163,282 +164,114 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       console.log('🔐 Unauthorized - removing token and reloading')
       localStorage.removeItem('authToken')
-      window.location.reload()
+      localStorage.removeItem('user')
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
 )
 
-export const login = async (email: string, password: string) => {
-  const loginId = Math.random().toString(36).substr(2, 9)
+export interface LoginCredentials {
+  email: string
+  password: string
+}
 
-  console.group(`🔐 Login Process [${loginId}]`)
-  console.log('Login attempt started:', {
-    email,
-    passwordLength: password.length,
-    timestamp: new Date().toISOString(),
-    loginId,
-  })
+export interface User {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  roles: string[]
+}
 
-  try {
-    console.log('📡 Sending login request...')
-    const response = await api.post('/api/auth/login', { email, password })
+export interface LoginResponse {
+  token: string
+  user: User
+  sessionId: string
+}
 
-    console.log('✅ Login response received:', {
-      status: response.status,
-      hasToken: !!response.data.token,
-      hasUser: !!response.data.user,
-      userEmail: response.data.user?.email,
-      tokenPreview: response.data.token
-        ? `${response.data.token.substring(0, 20)}...`
-        : 'none',
-      fullResponse: response.data,
-    })
+export interface AuthMethods {
+  methods: string[]
+  oidcConfigured: boolean
+  defaultMethod: string
+  oidcLoginUrl?: string
+}
 
-    const { token, user } = response.data
+// Authentication API
+export const authAPI = {
+  // Get available authentication methods
+  async getAuthMethods(): Promise<AuthMethods> {
+    const response = await api.get<AuthMethods>('/auth/method')
+    return response.data
+  },
+
+  // Local authentication
+  async login(credentials: LoginCredentials): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>('/auth/login', credentials)
+    return response.data
+  },
+
+  // OIDC authentication (redirects to Authentik)
+  async loginWithOIDC(): Promise<void> {
+    // This will redirect the browser to Authentik
+    window.location.href = `${API_URL}/auth/oidc/login`
+  },
+
+  // Get current user
+  async getCurrentUser(): Promise<User> {
+    const response = await api.get<User>('/auth/user')
+    return response.data
+  },
+
+  // Logout
+  async logout(): Promise<void> {
+    await api.post('/auth/logout')
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('user')
+  },
+
+  // Handle OIDC callback (extract token from URL)
+  handleOIDCCallback(): { token?: string; sessionId?: string; error?: string } {
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = urlParams.get('token')
+    const sessionId = urlParams.get('sessionId')
+    const error = urlParams.get('error')
+    const message = urlParams.get('message')
+
+    if (error) {
+      return { error: message || error }
+    }
 
     if (token) {
       localStorage.setItem('authToken', token)
-      console.log('💾 Token stored in localStorage')
-    } else {
-      console.error('❌ No token in response')
+      if (sessionId) {
+        localStorage.setItem('sessionId', sessionId)
+      }
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname)
+      return { token, sessionId }
     }
 
-    console.groupEnd()
-    return { token, user }
-  } catch (error: any) {
-    console.error('❌ Login failed:', {
-      error: error.message,
-      code: error.code,
-      status: error.response?.status,
-      responseData: error.response?.data,
-      fullError: error,
-      stack: error.stack,
-    })
-    console.groupEnd()
-    throw error
-  }
+    return {}
+  },
 }
 
-export const logout = async () => {
-  try {
-    await api.post('/api/auth/logout')
-  } catch (error) {
-    // Even if logout fails on server, remove local token
-    console.error('Logout error:', error)
-  } finally {
-    localStorage.removeItem('authToken')
-  }
+// Apps API
+export const appsAPI = {
+  async getApps() {
+    const response = await api.get('/apps')
+    return response.data
+  },
 }
 
-export const getCurrentUser = async (): Promise<User> => {
-  const response = await api.get('/api/auth/user')
-  return response.data.user
+// Organizations API  
+export const organizationsAPI = {
+  async getOrganizations() {
+    const response = await api.get('/organizations')
+    return response.data
+  },
 }
 
-export const fetchApps = async (): Promise<App[]> => {
-  const response = await api.get('/api/apps')
-  return response.data
-}
-
-export const fetchHealthyApps = async (): Promise<App[]> => {
-  const response = await api.get('/api/apps?healthyOnly=true')
-  return response.data
-}
-
-export const checkAppsHealth = async () => {
-  const response = await api.get('/api/apps/health')
-  return response.data
-}
-
-export const createApp = async (appData: Partial<App>): Promise<App> => {
-  const response = await api.post('/api/apps', appData)
-  return response.data
-}
-
-export const updateAppStatus = async (appId: string, isActive: boolean) => {
-  const response = await api.put(`/api/apps/${appId}/activate`, { isActive })
-  return response.data
-}
-
-export const deleteApp = async (appId: string) => {
-  const response = await api.delete(`/api/apps/${appId}`)
-  return response.data
-}
-
-// Organization Management APIs
-export interface Organization {
-  id: string
-  name: string
-  slug: string
-  type: 'personal' | 'team' | 'enterprise'
-  description?: string
-  owner_id: string
-  is_active: boolean
-  settings: Record<string, any>
-  metadata: Record<string, any>
-  created_at: string
-  updated_at: string
-  member_count?: number
-  user_role?: 'owner' | 'admin' | 'member' | 'viewer'
-}
-
-export interface OrganizationMember {
-  id: string
-  user_id: string
-  organization_id: string
-  role: 'owner' | 'admin' | 'member' | 'viewer'
-  status: 'active' | 'pending' | 'suspended'
-  user: {
-    id: string
-    email: string
-    firstName?: string
-    lastName?: string
-  }
-  invited_at?: string
-  joined_at?: string
-}
-
-export const getOrganizations = async (): Promise<Organization[]> => {
-  const response = await api.get('/api/organizations')
-  return response.data
-}
-
-export const getOrganization = async (
-  organizationId: string
-): Promise<Organization> => {
-  const response = await api.get(`/api/organizations/${organizationId}`)
-  return response.data
-}
-
-export const createOrganization = async (data: {
-  name: string
-  description?: string
-  type?: 'personal' | 'team' | 'enterprise'
-}): Promise<Organization> => {
-  const response = await api.post('/api/organizations', data)
-  return response.data
-}
-
-export const updateOrganization = async (
-  organizationId: string,
-  data: Partial<Organization>
-): Promise<Organization> => {
-  const response = await api.put(`/api/organizations/${organizationId}`, data)
-  return response.data
-}
-
-export const deleteOrganization = async (
-  organizationId: string
-): Promise<void> => {
-  await api.delete(`/api/organizations/${organizationId}`)
-}
-
-export const getOrganizationMembers = async (
-  organizationId: string
-): Promise<OrganizationMember[]> => {
-  const response = await api.get(`/api/organizations/${organizationId}/members`)
-  return response.data
-}
-
-export const inviteOrganizationMember = async (
-  organizationId: string,
-  data: { email: string; role: 'admin' | 'member' | 'viewer' }
-): Promise<OrganizationMember> => {
-  const response = await api.post(
-    `/api/organizations/${organizationId}/members/invite`,
-    data
-  )
-  return response.data
-}
-
-export const updateMemberRole = async (
-  organizationId: string,
-  memberId: string,
-  role: 'admin' | 'member' | 'viewer'
-): Promise<OrganizationMember> => {
-  const response = await api.put(
-    `/api/organizations/${organizationId}/members/${memberId}`,
-    { role }
-  )
-  return response.data
-}
-
-export const removeMember = async (
-  organizationId: string,
-  memberId: string
-): Promise<void> => {
-  await api.delete(`/api/organizations/${organizationId}/members/${memberId}`)
-}
-
-// Permission Checking APIs
-export interface PermissionCheckRequest {
-  permissions: string[]
-  organizationId?: string
-  requireAll?: boolean
-}
-
-export interface PermissionCheckResponse {
-  allowed: boolean
-  permissions: Record<string, boolean>
-  user_roles: string[]
-  organization_role?: string
-}
-
-export const checkPermissions = async (
-  permissions: string | string[],
-  organizationId?: string,
-  requireAll = false
-): Promise<boolean> => {
-  const permissionArray = Array.isArray(permissions)
-    ? permissions
-    : [permissions]
-
-  const response = await api.post('/api/auth/check-permissions', {
-    permissions: permissionArray,
-    organizationId,
-    requireAll,
-  })
-
-  return response.data.allowed
-}
-
-export const checkUserPermissions = async (
-  userId: string,
-  permissions: string[],
-  organizationId?: string,
-  requireAll = false
-): Promise<PermissionCheckResponse> => {
-  const response = await api.post('/api/auth/check-user-permissions', {
-    userId,
-    permissions,
-    organizationId,
-    requireAll,
-  })
-
-  return response.data
-}
-
-export const getUserRoles = async (
-  organizationId?: string
-): Promise<string[]> => {
-  const params = organizationId ? { organizationId } : {}
-  const response = await api.get('/api/auth/user-roles', { params })
-  return response.data.roles
-}
-
-// Bulk permission operations
-export const bulkCheckPermissions = async (
-  checks: Array<{
-    permissions: string[]
-    organizationId?: string
-    requireAll?: boolean
-  }>
-): Promise<
-  Array<{ allowed: boolean; permissions: Record<string, boolean> }>
-> => {
-  const response = await api.post('/api/auth/bulk-check-permissions', {
-    checks,
-  })
-  return response.data
-}
+export default api

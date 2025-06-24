@@ -1,0 +1,32 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+// Register the micro-frontend with the shell
+if (window.FuzeFrontSDK) {
+  window.FuzeFrontSDK.registerApp({
+    name: '<%= projectName %>',
+    displayName: '<%= names(projectName).className %>',
+    version: '1.0.0',
+    mount: (element: HTMLElement) => {
+      const root = ReactDOM.createRoot(element);
+      root.render(<App />);
+      return () => root.unmount();
+    },
+    routes: [
+      {
+        path: '/<%= projectName %>',
+        exact: false
+      }
+    ]
+  });
+}
+
+// For standalone development
+if (process.env.NODE_ENV === 'development' && !window.FuzeFrontSDK) {
+  const root = ReactDOM.createRoot(
+    document.getElementById('root') as HTMLElement
+  );
+  root.render(<App />);
+} 

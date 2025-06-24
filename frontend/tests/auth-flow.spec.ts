@@ -18,7 +18,7 @@ test.describe('Authentication Flow', () => {
     page,
   }) => {
     // Perform login
-    await loginPage.login('admin@frontfuse.dev', 'admin123')
+    await loginPage.login('admin@fuzefront.dev', 'admin123')
     await loginPage.waitForResponse()
 
     // Check for authentication success
@@ -65,7 +65,7 @@ test.describe('Authentication Flow', () => {
     })
 
     // Attempt login
-    await loginPage.login('admin@frontfuse.dev', 'admin123')
+    await loginPage.login('admin@fuzefront.dev', 'admin123')
     await loginPage.waitForResponse()
 
     // Check for CORS errors

@@ -4,91 +4,29 @@
   "description": "Microfrontend hosting platform with runtime Module Federation",
   "private": true,
   "workspaces": [
-    "frontend",
     "backend",
-    "shared",
-    "sdk",
-    "api-client",
-    "task-manager-app"
+    "shared"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:task-manager": "cd task-manager-app && npm run dev",
-    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:task-manager\"",
-    "install:all": "npm install && npm run install:frontend && npm run install:backend && npm run install:shared && npm run install:sdk && npm run install:api-client && npm run install:task-manager",
-    "install:frontend": "cd frontend && npm install",
-    "install:backend": "cd backend && npm install",
-    "install:shared": "cd shared && npm install",
-    "install:sdk": "cd sdk && npm install",
-    "install:api-client": "cd api-client && npm install",
-    "install:task-manager": "cd task-manager-app && npm install",
-    "build": "npm run build:all",
-    "build:all": "npm run build:shared && npm run build:sdk && npm run build:api-client && npm run build:frontend && npm run build:backend && npm run build:task-manager",
-    "build:frontend": "cd frontend && npm run build",
-    "build:backend": "cd backend && npm run build",
-    "build:shared": "cd shared && npm run build",
-    "build:sdk": "cd sdk && npm run build",
-    "build:api-client": "cd api-client && npm run build",
-    "build:task-manager": "cd task-manager-app && npm run build",
-    "test": "npm run test:all",
-    "test:all": "concurrently \"npm run test:frontend\" \"npm run test:backend\" \"npm run test:shared\" \"npm run test:sdk\"",
-    "test:frontend": "cd frontend && npm test",
-    "test:backend": "cd backend && npm test",
-    "test:shared": "cd shared && npm test",
-    "test:sdk": "cd sdk && npm test",
-    "test:auth": "cd backend && npm run test:auth",
-    "test:auth:production": "cd backend && npm run test:auth:production",
-    "test:auth:live": "cd backend && npm run test:auth:live",
-    "test:auth:coverage": "cd backend && npm run test:coverage",
-    "test:backend:full": "bash scripts/run-backend-tests.sh",
-    "test:backend:full:win": "powershell -ExecutionPolicy Bypass -File scripts/run-backend-tests.ps1",
-    "type-check": "npm run type-check:all",
-    "type-check:all": "concurrently \"npm run type-check:frontend\" \"npm run type-check:backend\" \"npm run type-check:shared\" \"npm run type-check:sdk\" \"npm run type-check:task-manager\"",
-    "type-check:frontend": "cd frontend && npm run type-check",
-    "type-check:backend": "cd backend && npm run type-check",
-    "type-check:shared": "cd shared && npm run type-check",
-    "type-check:sdk": "cd sdk && npm run type-check",
-    "type-check:task-manager": "cd task-manager-app && npm run type-check",
-    "lint": "npm run lint:all",
-    "lint:all": "concurrently \"npm run lint:frontend\" \"npm run lint:backend\" \"npm run lint:shared\" \"npm run lint:sdk\" \"npm run lint:task-manager\"",
-    "lint:frontend": "cd frontend && npm run lint",
-    "lint:backend": "cd backend && npm run lint",
-    "lint:shared": "cd shared && npm run lint",
-    "lint:sdk": "cd sdk && npm run lint",
-    "lint:task-manager": "cd task-manager-app && npm run lint",
-    "cleanup": "node scripts/cleanup.js",
-    "postinstall": "npm run build:shared && npm run build:sdk",
-    "security": "npm run security:audit && npm run security:sbom",
-    "security:audit": "npm audit --audit-level=high && npm run security:audit:workspaces",
-    "security:audit:workspaces": "concurrently \"cd frontend && npm audit --audit-level=high\" \"cd backend && npm audit --audit-level=high\" \"cd shared && npm audit --audit-level=high\" \"cd sdk && npm audit --audit-level=high\" \"cd task-manager-app && npm audit --audit-level=high\"",
-    "security:sbom": "cyclonedx-npm --output-file frontfuse-sbom.json && cyclonedx-npm --output-format xml --output-file frontfuse-sbom.xml",
-    "security:fix": "npm audit fix && npm run security:fix:workspaces",
-    "security:fix:workspaces": "concurrently \"cd frontend && npm audit fix\" \"cd backend && npm audit fix\" \"cd shared && npm audit fix\" \"cd sdk && npm audit fix\" \"cd task-manager-app && npm audit fix\"",
-    "docker:build": "docker-compose build",
+    "dev": "echo 'Use: npm run docker:up for development'",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
-    "docker:prod:build": "docker-compose -f docker-compose.prod.yml build",
-    "docker:prod:up": "docker-compose -f docker-compose.prod.yml up -d",
-    "docker:prod:down": "docker-compose -f docker-compose.prod.yml down",
-    "docker:prod:logs": "docker-compose -f docker-compose.prod.yml logs -f",
-    "docker:prod:status": "docker-compose -f docker-compose.prod.yml ps"
+    "docker:backend": "docker exec -it fuzefront-backend bash",
+    "docker:frontend": "docker exec -it fuzefront-frontend bash",
+    "build:backend": "npm run build -w backend",
+    "build:shared": "npm run build -w shared",
+    "test:backend": "npm run test -w backend",
+    "type-check:backend": "npm run type-check -w backend"
   },
   "devDependencies": {
-    "@commitlint/cli": "^18.0.0",
-    "@commitlint/config-conventional": "^18.0.0",
-    "@cyclonedx/cyclonedx-npm": "^1.12.0",
-    "concurrently": "^8.2.2",
-    "husky": "^8.0.3"
+    "concurrently": "^8.2.2"
   },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,md,yml,yaml}": [
-      "npx prettier --write"
-    ]
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   },
   "dependencies": {
-    "axios": "^1.10.0"
+    "permitio": "^2.7.4"
   }
 }

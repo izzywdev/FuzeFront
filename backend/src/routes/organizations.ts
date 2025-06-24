@@ -5,7 +5,7 @@ import {
   PermissionMiddleware,
   requireOwnership,
 } from '../middleware/permissions'
-import db from '../config/database'
+import { db } from '../config/database'
 import { Organization, OrganizationMembership } from '../types/shared'
 import {
   syncUserToPermit,
