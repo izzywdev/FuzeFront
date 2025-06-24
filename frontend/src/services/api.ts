@@ -11,7 +11,8 @@ interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
 
 // Use relative URLs since nginx proxies /api/ to backend
 // This works both in development (via nginx proxy) and production
-const API_BASE_URL = ''
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://fuzefront.dev.local'
+const API_URL = `${API_BASE_URL}/api`
 
 console.log('🔧 API Configuration:', {
   API_BASE_URL,
@@ -41,7 +42,7 @@ fetch('/api/health')
   })
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -163,105 +164,114 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       console.log('🔐 Unauthorized - removing token and reloading')
       localStorage.removeItem('authToken')
-      window.location.reload()
+      localStorage.removeItem('user')
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
 )
 
-export const login = async (email: string, password: string) => {
-  const loginId = Math.random().toString(36).substr(2, 9)
+export interface LoginCredentials {
+  email: string
+  password: string
+}
 
-  console.group(`🔐 Login Process [${loginId}]`)
-  console.log('Login attempt started:', {
-    email,
-    passwordLength: password.length,
-    timestamp: new Date().toISOString(),
-    loginId,
-  })
+export interface User {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  roles: string[]
+}
 
-  try {
-    console.log('📡 Sending login request...')
-    const response = await api.post('/api/auth/login', { email, password })
+export interface LoginResponse {
+  token: string
+  user: User
+  sessionId: string
+}
 
-    console.log('✅ Login response received:', {
-      status: response.status,
-      hasToken: !!response.data.token,
-      hasUser: !!response.data.user,
-      userEmail: response.data.user?.email,
-      tokenPreview: response.data.token
-        ? `${response.data.token.substring(0, 20)}...`
-        : 'none',
-      fullResponse: response.data,
-    })
+export interface AuthMethods {
+  methods: string[]
+  oidcConfigured: boolean
+  defaultMethod: string
+  oidcLoginUrl?: string
+}
 
-    const { token, user } = response.data
+// Authentication API
+export const authAPI = {
+  // Get available authentication methods
+  async getAuthMethods(): Promise<AuthMethods> {
+    const response = await api.get<AuthMethods>('/auth/method')
+    return response.data
+  },
+
+  // Local authentication
+  async login(credentials: LoginCredentials): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>('/auth/login', credentials)
+    return response.data
+  },
+
+  // OIDC authentication (redirects to Authentik)
+  async loginWithOIDC(): Promise<void> {
+    // This will redirect the browser to Authentik
+    window.location.href = `${API_URL}/auth/oidc/login`
+  },
+
+  // Get current user
+  async getCurrentUser(): Promise<User> {
+    const response = await api.get<User>('/auth/user')
+    return response.data
+  },
+
+  // Logout
+  async logout(): Promise<void> {
+    await api.post('/auth/logout')
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('user')
+  },
+
+  // Handle OIDC callback (extract token from URL)
+  handleOIDCCallback(): { token?: string; sessionId?: string; error?: string } {
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = urlParams.get('token')
+    const sessionId = urlParams.get('sessionId')
+    const error = urlParams.get('error')
+    const message = urlParams.get('message')
+
+    if (error) {
+      return { error: message || error }
+    }
 
     if (token) {
       localStorage.setItem('authToken', token)
-      console.log('💾 Token stored in localStorage')
-    } else {
-      console.error('❌ No token in response')
+      if (sessionId) {
+        localStorage.setItem('sessionId', sessionId)
+      }
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname)
+      return { token, sessionId }
     }
 
-    console.groupEnd()
-    return { token, user }
-  } catch (error: any) {
-    console.error('❌ Login failed:', {
-      error: error.message,
-      code: error.code,
-      status: error.response?.status,
-      responseData: error.response?.data,
-      fullError: error,
-      stack: error.stack,
-    })
-    console.groupEnd()
-    throw error
-  }
+    return {}
+  },
 }
 
-export const logout = async () => {
-  try {
-    await api.post('/api/auth/logout')
-  } catch (error) {
-    // Even if logout fails on server, remove local token
-    console.error('Logout error:', error)
-  } finally {
-    localStorage.removeItem('authToken')
-  }
+// Apps API
+export const appsAPI = {
+  async getApps() {
+    const response = await api.get('/apps')
+    return response.data
+  },
 }
 
-export const getCurrentUser = async (): Promise<User> => {
-  const response = await api.get('/api/auth/user')
-  return response.data.user
+// Organizations API  
+export const organizationsAPI = {
+  async getOrganizations() {
+    const response = await api.get('/organizations')
+    return response.data
+  },
 }
 
-export const fetchApps = async (): Promise<App[]> => {
-  const response = await api.get('/api/apps')
-  return response.data
-}
-
-export const fetchHealthyApps = async (): Promise<App[]> => {
-  const response = await api.get('/api/apps?healthyOnly=true')
-  return response.data
-}
-
-export const checkAppsHealth = async () => {
-  const response = await api.get('/api/apps/health')
-  return response.data
-}
-
-export const createApp = async (appData: Partial<App>): Promise<App> => {
-  const response = await api.post('/api/apps', appData)
-  return response.data
-}
-
-export const updateAppStatus = async (appId: string, isActive: boolean) => {
-  const response = await api.put(`/api/apps/${appId}/activate`, { isActive })
-  return response.data
-}
-
-export const deleteApp = async (appId: string) => {
-  const response = await api.delete(`/api/apps/${appId}`)
-  return response.data
-}
+export default api

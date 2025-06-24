@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MicroFrontend",
+  "title": "Create a Micro-Frontend Application",
+  "description": "Create a new micro-frontend application with Module Federation support",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The name of the micro-frontend application.",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      },
+      "x-prompt": "What name would you like to use for the micro-frontend?"
+    },
+    "directory": {
+      "type": "string",
+      "description": "The directory of the new application.",
+      "alias": "d"
+    },
+    "tags": {
+      "type": "string",
+      "description": "Add tags to the application (used for linting).",
+      "alias": "t"
+    },
+    "port": {
+      "type": "number",
+      "description": "The port for the dev server.",
+      "default": 4200
+    }
+  },
+  "required": ["name"]
+} 

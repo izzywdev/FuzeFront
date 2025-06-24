@@ -1,0 +1,50 @@
+{
+  "branches": [
+    "main",
+    "master",
+    {
+      "name": "develop",
+      "prerelease": "beta"
+    },
+    {
+      "name": "feature/*",
+      "prerelease": "alpha"
+    }
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "package.json",
+          "package-lock.json",
+          "CHANGELOG.md",
+          "frontend/package.json",
+          "backend/package.json",
+          "shared/package.json",
+          "sdk/package.json",
+          "api-client/package.json",
+          "task-manager-app/package.json"
+        ],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": "🎉 This ${issue.pull_request ? 'pull request is included' : 'issue has been resolved'} in version [${nextRelease.version}](${releases.filter(release => !!release.url).pop().url}) 🎉",
+        "labels": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+} 

@@ -66,6 +66,26 @@ function SidePanel() {
             </div>
           ))}
 
+        {/* Organizations section */}
+        <div
+          className="menu-item"
+          onClick={() => (window.location.href = '/organizations')}
+          style={{ color: 'var(--accent-color)' }}
+        >
+          <span>🏢</span>
+          <span>Organizations</span>
+        </div>
+
+        {/* Profile section */}
+        <div
+          className="menu-item"
+          onClick={() => (window.location.href = '/profile')}
+          style={{ color: '#4CAF50' }}
+        >
+          <span>👤</span>
+          <span>Profile</span>
+        </div>
+
         {/* Admin section within portal */}
         {user?.roles.includes('admin') && (
           <div
@@ -130,6 +150,15 @@ function SidePanel() {
           marginTop: 'auto',
         }}
       >
+        <div
+          className="menu-item"
+          onClick={() => (window.location.href = '/test')}
+          style={{ color: '#ff6b6b' }}
+        >
+          <span>🧪</span>
+          <span>Test Components</span>
+        </div>
+
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/help')}
