@@ -23,17 +23,21 @@ services:
     environment:
       - NODE_ENV=production
       - USE_POSTGRES=true
-      - DB_HOST=fuzeinfra-postgres
-      - DB_PORT=5432
-      - DB_NAME=fuzefront_platform
-      - DB_USER=fuzefront_user
-      - DB_PASSWORD=FuzeFront_2024_SecureDB_Pass!
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-fuzefront_platform}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
       - JWT_SECRET=fuzefront-production-secret-change-this-in-production
       - PORT=${BACKEND_PORT:-3002}
       - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
       - PERMIT_API_KEY=${PERMIT_API_KEY}
       - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
       - PERMIT_PDP_URL=http://permit-pdp:7000
+      - AUTHENTIK_ISSUER_URL=${AUTHENTIK_ISSUER_URL}
+      - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID}
+      - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET}
+      - AUTHENTIK_REDIRECT_URI=${AUTHENTIK_REDIRECT_URI}
     networks:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront # Connect to FuzeFront internal network
@@ -128,15 +132,15 @@ services:
     container_name: fuzefront-authentik-server
     command: server
     environment:
-      # Use shared PostgreSQL from FuzeInfra
+      # Use shared PostgreSQL from FuzeInfra with dedicated authentik user
       AUTHENTIK_REDIS__HOST: fuzeinfra-redis
       AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
-      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
-      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-generate-random-secret-in-production}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
       AUTHENTIK_LOG_LEVEL: info
-      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-fuzefront.local}
+      AUTHENTIK_COOKIE_DOMAIN: fuzefront.dev.local
       AUTHENTIK_DISABLE_UPDATE_CHECK: true
       AUTHENTIK_ERROR_REPORTING__ENABLED: false
       AUTHENTIK_DEFAULT_USER_CHANGE_EMAIL: true
@@ -152,6 +156,8 @@ services:
     networks:
       - FuzeInfra # Connect to shared infrastructure for PostgreSQL, Redis, and Traefik
       - fuzefront # Connect to FuzeFront internal network
+    depends_on:
+      - authentik-worker
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'ak', 'healthcheck']
@@ -169,13 +175,13 @@ services:
     container_name: fuzefront-authentik-worker
     command: worker
     environment:
-      # Use shared PostgreSQL and Redis from FuzeInfra
+      # Use shared PostgreSQL and Redis from FuzeInfra with dedicated authentik user
       AUTHENTIK_REDIS__HOST: fuzeinfra-redis
       AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
-      AUTHENTIK_POSTGRESQL__USER: ${POSTGRES_USER:-postgres}
-      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-generate-random-secret-in-production}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
       AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_ERROR_REPORTING__ENABLED: false
     volumes:
