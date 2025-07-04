@@ -20,10 +20,10 @@ class OIDCService {
 
   constructor() {
     this.config = {
-      issuerUrl: process.env.AUTHENTIK_ISSUER_URL || 'http://fuzefront.dev.local:9000/application/o/fuzefront/',
+      issuerUrl: process.env.AUTHENTIK_ISSUER_URL || 'http://localhost:9000/application/o/fuzefront/',
       clientId: process.env.AUTHENTIK_CLIENT_ID || '',
       clientSecret: process.env.AUTHENTIK_CLIENT_SECRET || '',
-      redirectUri: process.env.AUTHENTIK_REDIRECT_URI || 'http://fuzefront.dev.local:8008/api/auth/callback',
+      redirectUri: process.env.AUTHENTIK_REDIRECT_URI || 'http://fuzefront.dev.local/api/auth/oidc/callback',
     };
   }
 

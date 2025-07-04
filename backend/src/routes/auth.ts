@@ -382,12 +382,12 @@ router.get('/oidc/callback', async (req, res) => {
   try {
     if (error) {
       console.log(`❌ [${requestId}] OIDC error:`, error)
-      return res.redirect(`http://fuzefront.dev.local:8008/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+      return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
     }
 
     if (!code || !state) {
       console.log(`❌ [${requestId}] Missing code or state`)
-      return res.redirect(`http://fuzefront.dev.local:8008/?error=missing_parameters`)
+      return res.redirect(`http://fuzefront.dev.local/?error=missing_parameters`)
     }
 
     // Handle the callback and get user
@@ -412,12 +412,12 @@ router.get('/oidc/callback', async (req, res) => {
     console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email)
 
     // Redirect to frontend with token
-    const frontendUrl = `http://fuzefront.dev.local:8008/?token=${token}&sessionId=${sessionId}`
+    const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`
     res.redirect(frontendUrl)
 
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC callback error:`, error)
-    res.redirect(`http://fuzefront.dev.local:8008/?error=authentication_failed`)
+    res.redirect(`http://fuzefront.dev.local/?error=authentication_failed`)
   }
 })
 

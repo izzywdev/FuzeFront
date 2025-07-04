@@ -38,7 +38,7 @@ const getDatabaseConfig = (): Knex.Config => {
       user: dbUser,
     }
 
-    // Only add password if it exists and is not null
+    // Only add password if it exists
     if (dbPassword) {
       connectionConfig.password = dbPassword
     }
@@ -237,28 +237,22 @@ export async function runSeeds(): Promise<void> {
 }
 
 export async function initializeDatabase(): Promise<void> {
-  console.log('🔧 Initializing database...')
+  console.log('🏗️  Initializing database...')
 
   try {
-    // 1. Wait for PostgreSQL to be available
-    await waitForPostgres(30, 2000)
-
-    // 2. Ensure the database exists
-    await ensureDatabase()
-
-    // 3. Run migrations
-    await runMigrations()
-
-    // 4. Initialize runtime database connection
+    // Initialize database connection
     initializeDatabaseConnection()
 
-    // 5. Run seeds (only in development)
-    if (process.env.NODE_ENV !== 'production') {
-      await runSeeds()
-    }
+    // Wait for PostgreSQL to be available
+    await waitForPostgres()
+
+    // Ensure database exists
+    await ensureDatabase()
+
+    // Run migrations
+    await runMigrations()
 
     console.log('✅ Database initialization complete!')
-    console.log('🎉 Ready to serve requests with fuzefront_user credentials')
   } catch (error) {
     console.error('❌ Database initialization failed:', error)
     throw error
@@ -276,10 +270,8 @@ export async function checkDatabaseHealth(): Promise<boolean> {
 }
 
 export async function closeDatabase(): Promise<void> {
-  try {
+  if (db) {
     await db.destroy()
-    console.log('✅ Database connection closed')
-  } catch (error) {
-    console.error('❌ Error closing database:', error)
+    console.log('🔌 Database connection closed')
   }
 } 

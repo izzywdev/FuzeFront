@@ -7,7 +7,7 @@ const express_1 = __importDefault(require("express"));
 const uuid_1 = require("uuid");
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
-const database_1 = __importDefault(require("../config/database"));
+const database_1 = require("../config/database");
 const permit_1 = require("../utils/permit");
 const router = express_1.default.Router();
 // Input validation helpers
@@ -60,7 +60,7 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
             });
         }
         // Check if slug already exists
-        const existingOrg = await (0, database_1.default)('organizations')
+        const existingOrg = await (0, database_1.db)('organizations')
             .where('slug', input.slug)
             .first();
         if (existingOrg) {
@@ -70,7 +70,7 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
         }
         // Validate parent organization if specified
         if (input.parent_id) {
-            const parentOrg = await (0, database_1.default)('organizations')
+            const parentOrg = await (0, database_1.db)('organizations')
                 .where('id', input.parent_id)
                 .where('is_active', true)
                 .first();
@@ -80,7 +80,7 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
                 });
             }
             // Check if user has permission to create sub-organizations
-            const membership = await (0, database_1.default)('organization_memberships')
+            const membership = await (0, database_1.db)('organization_memberships')
                 .where('user_id', req.user.id)
                 .where('organization_id', input.parent_id)
                 .where('status', 'active')
@@ -94,7 +94,7 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
         }
         const organizationId = (0, uuid_1.v4)();
         // Create organization in transaction
-        await database_1.default.transaction(async (trx) => {
+        await database_1.db.transaction(async (trx) => {
             // Insert organization
             await trx('organizations').insert({
                 id: organizationId,
@@ -120,7 +120,7 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
             });
         });
         // Fetch the created organization
-        const newOrganization = await (0, database_1.default)('organizations')
+        const newOrganization = await (0, database_1.db)('organizations')
             .where('id', organizationId)
             .first();
         const organization = {
@@ -182,12 +182,12 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
         const sortField = validSortFields.includes(sort) ? sort : 'name';
         const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc';
         // Build query
-        let query = (0, database_1.default)('organizations')
+        let query = (0, database_1.db)('organizations')
             .select('organizations.*')
             .leftJoin('organization_memberships', function () {
             this.on('organizations.id', '=', 'organization_memberships.organization_id')
-                .andOn('organization_memberships.user_id', '=', database_1.default.raw('?', [req.user.id]))
-                .andOn('organization_memberships.status', '=', database_1.default.raw('?', ['active']));
+                .andOn('organization_memberships.user_id', '=', database_1.db.raw('?', [req.user.id]))
+                .andOn('organization_memberships.status', '=', database_1.db.raw('?', ['active']));
         })
             .where(function () {
             // User can see organizations they are members of, or public organizations
@@ -258,12 +258,12 @@ router.get('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
     try {
         const { id } = req.params;
         // Check if user has access to this organization
-        const organization = await (0, database_1.default)('organizations')
+        const organization = await (0, database_1.db)('organizations')
             .select('organizations.*')
             .leftJoin('organization_memberships', function () {
             this.on('organizations.id', '=', 'organization_memberships.organization_id')
-                .andOn('organization_memberships.user_id', '=', database_1.default.raw('?', [req.user.id]))
-                .andOn('organization_memberships.status', '=', database_1.default.raw('?', ['active']));
+                .andOn('organization_memberships.user_id', '=', database_1.db.raw('?', [req.user.id]))
+                .andOn('organization_memberships.status', '=', database_1.db.raw('?', ['active']));
         })
             .where('organizations.id', id)
             .where(function () {
@@ -302,7 +302,7 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
         const { id } = req.params;
         const input = sanitizeInput(req.body);
         // Check if user has permission to update this organization
-        const membership = await (0, database_1.default)('organization_memberships')
+        const membership = await (0, database_1.db)('organization_memberships')
             .where('user_id', req.user.id)
             .where('organization_id', id)
             .where('status', 'active')
@@ -323,7 +323,7 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
         }
         // Check if slug conflicts with another organization
         if (input.slug) {
-            const existingOrg = await (0, database_1.default)('organizations')
+            const existingOrg = await (0, database_1.db)('organizations')
                 .where('slug', input.slug)
                 .where('id', '!=', id)
                 .first();
@@ -334,7 +334,7 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             }
         }
         // Update organization
-        await (0, database_1.default)('organizations')
+        await (0, database_1.db)('organizations')
             .where('id', id)
             .update({
             name: input.name,
@@ -344,7 +344,7 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             updated_at: new Date(),
         });
         // Fetch updated organization
-        const updatedOrganization = await (0, database_1.default)('organizations')
+        const updatedOrganization = await (0, database_1.db)('organizations')
             .where('id', id)
             .first();
         const result = {
@@ -377,7 +377,7 @@ router.delete('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddlewa
     try {
         const { id } = req.params;
         // Check if user is owner of this organization
-        const membership = await (0, database_1.default)('organization_memberships')
+        const membership = await (0, database_1.db)('organization_memberships')
             .where('user_id', req.user.id)
             .where('organization_id', id)
             .where('status', 'active')
@@ -389,7 +389,7 @@ router.delete('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddlewa
             });
         }
         // Check for child organizations
-        const childOrganizations = await (0, database_1.default)('organizations')
+        const childOrganizations = await (0, database_1.db)('organizations')
             .where('parent_id', id)
             .where('is_active', true)
             .count('* as count')
@@ -400,7 +400,7 @@ router.delete('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddlewa
             });
         }
         // Deactivate organization (soft delete)
-        await (0, database_1.default)('organizations').where('id', id).update({
+        await (0, database_1.db)('organizations').where('id', id).update({
             is_active: false,
             updated_at: new Date(),
         });

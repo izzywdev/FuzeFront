@@ -44,6 +44,7 @@
     "permitio": "^2.4.0",
     "pg": "^8.11.5",
     "socket.io": "^4.7.5",
+    "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
     "uuid": "^9.0.1"
