@@ -31,6 +31,74 @@ This is a monorepo managed with **npm workspaces** containing:
 - **`sdk/`** - React SDK for microfrontend integration and self-registration
 - **`task-manager-app/`** - Example microfrontend with Module Federation
 
+## 📁 Project Organization
+
+The project follows a clean, organized folder structure:
+
+### Core Application Directories
+- **`backend/`** - Main API server and business logic
+- **`frontend/`** - Main platform interface (Module Federation Container)
+- **`task-manager-app/`** - Example microfrontend application
+- **`api-client/`** - Generated API client and types
+- **`sdk/`** - React SDK for microfrontend integration
+- **`shared/`** - Shared utilities and components
+- **`envmanager/`** - Environment configuration management
+- **`FuzeInfra/`** - Infrastructure setup and shared services (Git submodule)
+
+### Documentation (`docs/`)
+- **`docs/setup/`** - Setup and installation guides
+  - `README-SETUP.md` - Main setup instructions
+  - `EMPIRE-SETUP.md` - Empire infrastructure setup
+  - `SECRETS_SETUP.md` - Secret management setup
+- **`docs/guides/`** - Development and usage guides
+  - `DEVELOPER_GUIDE.md` - Comprehensive developer guide
+  - `MODULE_FEDERATION_GUIDE.md` - Module Federation implementation guide
+  - `WINDOWS_DEVELOPMENT_STRATEGY.md` - Windows-specific development notes
+  - `MIGRATION_TO_NPM_WORKSPACES.md` - Migration documentation
+  - `EMPIRE-CHECKLIST.md` - Empire deployment checklist
+  - `MANUAL_PLAYWRIGHT_TESTING.md` - Testing guide
+- **`docs/troubleshooting/`** - Problem-solving documentation
+  - `PERMIT_PDP_TROUBLESHOOTING.md` - Permit PDP issues
+  - `DNS_ACCESS_FIX.md` - DNS configuration fixes
+  - `DATABASE_CONNECTION_FIX.md` - Database connectivity issues
+  - `NETWORK_CONNECTIVITY_ANALYSIS.md` - Network debugging
+  - `POSTGRES_NAMING_FIXES.md` - PostgreSQL naming issues
+- **`docs/chats/`** - Exported chat history for development documentation
+
+### Scripts (`scripts/`)
+- Development automation and deployment scripts
+- Infrastructure setup and maintenance utilities
+- Testing and build automation
+
+### Configuration (`config/`)
+- Configuration file backups and alternatives
+- Environment-specific settings
+- Package.json variations for different setups
+
+### Testing (`tests/`)
+- Debug scripts and network testing utilities
+- Database connection testing
+- Port conflict resolution tests
+
+### Tools & Utilities
+- **`tools/`** - Development tools and generators
+- **`backups/`** - Backup files and recovery data
+- **`.github/`** - GitHub Actions, templates, and workflows
+- **`.husky/`** - Git hooks for code quality
+
+### Development Infrastructure
+- **`node_modules/`** - npm dependencies
+- **`envmanager/`** - Environment variable management
+- **Docker configuration files** - `docker-compose.yml`, `docker-compose.prod.yml`
+- **Configuration files** - `.cursorrules`, `.prettierrc`, `lerna.json`, etc.
+
+This organization ensures:
+- **Clean separation** of concerns
+- **Easy navigation** for new developers
+- **Logical grouping** of related files
+- **Scalable structure** for growing projects
+- **Clear documentation** hierarchy
+
 ## 🎯 Quick Demo
 
 ### Option 1: Development Mode
