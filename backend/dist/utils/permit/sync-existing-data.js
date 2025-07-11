@@ -32,15 +32,12 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncExistingDataToPermit = syncExistingDataToPermit;
 exports.syncSingleUserToPermit = syncSingleUserToPermit;
 exports.syncSingleOrganizationToPermit = syncSingleOrganizationToPermit;
 exports.checkPermitConnection = checkPermitConnection;
-const database_1 = __importDefault(require("../../config/database"));
+const database_1 = require("../../config/database");
 const bulk_operations_1 = require("./bulk-operations");
 /**
  * Syncs all existing database data to Permit.io
@@ -51,7 +48,7 @@ async function syncExistingDataToPermit() {
         console.log('🚀 Starting data sync to Permit.io...');
         // 1. Fetch all users from database
         console.log('📥 Fetching users from database...');
-        const usersFromDb = await (0, database_1.default)('users').select('*');
+        const usersFromDb = await (0, database_1.db)('users').select('*');
         const users = usersFromDb.map(user => ({
             id: user.id,
             email: user.email,
@@ -65,7 +62,7 @@ async function syncExistingDataToPermit() {
         console.log(`Found ${users.length} users`);
         // 2. Fetch all organizations from database
         console.log('📥 Fetching organizations from database...');
-        const orgsFromDb = await (0, database_1.default)('organizations')
+        const orgsFromDb = await (0, database_1.db)('organizations')
             .select('*')
             .where('is_active', true);
         const organizations = orgsFromDb.map(org => ({
@@ -84,7 +81,7 @@ async function syncExistingDataToPermit() {
         console.log(`Found ${organizations.length} organizations`);
         // 3. Fetch all memberships from database
         console.log('📥 Fetching organization memberships from database...');
-        const membershipsFromDb = await (0, database_1.default)('organization_memberships')
+        const membershipsFromDb = await (0, database_1.db)('organization_memberships')
             .select('*')
             .where('status', 'active');
         const memberships = membershipsFromDb.map(membership => ({
@@ -126,7 +123,7 @@ async function syncSingleUserToPermit(userId) {
     try {
         console.log(`🔄 Syncing user ${userId} to Permit.io...`);
         // Fetch user data
-        const userFromDb = await (0, database_1.default)('users').where('id', userId).first();
+        const userFromDb = await (0, database_1.db)('users').where('id', userId).first();
         if (!userFromDb) {
             console.error(`User ${userId} not found in database`);
             return false;
@@ -164,7 +161,7 @@ async function syncSingleOrganizationToPermit(organizationId) {
     try {
         console.log(`🔄 Syncing organization ${organizationId} to Permit.io...`);
         // Fetch organization data
-        const orgFromDb = await (0, database_1.default)('organizations')
+        const orgFromDb = await (0, database_1.db)('organizations')
             .where('id', organizationId)
             .first();
         if (!orgFromDb) {

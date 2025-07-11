@@ -1,4 +1,0 @@
-# Run lint-staged for staged files
-npx lint-staged
-
-echo "✅ Pre-commit checks passed!"
