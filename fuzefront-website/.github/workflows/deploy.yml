@@ -179,10 +179,17 @@ jobs:
     - name: Get Auto Scaling Group name
       id: asg-name
       run: |
+        # Get the most recently created ASG with our prefix
         ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website-asg`)].AutoScalingGroupName | [0]' \
+          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website-asg`)].{Name:AutoScalingGroupName, Created:CreatedTime} | sort_by(@, &Created) | [-1].Name' \
           --output text)
-        echo "Found ASG: $ASG_NAME"
+        
+        if [ "$ASG_NAME" = "None" ] || [ -z "$ASG_NAME" ]; then
+          echo "ERROR: No Auto Scaling Group found with prefix 'fuzefront-website-asg'"
+          exit 1
+        fi
+        
+        echo "Found most recent ASG: $ASG_NAME"
         echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Auto Scaling Group to force instance refresh
