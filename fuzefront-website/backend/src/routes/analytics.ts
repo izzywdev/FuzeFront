@@ -32,7 +32,7 @@ router.post('/page-view', [
   body('page').trim().isLength({ min: 1 }),
   body('referrer').optional().trim(),
   body('sessionId').optional().trim(),
-], async (req, res) => {
+], async (req: express.Request, res: express.Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -49,7 +49,7 @@ router.post('/page-view', [
       userAgent: req.get('User-Agent'),
       referrer: req.body.referrer || req.get('Referrer'),
       sessionId: req.body.sessionId,
-      ip: req.ip,
+      ip: req.ip || '',
       properties: req.body.properties
     }
 
@@ -70,7 +70,7 @@ router.post('/event', [
   body('event').trim().isLength({ min: 1 }),
   body('page').trim().isLength({ min: 1 }),
   body('properties').optional().isObject(),
-], async (req, res) => {
+], async (req: express.Request, res: express.Response) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -92,7 +92,7 @@ router.post('/event', [
       userAgent: req.get('User-Agent'),
       referrer: req.get('Referrer'),
       sessionId: validatedData.sessionId,
-      ip: req.ip,
+      ip: req.ip || '',
       properties: validatedData.properties,
     }
 
@@ -117,7 +117,7 @@ router.post('/event', [
 })
 
 // Get analytics summary (for admin use)
-router.get('/summary', (req, res) => {
+router.get('/summary', (req: express.Request, res: express.Response) => {
   // In production, add authentication middleware
   const summary = {
     totalEvents: events.length,
@@ -132,7 +132,7 @@ router.get('/summary', (req, res) => {
 })
 
 // Get page analytics
-router.get('/pages', (req, res) => {
+router.get('/pages', (req: express.Request, res: express.Response) => {
   // In production, add authentication middleware
   const pageViews = events.filter(e => e.event === 'page_view')
   const pageStats = pageViews.reduce((acc, event) => {
