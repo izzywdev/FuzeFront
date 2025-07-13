@@ -45,7 +45,7 @@ router.post('/submit', [
   body('message').trim().isLength({ min: 10, max: 2000 }).escape(),
   body('phone').optional().trim().isLength({ max: 20 }).escape(),
   body('interest').optional().isIn(['platform', 'infrastructure', 'consultation', 'partnership', 'other']),
-], async (req, res) => {
+], async (req: express.Request, res: express.Response) => {
   try {
     // Check for validation errors
     const errors = validationResult(req)
