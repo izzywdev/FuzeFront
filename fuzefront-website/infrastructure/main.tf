@@ -5,7 +5,18 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.1"
+    }
   }
+}
+
+# Random suffix for unique resource names
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
 }
 
 provider "aws" {
@@ -165,11 +176,11 @@ resource "aws_security_group" "ec2" {
 
 # Key Pair
 resource "aws_key_pair" "main" {
-  key_name   = "${var.project_name}-key"
+  key_name   = "${var.project_name}-key-${random_string.suffix.result}"
   public_key = var.ssh_public_key
 
   tags = {
-    Name        = "${var.project_name}-key"
+    Name        = "${var.project_name}-key-${random_string.suffix.result}"
     Environment = var.environment
   }
 }
@@ -231,7 +242,7 @@ resource "aws_autoscaling_group" "main" {
 
 # Application Load Balancer
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb"
+  name               = "${var.project_name}-alb-${random_string.suffix.result}"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -240,14 +251,14 @@ resource "aws_lb" "main" {
   enable_deletion_protection = false
 
   tags = {
-    Name        = "${var.project_name}-alb"
+    Name        = "${var.project_name}-alb-${random_string.suffix.result}"
     Environment = var.environment
   }
 }
 
 # Target Group
 resource "aws_lb_target_group" "main" {
-  name     = "${var.project_name}-tg"
+  name     = "${var.project_name}-tg-${random_string.suffix.result}"
   port     = 80
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
@@ -265,7 +276,7 @@ resource "aws_lb_target_group" "main" {
   }
 
   tags = {
-    Name        = "${var.project_name}-tg"
+    Name        = "${var.project_name}-tg-${random_string.suffix.result}"
     Environment = var.environment
   }
 }
