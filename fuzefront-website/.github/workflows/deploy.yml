@@ -190,6 +190,7 @@ jobs:
         fi
         
         echo "Found most recent ASG: $ASG_NAME"
+        echo "DEBUG: Using ASG name for instance refresh"
         echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Auto Scaling Group to force instance refresh
