@@ -66,6 +66,7 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAnalytics = (): AnalyticsContextType => {
   const context = useContext(AnalyticsContext)
   if (!context) {

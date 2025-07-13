@@ -48,7 +48,7 @@ export const ContactPage: React.FC = () => {
       })
       
       reset()
-    } catch (error) {
+    } catch {
       addNotification({
         type: 'error',
         title: 'Error',
