@@ -69,7 +69,7 @@ data "aws_subnet" "default" {
 
 # Security Group for Load Balancer
 resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg"
+  name        = "${var.project_name}-alb-sg-${random_string.suffix.result}"
   description = "Security group for Application Load Balancer"
   vpc_id      = data.aws_vpc.default.id
 
@@ -95,14 +95,14 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name        = "${var.project_name}-alb-sg"
+    Name        = "${var.project_name}-alb-sg-${random_string.suffix.result}"
     Environment = var.environment
   }
 }
 
 # Security Group for EC2 Instances
 resource "aws_security_group" "ec2" {
-  name        = "${var.project_name}-ec2-sg"
+  name        = "${var.project_name}-ec2-sg-${random_string.suffix.result}"
   description = "Security group for EC2 instances"
   vpc_id      = data.aws_vpc.default.id
 
@@ -135,7 +135,7 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "${var.project_name}-ec2-sg"
+    Name        = "${var.project_name}-ec2-sg-${random_string.suffix.result}"
     Environment = var.environment
   }
 }
