@@ -43,69 +43,30 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# VPC
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+# Use default VPC to avoid VPC limit issues
+data "aws_vpc" "default" {
+  default = true
+}
 
-  tags = {
-    Name        = "${var.project_name}-vpc"
-    Environment = var.environment
+# Get default subnets
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
   }
 }
 
-# Internet Gateway
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name        = "${var.project_name}-igw"
-    Environment = var.environment
-  }
-}
-
-# Public Subnets
-resource "aws_subnet" "public" {
-  count                   = length(var.public_subnet_cidrs)
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidrs[count.index]
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name        = "${var.project_name}-public-subnet-${count.index + 1}"
-    Environment = var.environment
-  }
-}
-
-# Route Table
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-
-  tags = {
-    Name        = "${var.project_name}-public-rt"
-    Environment = var.environment
-  }
-}
-
-# Route Table Associations
-resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+# Get subnet details
+data "aws_subnet" "default" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
 }
 
 # Security Group for Load Balancer
 resource "aws_security_group" "alb" {
   name        = "${var.project_name}-alb-sg"
   description = "Security group for Application Load Balancer"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     from_port   = 80
@@ -138,7 +99,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "ec2" {
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for EC2 instances"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     from_port       = 80
@@ -215,7 +176,7 @@ resource "aws_launch_template" "main" {
 # Auto Scaling Group
 resource "aws_autoscaling_group" "main" {
   name                = "${var.project_name}-asg-${random_string.suffix.result}"
-  vpc_zone_identifier = aws_subnet.public[*].id
+  vpc_zone_identifier = data.aws_subnets.default.ids
   target_group_arns   = [aws_lb_target_group.main.arn]
   health_check_type   = "ELB"
   min_size            = var.min_size
@@ -246,7 +207,7 @@ resource "aws_lb" "main" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+  subnets            = data.aws_subnets.default.ids
 
   enable_deletion_protection = false
 
@@ -261,7 +222,7 @@ resource "aws_lb_target_group" "main" {
   name     = "${var.project_name}-tg-${random_string.suffix.result}"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
+  vpc_id   = data.aws_vpc.default.id
 
   health_check {
     enabled             = true
