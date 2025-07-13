@@ -214,7 +214,7 @@ resource "aws_launch_template" "main" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "main" {
-  name                = "${var.project_name}-asg"
+  name                = "${var.project_name}-asg-${random_string.suffix.result}"
   vpc_zone_identifier = aws_subnet.public[*].id
   target_group_arns   = [aws_lb_target_group.main.arn]
   health_check_type   = "ELB"
@@ -229,7 +229,7 @@ resource "aws_autoscaling_group" "main" {
 
   tag {
     key                 = "Name"
-    value               = "${var.project_name}-asg"
+    value               = "${var.project_name}-asg-${random_string.suffix.result}"
     propagate_at_launch = false
   }
 
