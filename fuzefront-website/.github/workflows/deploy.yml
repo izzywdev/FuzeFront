@@ -180,9 +180,12 @@ jobs:
       id: asg-name
       run: |
         # Get the most recently created ASG with our prefix
+        echo "Querying for Auto Scaling Groups..."
+        # Query for ASG and select the most recent one
         ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
           --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website-asg`)].{Name:AutoScalingGroupName, Created:CreatedTime} | sort_by(@, &Created) | [-1].Name' \
           --output text)
+        echo "Raw ASG query result: '$ASG_NAME'"
         
         if [ "$ASG_NAME" = "None" ] || [ -z "$ASG_NAME" ]; then
           echo "ERROR: No Auto Scaling Group found with prefix 'fuzefront-website-asg'"
