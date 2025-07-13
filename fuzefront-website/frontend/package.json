@@ -10,20 +10,21 @@
     "build:check": "tsc && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "lint:fix": "eslint . --ext ts,tsx --fix"
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0",
-    "lucide-react": "^0.468.0",
-    "framer-motion": "^11.15.0",
-    "react-intersection-observer": "^9.13.1",
-    "react-hook-form": "^7.54.0",
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.6.0"
+    "framer-motion": "^11.15.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.54.0",
+    "react-intersection-observer": "^9.13.1",
+    "react-router-dom": "^6.28.0",
+    "tailwind-merge": "^2.6.0",
+    "typescript-eslint": "^8.36.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.17",
