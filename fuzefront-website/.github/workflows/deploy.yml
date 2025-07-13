@@ -180,8 +180,9 @@ jobs:
       id: asg-name
       run: |
         ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website`)].AutoScalingGroupName' \
+          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website-asg`)].AutoScalingGroupName | [0]' \
           --output text)
+        echo "Found ASG: $ASG_NAME"
         echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Auto Scaling Group to force instance refresh
