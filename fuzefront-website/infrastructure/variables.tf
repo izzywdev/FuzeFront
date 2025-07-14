@@ -61,7 +61,7 @@ variable "max_size" {
 variable "desired_capacity" {
   description = "Desired number of instances in ASG"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "ssh_public_key" {
