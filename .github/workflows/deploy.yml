@@ -149,9 +149,6 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -159,85 +156,62 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get Auto Scaling Group name from previous job
-      id: asg-name
+    - name: Get running instances from Auto Scaling Group
+      id: get-instances
       run: |
-        ASG_NAME="${{ needs.deploy-infrastructure.outputs.asg_name }}"
-        echo "Getting ASG name from infrastructure job output: '$ASG_NAME'"
+        echo "Getting running instances from ASG: ${{ needs.deploy-infrastructure.outputs.asg_name }}"
         
-        if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" = "null" ]; then
-          echo "ERROR: No Auto Scaling Group name found in infrastructure outputs"
+        # Get healthy instances from ASG
+        INSTANCES=$(aws autoscaling describe-auto-scaling-groups \
+          --auto-scaling-group-names ${{ needs.deploy-infrastructure.outputs.asg_name }} \
+          --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService` && HealthStatus==`Healthy`].InstanceId' \
+          --output text)
+        
+        echo "Found healthy instances: $INSTANCES"
+        
+        if [ -z "$INSTANCES" ]; then
+          echo "ERROR: No healthy instances found in ASG"
           exit 1
         fi
         
-        echo "Using ASG: $ASG_NAME"
-        echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
+        # Use the first healthy instance
+        INSTANCE_ID=$(echo $INSTANCES | awk '{print $1}')
+        echo "Using instance: $INSTANCE_ID"
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
-    - name: Update Auto Scaling Group to force instance refresh
+    - name: Deploy to existing instance
       run: |
-        echo "Starting instance refresh for ASG: ${{ steps.asg-name.outputs.asg_name }}"
+        INSTANCE_ID="${{ steps.get-instances.outputs.instance_id }}"
+        echo "Deploying to instance: $INSTANCE_ID"
         
-        # Check if an instance refresh is already in progress
-        REFRESH_STATUS=$(aws autoscaling describe-instance-refreshes \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --query 'InstanceRefreshes[0].Status' --output text 2>/dev/null || echo "None")
+        # Execute deployment script on the instance
+        aws ssm send-command \
+          --instance-ids $INSTANCE_ID \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=["/opt/fuzefront-website/deploy.sh"]' \
+          --query 'Command.CommandId' \
+          --output text > command_id.txt
         
-        if [ "$REFRESH_STATUS" = "InProgress" ]; then
-          echo "Instance refresh already in progress, cancelling existing refresh..."
-          REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --query 'InstanceRefreshes[0].InstanceRefreshId' --output text)
-          aws autoscaling cancel-instance-refresh \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --instance-refresh-id $REFRESH_ID
-          echo "Waiting for cancellation to complete..."
-          sleep 30
-        fi
+        COMMAND_ID=$(cat command_id.txt)
+        echo "Command ID: $COMMAND_ID"
         
-        # Start new instance refresh
-        aws autoscaling start-instance-refresh \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300, "CheckpointPercentages": [50]}'
-
-    - name: Wait for deployment to complete
-      run: |
-        echo "Waiting for instance refresh to complete..."
+        # Wait for command to complete
+        echo "Waiting for deployment to complete..."
+        aws ssm wait command-executed \
+          --command-id $COMMAND_ID \
+          --instance-id $INSTANCE_ID
         
-        # Set timeout to 20 minutes (1200 seconds)
-        TIMEOUT=1200
-        START_TIME=$(date +%s)
-        
-        while true; do
-          CURRENT_TIME=$(date +%s)
-          ELAPSED=$((CURRENT_TIME - START_TIME))
-          
-          if [ $ELAPSED -gt $TIMEOUT ]; then
-            echo "Timeout reached (${TIMEOUT}s). Instance refresh may still be in progress."
-            exit 1
-          fi
-          
-          STATUS=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --query 'InstanceRefreshes[0].Status' --output text)
-          
-          echo "Instance refresh status: $STATUS (${ELAPSED}s elapsed)"
-          
-          if [ "$STATUS" = "Successful" ]; then
-            echo "Instance refresh completed successfully!"
-            break
-          elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-            echo "Instance refresh failed or was cancelled. Status: $STATUS"
-            exit 1
-          fi
-          
-          sleep 30
-        done
+        # Get command output
+        echo "Deployment output:"
+        aws ssm get-command-invocation \
+          --command-id $COMMAND_ID \
+          --instance-id $INSTANCE_ID \
+          --query 'StandardOutputContent' \
+          --output text
 
     - name: Verify deployment
-      working-directory: ./fuzefront-website/infrastructure
       run: |
-        # Get the load balancer DNS name from Terraform output
-        ALB_DNS=$(terraform output -raw load_balancer_dns_name)
+        ALB_DNS="${{ needs.deploy-infrastructure.outputs.alb_dns_name }}"
         echo "Load Balancer DNS: $ALB_DNS"
         
         # Test health endpoint
