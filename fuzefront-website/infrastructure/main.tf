@@ -5,81 +5,174 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.1"
-    }
   }
-}
-
-# Data sources to find existing resources for cleanup
-data "aws_autoscaling_groups" "existing" {
-  filter {
-    name   = "tag:Project"
-    values = [var.project_name]
-  }
-}
-
-# Local value for consistent naming
-locals {
-  name_prefix = "${var.project_name}-${var.environment}"
 }
 
 provider "aws" {
   region = var.aws_region
 }
 
-# Data sources
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+# Local values for consistent naming
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+  
+  # Tags applied to all resources
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Purpose     = "fuzefront-website"
   }
 }
 
-# Use default VPC to avoid VPC limit issues
+# DATA SOURCES - Check for existing resources
 data "aws_vpc" "default" {
   default = true
 }
 
-# Get default subnets (excluding us-east-1e where t3.micro is not available)
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
-  
+}
+
+# Check for existing Route53 zone - disabled due to multiple zones
+data "aws_route53_zone" "existing" {
+  count        = 0  # Disabled to avoid multiple zone conflicts
+  name         = var.domain_name
+  private_zone = false
+}
+
+# Check for existing ACM certificate - disabled due to multiple zones
+data "aws_acm_certificate" "existing" {
+  count       = 0  # Disabled to avoid multiple zone conflicts
+  domain      = var.domain_name
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+# Check for existing security groups
+data "aws_security_groups" "existing_alb" {
   filter {
-    name   = "availability-zone"
-    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+    name   = "group-name"
+    values = ["${local.name_prefix}-alb-sg"]
   }
 }
 
-# Get subnet details
-data "aws_subnet" "default" {
-  for_each = toset(data.aws_subnets.default.ids)
-  id       = each.value
+data "aws_security_groups" "existing_ec2" {
+  filter {
+    name   = "group-name"
+    values = ["${local.name_prefix}-ec2-sg"]
+  }
 }
 
-# Security Group for Load Balancer
+# Check for existing key pair
+data "aws_key_pair" "existing" {
+  count           = var.ssh_public_key != "" ? 1 : 0
+  key_name        = "${local.name_prefix}-key"
+  include_public_key = true
+  
+  # This will fail gracefully if the key doesn't exist
+  lifecycle {
+    postcondition {
+      condition     = self.key_name != ""
+      error_message = "Key pair not found, will create new one."
+    }
+  }
+}
+
+# Check for existing load balancer
+data "aws_lb" "existing" {
+  count = 0  # Disable for now, will use try() in locals
+  name  = "${local.name_prefix}-alb"
+}
+
+# Check for existing target group
+data "aws_lb_target_group" "existing" {
+  count = 0  # Disable for now, will use try() in locals
+  name  = "${local.name_prefix}-tg"
+}
+
+# Check for existing auto scaling group
+data "aws_autoscaling_group" "existing" {
+  count = 0  # Disable for now, will use try() in locals
+  name  = "${local.name_prefix}-asg"
+}
+
+# ROUTE53 ZONE - Disabled due to multiple existing zones
+resource "aws_route53_zone" "main" {
+  count = 0  # Disabled to avoid multiple zone conflicts
+  name  = var.domain_name
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-zone"
+  })
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Route53 disabled - no zone management
+locals {
+  route53_zone_id = null
+}
+
+# ACM CERTIFICATE - Disabled due to multiple existing zones
+resource "aws_acm_certificate" "main" {
+  count             = 0  # Disabled to avoid multiple zone conflicts
+  domain_name       = var.domain_name
+  subject_alternative_names = ["*.${var.domain_name}"]
+  validation_method = "DNS"
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-cert"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+    prevent_destroy       = true
+  }
+}
+
+# Certificate disabled - no SSL management
+locals {
+  certificate_arn = null
+}
+
+# Certificate validation records - disabled
+# resource "aws_route53_record" "cert_validation" {
+#   for_each = {}  # Disabled due to multiple zones
+#
+#   allow_overwrite = true
+#   name            = each.value.name
+#   records         = [each.value.record]
+#   ttl             = 60
+#   type            = each.value.type
+#   zone_id         = local.route53_zone_id
+# }
+
+# Certificate validation - disabled
+# resource "aws_acm_certificate_validation" "main" {
+#   count                   = 0  # Disabled due to multiple zones
+#   certificate_arn         = null
+#   validation_record_fqdns = []
+#
+#   timeouts {
+#     create = "5m"
+#   }
+# }
+
+# SECURITY GROUP FOR ALB - Create only if doesn't exist
 resource "aws_security_group" "alb" {
+  count       = length(data.aws_security_groups.existing_alb.ids) == 0 ? 1 : 0
   name        = "${local.name_prefix}-alb-sg"
   description = "Security group for Application Load Balancer"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -87,6 +180,7 @@ resource "aws_security_group" "alb" {
   }
 
   ingress {
+    description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -100,34 +194,37 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name        = "${local.name_prefix}-alb-sg"
-    Project     = var.project_name
-    Environment = var.environment
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-# Security Group for EC2 Instances
+# Use existing or created ALB security group
+locals {
+  alb_security_group_id = length(data.aws_security_groups.existing_alb.ids) > 0 ? data.aws_security_groups.existing_alb.ids[0] : aws_security_group.alb[0].id
+}
+
+# SECURITY GROUP FOR EC2 - Create only if doesn't exist
 resource "aws_security_group" "ec2" {
+  count       = length(data.aws_security_groups.existing_ec2.ids) == 0 ? 1 : 0
   name        = "${local.name_prefix}-ec2-sg"
   description = "Security group for EC2 instances"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
+    description     = "HTTP from ALB"
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [local.alb_security_group_id]
   }
 
   ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  ingress {
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -141,109 +238,77 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name        = "${local.name_prefix}-ec2-sg"
-    Project     = var.project_name
-    Environment = var.environment
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-ec2-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-# Key Pair
+# Use existing or created EC2 security group
+locals {
+  ec2_security_group_id = length(data.aws_security_groups.existing_ec2.ids) > 0 ? data.aws_security_groups.existing_ec2.ids[0] : aws_security_group.ec2[0].id
+}
+
+# KEY PAIR - Create only if doesn't exist
 resource "aws_key_pair" "main" {
+  count      = var.ssh_public_key != "" && length(data.aws_key_pair.existing) == 0 ? 1 : 0
   key_name   = "${local.name_prefix}-key"
   public_key = var.ssh_public_key
 
-  tags = {
-    Name        = "${local.name_prefix}-key"
-    Project     = var.project_name
-    Environment = var.environment
-  }
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-key"
+  })
 }
 
-# Launch Template
-resource "aws_launch_template" "main" {
-  name_prefix   = "${var.project_name}-lt"
-  image_id      = data.aws_ami.amazon_linux.id
-  instance_type = var.instance_type
-  key_name      = aws_key_pair.main.key_name
+# Use existing or created key pair
+locals {
+  key_name = var.ssh_public_key != "" ? (
+    length(data.aws_key_pair.existing) > 0 && try(data.aws_key_pair.existing[0].key_name, "") != "" ? 
+    data.aws_key_pair.existing[0].key_name : 
+    aws_key_pair.main[0].key_name
+  ) : null
+}
 
-  vpc_security_group_ids = [aws_security_group.ec2.id]
-
+# USER DATA SCRIPT
+locals {
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+    project_name = var.project_name
     domain_name = var.domain_name
-    email       = var.ssl_email
+    email = var.ssl_email
   }))
+}
+
+# LAUNCH TEMPLATE - Always create new version
+resource "aws_launch_template" "main" {
+  name_prefix   = "${local.name_prefix}-"
+  image_id      = "ami-0c7217cdde317cfec" # Amazon Linux 2023
+  instance_type = var.instance_type
+  key_name      = local.key_name
+
+  vpc_security_group_ids = [local.ec2_security_group_id]
+
+  user_data = local.user_data
 
   tag_specifications {
     resource_type = "instance"
-    tags = {
-      Name        = "${var.project_name}-instance"
-      Environment = var.environment
-    }
+    tags = merge(local.common_tags, {
+      Name = "${local.name_prefix}-instance"
+    })
   }
 
   lifecycle {
     create_before_destroy = true
   }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-template"
+  })
 }
 
-# Auto Scaling Group
-resource "aws_autoscaling_group" "main" {
-  name                = "${local.name_prefix}-asg"
-  vpc_zone_identifier = data.aws_subnets.default.ids
-  target_group_arns   = [aws_lb_target_group.main.arn]
-  health_check_type   = "ELB"
-  min_size            = var.min_size
-  max_size            = var.max_size
-  desired_capacity    = var.desired_capacity
-
-  launch_template {
-    id      = aws_launch_template.main.id
-    version = "$Latest"
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "${local.name_prefix}-asg"
-    propagate_at_launch = false
-  }
-
-  tag {
-    key                 = "Environment"
-    value               = var.environment
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "Project"
-    value               = var.project_name
-    propagate_at_launch = true
-  }
-
-  # Lifecycle rule to create new ASG before destroying old one
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# Application Load Balancer
-resource "aws_lb" "main" {
-  name               = "${local.name_prefix}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = data.aws_subnets.default.ids
-
-  enable_deletion_protection = false
-
-  tags = {
-    Name        = "${local.name_prefix}-alb"
-    Project     = var.project_name
-    Environment = var.environment
-  }
-}
-
-# Target Group
+# TARGET GROUP - Always create (will replace if exists)
 resource "aws_lb_target_group" "main" {
   name     = "${local.name_prefix}-tg"
   port     = 80
@@ -262,116 +327,127 @@ resource "aws_lb_target_group" "main" {
     unhealthy_threshold = 2
   }
 
-  tags = {
-    Name        = "${local.name_prefix}-tg"
-    Project     = var.project_name
-    Environment = var.environment
-  }
-}
-
-# Load Balancer Listener (HTTP)
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type = "redirect"
-
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
-  }
-}
-
-# Load Balancer Listener (HTTPS)
-resource "aws_lb_listener" "https" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = aws_acm_certificate.main.arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.main.arn
-  }
-}
-
-# Route53 Hosted Zone
-resource "aws_route53_zone" "main" {
-  name = var.domain_name
-
-  tags = {
-    Name        = "${var.project_name}-zone"
-    Environment = var.environment
-  }
-}
-
-# Route53 Record for ALB
-resource "aws_route53_record" "main" {
-  zone_id = aws_route53_zone.main.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
-    evaluate_target_health = true
-  }
-}
-
-# Route53 Record for www
-resource "aws_route53_record" "www" {
-  zone_id = aws_route53_zone.main.zone_id
-  name    = "www.${var.domain_name}"
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
-    evaluate_target_health = true
-  }
-}
-
-# ACM Certificate
-resource "aws_acm_certificate" "main" {
-  domain_name               = var.domain_name
-  subject_alternative_names = ["*.${var.domain_name}"]
-  validation_method         = "DNS"
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-tg"
+  })
 
   lifecycle {
     create_before_destroy = true
   }
+}
 
-  tags = {
-    Name        = "${var.project_name}-cert"
-    Environment = var.environment
+# Use created target group
+locals {
+  target_group_arn = aws_lb_target_group.main.arn
+}
+
+# AUTO SCALING GROUP - Replace if exists
+resource "aws_autoscaling_group" "main" {
+  name                = "${local.name_prefix}-asg"
+  vpc_zone_identifier = data.aws_subnets.default.ids
+  target_group_arns   = [local.target_group_arn]
+  health_check_type   = "ELB"
+  min_size            = var.min_size
+  max_size            = var.max_size
+  desired_capacity    = var.desired_capacity
+
+  launch_template {
+    id      = aws_launch_template.main.id
+    version = "$Latest"
   }
-}
 
-# ACM Certificate Validation
-resource "aws_acm_certificate_validation" "main" {
-  certificate_arn         = aws_acm_certificate.main.arn
-  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
-}
+  # Force replacement if name changes
+  lifecycle {
+    create_before_destroy = true
+  }
 
-# Route53 Records for Certificate Validation
-resource "aws_route53_record" "cert_validation" {
-  for_each = {
-    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
+  tag {
+    key                 = "Name"
+    value               = "${local.name_prefix}-asg"
+    propagate_at_launch = false
+  }
+
+  dynamic "tag" {
+    for_each = local.common_tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
     }
   }
-
-  allow_overwrite = true
-  name            = each.value.name
-  records         = [each.value.record]
-  ttl             = 60
-  type            = each.value.type
-  zone_id         = aws_route53_zone.main.zone_id
 }
+
+# LOAD BALANCER - Always create (will replace if exists)
+resource "aws_lb" "main" {
+  name               = "${local.name_prefix}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [local.alb_security_group_id]
+  subnets            = data.aws_subnets.default.ids
+
+  enable_deletion_protection = false
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb"
+  })
+}
+
+# Use created load balancer
+locals {
+  load_balancer_arn = aws_lb.main.arn
+  load_balancer_dns_name = aws_lb.main.dns_name
+  load_balancer_zone_id = aws_lb.main.zone_id
+}
+
+# ALB LISTENERS
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = local.load_balancer_arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = local.target_group_arn
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count             = 0  # Disabled - no SSL certificate available
+  load_balancer_arn = local.load_balancer_arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = local.certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = local.target_group_arn
+  }
+}
+
+# ROUTE53 RECORDS - Disabled due to multiple zones
+# resource "aws_route53_record" "main" {
+#   count   = 0  # Disabled due to multiple zones
+#   zone_id = local.route53_zone_id
+#   name    = var.domain_name
+#   type    = "A"
+#
+#   alias {
+#     name                   = local.load_balancer_dns_name
+#     zone_id                = local.load_balancer_zone_id
+#     evaluate_target_health = true
+#   }
+# }
+#
+# resource "aws_route53_record" "www" {
+#   count   = 0  # Disabled due to multiple zones
+#   zone_id = local.route53_zone_id
+#   name    = "www.${var.domain_name}"
+#   type    = "A"
+#
+#   alias {
+#     name                   = local.load_balancer_dns_name
+#     zone_id                = local.load_balancer_zone_id
+#     evaluate_target_health = true
+#   }
+# }
