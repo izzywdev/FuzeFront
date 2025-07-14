@@ -156,35 +156,45 @@ jobs:
         if [ $APPLY_EXIT_CODE -ne 0 ]; then
           echo "Terraform apply failed, checking for resource conflicts..."
           
-          # Check if key pair already exists and import it
-          if terraform plan -detailed-exitcode | grep -q "InvalidKeyPair.Duplicate"; then
+          # Import existing resources if they exist
+          echo "Checking and importing existing resources..."
+          
+          # Import key pair if it exists
+          if aws ec2 describe-key-pairs --key-names fuzefront-website-production-key &>/dev/null; then
             echo "Importing existing key pair..."
             terraform import 'aws_key_pair.main[0]' 'fuzefront-website-production-key' || true
           fi
           
-          # Check if target group already exists and import it
-          if terraform plan -detailed-exitcode | grep -q "fuzefront-website-production-tg.*already exists"; then
-            echo "Getting target group ARN for import..."
+          # Import target group if it exists
+          if aws elbv2 describe-target-groups --names fuzefront-website-production-tg &>/dev/null; then
+            echo "Importing existing target group..."
             TG_ARN=$(aws elbv2 describe-target-groups --names fuzefront-website-production-tg --query 'TargetGroups[0].TargetGroupArn' --output text)
             terraform import aws_lb_target_group.main "$TG_ARN" || true
           fi
           
-          # Check if load balancer already exists and import it
-          if terraform plan -detailed-exitcode | grep -q "fuzefront-website-production-alb.*already exists"; then
-            echo "Getting load balancer ARN for import..."
+          # Import load balancer if it exists
+          if aws elbv2 describe-load-balancers --names fuzefront-website-production-alb &>/dev/null; then
+            echo "Importing existing load balancer..."
             ALB_ARN=$(aws elbv2 describe-load-balancers --names fuzefront-website-production-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text)
             terraform import aws_lb.main "$ALB_ARN" || true
           fi
           
-          # Check if auto scaling group already exists and import it
+          # Import auto scaling group if it exists
           if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names fuzefront-website-production-asg &>/dev/null; then
             echo "Importing existing auto scaling group..."
             terraform import aws_autoscaling_group.main fuzefront-website-production-asg || true
           fi
           
-          # Try apply again after imports
-          echo "Retrying terraform apply after imports..."
-          terraform apply tfplan
+          # Create new plan after imports and apply
+          echo "Creating new plan after imports..."
+          terraform plan \
+            -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
+            -var="ssl_email=${{ secrets.SSL_EMAIL }}" \
+            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
+            -out=tfplan-after-import
+          
+          echo "Applying updated plan..."
+          terraform apply tfplan-after-import
         fi
 
     - name: Get Terraform outputs
