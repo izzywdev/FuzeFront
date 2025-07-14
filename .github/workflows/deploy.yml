@@ -114,13 +114,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
     outputs:
-      asg_name: ${{ steps.terraform-outputs.outputs.asg_name }}
-      alb_dns_name: ${{ steps.terraform-outputs.outputs.alb_dns_name }}
+      asg_name: fuzefront-website-production-asg
+      alb_dns_name: fuzefront-website-production-alb-717394184.us-east-1.elb.amazonaws.com
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -128,89 +125,23 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.5.0
-
-    - name: Terraform Init
-      working-directory: ./fuzefront-website/infrastructure
-      run: terraform init
-
-    - name: Terraform Plan
-      working-directory: ./fuzefront-website/infrastructure
+    - name: Verify existing infrastructure
       run: |
-        terraform plan \
-          -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
-          -var="ssl_email=${{ secrets.SSL_EMAIL }}" \
-          -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
-          -out=tfplan
-
-    - name: Terraform Apply
-      working-directory: ./fuzefront-website/infrastructure
-      run: |
-        set +e  # Don't exit on error
-        terraform apply tfplan
-        APPLY_EXIT_CODE=$?
+        echo "Using existing infrastructure:"
+        echo "Auto Scaling Group: fuzefront-website-production-asg"
+        echo "Load Balancer: fuzefront-website-production-alb-717394184.us-east-1.elb.amazonaws.com"
         
-        if [ $APPLY_EXIT_CODE -ne 0 ]; then
-          echo "Terraform apply failed, checking for resource conflicts..."
-          
-          # Import existing resources if they exist
-          echo "Checking and importing existing resources..."
-          
-          # Import key pair if it exists
-          if aws ec2 describe-key-pairs --key-names fuzefront-website-production-key &>/dev/null; then
-            echo "Importing existing key pair..."
-            terraform import 'aws_key_pair.main[0]' 'fuzefront-website-production-key' || true
-          fi
-          
-          # Import target group if it exists
-          if aws elbv2 describe-target-groups --names fuzefront-website-production-tg &>/dev/null; then
-            echo "Importing existing target group..."
-            TG_ARN=$(aws elbv2 describe-target-groups --names fuzefront-website-production-tg --query 'TargetGroups[0].TargetGroupArn' --output text)
-            terraform import aws_lb_target_group.main "$TG_ARN" || true
-          fi
-          
-          # Import load balancer if it exists
-          if aws elbv2 describe-load-balancers --names fuzefront-website-production-alb &>/dev/null; then
-            echo "Importing existing load balancer..."
-            ALB_ARN=$(aws elbv2 describe-load-balancers --names fuzefront-website-production-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text)
-            terraform import aws_lb.main "$ALB_ARN" || true
-          fi
-          
-          # Import auto scaling group if it exists
-          if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names fuzefront-website-production-asg &>/dev/null; then
-            echo "Importing existing auto scaling group..."
-            terraform import aws_autoscaling_group.main fuzefront-website-production-asg || true
-          fi
-          
-          # Create new plan after imports and apply
-          echo "Creating new plan after imports..."
-          terraform plan \
-            -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
-            -var="ssl_email=${{ secrets.SSL_EMAIL }}" \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
-            -out=tfplan-after-import
-          
-          echo "Applying updated plan..."
-          terraform apply tfplan-after-import
-        fi
-
-    - name: Get Terraform outputs
-      working-directory: ./fuzefront-website/infrastructure
-      id: terraform-outputs
-      run: |
-        echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)" >> $GITHUB_OUTPUT
-        echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> $GITHUB_OUTPUT
-        # Route53 outputs are disabled, so we skip them
-        echo "zone_id=" >> $GITHUB_OUTPUT
-        echo "name_servers=[]" >> $GITHUB_OUTPUT
-
-    - name: Update Route53 if needed
-      run: |
-        echo "Please update your domain's nameservers to:"
-        echo "${{ steps.terraform-outputs.outputs.name_servers }}"
+        # Verify ASG exists
+        aws autoscaling describe-auto-scaling-groups \
+          --auto-scaling-group-names fuzefront-website-production-asg \
+          --query 'AutoScalingGroups[0].AutoScalingGroupName' \
+          --output text
+        
+        # Verify ALB exists  
+        aws elbv2 describe-load-balancers \
+          --names fuzefront-website-production-alb \
+          --query 'LoadBalancers[0].DNSName' \
+          --output text
 
   deploy-application:
     needs: deploy-infrastructure
