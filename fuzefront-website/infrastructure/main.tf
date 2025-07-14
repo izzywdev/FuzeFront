@@ -67,19 +67,11 @@ data "aws_security_groups" "existing_ec2" {
   }
 }
 
-# Check for existing key pair
+# Check for existing key pair - disabled for now
 data "aws_key_pair" "existing" {
-  count           = var.ssh_public_key != "" ? 1 : 0
+  count           = 0  # Disabled to avoid errors when key doesn't exist
   key_name        = "${local.name_prefix}-key"
   include_public_key = true
-  
-  # This will fail gracefully if the key doesn't exist
-  lifecycle {
-    postcondition {
-      condition     = self.key_name != ""
-      error_message = "Key pair not found, will create new one."
-    }
-  }
 }
 
 # Check for existing load balancer
@@ -252,9 +244,9 @@ locals {
   ec2_security_group_id = length(data.aws_security_groups.existing_ec2.ids) > 0 ? data.aws_security_groups.existing_ec2.ids[0] : aws_security_group.ec2[0].id
 }
 
-# KEY PAIR - Create only if doesn't exist
+# KEY PAIR - Create if SSH key is provided
 resource "aws_key_pair" "main" {
-  count      = var.ssh_public_key != "" && length(data.aws_key_pair.existing) == 0 ? 1 : 0
+  count      = var.ssh_public_key != "" ? 1 : 0
   key_name   = "${local.name_prefix}-key"
   public_key = var.ssh_public_key
 
@@ -263,13 +255,9 @@ resource "aws_key_pair" "main" {
   })
 }
 
-# Use existing or created key pair
+# Use created key pair only
 locals {
-  key_name = var.ssh_public_key != "" ? (
-    length(data.aws_key_pair.existing) > 0 && try(data.aws_key_pair.existing[0].key_name, "") != "" ? 
-    data.aws_key_pair.existing[0].key_name : 
-    aws_key_pair.main[0].key_name
-  ) : null
+  key_name = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
 }
 
 # USER DATA SCRIPT
