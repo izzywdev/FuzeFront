@@ -176,24 +176,22 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get Auto Scaling Group name
+    - name: Get Auto Scaling Group name from Terraform output
       id: asg-name
+      working-directory: ./fuzefront-website/infrastructure
       run: |
-        # Get the most recently created ASG with our prefix
-        echo "Querying for Auto Scaling Groups..."
-        # Query for ASG and select the most recent one
-        ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website-asg`)].{Name:AutoScalingGroupName, Created:CreatedTime} | sort_by(@, &Created) | [-1].Name' \
-          --output text)
-        echo "Raw ASG query result: '$ASG_NAME'"
+        echo "Getting ASG name from Terraform output..."
+        ASG_NAME=$(terraform output -raw autoscaling_group_name)
+        echo "Terraform ASG output: '$ASG_NAME'"
         
-        if [ "$ASG_NAME" = "None" ] || [ -z "$ASG_NAME" ]; then
-          echo "ERROR: No Auto Scaling Group found with prefix 'fuzefront-website-asg'"
+        if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" = "null" ]; then
+          echo "ERROR: No Auto Scaling Group name found in Terraform output"
+          echo "Available outputs:"
+          terraform output
           exit 1
         fi
         
-        echo "Found most recent ASG: $ASG_NAME"
-        echo "DEBUG: Using ASG name for instance refresh"
+        echo "Using ASG: $ASG_NAME"
         echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Auto Scaling Group to force instance refresh
@@ -257,12 +255,11 @@ jobs:
         done
 
     - name: Verify deployment
+      working-directory: ./fuzefront-website/infrastructure
       run: |
-        # Get the load balancer DNS name
-        ALB_DNS=$(aws elbv2 describe-load-balancers \
-          --names fuzefront-website-alb \
-          --query 'LoadBalancers[0].DNSName' \
-          --output text)
+        # Get the load balancer DNS name from Terraform output
+        ALB_DNS=$(terraform output -raw load_balancer_dns_name)
+        echo "Load Balancer DNS: $ALB_DNS"
         
         # Test health endpoint
         echo "Testing health endpoint..."
