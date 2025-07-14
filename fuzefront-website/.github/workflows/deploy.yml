@@ -198,15 +198,63 @@ jobs:
 
     - name: Update Auto Scaling Group to force instance refresh
       run: |
+        echo "Starting instance refresh for ASG: ${{ steps.asg-name.outputs.asg_name }}"
+        
+        # Check if an instance refresh is already in progress
+        REFRESH_STATUS=$(aws autoscaling describe-instance-refreshes \
+          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+          --query 'InstanceRefreshes[0].Status' --output text 2>/dev/null || echo "None")
+        
+        if [ "$REFRESH_STATUS" = "InProgress" ]; then
+          echo "Instance refresh already in progress, cancelling existing refresh..."
+          REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --query 'InstanceRefreshes[0].InstanceRefreshId' --output text)
+          aws autoscaling cancel-instance-refresh \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --instance-refresh-id $REFRESH_ID
+          echo "Waiting for cancellation to complete..."
+          sleep 30
+        fi
+        
+        # Start new instance refresh
         aws autoscaling start-instance-refresh \
           --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --preferences MinHealthyPercentage=50,InstanceWarmup=300
+          --preferences MinHealthyPercentage=50,InstanceWarmup=300,CheckpointPercentages=50
 
     - name: Wait for deployment to complete
       run: |
         echo "Waiting for instance refresh to complete..."
-        aws autoscaling wait instance-refresh-complete \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }}
+        
+        # Set timeout to 20 minutes (1200 seconds)
+        TIMEOUT=1200
+        START_TIME=$(date +%s)
+        
+        while true; do
+          CURRENT_TIME=$(date +%s)
+          ELAPSED=$((CURRENT_TIME - START_TIME))
+          
+          if [ $ELAPSED -gt $TIMEOUT ]; then
+            echo "Timeout reached (${TIMEOUT}s). Instance refresh may still be in progress."
+            exit 1
+          fi
+          
+          STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --query 'InstanceRefreshes[0].Status' --output text)
+          
+          echo "Instance refresh status: $STATUS (${ELAPSED}s elapsed)"
+          
+          if [ "$STATUS" = "Successful" ]; then
+            echo "Instance refresh completed successfully!"
+            break
+          elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+            echo "Instance refresh failed or was cancelled. Status: $STATUS"
+            exit 1
+          fi
+          
+          sleep 30
+        done
 
     - name: Verify deployment
       run: |
