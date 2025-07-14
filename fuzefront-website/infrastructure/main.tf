@@ -12,11 +12,17 @@ terraform {
   }
 }
 
-# Random suffix for unique resource names
-resource "random_string" "suffix" {
-  length  = 6
-  special = false
-  upper   = false
+# Data sources to find existing resources for cleanup
+data "aws_autoscaling_groups" "existing" {
+  filter {
+    name   = "tag:Project"
+    values = [var.project_name]
+  }
+}
+
+# Local value for consistent naming
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
 }
 
 provider "aws" {
@@ -69,7 +75,7 @@ data "aws_subnet" "default" {
 
 # Security Group for Load Balancer
 resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg-${random_string.suffix.result}"
+  name        = "${local.name_prefix}-alb-sg"
   description = "Security group for Application Load Balancer"
   vpc_id      = data.aws_vpc.default.id
 
@@ -95,14 +101,15 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name        = "${var.project_name}-alb-sg-${random_string.suffix.result}"
+    Name        = "${local.name_prefix}-alb-sg"
+    Project     = var.project_name
     Environment = var.environment
   }
 }
 
 # Security Group for EC2 Instances
 resource "aws_security_group" "ec2" {
-  name        = "${var.project_name}-ec2-sg-${random_string.suffix.result}"
+  name        = "${local.name_prefix}-ec2-sg"
   description = "Security group for EC2 instances"
   vpc_id      = data.aws_vpc.default.id
 
@@ -135,18 +142,20 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "${var.project_name}-ec2-sg-${random_string.suffix.result}"
+    Name        = "${local.name_prefix}-ec2-sg"
+    Project     = var.project_name
     Environment = var.environment
   }
 }
 
 # Key Pair
 resource "aws_key_pair" "main" {
-  key_name   = "${var.project_name}-key-${random_string.suffix.result}"
+  key_name   = "${local.name_prefix}-key"
   public_key = var.ssh_public_key
 
   tags = {
-    Name        = "${var.project_name}-key-${random_string.suffix.result}"
+    Name        = "${local.name_prefix}-key"
+    Project     = var.project_name
     Environment = var.environment
   }
 }
@@ -180,7 +189,7 @@ resource "aws_launch_template" "main" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "main" {
-  name                = "${var.project_name}-asg-${random_string.suffix.result}"
+  name                = "${local.name_prefix}-asg"
   vpc_zone_identifier = data.aws_subnets.default.ids
   target_group_arns   = [aws_lb_target_group.main.arn]
   health_check_type   = "ELB"
@@ -195,7 +204,7 @@ resource "aws_autoscaling_group" "main" {
 
   tag {
     key                 = "Name"
-    value               = "${var.project_name}-asg-${random_string.suffix.result}"
+    value               = "${local.name_prefix}-asg"
     propagate_at_launch = false
   }
 
@@ -204,11 +213,22 @@ resource "aws_autoscaling_group" "main" {
     value               = var.environment
     propagate_at_launch = true
   }
+
+  tag {
+    key                 = "Project"
+    value               = var.project_name
+    propagate_at_launch = true
+  }
+
+  # Lifecycle rule to create new ASG before destroying old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Application Load Balancer
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb-${random_string.suffix.result}"
+  name               = "${local.name_prefix}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -217,14 +237,15 @@ resource "aws_lb" "main" {
   enable_deletion_protection = false
 
   tags = {
-    Name        = "${var.project_name}-alb-${random_string.suffix.result}"
+    Name        = "${local.name_prefix}-alb"
+    Project     = var.project_name
     Environment = var.environment
   }
 }
 
 # Target Group
 resource "aws_lb_target_group" "main" {
-  name     = "${var.project_name}-tg-${random_string.suffix.result}"
+  name     = "${local.name_prefix}-tg"
   port     = 80
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default.id
@@ -242,7 +263,8 @@ resource "aws_lb_target_group" "main" {
   }
 
   tags = {
-    Name        = "${var.project_name}-tg-${random_string.suffix.result}"
+    Name        = "${local.name_prefix}-tg"
+    Project     = var.project_name
     Environment = var.environment
   }
 }
