@@ -67,28 +67,26 @@ data "aws_security_groups" "existing_ec2" {
   }
 }
 
-# Check for existing key pair - disabled for now
+# Try to get existing key pair (will return null if doesn't exist)
 data "aws_key_pair" "existing" {
-  count           = 0  # Disabled to avoid errors when key doesn't exist
+  count           = 0  # Disable data source approach for now
   key_name        = "${local.name_prefix}-key"
   include_public_key = true
 }
 
-# Check for existing load balancer
+# Check for existing resources - disabled data source approach
 data "aws_lb" "existing" {
-  count = 0  # Disable for now, will use try() in locals
+  count = 0
   name  = "${local.name_prefix}-alb"
 }
 
-# Check for existing target group
 data "aws_lb_target_group" "existing" {
-  count = 0  # Disable for now, will use try() in locals
+  count = 0
   name  = "${local.name_prefix}-tg"
 }
 
-# Check for existing auto scaling group
 data "aws_autoscaling_group" "existing" {
-  count = 0  # Disable for now, will use try() in locals
+  count = 0
   name  = "${local.name_prefix}-asg"
 }
 
@@ -244,7 +242,7 @@ locals {
   ec2_security_group_id = length(data.aws_security_groups.existing_ec2.ids) > 0 ? data.aws_security_groups.existing_ec2.ids[0] : aws_security_group.ec2[0].id
 }
 
-# KEY PAIR - Create if SSH key is provided
+# KEY PAIR - Create if SSH key is provided, will be imported if exists
 resource "aws_key_pair" "main" {
   count      = var.ssh_public_key != "" ? 1 : 0
   key_name   = "${local.name_prefix}-key"
@@ -253,9 +251,13 @@ resource "aws_key_pair" "main" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-key"
   })
+  
+  lifecycle {
+    ignore_changes = [public_key]
+  }
 }
 
-# Use created key pair only
+# Use created key pair
 locals {
   key_name = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
 }
@@ -296,7 +298,7 @@ resource "aws_launch_template" "main" {
   })
 }
 
-# TARGET GROUP - Always create (will replace if exists)
+# TARGET GROUP - Will be imported if exists
 resource "aws_lb_target_group" "main" {
   name     = "${local.name_prefix}-tg"
   port     = 80
@@ -329,7 +331,7 @@ locals {
   target_group_arn = aws_lb_target_group.main.arn
 }
 
-# AUTO SCALING GROUP - Replace if exists
+# AUTO SCALING GROUP - Will be imported if exists
 resource "aws_autoscaling_group" "main" {
   name                = "${local.name_prefix}-asg"
   vpc_zone_identifier = data.aws_subnets.default.ids
@@ -365,7 +367,7 @@ resource "aws_autoscaling_group" "main" {
   }
 }
 
-# LOAD BALANCER - Always create (will replace if exists)
+# LOAD BALANCER - Will be imported if exists
 resource "aws_lb" "main" {
   name               = "${local.name_prefix}-alb"
   internal           = false

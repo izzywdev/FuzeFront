@@ -113,6 +113,9 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
+    outputs:
+      asg_name: ${{ steps.terraform-outputs.outputs.asg_name }}
+      alb_dns_name: ${{ steps.terraform-outputs.outputs.alb_dns_name }}
     
     steps:
     - name: Checkout code
@@ -145,15 +148,54 @@ jobs:
 
     - name: Terraform Apply
       working-directory: ./fuzefront-website/infrastructure
-      run: terraform apply tfplan
+      run: |
+        set +e  # Don't exit on error
+        terraform apply tfplan
+        APPLY_EXIT_CODE=$?
+        
+        if [ $APPLY_EXIT_CODE -ne 0 ]; then
+          echo "Terraform apply failed, checking for resource conflicts..."
+          
+          # Check if key pair already exists and import it
+          if terraform plan -detailed-exitcode | grep -q "InvalidKeyPair.Duplicate"; then
+            echo "Importing existing key pair..."
+            terraform import 'aws_key_pair.main[0]' 'fuzefront-website-production-key' || true
+          fi
+          
+          # Check if target group already exists and import it
+          if terraform plan -detailed-exitcode | grep -q "fuzefront-website-production-tg.*already exists"; then
+            echo "Getting target group ARN for import..."
+            TG_ARN=$(aws elbv2 describe-target-groups --names fuzefront-website-production-tg --query 'TargetGroups[0].TargetGroupArn' --output text)
+            terraform import aws_lb_target_group.main "$TG_ARN" || true
+          fi
+          
+          # Check if load balancer already exists and import it
+          if terraform plan -detailed-exitcode | grep -q "fuzefront-website-production-alb.*already exists"; then
+            echo "Getting load balancer ARN for import..."
+            ALB_ARN=$(aws elbv2 describe-load-balancers --names fuzefront-website-production-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+            terraform import aws_lb.main "$ALB_ARN" || true
+          fi
+          
+          # Check if auto scaling group already exists and import it
+          if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names fuzefront-website-production-asg &>/dev/null; then
+            echo "Importing existing auto scaling group..."
+            terraform import aws_autoscaling_group.main fuzefront-website-production-asg || true
+          fi
+          
+          # Try apply again after imports
+          echo "Retrying terraform apply after imports..."
+          terraform apply tfplan
+        fi
 
     - name: Get Terraform outputs
       working-directory: ./fuzefront-website/infrastructure
       id: terraform-outputs
       run: |
         echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)" >> $GITHUB_OUTPUT
-        echo "zone_id=$(terraform output -raw route53_zone_id)" >> $GITHUB_OUTPUT
-        echo "name_servers=$(terraform output -json route53_zone_name_servers)" >> $GITHUB_OUTPUT
+        echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> $GITHUB_OUTPUT
+        # Route53 outputs are disabled, so we skip them
+        echo "zone_id=" >> $GITHUB_OUTPUT
+        echo "name_servers=[]" >> $GITHUB_OUTPUT
 
     - name: Update Route53 if needed
       run: |
@@ -176,33 +218,86 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get Auto Scaling Group name
+    - name: Get Auto Scaling Group name from previous job
       id: asg-name
       run: |
-        ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-          --query 'AutoScalingGroups[?contains(AutoScalingGroupName, `fuzefront-website`)].AutoScalingGroupName' \
-          --output text)
+        ASG_NAME="${{ needs.deploy-infrastructure.outputs.asg_name }}"
+        echo "Getting ASG name from infrastructure job output: '$ASG_NAME'"
+        
+        if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" = "null" ]; then
+          echo "ERROR: No Auto Scaling Group name found in infrastructure outputs"
+          exit 1
+        fi
+        
+        echo "Using ASG: $ASG_NAME"
         echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
 
     - name: Update Auto Scaling Group to force instance refresh
       run: |
+        echo "Starting instance refresh for ASG: ${{ steps.asg-name.outputs.asg_name }}"
+        
+        # Check if an instance refresh is already in progress
+        REFRESH_STATUS=$(aws autoscaling describe-instance-refreshes \
+          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+          --query 'InstanceRefreshes[0].Status' --output text 2>/dev/null || echo "None")
+        
+        if [ "$REFRESH_STATUS" = "InProgress" ]; then
+          echo "Instance refresh already in progress, cancelling existing refresh..."
+          REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --query 'InstanceRefreshes[0].InstanceRefreshId' --output text)
+          aws autoscaling cancel-instance-refresh \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --instance-refresh-id $REFRESH_ID
+          echo "Waiting for cancellation to complete..."
+          sleep 30
+        fi
+        
+        # Start new instance refresh
         aws autoscaling start-instance-refresh \
           --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --preferences MinHealthyPercentage=50,InstanceWarmup=300
+          --preferences MinHealthyPercentage=50,InstanceWarmup=300,CheckpointPercentages=50
 
     - name: Wait for deployment to complete
       run: |
         echo "Waiting for instance refresh to complete..."
-        aws autoscaling wait instance-refresh-complete \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }}
+        
+        # Set timeout to 20 minutes (1200 seconds)
+        TIMEOUT=1200
+        START_TIME=$(date +%s)
+        
+        while true; do
+          CURRENT_TIME=$(date +%s)
+          ELAPSED=$((CURRENT_TIME - START_TIME))
+          
+          if [ $ELAPSED -gt $TIMEOUT ]; then
+            echo "Timeout reached (${TIMEOUT}s). Instance refresh may still be in progress."
+            exit 1
+          fi
+          
+          STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
+            --query 'InstanceRefreshes[0].Status' --output text)
+          
+          echo "Instance refresh status: $STATUS (${ELAPSED}s elapsed)"
+          
+          if [ "$STATUS" = "Successful" ]; then
+            echo "Instance refresh completed successfully!"
+            break
+          elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+            echo "Instance refresh failed or was cancelled. Status: $STATUS"
+            exit 1
+          fi
+          
+          sleep 30
+        done
 
     - name: Verify deployment
+      working-directory: ./fuzefront-website/infrastructure
       run: |
-        # Get the load balancer DNS name
-        ALB_DNS=$(aws elbv2 describe-load-balancers \
-          --names fuzefront-website-alb \
-          --query 'LoadBalancers[0].DNSName' \
-          --output text)
+        # Get the load balancer DNS name from Terraform output
+        ALB_DNS=$(terraform output -raw load_balancer_dns_name)
+        echo "Load Balancer DNS: $ALB_DNS"
         
         # Test health endpoint
         echo "Testing health endpoint..."
