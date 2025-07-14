@@ -197,7 +197,7 @@ jobs:
         # Start new instance refresh
         aws autoscaling start-instance-refresh \
           --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --preferences MinHealthyPercentage=50,InstanceWarmup=300,CheckpointPercentages=50
+          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300, "CheckpointPercentages": [50]}'
 
     - name: Wait for deployment to complete
       run: |
