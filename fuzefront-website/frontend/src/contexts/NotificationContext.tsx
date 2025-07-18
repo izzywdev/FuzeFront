@@ -102,7 +102,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [notifications, setNotifications] = useState<Notification[]>([])
 
   const addNotification = useCallback((notification: Omit<Notification, 'id'>) => {
-    const id = crypto.randomUUID()
+    // Fallback UUID generation for non-secure contexts
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0
+          const v = c === 'x' ? r : (r & 0x3 | 0x8)
+          return v.toString(16)
+        })
     setNotifications(prev => [...prev, { ...notification, id }])
   }, [])
 
