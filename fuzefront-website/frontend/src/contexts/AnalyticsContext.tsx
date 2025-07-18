@@ -23,7 +23,7 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let newId: string
     try {
       newId = crypto.randomUUID()
-    } catch (error) {
+    } catch {
       // Fallback UUID generation for non-secure contexts
       newId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         const r = Math.random() * 16 | 0
