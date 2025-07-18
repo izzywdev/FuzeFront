@@ -70,6 +70,17 @@ app.use('/api/contact', contactLimiter, contactRoutes)
 app.use('/api/newsletter', newsletterRoutes)
 app.use('/api/analytics', analyticsRoutes)
 
+// API health check endpoint
+app.get('/api/health', (_, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    version: process.env.npm_package_version || '1.0.0',
+    api: 'active'
+  })
+})
+
 // Default route
 app.get('/', (_, res) => {
   res.json({
@@ -77,6 +88,7 @@ app.get('/', (_, res) => {
     version: '1.0.0',
     endpoints: {
       health: '/health',
+      apiHealth: '/api/health',
       contact: '/api/contact',
       newsletter: '/api/newsletter',
       analytics: '/api/analytics'
