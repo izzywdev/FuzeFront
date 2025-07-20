@@ -37,7 +37,7 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const trackEvent = useCallback(async (event: string, properties?: Record<string, unknown>) => {
     try {
-      await axios.post(`${API_BASE_URL}/api/analytics/event`, {
+      await axios.post(`${API_BASE_URL}/analytics/event`, {
         event,
         page: location.pathname,
         sessionId,
@@ -50,7 +50,7 @@ export const AnalyticsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const trackPageView = useCallback(async (page: string, referrer?: string) => {
     try {
-      await axios.post(`${API_BASE_URL}/api/analytics/page-view`, {
+      await axios.post(`${API_BASE_URL}/analytics/page-view`, {
         page,
         sessionId,
         referrer
