@@ -171,9 +171,6 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -181,85 +178,73 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get Auto Scaling Group name from previous job
-      id: asg-name
+    - name: Setup SSH key
       run: |
-        ASG_NAME="${{ needs.deploy-infrastructure.outputs.asg_name }}"
-        echo "Getting ASG name from infrastructure job output: '$ASG_NAME'"
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/ssh_key
+        chmod 600 /tmp/ssh_key
+
+    - name: Get running instances from Auto Scaling Group
+      id: get-instances
+      run: |
+        echo "Getting running instances from ASG: ${{ needs.deploy-infrastructure.outputs.asg_name }}"
         
-        if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" = "null" ]; then
-          echo "ERROR: No Auto Scaling Group name found in infrastructure outputs"
+        # Get healthy instances from ASG
+        INSTANCES=$(aws autoscaling describe-auto-scaling-groups \
+          --auto-scaling-group-names ${{ needs.deploy-infrastructure.outputs.asg_name }} \
+          --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
+          --output text)
+        
+        echo "Found instances: $INSTANCES"
+        
+        if [ -z "$INSTANCES" ]; then
+          echo "ERROR: No instances found in ASG"
           exit 1
         fi
         
-        echo "Using ASG: $ASG_NAME"
-        echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
+        # Use the first instance
+        INSTANCE_ID=$(echo $INSTANCES | awk '{print $1}')
+        echo "Using instance: $INSTANCE_ID"
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
-    - name: Update Auto Scaling Group to force instance refresh
+    - name: Get instance IP address
+      id: get-ip
       run: |
-        echo "Starting instance refresh for ASG: ${{ steps.asg-name.outputs.asg_name }}"
-        
-        # Check if an instance refresh is already in progress
-        REFRESH_STATUS=$(aws autoscaling describe-instance-refreshes \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --query 'InstanceRefreshes[0].Status' --output text 2>/dev/null || echo "None")
-        
-        if [ "$REFRESH_STATUS" = "InProgress" ]; then
-          echo "Instance refresh already in progress, cancelling existing refresh..."
-          REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --query 'InstanceRefreshes[0].InstanceRefreshId' --output text)
-          aws autoscaling cancel-instance-refresh \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --instance-refresh-id $REFRESH_ID
-          echo "Waiting for cancellation to complete..."
-          sleep 30
-        fi
-        
-        # Start new instance refresh
-        aws autoscaling start-instance-refresh \
-          --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-          --preferences MinHealthyPercentage=50,InstanceWarmup=300,CheckpointPercentages=50
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ steps.get-instances.outputs.instance_id }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        echo "Instance IP: $INSTANCE_IP"
+        echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
-    - name: Wait for deployment to complete
+    - name: Deploy to existing instance via SSH
       run: |
-        echo "Waiting for instance refresh to complete..."
+        INSTANCE_IP="${{ steps.get-ip.outputs.instance_ip }}"
+        echo "Deploying to instance: $INSTANCE_IP"
         
-        # Set timeout to 20 minutes (1200 seconds)
-        TIMEOUT=1200
-        START_TIME=$(date +%s)
-        
-        while true; do
-          CURRENT_TIME=$(date +%s)
-          ELAPSED=$((CURRENT_TIME - START_TIME))
-          
-          if [ $ELAPSED -gt $TIMEOUT ]; then
-            echo "Timeout reached (${TIMEOUT}s). Instance refresh may still be in progress."
-            exit 1
-          fi
-          
-          STATUS=$(aws autoscaling describe-instance-refreshes \
-            --auto-scaling-group-name ${{ steps.asg-name.outputs.asg_name }} \
-            --query 'InstanceRefreshes[0].Status' --output text)
-          
-          echo "Instance refresh status: $STATUS (${ELAPSED}s elapsed)"
-          
-          if [ "$STATUS" = "Successful" ]; then
-            echo "Instance refresh completed successfully!"
+        # Wait for SSH to be available
+        echo "Waiting for SSH to be available..."
+        for i in {1..30}; do
+          if ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$INSTANCE_IP 'echo "SSH OK"'; then
+            echo "SSH connection successful"
             break
-          elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-            echo "Instance refresh failed or was cancelled. Status: $STATUS"
-            exit 1
           fi
-          
-          sleep 30
+          echo "SSH attempt $i failed, retrying in 10 seconds..."
+          sleep 10
         done
+        
+        # Set environment variables and execute deployment
+        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+        export AWS_REGION=${{ env.AWS_REGION }}
+        export ECR_REPOSITORY_BACKEND=${{ env.ECR_REPOSITORY_BACKEND }}
+        export ECR_REPOSITORY_FRONTEND=${{ env.ECR_REPOSITORY_FRONTEND }}
+        
+        # Execute deployment script
+        sudo /opt/fuzefront-website/deploy.sh
+        EOF
 
     - name: Verify deployment
-      working-directory: ./fuzefront-website/infrastructure
       run: |
-        # Get the load balancer DNS name from Terraform output
-        ALB_DNS=$(terraform output -raw load_balancer_dns_name)
+        ALB_DNS="${{ needs.deploy-infrastructure.outputs.alb_dns_name }}"
         echo "Load Balancer DNS: $ALB_DNS"
         
         # Test health endpoint
