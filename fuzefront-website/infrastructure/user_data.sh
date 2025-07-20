@@ -15,6 +15,11 @@ usermod -a -G docker ec2-user
 # Install AWS CLI
 yum install -y aws-cli
 
+# Install and start SSM agent
+yum install -y amazon-ssm-agent
+systemctl enable amazon-ssm-agent
+systemctl start amazon-ssm-agent
+
 # Create application directory
 mkdir -p /opt/fuzefront-website
 cd /opt/fuzefront-website

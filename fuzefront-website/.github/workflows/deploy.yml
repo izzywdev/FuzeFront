@@ -1,4 +1,4 @@
-name: Deploy FuzeFront Website
+name: Deploy FuzeFront Website (SSH)
 
 on:
   push:
@@ -131,7 +131,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.5.0
+        terraform-version: 1.5.0
 
     - name: Terraform Init
       working-directory: ./fuzefront-website/infrastructure
@@ -156,14 +156,6 @@ jobs:
       run: |
         echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)" >> $GITHUB_OUTPUT
         echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> $GITHUB_OUTPUT
-        # Route53 outputs are disabled, so we skip them
-        echo "zone_id=" >> $GITHUB_OUTPUT
-        echo "name_servers=[]" >> $GITHUB_OUTPUT
-
-    - name: Update Route53 if needed
-      run: |
-        echo "Please update your domain's nameservers to:"
-        echo "${{ steps.terraform-outputs.outputs.name_servers }}"
 
   deploy-application:
     needs: deploy-infrastructure
@@ -230,6 +222,10 @@ jobs:
           fi
           echo "SSH attempt $i failed, retrying in 10 seconds..."
           sleep 10
+          if [ $i -eq 30 ]; then
+            echo "SSH connection failed after 30 attempts"
+            exit 1
+          fi
         done
         
         # Set environment variables and execute deployment
