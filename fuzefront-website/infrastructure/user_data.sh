@@ -66,7 +66,7 @@ echo "Starting frontend container..."
 docker run -d \
   --name fuzefront-frontend \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 3000:80 \
   ${FRONTEND_IMAGE}
 
 # Wait for services to be ready
@@ -95,7 +95,7 @@ http {
     }
     
     upstream frontend {
-        server frontend:3000;
+        server frontend:80;
     }
     
     server {
