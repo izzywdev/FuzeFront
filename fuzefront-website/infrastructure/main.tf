@@ -15,7 +15,7 @@ provider "aws" {
 # Local values for consistent naming
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
-  
+
   # Tags applied to all resources
   common_tags = {
     Project     = var.project_name
@@ -39,14 +39,14 @@ data "aws_subnets" "default" {
 
 # Check for existing Route53 zone - disabled due to multiple zones
 data "aws_route53_zone" "existing" {
-  count        = 0  # Disabled to avoid multiple zone conflicts
+  count        = 0 # Disabled to avoid multiple zone conflicts
   name         = var.domain_name
   private_zone = false
 }
 
 # Check for existing ACM certificate - disabled due to multiple zones
 data "aws_acm_certificate" "existing" {
-  count       = 0  # Disabled to avoid multiple zone conflicts
+  count       = 0 # Disabled to avoid multiple zone conflicts
   domain      = var.domain_name
   statuses    = ["ISSUED"]
   most_recent = true
@@ -69,32 +69,101 @@ data "aws_security_groups" "existing_ec2" {
 
 # Try to get existing key pair (will return null if doesn't exist)
 data "aws_key_pair" "existing" {
-  count           = 0  # Disable data source approach for now
-  key_name        = "${local.name_prefix}-key"
+  count              = 0 # Disable data source approach for now
+  key_name           = "${local.name_prefix}-key"
   include_public_key = true
 }
 
 # Import existing resources instead of recreating them
 # These resources already exist and should be imported, not recreated
 
-# Use existing ALB
-data "aws_lb" "main" {
-  name = "${local.name_prefix}-alb"
+# APPLICATION LOAD BALANCER
+resource "aws_lb" "main" {
+  name               = "${local.name_prefix}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [local.alb_security_group_id]
+  subnets            = data.aws_subnets.default.ids
+
+  enable_deletion_protection = false
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb"
+  })
 }
 
-# Use existing target group  
-data "aws_lb_target_group" "main" {
-  name = "${local.name_prefix}-tg"
+# TARGET GROUP
+resource "aws_lb_target_group" "main" {
+  name     = "${local.name_prefix}-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-tg"
+  })
 }
 
-# Use existing ASG
-data "aws_autoscaling_group" "main" {
-  name = "${local.name_prefix}-asg"
+# AUTO SCALING GROUP
+resource "aws_autoscaling_group" "main" {
+  name                      = "${local.name_prefix}-asg"
+  vpc_zone_identifier       = data.aws_subnets.default.ids
+  target_group_arns         = [aws_lb_target_group.main.arn]
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+
+  min_size         = var.min_size
+  max_size         = var.max_size
+  desired_capacity = var.desired_capacity
+
+  launch_template {
+    id      = aws_launch_template.main.id
+    version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${local.name_prefix}-asg"
+    propagate_at_launch = false
+  }
+
+  dynamic "tag" {
+    for_each = local.common_tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = false
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = [desired_capacity]
+  }
 }
 
 # ROUTE53 ZONE - Disabled due to multiple existing zones
 resource "aws_route53_zone" "main" {
-  count = 0  # Disabled to avoid multiple zone conflicts
+  count = 0 # Disabled to avoid multiple zone conflicts
   name  = var.domain_name
 
   tags = merge(local.common_tags, {
@@ -113,10 +182,10 @@ locals {
 
 # ACM CERTIFICATE - Disabled due to multiple existing zones
 resource "aws_acm_certificate" "main" {
-  count             = 0  # Disabled to avoid multiple zone conflicts
-  domain_name       = var.domain_name
+  count                     = 0 # Disabled to avoid multiple zone conflicts
+  domain_name               = var.domain_name
   subject_alternative_names = ["*.${var.domain_name}"]
-  validation_method = "DNS"
+  validation_method         = "DNS"
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-cert"
@@ -253,7 +322,7 @@ resource "aws_key_pair" "main" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-key"
   })
-  
+
   lifecycle {
     ignore_changes = [public_key]
   }
@@ -316,8 +385,8 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 locals {
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
     project_name = var.project_name
-    domain_name = var.domain_name
-    email = var.ssl_email
+    domain_name  = var.domain_name
+    email        = var.ssl_email
   }))
 }
 
@@ -349,16 +418,6 @@ resource "aws_launch_template" "main" {
     ignore_changes = [name_prefix]
   }
 
-  # Automatically clean up old versions - keep only latest 3
-  dynamic "tag_specification" {
-    for_each = ["instance", "volume"]
-    content {
-      resource_type = tag_specification.value
-      tags = merge(local.common_tags, {
-        Name = "${local.name_prefix}-${tag_specification.value}"
-      })
-    }
-  }
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-template"
@@ -367,25 +426,29 @@ resource "aws_launch_template" "main" {
 
 # TARGET GROUP - Use existing (imported via data source above)
 
-# Use existing target group from data source
+# Use created target group and load balancer
 locals {
-  target_group_arn = data.aws_lb_target_group.main.arn
+  target_group_arn       = aws_lb_target_group.main.arn
+  load_balancer_arn      = aws_lb.main.arn
+  load_balancer_dns_name = aws_lb.main.dns_name
+  load_balancer_zone_id  = aws_lb.main.zone_id
 }
 
-# AUTO SCALING GROUP - Use existing (imported via data source above)
+# ALB LISTENER - HTTP
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
 
-# LOAD BALANCER - Use existing (imported via data source above)
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
 
-# Use existing load balancer from data source
-locals {
-  load_balancer_arn = data.aws_lb.main.arn
-  load_balancer_dns_name = data.aws_lb.main.dns_name
-  load_balancer_zone_id = data.aws_lb.main.zone_id
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-listener-http"
+  })
 }
-
-# ALB LISTENERS - Use existing ones (they're already configured)
-# HTTP and HTTPS listeners already exist and are properly configured
-# No need to recreate them
 
 # ROUTE53 RECORDS - Disabled due to multiple zones
 # resource "aws_route53_record" "main" {
