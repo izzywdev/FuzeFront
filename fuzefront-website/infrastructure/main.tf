@@ -324,52 +324,16 @@ locals {
   key_name = data.aws_key_pair.main.key_name
 }
 
-# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS)
-resource "aws_iam_role" "ec2_ssm_role" {
+# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS) - Use existing
+data "aws_iam_role" "ec2_ssm_role" {
   name = "${local.name_prefix}-ec2-ssm-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-ec2-ssm-role"
-  })
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-# ATTACH SSM MANAGED POLICY
-resource "aws_iam_role_policy_attachment" "ec2_ssm_policy" {
-  role       = aws_iam_role.ec2_ssm_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
+# Policy attachments already exist with the role - no need to manage them
 
-# ATTACH ECR READ POLICY FOR DOCKER IMAGES
-resource "aws_iam_role_policy_attachment" "ec2_ecr_policy" {
-  role       = aws_iam_role.ec2_ssm_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-# INSTANCE PROFILE
-resource "aws_iam_instance_profile" "ec2_profile" {
+# INSTANCE PROFILE - Use existing
+data "aws_iam_instance_profile" "ec2_profile" {
   name = "${local.name_prefix}-ec2-profile"
-  role = aws_iam_role.ec2_ssm_role.name
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-ec2-profile"
-  })
 }
 
 # USER DATA SCRIPT
@@ -391,7 +355,7 @@ resource "aws_launch_template" "main" {
   vpc_security_group_ids = [local.ec2_security_group_id]
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.ec2_profile.name
+    name = data.aws_iam_instance_profile.ec2_profile.name
   }
 
   user_data = local.user_data
