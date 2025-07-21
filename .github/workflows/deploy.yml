@@ -263,14 +263,27 @@ jobs:
         # Wait for SSH to be available
         echo "Waiting for SSH to be available..."
         for i in {1..30}; do
-          if ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$INSTANCE_IP 'echo "SSH OK"'; then
+          SSH_OUTPUT=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$INSTANCE_IP 'echo "SSH OK"' 2>&1)
+          SSH_EXIT_CODE=$?
+          
+          if [ $SSH_EXIT_CODE -eq 0 ]; then
             echo "SSH connection successful"
             break
           fi
+          
+          # Check for permission denied error - don't retry these
+          if echo "$SSH_OUTPUT" | grep -q "Permission denied (publickey)"; then
+            echo "ERROR: SSH Permission denied (publickey) - check your SSH key configuration"
+            echo "SSH Output: $SSH_OUTPUT"
+            exit 1
+          fi
+          
           echo "SSH attempt $i failed, retrying in 10 seconds..."
+          echo "SSH error: $SSH_OUTPUT"
           sleep 10
           if [ $i -eq 30 ]; then
             echo "SSH connection failed after 30 attempts"
+            echo "Final SSH error: $SSH_OUTPUT"
             exit 1
           fi
         done
