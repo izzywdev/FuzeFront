@@ -264,15 +264,8 @@ locals {
   key_name = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
 }
 
-# Check for existing IAM role
-data "aws_iam_role" "existing_ssm_role" {
-  count = 1
-  name = "${local.name_prefix}-ec2-ssm-role"
-}
-
-# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS) - Create only if doesn't exist
+# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS)
 resource "aws_iam_role" "ec2_ssm_role" {
-  count = length(data.aws_iam_role.existing_ssm_role) == 0 ? 1 : 0
   name = "${local.name_prefix}-ec2-ssm-role"
 
   assume_role_policy = jsonencode({
@@ -297,49 +290,26 @@ resource "aws_iam_role" "ec2_ssm_role" {
   }
 }
 
-# Use existing or created role
-locals {
-  ssm_role_name = length(data.aws_iam_role.existing_ssm_role) > 0 ? data.aws_iam_role.existing_ssm_role[0].name : aws_iam_role.ec2_ssm_role[0].name
-}
-
-# Check for existing instance profile
-data "aws_iam_instance_profile" "existing_profile" {
-  count = 1
-  name = "${local.name_prefix}-ec2-profile"
-}
-
-# ATTACH SSM MANAGED POLICY - Only if role was created
+# ATTACH SSM MANAGED POLICY
 resource "aws_iam_role_policy_attachment" "ec2_ssm_policy" {
-  count      = length(aws_iam_role.ec2_ssm_role)
-  role       = local.ssm_role_name
+  role       = aws_iam_role.ec2_ssm_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# ATTACH ECR READ POLICY FOR DOCKER IMAGES - Only if role was created  
+# ATTACH ECR READ POLICY FOR DOCKER IMAGES
 resource "aws_iam_role_policy_attachment" "ec2_ecr_policy" {
-  count      = length(aws_iam_role.ec2_ssm_role)
-  role       = local.ssm_role_name
+  role       = aws_iam_role.ec2_ssm_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# INSTANCE PROFILE - Create only if doesn't exist
+# INSTANCE PROFILE
 resource "aws_iam_instance_profile" "ec2_profile" {
-  count = length(data.aws_iam_instance_profile.existing_profile) == 0 ? 1 : 0
   name = "${local.name_prefix}-ec2-profile"
-  role = local.ssm_role_name
+  role = aws_iam_role.ec2_ssm_role.name
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-ec2-profile"
   })
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Use existing or created instance profile
-locals {
-  instance_profile_name = length(data.aws_iam_instance_profile.existing_profile) > 0 ? data.aws_iam_instance_profile.existing_profile[0].name : aws_iam_instance_profile.ec2_profile[0].name
 }
 
 # USER DATA SCRIPT
@@ -361,7 +331,7 @@ resource "aws_launch_template" "main" {
   vpc_security_group_ids = [local.ec2_security_group_id]
 
   iam_instance_profile {
-    name = local.instance_profile_name
+    name = aws_iam_instance_profile.ec2_profile.name
   }
 
   user_data = local.user_data

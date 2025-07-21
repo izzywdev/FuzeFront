@@ -116,6 +116,7 @@ jobs:
     outputs:
       asg_name: ${{ steps.terraform-outputs.outputs.asg_name }}
       alb_dns_name: ${{ steps.terraform-outputs.outputs.alb_dns_name }}
+      instance_id: ${{ steps.ensure-instance.outputs.instance_id }}
     
     steps:
     - name: Checkout code
@@ -156,6 +157,67 @@ jobs:
       run: |
         echo "alb_dns_name=$(terraform output -raw load_balancer_dns_name)" >> $GITHUB_OUTPUT
         echo "asg_name=$(terraform output -raw autoscaling_group_name)" >> $GITHUB_OUTPUT
+    
+    - name: Ensure dedicated deployment instance exists
+      id: ensure-instance
+      run: |
+        echo "Checking for dedicated deployment instance..."
+        
+        # Check if our specific named instance exists and is running
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --region ${{ env.AWS_REGION }} \
+          --filters \
+            "Name=instance-state-name,Values=running" \
+            "Name=tag:Name,Values=fuzefront-website-production-instance" \
+          --query 'Reservations[0].Instances[0].InstanceId' \
+          --output text 2>/dev/null || echo "None")
+        
+        if [ "$INSTANCE_ID" == "None" ] || [ -z "$INSTANCE_ID" ]; then
+          echo "No dedicated instance found. Creating one..."
+          
+          # Force ASG to create an instance with the correct name
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name ${{ steps.terraform-outputs.outputs.asg_name }} \
+            --min-size 1 \
+            --desired-capacity 1 \
+            --max-size 3 \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "Waiting for ASG to create instance..."
+          for i in {1..20}; do
+            sleep 30
+            INSTANCE_ID=$(aws ec2 describe-instances \
+              --region ${{ env.AWS_REGION }} \
+              --filters \
+                "Name=instance-state-name,Values=running" \
+                "Name=tag:aws:autoscaling:groupName,Values=${{ steps.terraform-outputs.outputs.asg_name }}" \
+              --query 'Reservations[0].Instances[0].InstanceId' \
+              --output text 2>/dev/null || echo "None")
+            
+            if [ "$INSTANCE_ID" != "None" ] && [ -n "$INSTANCE_ID" ]; then
+              echo "Instance created: $INSTANCE_ID"
+              
+              # Ensure it has the correct name tag
+              aws ec2 create-tags \
+                --region ${{ env.AWS_REGION }} \
+                --resources $INSTANCE_ID \
+                --tags Key=Name,Value=fuzefront-website-production-instance
+              
+              echo "Instance tagged with correct name"
+              break
+            fi
+            
+            echo "Attempt $i: No instance ready yet, waiting 30s..."
+            if [ $i -eq 20 ]; then
+              echo "ERROR: Failed to create instance after 10 minutes"
+              exit 1
+            fi
+          done
+        else
+          echo "Dedicated instance already exists: $INSTANCE_ID"
+        fi
+        
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
   deploy-application:
     needs: deploy-infrastructure
@@ -175,27 +237,12 @@ jobs:
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/ssh_key
         chmod 600 /tmp/ssh_key
 
-    - name: Get running instances from Auto Scaling Group
-      id: get-instances
+    - name: Get target instance IP
+      id: get-instances  
       run: |
-        echo "Getting running instances from ASG: ${{ needs.deploy-infrastructure.outputs.asg_name }}"
-        
-        # Get healthy instances from ASG
-        INSTANCES=$(aws autoscaling describe-auto-scaling-groups \
-          --auto-scaling-group-names ${{ needs.deploy-infrastructure.outputs.asg_name }} \
-          --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
-          --output text)
-        
-        echo "Found instances: $INSTANCES"
-        
-        if [ -z "$INSTANCES" ]; then
-          echo "ERROR: No instances found in ASG"
-          exit 1
-        fi
-        
-        # Use the first instance
-        INSTANCE_ID=$(echo $INSTANCES | awk '{print $1}')
-        echo "Using instance: $INSTANCE_ID"
+        # Use the instance ID from infrastructure deployment step
+        INSTANCE_ID="${{ needs.deploy-infrastructure.outputs.instance_id }}"
+        echo "Using dedicated instance from previous step: $INSTANCE_ID"
         echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
     - name: Get instance IP address
@@ -228,7 +275,23 @@ jobs:
           fi
         done
         
+        # First check the current state of the instance
+        echo "Checking current instance state..."
+        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+        echo "=== Instance Status Check ==="
+        echo "OS Info: $(cat /etc/os-release | grep PRETTY_NAME)"
+        echo "Uptime: $(uptime)"
+        echo "Docker installed: $(which docker || echo 'NOT INSTALLED')"
+        echo "Docker running: $(sudo systemctl is-active docker || echo 'NOT RUNNING')"
+        echo "Docker version: $(docker --version 2>/dev/null || echo 'DOCKER NOT AVAILABLE')"
+        echo "Existing containers: $(docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || echo 'DOCKER NOT AVAILABLE')"
+        echo "Deploy script exists: $(ls -la /opt/fuzefront-website/deploy.sh 2>/dev/null || echo 'DEPLOY SCRIPT MISSING')"
+        echo "SSM Agent status: $(sudo systemctl is-active amazon-ssm-agent || echo 'SSM NOT RUNNING')"
+        echo "=== End Status Check ==="
+        EOF
+        
         # Set environment variables and execute deployment
+        echo "Proceeding with deployment..."
         ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
         export AWS_REGION=${{ env.AWS_REGION }}
         export ECR_REPOSITORY_BACKEND=${{ env.ECR_REPOSITORY_BACKEND }}
