@@ -143,7 +143,7 @@ The project includes GitHub Actions workflows for automated deployment:
    aws ec2 describe-key-pairs --key-names fuzefront-website-production-key
    
    # SSH_PRIVATE_KEY secret has been updated with matching key
-   # The key pair is now synchronized between AWS and GitHub
+   # The key pair is now synchronized and deployed to fresh instance
    ```
 
 2. **Push to main branch**
