@@ -56,86 +56,35 @@ echo "Stopping existing containers..."
 docker stop fuzefront-backend fuzefront-frontend fuzefront-nginx || true
 docker rm fuzefront-backend fuzefront-frontend fuzefront-nginx || true
 
-# Start backend
+# Create Docker network for container communication
+docker network create fuzefront-network || true
+
+# Start backend first
 echo "Starting backend container..."
 docker run -d \
   --name fuzefront-backend \
+  --network fuzefront-network \
   --restart unless-stopped \
-  -p 3001:3001 \
   -e NODE_ENV=production \
   -e PORT=3001 \
   ${BACKEND_IMAGE}
 
-# Start frontend  
-echo "Starting frontend container..."
-docker run -d \
-  --name fuzefront-frontend \
-  --restart unless-stopped \
-  -p 3000:80 \
-  ${FRONTEND_IMAGE}
-
-# Wait for services to be ready
-echo "Waiting for services to start..."
+# Wait for backend to be ready
+echo "Waiting for backend to start..."
 sleep 10
 
-# Start nginx reverse proxy
-echo "Starting nginx reverse proxy..."
+# Start frontend (includes built-in nginx with API proxying)
+echo "Starting frontend container with built-in nginx..."
 docker run -d \
-  --name fuzefront-nginx \
+  --name fuzefront-frontend \
+  --network fuzefront-network \
   --restart unless-stopped \
   -p 80:80 \
-  --link fuzefront-backend:backend \
-  --link fuzefront-frontend:frontend \
-  nginx:alpine
+  ${FRONTEND_IMAGE}
 
-# Configure nginx
-docker exec fuzefront-nginx sh -c 'cat > /etc/nginx/nginx.conf << "NGINX_EOF"
-events {
-    worker_connections 1024;
-}
-
-http {
-    upstream backend {
-        server backend:3001;
-    }
-    
-    upstream frontend {
-        server frontend:80;
-    }
-    
-    server {
-        listen 80;
-        
-        # Health check endpoint
-        location /health {
-            access_log off;
-            return 200 "healthy\n";
-            add_header Content-Type text/plain;
-        }
-        
-        # API proxy to backend
-        location /api/ {
-            proxy_pass http://backend;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-        
-        # Frontend proxy
-        location / {
-            proxy_pass http://frontend;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-    }
-}
-NGINX_EOF'
-
-# Reload nginx with new config
-docker exec fuzefront-nginx nginx -s reload
+# Verify containers are running and networked
+echo "Verifying container network connectivity..."
+docker exec fuzefront-frontend sh -c "ping -c 1 fuzefront-backend" || echo "Warning: Backend ping failed"
 
 echo "Deployment completed successfully at $(date)"
 EOF
