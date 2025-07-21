@@ -313,24 +313,15 @@ locals {
   ec2_security_group_id = length(data.aws_security_groups.existing_ec2.ids) > 0 ? data.aws_security_groups.existing_ec2.ids[0] : aws_security_group.ec2[0].id
 }
 
-# KEY PAIR - Create if SSH key is provided, will be imported if exists
-resource "aws_key_pair" "main" {
-  count      = var.ssh_public_key != "" ? 1 : 0
-  key_name   = "${local.name_prefix}-key"
-  public_key = var.ssh_public_key
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-key"
-  })
-
-  lifecycle {
-    ignore_changes = [public_key]
-  }
+# KEY PAIR - Use existing key pair
+data "aws_key_pair" "main" {
+  key_name           = "${local.name_prefix}-key"
+  include_public_key = true
 }
 
-# Use created key pair
+# Use existing key pair
 locals {
-  key_name = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
+  key_name = data.aws_key_pair.main.key_name
 }
 
 # IAM ROLE FOR EC2 INSTANCES (SSM ACCESS)
