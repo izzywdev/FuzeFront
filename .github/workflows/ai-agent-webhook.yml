@@ -1,0 +1,108 @@
+name: AI Agent Workflow Monitor
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+jobs:
+  notify-ai-agent:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    
+    steps:
+    - name: Notify AI Agent of Failure
+      id: notify
+      run: |
+        echo "🚨 Workflow failure detected - notifying AI Agent"
+        echo "Workflow: ${{ github.event.workflow_run.name }}"
+        echo "Status: ${{ github.event.workflow_run.conclusion }}"
+        echo "URL: ${{ github.event.workflow_run.html_url }}"
+        
+        # Prepare webhook payload
+        PAYLOAD=$(cat << EOF
+        {
+          "action": "completed",
+          "workflow_run": {
+            "id": ${{ github.event.workflow_run.id }},
+            "name": "${{ github.event.workflow_run.name }}",
+            "status": "${{ github.event.workflow_run.status }}",
+            "conclusion": "${{ github.event.workflow_run.conclusion }}",
+            "html_url": "${{ github.event.workflow_run.html_url }}",
+            "head_branch": "${{ github.event.workflow_run.head_branch }}",
+            "repository": {
+              "full_name": "${{ github.repository }}"
+            }
+          }
+        }
+        EOF
+        )
+        
+        # Send webhook notification
+        RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-Hub-Signature-256: sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "${{ secrets.AI_AGENT_WEBHOOK_SECRET }}" | cut -d' ' -f2)" \
+          -H "X-GitHub-Event: workflow_run" \
+          -H "User-Agent: GitHub-Hookshot/workflow" \
+          -d "$PAYLOAD" \
+          "${{ secrets.AI_AGENT_WEBHOOK_URL }}")
+        
+        # Extract HTTP status and response body
+        HTTP_STATUS=$(echo $RESPONSE | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+        RESPONSE_BODY=$(echo $RESPONSE | sed -E 's/HTTPSTATUS\:[0-9]{3}$//')
+        
+        echo "HTTP Status: $HTTP_STATUS"
+        echo "Response: $RESPONSE_BODY"
+        
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "✅ AI Agent successfully notified"
+          echo "ai_agent_notified=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Failed to notify AI Agent (HTTP $HTTP_STATUS)"
+          echo "ai_agent_notified=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Fallback Notification
+      if: steps.notify.outputs.ai_agent_notified != 'true'
+      run: |
+        echo "⚠️  AI Agent notification failed - creating fallback issue"
+        
+        # Create an issue as fallback
+        gh issue create \
+          --title "🤖 AI Agent Intervention Required: ${{ github.event.workflow_run.name }} Failed" \
+          --body "**Workflow Failure Details:**
+          - **Workflow**: ${{ github.event.workflow_run.name }}
+          - **Branch**: ${{ github.event.workflow_run.head_branch }}
+          - **Status**: ${{ github.event.workflow_run.conclusion }}
+          - **URL**: ${{ github.event.workflow_run.html_url }}
+          - **Timestamp**: $(date -u)
+          
+          **AI Agent Status**: Failed to notify (webhook may be down)
+          
+          **Action Required**: 
+          - Check AI Agent service status
+          - Manually investigate workflow failure
+          - Verify webhook configuration
+          
+          This issue was automatically created as a fallback when the AI Agent webhook failed.
+          
+          🤖 Created by GitHub Actions" \
+          --label "ai-agent,workflow-failure,automated" \
+          --assignee "${{ github.actor }}"
+      env:
+        GH_TOKEN: ${{ github.token }}
+        
+    - name: Summary
+      run: |
+        echo "## AI Agent Notification Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Workflow**: ${{ github.event.workflow_run.name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ${{ github.event.workflow_run.conclusion }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **AI Agent Notified**: ${{ steps.notify.outputs.ai_agent_notified }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.notify.outputs.ai_agent_notified }}" = "true" ]; then
+          echo "✅ AI Agent has been notified and will analyze the failure automatically." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ AI Agent notification failed. Manual intervention may be required." >> $GITHUB_STEP_SUMMARY
+        fi
