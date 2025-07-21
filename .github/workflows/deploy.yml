@@ -262,7 +262,7 @@ jobs:
         # Wait for SSH to be available
         echo "Waiting for SSH to be available..."
         for i in {1..30}; do
-          SSH_OUTPUT=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ec2-user@$INSTANCE_IP 'echo "SSH OK"' 2>&1)
+          SSH_OUTPUT=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@$INSTANCE_IP 'echo "SSH OK"' 2>&1)
           SSH_EXIT_CODE=$?
           
           if [ $SSH_EXIT_CODE -eq 0 ]; then
@@ -289,7 +289,7 @@ jobs:
         
         # First check the current state of the instance
         echo "Checking current instance state..."
-        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
         echo "=== Instance Status Check ==="
         echo "OS Info: $(cat /etc/os-release | grep PRETTY_NAME)"
         echo "Uptime: $(uptime)"
@@ -304,7 +304,7 @@ jobs:
         
         # Set environment variables and execute deployment
         echo "Proceeding with deployment..."
-        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
         export AWS_REGION=${{ env.AWS_REGION }}
         export ECR_REPOSITORY_BACKEND=${{ env.ECR_REPOSITORY_BACKEND }}
         export ECR_REPOSITORY_FRONTEND=${{ env.ECR_REPOSITORY_FRONTEND }}
