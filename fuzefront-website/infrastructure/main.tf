@@ -77,88 +77,19 @@ data "aws_key_pair" "existing" {
 # Import existing resources instead of recreating them
 # These resources already exist and should be imported, not recreated
 
-# APPLICATION LOAD BALANCER
-resource "aws_lb" "main" {
-  name               = "${local.name_prefix}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [local.alb_security_group_id]
-  subnets            = data.aws_subnets.default.ids
-
-  enable_deletion_protection = false
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-alb"
-  })
+# APPLICATION LOAD BALANCER - Use existing
+data "aws_lb" "main" {
+  name = "${local.name_prefix}-alb"
 }
 
-# TARGET GROUP
-resource "aws_lb_target_group" "main" {
-  name     = "${local.name_prefix}-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/health"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-tg"
-  })
+# TARGET GROUP - Use existing
+data "aws_lb_target_group" "main" {
+  name = "${local.name_prefix}-tg"
 }
 
-# AUTO SCALING GROUP
-resource "aws_autoscaling_group" "main" {
-  name                      = "${local.name_prefix}-asg"
-  vpc_zone_identifier       = data.aws_subnets.default.ids
-  target_group_arns         = [aws_lb_target_group.main.arn]
-  health_check_type         = "ELB"
-  health_check_grace_period = 300
-
-  min_size         = var.min_size
-  max_size         = var.max_size
-  desired_capacity = var.desired_capacity
-
-  launch_template {
-    id      = aws_launch_template.main.id
-    version = "$Latest"
-  }
-
-  instance_refresh {
-    strategy = "Rolling"
-    preferences {
-      min_healthy_percentage = 50
-    }
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "${local.name_prefix}-asg"
-    propagate_at_launch = false
-  }
-
-  dynamic "tag" {
-    for_each = local.common_tags
-    content {
-      key                 = tag.key
-      value               = tag.value
-      propagate_at_launch = false
-    }
-  }
-
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes        = [desired_capacity]
-  }
+# AUTO SCALING GROUP - Use existing
+data "aws_autoscaling_group" "main" {
+  name = "${local.name_prefix}-asg"
 }
 
 # ROUTE53 ZONE - Disabled due to multiple existing zones
@@ -383,27 +314,14 @@ resource "aws_launch_template" "main" {
 
 # Use created target group and load balancer
 locals {
-  target_group_arn       = aws_lb_target_group.main.arn
-  load_balancer_arn      = aws_lb.main.arn
-  load_balancer_dns_name = aws_lb.main.dns_name
-  load_balancer_zone_id  = aws_lb.main.zone_id
+  target_group_arn       = data.aws_lb_target_group.main.arn
+  load_balancer_arn      = data.aws_lb.main.arn
+  load_balancer_dns_name = data.aws_lb.main.dns_name
+  load_balancer_zone_id  = data.aws_lb.main.zone_id
 }
 
 # ALB LISTENER - HTTP
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.main.arn
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-listener-http"
-  })
-}
+# ALB HTTP Listener already exists - no need to manage
 
 # ROUTE53 RECORDS - Disabled due to multiple zones
 # resource "aws_route53_record" "main" {
