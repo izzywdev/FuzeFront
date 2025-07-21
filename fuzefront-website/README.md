@@ -130,11 +130,21 @@ npm run build
 The project includes GitHub Actions workflows for automated deployment:
 
 1. **Set up GitHub Secrets**
-   - `AWS_ACCESS_KEY_ID`
-   - `AWS_SECRET_ACCESS_KEY`
-   - `DOMAIN_NAME`
-   - `SSL_EMAIL`
-   - `SSH_PUBLIC_KEY`
+   - `AWS_ACCESS_KEY_ID` - AWS access key for deployment
+   - `AWS_SECRET_ACCESS_KEY` - AWS secret key for deployment  
+   - `DOMAIN_NAME` - Your domain name (e.g., fuzefront.com)
+   - `SSL_EMAIL` - Email for SSL certificate notifications
+   - `SSH_PRIVATE_KEY` - Private key that corresponds to the `fuzefront-website-production-key` key pair in AWS
+   
+   **Important**: The `SSH_PRIVATE_KEY` secret must match the existing AWS key pair named `fuzefront-website-production-key`. 
+   To verify/update:
+   ```bash
+   # Check existing key pair in AWS
+   aws ec2 describe-key-pairs --key-names fuzefront-website-production-key
+   
+   # SSH_PRIVATE_KEY secret has been updated with matching key
+   # The key pair is now synchronized between AWS and GitHub
+   ```
 
 2. **Push to main branch**
    ```bash
