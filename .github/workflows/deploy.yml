@@ -132,7 +132,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform-version: 1.5.0
+        terraform_version: 1.5.0
 
     - name: Terraform Init
       working-directory: ./fuzefront-website/infrastructure
@@ -144,7 +144,6 @@ jobs:
         terraform plan \
           -var="domain_name=${{ secrets.DOMAIN_NAME }}" \
           -var="ssl_email=${{ secrets.SSL_EMAIL }}" \
-          -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
           -out=tfplan
 
     - name: Terraform Apply
