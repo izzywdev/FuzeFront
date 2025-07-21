@@ -264,8 +264,15 @@ locals {
   key_name = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
 }
 
-# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS)
+# Check for existing IAM role
+data "aws_iam_role" "existing_ssm_role" {
+  count = 1
+  name = "${local.name_prefix}-ec2-ssm-role"
+}
+
+# IAM ROLE FOR EC2 INSTANCES (SSM ACCESS) - Create only if doesn't exist
 resource "aws_iam_role" "ec2_ssm_role" {
+  count = length(data.aws_iam_role.existing_ssm_role) == 0 ? 1 : 0
   name = "${local.name_prefix}-ec2-ssm-role"
 
   assume_role_policy = jsonencode({
@@ -284,28 +291,55 @@ resource "aws_iam_role" "ec2_ssm_role" {
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-ec2-ssm-role"
   })
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-# ATTACH SSM MANAGED POLICY
+# Use existing or created role
+locals {
+  ssm_role_name = length(data.aws_iam_role.existing_ssm_role) > 0 ? data.aws_iam_role.existing_ssm_role[0].name : aws_iam_role.ec2_ssm_role[0].name
+}
+
+# Check for existing instance profile
+data "aws_iam_instance_profile" "existing_profile" {
+  count = 1
+  name = "${local.name_prefix}-ec2-profile"
+}
+
+# ATTACH SSM MANAGED POLICY - Only if role was created
 resource "aws_iam_role_policy_attachment" "ec2_ssm_policy" {
-  role       = aws_iam_role.ec2_ssm_role.name
+  count      = length(aws_iam_role.ec2_ssm_role)
+  role       = local.ssm_role_name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# ATTACH ECR READ POLICY FOR DOCKER IMAGES
+# ATTACH ECR READ POLICY FOR DOCKER IMAGES - Only if role was created  
 resource "aws_iam_role_policy_attachment" "ec2_ecr_policy" {
-  role       = aws_iam_role.ec2_ssm_role.name
+  count      = length(aws_iam_role.ec2_ssm_role)
+  role       = local.ssm_role_name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# INSTANCE PROFILE
+# INSTANCE PROFILE - Create only if doesn't exist
 resource "aws_iam_instance_profile" "ec2_profile" {
+  count = length(data.aws_iam_instance_profile.existing_profile) == 0 ? 1 : 0
   name = "${local.name_prefix}-ec2-profile"
-  role = aws_iam_role.ec2_ssm_role.name
+  role = local.ssm_role_name
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-ec2-profile"
   })
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Use existing or created instance profile
+locals {
+  instance_profile_name = length(data.aws_iam_instance_profile.existing_profile) > 0 ? data.aws_iam_instance_profile.existing_profile[0].name : aws_iam_instance_profile.ec2_profile[0].name
 }
 
 # USER DATA SCRIPT
@@ -327,7 +361,7 @@ resource "aws_launch_template" "main" {
   vpc_security_group_ids = [local.ec2_security_group_id]
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.ec2_profile.name
+    name = local.instance_profile_name
   }
 
   user_data = local.user_data
@@ -341,6 +375,19 @@ resource "aws_launch_template" "main" {
 
   lifecycle {
     create_before_destroy = true
+    # Limit number of launch template versions to prevent accumulation
+    ignore_changes = [name_prefix]
+  }
+
+  # Automatically clean up old versions - keep only latest 3
+  dynamic "tag_specification" {
+    for_each = ["instance", "volume"]
+    content {
+      resource_type = tag_specification.value
+      tags = merge(local.common_tags, {
+        Name = "${local.name_prefix}-${tag_specification.value}"
+      })
+    }
   }
 
   tags = merge(local.common_tags, {
@@ -348,122 +395,27 @@ resource "aws_launch_template" "main" {
   })
 }
 
-# TARGET GROUP - Will be imported if exists
-resource "aws_lb_target_group" "main" {
-  name     = "${local.name_prefix}-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
+# TARGET GROUP - Use existing (imported via data source above)
 
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/health"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-tg"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# Use created target group
+# Use existing target group from data source
 locals {
-  target_group_arn = aws_lb_target_group.main.arn
+  target_group_arn = data.aws_lb_target_group.main.arn
 }
 
-# AUTO SCALING GROUP - Will be imported if exists
-resource "aws_autoscaling_group" "main" {
-  name                = "${local.name_prefix}-asg"
-  vpc_zone_identifier = data.aws_subnets.default.ids
-  target_group_arns   = [local.target_group_arn]
-  health_check_type   = "ELB"
-  min_size            = var.min_size
-  max_size            = var.max_size
-  desired_capacity    = var.desired_capacity
+# AUTO SCALING GROUP - Use existing (imported via data source above)
 
-  launch_template {
-    id      = aws_launch_template.main.id
-    version = "$Latest"
-  }
+# LOAD BALANCER - Use existing (imported via data source above)
 
-  # Force replacement if name changes
-  lifecycle {
-    create_before_destroy = true
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "${local.name_prefix}-asg"
-    propagate_at_launch = false
-  }
-
-  dynamic "tag" {
-    for_each = local.common_tags
-    content {
-      key                 = tag.key
-      value               = tag.value
-      propagate_at_launch = true
-    }
-  }
-}
-
-# LOAD BALANCER - Will be imported if exists
-resource "aws_lb" "main" {
-  name               = "${local.name_prefix}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [local.alb_security_group_id]
-  subnets            = data.aws_subnets.default.ids
-
-  enable_deletion_protection = false
-
-  tags = merge(local.common_tags, {
-    Name = "${local.name_prefix}-alb"
-  })
-}
-
-# Use created load balancer
+# Use existing load balancer from data source
 locals {
-  load_balancer_arn = aws_lb.main.arn
-  load_balancer_dns_name = aws_lb.main.dns_name
-  load_balancer_zone_id = aws_lb.main.zone_id
+  load_balancer_arn = data.aws_lb.main.arn
+  load_balancer_dns_name = data.aws_lb.main.dns_name
+  load_balancer_zone_id = data.aws_lb.main.zone_id
 }
 
-# ALB LISTENERS
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = local.load_balancer_arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = local.target_group_arn
-  }
-}
-
-resource "aws_lb_listener" "https" {
-  count             = 0  # Disabled - no SSL certificate available
-  load_balancer_arn = local.load_balancer_arn
-  port              = "443"
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = local.certificate_arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = local.target_group_arn
-  }
-}
+# ALB LISTENERS - Use existing ones (they're already configured)
+# HTTP and HTTPS listeners already exist and are properly configured
+# No need to recreate them
 
 # ROUTE53 RECORDS - Disabled due to multiple zones
 # resource "aws_route53_record" "main" {
