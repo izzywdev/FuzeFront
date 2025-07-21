@@ -64,11 +64,6 @@ variable "desired_capacity" {
   default     = 1
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for EC2 instances"
-  type        = string
-  default     = ""
-}
 
 variable "ssh_cidr_blocks" {
   description = "CIDR blocks allowed for SSH access"
