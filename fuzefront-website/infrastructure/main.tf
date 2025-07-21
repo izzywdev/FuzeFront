@@ -74,20 +74,22 @@ data "aws_key_pair" "existing" {
   include_public_key = true
 }
 
-# Check for existing resources - disabled data source approach
-data "aws_lb" "existing" {
-  count = 0
-  name  = "${local.name_prefix}-alb"
+# Import existing resources instead of recreating them
+# These resources already exist and should be imported, not recreated
+
+# Use existing ALB
+data "aws_lb" "main" {
+  name = "${local.name_prefix}-alb"
 }
 
-data "aws_lb_target_group" "existing" {
-  count = 0
-  name  = "${local.name_prefix}-tg"
+# Use existing target group  
+data "aws_lb_target_group" "main" {
+  name = "${local.name_prefix}-tg"
 }
 
-data "aws_autoscaling_group" "existing" {
-  count = 0
-  name  = "${local.name_prefix}-asg"
+# Use existing ASG
+data "aws_autoscaling_group" "main" {
+  name = "${local.name_prefix}-asg"
 }
 
 # ROUTE53 ZONE - Disabled due to multiple existing zones
