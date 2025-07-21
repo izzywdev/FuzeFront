@@ -4,19 +4,22 @@
 # This script sets up the basic environment and a deployment mechanism
 
 # Update system
-yum update -y
+apt-get update -y
+
+# Configure passwordless sudo for ubuntu user
+echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/99-ubuntu-nopasswd
+chmod 440 /etc/sudoers.d/99-ubuntu-nopasswd
 
 # Install Docker
-yum install -y docker
+apt-get install -y docker.io
 systemctl start docker
 systemctl enable docker
-usermod -a -G docker ec2-user
+usermod -a -G docker ubuntu
 
 # Install AWS CLI
-yum install -y aws-cli
+apt-get install -y awscli
 
-# Install and start SSM agent
-yum install -y amazon-ssm-agent
+# Install and start SSM agent (already installed on Ubuntu AMIs)
 systemctl enable amazon-ssm-agent
 systemctl start amazon-ssm-agent
 
