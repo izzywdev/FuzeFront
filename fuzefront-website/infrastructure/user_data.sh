@@ -40,7 +40,7 @@ echo "Starting deployment at $(date)"
 
 # Get AWS account ID and region
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_REGION=$${AWS_REGION:-us-east-1}
 
 # ECR repository URIs
 BACKEND_IMAGE="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/fuzefront-website-backend:latest"
