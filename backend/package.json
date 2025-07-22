@@ -29,6 +29,7 @@
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
+    "bindings": "^1.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
@@ -47,6 +48,7 @@
     "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
+    "tar": "^7.4.3",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
