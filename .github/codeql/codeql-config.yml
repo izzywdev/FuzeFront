@@ -35,5 +35,4 @@ module-federation:
 
 # Security-focused query packs
 packs:
-  - codeql/javascript-queries:Security
-  - codeql/javascript-queries:AlertSuppression
+  - codeql/javascript-queries
