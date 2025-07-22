@@ -37,6 +37,8 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "permitio": "^2.7.4"
+    "node-addon-api": "^8.5.0",
+    "permitio": "^2.7.4",
+    "prebuild-install": "^7.1.3"
   }
 }
