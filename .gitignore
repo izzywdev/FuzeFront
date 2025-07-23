@@ -1,1 +1,6 @@
 node_modules/
+
+# SSH Keys and sensitive files
+keys/
+*.pem
+*.key

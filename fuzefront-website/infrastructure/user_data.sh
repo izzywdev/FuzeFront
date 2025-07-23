@@ -62,10 +62,10 @@ docker rm fuzefront-backend fuzefront-frontend fuzefront-nginx || true
 # Create Docker network for container communication
 docker network create fuzefront-network || true
 
-# Start backend first
+# Start backend first with correct name for nginx
 echo "Starting backend container..."
 docker run -d \
-  --name fuzefront-backend \
+  --name backend \
   --network fuzefront-network \
   --restart unless-stopped \
   -e NODE_ENV=production \
@@ -74,20 +74,28 @@ docker run -d \
 
 # Wait for backend to be ready
 echo "Waiting for backend to start..."
-sleep 10
+sleep 15
+
+# Verify backend is healthy before starting frontend
+echo "Verifying backend health..."
+docker exec backend wget -qO- http://localhost:3001/health || echo "Warning: Backend health check failed"
 
 # Start frontend (includes built-in nginx with API proxying)
 echo "Starting frontend container with built-in nginx..."
 docker run -d \
-  --name fuzefront-frontend \
+  --name frontend \
   --network fuzefront-network \
   --restart unless-stopped \
-  -p 80:80 \
+  -p 80:3000 \
   $${FRONTEND_IMAGE}
+
+# Wait for frontend to start
+sleep 10
 
 # Verify containers are running and networked
 echo "Verifying container network connectivity..."
-docker exec fuzefront-frontend sh -c "ping -c 1 fuzefront-backend" || echo "Warning: Backend ping failed"
+docker exec frontend ping -c 1 backend || echo "Warning: Backend ping failed"
+docker exec frontend wget -qO- http://backend:3001/health || echo "Warning: Backend API test failed"
 
 echo "Deployment completed successfully at $(date)"
 EOF
