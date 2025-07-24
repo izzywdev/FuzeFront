@@ -266,3 +266,9 @@ Docker Containers
 ```
 
 The infrastructure is designed for high availability and scalability with automatic SSL certificate management and monitoring.
+
+## Recent Updates
+
+- Fixed frontend API configuration for production deployment
+- Resolved nginx proxy DNS resolution issues
+- Completed IAM role integration for automated deployments
