@@ -131,6 +131,15 @@ router.get('/summary', (req, res) => {
   res.json(summary)
 })
 
+// Health check for analytics service
+router.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    service: 'analytics',
+    timestamp: new Date().toISOString()
+  })
+})
+
 // Get page analytics
 router.get('/pages', (req, res) => {
   // In production, add authentication middleware
