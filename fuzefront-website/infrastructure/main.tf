@@ -26,6 +26,8 @@ locals {
 }
 
 # DATA SOURCES - Check for existing resources
+data "aws_caller_identity" "current" {}
+
 data "aws_vpc" "default" {
   default = true
 }
@@ -273,6 +275,10 @@ locals {
     project_name = var.project_name
     domain_name  = var.domain_name
     email        = var.ssl_email
+    AWS_REGION   = var.aws_region
+    ACCOUNT_ID   = data.aws_caller_identity.current.account_id
+    BACKEND_IMAGE = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/fuzefront-website-backend:latest" 
+    FRONTEND_IMAGE = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/fuzefront-website-frontend:latest"
   }))
 }
 
