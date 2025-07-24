@@ -12,8 +12,17 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Debug: Show environment files
+RUN ls -la .env* || echo "No .env files found"
+
+# Build the application for production
+ENV NODE_ENV=production
+RUN echo "Building with NODE_ENV=$NODE_ENV" && \
+    npm cache clean --force && \
+    npm run build
+
+# Debug: Show build output
+RUN ls -la dist/ || echo "No dist directory found"
 
 # Production stage
 FROM nginx:alpine AS production

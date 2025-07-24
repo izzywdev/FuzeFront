@@ -93,8 +93,11 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         cd fuzefront-website/backend
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+        # Clear any existing Docker cache for fresh builds
+        docker builder prune -f || true
+        # Build with no cache to ensure latest changes are applied
+        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
+        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
 
@@ -104,8 +107,11 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         cd fuzefront-website/frontend
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+        # Clear any existing Docker cache for fresh builds
+        docker builder prune -f || true
+        # Build with no cache to ensure .env.production and Dockerfile changes are applied
+        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
+        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
 
