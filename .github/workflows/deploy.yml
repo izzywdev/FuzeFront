@@ -81,39 +81,163 @@ jobs:
 
     - name: Create ECR repositories if they don't exist
       run: |
+        echo "🔍 Creating ECR repositories if needed..."
         aws ecr describe-repositories --repository-names $ECR_REPOSITORY_BACKEND --region $AWS_REGION || \
         aws ecr create-repository --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION
         
         aws ecr describe-repositories --repository-names $ECR_REPOSITORY_FRONTEND --region $AWS_REGION || \
         aws ecr create-repository --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION
+        echo "✅ ECR repositories ready"
+
+    - name: Check current ECR images (before build)
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+        echo "🔍 Current ECR images before build:"
+        echo "Backend images:"
+        aws ecr list-images --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION --query 'imageIds[*].[imageTag,imagePushedAt]' --output table || echo "No backend images found"
+        echo "Frontend images:"
+        aws ecr list-images --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION --query 'imageIds[*].[imageTag,imagePushedAt]' --output table || echo "No frontend images found"
 
     - name: Build and push backend Docker image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
+        echo "🚀 Building backend Docker image..."
+        echo "ECR Registry: $ECR_REGISTRY"
+        echo "Image Tag: $IMAGE_TAG"
+        echo "Repository: $ECR_REPOSITORY_BACKEND"
+        
         cd fuzefront-website/backend
-        # Clear any existing Docker cache for fresh builds
+        echo "📁 Working directory: $(pwd)"
+        echo "📋 Files in backend directory:"
+        ls -la
+        
+        # Clear Docker cache and system
+        echo "🧹 Cleaning Docker cache..."
         docker builder prune -f || true
-        # Build with no cache to ensure latest changes are applied
-        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
-        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+        docker system prune -f || true
+        
+        # Build backend image with comprehensive logging
+        echo "🔨 Building backend image with tag: $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG"
+        if docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .; then
+          echo "✅ Backend build successful"
+        else
+          echo "❌ Backend build failed"
+          exit 1
+        fi
+        
+        echo "🔨 Building backend image with latest tag..."
+        if docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .; then
+          echo "✅ Backend latest build successful"
+        else
+          echo "❌ Backend latest build failed"
+          exit 1
+        fi
+        
+        # Push images with error checking
+        echo "📤 Pushing backend image: $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG"
+        if docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG; then
+          echo "✅ Backend push successful"
+        else
+          echo "❌ Backend push failed"
+          exit 1
+        fi
+        
+        echo "📤 Pushing backend image: $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest"
+        if docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest; then
+          echo "✅ Backend latest push successful"
+        else
+          echo "❌ Backend latest push failed"
+          exit 1
+        fi
 
     - name: Build and push frontend Docker image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
+        echo "🚀 Building frontend Docker image..."
+        echo "ECR Registry: $ECR_REGISTRY"
+        echo "Image Tag: $IMAGE_TAG"
+        echo "Repository: $ECR_REPOSITORY_FRONTEND"
+        
         cd fuzefront-website/frontend
-        # Clear any existing Docker cache for fresh builds
+        echo "📁 Working directory: $(pwd)"
+        echo "📋 Files in frontend directory:"
+        ls -la
+        
+        echo "🔍 Checking App.tsx content:"
+        head -10 src/App.tsx
+        
+        # Clear Docker cache and system
+        echo "🧹 Cleaning Docker cache..."
         docker builder prune -f || true
-        # Build with no cache to ensure .env.production and Dockerfile changes are applied
-        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
-        docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+        docker system prune -f || true
+        
+        # Build frontend image with comprehensive logging
+        echo "🔨 Building frontend image with tag: $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG"
+        if docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .; then
+          echo "✅ Frontend build successful"
+        else
+          echo "❌ Frontend build failed"
+          exit 1
+        fi
+        
+        echo "🔨 Building frontend image with latest tag..."
+        if docker build --no-cache -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .; then
+          echo "✅ Frontend latest build successful"
+        else
+          echo "❌ Frontend latest build failed"
+          exit 1
+        fi
+        
+        # Push images with error checking
+        echo "📤 Pushing frontend image: $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG"
+        if docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG; then
+          echo "✅ Frontend push successful"
+        else
+          echo "❌ Frontend push failed"
+          exit 1
+        fi
+        
+        echo "📤 Pushing frontend image: $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest"  
+        if docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest; then
+          echo "✅ Frontend latest push successful"
+        else
+          echo "❌ Frontend latest push failed"
+          exit 1
+        fi
+
+    - name: Verify ECR images were pushed successfully
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        echo "🔍 Verifying ECR images after push:"
+        
+        echo "Backend images:"
+        if aws ecr describe-images --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION --image-ids imageTag=latest --query 'imageDetails[0].imagePushedAt' --output text; then
+          echo "✅ Backend latest image verified in ECR"
+        else
+          echo "❌ Backend latest image NOT found in ECR"
+          exit 1
+        fi
+        
+        echo "Frontend images:"
+        if aws ecr describe-images --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION --image-ids imageTag=latest --query 'imageDetails[0].imagePushedAt' --output text; then
+          echo "✅ Frontend latest image verified in ECR"
+        else
+          echo "❌ Frontend latest image NOT found in ECR"
+          exit 1
+        fi
+        
+        echo "📊 All ECR images after build:"
+        echo "Backend:"
+        aws ecr list-images --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION --query 'imageIds[*].[imageTag,imagePushedAt]' --output table
+        echo "Frontend:"
+        aws ecr list-images --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION --query 'imageIds[*].[imageTag,imagePushedAt]' --output table
 
   deploy-infrastructure:
     needs: build-and-push
@@ -308,32 +432,143 @@ jobs:
         echo "=== End Status Check ==="
         EOF
         
-        # Set environment variables and execute deployment
-        echo "Proceeding with deployment..."
+        # Enhanced deployment with forced container restart
+        echo "🚀 Proceeding with enhanced deployment..."
         ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
         export AWS_REGION=${{ env.AWS_REGION }}
         export ECR_REPOSITORY_BACKEND=${{ env.ECR_REPOSITORY_BACKEND }}
         export ECR_REPOSITORY_FRONTEND=${{ env.ECR_REPOSITORY_FRONTEND }}
         
-        # Execute deployment script
-        sudo /opt/fuzefront-website/deploy.sh
+        echo "🔍 Pre-deployment container status:"
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" || echo "No containers running"
+        
+        echo "🔍 Current ECR images on instance:"
+        docker images | grep fuzefront-website || echo "No fuzefront images found"
+        
+        echo "🔄 Forcing ECR login and image pull..."
+        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin 524103092742.dkr.ecr.$AWS_REGION.amazonaws.com
+        
+        echo "📥 Pulling latest images from ECR..."
+        docker pull 524103092742.dkr.ecr.$AWS_REGION.amazonaws.com/fuzefront-website-backend:latest
+        docker pull 524103092742.dkr.ecr.$AWS_REGION.amazonaws.com/fuzefront-website-frontend:latest
+        
+        echo "🛑 Stopping existing containers..."
+        docker stop backend frontend reverse-proxy 2>/dev/null || echo "Some containers already stopped"
+        docker rm backend frontend reverse-proxy 2>/dev/null || echo "Some containers already removed"
+        
+        echo "🌐 Ensuring Docker network exists..."
+        docker network create fuzefront-network 2>/dev/null || echo "Network already exists"
+        
+        echo "🚀 Starting fresh containers with latest images..."
+        
+        # Start backend
+        docker run -d \
+          --name backend \
+          --network fuzefront-network \
+          --restart unless-stopped \
+          -p 3001:3001 \
+          524103092742.dkr.ecr.$AWS_REGION.amazonaws.com/fuzefront-website-backend:latest
+        
+        # Start frontend  
+        docker run -d \
+          --name frontend \
+          --network fuzefront-network \
+          --restart unless-stopped \
+          -p 3000:3000 \
+          524103092742.dkr.ecr.$AWS_REGION.amazonaws.com/fuzefront-website-frontend:latest
+        
+        # Start reverse proxy
+        docker run -d \
+          --name reverse-proxy \
+          --network fuzefront-network \
+          --restart unless-stopped \
+          -p 80:80 \
+          -v /tmp/nginx-reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro \
+          nginx:alpine
+        
+        echo "⏳ Waiting for containers to start..."
+        sleep 30
+        
+        echo "🔍 Post-deployment container status:"
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+        
+        echo "🏥 Testing container health:"
+        echo "Backend health:"
+        curl -s http://localhost:3001/health || echo "❌ Backend health failed"
+        echo ""
+        echo "Frontend health:"  
+        curl -s http://localhost:3000/health || echo "❌ Frontend health failed"
+        echo ""
+        echo "Reverse proxy health:"
+        curl -s http://localhost:80/health || echo "❌ Reverse proxy health failed"
+        
+        echo "✅ Deployment completed!"
         EOF
 
     - name: Verify deployment
       run: |
         ALB_DNS="${{ needs.deploy-infrastructure.outputs.alb_dns_name }}"
+        echo "🔍 Comprehensive deployment verification"
         echo "Load Balancer DNS: $ALB_DNS"
         
         # Test health endpoint
-        echo "Testing health endpoint..."
+        echo "🏥 Testing health endpoint..."
         for i in {1..30}; do
           if curl -f "http://$ALB_DNS/health"; then
-            echo "Health check passed!"
+            echo "✅ Health check passed!"
             break
           fi
           echo "Attempt $i failed, retrying in 10 seconds..."
           sleep 10
         done
+        
+        # Test analytics health endpoint (our fix)
+        echo "🔍 Testing analytics health endpoint..."
+        if curl -s "http://$ALB_DNS/api/analytics/health" | grep -q "healthy"; then
+          echo "✅ Analytics health endpoint working!"
+        else
+          echo "❌ Analytics health endpoint failed"
+        fi
+        
+        # Check for new frontend bundle (React app deployment verification)
+        echo "🔍 Checking frontend bundle..."
+        HTML_CONTENT=$(curl -s "http://$ALB_DNS")
+        JS_BUNDLE=$(echo "$HTML_CONTENT" | grep -o '/assets/index-[^"]*\.js' | head -1)
+        echo "Current JS bundle: $JS_BUNDLE"
+        
+        # Verify React content is being served
+        echo "🔍 Verifying React content..."
+        if echo "$HTML_CONTENT" | grep -q '<div id="root">'; then
+          echo "✅ React root element found in HTML"
+        else
+          echo "❌ React root element missing!"
+          exit 1
+        fi
+        
+        # Test if JS bundle is accessible
+        if [ -n "$JS_BUNDLE" ]; then
+          echo "🔍 Testing JS bundle accessibility..."
+          if curl -f -s "http://$ALB_DNS$JS_BUNDLE" > /dev/null; then
+            echo "✅ JS bundle is accessible"
+            
+            # Check bundle size (should be different for minimal React app)
+            BUNDLE_SIZE=$(curl -s "http://$ALB_DNS$JS_BUNDLE" | wc -c)
+            echo "📊 Bundle size: $BUNDLE_SIZE bytes"
+            
+            # Check if bundle contains our minimal React app code
+            if curl -s "http://$ALB_DNS$JS_BUNDLE" | grep -q "React is Working"; then
+              echo "✅ Minimal React app detected in bundle!"
+            else
+              echo "⚠️ Minimal React app content not found in bundle"
+            fi
+          else
+            echo "❌ JS bundle not accessible"
+            exit 1
+          fi
+        fi
+        
+        echo "🎉 Deployment verification completed!"
+        echo "🌐 Website should be live at: http://$ALB_DNS"
 
   notify:
     needs: [test, build-and-push, deploy-infrastructure, deploy-application]
