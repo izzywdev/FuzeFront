@@ -11,6 +11,8 @@ import apiService, {
   AnalyticsEvent
 } from '../services/api';
 
+const IS_DEVELOPMENT = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
+
 // Generic API hook type
 interface UseApiState<T> {
   data: T | null;
@@ -43,7 +45,9 @@ export function useApi<T>(
         success: true,
       });
     } catch (error) {
-      console.error('API Error:', error);
+      if (IS_DEVELOPMENT) {
+        console.error('API Error:', error);
+      }
       setState({
         data: null,
         loading: false,
@@ -63,9 +67,45 @@ export function useApi<T>(
   };
 }
 
-// Health check hook
-export function useHealthCheck() {
-  return useApi(() => apiService.health());
+// Health check hook with interval and retry logic
+export function useHealthCheck(intervalMs: number = 30000) {
+  const [state, setState] = useState<UseApiState<unknown>>({
+    data: null,
+    loading: true,
+    error: null,
+    success: false,
+  });
+
+  const checkHealth = useCallback(async () => {
+    try {
+      const data = await apiService.health();
+      setState({
+        data,
+        loading: false,
+        error: null,
+        success: true,
+      });
+    } catch (error) {
+      setState({
+        data: null,
+        loading: false,
+        error: error instanceof ApiError ? error.message : 'Health check failed',
+        success: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    
+    const interval = setInterval(checkHealth, intervalMs);
+    return () => clearInterval(interval);
+  }, [checkHealth, intervalMs]);
+
+  return {
+    ...state,
+    refetch: checkHealth,
+  };
 }
 
 // Contact form hook
@@ -226,26 +266,30 @@ export function usePageAnalytics() {
   return useApi(() => apiService.getPageAnalytics());
 }
 
-// Auto page view tracking hook
+// Auto page view tracking hook with debouncing
 export function useAutoPageTracking() {
   const { trackPageView } = useAnalytics();
+  const [hasTrackedInitial, setHasTrackedInitial] = useState(false);
 
   useEffect(() => {
-    // Track page view on mount
-    trackPageView().catch(console.error);
+    if (!hasTrackedInitial) {
+      trackPageView().catch(err => IS_DEVELOPMENT && console.error(err));
+      setHasTrackedInitial(true);
+    }
 
-    // Track page view on route changes (if using React Router)
+    let timeoutId: number;
     const handleRouteChange = () => {
-      setTimeout(() => {
-        trackPageView().catch(console.error);
-      }, 100);
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        trackPageView().catch(err => IS_DEVELOPMENT && console.error(err));
+      }, 500);
     };
 
-    // Listen for popstate events (back/forward navigation)
     window.addEventListener('popstate', handleRouteChange);
     
     return () => {
+      clearTimeout(timeoutId);
       window.removeEventListener('popstate', handleRouteChange);
     };
-  }, [trackPageView]);
+  }, [trackPageView, hasTrackedInitial]);
 }

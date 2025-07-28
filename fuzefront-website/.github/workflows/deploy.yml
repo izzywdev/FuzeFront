@@ -2,9 +2,9 @@ name: Deploy FuzeFront Website
 
 on:
   push:
-    branches: [ main, fuzefront-website ]
+    branches: [ main, master, fuzefront-website ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 env:
   AWS_REGION: us-east-1
@@ -62,7 +62,7 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
     - name: Checkout code
@@ -112,7 +112,7 @@ jobs:
   deploy-infrastructure:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
     - name: Checkout code
@@ -163,7 +163,7 @@ jobs:
   deploy-application:
     needs: deploy-infrastructure
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
     - name: Checkout code
@@ -222,7 +222,7 @@ jobs:
     
     steps:
     - name: Notify deployment status
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fuzefront-website'
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
       run: |
         if [ "${{ needs.deploy-application.result }}" == "success" ]; then
           echo "✅ Deployment successful! Website is live at https://${{ secrets.DOMAIN_NAME }}"

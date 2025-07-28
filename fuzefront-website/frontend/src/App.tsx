@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useHealthCheck, useNewsletter, useContactForm, useAnalytics, useAutoPageTracking } from './hooks/useApi'
 
+const IS_DEVELOPMENT = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development'
+
 function App() {
   // API hooks
-  const { data: healthData, loading: healthLoading, error: healthError } = useHealthCheck()
+  const { data: healthData, loading: healthLoading, error: healthError } = useHealthCheck(60000) // Check every 60 seconds
   const { subscribe, loading: newsletterLoading, success: newsletterSuccess, error: newsletterError } = useNewsletter()
   const { submitForm, loading: contactLoading, success: contactSuccess, error: contactError } = useContactForm()
   const { trackEvent } = useAnalytics()
@@ -20,12 +22,16 @@ function App() {
     message: ''
   })
 
-  // Track app load event
+  // Track app load event (only once)
   useEffect(() => {
-    trackEvent({
-      event: 'app_loaded',
-      properties: { timestamp: new Date().toISOString() }
-    }).catch(console.error)
+    const hasTrackedAppLoad = sessionStorage.getItem('app_loaded')
+    if (!hasTrackedAppLoad) {
+      trackEvent({
+        event: 'app_loaded',
+        properties: { timestamp: new Date().toISOString() }
+      }).catch(err => IS_DEVELOPMENT && console.error(err))
+      sessionStorage.setItem('app_loaded', 'true')
+    }
   }, [trackEvent])
 
   const handleNewsletterSubmit = async (e: React.FormEvent) => {
@@ -37,7 +43,9 @@ function App() {
       setEmail('')
       trackEvent({ event: 'newsletter_subscribe', properties: { email } })
     } catch (error) {
-      console.error('Newsletter subscription failed:', error)
+      if (IS_DEVELOPMENT) {
+        console.error('Newsletter subscription failed:', error)
+      }
     }
   }
 
@@ -50,7 +58,9 @@ function App() {
       setContactForm({ name: '', email: '', subject: '', message: '' })
       trackEvent({ event: 'contact_form_submit', properties: { subject: contactForm.subject } })
     } catch (error) {
-      console.error('Contact form submission failed:', error)  
+      if (IS_DEVELOPMENT) {
+        console.error('Contact form submission failed:', error)
+      }
     }
   }
 

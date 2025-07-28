@@ -7,6 +7,7 @@
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const IS_DEVELOPMENT = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
 
 // Request configuration
 const DEFAULT_HEADERS = {
@@ -98,13 +99,17 @@ class HttpClient {
     };
 
     try {
-      console.log(`🌐 API Request: ${config.method || 'GET'} ${url}`);
+      if (IS_DEVELOPMENT) {
+        console.log(`🌐 API Request: ${config.method || 'GET'} ${url}`);
+      }
       
       const response = await fetch(url, config);
       const data = await response.json();
 
       if (!response.ok) {
-        console.error(`❌ API Error: ${response.status}`, data);
+        if (IS_DEVELOPMENT) {
+          console.error(`❌ API Error: ${response.status}`, data);
+        }
         throw new ApiError(
           data.error || data.message || 'Request failed',
           response.status,
@@ -112,14 +117,18 @@ class HttpClient {
         );
       }
 
-      console.log(`✅ API Success: ${config.method || 'GET'} ${url}`, data);
+      if (IS_DEVELOPMENT) {
+        console.log(`✅ API Success: ${config.method || 'GET'} ${url}`, data);
+      }
       return data;
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
       }
 
-      console.error(`🚨 Network Error: ${url}`, error);
+      if (IS_DEVELOPMENT) {
+        console.error(`🚨 Network Error: ${url}`, error);
+      }
       throw new ApiError(
         'Network error. Please check your connection and try again.',
         0,
