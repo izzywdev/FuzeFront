@@ -67,7 +67,7 @@ function App() {
         marginBottom: '20px',
         textAlign: 'center'
       }}>
-        🚀 FuzeFront Website
+        🚀 FuzeFront Website v2.0
       </h1>
       <p style={{ 
         fontSize: '24px', 
@@ -75,7 +75,7 @@ function App() {
         textAlign: 'center',
         marginBottom: '30px'
       }}>
-        React app with live API integration
+        React app with live API integration - Deployed via CI/CD
       </p>
 
       {/* API Health Status */}
