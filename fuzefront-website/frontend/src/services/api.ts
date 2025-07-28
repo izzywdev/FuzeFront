@@ -6,7 +6,10 @@
 /// <reference lib="dom" />
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (
+  // In production, use relative path to leverage nginx proxy
+  import.meta.env.PROD ? '' : 'http://localhost:3001'
+);
 const IS_DEVELOPMENT = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
 
 // Request configuration
@@ -167,7 +170,7 @@ const httpClient = new HttpClient(API_BASE_URL);
 export const apiService = {
   // Health Check
   async health(): Promise<HealthResponse> {
-    return httpClient.get<HealthResponse>('/health');
+    return httpClient.get<HealthResponse>('/api/health');
   },
 
   // Contact Form
