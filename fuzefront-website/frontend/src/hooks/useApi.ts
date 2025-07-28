@@ -8,8 +8,7 @@ import apiService, {
   ApiError, 
   ContactFormData, 
   NewsletterData, 
-  AnalyticsEvent,
-  AnalyticsSummary 
+  AnalyticsEvent
 } from '../services/api';
 
 // Generic API hook type
@@ -23,7 +22,7 @@ interface UseApiState<T> {
 // Generic API hook
 export function useApi<T>(
   apiCall: () => Promise<T>, 
-  dependencies: any[] = []
+  dependencies: unknown[] = []
 ): UseApiState<T> & { refetch: () => Promise<void> } {
   const [state, setState] = useState<UseApiState<T>>({
     data: null,
@@ -52,7 +51,7 @@ export function useApi<T>(
         success: false,
       });
     }
-  }, dependencies);
+  }, [apiCall, ...dependencies]);
 
   useEffect(() => {
     fetchData();
@@ -71,7 +70,7 @@ export function useHealthCheck() {
 
 // Contact form hook
 export function useContactForm() {
-  const [state, setState] = useState<UseApiState<any>>({
+  const [state, setState] = useState<UseApiState<unknown>>({
     data: null,
     loading: false,
     error: null,
@@ -115,7 +114,7 @@ export function useContactForm() {
 
 // Newsletter hook
 export function useNewsletter() {
-  const [state, setState] = useState<UseApiState<any>>({
+  const [state, setState] = useState<UseApiState<unknown>>({
     data: null,
     loading: false,
     error: null,
