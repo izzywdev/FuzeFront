@@ -3,6 +3,8 @@
  * Handles all backend API calls with proper error handling and types
  */
 
+/// <reference lib="dom" />
+
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -12,13 +14,13 @@ const DEFAULT_HEADERS = {
 };
 
 // API Response Types
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   timestamp?: string;
   data?: T;
   error?: string;
-  details?: any[];
+  details?: unknown[];
 }
 
 export interface HealthResponse {
@@ -57,7 +59,7 @@ export interface AnalyticsSummary {
   pageViews: number;
   customEvents: number;
   uniquePages: number;
-  recentEvents: any[];
+  recentEvents: unknown[];
   timestamp: string;
 }
 
@@ -66,7 +68,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public response?: any
+    public response?: unknown
   ) {
     super(message);
     this.name = 'ApiError';
@@ -83,11 +85,11 @@ class HttpClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: globalThis.RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     
-    const config: RequestInit = {
+    const config: globalThis.RequestInit = {
       headers: {
         ...DEFAULT_HEADERS,
         ...options.headers,
@@ -130,14 +132,14 @@ class HttpClient {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     });
   }
 
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
