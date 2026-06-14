@@ -4,3 +4,9 @@ node_modules/
 keys/
 *.pem
 *.key
+
+# Environment files — never commit real secrets. Use the .env.example templates.
+.env
+**/.env
+!.env.example
+!**/.env.example

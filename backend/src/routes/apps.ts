@@ -13,7 +13,7 @@ interface AppRow {
   url: string
   icon_url: string
   is_active: boolean
-  integration_type: 'iframe' | 'module_federation' | 'spa'
+  integration_type: 'iframe' | 'module-federation' | 'web-component' | 'spa'
   remote_url: string
   scope: string
   module: string
@@ -143,7 +143,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
           integrationType: app.integration_type as
             | 'module-federation'
             | 'iframe'
-            | 'web-component',
+            | 'web-component'
+            | 'spa',
           remoteUrl: app.remote_url,
           scope: app.scope,
           module: app.module,
@@ -329,9 +330,8 @@ router.post(
       const validIntegrationTypes = [
         'iframe',
         'module-federation',
-        'module_federation',
-        'spa',
         'web-component',
+        'spa',
       ]
       if (!validIntegrationTypes.includes(integrationType)) {
         return res.status(400).json({
@@ -339,15 +339,8 @@ router.post(
         })
       }
 
-      // Store original integration type for response but normalize for database
-      const originalIntegrationType = integrationType
-      let dbIntegrationType = integrationType
-      if (integrationType === 'module-federation') {
-        dbIntegrationType = 'module_federation'
-      }
-
       // Module federation specific validation
-      if (dbIntegrationType === 'module_federation') {
+      if (integrationType === 'module-federation') {
         if (!remoteUrl || remoteUrl.length === 0) {
           return res.status(400).json({
             error: 'remoteUrl is required for module federation applications',
@@ -407,7 +400,7 @@ router.post(
         name,
         url,
         icon_url: iconUrl,
-        integration_type: dbIntegrationType,
+        integration_type: integrationType,
         remote_url: remoteUrl,
         scope,
         module,
@@ -420,7 +413,7 @@ router.post(
         url,
         iconUrl,
         isActive: true,
-        integrationType: originalIntegrationType,
+        integrationType,
         remoteUrl,
         scope,
         module,

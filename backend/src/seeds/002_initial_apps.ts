@@ -11,8 +11,8 @@ export async function seed(knex: Knex): Promise<void> {
       name: 'Task Manager',
       url: 'http://localhost:3002',
       icon_url: '/icons/task-manager.svg',
-      status: 'active',
-      integration_type: 'module_federation',
+      is_active: true,
+      integration_type: 'module-federation',
       description:
         'A comprehensive task management application for organizing and tracking work items.',
       marketplace_metadata: JSON.stringify({
@@ -37,7 +37,7 @@ export async function seed(knex: Knex): Promise<void> {
       name: 'Dashboard',
       url: 'http://localhost:5173',
       icon_url: '/icons/dashboard.svg',
-      status: 'active',
+      is_active: true,
       integration_type: 'spa',
       description:
         'Main platform dashboard providing overview and navigation to all applications.',
@@ -60,7 +60,7 @@ export async function seed(knex: Knex): Promise<void> {
       name: 'Demo External App',
       url: 'https://www.example.com',
       icon_url: '/icons/external.svg',
-      status: 'active',
+      is_active: true,
       integration_type: 'iframe',
       description:
         'Demo external application to showcase iframe integration capabilities.',

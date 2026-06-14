@@ -2,9 +2,9 @@ import { Knex, knex } from 'knex'
 import path from 'path'
 import { Client } from 'pg'
 
-// Database credentials for FuzeFront dedicated user
+// Default DB username (non-secret). The password MUST be supplied via the
+// DB_PASSWORD environment variable (e.g. k8s secret / .env) — never hardcoded.
 const FUZEFRONT_USER = 'fuzefront_user'
-const FUZEFRONT_PASSWORD = 'FuzeFront_2024_SecureDB_Pass!'
 
 // Helper function to ensure password is always a string
 const ensurePasswordString = (password: any): string | undefined => {
@@ -27,7 +27,7 @@ const getDatabaseConfig = (): Knex.Config => {
   if (usePostgres) {
     // PostgreSQL configuration (shared infrastructure)
     const dbUser = process.env.DB_USER || FUZEFRONT_USER
-    const dbPassword = ensurePasswordString(process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+    const dbPassword = ensurePasswordString(process.env.DB_PASSWORD)
 
     console.log(`🔧 Database config: User=${dbUser}, Password type=${typeof dbPassword}, Host=${process.env.DB_HOST || 'localhost'}`)
 
@@ -101,7 +101,7 @@ export async function waitForPostgres(
   console.log('🔍 Checking PostgreSQL availability...')
 
   const dbUser = process.env.DB_USER || FUZEFRONT_USER
-  const dbPassword = ensurePasswordString(process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+  const dbPassword = ensurePasswordString(process.env.DB_PASSWORD)
 
   console.log(`🔧 Connection test: User=${dbUser}, Password type=${typeof dbPassword}`)
 
@@ -146,7 +146,7 @@ export async function ensureDatabase(): Promise<void> {
   console.log('🔧 Ensuring database exists...')
 
   const dbUser = process.env.DB_USER || FUZEFRONT_USER
-  const dbPassword = ensurePasswordString(process.env.DB_PASSWORD || FUZEFRONT_PASSWORD)
+  const dbPassword = ensurePasswordString(process.env.DB_PASSWORD)
 
   const clientConfig: any = {
     host: process.env.DB_HOST || 'localhost',

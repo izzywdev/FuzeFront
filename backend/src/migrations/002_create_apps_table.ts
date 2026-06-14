@@ -8,7 +8,12 @@ export async function up(knex: Knex): Promise<void> {
     table.string('icon_url').nullable()
     table.boolean('is_active').defaultTo(true)
     table
-      .enum('integration_type', ['iframe', 'module_federation', 'spa'])
+      .enum('integration_type', [
+        'iframe',
+        'module-federation',
+        'web-component',
+        'spa',
+      ])
       .defaultTo('iframe')
     table.string('remote_url').nullable()
     table.string('scope').nullable()

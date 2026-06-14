@@ -1,5 +1,3 @@
-version: '3.8'
-
 # External networks from shared infrastructure
 networks:
   FuzeInfra:
@@ -28,7 +26,7 @@ services:
       - DB_NAME=${DB_NAME:-fuzefront_platform}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
-      - JWT_SECRET=fuzefront-production-secret-change-this-in-production
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=${BACKEND_PORT:-3002}
       - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
       - PERMIT_API_KEY=${PERMIT_API_KEY}
@@ -128,25 +126,31 @@ services:
   # AUTHENTIK OIDC/OAuth2 AUTHENTICATION
   # ================================
   authentik-server:
-    image: ghcr.io/goauthentik/server:2024.2.2
+    image: ghcr.io/goauthentik/server:2024.12.3
     container_name: fuzefront-authentik-server
     command: server
     environment:
       # Use shared PostgreSQL from FuzeInfra with dedicated authentik user
       AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_REDIS__PORT: 6379
       AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
       AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
       AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
       AUTHENTIK_LOG_LEVEL: info
-      AUTHENTIK_COOKIE_DOMAIN: fuzefront.dev.local
+      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-fuzefront.local}
       AUTHENTIK_DISABLE_UPDATE_CHECK: true
       AUTHENTIK_ERROR_REPORTING__ENABLED: false
       AUTHENTIK_DEFAULT_USER_CHANGE_EMAIL: true
       AUTHENTIK_DEFAULT_USER_CHANGE_NAME: true
       AUTHENTIK_DEFAULT_USER_CHANGE_USERNAME: true
       AUTHENTIK_GDPR_COMPLIANCE: false
+      # Database bootstrap settings
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin123}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-bootstrap-token-change-me}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@fuzefront.local}
     volumes:
       - authentik_media:/media
       - authentik_custom_templates:/templates
@@ -157,27 +161,31 @@ services:
       - FuzeInfra # Connect to shared infrastructure for PostgreSQL, Redis, and Traefik
       - fuzefront # Connect to FuzeFront internal network
     depends_on:
-      - authentik-worker
+      authentik-worker:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'ak', 'healthcheck']
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.authentik.rule=Host(`auth.fuzefront.local`)'
       - 'traefik.http.services.authentik.loadbalancer.server.port=9000'
+      - 'traefik.http.routers.authentik.tls=false'
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2024.2.2
+    image: ghcr.io/goauthentik/server:2024.12.3
     container_name: fuzefront-authentik-worker
     command: worker
     environment:
       # Use shared PostgreSQL and Redis from FuzeInfra with dedicated authentik user
       AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_REDIS__PORT: 6379
       AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
       AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
       AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
@@ -192,6 +200,12 @@ services:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront
     restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # ================================
   # PERMIT.IO AUTHORIZATION (PDP)

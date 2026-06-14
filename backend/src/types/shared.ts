@@ -52,7 +52,7 @@ export interface App {
   iconUrl?: string
   isActive: boolean
   isHealthy?: boolean
-  integrationType: 'module-federation' | 'iframe' | 'web-component'
+  integrationType: 'module-federation' | 'iframe' | 'web-component' | 'spa'
   remoteUrl?: string
   scope?: string
   module?: string
