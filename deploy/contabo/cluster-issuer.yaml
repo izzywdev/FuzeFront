@@ -1,0 +1,17 @@
+# Let's Encrypt production issuer (HTTP-01 via ingress-nginx).
+# Edit the email before applying. For a wildcard (*.apps.fuzefront.com) switch to
+# a DNS-01 solver with a Cloudflare API token instead.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@fuzefront.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
