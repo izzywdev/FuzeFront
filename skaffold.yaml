@@ -4,10 +4,16 @@
 #   skaffold dev     # watch sources, rebuild + reload + redeploy on change
 #   skaffold verify  # run the Playwright sign-in check against the deployment
 #
-# Prereqs: the kind cluster "fuzeinfra" exists with FuzeInfra (Postgres/Redis)
-# deployed and ingress-nginx installed (see FuzeInfra: make kind-up). Skaffold
-# auto-loads images into kind (build.local.push=false + a kind kube-context), so
-# no registry is needed.
+# Prereqs:
+#   - kind cluster "fuzeinfra" exists with FuzeInfra (Postgres/Redis) deployed and
+#     ingress-nginx installed (see FuzeInfra: make kind-up).
+#   - HELM 3 on PATH. Skaffold's Helm renderer uses the Helm-3 plugin format and
+#     cannot parse Helm 4's plugin.yaml; if your system helm is v4, put a helm 3
+#     binary earlier on PATH for skaffold invocations.
+#   - Windows: enable Developer Mode (Skaffold's Helm post-renderer is installed
+#     via a symlink, which needs that privilege).
+# Skaffold auto-loads images into kind (build.local.push=false + a kind
+# kube-context), so no registry is needed.
 apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
@@ -49,7 +55,12 @@ manifests:
 
 deploy:
   kubeContext: kind-fuzeinfra
-  helm: {}
+  # Apply the Helm-rendered chart + the rawYaml example in a single pass.
+  # defaultNamespace pins resources that don't carry an explicit namespace to
+  # the fuzefront namespace — Helm-templated manifests omit metadata.namespace,
+  # which would otherwise land them in "default" and collide cluster-wide.
+  kubectl:
+    defaultNamespace: fuzefront
 
 # After `skaffold run`/`dev`, run the Playwright sign-in check against the
 # deployment with:  cd frontend && npm run test:e2e
