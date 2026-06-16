@@ -72,6 +72,23 @@ class WebSocketService {
   isConnected(): boolean {
     return this.socket?.connected || false
   }
+
+  // Raw server pub/sub used by the platform bridge's socket bus so that
+  // runtime-loaded apps can subscribe to / emit platform events over the
+  // host's single socket connection.
+  onServer(event: string, callback: (payload: any) => void) {
+    const socket = this.connect()
+    socket.on(event, callback as any)
+  }
+
+  offServer(event: string, callback: (payload: any) => void) {
+    this.socket?.off(event, callback as any)
+  }
+
+  emitServer(event: string, payload: any) {
+    const socket = this.connect()
+    socket.emit(event, payload)
+  }
 }
 
 export const websocketService = new WebSocketService()

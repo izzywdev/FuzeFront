@@ -3,6 +3,7 @@ import TopBar from './TopBar'
 import SidePanel from './SidePanel'
 import ChatPanel from './ChatPanel'
 import { useChat } from '../contexts/ChatContext'
+import Toaster from './Toaster'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -28,6 +29,9 @@ function Layout({ children }: LayoutProps) {
         onFeedback={addFeedback}
         isLoading={state.isLoading}
       />
+
+      {/* Toast region fed by window.__FUZEFRONT__.notify() (host + any app) */}
+      <Toaster />
     </div>
   )
 }
