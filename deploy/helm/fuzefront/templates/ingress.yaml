@@ -1,0 +1,23 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    # Single host -> frontend. The frontend's nginx fans /api and /socket.io
+    # out to the backend Service internally, mirroring the compose setup.
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-frontend
+                port:
+                  number: {{ .Values.frontend.port }}
+{{- end }}

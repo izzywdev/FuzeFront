@@ -1,0 +1,10 @@
+apiVersion: v2
+name: fuzefront
+description: >-
+  FuzeFront microfrontend hosting platform (backend + frontend), deployed
+  in-cluster and wired to the shared FuzeInfra services. Minimal first cut:
+  backend + frontend with local JWT auth; Authentik (OIDC) and Permit (PDP)
+  are layered on later.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

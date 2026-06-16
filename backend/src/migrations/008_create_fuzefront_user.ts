@@ -20,19 +20,20 @@ export async function up(knex: Knex): Promise<void> {
     if (userExists.rows.length === 0) {
       console.log(`📝 Creating user: ${username}`)
       
-      // Create the user with password
+      // Create the user with password. Postgres DDL does not accept a bound
+      // parameter ($1) for the password literal, so inline it (constant value).
       await knex.raw(`
-        CREATE USER ?? WITH PASSWORD ?
-      `, [username, password])
+        CREATE USER ?? WITH PASSWORD '${password}'
+      `, [username])
       
       console.log(`✅ User ${username} created successfully`)
     } else {
       console.log(`✅ User ${username} already exists`)
       
-      // Update password in case it changed
+      // Update password in case it changed (inline literal — see note above).
       await knex.raw(`
-        ALTER USER ?? WITH PASSWORD ?
-      `, [username, password])
+        ALTER USER ?? WITH PASSWORD '${password}'
+      `, [username])
       
       console.log(`✅ User ${username} password updated`)
     }

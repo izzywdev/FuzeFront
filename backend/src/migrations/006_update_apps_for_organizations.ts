@@ -17,6 +17,7 @@ export async function up(knex: Knex): Promise<void> {
     table
       .enum('visibility', null, {
         useNative: true,
+        existingType: true,
         enumName: 'app_visibility_enum',
       })
       .defaultTo('private')

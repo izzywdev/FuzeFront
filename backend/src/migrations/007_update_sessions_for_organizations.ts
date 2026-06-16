@@ -11,9 +11,8 @@ export async function up(knex: Knex): Promise<void> {
     table.jsonb('organization_context').defaultTo('{}')
     table.string('tenant_id', 255).nullable().alter() // Make consistent with apps table
 
-    // Indexes for performance
+    // Indexes for performance (tenant_id is already indexed by migration 003)
     table.index(['active_organization_id'])
-    table.index(['tenant_id'])
   })
 }
 

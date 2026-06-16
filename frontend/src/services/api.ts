@@ -274,4 +274,122 @@ export const organizationsAPI = {
   },
 }
 
+// ---------------------------------------------------------------------------
+// Backward-compatible standalone exports.
+// Components import these named functions/types directly. They wrap the *API
+// objects above and add the org/member/app-CRUD + permission calls the
+// components expect, following the backend's /api routes.
+// ---------------------------------------------------------------------------
+
+export interface Organization {
+  id: string
+  name: string
+  slug?: string
+  description?: string
+  ownerId?: string
+  parentId?: string | null
+  type?: string
+  metadata?: Record<string, any>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface OrganizationMember {
+  id: string
+  organizationId: string
+  userId: string
+  email?: string
+  firstName?: string
+  lastName?: string
+  role: string
+  status?: string
+  createdAt?: string
+}
+
+// Auth
+export const getCurrentUser = () => authAPI.getCurrentUser()
+export const logout = () => authAPI.logout()
+
+// Apps
+export const fetchApps = () => appsAPI.getApps()
+export const createApp = async (app: Partial<App>) => {
+  const res = await api.post('/apps', app)
+  return res.data
+}
+export const updateAppStatus = async (id: string, isActive: boolean) => {
+  const res = await api.put(`/apps/${id}/activate`, { isActive })
+  return res.data
+}
+export const deleteApp = async (id: string) => {
+  const res = await api.delete(`/apps/${id}`)
+  return res.data
+}
+
+// Organizations
+export const getOrganizations = () => organizationsAPI.getOrganizations()
+export const createOrganization = async (data: Partial<Organization>) => {
+  const res = await api.post('/organizations', data)
+  return res.data
+}
+export const updateOrganization = async (
+  id: string,
+  data: Partial<Organization>
+) => {
+  const res = await api.put(`/organizations/${id}`, data)
+  return res.data
+}
+export const deleteOrganization = async (id: string) => {
+  const res = await api.delete(`/organizations/${id}`)
+  return res.data
+}
+
+// Organization members
+export const getOrganizationMembers = async (orgId: string) => {
+  const res = await api.get(`/organizations/${orgId}/members`)
+  return res.data
+}
+export const inviteOrganizationMember = async (
+  orgId: string,
+  data: { email: string; role: string }
+) => {
+  const res = await api.post(`/organizations/${orgId}/members`, data)
+  return res.data
+}
+export const updateMemberRole = async (
+  orgId: string,
+  memberId: string,
+  role: string
+) => {
+  const res = await api.put(`/organizations/${orgId}/members/${memberId}`, {
+    role,
+  })
+  return res.data
+}
+export const removeMember = async (orgId: string, memberId: string) => {
+  const res = await api.delete(`/organizations/${orgId}/members/${memberId}`)
+  return res.data
+}
+
+// Permissions (best-effort; permissive fallback for local dev so the UI renders
+// when the authorization endpoints aren't wired yet).
+export const checkPermissions = async (
+  resource?: string,
+  action?: string
+): Promise<boolean> => {
+  try {
+    const res = await api.post('/auth/permissions/check', { resource, action })
+    return Boolean(res.data?.allowed ?? true)
+  } catch {
+    return true
+  }
+}
+export const getUserRoles = async (): Promise<string[]> => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return Array.isArray(user?.roles) ? user.roles : []
+  } catch {
+    return []
+  }
+}
+
 export default api

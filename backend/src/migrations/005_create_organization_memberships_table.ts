@@ -27,11 +27,16 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('organizations')
       .onDelete('CASCADE')
     table
-      .enum('role', null, { useNative: true, enumName: 'membership_role_enum' })
+      .enum('role', null, {
+        useNative: true,
+        existingType: true,
+        enumName: 'membership_role_enum',
+      })
       .notNullable()
     table
       .enum('status', null, {
         useNative: true,
+        existingType: true,
         enumName: 'membership_status_enum',
       })
       .defaultTo('active')
