@@ -17,6 +17,10 @@ spec:
         app.kubernetes.io/part-of: fuzefront
         app.kubernetes.io/component: backend
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

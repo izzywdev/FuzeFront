@@ -12,6 +12,9 @@ global:
   # `kind load docker-image` rather than trying to pull from a registry.
   imagePullPolicy: IfNotPresent
 
+# Image pull secrets for private registries (e.g. private GHCR). Sealed in prod.
+imagePullSecrets: []
+
 # Connection to FuzeInfra shared services (CoreDNS names, cross-namespace).
 fuzeinfra:
   namespace: fuzeinfra
@@ -72,3 +75,9 @@ ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
+  # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
+  annotations: {}
+  tls:
+    enabled: false
+    # Defaults to "<host>-tls" when empty.
+    secretName: ''
