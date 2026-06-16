@@ -1,0 +1,58 @@
+name: Publish SDK
+
+# Publishes @izzywdev/fuzefront-sdk-react to npm when a PR that touched the SDK
+# is merged to master. The `paths` filter is GitHub's native "only if the SDK
+# was modified" gate.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'sdk/**'
+
+# Avoid overlapping publishes if several SDK PRs merge in quick succession.
+concurrency:
+  group: sdk-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build & publish SDK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push the version bump commit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install & build
+        working-directory: sdk
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Bump patch version
+        id: version
+        working-directory: sdk
+        run: |
+          NEW_VERSION=$(npm version patch --no-git-tag-version)
+          echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        working-directory: sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit version bump
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add sdk/package.json sdk/package-lock.json 2>/dev/null || git add sdk/package.json
+          git commit -m "chore(sdk): publish v${{ steps.version.outputs.version }} [skip ci]" || exit 0
+          git push
