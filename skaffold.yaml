@@ -1,0 +1,57 @@
+# Skaffold — local in-cluster dev loop for FuzeFront on kind.
+#
+#   skaffold run     # one-shot: build images -> load into kind -> deploy
+#   skaffold dev     # watch sources, rebuild + reload + redeploy on change
+#   skaffold verify  # run the Playwright sign-in check against the deployment
+#
+# Prereqs: the kind cluster "fuzeinfra" exists with FuzeInfra (Postgres/Redis)
+# deployed and ingress-nginx installed (see FuzeInfra: make kind-up). Skaffold
+# auto-loads images into kind (build.local.push=false + a kind kube-context), so
+# no registry is needed.
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: fuzefront
+
+build:
+  local:
+    push: false # kind: load images into nodes instead of pushing to a registry
+    useBuildkit: true
+  artifacts:
+    - image: fuzefront/backend
+      context: backend
+    - image: fuzefront/frontend
+      context: frontend
+      docker:
+        buildArgs:
+          VITE_API_URL: http://fuzefront.dev.local
+    - image: fuzefront/clock-app
+      context: clock-app
+
+manifests:
+  helm:
+    releases:
+      - name: fuzefront
+        chartPath: deploy/helm/fuzefront
+        namespace: fuzefront
+        createNamespace: true
+        valuesFiles:
+          - deploy/helm/fuzefront/values-local.yaml
+        # Inject the freshly-built image refs into the chart's image values.
+        setValueTemplates:
+          backend.image.repository: '{{.IMAGE_REPO_fuzefront_backend}}'
+          backend.image.tag: '{{.IMAGE_TAG_fuzefront_backend}}'
+          frontend.image.repository: '{{.IMAGE_REPO_fuzefront_frontend}}'
+          frontend.image.tag: '{{.IMAGE_TAG_fuzefront_frontend}}'
+  # clock-app example: image ref is substituted automatically from the artifact.
+  rawYaml:
+    - deploy/examples/clock-app.yaml
+
+deploy:
+  kubeContext: kind-fuzeinfra
+  helm: {}
+
+# After `skaffold run`/`dev`, run the Playwright sign-in check against the
+# deployment with:  cd frontend && npm run test:e2e
+# (BASE_URL defaults to http://fuzefront.dev.local). The same spec runs in CI
+# on every PR — see .github/workflows/e2e.yml.
