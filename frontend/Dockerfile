@@ -1,16 +1,16 @@
-# Build stage
-FROM node:18-alpine AS build
+# Build stage — glibc + Node 20 so Tailwind v4's @tailwindcss/oxide native
+# binding resolves reliably (it is flaky on alpine/musl).
+FROM node:20-bookworm-slim AS build
 
 WORKDIR /app
-
-# Install dependencies for native modules
-RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies. Drop the host (Windows) lockfile first so npm re-resolves
+# platform-native optional deps (e.g. @tailwindcss/oxide linux binding) inside the
+# linux build — works around npm's optional-deps bug (npm/cli#4828).
+RUN rm -f package-lock.json && npm install
 
 # Copy source code
 COPY . .
