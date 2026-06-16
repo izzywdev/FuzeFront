@@ -1,0 +1,23 @@
+# Root "app of apps": apply this once after bootstrap and Argo manages the rest.
+#   kubectl apply -f deploy/argocd/project.yaml
+#   kubectl apply -f deploy/argocd/app-of-apps.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzefront-apps
+  namespace: argocd
+spec:
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    path: deploy/argocd/applications
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

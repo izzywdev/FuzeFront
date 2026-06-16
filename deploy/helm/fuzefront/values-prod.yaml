@@ -1,0 +1,51 @@
+# =============================================================================
+# Production overlay (Contabo k3s), consumed by the Argo CD `fuzefront` Application.
+# Differs from local only by: GHCR images, public host + TLS, sealed secret.
+# =============================================================================
+global:
+  imagePullPolicy: IfNotPresent
+
+backend:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-backend
+    tag: latest # CI (release.yml) rewrites this to the git SHA on each merge
+  replicas: 2
+
+frontend:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-frontend
+    tag: latest
+  replicas: 2
+
+# Private GHCR pull secret (sealed; see deploy/contabo/README.md).
+imagePullSecrets:
+  - name: ghcr-pull
+
+fuzeinfra:
+  namespace: fuzeinfra
+  postgres:
+    host: postgres.fuzeinfra.svc.cluster.local
+    port: 5432
+  redis:
+    host: redis.fuzeinfra.svc.cluster.local
+    port: 6379
+
+database:
+  name: fuzefront_platform
+  # Bootstraps as the FuzeInfra superuser for now; harden to fuzefront_user later.
+  user: fuzeinfra
+
+# Secrets come from a SealedSecret (JWT_SECRET, SESSION_SECRET, DB_PASSWORD,
+# PERMIT_API_KEY) — never plaintext in git.
+secret:
+  existingSecret: fuzefront-secrets
+
+ingress:
+  enabled: true
+  className: nginx
+  host: app.fuzefront.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: fuzefront-app-tls

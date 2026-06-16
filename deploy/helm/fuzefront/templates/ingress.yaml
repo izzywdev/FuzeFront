@@ -5,8 +5,18 @@ metadata:
   name: fuzefront
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
   rules:
     # Single host -> frontend. The frontend's nginx fans /api and /socket.io
     # out to the backend Service internally, mirroring the compose setup.

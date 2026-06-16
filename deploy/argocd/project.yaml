@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fuzefront
+  namespace: argocd
+spec:
+  description: FuzeFront platform + shared infrastructure
+  sourceRepos:
+    - https://github.com/izzywdev/FuzeFront.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: fuzefront
+    - server: https://kubernetes.default.svc
+      namespace: fuzeinfra
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  # Self-managed single-tenant cluster: allow the cluster-scoped resources the
+  # charts + add-ons need (namespaces, ingressclasses, cert-manager CRDs, etc.).
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
