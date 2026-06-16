@@ -1,0 +1,36 @@
+# Lean FuzeInfra overlay for FuzeFront "first light".
+# Starts ONLY the backbone services FuzeFront's minimal cut consumes (Postgres + Redis)
+# and turns the rest of the FuzeInfra menu off to keep the local cluster light.
+#
+# Layer on top of the chart's local overlay:
+#   helm upgrade --install fuzeinfra FuzeInfra/helm/fuzeinfra -n fuzeinfra --create-namespace \
+#     -f FuzeInfra/helm/fuzeinfra/values-local.yaml \
+#     -f deploy/fuzeinfra-lean-values.yaml
+#
+# To bring up more later, drop the relevant `enabled: false` (or use the full make kind-up).
+
+# FuzeInfra's own ingress only fronts its web UIs (Grafana, etc.) — all disabled
+# here, which would render an Ingress with no rules (invalid). FuzeFront brings its
+# own ingress, and Postgres/Redis are internal ClusterIP services, so turn it off.
+ingress:    { enabled: false }
+
+postgres:   { enabled: true }
+redis:      { enabled: true }
+
+mongodb:       { enabled: false }
+mongoExpress:  { enabled: false }
+neo4j:         { enabled: false }
+elasticsearch: { enabled: false }
+chromadb:      { enabled: false }
+kafka:         { enabled: false }
+kafkaUi:       { enabled: false }
+rabbitmq:      { enabled: false }
+prometheus:    { enabled: false }
+grafana:       { enabled: false }
+alertmanager:  { enabled: false }
+loki:          { enabled: false }
+promtail:      { enabled: false }
+nodeExporter:  { enabled: false }
+airflow:       { enabled: false }
+dnsmasq:       { enabled: false }
+cloudflareTunnel: { enabled: false }

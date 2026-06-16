@@ -1,0 +1,74 @@
+# =============================================================================
+# FuzeFront Helm chart — default values (minimal first cut: backend + frontend).
+#
+# Deploy into its own namespace, wired to FuzeInfra services in the `fuzeinfra`
+# namespace via cross-namespace CoreDNS names:
+#   helm upgrade --install fuzefront deploy/helm/fuzefront \
+#     -n fuzefront --create-namespace -f deploy/helm/fuzefront/values-local.yaml
+# =============================================================================
+
+global:
+  # Applied to every workload. IfNotPresent so kind uses images loaded via
+  # `kind load docker-image` rather than trying to pull from a registry.
+  imagePullPolicy: IfNotPresent
+
+# Connection to FuzeInfra shared services (CoreDNS names, cross-namespace).
+fuzeinfra:
+  namespace: fuzeinfra
+  postgres:
+    host: postgres.fuzeinfra.svc.cluster.local
+    port: 5432
+  redis:
+    host: redis.fuzeinfra.svc.cluster.local
+    port: 6379
+
+# FuzeFront application database. The backend creates this DB on first startup,
+# so it only needs Postgres credentials that can CREATE DATABASE.
+database:
+  name: fuzefront_platform
+  # For first light the backend authenticates as the FuzeInfra Postgres superuser
+  # (so it can bootstrap its own database). Harden later to a dedicated
+  # fuzefront_user with limited grants. Password comes from the Secret below.
+  user: fuzeinfra
+
+# Secret handling. Either let the chart create a Secret from the values here
+# (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
+secret:
+  existingSecret: ""        # e.g. "fuzefront-secrets" created out-of-band
+  # Dev-only placeholders. OVERRIDE for anything real, e.g.:
+  #   --set secret.jwtSecret=... --set secret.dbPassword=...
+  # or a gitignored values file. NEVER commit real secrets here.
+  jwtSecret: "dev-only-change-me"
+  sessionSecret: "dev-only-change-me"
+  dbPassword: "fuzeinfra_secure_password"   # matches FuzeInfra postgres default
+  # Permit.io is deferred in the minimal cut, but the backend requires this var
+  # to be set at import time. The SDK is built with throwOnError:false, so with a
+  # placeholder it boots and degrades gracefully (Permit-gated routes will deny).
+  permitApiKey: "dev-no-permit"
+
+backend:
+  image:
+    repository: fuzefront/backend
+    tag: local
+  # Must stay 3001: the frontend nginx proxies /api and /socket.io to
+  # http://fuzefront-backend:3001, and the backend Service is named accordingly.
+  port: 3001
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+
+frontend:
+  image:
+    repository: fuzefront/frontend
+    tag: local
+  port: 8080
+  replicas: 1
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+ingress:
+  enabled: true
+  className: nginx
+  host: fuzefront.dev.local

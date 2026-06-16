@@ -1,0 +1,28 @@
+FuzeFront ({{ .Chart.AppVersion }}) deployed to namespace "{{ .Release.Namespace }}".
+
+1. Watch the pods come up:
+     kubectl -n {{ .Release.Namespace }} get pods -w
+
+2. Make sure the host resolves to the kind ingress (127.0.0.1):
+     {{ .Values.ingress.host }}  ->  add to /etc/hosts (or C:\Windows\System32\drivers\etc\hosts)
+
+3. Open the platform:
+     http://{{ .Values.ingress.host }}
+
+4. Backend health (through the frontend nginx proxy):
+     curl http://{{ .Values.ingress.host }}/api/health
+
+5. Plug in an app at runtime (no rebuild of the host):
+     curl -X POST http://{{ .Values.ingress.host }}/api/apps/register \
+       -H 'Content-Type: application/json' \
+       -d '{"name":"My App","url":"http://my-app:8080",
+            "integrationType":"module-federation",
+            "remoteUrl":"http://my-app:8080/remoteEntry.js",
+            "scope":"myApp","module":"./App"}'
+
+{{- if not .Values.secret.existingSecret }}
+
+WARNING: this release created its Secret from chart values (dev placeholders).
+Override secret.jwtSecret / secret.sessionSecret / secret.dbPassword for anything
+real, or set secret.existingSecret to a Secret you manage out-of-band.
+{{- end }}

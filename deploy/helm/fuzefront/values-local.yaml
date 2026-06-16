@@ -1,0 +1,15 @@
+# =============================================================================
+# Local (kind) overlay for FuzeFront.
+#   helm upgrade --install fuzefront deploy/helm/fuzefront \
+#     -n fuzefront --create-namespace -f deploy/helm/fuzefront/values-local.yaml
+#
+# The defaults in values.yaml already target the local kind setup. Override
+# secrets here (in a gitignored copy) or via --set for anything real.
+# =============================================================================
+global:
+  imagePullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: fuzefront.dev.local
