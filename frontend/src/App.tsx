@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useCurrentUser, useAppContext } from './lib/shared'
+import { useCurrentUser, useAppContext, MenuItem } from './lib/shared'
+import { installBridge, bridge } from './platform/bridge'
 import { ChatProvider } from './contexts/ChatContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
@@ -95,6 +96,53 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       }
     }
   }, [state.user, dispatch])
+
+  // Install the platform bridge once, and keep its context + menu wiring in
+  // sync with host state so runtime-loaded apps can read live context and call
+  // shared services (toaster, menu) through window.__FUZEFRONT__.
+  const menuRef = useRef<MenuItem[]>([])
+  useEffect(() => {
+    menuRef.current = state.menuItems
+  }, [state.menuItems])
+
+  useEffect(() => {
+    installBridge({
+      onMenuAdd: (appId, items) => {
+        const others = menuRef.current.filter(m => m.appId !== appId)
+        const added = items.map(i => ({ ...i, category: 'app' as const, appId }))
+        dispatch({ type: 'SET_MENU_ITEMS', payload: [...others, ...added] })
+      },
+      onMenuRemove: appId => {
+        dispatch({
+          type: 'SET_MENU_ITEMS',
+          payload: menuRef.current.filter(m => m.appId !== appId),
+        })
+      },
+      socket: {
+        on: (event, handler) => websocketService.onServer(event, handler),
+        off: (event, handler) => websocketService.offServer(event, handler),
+        emit: (event, payload) => websocketService.emitServer(event, payload),
+        isConnected: () => websocketService.isConnected(),
+      },
+    })
+  }, [dispatch])
+
+  useEffect(() => {
+    bridge.setContext({
+      user: state.user
+        ? {
+            id: state.user.id,
+            email: state.user.email,
+            roles: state.user.roles,
+          }
+        : null,
+      apps: state.apps.map(a => ({ id: a.id, name: a.name })),
+      activeApp: state.activeApp
+        ? { id: state.activeApp.id, name: state.activeApp.name }
+        : null,
+      isPlatformMode: true,
+    })
+  }, [state.user, state.apps, state.activeApp])
 
   if (isLoading) {
     return (

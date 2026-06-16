@@ -20,6 +20,20 @@ export { useSession } from './hooks/useSession'
 export { useGlobalMenu } from './hooks/useGlobalMenu'
 export { useSocketBus } from './hooks/useSocketBus'
 
+// Platform bridge — the window.__FUZEFRONT__ contract + bridge-native hooks.
+export { getBridge, isInPlatform } from './bridge'
+export type {
+  FuzeFrontBridge,
+  BridgeSocket,
+  BridgeMenuItem,
+  Toast,
+  ToastInput,
+  ToastLevel,
+  PlatformSnapshot,
+} from './bridge'
+export { useToast } from './hooks/useToast'
+export { usePlatform } from './hooks/usePlatform'
+
 // Module Federation Loader
 export {
   loadApp,
@@ -35,6 +49,9 @@ import { useSession } from './hooks/useSession'
 import { useGlobalMenu } from './hooks/useGlobalMenu'
 import { useSocketBus } from './hooks/useSocketBus'
 import { loadApp, clearModuleCache } from './loader/moduleFederation'
+import { getBridge } from './bridge'
+import { useToast } from './hooks/useToast'
+import { usePlatform } from './hooks/usePlatform'
 
 // Default export for convenience
 export default {
@@ -43,6 +60,9 @@ export default {
   useSession,
   useGlobalMenu,
   useSocketBus,
+  useToast,
+  usePlatform,
+  getBridge,
   loadApp,
   clearModuleCache,
 }

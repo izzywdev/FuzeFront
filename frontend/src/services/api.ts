@@ -210,6 +210,14 @@ export const authAPI = {
   // Local authentication
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
     const response = await api.post<LoginResponse>('/auth/login', credentials)
+    // Persist the token so it survives the post-login page reload and is sent
+    // on subsequent requests by the axios interceptor.
+    if (response.data?.token) {
+      localStorage.setItem('authToken', response.data.token)
+    }
+    if (response.data?.sessionId) {
+      localStorage.setItem('sessionId', response.data.sessionId)
+    }
     return response.data
   },
 
@@ -219,10 +227,10 @@ export const authAPI = {
     window.location.href = `${API_URL}/auth/oidc/login`
   },
 
-  // Get current user
+  // Get current user (the backend wraps the payload as { user })
   async getCurrentUser(): Promise<User> {
-    const response = await api.get<User>('/auth/user')
-    return response.data
+    const response = await api.get<{ user: User }>('/auth/user')
+    return response.data.user
   },
 
   // Logout

@@ -18,10 +18,11 @@ function SidePanel() {
     ) ||
     []
 
-  const appMenuItems =
-    globalMenu.appMenuItems ||
-    globalMenu.menuItems?.filter((item: MenuItem) => item.category === 'app') ||
-    []
+  // App-injected menu items live in the AppContext reducer, where the platform
+  // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
+  const appMenuItems = state.menuItems.filter(
+    (item: MenuItem) => item.category === 'app'
+  )
 
   const handleMenuClick = (item: MenuItem) => {
     if (item.route) {
