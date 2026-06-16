@@ -4,7 +4,7 @@ test.describe('Authentication - Simple', () => {
   test('should successfully authenticate', async ({ page }) => {
     // Navigate to the app
     await page.goto('/')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
 
     // Verify login form is present
     await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 10000 })
@@ -27,7 +27,7 @@ test.describe('Authentication - Simple', () => {
     expect(response.status()).toBe(200)
 
     // Wait for authentication to complete
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
     await page.waitForTimeout(3000)
 
     // Verify authentication token is set
