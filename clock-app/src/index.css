@@ -1,0 +1,55 @@
+.fuzeclock {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  padding: 2rem;
+  text-align: center;
+  color: #1f2937;
+}
+.fuzeclock h2 {
+  margin: 0 0 0.5rem;
+}
+.fuzeclock .time {
+  font-size: 3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.fuzeclock .date {
+  color: #6b7280;
+  margin-bottom: 1rem;
+}
+.fuzeclock .note {
+  max-width: 46ch;
+  margin: 1rem auto;
+  color: #9ca3af;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.fuzeclock .note code {
+  background: #f1f5f9;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.fuzeclock .ctx {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto 1rem;
+  color: #374151;
+  font-size: 0.9rem;
+  display: inline-block;
+  text-align: left;
+}
+.fuzeclock .ctx li {
+  margin: 0.25rem 0;
+}
+.fuzeclock .btn {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.fuzeclock .btn:hover {
+  background: #1d4ed8;
+}
