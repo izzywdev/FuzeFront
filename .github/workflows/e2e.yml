@@ -1,0 +1,117 @@
+name: E2E (sign-in)
+
+# PR check: brings up Postgres + backend + frontend, creates an admin user,
+# and runs the Playwright sign-in flow (frontend/tests/auth-simple.spec.ts).
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  signin:
+    name: Playwright sign-in flow
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: fuzeinfra
+          POSTGRES_PASSWORD: fuzeinfra_secure_password
+        options: >-
+          --health-cmd "pg_isready -U fuzeinfra"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      # Backend -> Postgres (connects as the superuser, creates its own DB)
+      NODE_ENV: production
+      USE_POSTGRES: 'true'
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: fuzefront_platform
+      DB_USER: fuzeinfra
+      DB_PASSWORD: fuzeinfra_secure_password
+      JWT_SECRET: ci-e2e-secret
+      SESSION_SECRET: ci-e2e-session
+      PERMIT_API_KEY: ci-noop
+      PERMIT_PDP_URL: http://localhost:7766
+      PORT: '3001'
+      FRONTEND_URL: http://localhost:4173
+      # Browser-facing API base (cross-origin to the previewed frontend; CORS
+      # is allowed via FRONTEND_URL above).
+      VITE_API_URL: http://localhost:3001
+      BASE_URL: http://localhost:4173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      # ---- Backend: build, start, migrate, wait ----
+      - name: Build & start backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+          node dist/index.js > /tmp/backend.log 2>&1 &
+          echo "Waiting for backend /health..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "backend up"; exit 0; fi
+            sleep 2
+          done
+          echo "backend failed to start"; cat /tmp/backend.log; exit 1
+
+      - name: Create admin user
+        working-directory: backend
+        run: |
+          node -e '
+            const bcrypt = require("bcrypt");
+            const knex = require("knex")({
+              client: "pg",
+              connection: { host: process.env.DB_HOST, port: +process.env.DB_PORT,
+                database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD },
+            });
+            (async () => {
+              const password_hash = await bcrypt.hash("admin123", 10);
+              await knex("users").insert({ email: "admin@fuzefront.dev", password_hash,
+                first_name: "Admin", last_name: "User", roles: JSON.stringify(["admin","user"]) })
+                .onConflict("email").merge({ password_hash });
+              console.log("admin user ready");
+              await knex.destroy();
+            })().catch(e => { console.error(e); process.exit(1); });
+          '
+
+      # ---- Frontend: build & preview ----
+      - name: Build & preview frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          npx vite preview --port 4173 --host 127.0.0.1 > /tmp/frontend.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4173 >/dev/null 2>&1; then echo "frontend up"; exit 0; fi
+            sleep 2
+          done
+          echo "frontend failed to start"; cat /tmp/frontend.log; exit 1
+
+      # ---- Playwright sign-in flow ----
+      - name: Run Playwright sign-in test
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test tests/auth-simple.spec.ts
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
