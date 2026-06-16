@@ -1,0 +1,75 @@
+name: Release (images + GitOps bump)
+
+# On merge to master that touches the platform: build backend/frontend, push to
+# GHCR tagged with the commit SHA, then bump the tags in values-prod.yaml and
+# commit. Argo CD sees the git change and rolls out the new images.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/helm/fuzefront/**'
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build-and-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit the tag bump
+      packages: write # push to GHCR
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-backend:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            VITE_API_URL=https://app.fuzefront.com
+          tags: |
+            ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bump image tags in values-prod.yaml (GitOps)
+        run: |
+          SHA="${{ steps.tag.outputs.sha }}"
+          sed -i -E "s/^(\s*tag:).*/\1 ${SHA}/" deploy/helm/fuzefront/values-prod.yaml
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add deploy/helm/fuzefront/values-prod.yaml
+          git commit -m "release: fuzefront images ${SHA} [skip ci]" || exit 0
+          git push

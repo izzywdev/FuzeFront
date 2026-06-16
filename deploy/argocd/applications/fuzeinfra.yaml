@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzeinfra
+  namespace: argocd
+spec:
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    # Chart lives in the FuzeInfra git submodule (Argo inits submodules by default).
+    path: FuzeInfra/helm/fuzeinfra
+    helm:
+      # Contabo prod overlay: Postgres + Redis + monitoring only (no Mongo/Neo4j/
+      # ES/Kafka/RabbitMQ/Airflow). k3s local-path storage; public domain.
+      values: |
+        global:
+          storageClass: local-path
+          domain: fuzefront.com
+        postgres: { enabled: true }
+        redis: { enabled: true }
+        prometheus: { enabled: true }
+        grafana: { enabled: true }
+        alertmanager: { enabled: true }
+        loki: { enabled: true }
+        promtail: { enabled: true }
+        nodeExporter: { enabled: true }
+        mongodb: { enabled: false }
+        mongoExpress: { enabled: false }
+        neo4j: { enabled: false }
+        elasticsearch: { enabled: false }
+        chromadb: { enabled: false }
+        kafka: { enabled: false }
+        kafkaUi: { enabled: false }
+        rabbitmq: { enabled: false }
+        airflow: { enabled: false }
+        dnsmasq: { enabled: false }
+        cloudflareTunnel: { enabled: false }
+        ingress:
+          enabled: true
+          className: nginx
+          tls:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fuzeinfra
+  syncPolicy:
+    automated:
+      prune: false # stateful (Postgres/Redis PVCs) — never auto-prune data
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
