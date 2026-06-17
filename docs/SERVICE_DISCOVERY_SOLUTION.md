@@ -1,273 +1,113 @@
-# Service Discovery Solution for Dynamic Container IP Updates
+# Service Discovery on Kubernetes
 
-## Problem Statement
+> **Superseded:** This document originally described a Docker Compose problem —
+> container IPs changing on restart and a shared nginx (`fuzeinfra-nginx`) caching
+> stale upstreams, worked around with a DNS-resolver nginx config and a Python
+> `nginx-updater.py` service-discovery tool. **On Kubernetes none of that applies:**
+> Services provide stable virtual IPs and DNS names, and CoreDNS handles resolution
+> automatically. The legacy approach below is retained only for historical context
+> at the end.
 
-Docker containers get new IP addresses when they restart, causing nginx proxy failures when it caches old IP addresses. This leads to:
+## How it works now
 
-- 502 Bad Gateway errors when containers restart
-- Manual nginx restarts required after container deployments
-- Poor development experience with frequent connectivity issues
+FuzeFront and FuzeInfra both run in the same cluster (local **kind** `fuzeinfra`,
+prod Contabo **k3s**), in separate namespaces:
 
-## Solution Overview
+- `fuzefront` — `fuzefront-frontend` (svc :8080) and `fuzefront-backend` (svc :3001)
+- `fuzeinfra` — `postgres` (svc :5432) and `redis` (svc :6379)
 
-We implemented a multi-layered approach to handle dynamic container IP changes:
+Each Kubernetes **Service** has a stable ClusterIP and a stable DNS name. Pods can
+restart and get new pod IPs as often as they like — the Service IP/name never
+changes, so there is nothing to "re-resolve" or cache-bust.
 
-### 1. **Enhanced Nginx Configuration** (Immediate Fix)
+### Cross-namespace DNS (CoreDNS)
 
-**File**: `FuzeInfra/infrastructure/shared-nginx/conf.d/fuzefront.conf`
+Services are addressable by fully-qualified name across namespaces:
 
-**Key Changes**:
-
-- Added DNS resolver with short cache TTL: `resolver 127.0.0.11 valid=10s ipv6=off;`
-- Used variables to force DNS resolution on each request
-- Removed static upstream caching
-
-**Before**:
-
-```nginx
-location /api/ {
-    proxy_pass http://fuzefront-backend:3001;
-    # ... headers
-}
+```
+<service>.<namespace>.svc.cluster.local
 ```
 
-**After**:
+So the backend reaches the shared infra at:
 
-```nginx
-location /api/ {
-    set $backend_upstream fuzefront-backend:3001;
-    proxy_pass http://$backend_upstream;
-    # ... headers
-}
+```
+postgres.fuzeinfra.svc.cluster.local:5432
+redis.fuzeinfra.svc.cluster.local:6379
 ```
 
-**Benefits**:
+These are set in the Helm values (`fuzeinfra.postgres.host` / `fuzeinfra.redis.host`)
+and injected into the backend's environment. Within the `fuzefront` namespace,
+short names work too (e.g. `fuzefront-backend:3001`).
 
-- Forces nginx to re-resolve hostnames on each request
-- Automatic adaptation to IP changes without restarts
-- Maintains all existing proxy functionality
+### Browser → app routing (Ingress)
 
-### 2. **Service Discovery Tool** (Advanced Solution)
+External traffic enters through the **ingress-nginx** controller (host ports
+80/443), provided by FuzeInfra. The `fuzefront` Ingress routes the host to the
+frontend Service:
 
-**File**: `FuzeInfra/tools/service-discovery/nginx-updater.py`
+- Local: `fuzefront.dev.local` → `fuzefront-frontend:8080`
+- Prod: `app.fuzefront.com` → `fuzefront-frontend:8080` (TLS via cert-manager)
 
-**Features**:
+The frontend pod's **in-pod nginx** serves the SPA and proxies `/api` and
+`/socket.io` to `fuzefront-backend:3001`. Because it proxies to a Service name, the
+backend can be scaled or restarted freely — kube-proxy load-balances across the
+healthy backend pods.
 
-- Container IP monitoring and registration
-- Automatic nginx reload on IP changes
-- Service health tracking
-- JSON-based service registry
+```
+browser
+  └─▶ ingress-nginx (:80/:443)
+        └─▶ fuzefront-frontend (svc :8080, in-pod nginx)
+              ├─ serves the React host shell (Module Federation container)
+              └─ proxies /api + /socket.io ─▶ fuzefront-backend (svc :3001)
+                                                └─▶ postgres.fuzeinfra.svc / redis.fuzeinfra.svc
+```
 
-**Usage Examples**:
+## Verifying
 
 ```bash
-# Register a service
-python nginx-updater.py register fuzefront-frontend fuzefront-frontend 8080 /
+# Services and endpoints
+kubectl -n fuzefront get svc,endpoints
+kubectl -n fuzeinfra  get svc
 
-# Update service IP
-python nginx-updater.py update fuzefront-frontend
+# Cross-namespace DNS resolution from a fuzefront pod
+kubectl -n fuzefront run dns-test --rm -it --image=busybox --restart=Never -- \
+  nslookup postgres.fuzeinfra.svc.cluster.local
 
-# Monitor all services
-python nginx-updater.py watch
-
-# Check status
-python nginx-updater.py status
+# End-to-end through the ingress (after hosts entry for local)
+curl http://fuzefront.dev.local/api/health      # local
+curl -fsS https://app.fuzefront.com/api/health   # prod
 ```
 
-### 3. **Container Startup Hooks** (Future Enhancement)
-
-**Files**:
-
-- `frontend/docker-entrypoint-hooks.sh`
-- `backend/docker-entrypoint-hooks.sh`
-
-**Features**:
-
-- Automatic service registration on container startup
-- Version information logging
-- Health status notifications
-- Dependency checking
-
-### 4. **Management Scripts**
-
-**File**: `scripts/nginx-service-manager.ps1`
-
-**Capabilities**:
-
-- Integrated container restart with nginx updates
-- Service status monitoring
-- Connectivity testing
-- Watch mode for IP changes
-
-## Current Status
-
-### ✅ **Working Solutions**:
-
-1. **Enhanced Nginx DNS Resolution**:
-
-   - Status: ✅ **IMPLEMENTED & ACTIVE**
-   - Current IPs: Frontend: `172.22.0.29`, Backend: `172.22.0.22`
-   - Domain: `http://fuzefront.dev.local/` ✅ Working
-   - API routing: `http://fuzefront.dev.local/health` ✅ Working
-
-2. **Service Discovery Tool**:
-
-   - Status: ✅ **CREATED & TESTED**
-   - Location: `FuzeInfra/tools/service-discovery/nginx-updater.py`
-   - Functionality: ✅ Container IP detection working
-
-3. **Frontend Enhanced Logging**:
-   - Status: ✅ **IMPLEMENTED & DEPLOYED**
-   - New assets: `index-rDBzn_h2.js` (rebuilt with logging)
-   - API calls now fully logged with request IDs and timing
-
-### 🔄 **Ready for Deployment**:
-
-1. **Automated Service Discovery**:
-
-   - Docker Compose: `FuzeInfra/docker-compose.service-discovery.yml`
-   - Can be started with: `docker-compose -f docker-compose.service-discovery.yml up -d`
-
-2. **Container Startup Hooks**:
-   - Scripts created and ready for integration
-   - Need Dockerfile updates to use the hooks
-
-## Testing the Solution
-
-### Quick Test Commands:
-
-```powershell
-# Check container IPs
-docker inspect fuzefront-frontend --format "{{.NetworkSettings.Networks.FuzeInfra.IPAddress}}"
-docker inspect fuzefront-backend --format "{{.NetworkSettings.Networks.FuzeInfra.IPAddress}}"
-
-# Test connectivity
-Invoke-WebRequest -Uri "http://fuzefront.dev.local/" -UseBasicParsing
-Invoke-WebRequest -Uri "http://fuzefront.dev.local/health" -UseBasicParsing
-
-# Restart nginx (force DNS refresh)
-docker restart fuzeinfra-nginx
-```
-
-### Comprehensive Status Check:
-
-```powershell
-.\scripts\quick-status.ps1
-```
-
-## Implementation Benefits
-
-### 🎯 **Immediate Benefits** (Already Active):
-
-- ✅ No more 502 errors from IP changes
-- ✅ Automatic DNS resolution every 10 seconds
-- ✅ Enhanced frontend logging for debugging
-- ✅ Domain-based access working reliably
-
-### 🚀 **Advanced Benefits** (Ready to Deploy):
-
-- 🔧 Proactive IP change detection
-- 🔧 Automatic nginx reloads
-- 🔧 Service health monitoring
-- 🔧 Container startup notifications
-
-### 📊 **Development Benefits**:
-
-- 🔍 Comprehensive API request logging
-- 🔍 Network diagnostics in frontend
-- 🔍 Container version tracking
-- 🔍 Automated connectivity testing
-
-## Recommended Next Steps
-
-1. **Deploy Service Discovery Watcher** (Optional):
-
-   ```bash
-   cd FuzeInfra
-   docker-compose -f docker-compose.service-discovery.yml up -d
-   ```
-
-2. **Monitor Enhanced Logging**:
-
-   - Access `http://fuzefront.dev.local/`
-   - Open browser DevTools to see detailed API logging
-   - Try login to see comprehensive request/response logging
-
-3. **Test IP Change Handling**:
-   ```powershell
-   # Restart a container and verify nginx adapts
-   docker restart fuzefront-backend
-   # Wait 10 seconds for DNS cache to expire, then test
-   Invoke-WebRequest -Uri "http://fuzefront.dev.local/health"
-   ```
-
-## Architecture Overview
-
-```
-Browser → Shared Nginx (fuzeinfra-nginx) → Frontend/Backend Containers
-           ↑
-      DNS Resolver (127.0.0.11)
-           ↑
-    Docker DNS (auto-updates)
-           ↑
-   Service Discovery (optional)
-```
-
-## Files Modified/Created
-
-### ✅ **Core Implementation**:
-
-- `FuzeInfra/infrastructure/shared-nginx/conf.d/fuzefront.conf` - Enhanced DNS resolution
-- `frontend/src/services/api.ts` - Enhanced API logging
-- `frontend/src/pages/LoginPage.tsx` - Network diagnostics
-- `frontend/src/main.tsx` - Global logging system
-
-### 🔧 **Infrastructure Tools**:
-
-- `FuzeInfra/tools/service-discovery/nginx-updater.py` - Service discovery tool
-- `FuzeInfra/docker-compose.service-discovery.yml` - Watcher service
-- `scripts/nginx-service-manager.ps1` - Management utilities
-- `frontend/docker-entrypoint-hooks.sh` - Startup hooks
-- `backend/docker-entrypoint-hooks.sh` - Startup hooks
-
-### 📖 **Documentation**:
-
-- `docs/SERVICE_DISCOVERY_SOLUTION.md` - This document
-
-## Version Management
-
-The solution includes automatic version detection and logging:
-
-- Frontend: Shows build timestamp and asset information
-- Backend: Shows package version and build information
-- Containers: Display network information and health status
-
-This ensures deployment verification and debugging capabilities.
-
-## ✅ **FINAL STATUS: FULLY RESOLVED**
-
-### **🎯 Problem Resolution:**
-
-- **Container IP Changes**: ✅ Solved with nginx DNS resolver configuration
-- **Backend Authentication**: ✅ Fixed JSON parsing for user roles
-- **Frontend Logging**: ✅ Enhanced with comprehensive API logging
-- **Domain Routing**: ✅ `fuzefront.dev.local` working perfectly
-
-### **🔐 Authentication Working:**
+When a backend pod is replaced, no manual action is needed — the Service tracks the
+new pod automatically:
 
 ```bash
-# Test login (works now!)
-curl -X POST "http://fuzefront.dev.local/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@fuzefront.dev","password":"admin123"}'
-# Returns: {"token":"eyJ...","user":{...},"sessionId":"..."}
+kubectl -n fuzefront rollout restart deployment/fuzefront-backend
+curl http://fuzefront.dev.local/api/health        # still works
 ```
 
-### **🛠️ Service Discovery Features:**
+## Why the old workarounds are gone
 
-- ✅ **Immediate Fix**: DNS resolver with 10s cache TTL (ACTIVE)
-- ✅ **Enhanced Logging**: Request tracking and timing (DEPLOYED)
-- ✅ **Advanced Monitoring**: Service discovery tools (READY)
-- ✅ **Container Hooks**: Startup notification system (CREATED)
+| Legacy concern (Docker Compose)              | Kubernetes resolution                         |
+| -------------------------------------------- | --------------------------------------------- |
+| Container IP changes on restart → 502s       | Service ClusterIP/name is stable              |
+| nginx caching stale upstream IPs             | nginx proxies to a Service name; kube-proxy LBs |
+| `resolver 127.0.0.11 valid=10s` hack         | CoreDNS resolves Service names cluster-wide   |
+| `nginx-updater.py` / service-discovery watcher | Not needed — Services are the discovery layer |
+| Manual `docker restart fuzeinfra-nginx`      | `kubectl rollout restart` / self-healing pods |
 
-**The FuzeFront platform is now fully operational with robust container IP handling and comprehensive debugging capabilities.**
+---
+
+## Legacy (historical, Docker Compose)
+
+The previous design relied on Docker DNS, a shared `fuzeinfra-nginx` container, and
+the following workarounds, all now obsolete:
+
+- Enhanced nginx config in `FuzeInfra/infrastructure/shared-nginx/conf.d/fuzefront.conf`
+  using `resolver 127.0.0.11 valid=10s ipv6=off;` and per-request DNS resolution.
+- A Python service-discovery tool `FuzeInfra/tools/service-discovery/nginx-updater.py`
+  plus `docker-compose.service-discovery.yml` and `scripts/nginx-service-manager.ps1`.
+- Container startup hooks (`frontend/docker-entrypoint-hooks.sh`,
+  `backend/docker-entrypoint-hooks.sh`).
+
+These are no longer part of the deployment path and should not be reintroduced.

@@ -1,0 +1,54 @@
+# =============================================================================
+# Local development TLS for the kind-fuzeinfra cluster.
+#
+# Provides a self-signed local Certificate Authority via cert-manager so that
+# ingresses (e.g. fuzefront.dev.local) get real, cert-manager-managed TLS certs
+# locally — mirroring the prod model (cert-manager + letsencrypt-prod) without
+# needing a public ACME challenge.
+#
+# Apply:   kubectl apply -f deploy/local-tls/cert-manager-local-ca.yaml
+# Trust:   export the CA so your browser trusts the issued certs —
+#          kubectl -n cert-manager get secret fuzefront-local-ca-tls \
+#            -o jsonpath='{.data.tls\.crt}' | base64 -d > fuzefront-local-ca.crt
+#          then import fuzefront-local-ca.crt into your OS/browser trust store
+#          (Windows: certutil -addstore -f "ROOT" fuzefront-local-ca.crt).
+#
+# An ingress opts in with:
+#   annotations: { cert-manager.io/cluster-issuer: fuzefront-local-ca }
+#   tls: [{ hosts: [<host>], secretName: <host>-tls }]
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+# A self-signed CA whose key/cert land in a secret cert-manager can issue from.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fuzefront-local-ca
+  namespace: cert-manager # CA ClusterIssuers read their secret from this ns
+spec:
+  isCA: true
+  commonName: FuzeFront Local Dev CA
+  secretName: fuzefront-local-ca-tls
+  duration: 87600h # 10 years
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# The issuer ingresses reference. Signs leaf certs (e.g. *.dev.local) with the CA above.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: fuzefront-local-ca
+spec:
+  ca:
+    secretName: fuzefront-local-ca-tls

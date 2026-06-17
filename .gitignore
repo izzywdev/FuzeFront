@@ -14,3 +14,17 @@ keys/
 # Playwright artifacts
 **/test-results/
 **/playwright-report/
+frontend/screens/
+
+# Downloaded CLI tools / binaries (never commit — re-downloadable)
+/cloudflared
+/cloudflared.deb
+/mkcert
+*.deb
+
+# Local agent tooling / throwaway captures
+AGENTS.md
+frontend/tests/_screens.spec.ts
+
+# Local dev CA public cert (per-machine; regenerate via deploy/local-tls/)
+deploy/local-tls/*.crt

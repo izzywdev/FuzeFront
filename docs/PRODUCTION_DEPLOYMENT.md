@@ -1,331 +1,196 @@
 # FuzeFront Production Deployment
 
-This guide explains how to deploy FuzeFront as a separate Docker group that other projects can depend on while relying on the shared FuzeInfra setup.
+> **Superseded:** FuzeFront no longer ships to production with Docker Compose. It is
+> now deployed to Kubernetes via a Helm chart, managed by **Argo CD** (GitOps) on a
+> Contabo **k3s** cluster. This document describes the current model. The old
+> `docker-compose.prod.yml` / `fuzefront-prod` network approach is legacy.
 
 ## Overview
 
-The production deployment creates a separate Docker network (`fuzefront-prod`) that connects to the shared infrastructure network (`FuzeInfra`) for database and other shared services.
+Production runs FuzeFront on a single-node k3s cluster on a Contabo VPS:
+
+- **Orchestration:** k3s (Traefik disabled) + **ingress-nginx** controller.
+- **GitOps:** Argo CD syncs the `fuzeinfra` and `fuzefront` Applications from this
+  repo (app-of-apps).
+- **Images:** GHCR (`ghcr.io/izzywdev/fuzefront-backend`, `…/fuzefront-frontend`),
+  pulled with a sealed `ghcr-pull` secret.
+- **TLS:** cert-manager with the `letsencrypt-prod` ClusterIssuer, serving
+  `https://app.fuzefront.com`.
+- **Secrets:** sealed-secrets (`kubeseal`) — encrypted YAML committed to git,
+  decrypted only in-cluster.
+- **Shared infra (FuzeInfra):** Postgres and Redis run in the `fuzeinfra` namespace
+  and are reached cross-namespace via CoreDNS
+  (`postgres.fuzeinfra.svc.cluster.local:5432`,
+  `redis.fuzeinfra.svc.cluster.local:6379`).
+
+The Helm chart lives at [`deploy/helm/fuzefront/`](../deploy/helm/fuzefront/); the
+production overlay is
+[`deploy/helm/fuzefront/values-prod.yaml`](../deploy/helm/fuzefront/values-prod.yaml).
+
+## Architecture
+
+```
+                Cloudflare DNS (app.fuzefront.com → VPS IP)
+                              │  https
+                              ▼
+                   ingress-nginx (k3s, host :80/:443)
+                              │  Ingress `fuzefront` (TLS via cert-manager)
+                              ▼
+   namespace: fuzefront
+     ┌──────────────────────────────────────────────┐
+     │ fuzefront-frontend (svc :8080)                │
+     │   in-pod nginx: serves SPA + proxies          │
+     │   /api and /socket.io ─────┐                  │
+     │ fuzefront-backend (svc :3001) ◀───────────────┘
+     └───────────────┬──────────────────────────────┘
+                     │ CoreDNS cross-namespace
+                     ▼
+   namespace: fuzeinfra
+     postgres.fuzeinfra.svc.cluster.local:5432
+     redis.fuzeinfra.svc.cluster.local:6379
+```
 
 ## Prerequisites
 
-1. **Shared Infrastructure Running**: FuzeInfra must be running first
+- A Contabo VPS (Ubuntu 22.04, ~8 vCPU / 30 GB RAM), root SSH.
+- Domain `fuzefront.com` on Cloudflare.
+- A GHCR pull token (GitHub PAT with `read:packages`).
+- `kubeseal` installed on your laptop (to seal secrets).
 
-   ```bash
-   cd FuzeInfra && ./infra-up.sh    # Linux/Mac
-   cd FuzeInfra && .\infra-up.bat   # Windows
-   ```
+## Bring-up
 
-2. **Docker**: Docker and Docker Compose must be installed and running
+The end-to-end bring-up is documented in
+[`deploy/contabo/README.md`](../deploy/contabo/README.md). Summary:
 
-3. **Network Access**: The `FuzeInfra` network must exist and be accessible
+### 1. DNS (Cloudflare)
 
-## Quick Start
+Point A records at the VPS IP (grey-cloud / DNS-only is simplest for HTTP-01 TLS):
 
-### Using Scripts (Recommended)
+```
+app.fuzefront.com      A  <VPS_IP>
+argocd.fuzefront.com   A  <VPS_IP>
+grafana.fuzefront.com  A  <VPS_IP>
+```
 
-**Linux/Mac:**
+### 2. Bootstrap the cluster (on the VPS)
 
 ```bash
-chmod +x start-fuzefront-prod.sh
-./start-fuzefront-prod.sh
+# clone the repo (with submodules) on the VPS, then:
+sudo bash deploy/contabo/bootstrap.sh      # edit cluster-issuer.yaml email first
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ```
 
-**Windows:**
+Installs k3s (no Traefik) + ingress-nginx + cert-manager (+ `letsencrypt-prod`) +
+sealed-secrets + Argo CD.
 
-```batch
-.\start-fuzefront-prod.bat
-```
+### 3. Seal the secrets (on your laptop)
 
-### Using Docker Compose
+Create the `fuzefront-secrets` (JWT/session/db/permit), `ghcr-pull`, and FuzeInfra
+secrets and run them through `kubeseal`. Commit the encrypted
+`deploy/contabo/sealed/*.yaml` (safe in git). Plaintext never leaves your laptop —
+see [`deploy/contabo/README.md`](../deploy/contabo/README.md) for exact commands.
+
+### 4. Hand the cluster to GitOps
 
 ```bash
-# Build and start production services
-docker-compose -f docker-compose.prod.yml up -d --build
-
-# Check status
-docker-compose -f docker-compose.prod.yml ps
-
-# View logs
-docker-compose -f docker-compose.prod.yml logs -f
-
-# Stop services
-docker-compose -f docker-compose.prod.yml down
+kubectl apply -f deploy/argocd/project.yaml
+kubectl apply -f deploy/argocd/app-of-apps.yaml
+kubectl apply -f deploy/backup/postgres-backup-cronjob.yaml   # once secrets exist
 ```
 
-### Using NPM Scripts
+Argo CD creates the `fuzeinfra` (Postgres + Redis + monitoring) and `fuzefront`
+Applications and syncs them. cert-manager issues TLS for `app.fuzefront.com`.
+
+### 5. Verify
 
 ```bash
-# Build production images
-npm run docker:prod:build
+kubectl -n fuzefront get pods,ingress
+curl -fsS https://app.fuzefront.com/api/health
 
-# Start production services
-npm run docker:prod:up
-
-# Check status
-npm run docker:prod:status
-
-# View logs
-npm run docker:prod:logs
-
-# Stop services
-npm run docker:prod:down
+# Argo UI: https://argocd.fuzefront.com
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
 ```
 
-## Production Services
+## Configuration (values-prod.yaml)
 
-### Container Names
-
-- `fuzefront-backend-prod` - Backend API service
-- `fuzefront-frontend-prod` - Frontend web application
-- `fuzefront-taskmanager-prod` - Task Manager microfrontend
-- `fuzefront-db-migration-prod` - Database migration (runs once)
-- `fuzefront-postgres-check-prod` - PostgreSQL availability check
-
-### Service URLs
-
-- **Frontend**: http://localhost:8080
-- **Backend API**: http://localhost:3001
-- **Task Manager**: http://localhost:3003
-- **API Documentation**: http://localhost:3001/api-docs
-
-### Health Checks
-
-- **Backend**: http://localhost:3001/health
-- **Frontend**: http://localhost:8080/health
-- **Task Manager**: http://localhost:3002/health
-
-## Network Architecture
-
-```
-┌─────────────────────┐    ┌─────────────────────┐
-│    FuzeInfra        │    │   fuzefront-prod    │
-│                     │    │                     │
-│  ┌─────────────┐    │    │  ┌─────────────┐    │
-│  │shared-postgres├──┼────┼──┤ backend     │    │
-│  │             │    │    │  │             │    │
-│  │shared-redis │    │    │  ├─────────────┤    │
-│  │             │    │    │  │ frontend    │    │
-│  │shared-kafka │    │    │  │             │    │
-│  │             │    │    │  ├─────────────┤    │
-│  │etc...       │    │    │  │taskmanager  │    │
-│  └─────────────┘    │    │  └─────────────┘    │
-└─────────────────────┘    └─────────────────────┘
-```
-
-## Database Configuration
-
-### Production Database
-
-- **Host**: `shared-postgres` (container name)
-- **Port**: `5432`
-- **Database**: `fuzefront_platform_prod`
-- **User**: `postgres`
-- **Password**: `postgres`
-
-### Migration
-
-The production deployment automatically:
-
-1. Creates the production database if it doesn't exist
-2. Runs all migrations
-3. Seeds initial data
-
-## Environment Variables
-
-### Backend Service
+The production overlay differs from local only by GHCR images, the public host +
+TLS, and the sealed secret:
 
 ```yaml
-NODE_ENV: production
-USE_POSTGRES: true
-DB_HOST: shared-postgres
-DB_PORT: 5432
-DB_NAME: fuzefront_platform_prod
-DB_USER: postgres
-DB_PASSWORD: postgres
-JWT_SECRET: fuzefront-production-secret-change-this-in-production
-PORT: 3001
-FRONTEND_URL: http://fuzefront-frontend-prod:8080
+backend:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-backend
+  replicas: 2
+frontend:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-frontend
+  replicas: 2
+
+imagePullSecrets:
+  - name: ghcr-pull
+
+fuzeinfra:
+  postgres: { host: postgres.fuzeinfra.svc.cluster.local, port: 5432 }
+  redis:    { host: redis.fuzeinfra.svc.cluster.local,    port: 6379 }
+
+database:
+  name: fuzefront_platform
+  user: fuzeinfra            # bootstraps as the FuzeInfra superuser for now
+
+secret:
+  existingSecret: fuzefront-secrets   # from a SealedSecret
+
+ingress:
+  enabled: true
+  className: nginx
+  host: app.fuzefront.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: fuzefront-app-tls
 ```
 
-### Frontend Services
+## Releases (Day-2)
 
-```yaml
-NGINX_HOST: localhost
-NGINX_PORT: 8080 # (or 3002 for taskmanager)
-```
+- **Image releases:** merging to `master` runs `release.yml`, which builds and
+  pushes images to GHCR and bumps the image tag in `values-prod.yaml`; Argo CD then
+  rolls the new tag out automatically.
+- **Data safety:** the `fuzeinfra` Argo Application uses `prune: false` so a sync
+  never deletes the Postgres/Redis PVCs. A nightly `pg_dump` ships to Contabo Object
+  Storage (S3-compatible).
+- **AWS path** (`deploy.yml`) is left intact and switchable.
 
-## Inter-Service Communication
+## Security checklist
 
-### For Other Projects to Connect
-
-To connect other projects to FuzeFront production services:
-
-1. **Add network to your docker-compose.yml**:
-
-```yaml
-networks:
-  fuzefront-prod:
-    external: true
-    name: fuzefront-prod
-```
-
-2. **Connect your services**:
-
-```yaml
-services:
-  your-service:
-    # ... your service config ...
-    networks:
-      - fuzefront-prod
-```
-
-3. **Use internal URLs**:
-
-- Backend API: `http://fuzefront-backend-prod:3001`
-- Frontend: `http://fuzefront-frontend-prod:8080`
-- Task Manager: `http://fuzefront-taskmanager-prod:3002`
-
-## Security Considerations
-
-### Production Security Checklist
-
-- [ ] Change JWT_SECRET from default value
-- [ ] Use environment variables for sensitive data
-- [ ] Configure proper CORS origins
-- [ ] Set up SSL/TLS termination
-- [ ] Implement proper logging and monitoring
-- [ ] Regular security updates for base images
-
-### Recommended Changes for Production
-
-1. **Environment Variables**: Use `.env` files or Docker secrets
-2. **Reverse Proxy**: Use Nginx or Traefik for SSL termination
-3. **Monitoring**: Add Prometheus metrics and Grafana dashboards
-4. **Backup**: Implement database backup strategy
+- [x] Secrets delivered via sealed-secrets (no plaintext in git or compose files)
+- [x] TLS terminated at ingress-nginx via cert-manager `letsencrypt-prod`
+- [ ] Harden the DB user from the FuzeInfra superuser (`fuzeinfra`) to a dedicated
+      `fuzefront_user` with limited grants
+- [ ] Configure proper CORS origins for the production host
+- [ ] Review resource requests/limits and replica counts under load
+- [ ] Confirm backup restore procedure periodically
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **FuzeInfra network not found**
-
-   ```bash
-   cd FuzeInfra && ./infra-up.sh
-   ```
-
-2. **PostgreSQL connection failed**
-
-   ```bash
-   # Check if shared-postgres is running
-   docker ps | grep shared-postgres
-
-   # Check network connectivity
-   docker network inspect FuzeInfra
-   ```
-
-3. **Service unhealthy**
-
-   ```bash
-   # Check service logs
-   docker-compose -f docker-compose.prod.yml logs [service-name]
-
-   # Check health status
-   docker inspect fuzefront-backend-prod --format='{{.State.Health.Status}}'
-   ```
-
-4. **Port conflicts**
-   ```bash
-   # Check what's using the ports
-   netstat -tulpn | grep :8080
-   netstat -tulpn | grep :3001
-   ```
-
-### Log Locations
-
-- Container logs are available via Docker Compose
-- Persistent logs are stored in `fuzefront_prod_logs` volume
-- Application logs are structured JSON format
-
-## Monitoring and Maintenance
-
-### Health Monitoring
-
-All services include health checks that verify:
-
-- HTTP endpoint availability
-- Database connectivity
-- Service dependencies
-
-### Resource Monitoring
-
 ```bash
-# Check resource usage
-docker stats
+# Pods / ingress / events
+kubectl -n fuzefront get pods,ingress
+kubectl -n fuzefront describe ingress fuzefront
+kubectl -n fuzefront logs deploy/fuzefront-backend
 
-# Check disk usage
-docker system df
+# Cross-namespace DB connectivity (CoreDNS)
+kubectl -n fuzefront run dns-test --rm -it --image=busybox --restart=Never -- \
+  nslookup postgres.fuzeinfra.svc.cluster.local
 
-# Clean up unused resources
-docker system prune
+# TLS / cert-manager
+kubectl -n fuzefront get certificate
+kubectl -n fuzefront describe certificate fuzefront-app-tls
+
+# Argo CD sync status
+kubectl -n argocd get applications
 ```
 
-### Updates and Maintenance
-
-```bash
-# Update images
-docker-compose -f docker-compose.prod.yml pull
-
-# Rebuild with latest changes
-docker-compose -f docker-compose.prod.yml build --no-cache
-
-# Rolling restart
-docker-compose -f docker-compose.prod.yml restart
-```
-
-## Integration Examples
-
-### Example: Connecting a Laravel App
-
-```yaml
-# docker-compose.yml for your Laravel app
-version: '3.8'
-
-networks:
-  fuzefront-prod:
-    external: true
-    name: fuzefront-prod
-
-services:
-  laravel-app:
-    build: .
-    networks:
-      - fuzefront-prod
-    environment:
-      - FUZEFRONT_API_URL=http://fuzefront-backend-prod:3001
-      - FUZEFRONT_FRONTEND_URL=http://fuzefront-frontend-prod:8080
-```
-
-### Example: Connecting a React App
-
-```javascript
-// In your React app configuration
-const config = {
-  fuzeFrontApi:
-    process.env.NODE_ENV === 'production'
-      ? 'http://fuzefront-backend-prod:3001'
-      : 'http://localhost:3001',
-  fuzeFrontFrontend:
-    process.env.NODE_ENV === 'production'
-      ? 'http://fuzefront-frontend-prod:8080'
-      : 'http://localhost:8080',
-}
-```
-
-## Support
-
-For issues and questions:
-
-1. Check the troubleshooting section above
-2. Review Docker logs for error messages
-3. Verify network connectivity between containers
-4. Ensure shared infrastructure services are running
+See also [`docs/SERVICE_DISCOVERY_SOLUTION.md`](SERVICE_DISCOVERY_SOLUTION.md) for
+how cross-namespace service discovery works under Kubernetes.

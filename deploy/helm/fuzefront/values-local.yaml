@@ -13,3 +13,11 @@ ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
+  # Local TLS via cert-manager + the self-signed local CA
+  # (deploy/local-tls/cert-manager-local-ca.yaml). Trust the CA cert once and
+  # https://fuzefront.dev.local is green in the browser.
+  annotations:
+    cert-manager.io/cluster-issuer: fuzefront-local-ca
+  tls:
+    enabled: true
+    secretName: fuzefront-dev-local-tls

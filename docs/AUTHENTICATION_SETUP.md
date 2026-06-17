@@ -1,18 +1,41 @@
 # FuzeFront Authentication & Authorization Setup
 
+> **Status — migration in progress.** FuzeFront and FuzeInfra have moved to
+> Kubernetes (Helm chart + ingress-nginx; see
+> [`docs/PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md) and
+> [`deploy/helm/fuzefront/README.md`](../deploy/helm/fuzefront/README.md)).
+> **Authentik is not yet in the Helm chart** — it is still launched as an **interim**
+> step from the legacy root `docker-compose.yml`. The first Helm cut uses local JWT
+> auth only; Authentik (OIDC) and Permit (PDP) are added in a later overlay. The
+> Docker Compose / Traefik details below are therefore **legacy/interim** and are
+> being superseded by the cluster's ingress-nginx + cert-manager.
+
 ## Infrastructure Architecture
 
 FuzeFront uses a consolidated infrastructure approach that leverages shared services for optimal resource utilization:
 
 ### **Shared Infrastructure (FuzeInfra)**
 
-- **PostgreSQL**: Single shared database server (`shared-postgres`)
-- **Redis**: Single shared cache server (`shared-redis`)
-- **Traefik**: Reverse proxy and load balancer (`shared-traefik`)
+On Kubernetes (current), FuzeInfra provides these in the `fuzeinfra` namespace,
+reachable cross-namespace via CoreDNS:
 
-### **Authentication (Authentik)**
+- **PostgreSQL**: `postgres.fuzeinfra.svc.cluster.local:5432` (Authentik uses
+  database `authentik`)
+- **Redis**: `redis.fuzeinfra.svc.cluster.local:6379`
+- **ingress-nginx**: cluster ingress controller (host ports 80/443) — **replaces**
+  the legacy `shared-traefik` reverse proxy. (TLS in prod via cert-manager
+  `letsencrypt-prod`.)
+
+> **Legacy (Docker Compose):** the older model named these `shared-postgres`,
+> `shared-redis`, and `shared-traefik` containers. Traefik → ingress-nginx is the
+> key change.
+
+### **Authentication (Authentik)** — interim via Docker Compose
 
 - **Purpose**: OIDC/OAuth2 authentication provider
+- **Deployment**: **Not yet in the Helm chart.** Currently launched from the legacy
+  root `docker-compose.yml` (`authentik-server`, `authentik-worker`) as an interim
+  step. To be folded into the chart in a later overlay.
 - **Database**: Uses shared PostgreSQL (database: `authentik`)
 - **Cache**: Uses shared Redis for sessions and caching
 - **Containers**: `authentik-server`, `authentik-worker`
@@ -28,13 +51,17 @@ FuzeFront uses a consolidated infrastructure approach that leverages shared serv
 
 ### 1. Start Infrastructure
 
-```powershell
-# Full setup (recommended)
+```bash
+# Linux/macOS - Recommended automated setup
+./scripts/setup-authentik.sh
+
+# Windows PowerShell (legacy)
 .\scripts\setup-infrastructure.ps1
 
-# Or step by step
-.\scripts\setup-infrastructure.ps1 -SkipAuthentik -SkipPermit  # Core only
-.\scripts\setup-infrastructure.ps1 -SkipShared -SkipFuzeFront  # Auth only
+# Manual step by step
+cd FuzeInfra && docker-compose -f docker-compose.FuzeInfra.yml up -d
+./scripts/init-authentik-db.sh
+docker-compose up -d authentik-worker authentik-server
 ```
 
 ### 2. Configure DNS
@@ -139,23 +166,32 @@ const allowed = await permit.check(userId, 'read', {
 
 ## Service Dependencies
 
-### Container Startup Order
+### Startup Order
 
-1. **Shared Infrastructure**: PostgreSQL, Redis, Traefik
-2. **FuzeFront Core**: Backend, Frontend, Task Manager
-3. **Authentik Services**: Server, Worker
-4. **Permit.io**: PDP
+1. **Shared Infrastructure (FuzeInfra, k8s `fuzeinfra` ns)**: ingress-nginx,
+   PostgreSQL, Redis
+2. **FuzeFront Core (Helm, `fuzefront` ns)**: Backend, Frontend
+3. **Authentik Services** *(interim via `docker-compose.yml`)*: Worker, Server
+4. **Permit.io**: PDP *(not yet in the Helm chart)*
 
 ### Network Configuration
 
-```yaml
-# Docker networks
-networks:
-  FuzeInfra: # Shared infrastructure network
-    external: true
-  fuzefront: # Internal FuzeFront network
-    internal: false
-```
+On Kubernetes, services are reached by DNS name rather than Docker networks:
+
+- `fuzefront-backend:3001`, `fuzefront-frontend:8080` (within the `fuzefront` ns)
+- `postgres.fuzeinfra.svc.cluster.local:5432`,
+  `redis.fuzeinfra.svc.cluster.local:6379` (cross-namespace via CoreDNS)
+
+> **Legacy (Docker Compose):** the interim Authentik containers still attach to the
+> shared `FuzeInfra` Docker network and an internal `fuzefront` network:
+>
+> ```yaml
+> networks:
+>   FuzeInfra: # Shared infrastructure network
+>     external: true
+>   fuzefront: # Internal FuzeFront network
+>     internal: false
+> ```
 
 ### Database Setup
 
@@ -199,10 +235,49 @@ CREATE DATABASE authentik;           -- Authentik auth
 
 ```bash
 # Check shared PostgreSQL is running
-docker exec shared-postgres pg_isready -U postgres
+docker exec fuzeinfra-postgres pg_isready -U postgres
 
 # Verify authentik database exists
-docker exec shared-postgres psql -U postgres -l | grep authentik
+docker exec fuzeinfra-postgres psql -U postgres -l | grep authentik
+
+# Test authentik user connection
+docker exec fuzeinfra-postgres psql -U authentik_user -d authentik -c "SELECT version();"
+
+# Reinitialize database if needed
+./scripts/init-authentik-db.sh
+```
+
+**Authentik containers failing to start**
+
+```bash
+# Check container logs
+docker logs fuzefront-authentik-server
+docker logs fuzefront-authentik-worker
+
+# Verify environment variables
+docker exec fuzefront-authentik-server env | grep AUTHENTIK
+
+# Restart with fresh containers
+docker-compose stop authentik-server authentik-worker
+docker-compose rm -f authentik-server authentik-worker
+docker-compose up -d authentik-worker authentik-server
+```
+
+**Authentik UI not accessible**
+
+```bash
+# Check if container is running and healthy
+docker ps --filter "name=authentik-server"
+
+# Test direct connection
+curl -v http://localhost:9000
+
+# Check DNS resolution
+ping auth.fuzefront.local
+
+# Verify hosts file entry
+cat /etc/hosts | grep auth.fuzefront.local  # Linux/macOS
+type C:\Windows\System32\drivers\etc\hosts | findstr auth.fuzefront.local  # Windows
 ```
 
 **Permit.io PDP not responding**

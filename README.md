@@ -16,7 +16,7 @@ A modern microfrontend platform built with Node.js, TypeScript, React, and Vite,
 - **Health Monitoring**: Real-time app health checks with visual indicators
 - **WebSocket Communication**: Real-time updates and notifications
 - **Smart Navigation**: Context-aware routing and deep linking
-- **🐳 Docker Support**: Containerized deployment for micro-frontends
+- **☸️ Kubernetes-native Deployment**: Helm chart + ingress-nginx for local (kind) and production (k3s) clusters
 - **Graceful Shutdown**: Proper cleanup and port conflict handling
 - **Interactive API Documentation**: Swagger/OpenAPI documentation
 - **Comprehensive Help System**: Built-in guides and documentation
@@ -89,7 +89,10 @@ The project follows a clean, organized folder structure:
 ### Development Infrastructure
 - **`node_modules/`** - npm dependencies
 - **`envmanager/`** - Environment variable management
-- **Docker configuration files** - `docker-compose.yml`, `docker-compose.prod.yml`
+- **`deploy/helm/fuzefront/`** - Helm chart for deploying FuzeFront to Kubernetes (local kind + prod k3s)
+- **`deploy/contabo/`, `deploy/argocd/`** - Production GitOps (Contabo k3s + Argo CD) manifests
+- **Docker build files** - per-service `Dockerfile`s (images are built and loaded into the cluster)
+- **Legacy Docker Compose files** - `docker-compose.yml`, `docker-compose.prod.yml` (superseded by Kubernetes; Authentik is still launched from `docker-compose.yml` as an interim step — see `docs/AUTHENTICATION_SETUP.md`)
 - **Configuration files** - `.cursorrules`, `.prettierrc`, `lerna.json`, etc.
 
 This organization ensures:
@@ -121,15 +124,31 @@ This starts:
 - **Backend API** on `http://localhost:3001` (App Registry & WebSocket)
 - **Task Manager** on `http://localhost:3002` (Example Micro-frontend)
 
-### Option 2: Docker Mode
+### Option 2: Local Kubernetes (kind)
+
+FuzeFront deploys via a Helm chart into a local **kind** cluster (`kind-fuzeinfra`)
+alongside the shared FuzeInfra services. See
+[Deploy to local Kubernetes](#-deploy-to-local-kubernetes-kind-fuzeinfra) below or
+the full guide in [`deploy/helm/fuzefront/README.md`](deploy/helm/fuzefront/README.md).
 
 ```bash
-# Build and run all services with Docker
-npm run docker:build
-npm run docker:up
+# 1. Bring up FuzeInfra (Postgres + Redis + ingress-nginx) in kind
+cd FuzeInfra && make kind-up && cd ..
+
+# 2. Build and load the FuzeFront images into the cluster
+docker build -t fuzefront/backend:local ./backend
+docker build -t fuzefront/frontend:local --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
+kind load docker-image fuzefront/backend:local fuzefront/frontend:local --name fuzeinfra
+
+# 3. Deploy with Helm
+helm upgrade --install fuzefront deploy/helm/fuzefront \
+  -n fuzefront --create-namespace \
+  -f deploy/helm/fuzefront/values-local.yaml
 ```
 
-Access the platform at `http://localhost:3000`
+Add `127.0.0.1 fuzefront.dev.local` to your hosts file, then open `http://fuzefront.dev.local`.
+
+> **Legacy:** the old `npm run docker:up` / `docker-compose` flow is superseded by Kubernetes.
 
 ### What You'll See
 
@@ -183,7 +202,7 @@ sequenceDiagram
 - **Monorepo**: npm workspaces, concurrently
 - **Code Quality**: ESLint, Prettier, Husky, lint-staged, commitlint
 - **Integration**: Module Federation, Iframe, Web Components
-- **Containerization**: Docker, Docker Compose, Multi-stage builds
+- **Containerization & Orchestration**: Docker (multi-stage builds), Kubernetes (Helm), ingress-nginx, kind (local) / k3s (prod), Argo CD
 
 ## 🏃‍♂️ Development
 
@@ -207,11 +226,16 @@ npm run lint                # Lint all packages
 npm run db:init             # Initialize database
 npm run db:seed             # Seed with demo data
 
-# Docker
+# Docker images (build for kind/k8s, or legacy compose)
 npm run docker:build        # Build all Docker images
-npm run docker:up           # Start all services with Docker
-npm run docker:down         # Stop all Docker services
+npm run docker:up           # Legacy: start all services with docker-compose
+npm run docker:down         # Legacy: stop all docker-compose services
 ```
+
+> **Deployment is now Kubernetes-based.** After building images, load them into
+> the cluster (`kind load docker-image ... --name fuzeinfra`) and deploy with Helm —
+> see [Deploy to local Kubernetes](#-deploy-to-local-kubernetes-kind-fuzeinfra).
+> The `docker:up`/`docker:down` compose targets are retained only as legacy.
 
 ### Creating New Micro-frontends
 
@@ -391,13 +415,60 @@ chore(deps): Update dependencies
 - Helmet.js security headers
 - Input validation and sanitization
 
-## 🚀 Deployment
+## ☸️ Deploy to local Kubernetes (kind-fuzeinfra)
 
-### Production Build
+FuzeFront runs on Kubernetes. Locally it deploys via a Helm chart at
+[`deploy/helm/fuzefront/`](deploy/helm/fuzefront/) into a **kind** cluster named
+`fuzeinfra` (kubectl context `kind-fuzeinfra`), namespace `fuzefront`. The shared
+**FuzeInfra** services (Postgres, Redis) and the **ingress-nginx** controller (host
+ports 80/443) are provided by the FuzeInfra submodule, also on kind.
 
 ```bash
-npm run build:all
+# 1. Bring up FuzeInfra (ingress-nginx + Postgres + Redis) in kind
+cd FuzeInfra && make kind-up && cd ..
+kubectl -n fuzeinfra get pods            # wait until postgres/redis are Running
+
+# 2. Build the images and load them into the cluster
+docker build -t fuzefront/backend:local ./backend
+docker build -t fuzefront/frontend:local --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
+kind load docker-image fuzefront/backend:local fuzefront/frontend:local --name fuzeinfra
+
+# 3. Deploy with Helm
+helm upgrade --install fuzefront deploy/helm/fuzefront \
+  -n fuzefront --create-namespace \
+  -f deploy/helm/fuzefront/values-local.yaml
+
+# 4. Resolve the hostname (add to C:\Windows\System32\drivers\etc\hosts)
+#    127.0.0.1 fuzefront.dev.local
+
+# 5. Verify
+kubectl -n fuzefront get pods,svc,ingress
+curl http://fuzefront.dev.local/api/health
+# open http://fuzefront.dev.local
 ```
+
+**Services deployed:** `fuzefront-frontend` (svc :8080 — serves the SPA via its
+in-pod nginx, which also proxies `/api` + `/socket.io` to the backend) and
+`fuzefront-backend` (svc :3001). The `fuzefront` Ingress routes host
+`fuzefront.dev.local` → frontend.
+
+**Refresh an image after a code change:**
+
+```bash
+docker build -t fuzefront/frontend:local ./frontend
+kind load docker-image fuzefront/frontend:local --name fuzeinfra
+kubectl -n fuzefront rollout restart deployment/fuzefront-frontend
+```
+
+Full instructions (secrets, runtime app registration, follow-ups):
+[`deploy/helm/fuzefront/README.md`](deploy/helm/fuzefront/README.md).
+
+### Production
+
+Production runs on a Contabo **k3s** cluster managed by **Argo CD** (GitOps), using
+GHCR images and cert-manager (`letsencrypt-prod`) for TLS at `app.fuzefront.com`. See
+[`docs/PRODUCTION_DEPLOYMENT.md`](docs/PRODUCTION_DEPLOYMENT.md) and
+[`deploy/contabo/README.md`](deploy/contabo/README.md).
 
 ### Environment Variables
 
@@ -405,20 +476,23 @@ npm run build:all
 # Backend
 PORT=3001
 NODE_ENV=production
-JWT_SECRET=your-secret-key
-DB_PATH=/path/to/database.sqlite
-FRONTEND_URL=https://your-domain.com
+JWT_SECRET=your-secret-key       # supplied via Helm secret / SealedSecret
+USE_POSTGRES=true
+DB_HOST=postgres.fuzeinfra.svc.cluster.local
+DB_PORT=5432
+DB_NAME=fuzefront_platform
+FRONTEND_URL=https://app.fuzefront.com
 
-# Frontend
-VITE_API_URL=https://api.your-domain.com
+# Frontend (baked at build time via --build-arg)
+VITE_API_URL=https://app.fuzefront.com
 ```
 
-### Docker Deployment
+### Legacy: Docker Compose
 
-```bash
-# Production deployment with Docker Compose
-docker-compose -f docker-compose.yml up -d
-```
+The previous `docker-compose.yml` / `docker-compose.prod.yml` deployment is
+**superseded by Kubernetes** and kept only for reference. (Authentik is still
+launched from `docker-compose.yml` as an interim step until it moves into the Helm
+chart — see [`docs/AUTHENTICATION_SETUP.md`](docs/AUTHENTICATION_SETUP.md).)
 
 ## 📊 Database Schema
 
@@ -531,10 +605,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] **Self-registering Apps** - Dynamic discovery via REST API ✅
 - [x] **Docker Support** - Containerized micro-frontends ✅
 - [x] **Heartbeat System** - Real-time health monitoring ✅
+- [x] **Kubernetes deployment** - Helm chart (kind local + k3s prod via Argo CD) ✅
 - [ ] Plugin system for custom integrations
 - [ ] Advanced analytics and monitoring
 - [ ] Multi-tenant support
-- [ ] Kubernetes deployment manifests
 - [ ] Advanced caching strategies
 - [ ] Performance monitoring dashboard
 - [ ] CI/CD pipeline templates for new apps
