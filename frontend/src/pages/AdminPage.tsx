@@ -440,7 +440,7 @@ export default function AdminPage() {
                         alt=""
                         style={{ width: '24px', height: '24px' }}
                         onError={e => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
+                          (e.target as HTMLImageElement).style.display = 'none'
                         }}
                       />
                     ) : (

@@ -158,7 +158,7 @@ export function PlatformProvider({
   // Expose context to child microfrontends when in platform mode
   useEffect(() => {
     if (state.isPlatformMode && typeof window !== 'undefined') {
-      ;(window as any).__FRONTFUSE_CONTEXT__ = {
+      (window as any).__FRONTFUSE_CONTEXT__ = {
         user: state.user,
         session: state.session,
         apps: state.apps,

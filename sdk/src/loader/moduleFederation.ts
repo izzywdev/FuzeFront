@@ -84,18 +84,18 @@ async function loadRemoteModule(
     await loadRemoteEntry(remoteUrl)
 
     // Initialize sharing scope
-    // @ts-ignore - Webpack federation APIs
+    // @ts-expect-error - Webpack federation APIs
     await __webpack_init_sharing__('default')
 
     // Get the container
-    // @ts-ignore - Dynamic access to global containers
+    // @ts-expect-error - Dynamic access to global containers
     const container = window[scope]
     if (!container) {
       throw new Error(`Container '${scope}' not found on window object`)
     }
 
     // Initialize the container with shared scope
-    // @ts-ignore - Webpack federation APIs
+    // @ts-expect-error - Webpack federation APIs
     await container.init(__webpack_share_scopes__.default)
 
     // Get the module factory

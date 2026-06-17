@@ -52,7 +52,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Mark that we're running in FrontFuse platform
-      ;(window as any).__FRONTFUSE_PLATFORM__ = true
+      (window as any).__FRONTFUSE_PLATFORM__ = true
 
       // Provide platform context for federated apps
       ;(window as any).__FRONTFUSE_CONTEXT__ = {
