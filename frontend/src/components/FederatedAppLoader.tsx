@@ -19,15 +19,15 @@ const LoadingSpinner = () => (
   >
     <div
       style={{
-        border: '4px solid #333',
-        borderTop: '4px solid #646cff',
+        border: '4px solid var(--border-color)',
+        borderTop: '4px solid var(--accent-color)',
         borderRadius: '50%',
         width: '40px',
         height: '40px',
         animation: 'spin 1s linear infinite',
       }}
     ></div>
-    <p style={{ marginTop: '1rem', color: '#888' }}>Loading application...</p>
+    <p style={{ marginTop: '1rem', color: 'var(--text-tertiary)' }}>Loading application...</p>
     <style>{`
       @keyframes spin {
         0% { transform: rotate(0deg); }
@@ -204,8 +204,8 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
                   style={{
                     padding: '2rem',
                     textAlign: 'center',
-                    color: '#ff6b6b',
-                    border: '1px dashed #ff6b6b',
+                    color: 'var(--error-color)',
+                    border: '1px dashed var(--error-color)',
                     borderRadius: '8px',
                   }}
                 >
@@ -306,11 +306,11 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
       <div
         style={{
           padding: '2rem',
-          border: '1px solid #ff6b6b',
+          border: '1px solid var(--error-color)',
           borderRadius: '8px',
           backgroundColor: '#2a1f1f',
           textAlign: 'center',
-          color: '#ff6b6b',
+          color: 'var(--error-color)',
         }}
       >
         <h3>⚠️ Failed to Load App</h3>
@@ -332,7 +332,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         style={{
           padding: '2rem',
           textAlign: 'center',
-          color: '#888',
+          color: 'var(--text-tertiary)',
         }}
       >
         <p>No component loaded</p>

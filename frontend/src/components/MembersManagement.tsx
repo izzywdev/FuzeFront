@@ -62,13 +62,13 @@ export function MembersManagement({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return '#4CAF50'
+        return 'var(--success-color)'
       case 'pending':
-        return '#FF9800'
+        return 'var(--warning-color)'
       case 'suspended':
-        return '#f44336'
+        return 'var(--error-color)'
       default:
-        return '#9E9E9E'
+        return 'var(--text-tertiary)'
     }
   }
 
@@ -156,9 +156,9 @@ export function MembersManagement({
             key={member.id}
             style={{
               padding: '1.5rem',
-              border: '1px solid #333',
+              border: '1px solid var(--border-color)',
               borderRadius: '8px',
-              backgroundColor: '#1a1a1a',
+              backgroundColor: 'var(--bg-tertiary)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -178,7 +178,7 @@ export function MembersManagement({
                     width: '40px',
                     height: '40px',
                     borderRadius: '50%',
-                    backgroundColor: '#333',
+                    backgroundColor: 'var(--bg-quaternary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -195,7 +195,7 @@ export function MembersManagement({
                       ? `${member.user.firstName} ${member.user.lastName}`
                       : member.user.email}
                   </div>
-                  <div style={{ color: '#888', fontSize: '0.9rem' }}>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
                     {member.user.email}
                   </div>
                 </div>
@@ -230,7 +230,7 @@ export function MembersManagement({
                 </div>
               </div>
 
-              <div style={{ fontSize: '0.8rem', color: '#666' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
                 {member.joined_at
                   ? `Joined: ${new Date(member.joined_at).toLocaleDateString()}`
                   : member.invited_at
@@ -260,9 +260,9 @@ export function MembersManagement({
                     style={{
                       padding: '0.25rem 0.5rem',
                       borderRadius: '4px',
-                      border: '1px solid #555',
-                      backgroundColor: '#2a2a2a',
-                      color: 'white',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)',
                       fontSize: '0.8rem',
                     }}
                   >
@@ -292,8 +292,8 @@ export function MembersManagement({
             style={{
               padding: '2rem',
               textAlign: 'center',
-              color: '#888',
-              border: '2px dashed #333',
+              color: 'var(--text-tertiary)',
+              border: '2px dashed var(--border-color)',
               borderRadius: '8px',
             }}
           >
@@ -312,7 +312,7 @@ export function MembersManagement({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'var(--shadow)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -321,10 +321,10 @@ export function MembersManagement({
         >
           <div
             style={{
-              backgroundColor: '#1a1a1a',
+              backgroundColor: 'var(--bg-tertiary)',
               padding: '2rem',
               borderRadius: '8px',
-              border: '1px solid #333',
+              border: '1px solid var(--border-color)',
               minWidth: '400px',
               maxWidth: '500px',
             }}
@@ -350,9 +350,9 @@ export function MembersManagement({
                   width: '100%',
                   padding: '0.75rem',
                   borderRadius: '4px',
-                  border: '1px solid #555',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-quaternary)',
+                  color: 'var(--text-primary)',
                 }}
               />
             </div>
@@ -376,9 +376,9 @@ export function MembersManagement({
                   width: '100%',
                   padding: '0.75rem',
                   borderRadius: '4px',
-                  border: '1px solid #555',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-quaternary)',
+                  color: 'var(--text-primary)',
                 }}
               >
                 <option value="admin">
@@ -406,9 +406,9 @@ export function MembersManagement({
                 style={{
                   padding: '0.75rem 1.5rem',
                   borderRadius: '4px',
-                  border: '1px solid #555',
+                  border: '1px solid var(--border-color)',
                   backgroundColor: 'transparent',
-                  color: 'white',
+                  color: 'var(--text-primary)',
                   cursor: 'pointer',
                 }}
               >
@@ -421,7 +421,7 @@ export function MembersManagement({
                   padding: '0.75rem 1.5rem',
                   borderRadius: '4px',
                   border: 'none',
-                  backgroundColor: loading ? '#555' : '#646cff',
+                  backgroundColor: loading ? 'var(--bg-quaternary)' : 'var(--accent-color)',
                   color: 'white',
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }}

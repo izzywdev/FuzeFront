@@ -197,7 +197,7 @@ function OrganizationPage() {
 
   if (error) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#ff4444' }}>
+      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--error-color)' }}>
         <div>❌ {error}</div>
         <button
           onClick={loadOrganizations}
@@ -213,7 +213,7 @@ function OrganizationPage() {
     <div style={{ padding: '2rem' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h1>🏢 Organization Management</h1>
-        <p style={{ color: '#888', fontSize: '1.1rem' }}>
+        <p style={{ color: 'var(--text-tertiary)', fontSize: '1.1rem' }}>
           Manage your organizations, members, and settings
         </p>
       </div>
@@ -241,9 +241,9 @@ function OrganizationPage() {
             style={{
               padding: '0.5rem',
               borderRadius: '4px',
-              border: '1px solid #333',
-              backgroundColor: '#1a1a1a',
-              color: 'white',
+              border: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
               minWidth: '200px',
             }}
           >
@@ -268,7 +268,7 @@ function OrganizationPage() {
               }}
               style={{
                 padding: '0.5rem 1rem',
-                backgroundColor: '#646cff',
+                backgroundColor: 'var(--accent-color)',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
@@ -287,9 +287,9 @@ function OrganizationPage() {
           <div
             style={{
               padding: '1.5rem',
-              border: '1px solid #333',
+              border: '1px solid var(--border-color)',
               borderRadius: '8px',
-              backgroundColor: '#1a1a1a',
+              backgroundColor: 'var(--bg-tertiary)',
               marginBottom: '2rem',
             }}
           >
@@ -326,7 +326,7 @@ function OrganizationPage() {
                     {currentOrg.user_role?.toUpperCase()}
                   </span>
                 </h2>
-                <p style={{ color: '#888', margin: '0 0 1rem 0' }}>
+                <p style={{ color: 'var(--text-tertiary)', margin: '0 0 1rem 0' }}>
                   {currentOrg.description || 'No description provided'}
                 </p>
                 <div
@@ -334,7 +334,7 @@ function OrganizationPage() {
                     display: 'flex',
                     gap: '2rem',
                     fontSize: '0.9rem',
-                    color: '#bbb',
+                    color: 'var(--text-secondary)',
                   }}
                 >
                   <span>👥 {members.length} members</span>
@@ -345,7 +345,7 @@ function OrganizationPage() {
                   <span>🏷️ {currentOrg.type}</span>
                   <span
                     style={{
-                      color: currentOrg.is_active ? '#4CAF50' : '#ff4444',
+                      color: currentOrg.is_active ? 'var(--success-color)' : 'var(--error-color)',
                     }}
                   >
                     {currentOrg.is_active ? '✅ Active' : '❌ Inactive'}
@@ -361,7 +361,7 @@ function OrganizationPage() {
               style={{
                 display: 'flex',
                 gap: '1rem',
-                borderBottom: '1px solid #333',
+                borderBottom: '1px solid var(--border-color)',
               }}
             >
               {[
@@ -376,10 +376,10 @@ function OrganizationPage() {
                     padding: '1rem 1.5rem',
                     border: 'none',
                     backgroundColor: 'transparent',
-                    color: activeTab === tab.key ? '#646cff' : '#888',
+                    color: activeTab === tab.key ? 'var(--accent-color)' : 'var(--text-tertiary)',
                     borderBottom:
                       activeTab === tab.key
-                        ? '2px solid #646cff'
+                        ? '2px solid var(--accent-color)'
                         : '2px solid transparent',
                     cursor: 'pointer',
                     fontSize: '1rem',
@@ -404,9 +404,9 @@ function OrganizationPage() {
               <div
                 style={{
                   padding: '1.5rem',
-                  border: '1px solid #333',
+                  border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  backgroundColor: '#1a1a1a',
+                  backgroundColor: 'var(--bg-tertiary)',
                 }}
               >
                 <h3>📈 Quick Stats</h3>
@@ -442,13 +442,13 @@ function OrganizationPage() {
               <div
                 style={{
                   padding: '1.5rem',
-                  border: '1px solid #333',
+                  border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  backgroundColor: '#1a1a1a',
+                  backgroundColor: 'var(--bg-tertiary)',
                 }}
               >
                 <h3>📅 Recent Activity</h3>
-                <div style={{ color: '#888' }}>
+                <div style={{ color: 'var(--text-tertiary)' }}>
                   <p>
                     • Organization created{' '}
                     {new Date(currentOrg.created_at).toLocaleDateString()}
@@ -492,7 +492,7 @@ function OrganizationPage() {
                   style={{
                     textAlign: 'center',
                     padding: '2rem',
-                    color: '#888',
+                    color: 'var(--text-tertiary)',
                   }}
                 >
                   🔒 You don't have permission to view organization settings
@@ -512,7 +512,7 @@ function OrganizationPage() {
       )}
 
       {organizations.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '4rem', color: '#888' }}>
+        <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-tertiary)' }}>
           <h2>🏢 No Organizations</h2>
           <p>You're not a member of any organizations yet.</p>
           <PermissionGate requiredPermissions={['Organization:create']}>
@@ -529,7 +529,7 @@ function OrganizationPage() {
               }}
               style={{
                 padding: '1rem 2rem',
-                backgroundColor: '#646cff',
+                backgroundColor: 'var(--accent-color)',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',

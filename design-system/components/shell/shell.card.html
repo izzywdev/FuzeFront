@@ -1,0 +1,382 @@
+<!-- @dsCard group="Components" viewport="960x520" name="Shell — TopBar, Nav, User menu" subtitle="Host header with the seam underline, sidebar items, theme toggle" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-8);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  .lbl {
+    margin: 0 0 var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .specimen-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-6);
+  }
+
+  /* ---- TopBar ------------------------------------------------- */
+  .topbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    height: var(--top-bar-height);
+    padding: 0 var(--space-5);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+  }
+  .topbar__spacer { flex: 1; min-width: 0; }
+  .topbar__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  /* signature fuse seam: 1px indigo->cyan strip along the bottom */
+  .topbar__seam {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: var(--seam);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  /* ---- BrandMark ---------------------------------------------- */
+  .brandmark {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-display);
+    font-weight: var(--weight-bold);
+    font-size: var(--text-lg);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--text-primary);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .brandmark__fuze {
+    background: var(--seam);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ---- ThemeToggle -------------------------------------------- */
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .theme-toggle.is-hover {
+    background: var(--bg-quaternary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+  .theme-toggle svg { flex: none; }
+
+  /* ---- Avatar trigger ----------------------------------------- */
+  .avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(45deg, var(--accent-color), var(--accent-hover));
+    color: #fff;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* ---- MenuItem (sidebar nav rows) ---------------------------- */
+  .sidebar {
+    width: var(--side-panel-width);
+    padding: var(--space-2) 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+  }
+  .menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
+    color: var(--text-secondary);
+    background: transparent;
+    user-select: none;
+  }
+  .menu-item svg { flex: none; }
+  .menu-item.is-hover {
+    background: var(--bg-quaternary);
+    color: var(--text-primary);
+  }
+  .menu-item.is-active {
+    background: var(--accent-soft);
+    color: var(--text-primary);
+    font-weight: var(--weight-semibold);
+  }
+  /* the fuse seam: a rounded indigo->cyan bar marking the active row */
+  .menu-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 1.1rem;
+    border-radius: 3px;
+    background: var(--seam);
+  }
+  .state-tag {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    font-weight: var(--weight-regular);
+  }
+
+  /* ---- UserMenu dropdown panel -------------------------------- */
+  .user-menu { display: flex; align-items: flex-start; gap: var(--space-6); }
+  .menu-panel {
+    min-width: 240px;
+    padding: var(--space-2);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+  }
+  .menu-panel__header {
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: var(--space-2);
+  }
+  .menu-panel__name {
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--text-primary);
+  }
+  .menu-panel__email {
+    margin-top: var(--space-1);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .menu-panel__role {
+    margin-top: var(--space-2);
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--accent-2);
+  }
+  .menu-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu-row svg { flex: none; }
+  .menu-row.is-hover {
+    background: var(--bg-quaternary);
+    color: var(--text-primary);
+  }
+  .menu-row.is-error { color: var(--error-color); }
+  .menu-panel__signout {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-color);
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============================ TopBar ============================ -->
+  <section>
+    <p class="lbl">TopBar &mdash; host header with the fuse seam</p>
+    <div class="topbar">
+      <span class="brandmark"><span class="brandmark__fuze">Fuze</span>Front</span>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__actions">
+        <!-- ThemeToggle (moon while dark) -->
+        <button class="theme-toggle" title="Switch to light theme" aria-label="Switch to light theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+        <!-- UserMenu avatar trigger -->
+        <button class="avatar" title="Ada Lovelace">AL</button>
+      </div>
+      <span class="topbar__seam" aria-hidden="true"></span>
+    </div>
+  </section>
+
+  <!-- ===================== MenuItem & ThemeToggle ==================== -->
+  <div class="specimen-row">
+
+    <section>
+      <p class="lbl">MenuItem &mdash; sidebar nav rows</p>
+      <div class="sidebar">
+        <!-- default -->
+        <div class="menu-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9.5 12 3l9 6.5" /><path d="M5 10v10h14V10" />
+          </svg>
+          <span>Dashboard</span>
+          <span class="state-tag">default</span>
+        </div>
+        <!-- hover -->
+        <div class="menu-item is-hover">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+          <span>Modules</span>
+          <span class="state-tag">hover</span>
+        </div>
+        <!-- active -->
+        <div class="menu-item is-active" aria-current="page">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>Settings</span>
+          <span class="state-tag">active</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="lbl">ThemeToggle</p>
+      <div class="specimen-row">
+        <!-- dark resting (moon) -->
+        <button class="theme-toggle" title="Switch to light theme" aria-label="Switch to light theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+        <!-- hover (sun) -->
+        <button class="theme-toggle is-hover" title="Switch to dark theme" aria-label="Switch to dark theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+          </svg>
+        </button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============================ UserMenu =========================== -->
+  <section>
+    <p class="lbl">UserMenu &mdash; avatar trigger &amp; open dropdown</p>
+    <div class="user-menu">
+      <button class="avatar" title="Ada Lovelace">AL</button>
+
+      <div class="menu-panel" role="menu" aria-label="Account menu for Ada Lovelace">
+        <div class="menu-panel__header">
+          <div class="menu-panel__name">Ada Lovelace</div>
+          <div class="menu-panel__email">ada.lovelace@fuzefront.dev</div>
+          <div class="menu-panel__role">Administrator</div>
+        </div>
+
+        <!-- Profile -->
+        <button class="menu-row" role="menuitem">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+          </svg>
+          <span>Profile</span>
+        </button>
+
+        <!-- Settings (hover state shown) -->
+        <button class="menu-row is-hover" role="menuitem">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span>Settings</span>
+        </button>
+
+        <!-- Admin (gated on admin role) -->
+        <button class="menu-row" role="menuitem">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" />
+          </svg>
+          <span>Admin</span>
+        </button>
+
+        <!-- Sign out (error tone, divider above) -->
+        <div class="menu-panel__signout">
+          <button class="menu-row is-error" role="menuitem">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" />
+            </svg>
+            <span>Sign out</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

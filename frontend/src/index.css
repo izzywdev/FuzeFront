@@ -1,10 +1,20 @@
 
 @import 'tailwindcss';
 @import 'tw-animate-css';
+/* FuzeFront type system: Space Grotesk (display) / Inter (body) / JetBrains Mono (data) */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-theme='dark'] *));
 
 @theme inline {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --color-fuse: var(--accent-color);
+  --color-fuse-2: var(--accent-2);
+  --color-success: var(--success-color);
+  --color-warning: var(--warning-color);
+  --color-error: var(--error-color);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -43,7 +53,7 @@
 }
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -52,74 +62,126 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Dark theme (default) */
+/* ============================================================
+   FuzeFront design tokens — "runtime fabric"
+   Dark is the default. One source of truth feeds BOTH the host's
+   legacy --bg-*/--text-* vars and the shadcn token layer, so
+   shadcn components no longer fall back to light on a dark shell.
+   ============================================================ */
 :root,
 [data-theme='dark'] {
-  --bg-primary: #242424;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #2a2a2a;
-  --bg-quaternary: #3a3a3a;
-  --text-primary: rgba(255, 255, 255, 0.87);
-  --text-secondary: #ccc;
-  --text-tertiary: #888;
-  --border-color: #333;
-  --accent-color: #646cff;
-  --accent-hover: #535bf2;
-  --success-color: #6bcf7f;
-  --warning-color: #f39c12;
-  --error-color: #ff6b6b;
-  --shadow: rgba(0, 0, 0, 0.4);
+  /* surfaces — deep blue-graphite, layered from shell to raised */
+  --bg-secondary: #0b0e15; /* app shell / top bar (deepest) */
+  --bg-primary: #0f131c; /* content canvas */
+  --bg-tertiary: #141a26; /* panels & cards */
+  --bg-quaternary: #1c2433; /* raised / hover */
+  --border-color: #232c3d;
+  --border-strong: #303b50;
+  /* text */
+  --text-primary: #e7ecf5;
+  --text-secondary: #9fa9bc;
+  --text-tertiary: #66718a;
+  /* the fuse — electric indigo paired with a cyan signal */
+  --accent-color: #6e5cff;
+  --accent-hover: #5847e6;
+  --accent-soft: rgba(110, 92, 255, 0.14);
+  --accent-2: #29d3e6;
+  /* status — one warm spark (amber/coral) in an otherwise cool set */
+  --success-color: #34d399;
+  --warning-color: #f5a623;
+  --error-color: #f26b7a;
+  --shadow: rgba(0, 0, 0, 0.45);
+  /* signature: the seam where modules fuse at runtime */
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  /* shadcn token layer — kept in sync with the surfaces above */
+  --background: #0f131c;
+  --foreground: #e7ecf5;
+  --card: #141a26;
+  --card-foreground: #e7ecf5;
+  --popover: #141a26;
+  --popover-foreground: #e7ecf5;
+  --primary: #6e5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #1c2433;
+  --secondary-foreground: #e7ecf5;
+  --muted: #1c2433;
+  --muted-foreground: #9fa9bc;
+  --accent: #1c2433;
+  --accent-foreground: #e7ecf5;
+  --destructive: #f26b7a;
+  --border: #232c3d;
+  --input: #232c3d;
+  --ring: #6e5cff;
+  --chart-1: #6e5cff;
+  --chart-2: #29d3e6;
+  --chart-3: #34d399;
+  --chart-4: #f5a623;
+  --chart-5: #f26b7a;
+  --sidebar: #141a26;
+  --sidebar-foreground: #e7ecf5;
+  --sidebar-primary: #6e5cff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2433;
+  --sidebar-accent-foreground: #e7ecf5;
+  --sidebar-border: #232c3d;
+  --sidebar-ring: #6e5cff;
 }
 
-/* Light theme */
+/* Light theme — cool, instrument-grade white */
 [data-theme='light'] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --bg-tertiary: #e9ecef;
-  --bg-quaternary: #dee2e6;
-  --text-primary: #212529;
-  --text-secondary: #495057;
-  --text-tertiary: #6c757d;
-  --border-color: #dee2e6;
-  --accent-color: #0d6efd;
-  --accent-hover: #0b5ed7;
-  --success-color: #198754;
-  --warning-color: #fd7e14;
-  --error-color: #dc3545;
-  --shadow: rgba(0, 0, 0, 0.15);
+  --bg-secondary: #ffffff;
+  --bg-primary: #f6f8fc;
+  --bg-tertiary: #ffffff;
+  --bg-quaternary: #eef1f7;
+  --border-color: #e4e9f2;
+  --border-strong: #d2d9e6;
+  --text-primary: #131722;
+  --text-secondary: #54607a;
+  --text-tertiary: #8a93a6;
+  --accent-color: #6048f5;
+  --accent-hover: #4f3ae0;
+  --accent-soft: rgba(96, 72, 245, 0.1);
+  --accent-2: #0bb6c9;
+  --success-color: #10b981;
+  --warning-color: #d98313;
+  --error-color: #e0556b;
+  --shadow: rgba(15, 23, 42, 0.12);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  --background: #f6f8fc;
+  --foreground: #131722;
+  --card: #ffffff;
+  --card-foreground: #131722;
+  --popover: #ffffff;
+  --popover-foreground: #131722;
+  --primary: #6048f5;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f7;
+  --secondary-foreground: #131722;
+  --muted: #eef1f7;
+  --muted-foreground: #54607a;
+  --accent: #eef1f7;
+  --accent-foreground: #131722;
+  --destructive: #e0556b;
+  --border: #e4e9f2;
+  --input: #e4e9f2;
+  --ring: #6048f5;
+  --chart-1: #6048f5;
+  --chart-2: #0bb6c9;
+  --chart-3: #10b981;
+  --chart-4: #d98313;
+  --chart-5: #e0556b;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #131722;
+  --sidebar-primary: #6048f5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef1f7;
+  --sidebar-accent-foreground: #131722;
+  --sidebar-border: #e4e9f2;
+  --sidebar-ring: #6048f5;
 }
 
 * {
@@ -146,6 +208,80 @@ body {
   text-align: center;
 }
 
+/* ============================================================
+   Typography — Space Grotesk carries the personality; Inter does
+   the reading; JetBrains Mono speaks for the machine (IDs, scopes,
+   remote URLs — the technical data that defines this product).
+   ============================================================ */
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+/* Brand wordmark: "Fuze" + "Front" joined by the seam. */
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.brand-mark .brand-accent {
+  background: var(--seam);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Technical data reads in mono — connection IDs, scopes, remoteEntry URLs. */
+.mono,
+code,
+kbd,
+.app-id,
+.remote-url {
+  font-family: var(--font-mono);
+  font-feature-settings: 'ss01' 1;
+}
+
+/* Quality floor: a visible, on-brand keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .app-layout {
   display: flex;
   flex-direction: column;
@@ -153,16 +289,30 @@ body {
 }
 
 .top-bar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1rem;
+  padding: 0 1.25rem;
   height: 60px;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   transition:
     background-color 0.3s ease,
     border-color 0.3s ease;
+}
+
+/* Signature: a glowing "fuse seam" marking where the host shell joins
+   the content the runtime modules render into. */
+.top-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--seam);
+  opacity: 0.7;
 }
 
 .main-content {
@@ -190,21 +340,43 @@ body {
 }
 
 .menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 0.75rem 1rem;
+  gap: 0.625rem;
+  margin: 0.125rem 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background-color 0.2s;
-  color: var(--text-primary);
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .menu-item:hover {
   background-color: var(--bg-quaternary);
+  color: var(--text-primary);
 }
 
+/* Active item carries the seam as a left edge, not a slab of color. */
 .menu-item.active {
-  background-color: var(--accent-color);
-  color: white;
+  background-color: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1.1rem;
+  border-radius: 3px;
+  background: var(--seam);
 }
 
 .dropdown {
@@ -244,15 +416,29 @@ body {
 }
 
 .auth-form {
+  position: relative;
   max-width: 400px;
   margin: 2rem auto;
   padding: 2rem;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border-color);
+  box-shadow: 0 24px 60px -24px var(--shadow);
+  overflow: hidden;
   transition:
     background-color 0.3s ease,
     border-color 0.3s ease;
+}
+
+/* The card opens with the seam — the first hint of the fuse identity. */
+.auth-form::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--seam);
 }
 
 .form-group {
@@ -267,36 +453,50 @@ body {
 
 .form-group input {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.75rem 0.875rem;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
   color: var(--text-primary);
   transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease,
-    color 0.3s ease;
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+.form-group input::placeholder {
+  color: var(--text-tertiary);
 }
 
 .form-group input:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.2);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .btn {
   padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.05s ease;
   color: white;
+}
+
+.btn:active {
+  transform: translateY(1px);
 }
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: white;
+  color: #fff;
+  box-shadow: 0 6px 18px -8px var(--accent-color);
 }
 
 .btn-primary:hover {
@@ -311,6 +511,200 @@ body {
 
 .btn-secondary:hover {
   background-color: var(--bg-tertiary);
+}
+
+/* ============================================================
+   Dashboard — the launcher grid. App cards are the primary
+   surface the runtime fabric renders; each carries the seam on
+   hover, the moment before a module fuses into the shell.
+   ============================================================ */
+.dashboard {
+  padding: 2rem;
+}
+
+.dashboard-header {
+  margin-bottom: 2rem;
+}
+
+.dashboard-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin: 0.25rem 0 0;
+}
+
+.section-title {
+  margin-bottom: 1.5rem;
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.app-card {
+  position: relative;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-tertiary);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-card:hover {
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px -20px var(--shadow);
+}
+
+/* Seam reveals along the top edge as a card lifts toward you. */
+.app-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--seam);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.app-card:hover::before {
+  opacity: 1;
+}
+
+.app-card.is-offline {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: grayscale(0.5);
+}
+
+.app-card.is-offline:hover {
+  border-color: var(--border-color);
+  transform: none;
+  box-shadow: none;
+}
+
+.app-card.is-offline:hover::before {
+  opacity: 0;
+}
+
+.app-card-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.app-card-icon {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.app-icon-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.app-icon-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  background: var(--bg-quaternary);
+}
+
+/* Integration types read by hue, all tuned to the cool palette. */
+.app-icon-fallback.type-module-federation {
+  background: linear-gradient(135deg, #15414f, var(--accent-2));
+}
+.app-icon-fallback.type-iframe {
+  background: linear-gradient(135deg, #4a3a12, var(--warning-color));
+}
+.app-icon-fallback.type-web-component,
+.app-icon-fallback.type-other {
+  background: linear-gradient(135deg, #2f1f4f, var(--accent-color));
+}
+
+.health-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--success-color);
+  border: 2px solid var(--bg-tertiary);
+}
+
+.health-dot.offline {
+  background-color: var(--error-color);
+}
+
+.app-card-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.app-card.is-offline .app-card-title {
+  color: var(--text-tertiary);
+}
+
+.app-offline-tag {
+  color: var(--error-color);
+  font-size: 0.9rem;
+  margin-left: 8px;
+}
+
+.app-type-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-soft);
+  color: var(--accent-color);
+  text-transform: lowercase;
+}
+
+.app-card-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.dashboard-empty {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+}
+
+.quick-actions {
+  margin-top: 3rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-tertiary);
+}
+
+.quick-actions-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
 }
 
 /* Theme toggle button styles */

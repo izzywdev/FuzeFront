@@ -226,7 +226,7 @@ function AdminRoute() {
         style={{
           padding: '2rem',
           textAlign: 'center',
-          color: '#ff6b6b',
+          color: 'var(--error-color)',
         }}
       >
         <h3>🔒 Access Denied</h3>
@@ -251,7 +251,7 @@ function NotFoundPage() {
       style={{
         padding: '2rem',
         textAlign: 'center',
-        color: '#888',
+        color: 'var(--text-tertiary)',
       }}
     >
       <h1>404 - Page Not Found</h1>

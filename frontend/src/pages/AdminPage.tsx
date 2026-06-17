@@ -151,10 +151,10 @@ export default function AdminPage() {
         <div
           style={{
             padding: '1rem',
-            backgroundColor: '#2a1f1f',
-            border: '1px solid #ff6b6b',
+            backgroundColor: 'var(--bg-tertiary)',
+            border: '1px solid var(--error-color)',
             borderRadius: '4px',
-            color: '#ff6b6b',
+            color: 'var(--error-color)',
             marginBottom: '1rem',
           }}
         >
@@ -163,7 +163,7 @@ export default function AdminPage() {
             style={{
               background: 'none',
               border: 'none',
-              color: '#ff6b6b',
+              color: 'var(--error-color)',
               float: 'right',
               cursor: 'pointer',
             }}
@@ -177,8 +177,8 @@ export default function AdminPage() {
       {showForm && (
         <div
           style={{
-            backgroundColor: '#1a1a1a',
-            border: '1px solid #333',
+            backgroundColor: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-color)',
             borderRadius: '8px',
             padding: '2rem',
             marginBottom: '2rem',
@@ -214,10 +214,10 @@ export default function AdminPage() {
                   style={{
                     width: '100%',
                     padding: '0.75rem',
-                    border: '1px solid #333',
+                    border: '1px solid var(--border-color)',
                     borderRadius: '4px',
-                    backgroundColor: '#2a2a2a',
-                    color: 'white',
+                    backgroundColor: 'var(--bg-quaternary)',
+                    color: 'var(--text-primary)',
                   }}
                 >
                   <option value="iframe">Iframe</option>
@@ -325,10 +325,10 @@ export default function AdminPage() {
                   style={{
                     width: '100%',
                     padding: '0.75rem',
-                    border: '1px solid #333',
+                    border: '1px solid var(--border-color)',
                     borderRadius: '4px',
-                    backgroundColor: '#2a2a2a',
-                    color: 'white',
+                    backgroundColor: 'var(--bg-quaternary)',
+                    color: 'var(--text-primary)',
                     minHeight: '80px',
                     resize: 'vertical',
                   }}
@@ -353,9 +353,9 @@ export default function AdminPage() {
                 className="btn"
                 onClick={cancelForm}
                 style={{
-                  backgroundColor: '#666',
+                  backgroundColor: 'var(--bg-quaternary)',
                   border: 'none',
-                  color: 'white',
+                  color: 'var(--text-primary)',
                 }}
               >
                 Cancel
@@ -367,20 +367,20 @@ export default function AdminPage() {
 
       <div
         style={{
-          backgroundColor: '#1a1a1a',
-          border: '1px solid #333',
+          backgroundColor: 'var(--bg-tertiary)',
+          border: '1px solid var(--border-color)',
           borderRadius: '8px',
           overflow: 'hidden',
         }}
       >
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead style={{ backgroundColor: '#2a2a2a' }}>
+          <thead style={{ backgroundColor: 'var(--bg-quaternary)' }}>
             <tr>
               <th
                 style={{
                   padding: '1rem',
                   textAlign: 'left',
-                  borderBottom: '1px solid #333',
+                  borderBottom: '1px solid var(--border-color)',
                 }}
               >
                 App
@@ -389,7 +389,7 @@ export default function AdminPage() {
                 style={{
                   padding: '1rem',
                   textAlign: 'left',
-                  borderBottom: '1px solid #333',
+                  borderBottom: '1px solid var(--border-color)',
                 }}
               >
                 Type
@@ -398,7 +398,7 @@ export default function AdminPage() {
                 style={{
                   padding: '1rem',
                   textAlign: 'left',
-                  borderBottom: '1px solid #333',
+                  borderBottom: '1px solid var(--border-color)',
                 }}
               >
                 Status
@@ -407,7 +407,7 @@ export default function AdminPage() {
                 style={{
                   padding: '1rem',
                   textAlign: 'left',
-                  borderBottom: '1px solid #333',
+                  borderBottom: '1px solid var(--border-color)',
                 }}
               >
                 URL
@@ -416,7 +416,7 @@ export default function AdminPage() {
                 style={{
                   padding: '1rem',
                   textAlign: 'center',
-                  borderBottom: '1px solid #333',
+                  borderBottom: '1px solid var(--border-color)',
                 }}
               >
                 Actions
@@ -425,7 +425,7 @@ export default function AdminPage() {
           </thead>
           <tbody>
             {state.apps.map(app => (
-              <tr key={app.id} style={{ borderBottom: '1px solid #333' }}>
+              <tr key={app.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td style={{ padding: '1rem' }}>
                   <div
                     style={{
@@ -472,7 +472,7 @@ export default function AdminPage() {
                     )}
                     <div>
                       <div style={{ fontWeight: 'bold' }}>{app.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#888' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
                         {app.description}
                       </div>
                     </div>
@@ -508,7 +508,7 @@ export default function AdminPage() {
                       borderRadius: '4px',
                       fontSize: '0.8rem',
                       backgroundColor: app.isActive ? '#1f4f1f' : '#4f1f1f',
-                      color: app.isActive ? '#5fd45f' : '#d45f5f',
+                      color: app.isActive ? 'var(--success-color)' : 'var(--error-color)',
                     }}
                   >
                     {app.isActive ? 'Active' : 'Inactive'}
@@ -520,7 +520,7 @@ export default function AdminPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      color: '#646cff',
+                      color: 'var(--accent-color)',
                       textDecoration: 'none',
                       fontSize: '0.9rem',
                     }}
@@ -540,7 +540,7 @@ export default function AdminPage() {
                       className="btn"
                       onClick={() => handleEdit(app)}
                       style={{
-                        backgroundColor: '#646cff',
+                        backgroundColor: 'var(--accent-color)',
                         border: 'none',
                         color: 'white',
                         padding: '0.5rem',
@@ -553,7 +553,7 @@ export default function AdminPage() {
                       className="btn"
                       onClick={() => handleToggleStatus(app)}
                       style={{
-                        backgroundColor: app.isActive ? '#f39c12' : '#27ae60',
+                        backgroundColor: app.isActive ? 'var(--warning-color)' : 'var(--success-color)',
                         border: 'none',
                         color: 'white',
                         padding: '0.5rem',
@@ -566,7 +566,7 @@ export default function AdminPage() {
                       className="btn"
                       onClick={() => handleDelete(app)}
                       style={{
-                        backgroundColor: '#e74c3c',
+                        backgroundColor: 'var(--error-color)',
                         border: 'none',
                         color: 'white',
                         padding: '0.5rem',
@@ -587,7 +587,7 @@ export default function AdminPage() {
             style={{
               padding: '3rem',
               textAlign: 'center',
-              color: '#888',
+              color: 'var(--text-tertiary)',
             }}
           >
             <h3>No apps registered yet</h3>

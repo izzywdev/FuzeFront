@@ -1,0 +1,63 @@
+<!-- @dsCard group="Colors" viewport="720x180" name="Status — Cool, with one warm spark" subtitle="Mint success, amber warning, coral error" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body {
+    margin: 0; padding: var(--space-6);
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+  .sw {
+    border-radius: var(--radius-md); overflow: hidden;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+  }
+  .chip { height: 64px; position: relative; }
+  .chip .spark {
+    position: absolute; top: var(--space-2); right: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: rgba(11,14,21,0.7); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .meta { padding: var(--space-2) var(--space-3); }
+  .name { font-size: var(--text-xs); font-weight: 600; color: var(--text-primary); }
+  .token { font-size: var(--text-2xs); color: var(--text-tertiary); font-family: var(--font-mono); }
+  .hex { font-size: var(--text-2xs); color: var(--text-secondary); font-family: var(--font-mono); text-transform: uppercase; }
+  .note {
+    margin-top: var(--space-4);
+    font-size: var(--text-2xs); color: var(--text-tertiary);
+    font-family: var(--font-mono);
+  }
+  .note b { color: var(--warning-color); }
+</style></head><body>
+  <div class="row">
+    <div class="sw">
+      <div class="chip" style="background:var(--success-color)"><span class="spark">cool</span></div>
+      <div class="meta">
+        <div class="name">Mint · success</div>
+        <div class="token">--success-color</div>
+        <div class="hex">#34D399</div>
+      </div>
+    </div>
+    <div class="sw">
+      <div class="chip" style="background:var(--warning-color)"><span class="spark">warm</span></div>
+      <div class="meta">
+        <div class="name">Amber · warning</div>
+        <div class="token">--warning-color</div>
+        <div class="hex">#F5A623</div>
+      </div>
+    </div>
+    <div class="sw">
+      <div class="chip" style="background:var(--error-color)"><span class="spark">cool</span></div>
+      <div class="meta">
+        <div class="name">Coral · error</div>
+        <div class="token">--error-color</div>
+        <div class="hex">#F26B7A</div>
+      </div>
+    </div>
+  </div>
+  <div class="note">The status set runs cool — mint and coral both sit on the blue side — with one <b>warm amber spark</b> reserved for warning.</div>
+</body></html>

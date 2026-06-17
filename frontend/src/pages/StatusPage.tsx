@@ -58,7 +58,7 @@ function StatusPage() {
     <div style={{ padding: '2rem' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h1>🩺 System Status</h1>
-        <p style={{ color: '#888', fontSize: '1.1rem' }}>
+        <p style={{ color: 'var(--text-tertiary)', fontSize: '1.1rem' }}>
           Real-time health monitoring for FrontFuse services
         </p>
       </div>
@@ -67,9 +67,9 @@ function StatusPage() {
       <div
         style={{
           padding: '2rem',
-          border: '1px solid #333',
+          border: '1px solid var(--border-color)',
           borderRadius: '8px',
-          backgroundColor: '#1a1a1a',
+          backgroundColor: 'var(--bg-tertiary)',
           marginBottom: '2rem',
         }}
       >
@@ -87,7 +87,7 @@ function StatusPage() {
             disabled={loading}
             style={{
               padding: '0.5rem 1rem',
-              backgroundColor: '#646cff',
+              backgroundColor: 'var(--accent-color)',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -100,14 +100,14 @@ function StatusPage() {
         </div>
 
         {loading && !healthData ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
             <div>🔄 Checking system status...</div>
           </div>
         ) : error ? (
           <div
             style={{
               padding: '1rem',
-              backgroundColor: '#ff4444',
+              backgroundColor: 'var(--error-color)',
               color: 'white',
               borderRadius: '4px',
               textAlign: 'center',
@@ -124,7 +124,9 @@ function StatusPage() {
               style={{
                 padding: '1rem',
                 backgroundColor:
-                  healthData.status === 'ok' ? '#4CAF50' : '#ff4444',
+                  healthData.status === 'ok'
+                    ? 'var(--success-color)'
+                    : 'var(--error-color)',
                 color: 'white',
                 borderRadius: '4px',
                 textAlign: 'center',
@@ -149,11 +151,11 @@ function StatusPage() {
               <div
                 style={{
                   padding: '1rem',
-                  backgroundColor: '#262626',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
                 }}
               >
-                <div style={{ color: '#888', fontSize: '0.9rem' }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
                   Last Response
                 </div>
                 <div style={{ fontSize: '1.1rem' }}>
@@ -164,11 +166,11 @@ function StatusPage() {
               <div
                 style={{
                   padding: '1rem',
-                  backgroundColor: '#262626',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
                 }}
               >
-                <div style={{ color: '#888', fontSize: '0.9rem' }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
                   Last Checked
                 </div>
                 <div style={{ fontSize: '1.1rem' }}>
@@ -180,11 +182,11 @@ function StatusPage() {
                 <div
                   style={{
                     padding: '1rem',
-                    backgroundColor: '#262626',
+                    backgroundColor: 'var(--bg-quaternary)',
                     borderRadius: '4px',
                   }}
                 >
-                  <div style={{ color: '#888', fontSize: '0.9rem' }}>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
                     Uptime
                   </div>
                   <div style={{ fontSize: '1.1rem' }}>
@@ -197,11 +199,11 @@ function StatusPage() {
                 <div
                   style={{
                     padding: '1rem',
-                    backgroundColor: '#262626',
+                    backgroundColor: 'var(--bg-quaternary)',
                     borderRadius: '4px',
                   }}
                 >
-                  <div style={{ color: '#888', fontSize: '0.9rem' }}>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
                     Version
                   </div>
                   <div style={{ fontSize: '1.1rem' }}>{healthData.version}</div>
@@ -223,16 +225,16 @@ function StatusPage() {
         <div
           style={{
             padding: '1.5rem',
-            border: '1px solid #333',
+            border: '1px solid var(--border-color)',
             borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
+            backgroundColor: 'var(--bg-tertiary)',
           }}
         >
           <h3>🌐 Frontend Status</h3>
-          <div style={{ color: '#4CAF50', marginBottom: '0.5rem' }}>
+          <div style={{ color: 'var(--success-color)', marginBottom: '0.5rem' }}>
             ✅ Online
           </div>
-          <div style={{ color: '#888', fontSize: '0.9rem' }}>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
             Vite development server running on port 5173
           </div>
         </div>
@@ -240,16 +242,16 @@ function StatusPage() {
         <div
           style={{
             padding: '1.5rem',
-            border: '1px solid #333',
+            border: '1px solid var(--border-color)',
             borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
+            backgroundColor: 'var(--bg-tertiary)',
           }}
         >
           <h3>🔌 WebSocket Status</h3>
-          <div style={{ color: '#4CAF50', marginBottom: '0.5rem' }}>
+          <div style={{ color: 'var(--success-color)', marginBottom: '0.5rem' }}>
             ✅ Connected
           </div>
-          <div style={{ color: '#888', fontSize: '0.9rem' }}>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
             Real-time communication active
           </div>
         </div>
@@ -257,16 +259,16 @@ function StatusPage() {
         <div
           style={{
             padding: '1.5rem',
-            border: '1px solid #333',
+            border: '1px solid var(--border-color)',
             borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
+            backgroundColor: 'var(--bg-tertiary)',
           }}
         >
           <h3>🗄️ Database Status</h3>
-          <div style={{ color: '#4CAF50', marginBottom: '0.5rem' }}>
+          <div style={{ color: 'var(--success-color)', marginBottom: '0.5rem' }}>
             ✅ Connected
           </div>
-          <div style={{ color: '#888', fontSize: '0.9rem' }}>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
             SQLite database operational
           </div>
         </div>
@@ -276,10 +278,10 @@ function StatusPage() {
         style={{
           marginTop: '2rem',
           padding: '1rem',
-          backgroundColor: '#262626',
+          backgroundColor: 'var(--bg-quaternary)',
           borderRadius: '4px',
           fontSize: '0.9rem',
-          color: '#888',
+          color: 'var(--text-tertiary)',
         }}
       >
         <strong>Note:</strong> This page automatically refreshes every 30
