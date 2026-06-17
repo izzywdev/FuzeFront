@@ -44,10 +44,12 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install backend dependencies
-        working-directory: ./backend
+        # Install from the workspace ROOT so root package.json `overrides`
+        # (pinning @types/express* to v4) apply; a child `cd backend && npm ci`
+        # ignores them and pulls @types/express@5, breaking the build.
         run: npm ci
 
       - name: Set up test environment

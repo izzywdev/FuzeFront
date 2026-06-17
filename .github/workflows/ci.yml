@@ -29,8 +29,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd backend && npm ci
-          cd ../frontend && npm ci
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
           cd ../sdk && npm ci
           cd ../api-client && npm ci
           cd ../task-manager-app && npm ci
@@ -74,8 +74,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd backend && npm ci
-          cd ../frontend && npm ci
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
           cd ../sdk && npm ci
           cd ../task-manager-app && npm ci
 
@@ -137,8 +137,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd backend && npm ci
-          cd ../frontend && npm ci
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
 
       - name: Run integration tests
         env:
