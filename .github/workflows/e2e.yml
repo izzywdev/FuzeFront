@@ -101,12 +101,28 @@ jobs:
           done
           echo "frontend failed to start"; cat /tmp/frontend.log; exit 1
 
-      # ---- Playwright sign-in flow ----
-      - name: Run Playwright sign-in test
+      # ---- Example remote: build, serve (vite preview w/ CORS), register ----
+      - name: Build, serve & register clock-app
+        working-directory: clock-app
+        run: |
+          npm install
+          VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
+          npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4174/assets/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
+            sleep 2
+          done
+          # url = backend-reachable (drives the health check); remoteUrl = browser-reachable.
+          curl -fsS -X POST http://localhost:3001/api/apps/register \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"FuzeClock","url":"http://localhost:4174","integrationType":"module-federation","remoteUrl":"http://localhost:4174/assets","scope":"fuzeClock","module":"./App","description":"on-the-fly clock"}'
+
+      # ---- Playwright: sign-in + runtime federated load ----
+      - name: Run Playwright e2e (sign-in + FuzeClock load)
         working-directory: frontend
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/auth-simple.spec.ts
+          npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts
 
       - name: Upload Playwright report
         if: failure()
