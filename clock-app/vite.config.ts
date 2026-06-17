@@ -27,4 +27,7 @@ export default defineConfig({
   },
   base: '/',
   server: { host: '0.0.0.0', port: 3003, cors: true, strictPort: true },
+  // CORS on preview too, so the host page can cross-origin import remoteEntry.js
+  // when served via `vite preview` (used in the CI e2e job).
+  preview: { host: '127.0.0.1', port: 4174, cors: true, strictPort: true },
 })

@@ -1,9 +1,19 @@
 import { test, expect } from '@playwright/test'
 
-// Verifies a registered microfrontend (FuzeClock) loads at runtime via Module
-// Federation and renders inside the host shell.
-test('FuzeClock loads at runtime via Module Federation', async ({ page }) => {
-  // sign in
+// Real user path: sign in, open the 9-dots launcher, click FuzeClock, and verify
+// the federated remote renders inside the host (no "app unavailable" alert).
+test('FuzeClock loads from the launcher at runtime', async ({ page }) => {
+  let dialogMessage = ''
+  page.on('dialog', d => {
+    dialogMessage = d.message()
+    d.dismiss().catch(() => {})
+  })
+  const consoleErrors: string[] = []
+  page.on('console', m => {
+    if (m.type() === 'error') consoleErrors.push(m.text())
+  })
+
+  // --- sign in ---
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
   await page.fill('input[type="email"]', 'admin@fuzefront.dev')
@@ -18,23 +28,23 @@ test('FuzeClock loads at runtime via Module Federation', async ({ page }) => {
     timeout: 10000,
   })
 
-  // find FuzeClock in the registry
-  const appId = await page.evaluate(async () => {
-    const token = localStorage.getItem('authToken')
-    const res = await fetch('/api/apps', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    return (await res.json()).find((x: any) => x.name === 'FuzeClock')?.id
-  })
-  expect(appId, 'FuzeClock must be registered').toBeTruthy()
+  // --- open the 9-dots launcher and click FuzeClock (the real path) ---
+  await page.locator('button.app-grid-button').click()
+  await page.getByText('FuzeClock', { exact: true }).first().click()
 
-  // load the federated remote
-  await page.goto(`/app/${appId}`)
+  // The launcher must NOT have blocked it with an "unavailable" alert.
+  await page.waitForTimeout(500)
+  expect(dialogMessage, `unexpected dialog popup: "${dialogMessage}"`).toBe('')
 
   // The remote's own content (unique to clock-app) must render — proving the
-  // runtime Module Federation load succeeded, not the error boundary.
+  // runtime Module Federation load succeeded inside the host, not the error UI.
   await expect(
     page.getByText('No build-time knowledge of the host')
   ).toBeVisible({ timeout: 20000 })
   await expect(page.getByText('Failed to Load App')).toHaveCount(0)
+
+  // Surface any console errors for visibility (not a hard failure here).
+  if (consoleErrors.length) {
+    console.log('Console errors during load:\n - ' + consoleErrors.join('\n - '))
+  }
 })
