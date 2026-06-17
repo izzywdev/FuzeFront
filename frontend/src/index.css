@@ -67,7 +67,7 @@
 /* ============================================================
    FuzeFront design tokens — "runtime fabric"
    Dark is the default. One source of truth feeds BOTH the host's
-   legacy --bg-*/--text-* vars and the shadcn token layer, so
+   legacy --bg-* and --text-* vars and the shadcn token layer, so
    shadcn components no longer fall back to light on a dark shell.
    ============================================================ */
 :root,
