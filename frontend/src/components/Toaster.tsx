@@ -13,7 +13,12 @@ const LEVEL_COLORS: Record<ToastLevel, { bg: string; bar: string }> = {
 export function Toaster() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  useEffect(() => bridge.subscribeToasts(setToasts), [])
+  useEffect(() => {
+    const unsubscribe = bridge.subscribeToasts(setToasts)
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   if (toasts.length === 0) return null
 

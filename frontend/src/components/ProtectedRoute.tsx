@@ -1,6 +1,6 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { PermissionGate, usePermissions } from './PermissionGate'
+import { PermissionGate } from './PermissionGate'
 import { useCurrentUser } from '../lib/shared'
 
 interface ProtectedRouteProps {

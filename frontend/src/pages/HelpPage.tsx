@@ -1,7 +1,5 @@
-import React, { useState } from 'react'
-import { useLanguage } from '../contexts/LanguageContext'
+import { useState } from 'react'
 import { useCurrentUser } from '../lib/shared'
-import { useTheme } from '../contexts/ThemeContext'
 
 interface TabProps {
   id: string
@@ -10,7 +8,6 @@ interface TabProps {
 }
 
 function HelpPage() {
-  const { t } = useLanguage()
   const { user } = useCurrentUser()
   const [activeTab, setActiveTab] = useState('getting-started')
 

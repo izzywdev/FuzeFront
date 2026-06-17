@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { User, useCurrentUser } from '../lib/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import { logout } from '../services/api'

@@ -1,8 +1,6 @@
-import React from 'react'
 import { useGlobalMenu, useCurrentUser, useAppContext } from '../lib/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import type { MenuItem } from '../lib/shared'
-import { NavLink } from 'react-router-dom'
 
 function SidePanel() {
   const globalMenu = useGlobalMenu() as any // Temporary type assertion while types are updating

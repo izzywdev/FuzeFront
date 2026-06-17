@@ -2,7 +2,6 @@ import { App } from '../lib/shared'
 // Dynamic remote-loading helpers from @originjs/vite-plugin-federation (the
 // federation runtime this host actually builds with). The previous
 // webpack-style __webpack_init_sharing__ approach never worked with Vite remotes.
-// @ts-ignore - virtual module provided by the federation plugin at build time
 import {
   __federation_method_setRemote,
   __federation_method_getRemote,
