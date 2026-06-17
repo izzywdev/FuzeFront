@@ -57,9 +57,15 @@ const getDatabaseConfig = (): Knex.Config => {
           isProduction ? '../migrations' : '../migrations'
         ),
         extension: isProduction ? 'js' : 'ts',
+        // Only load the compiled .js (or .ts in dev). Without this, knex's
+        // default loadExtensions also matches the emitted .d.ts declaration
+        // files in dist/migrations and require()s them -> "Unexpected token
+        // 'export'", which broke migrations on server startup in CI.
+        loadExtensions: [isProduction ? '.js' : '.ts'],
       },
       seeds: {
         directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
+        loadExtensions: [isProduction ? '.js' : '.ts'],
       },
     }
   } else {
@@ -77,9 +83,15 @@ const getDatabaseConfig = (): Knex.Config => {
           isProduction ? '../migrations' : '../migrations'
         ),
         extension: isProduction ? 'js' : 'ts',
+        // Only load the compiled .js (or .ts in dev). Without this, knex's
+        // default loadExtensions also matches the emitted .d.ts declaration
+        // files in dist/migrations and require()s them -> "Unexpected token
+        // 'export'", which broke migrations on server startup in CI.
+        loadExtensions: [isProduction ? '.js' : '.ts'],
       },
       seeds: {
         directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
+        loadExtensions: [isProduction ? '.js' : '.ts'],
       },
     }
   }
