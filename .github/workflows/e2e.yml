@@ -60,7 +60,7 @@ jobs:
       # ignores them and resolves @types/express@5, breaking the tsc build.
       - name: Build & start backend
         run: |
-          npm ci
+          npm ci --include=dev   # job NODE_ENV=production would otherwise omit devDeps (tsc)
           npm run build -w backend
           cd backend
           node dist/index.js > /tmp/backend.log 2>&1 &
@@ -95,7 +95,7 @@ jobs:
       - name: Build & preview frontend
         working-directory: frontend
         run: |
-          npm ci
+          npm ci --include=dev   # need vite/@playwright (devDeps) despite NODE_ENV=production
           npm run build
           npx vite preview --port 4173 --host 127.0.0.1 > /tmp/frontend.log 2>&1 &
           for i in $(seq 1 30); do
@@ -108,7 +108,7 @@ jobs:
       - name: Build, serve & register clock-app
         working-directory: clock-app
         run: |
-          npm install
+          npm install --include=dev   # need vite (devDep) despite NODE_ENV=production
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
           for i in $(seq 1 30); do
