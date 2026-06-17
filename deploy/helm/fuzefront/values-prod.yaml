@@ -8,13 +8,13 @@ global:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 0f6397b9b264
+    tag: 02482758d5b2
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 0f6397b9b264
+    tag: 02482758d5b2
   replicas: 2
 
 # Private GHCR pull secret (sealed; see deploy/contabo/README.md).
