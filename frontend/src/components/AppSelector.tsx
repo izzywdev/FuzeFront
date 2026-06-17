@@ -254,7 +254,7 @@ function AppSelector() {
                               borderRadius: '8px',
                             }}
                             onError={e => {
-                              ;(e.target as HTMLImageElement).style.display =
+                              (e.target as HTMLImageElement).style.display =
                                 'none'
                             }}
                           />

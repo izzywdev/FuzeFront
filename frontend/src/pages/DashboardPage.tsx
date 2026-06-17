@@ -68,7 +68,7 @@ function DashboardPage() {
                         alt=""
                         className="app-icon-img"
                         onError={e => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
+                          (e.target as HTMLImageElement).style.display = 'none'
                         }}
                       />
                     ) : (
