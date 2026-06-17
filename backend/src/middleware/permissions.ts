@@ -6,7 +6,14 @@ import {
   checkUserManagementPermission,
 } from '../utils/permit/permission-check'
 
-// Extend Express Request type to include user and organization context
+// Extend Express Request type to include user and organization context.
+//
+// params/body/query are re-declared explicitly (assignable overrides of the
+// base Express Request members) so they are always present on
+// AuthenticatedRequest regardless of how @types/express / serve-static-core
+// resolve in a given environment. Without this, a transient @types resolution
+// in CI dropped these from the base Request and broke the build (TS2339),
+// while the same code compiled cleanly locally.
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string
@@ -18,6 +25,9 @@ export interface AuthenticatedRequest extends Request {
     id: string
     role: string
   }
+  params: Record<string, string>
+  body: any
+  query: any
 }
 
 export interface PermissionConfig {
