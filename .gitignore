@@ -10,3 +10,7 @@ keys/
 **/.env
 !.env.example
 !**/.env.example
+
+# Playwright artifacts
+**/test-results/
+**/playwright-report/
