@@ -55,11 +55,14 @@ jobs:
           node-version: '20.x'
 
       # ---- Backend: build, start, migrate, wait ----
+      # Install from the workspace ROOT so the root package.json `overrides`
+      # (pinning @types/express* to v4) apply — a child `cd backend && npm ci`
+      # ignores them and resolves @types/express@5, breaking the tsc build.
       - name: Build & start backend
-        working-directory: backend
         run: |
           npm ci
-          npm run build
+          npm run build -w backend
+          cd backend
           node dist/index.js > /tmp/backend.log 2>&1 &
           echo "Waiting for backend /health..."
           for i in $(seq 1 60); do
