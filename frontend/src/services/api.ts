@@ -278,7 +278,8 @@ export const appsAPI = {
 export const organizationsAPI = {
   async getOrganizations() {
     const response = await api.get('/organizations')
-    return response.data
+    // Backend returns { organizations, pagination }; callers expect the array.
+    return response.data?.organizations ?? response.data
   },
 }
 
@@ -378,23 +379,23 @@ export const removeMember = async (orgId: string, memberId: string) => {
   return res.data
 }
 
-// Permissions (best-effort; permissive fallback for local dev so the UI renders
-// when the authorization endpoints aren't wired yet).
+// Permission checks: no PDP endpoint is wired yet (Permit deferred), so resolve
+// permissively client-side instead of POSTing to a non-existent endpoint (which
+// 404s on every check). Role-based gating below uses the real user roles.
+// Signature matches PermissionGate: (permissions, organizationId?, requireAll?).
 export const checkPermissions = async (
-  resource?: string,
-  action?: string
+  _permissions?: string | string[],
+  _organizationId?: string,
+  _requireAll?: boolean
 ): Promise<boolean> => {
-  try {
-    const res = await api.post('/auth/permissions/check', { resource, action })
-    return Boolean(res.data?.allowed ?? true)
-  } catch {
-    return true
-  }
+  return true
 }
-export const getUserRoles = async (): Promise<string[]> => {
+export const getUserRoles = async (
+  _organizationId?: string
+): Promise<string[]> => {
   try {
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    return Array.isArray(user?.roles) ? user.roles : []
+    const user = await authAPI.getCurrentUser()
+    return Array.isArray(user.roles) ? user.roles : []
   } catch {
     return []
   }

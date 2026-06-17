@@ -289,8 +289,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
       })
     }
 
-    // Get total count
-    const countQuery = query.clone().count('* as total').first()
+    // Get total count. clearSelect() drops the `organizations.*` projection so the
+    // count query is a plain count(*) (otherwise Postgres requires a GROUP BY).
+    const countQuery = query.clone().clearSelect().count('* as total').first()
     const totalResult = await countQuery
     const total = parseInt((totalResult?.total as string) || '0')
 
