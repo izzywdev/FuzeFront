@@ -546,6 +546,35 @@ function MenuManager() {
 
 ## Deployment Guide
 
+> **Two kinds of deployment.** This section covers deploying **your microfrontend
+> app** (typically static hosting, then registering it with the platform at
+> runtime). Deploying the **FuzeFront platform itself** is now Kubernetes-based:
+> a Helm chart into a local **kind** cluster (`kind-fuzeinfra`) for development, and
+> Argo CD + Contabo **k3s** for production. See
+> [`deploy/helm/fuzefront/README.md`](../deploy/helm/fuzefront/README.md) and
+> [`docs/PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md). The old docker-compose
+> platform deployment is legacy.
+
+### Deploying the platform (Kubernetes)
+
+```bash
+# Bring up FuzeInfra (ingress-nginx + Postgres + Redis) in kind
+cd FuzeInfra && make kind-up && cd ..
+
+# Build + load the FuzeFront images into the cluster
+docker build -t fuzefront/backend:local ./backend
+docker build -t fuzefront/frontend:local --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
+kind load docker-image fuzefront/backend:local fuzefront/frontend:local --name fuzeinfra
+
+# Deploy with Helm
+helm upgrade --install fuzefront deploy/helm/fuzefront \
+  -n fuzefront --create-namespace \
+  -f deploy/helm/fuzefront/values-local.yaml
+# then add `127.0.0.1 fuzefront.dev.local` to your hosts file
+```
+
+### Deploying your microfrontend app
+
 ### 1. Build Your Application
 
 ```bash
