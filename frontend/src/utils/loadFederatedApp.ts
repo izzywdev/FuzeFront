@@ -1,4 +1,13 @@
 import { App } from '../lib/shared'
+// Dynamic remote-loading helpers from @originjs/vite-plugin-federation (the
+// federation runtime this host actually builds with). The previous
+// webpack-style __webpack_init_sharing__ approach never worked with Vite remotes.
+// @ts-ignore - virtual module provided by the federation plugin at build time
+import {
+  __federation_method_setRemote,
+  __federation_method_getRemote,
+  __federation_method_unwrapDefault,
+} from 'virtual:__federation__'
 
 interface LoadedModule {
   default: React.ComponentType<any>
@@ -37,7 +46,8 @@ const getRetryDelay = (
 }
 
 /**
- * Load a remote module using Webpack Module Federation
+ * Load a remote module at runtime via @originjs/vite-plugin-federation:
+ * register the remote dynamically, fetch the exposed module, unwrap its default.
  */
 async function loadRemoteModule(
   remoteUrl: string,
@@ -52,77 +62,29 @@ async function loadRemoteModule(
   }
 
   const loadPromise = (async () => {
-    // Ensure the remote entry script is loaded
-    await loadRemoteEntry(remoteUrl)
+    // Register the remote at runtime (remoteUrl is the base; remoteEntry.js lives under it).
+    __federation_method_setRemote(scope, {
+      url: `${remoteUrl}/remoteEntry.js`,
+      format: 'esm',
+      from: 'vite',
+    })
 
-    // Initialize sharing scope
-    // @ts-ignore - Webpack federation APIs
-    await __webpack_init_sharing__('default')
+    const proxy = await __federation_method_getRemote(scope, module)
+    const Component = await __federation_method_unwrapDefault(proxy)
 
-    // Get the container
-    // @ts-ignore - Dynamic access to global containers
-    const container = window[scope]
-    if (!container) {
-      throw new Error(`Container '${scope}' not found on window object`)
+    if (!Component) {
+      throw new Error(
+        `Module '${module}' from '${scope}' did not provide a default export`
+      )
     }
 
-    // Initialize the container with shared scope
-    // @ts-ignore - Webpack federation APIs
-    await container.init(__webpack_share_scopes__.default)
-
-    // Get the module factory
-    const factory = await container.get(module)
-    if (!factory) {
-      throw new Error(`Module '${module}' not found in container '${scope}'`)
-    }
-
-    // Execute the factory to get the module
-    const Module = factory()
-
-    if (!Module || !Module.default) {
-      throw new Error(`Module '${module}' does not export a default component`)
-    }
-
-    return Module as LoadedModule
+    return { default: Component } as LoadedModule
   })()
 
   // Cache the promise
   moduleCache.set(cacheKey, loadPromise)
 
   return loadPromise
-}
-
-/**
- * Load the remote entry script
- */
-async function loadRemoteEntry(remoteUrl: string): Promise<void> {
-  const scriptId = `remote-${remoteUrl.replace(/[^a-zA-Z0-9]/g, '_')}`
-
-  // Check if script is already loaded
-  if (document.getElementById(scriptId)) {
-    return
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.id = scriptId
-    script.src = `${remoteUrl}/remoteEntry.js`
-    script.type = 'text/javascript'
-    script.async = true
-
-    script.onload = () => {
-      console.log(`✅ Loaded remote entry: ${remoteUrl}`)
-      resolve()
-    }
-
-    script.onerror = error => {
-      console.error(`❌ Failed to load remote entry: ${remoteUrl}`, error)
-      document.head.removeChild(script)
-      reject(new Error(`Failed to load remote entry: ${remoteUrl}`))
-    }
-
-    document.head.appendChild(script)
-  })
 }
 
 /**
@@ -190,9 +152,15 @@ export async function loadFederatedApp(
  */
 export async function loadApp(appId: string): Promise<LoadedModule> {
   try {
-    // Fetch app metadata from the registry
+    // Fetch app metadata from the registry. /api/apps requires auth, so send the
+    // stored token — a raw fetch without it gets a 401 and breaks app loading.
+    const token =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem('authToken')
+        : null
     const response = await fetch(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apps`
+      `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apps`,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
     )
     if (!response.ok) {
       throw new Error(`Failed to fetch apps: ${response.statusText}`)

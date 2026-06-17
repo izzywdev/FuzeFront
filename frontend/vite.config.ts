@@ -8,7 +8,11 @@ export default defineConfig({
     federation({
       name: 'container',
       remotes: {
-        // Dynamic remotes will be loaded at runtime
+        // Placeholder remote so the federation plugin emits the full host runtime
+        // (including the shared scope). Real remotes are registered at runtime via
+        // __federation_method_setRemote(). With no declared remote, the host build
+        // leaves __rf_placeholder__shareScope unresolved → runtime ReferenceError.
+        _dynamic: 'http://localhost/remoteEntry.js',
       },
       shared: ['react', 'react-dom'],
     }),
