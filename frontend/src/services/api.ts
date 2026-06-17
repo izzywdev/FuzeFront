@@ -1,13 +1,5 @@
-import axios, { AxiosRequestConfig } from 'axios'
-import { App, User } from '../lib/shared'
-
-// Extend AxiosRequestConfig to include metadata
-interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
-  metadata?: {
-    startTime: number
-    requestId: string
-  }
-}
+import axios from 'axios'
+import { App } from '../lib/shared'
 
 // Use relative URLs since nginx proxies /api/ to backend
 // This works both in development (via nginx proxy) and production
@@ -259,7 +251,7 @@ export const authAPI = {
       }
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname)
-      return { token, sessionId }
+      return { token, sessionId: sessionId ?? undefined }
     }
 
     return {}
@@ -301,6 +293,10 @@ export interface Organization {
   metadata?: Record<string, any>
   createdAt?: string
   updatedAt?: string
+  // Snake_case fields returned by the backend / consumed by the UI.
+  user_role?: string
+  member_count?: number
+  created_at?: string
 }
 
 export interface OrganizationMember {

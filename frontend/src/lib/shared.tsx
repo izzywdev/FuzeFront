@@ -2,7 +2,6 @@ import React, {
   createContext,
   useContext,
   useState,
-  useEffect,
   ReactNode,
 } from 'react'
 
@@ -14,6 +13,13 @@ export interface User {
   roles: string[]
   firstName?: string
   lastName?: string
+  // Optional extended profile fields (populated by the profile/auth payloads).
+  avatar?: string
+  bio?: string
+  timezone?: string
+  language?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface App {

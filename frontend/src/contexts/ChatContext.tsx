@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react'
+import { createContext, useContext, useReducer, ReactNode } from 'react'
 import { ChatMessage, ChatState, ChatContextType } from '../types/chat'
 
 // Chat reducer actions

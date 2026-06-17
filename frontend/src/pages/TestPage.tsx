@@ -1,4 +1,3 @@
-import React from 'react'
 import { PermissionGate } from '../components/PermissionGate'
 import {
   PermissionButton,

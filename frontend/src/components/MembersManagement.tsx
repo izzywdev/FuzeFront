@@ -1,14 +1,28 @@
-import React, { useState } from 'react'
-import { PermissionGate, usePermissions } from './PermissionGate'
+import { useState } from 'react'
+import { PermissionGate } from './PermissionGate'
 import { PermissionButton, DeleteButton } from './PermissionButton'
 import {
-  getOrganizationMembers,
   inviteOrganizationMember,
   updateMemberRole,
   removeMember,
   type Organization,
-  type OrganizationMember,
 } from '../services/api'
+
+// Member shape this component consumes (provided by OrganizationPage): a nested
+// `user` object plus status/timestamp fields.
+interface OrganizationMember {
+  id: string
+  role: string
+  status: string
+  user: {
+    id: string
+    email: string
+    firstName?: string
+    lastName?: string
+  }
+  invited_at?: string
+  joined_at?: string
+}
 
 interface MembersManagementProps {
   organization: Organization
@@ -21,7 +35,6 @@ export function MembersManagement({
   members,
   onMembersChange,
 }: MembersManagementProps) {
-  const { hasPermission } = usePermissions()
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>(

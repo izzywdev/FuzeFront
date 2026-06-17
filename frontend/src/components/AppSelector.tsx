@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppContext, App } from '../lib/shared'
 import { useLanguage } from '../contexts/LanguageContext'
 import { fetchApps } from '../services/api'
@@ -22,7 +22,7 @@ function AppSelector() {
 
         // Set default app if user has one and it's active and healthy
         const defaultApp = allApps.find(
-          app =>
+          (app: App) =>
             app.id === state.user?.defaultAppId && app.isActive && app.isHealthy
         )
         if (defaultApp && !state.activeApp) {
@@ -96,9 +96,6 @@ function AppSelector() {
     setIsOpen(false)
     window.location.href = `/app/${app.id}`
   }
-
-  const currentPath = window.location.pathname
-  const isOnAppPage = currentPath.startsWith('/app/')
 
   return (
     <div className="app-selector">

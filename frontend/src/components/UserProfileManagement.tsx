@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useCurrentUser } from '../lib/shared'
-import { PermissionGate } from './PermissionGate'
 import { RoleBadge } from './RoleBadge'
-import { getCurrentUser } from '../services/api'
 
 interface UserProfile {
   id: string
@@ -61,6 +59,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
   }, [currentUser, isAuthenticated])
 
   const loadProfile = async () => {
+    if (!currentUser) return
     setIsLoading(true)
     try {
       // For now, use current user data as profile

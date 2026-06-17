@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppContext, useCurrentUser, App } from '../lib/shared'
 import { fetchApps } from '../services/api'
 
 function DashboardPage() {
-  const { state, dispatch } = useAppContext()
+  const { dispatch } = useAppContext()
   const { user } = useCurrentUser()
   const [allApps, setAllApps] = useState<App[]>([])
 
