@@ -11,6 +11,8 @@ interface OIDCConfig {
 
 // Declare global types for code verifier storage
 declare global {
+  // `var` is required here — global augmentation can't use let/const.
+  // eslint-disable-next-line no-var
   var codeVerifiers: Map<string, string> | undefined;
 }
 

@@ -408,7 +408,7 @@ async function findAvailablePort(
   maxAttempts: number = 10
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    let currentPort = startPort
+    const currentPort = startPort
     let attempts = 0
 
     function tryPort(port: number) {
