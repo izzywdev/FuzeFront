@@ -1,0 +1,34 @@
+{
+  "plugins": ["react", "import"],
+  "rules": {
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "**/design-system/components/**",
+              "**/design-system/tokens/**"
+            ],
+            "message": "Import design-system components from the public surface ('design-system' / index.js), not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a FuzeFront color token via var() (e.g. var(--accent-color), var(--bg-tertiary)). The only allowed literal is #fff for text on an accent/gradient fill."
+      },
+      {
+        "selector": "Literal[value=/\\brgba?\\(/]",
+        "message": "Raw rgba()/rgb() — use a color token via var(). For a soft tint, prefer var(--accent-soft) or color-mix(in srgb, var(--token) 14%, transparent)."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Space Grotesk|Inter|JetBrains Mono))/i]",
+        "message": "Font not provided by the design system. Use a font token: --font-display (Space Grotesk), --font-sans (Inter), --font-mono (JetBrains Mono)."
+      }
+    ]
+  }
+}

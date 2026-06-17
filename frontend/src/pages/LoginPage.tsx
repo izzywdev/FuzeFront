@@ -274,10 +274,10 @@ function LoginPage() {
       {error && (
         <div
           style={{
-            color: 'red',
+            color: 'var(--error-color)',
             marginBottom: '1rem',
             padding: '10px',
-            border: '1px solid red',
+            border: '1px solid var(--error-color)',
             borderRadius: '4px',
             backgroundColor: 'rgba(255, 0, 0, 0.1)',
           }}
@@ -298,7 +298,7 @@ function LoginPage() {
             style={{
               width: '100%',
               padding: '12px',
-              backgroundColor: '#007bff',
+              backgroundColor: 'var(--accent-color)',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -310,7 +310,7 @@ function LoginPage() {
           >
             {loading ? '🔄 Redirecting...' : '🔐 Sign in with Authentik'}
           </button>
-          <p style={{ textAlign: 'center', color: '#666', fontSize: '14px' }}>
+          <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px' }}>
             Single Sign-On via Authentik
           </p>
           
@@ -318,11 +318,11 @@ function LoginPage() {
             display: 'flex', 
             alignItems: 'center', 
             margin: '20px 0',
-            color: '#666' 
+            color: 'var(--text-tertiary)'
           }}>
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ddd' }} />
+            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
             <span style={{ padding: '0 15px', fontSize: '14px' }}>or</span>
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid #ddd' }} />
+            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
           </div>
         </div>
       )}
@@ -360,11 +360,11 @@ function LoginPage() {
       {authMethods && (
         <div style={{ 
           marginTop: '1rem', 
-          padding: '10px', 
-          backgroundColor: '#f8f9fa', 
+          padding: '10px',
+          backgroundColor: 'var(--bg-tertiary)',
           borderRadius: '4px',
           fontSize: '12px',
-          color: '#666'
+          color: 'var(--text-tertiary)'
         }}>
           <strong>Available Methods:</strong> {authMethods.methods.join(', ')}
           {authMethods.oidcConfigured && (
@@ -379,8 +379,8 @@ function LoginPage() {
           onClick={runNetworkDiagnostics}
           style={{
             padding: '8px 16px',
-            backgroundColor: '#6c757d',
-            color: 'white',
+            backgroundColor: 'var(--bg-quaternary)',
+            color: 'var(--text-primary)',
             border: 'none',
             borderRadius: '4px',
             cursor: 'pointer',
@@ -396,9 +396,9 @@ function LoginPage() {
           style={{
             marginTop: '1rem',
             padding: '10px',
-            border: '1px solid #ccc',
+            border: '1px solid var(--border-color)',
             borderRadius: '4px',
-            backgroundColor: '#f8f9fa',
+            backgroundColor: 'var(--bg-tertiary)',
             fontSize: '12px',
             maxHeight: '300px',
             overflow: 'auto',
@@ -409,7 +409,7 @@ function LoginPage() {
         </div>
       )}
 
-      <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: '#ccc' }}>
+      <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
         <p>Demo credentials:</p>
         <p>Email: admin@fuzefront.dev</p>
         <p>Password: admin123</p>

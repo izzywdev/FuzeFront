@@ -39,11 +39,11 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
         <div
           style={{
             padding: '2rem',
-            border: '1px solid #ff6b6b',
+            border: '1px solid var(--error-color)',
             borderRadius: '8px',
-            backgroundColor: '#2a1f1f',
+            backgroundColor: 'var(--bg-tertiary)',
             textAlign: 'center',
-            color: '#ff6b6b',
+            color: 'var(--error-color)',
           }}
         >
           <h3>⚠️ App Loading Error</h3>
@@ -59,7 +59,7 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
               </summary>
               <pre
                 style={{
-                  backgroundColor: '#1a1a1a',
+                  backgroundColor: 'var(--bg-secondary)',
                   padding: '1rem',
                   borderRadius: '4px',
                   fontSize: '0.8rem',
@@ -82,9 +82,9 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
               className="btn"
               onClick={() => (window.location.href = '/dashboard')}
               style={{
-                backgroundColor: '#666',
+                backgroundColor: 'var(--bg-quaternary)',
                 border: 'none',
-                color: 'white',
+                color: 'var(--text-primary)',
               }}
             >
               🏠 Go to Dashboard

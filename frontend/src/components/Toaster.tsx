@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { bridge, Toast, ToastLevel } from '../platform/bridge'
 
 const LEVEL_COLORS: Record<ToastLevel, { bg: string; bar: string }> = {
-  info: { bg: '#1e293b', bar: '#3b82f6' },
-  success: { bg: '#14302a', bar: '#22c55e' },
-  warning: { bg: '#332b14', bar: '#f59e0b' },
-  error: { bg: '#33181a', bar: '#ef4444' },
+  info: { bg: 'var(--bg-tertiary)', bar: 'var(--accent-2)' },
+  success: { bg: 'var(--bg-tertiary)', bar: 'var(--success-color)' },
+  warning: { bg: 'var(--bg-tertiary)', bar: 'var(--warning-color)' },
+  error: { bg: 'var(--bg-tertiary)', bar: 'var(--error-color)' },
 }
 
 // Renders toasts pushed through window.__FUZEFRONT__.notify() by any app or by
@@ -38,11 +38,11 @@ export function Toaster() {
             role="status"
             style={{
               background: c.bg,
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               borderLeft: `4px solid ${c.bar}`,
               borderRadius: 8,
               padding: '10px 12px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+              boxShadow: '0 8px 24px var(--shadow)',
               display: 'flex',
               gap: 8,
               alignItems: 'flex-start',
@@ -65,7 +65,7 @@ export function Toaster() {
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-tertiary)',
                 cursor: 'pointer',
                 fontSize: 16,
                 lineHeight: 1,

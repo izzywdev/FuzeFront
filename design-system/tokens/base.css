@@ -1,0 +1,59 @@
+/* ============================================================
+   FuzeFront — Base element defaults
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Space Grotesk carries headings; tight tracking gives it the wordmark feel. */
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
+  color: var(--text-primary);
+  margin: 0;
+}
+h1 { font-size: var(--text-2xl); line-height: var(--leading-tight); }
+h2 { font-size: var(--text-xl); line-height: var(--leading-snug); }
+h3 { font-size: var(--text-lg); line-height: var(--leading-snug); }
+
+/* Technical data reads in mono — connection IDs, scopes, remoteEntry URLs. */
+.mono, code, kbd, .app-id, .remote-url {
+  font-family: var(--font-mono);
+  font-feature-settings: 'ss01' 1;
+}
+
+a { color: var(--accent-color); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+img { max-width: 100%; }
+
+::selection { background: var(--accent-soft); color: var(--text-primary); }
+
+/* Quality floor: a visible, on-brand keyboard focus everywhere. */
+:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

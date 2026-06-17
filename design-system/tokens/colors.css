@@ -1,0 +1,149 @@
+/* ============================================================
+   FuzeFront — Color tokens
+   The "runtime fabric": a deep blue-graphite shell, an electric
+   indigo + cyan "fuse seam", and a cool status set with one warm
+   amber spark. Dark is the DEFAULT; light is an override.
+   ============================================================ */
+
+:root {
+  /* ---- Brand primitives ---------------------------------- */
+
+  /* Indigo — "the fuse". The brand's load-bearing hue. */
+  --indigo-50:  #f0eeff;
+  --indigo-100: #e0dcff;
+  --indigo-300: #b3a9ff;
+  --indigo-400: #8c7cff;
+  --indigo-500: #6e5cff;   /* accent (dark theme) */
+  --indigo-600: #6048f5;   /* accent (light theme) */
+  --indigo-700: #5847e6;   /* hover (dark) */
+  --indigo-800: #4f3ae0;   /* hover (light) */
+
+  /* Cyan — the signal the indigo fuses with along the seam. */
+  --cyan-400: #29d3e6;
+  --cyan-500: #0bb6c9;
+
+  /* Status — cool throughout, with one warm amber spark. */
+  --mint-500:  #34d399;   /* success (dark) */
+  --mint-600:  #10b981;   /* success (light) */
+  --amber-500: #f5a623;   /* warning (dark) */
+  --amber-600: #d98313;   /* warning (light) */
+  --coral-500: #f26b7a;   /* error (dark) */
+  --coral-600: #e0556b;   /* error (light) */
+
+  /* Graphite — the dark shell, shallow (shell) to raised. */
+  --graphite-950: #0b0e15;  /* shell / top bar (deepest) */
+  --graphite-900: #0f131c;  /* content canvas */
+  --graphite-850: #141a26;  /* panels & cards */
+  --graphite-800: #1c2433;  /* raised / hover / chips */
+  --graphite-700: #232c3d;  /* borders */
+  --graphite-600: #303b50;  /* strong dividers */
+  --graphite-400: #66718a;  /* muted text */
+  --graphite-300: #9fa9bc;  /* secondary text */
+  --graphite-100: #e7ecf5;  /* primary text */
+
+  /* Paper — the light shell. */
+  --paper:        #ffffff;
+  --paper-tint:   #f6f8fc;
+  --paper-muted:  #eef1f7;
+  --line-light:   #e4e9f2;
+  --line-strong-light: #d2d9e6;
+  --ink-900:      #131722;  /* primary text (light) */
+  --ink-600:      #54607a;  /* secondary text (light) */
+  --ink-400:      #8a93a6;  /* muted text (light) */
+}
+
+/* ============================================================
+   Semantic tokens — the names components actually consume.
+   These match the FuzeFront app 1:1, so anything built against
+   this design system drops straight into frontend/src.
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  /* surfaces */
+  --bg-secondary:  var(--graphite-950);  /* app shell / top bar */
+  --bg-primary:    var(--graphite-900);  /* content canvas */
+  --bg-tertiary:   var(--graphite-850);  /* panels & cards */
+  --bg-quaternary: var(--graphite-800);  /* raised / hover */
+  /* borders */
+  --border-color:  var(--graphite-700);
+  --border-strong: var(--graphite-600);
+  /* text */
+  --text-primary:   var(--graphite-100);
+  --text-secondary: var(--graphite-300);
+  --text-tertiary:  var(--graphite-400);
+  /* the fuse */
+  --accent-color: var(--indigo-500);
+  --accent-hover: var(--indigo-700);
+  --accent-soft:  rgba(110, 92, 255, 0.14);
+  --accent-2:     var(--cyan-400);
+  /* status */
+  --success-color: var(--mint-500);
+  --warning-color: var(--amber-500);
+  --error-color:   var(--coral-500);
+  /* elevation */
+  --shadow: rgba(0, 0, 0, 0.45);
+  /* signature: the seam where modules fuse at runtime */
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  /* shadcn token layer — kept in sync with the surfaces above so
+     shadcn components never fall back to light on the dark shell. */
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card: var(--bg-tertiary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-tertiary);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-color);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg-quaternary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-quaternary);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--bg-quaternary);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--error-color);
+  --border: var(--border-color);
+  --input: var(--border-color);
+  --ring: var(--accent-color);
+}
+
+/* Light theme — cool, instrument-grade white. */
+[data-theme='light'] {
+  --bg-secondary:  var(--paper);
+  --bg-primary:    var(--paper-tint);
+  --bg-tertiary:   var(--paper);
+  --bg-quaternary: var(--paper-muted);
+  --border-color:  var(--line-light);
+  --border-strong: var(--line-strong-light);
+  --text-primary:   var(--ink-900);
+  --text-secondary: var(--ink-600);
+  --text-tertiary:  var(--ink-400);
+  --accent-color: var(--indigo-600);
+  --accent-hover: var(--indigo-800);
+  --accent-soft:  rgba(96, 72, 245, 0.10);
+  --accent-2:     var(--cyan-500);
+  --success-color: var(--mint-600);
+  --warning-color: var(--amber-600);
+  --error-color:   var(--coral-600);
+  --shadow: rgba(15, 23, 42, 0.12);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+  --card: var(--bg-tertiary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-tertiary);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent-color);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg-quaternary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-quaternary);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--bg-quaternary);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--error-color);
+  --border: var(--border-color);
+  --input: var(--border-color);
+  --ring: var(--accent-color);
+}

@@ -84,7 +84,7 @@ function UserMenu({ user }: UserMenuProps) {
           }}
           onClick={() => setIsNotificationOpen(!isNotificationOpen)}
           onMouseEnter={e => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+            e.currentTarget.style.backgroundColor = 'var(--bg-quaternary)'
           }}
           onMouseLeave={e => {
             e.currentTarget.style.backgroundColor = 'transparent'
@@ -184,8 +184,7 @@ function UserMenu({ user }: UserMenuProps) {
           onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
           onMouseEnter={e => {
             e.currentTarget.style.transform = 'scale(1.05)'
-            e.currentTarget.style.boxShadow =
-              '0 4px 12px rgba(100, 108, 255, 0.3)'
+            e.currentTarget.style.boxShadow = '0 4px 12px var(--accent-soft)'
           }}
           onMouseLeave={e => {
             e.currentTarget.style.transform = 'scale(1)'

@@ -120,7 +120,7 @@ function AppSelector() {
           color: 'var(--text-primary)',
         }}
         onMouseEnter={e => {
-          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+          e.currentTarget.style.backgroundColor = 'var(--bg-quaternary)'
         }}
         onMouseLeave={e => {
           e.currentTarget.style.backgroundColor = 'transparent'

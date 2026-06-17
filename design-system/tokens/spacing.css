@@ -1,0 +1,49 @@
+/* ============================================================
+   FuzeFront — Spacing, radii, shadows, layout, motion
+   ============================================================ */
+
+:root {
+  /* ---- Spacing scale (4px base) -------------------------- */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* ---- Radii --------------------------------------------- */
+  --radius: 0.625rem;   /* 10px base */
+  --radius-sm: 0.375rem; /* 6px */
+  --radius-md: 0.5rem;   /* 8px — inputs, buttons, chips */
+  --radius-lg: 0.625rem; /* 10px — cards */
+  --radius-xl: 1rem;     /* 16px — modals, auth card */
+  --radius-pill: 999px;
+
+  /* ---- Borders ------------------------------------------- */
+  --border-width: 1px;
+  --border-width-strong: 2px;
+
+  /* ---- Shadows — deep and soft, tuned for the dark shell -- */
+  --shadow-xs: 0 1px 2px var(--shadow);
+  --shadow-sm: 0 4px 12px -6px var(--shadow);
+  --shadow-md: 0 16px 40px -20px var(--shadow);
+  --shadow-lg: 0 24px 60px -24px var(--shadow);
+  --shadow-accent: 0 6px 18px -8px var(--accent-color); /* glow under a primary button */
+
+  /* ---- Layout -------------------------------------------- */
+  --top-bar-height: 60px;
+  --side-panel-width: 240px;
+  --container-max: 1440px;
+
+  /* ---- Motion -------------------------------------------- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+}

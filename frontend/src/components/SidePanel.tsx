@@ -71,7 +71,6 @@ function SidePanel() {
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/organizations')}
-          style={{ color: 'var(--accent-color)' }}
         >
           <span>🏢</span>
           <span>Organizations</span>
@@ -81,7 +80,6 @@ function SidePanel() {
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/profile')}
-          style={{ color: '#4CAF50' }}
         >
           <span>👤</span>
           <span>Profile</span>
@@ -92,7 +90,6 @@ function SidePanel() {
           <div
             className="menu-item"
             onClick={() => (window.location.href = '/admin')}
-            style={{ color: 'var(--warning-color)' }}
           >
             <span>⚙️</span>
             <span>{t('adminPanel')}</span>
@@ -154,7 +151,6 @@ function SidePanel() {
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/test')}
-          style={{ color: '#ff6b6b' }}
         >
           <span>🧪</span>
           <span>Test Components</span>
@@ -163,7 +159,6 @@ function SidePanel() {
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/help')}
-          style={{ color: '#64b5f6' }}
         >
           <span>❓</span>
           <span>{t('help')}</span>
@@ -172,7 +167,6 @@ function SidePanel() {
         <div
           className="menu-item"
           onClick={() => (window.location.href = '/status')}
-          style={{ color: 'var(--success-color)' }}
         >
           <span>🩺</span>
           <span>{t('status')}</span>

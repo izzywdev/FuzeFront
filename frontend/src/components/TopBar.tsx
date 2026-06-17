@@ -17,17 +17,18 @@ function TopBar() {
 
   return (
     <div className="top-bar">
-      <div className="logo">
+      <div
+        className="logo"
+        style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+      >
         <img
           src={FrontFuseLogo}
-          alt="FrontFuse"
-          style={{
-            height: '32px',
-            width: 'auto',
-            marginRight: '8px',
-          }}
+          alt="FuzeFront"
+          style={{ height: '28px', width: 'auto' }}
         />
-        <h2>{t('frontFuse')}</h2>
+        <span className="brand-mark">
+          <span className="brand-accent">Fuze</span>Front
+        </span>
       </div>
       <div style={{ flex: 1 }}></div> {/* Spacer */}
       <div

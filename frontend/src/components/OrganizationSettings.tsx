@@ -67,9 +67,9 @@ export function OrganizationSettings({
       <div
         style={{
           padding: '1.5rem',
-          border: '1px solid #333',
+          border: '1px solid var(--border-color)',
           borderRadius: '8px',
-          backgroundColor: '#1a1a1a',
+          backgroundColor: 'var(--bg-tertiary)',
         }}
       >
         <div
@@ -88,7 +88,7 @@ export function OrganizationSettings({
                 onClick={() => setIsEditing(true)}
                 style={{
                   padding: '0.5rem 1rem',
-                  backgroundColor: '#646cff',
+                  backgroundColor: 'var(--accent-color)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
@@ -103,9 +103,9 @@ export function OrganizationSettings({
                   onClick={() => setIsEditing(false)}
                   style={{
                     padding: '0.5rem 1rem',
-                    border: '1px solid #333',
+                    border: '1px solid var(--border-color)',
                     backgroundColor: 'transparent',
-                    color: '#888',
+                    color: 'var(--text-tertiary)',
                     borderRadius: '4px',
                     cursor: 'pointer',
                   }}
@@ -117,7 +117,7 @@ export function OrganizationSettings({
                   disabled={loading}
                   style={{
                     padding: '0.5rem 1rem',
-                    backgroundColor: '#4CAF50',
+                    backgroundColor: 'var(--success-color)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
@@ -153,16 +153,16 @@ export function OrganizationSettings({
                   width: '100%',
                   padding: '0.75rem',
                   borderRadius: '4px',
-                  border: '1px solid #333',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                 }}
               />
             ) : (
               <div
                 style={{
                   padding: '0.75rem',
-                  backgroundColor: '#2a2a2a',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
                 }}
               >
@@ -195,9 +195,9 @@ export function OrganizationSettings({
                   width: '100%',
                   padding: '0.75rem',
                   borderRadius: '4px',
-                  border: '1px solid #333',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                   resize: 'vertical',
                 }}
               />
@@ -205,7 +205,7 @@ export function OrganizationSettings({
               <div
                 style={{
                   padding: '0.75rem',
-                  backgroundColor: '#2a2a2a',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
                 }}
               >
@@ -238,9 +238,9 @@ export function OrganizationSettings({
                   width: '100%',
                   padding: '0.75rem',
                   borderRadius: '4px',
-                  border: '1px solid #333',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                 }}
               >
                 <option value="personal">Personal</option>
@@ -251,7 +251,7 @@ export function OrganizationSettings({
               <div
                 style={{
                   padding: '0.75rem',
-                  backgroundColor: '#2a2a2a',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
                 }}
               >
@@ -297,9 +297,11 @@ export function OrganizationSettings({
               <div
                 style={{
                   padding: '0.75rem',
-                  backgroundColor: '#2a2a2a',
+                  backgroundColor: 'var(--bg-quaternary)',
                   borderRadius: '4px',
-                  color: organization.is_active ? '#4CAF50' : '#ff4444',
+                  color: organization.is_active
+                    ? 'var(--success-color)'
+                    : 'var(--error-color)',
                 }}
               >
                 {organization.is_active ? '✅ Active' : '❌ Inactive'}
@@ -313,9 +315,9 @@ export function OrganizationSettings({
       <div
         style={{
           padding: '1.5rem',
-          border: '1px solid #333',
+          border: '1px solid var(--border-color)',
           borderRadius: '8px',
-          backgroundColor: '#1a1a1a',
+          backgroundColor: 'var(--bg-tertiary)',
         }}
       >
         <h3 style={{ marginTop: 0 }}>📊 Organization Information</h3>
@@ -333,7 +335,7 @@ export function OrganizationSettings({
                 display: 'block',
                 marginBottom: '0.5rem',
                 fontWeight: 'bold',
-                color: '#888',
+                color: 'var(--text-tertiary)',
               }}
             >
               Organization ID
@@ -341,7 +343,7 @@ export function OrganizationSettings({
             <div
               style={{
                 padding: '0.75rem',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: 'var(--bg-quaternary)',
                 borderRadius: '4px',
                 fontFamily: 'monospace',
                 fontSize: '0.9rem',
@@ -357,7 +359,7 @@ export function OrganizationSettings({
                 display: 'block',
                 marginBottom: '0.5rem',
                 fontWeight: 'bold',
-                color: '#888',
+                color: 'var(--text-tertiary)',
               }}
             >
               Slug
@@ -365,7 +367,7 @@ export function OrganizationSettings({
             <div
               style={{
                 padding: '0.75rem',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: 'var(--bg-quaternary)',
                 borderRadius: '4px',
               }}
             >
@@ -379,7 +381,7 @@ export function OrganizationSettings({
                 display: 'block',
                 marginBottom: '0.5rem',
                 fontWeight: 'bold',
-                color: '#888',
+                color: 'var(--text-tertiary)',
               }}
             >
               Created
@@ -387,7 +389,7 @@ export function OrganizationSettings({
             <div
               style={{
                 padding: '0.75rem',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: 'var(--bg-quaternary)',
                 borderRadius: '4px',
               }}
             >
@@ -401,7 +403,7 @@ export function OrganizationSettings({
                 display: 'block',
                 marginBottom: '0.5rem',
                 fontWeight: 'bold',
-                color: '#888',
+                color: 'var(--text-tertiary)',
               }}
             >
               Last Updated
@@ -409,7 +411,7 @@ export function OrganizationSettings({
             <div
               style={{
                 padding: '0.75rem',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: 'var(--bg-quaternary)',
                 borderRadius: '4px',
               }}
             >
@@ -424,13 +426,15 @@ export function OrganizationSettings({
         <div
           style={{
             padding: '1.5rem',
-            border: '1px solid #ff4444',
+            border: '1px solid var(--error-color)',
             borderRadius: '8px',
             backgroundColor: 'rgba(255, 68, 68, 0.05)',
           }}
         >
-          <h3 style={{ marginTop: 0, color: '#ff4444' }}>⚠️ Danger Zone</h3>
-          <p style={{ color: '#888', marginBottom: '1rem' }}>
+          <h3 style={{ marginTop: 0, color: 'var(--error-color)' }}>
+            ⚠️ Danger Zone
+          </h3>
+          <p style={{ color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
             Permanently delete this organization and all of its data.
           </p>
 
@@ -438,7 +442,7 @@ export function OrganizationSettings({
             onClick={() => setShowDeleteModal(true)}
             style={{
               padding: '0.75rem 1.5rem',
-              backgroundColor: '#ff4444',
+              backgroundColor: 'var(--error-color)',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -458,7 +462,7 @@ export function OrganizationSettings({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'var(--shadow)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -467,14 +471,14 @@ export function OrganizationSettings({
         >
           <div
             style={{
-              backgroundColor: '#1a1a1a',
+              backgroundColor: 'var(--bg-tertiary)',
               padding: '2rem',
               borderRadius: '8px',
-              border: '1px solid #ff4444',
+              border: '1px solid var(--error-color)',
               minWidth: '400px',
             }}
           >
-            <h3 style={{ marginTop: 0, color: '#ff4444' }}>
+            <h3 style={{ marginTop: 0, color: 'var(--error-color)' }}>
               ⚠️ Confirm Deletion
             </h3>
             <p>
@@ -493,9 +497,9 @@ export function OrganizationSettings({
                 onClick={() => setShowDeleteModal(false)}
                 style={{
                   padding: '0.75rem 1.5rem',
-                  border: '1px solid #333',
+                  border: '1px solid var(--border-color)',
                   backgroundColor: 'transparent',
-                  color: '#888',
+                  color: 'var(--text-tertiary)',
                   borderRadius: '4px',
                   cursor: 'pointer',
                 }}
@@ -507,7 +511,7 @@ export function OrganizationSettings({
                 disabled={loading}
                 style={{
                   padding: '0.75rem 1.5rem',
-                  backgroundColor: '#ff4444',
+                  backgroundColor: 'var(--error-color)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
