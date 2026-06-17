@@ -1,9 +1,13 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
 
-// Use relative URLs since nginx proxies /api/ to backend
-// This works both in development (via nginx proxy) and production
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://fuzefront.dev.local'
+// Default to the same origin the app is served from (the in-pod / ingress nginx
+// proxies /api/ to the backend). Same-origin keeps the protocol correct — http
+// on http, https on https — so there's no mixed-content breakage under TLS.
+// VITE_API_URL still overrides for cross-origin setups.
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001')
 const API_URL = `${API_BASE_URL}/api`
 
 console.log('🔧 API Configuration:', {
