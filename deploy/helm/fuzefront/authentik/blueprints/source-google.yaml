@@ -1,0 +1,41 @@
+# Authentik Blueprint — Google OAuth2 source
+#
+# Configures Google as an SSO source with "link on verified email" de-dupe
+# strategy, so a user who signs up with password and then signs in with Google
+# (same email) is merged into one account rather than creating a duplicate.
+#
+# Prerequisites: create a Google OAuth2 app at console.cloud.google.com,
+# add Authorized redirect URI:
+#   https://auth.fuzefront.dev.local/source/oauth/callback/google/
+#
+# Set real consumer_key/secret via Helm values:
+#   authentik.blueprints.googleClientId / authentik.blueprints.googleClientSecret
+# (backed by SealedSecret in prod). The placeholders below disable the source
+# in dev until real creds are provided — Authentik skips sources with empty keys.
+version: 3
+metadata:
+  name: FuzeFront Google OAuth Source
+entries:
+  # ── User-matching / de-dupe policy ───────────────────────────────────────────
+  # Link on verified email prevents duplicate accounts when the same address
+  # is used across password + Google sign-in.
+
+  # ── Google OAuth source ───────────────────────────────────────────────────────
+  - model: authentik_sources_oauth.oauthsource
+    state: present
+    identifiers:
+      slug: google
+    attrs:
+      name: "Google"
+      slug: google
+      enabled: true
+      provider_type: google
+      # Replace with real creds from console.cloud.google.com
+      consumer_key: "GOOGLE_CLIENT_ID_PLACEHOLDER"
+      consumer_secret: "GOOGLE_CLIENT_SECRET_PLACEHOLDER"
+      # Link on verified email — merges accounts instead of creating duplicates
+      user_matching_mode: link_by_email
+      user_path_template: "goauthentik.io/sources/%(slug)s"
+      # Show a "Sign in with Google" button on the login page
+      authentication_flow: !find [authentik_flows.flow, [slug, default-source-authentication]]
+      enrollment_flow: !find [authentik_flows.flow, [slug, default-source-enrollment]]

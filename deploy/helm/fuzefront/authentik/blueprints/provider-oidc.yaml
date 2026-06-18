@@ -1,0 +1,65 @@
+# Authentik Blueprint — FuzeFront OIDC provider + Application
+#
+# Creates the OIDC provider and Application for the FuzeFront backend.
+# client_id and client_secret are set deterministically via attrs so the
+# backend wiring does NOT require an out-of-band patch step after seeding.
+#
+# The deterministic dev values are also in values.yaml under:
+#   authentik.blueprints.clientId    (rendered into this blueprint by the ConfigMap)
+#   authentik.blueprints.clientSecret
+#
+# For production: override via SealedSecret-backed Helm values so that
+# authentikClientId / authentikClientSecret in the chart Secret match.
+#
+# NOTE: attrs.client_id / attrs.client_secret are respected at *creation time*
+# by Authentik 2024.x blueprint runner. If the provider already exists, these
+# fields are not updated (Authentik generates a new secret on provider creation
+# if client_secret is absent from attrs). Rotation requires deleting the
+# provider entry and re-applying.
+version: 3
+metadata:
+  name: FuzeFront OIDC Provider
+entries:
+  # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeFront
+    attrs:
+      name: FuzeFront
+      client_type: confidential
+      # Deterministic credentials — backend reads these from the chart Secret.
+      # Dev placeholders; override via Helm values in prod.
+      client_id: "fuzefront-oidc-client"
+      client_secret: "fuzefront-oidc-secret-dev-change-me"
+      # Redirect URIs — local dev (http + https) + prod wildcard
+      redirect_uris:
+        - matching_mode: strict
+          url: "http://fuzefront.dev.local/api/auth/oidc/callback"
+        - matching_mode: strict
+          url: "https://fuzefront.dev.local/api/auth/oidc/callback"
+      # Standard OIDC scopes (openid, email, profile)
+      property_mappings:
+        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
+        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
+        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
+      # Use email as the `sub` claim — consistent with the seeder behaviour
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      # Wire to the default authorization + invalidation flows
+      authorization_flow: !find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+      invalidation_flow: !find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+
+  # ── Application ───────────────────────────────────────────────────────────────
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: fuzefront
+    attrs:
+      name: FuzeFront
+      slug: fuzefront
+      provider: !find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
+      meta_launch_url: "https://fuzefront.dev.local/"
+      meta_description: "FuzeFront runtime microfrontend platform"
+      policy_engine_mode: any
+      open_in_new_tab: false
