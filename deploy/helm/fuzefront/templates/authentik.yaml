@@ -1,0 +1,191 @@
+{{- /*
+  Authentik IdP (server + worker) running in-cluster, backed by the shared
+  FuzeInfra Postgres ("authentik" DB) and Redis. The bootstrap credentials are
+  set on BOTH the worker (which runs migrations + the bootstrap blueprint that
+  creates akadmin) and the server — without them on the worker, akadmin is
+  created with no usable password and you get stuck on the initial-setup flow.
+*/}}
+{{- define "authentik.commonEnv" -}}
+- name: AUTHENTIK_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: AUTHENTIK_SECRET_KEY
+- name: AUTHENTIK_POSTGRESQL__HOST
+  value: {{ .Values.fuzeinfra.postgres.host | quote }}
+- name: AUTHENTIK_POSTGRESQL__PORT
+  value: {{ .Values.fuzeinfra.postgres.port | quote }}
+- name: AUTHENTIK_POSTGRESQL__USER
+  value: {{ .Values.database.user | quote }}
+- name: AUTHENTIK_POSTGRESQL__NAME
+  value: {{ .Values.authentik.dbName | quote }}
+- name: AUTHENTIK_POSTGRESQL__PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: DB_PASSWORD
+- name: AUTHENTIK_REDIS__HOST
+  value: {{ .Values.fuzeinfra.redis.host | quote }}
+- name: AUTHENTIK_REDIS__PORT
+  value: {{ .Values.fuzeinfra.redis.port | quote }}
+- name: AUTHENTIK_LOG_LEVEL
+  value: "info"
+- name: AUTHENTIK_DISABLE_UPDATE_CHECK
+  value: "true"
+- name: AUTHENTIK_ERROR_REPORTING__ENABLED
+  value: "false"
+- name: AUTHENTIK_COOKIE_DOMAIN
+  value: {{ .Values.authentik.cookieDomain | quote }}
+# Bootstrap the akadmin user with a known password/token so the initial-setup
+# flow is skipped. MUST be present on the worker (runs the bootstrap).
+- name: AUTHENTIK_BOOTSTRAP_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: AUTHENTIK_BOOTSTRAP_PASSWORD
+- name: AUTHENTIK_BOOTSTRAP_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: AUTHENTIK_BOOTSTRAP_TOKEN
+- name: AUTHENTIK_BOOTSTRAP_EMAIL
+  value: {{ .Values.authentik.bootstrapEmail | quote }}
+{{- end -}}
+{{- if .Values.authentik.enabled }}
+{{- $ak := .Values.authentik }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-server
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-server
+  template:
+    metadata:
+      labels:
+        {{- include "fuzefront.labels" . | nindent 8 }}
+        app: authentik-server
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: "{{ $ak.image.repository }}:{{ $ak.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["server"]
+          env:
+            {{- include "authentik.commonEnv" . | nindent 12 }}
+          ports:
+            - containerPort: 9000
+          startupProbe:
+            httpGet: { path: /-/health/live/, port: 9000 }
+            periodSeconds: 5
+            failureThreshold: 60 # up to ~5min for first-boot migrations
+          livenessProbe:
+            httpGet: { path: /-/health/live/, port: 9000 }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /-/health/ready/, port: 9000 }
+            periodSeconds: 15
+          volumeMounts:
+            - { name: media, mountPath: /media }
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits:   { cpu: "1",  memory: 768Mi }
+      volumes:
+        - name: media
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-worker
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-worker
+  template:
+    metadata:
+      labels:
+        {{- include "fuzefront.labels" . | nindent 8 }}
+        app: authentik-worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ $ak.image.repository }}:{{ $ak.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["worker"]
+          env:
+            {{- include "authentik.commonEnv" . | nindent 12 }}
+          volumeMounts:
+            - { name: media, mountPath: /media }
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits:   { cpu: "1",  memory: 768Mi }
+      volumes:
+        - name: media
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-server
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik-server
+spec:
+  selector:
+    app: authentik-server
+  ports:
+    - port: 9000
+      targetPort: 9000
+---
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $ak.host | quote }}
+      secretName: {{ printf "%s-tls" $ak.host }}
+  {{- end }}
+  rules:
+    - host: {{ $ak.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 9000
+{{- end }}
+{{- end }}
