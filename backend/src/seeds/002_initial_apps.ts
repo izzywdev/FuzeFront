@@ -33,7 +33,7 @@ export async function seed(knex: Knex): Promise<void> {
       updated_at: new Date(),
     },
     {
-      id: 'b2c3d4e5-f6g7-8901-2345-678901bcdefg',
+      id: 'b2c3d4e5-f6a7-8901-2345-678901bcdef0',
       name: 'Dashboard',
       url: 'http://localhost:5173',
       icon_url: '/icons/dashboard.svg',
@@ -56,7 +56,7 @@ export async function seed(knex: Knex): Promise<void> {
       updated_at: new Date(),
     },
     {
-      id: 'c3d4e5f6-g7h8-9012-3456-789012cdefgh',
+      id: 'c3d4e5f6-a7b8-9012-3456-789012cdef01',
       name: 'Demo External App',
       url: 'https://www.example.com',
       icon_url: '/icons/external.svg',
