@@ -82,7 +82,11 @@ spec:
                   name: {{ include "fuzefront.secretName" . }}
                   key: PERMIT_API_KEY
             - name: PERMIT_PDP_URL
+              {{- if .Values.permit.enabled }}
+              value: "http://fuzefront-permit-pdp:7000"
+              {{- else }}
               value: "http://localhost:7766"
+              {{- end }}
             - name: PERMIT_DEBUG
               value: "false"
             {{- if .Values.authentik.oidc.enabled }}
