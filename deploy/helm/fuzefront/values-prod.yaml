@@ -17,6 +17,9 @@ frontend:
     tag: 46c4407a708c
   replicas: 2
 
+permit:
+  enabled: true
+
 # Private GHCR pull secret (sealed; see deploy/contabo/README.md).
 imagePullSecrets:
   - name: ghcr-pull

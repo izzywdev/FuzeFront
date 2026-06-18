@@ -69,6 +69,21 @@ backend:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
 
+# Permit.io authorization. Disabled by default (minimal cut). When enabled, the
+# chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
+# read from the existing chart Secret. Local enablement needs a REAL key — the
+# PDP's offline mode is unreliable (see docs/troubleshooting/PERMIT_PDP_TROUBLESHOOTING.md).
+permit:
+  enabled: false
+  pdp:
+    image:
+      repository: permitio/pdp-v2
+      # Pin to a concrete tag (Step: verify before commit). Do NOT use :latest.
+      tag: "0.8.1"
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+
 frontend:
   image:
     repository: fuzefront/frontend
