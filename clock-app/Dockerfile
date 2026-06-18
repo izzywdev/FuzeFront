@@ -6,9 +6,10 @@ COPY package*.json ./
 RUN rm -f package-lock.json && npm install
 COPY . .
 
-# Build-time configuration (no host code, just URLs):
-ARG VITE_HUB_API_URL=http://fuzefront.dev.local
-ARG VITE_PUBLIC_URL=http://clock.dev.local
+# Build-time configuration (no host code, just URLs). HTTPS by default so the
+# federated remote loads from the https host without a mixed-content block.
+ARG VITE_HUB_API_URL=https://fuzefront.dev.local
+ARG VITE_PUBLIC_URL=https://clock.dev.local
 ENV VITE_HUB_API_URL=$VITE_HUB_API_URL
 ENV VITE_PUBLIC_URL=$VITE_PUBLIC_URL
 RUN npm run build
