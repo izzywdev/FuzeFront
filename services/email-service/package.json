@@ -1,0 +1,30 @@
+{
+  "name": "@fuzefront/email-service",
+  "version": "1.0.0",
+  "description": "Kafka consumer that sends transactional emails for FuzeFront",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@fuzefront/shared": "1.0.0",
+    "@sendgrid/mail": "8.1.3",
+    "express": "4.19.2",
+    "kafkajs": "2.2.4",
+    "nodemailer": "6.9.14",
+    "zod": "3.22.4"
+  },
+  "devDependencies": {
+    "@types/express": "4.17.21",
+    "@types/node": "18.19.0",
+    "@types/nodemailer": "6.4.14",
+    "jest": "29.7.0",
+    "nodemon": "3.0.1",
+    "ts-jest": "29.1.1",
+    "ts-node": "10.9.2",
+    "typescript": "5.1.6"
+  }
+}
