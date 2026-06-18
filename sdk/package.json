@@ -38,7 +38,7 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,tsx}",
     "lint:fix": "eslint src/**/*.{ts,tsx} --fix",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests src",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
     "clean": "rimraf dist",
