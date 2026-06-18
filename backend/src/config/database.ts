@@ -187,10 +187,21 @@ export async function ensureDatabase(): Promise<void> {
       console.log(
         `📦 Creating database "${process.env.DB_NAME || 'fuzefront_platform'}"...`
       )
-      await client.query(
-        `CREATE DATABASE "${process.env.DB_NAME || 'fuzefront_platform'}"`
-      )
-      console.log('✅ Database created successfully!')
+      try {
+        await client.query(
+          `CREATE DATABASE "${process.env.DB_NAME || 'fuzefront_platform'}"`
+        )
+        console.log('✅ Database created successfully!')
+      } catch (createError: any) {
+        // Concurrent creators (e.g. parallel test workers) race between the
+        // existence check above and CREATE. Treat "already exists" as success.
+        // 42P04 = duplicate_database; 23505 = unique_violation on pg_database.
+        if (createError?.code === '42P04' || createError?.code === '23505') {
+          console.log('✅ Database already exists (created concurrently)')
+        } else {
+          throw createError
+        }
+      }
     } else {
       console.log('✅ Database already exists')
     }
