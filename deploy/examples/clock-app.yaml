@@ -56,8 +56,16 @@ kind: Ingress
 metadata:
   name: clock-app
   namespace: fuzefront
+  annotations:
+    # Trusted local TLS so the federated remote loads over https without a
+    # mixed-content block (FuzeFront is served over https).
+    cert-manager.io/cluster-issuer: fuzefront-local-ca
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - clock.dev.local
+      secretName: clock-dev-local-tls
   rules:
     - host: clock.dev.local
       http:

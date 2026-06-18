@@ -99,6 +99,14 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
 
     const loadFederatedApp = async () => {
       if (!app) {
+        // The app list may not be fetched yet (deep-link / page refresh). Don't
+        // flash a "not found" failure before it loads — stay on the spinner and
+        // let this effect re-run once apps arrive. Only error once the list is
+        // loaded and the app genuinely isn't there.
+        if (state.isLoading || state.apps.length === 0) {
+          setLoading(true)
+          return
+        }
         setError(`App with ID "${appId}" not found`)
         setLoading(false)
         return
@@ -289,7 +297,9 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
     return () => {
       mounted = false
     }
-  }, [appId, app, retryKey])
+    // Re-run when the app resolves or the app-list finishes loading, so a
+    // deep-link doesn't get stuck on the spinner or flash a premature error.
+  }, [appId, app, retryKey, state.isLoading, state.apps.length])
 
   const handleRetry = () => {
     // Clear module cache and retry
