@@ -21,6 +21,20 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.backendHostAliasIP }}
+      # Dev split-DNS: let the backend resolve the external Authentik host (used
+      # as the OIDC issuer by both browser and backend) to the ingress IP.
+      hostAliases:
+        - ip: {{ .Values.authentik.oidc.backendHostAliasIP | quote }}
+          hostnames:
+            - {{ .Values.authentik.host | quote }}
+      {{- end }}
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
+      volumes:
+        - name: fuzefront-ca
+          configMap:
+            name: {{ .Values.authentik.oidc.caConfigMap | quote }}
+      {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -59,7 +73,7 @@ spec:
                   name: {{ include "fuzefront.secretName" . }}
                   key: SESSION_SECRET
             - name: FRONTEND_URL
-              value: "http://{{ .Values.ingress.host }}"
+              value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}"
             # Permit.io deferred in the minimal cut; placeholder lets the backend
             # boot (SDK uses throwOnError:false). PDP is intentionally absent.
             - name: PERMIT_API_KEY
@@ -71,6 +85,28 @@ spec:
               value: "http://localhost:7766"
             - name: PERMIT_DEBUG
               value: "false"
+            {{- if .Values.authentik.oidc.enabled }}
+            # Authentik OIDC (SSO). client_id/secret come from the Secret (seeded
+            # by scripts/seed-authentik-fuzefront.py); issuer/redirect from values.
+            - name: AUTHENTIK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_ID
+            - name: AUTHENTIK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_SECRET
+            - name: AUTHENTIK_ISSUER_URL
+              value: {{ .Values.authentik.oidc.issuerUrl | quote }}
+            - name: AUTHENTIK_REDIRECT_URI
+              value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            {{- if .Values.authentik.oidc.caConfigMap }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/fuzefront-ca/ca.crt
+            {{- end }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
@@ -87,6 +123,12 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
+          volumeMounts:
+            - name: fuzefront-ca
+              mountPath: /etc/fuzefront-ca
+              readOnly: true
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service
