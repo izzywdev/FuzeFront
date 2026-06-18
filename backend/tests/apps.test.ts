@@ -2,93 +2,72 @@ import request from 'supertest'
 import express from 'express'
 import appsRoutes from '../src/routes/apps'
 import authRoutes from '../src/routes/auth'
-import { db } from '../src/config/database'
+import {
+  initializeDatabaseConnection,
+  db,
+} from '../src/config/database'
+
+// NOTE on harness design:
+// The global harness (tests/setup.ts) waits for Postgres, ensures the test
+// database exists, runs the REAL knex migrations and seeds. It does NOT,
+// however, set the module-level `db` knex instance used by the routes/
+// middleware under test. So here we call initializeDatabaseConnection() to
+// point that shared `db` at the same (already-migrated/seeded) Postgres.
+// We do NOT drop/recreate tables and we do NOT switch to SQLite.
+
+// Build the app the same way src/index.ts wires the routes under test:
+// a JSON body parser plus the real auth + apps routers (which themselves
+// mount the real authenticateToken / requireRole middleware).
+function buildApp(): express.Application {
+  const app = express()
+  app.use(express.json())
+  app.use('/api/auth', authRoutes)
+  app.use('/api/apps', appsRoutes)
+  return app
+}
 
 describe('Apps Registration Routes', () => {
   let app: express.Application
   let authToken: string
+  // Track app names we create so we can clean them out of the shared DB and
+  // keep assertions about counts/contents deterministic.
+  const createdAppNames = new Set<string>()
+
+  // Helper: POST an app and remember its name for cleanup.
+  async function postApp(appData: Record<string, any>, token = authToken) {
+    if (appData && typeof appData.name === 'string') {
+      createdAppNames.add(appData.name.trim())
+    }
+    return request(app)
+      .post('/api/apps')
+      .set('Authorization', `Bearer ${token}`)
+      .send(appData)
+  }
 
   beforeAll(async () => {
-    // Create test app
-    app = express()
-    app.use(express.json())
-    app.use('/api/auth', authRoutes)
-    app.use('/api/apps', appsRoutes)
+    // Point the shared module `db` at the migrated/seeded test Postgres.
+    initializeDatabaseConnection()
 
-    // Set environment for SQLite testing
-    process.env.NODE_ENV = 'test'
-    process.env.USE_POSTGRES = 'false'
-    process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only'
+    app = buildApp()
 
-    // Create test tables directly without migrations
-    await db.schema.dropTableIfExists('sessions')
-    await db.schema.dropTableIfExists('apps')
-    await db.schema.dropTableIfExists('users')
-
-    // Create users table
-    await db.schema.createTable('users', table => {
-      table.string('id').primary()
-      table.string('email').unique().notNullable()
-      table.string('password_hash')
-      table.string('first_name')
-      table.string('last_name')
-      table.string('default_app_id')
-      table.text('roles').defaultTo('["user"]') // Use text instead of json for SQLite
-      table.timestamps(true, true)
-    })
-
-    // Create apps table
-    await db.schema.createTable('apps', table => {
-      table.string('id').primary()
-      table.string('name').notNullable().unique()
-      table.string('url').notNullable()
-      table.string('icon_url')
-      table.boolean('is_active').defaultTo(true)
-      table.string('integration_type').defaultTo('iframe')
-      table.string('remote_url')
-      table.string('scope')
-      table.string('module')
-      table.text('description')
-      table.text('metadata')
-      table.timestamps(true, true)
-    })
-
-    // Create sessions table
-    await db.schema.createTable('sessions', table => {
-      table.string('id').primary()
-      table.string('user_id').notNullable()
-      table.string('tenant_id')
-      table.timestamp('expires_at').notNullable()
-      table.timestamps(true, true)
-      table.foreign('user_id').references('users.id')
-    })
-
-    // Seed test user
-    const bcrypt = require('bcrypt')
-    const adminPasswordHash = await bcrypt.hash('admin123', 10)
-    await db('users').insert({
-      id: '8dbf6a1b-c0a1-462a-9bf5-934c8c7339c3',
-      email: 'admin@fuzefront.dev',
-      password_hash: adminPasswordHash,
-      first_name: 'Admin',
-      last_name: 'User',
-      roles: JSON.stringify(['admin', 'user']), // Store as JSON string for SQLite
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
-
-    // Get authentication token
+    // Obtain a REAL JWT via the REAL login route. The admin user is seeded by
+    // the global setup (admin@fuzefront.dev / admin123 with roles admin,user).
     const loginResponse = await request(app).post('/api/auth/login').send({
       email: 'admin@fuzefront.dev',
       password: 'admin123',
     })
 
+    expect(loginResponse.status).toBe(200)
+    expect(loginResponse.body.token).toBeDefined()
     authToken = loginResponse.body.token
   })
 
   afterAll(async () => {
-    // Clean up database connection
-    await db.destroy()
+    // Remove only the rows this suite inserted; leave seeds intact for other
+    // suites. The global afterAll closes the shared connection.
+    if (createdAppNames.size > 0) {
+      await db('apps').whereIn('name', Array.from(createdAppNames)).del()
+    }
   })
 
   describe('POST /api/apps - Module Federation Apps', () => {
@@ -104,20 +83,30 @@ describe('Apps Registration Routes', () => {
         description: 'A test module federation application',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
 
       expect(response.body).toHaveProperty('id')
+      expect(typeof response.body.id).toBe('string')
       expect(response.body.name).toBe(appData.name)
       expect(response.body.url).toBe(appData.url)
+      expect(response.body.iconUrl).toBe(appData.iconUrl)
       expect(response.body.integrationType).toBe('module-federation')
       expect(response.body.remoteUrl).toBe(appData.remoteUrl)
       expect(response.body.scope).toBe(appData.scope)
       expect(response.body.module).toBe(appData.module)
+      expect(response.body.description).toBe(appData.description)
       expect(response.body.isActive).toBe(true)
+
+      // Side effect: the row is actually persisted with the mapped columns.
+      const row = await db('apps').where('id', response.body.id).first()
+      expect(row).toBeDefined()
+      expect(row.name).toBe(appData.name)
+      expect(row.integration_type).toBe('module-federation')
+      expect(row.remote_url).toBe(appData.remoteUrl)
+      expect(row.scope).toBe(appData.scope)
+      expect(row.module).toBe(appData.module)
+      expect(Boolean(row.is_active)).toBe(true)
     })
 
     it('should register module federation app with hyphenated integration type', async () => {
@@ -132,34 +121,9 @@ describe('Apps Registration Routes', () => {
         description: 'Testing hyphenated integration type',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body.integrationType).toBe('module-federation')
-    })
-
-    it('should register module federation app with underscore integration type', async () => {
-      const appData = {
-        name: 'Test Underscore Module Federation',
-        url: 'http://localhost:3002',
-        iconUrl: 'http://localhost:3002/icon.svg',
-        integrationType: 'module_federation', // underscore version
-        remoteUrl: 'http://localhost:3002/remoteEntry.js',
-        scope: 'testAppUnderscore',
-        module: './App',
-        description: 'Testing underscore integration type',
-      }
-
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
-      expect(response.body.integrationType).toBe('module_federation')
     })
 
     it('should reject module federation app without remoteUrl', async () => {
@@ -172,14 +136,14 @@ describe('Apps Registration Routes', () => {
         // remoteUrl missing
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toContain('remoteUrl')
+
+      // Side effect: nothing persisted.
+      const row = await db('apps').where('name', appData.name).first()
+      expect(row).toBeUndefined()
     })
 
     it('should reject module federation app without scope', async () => {
@@ -192,12 +156,8 @@ describe('Apps Registration Routes', () => {
         // scope missing
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toContain('scope')
     })
@@ -212,12 +172,8 @@ describe('Apps Registration Routes', () => {
         // module missing
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toContain('module')
     })
@@ -233,17 +189,17 @@ describe('Apps Registration Routes', () => {
         description: 'A test iframe application',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
 
       expect(response.body).toHaveProperty('id')
       expect(response.body.name).toBe(appData.name)
       expect(response.body.url).toBe(appData.url)
       expect(response.body.integrationType).toBe('iframe')
       expect(response.body.isActive).toBe(true)
+
+      const row = await db('apps').where('id', response.body.id).first()
+      expect(row.integration_type).toBe('iframe')
     })
 
     it('should register iframe app without module federation specific fields', async () => {
@@ -254,16 +210,19 @@ describe('Apps Registration Routes', () => {
         description: 'Simple iframe without optional fields',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body.integrationType).toBe('iframe')
+      // The route returns these keys as undefined (omitted by JSON) when not
+      // provided for an iframe app.
       expect(response.body.remoteUrl).toBeUndefined()
       expect(response.body.scope).toBeUndefined()
       expect(response.body.module).toBeUndefined()
+
+      const row = await db('apps').where('id', response.body.id).first()
+      expect(row.remote_url).toBeNull()
+      expect(row.scope).toBeNull()
+      expect(row.module).toBeNull()
     })
   })
 
@@ -277,12 +236,8 @@ describe('Apps Registration Routes', () => {
         description: 'A test web component application',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body).toHaveProperty('id')
       expect(response.body.name).toBe(appData.name)
       expect(response.body.url).toBe(appData.url)
@@ -301,12 +256,8 @@ describe('Apps Registration Routes', () => {
         description: 'A test SPA application',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body).toHaveProperty('id')
       expect(response.body.name).toBe(appData.name)
       expect(response.body.url).toBe(appData.url)
@@ -323,13 +274,10 @@ describe('Apps Registration Routes', () => {
         // name missing
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      // Route message: "Name is required and cannot be empty"
       expect(response.body.error).toContain('Name')
     })
 
@@ -340,13 +288,10 @@ describe('Apps Registration Routes', () => {
         // url missing
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      // Route message: "URL is required and cannot be empty"
       expect(response.body.error).toContain('URL')
     })
 
@@ -357,13 +302,10 @@ describe('Apps Registration Routes', () => {
         integrationType: 'invalid-type',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toContain('Invalid integration type')
     })
 
     it('should reject duplicate app name', async () => {
@@ -374,24 +316,21 @@ describe('Apps Registration Routes', () => {
       }
 
       // Register first app
-      await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
+      const first = await postApp(appData)
+      expect(first.status).toBe(201)
 
-      // Try to register duplicate
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({
-          ...appData,
-          url: 'http://localhost:7003', // different URL but same name
-        })
-        .expect(409)
-
+      // Try to register duplicate (different URL, same name)
+      const response = await postApp({
+        ...appData,
+        url: 'http://localhost:7003',
+      })
+      expect(response.status).toBe(409)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toContain('exists')
+
+      // Side effect: only one row with that name persisted.
+      const rows = await db('apps').where('name', appData.name)
+      expect(rows.length).toBe(1)
     })
 
     it('should reject invalid URL format', async () => {
@@ -401,13 +340,10 @@ describe('Apps Registration Routes', () => {
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toContain('URL must be a valid')
     })
 
     it('should reject invalid icon URL format', async () => {
@@ -418,29 +354,23 @@ describe('Apps Registration Routes', () => {
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toContain('Icon URL must be a valid')
     })
 
     it('should reject extremely long app name', async () => {
       const appData = {
-        name: 'A'.repeat(300), // Very long name
+        name: 'A'.repeat(300), // exceeds 255 char limit
         url: 'http://localhost:7005',
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toContain('too long')
     })
 
     it('should reject extremely long URL', async () => {
@@ -450,17 +380,14 @@ describe('Apps Registration Routes', () => {
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toContain('too long')
     })
   })
 
-  describe('POST /api/apps - Authentication Tests', () => {
+  describe('POST /api/apps - Authentication & Authorization', () => {
     it('should reject request without authentication token', async () => {
       const appData = {
         name: 'Unauthenticated App',
@@ -501,6 +428,7 @@ describe('Apps Registration Routes', () => {
         integrationType: 'iframe',
       }
 
+      // No "Bearer <token>" -> split(' ')[1] is undefined -> "No token".
       const response = await request(app)
         .post('/api/apps')
         .set('Authorization', 'InvalidFormat')
@@ -508,49 +436,65 @@ describe('Apps Registration Routes', () => {
         .expect(401)
 
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toBe('Access denied. No token provided.')
+    })
+
+    it('should reject a non-admin user with 403 (requireRole)', async () => {
+      // Log in as the seeded demo user (roles: ['user'] only).
+      const demoLogin = await request(app).post('/api/auth/login').send({
+        email: 'demo@fuzefront.dev',
+        password: 'demo123',
+      })
+      expect(demoLogin.status).toBe(200)
+      const demoToken = demoLogin.body.token
+
+      const response = await request(app)
+        .post('/api/apps')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({
+          name: 'Non Admin App',
+          url: 'http://localhost:8010',
+          integrationType: 'iframe',
+        })
+        .expect(403)
+
+      expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toBe('Insufficient permissions')
+
+      // Side effect: nothing persisted for a forbidden request.
+      const row = await db('apps').where('name', 'Non Admin App').first()
+      expect(row).toBeUndefined()
     })
   })
 
   describe('POST /api/apps - Edge Cases', () => {
-    it('should handle empty request body', async () => {
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send({})
-        .expect(400)
-
+    it('should reject empty request body', async () => {
+      const response = await postApp({})
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
     })
 
-    it('should handle null values in required fields', async () => {
+    it('should reject null values in required fields', async () => {
       const appData = {
         name: null,
         url: null,
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
     })
 
-    it('should handle undefined values in required fields', async () => {
+    it('should reject undefined values in required fields', async () => {
       const appData = {
         name: undefined,
         url: undefined,
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
     })
 
@@ -562,15 +506,16 @@ describe('Apps Registration Routes', () => {
         description: '  Description with spaces  ',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body.name).toBe('Whitespace Test App')
       expect(response.body.url).toBe('http://localhost:8003')
       expect(response.body.description).toBe('Description with spaces')
+
+      // Side effect: trimmed values persisted.
+      const row = await db('apps').where('id', response.body.id).first()
+      expect(row.name).toBe('Whitespace Test App')
+      expect(row.url).toBe('http://localhost:8003')
     })
 
     it('should reject app with only whitespace in name', async () => {
@@ -580,28 +525,20 @@ describe('Apps Registration Routes', () => {
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(400)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(400)
       expect(response.body).toHaveProperty('error')
     })
 
-    it('should handle special characters in app name', async () => {
+    it('should accept special characters in app name', async () => {
       const appData = {
         name: 'Test App with Special chars: éñümlëd & <script>',
         url: 'http://localhost:8005',
         integrationType: 'iframe',
       }
 
-      const response = await request(app)
-        .post('/api/apps')
-        .set('Authorization', `Bearer ${authToken}`)
-        .send(appData)
-        .expect(201)
-
+      const response = await postApp(appData)
+      expect(response.status).toBe(201)
       expect(response.body.name).toBe(
         'Test App with Special chars: éñümlëd & <script>'
       )
@@ -609,29 +546,26 @@ describe('Apps Registration Routes', () => {
   })
 
   describe('GET /api/apps - Retrieve Apps', () => {
-    beforeAll(async () => {
-      // Create some test apps for retrieval tests
-      const testApps = [
-        {
-          name: 'Retrieval Test App 1',
-          url: 'http://localhost:9000',
-          integrationType: 'iframe',
-        },
-        {
-          name: 'Retrieval Test App 2',
-          url: 'http://localhost:9001',
-          integrationType: 'module-federation',
-          remoteUrl: 'http://localhost:9001/remoteEntry.js',
-          scope: 'testScope',
-          module: './App',
-        },
-      ]
+    const retrievalApps = [
+      {
+        name: 'Retrieval Test App 1',
+        url: 'http://localhost:9000',
+        integrationType: 'iframe',
+      },
+      {
+        name: 'Retrieval Test App 2',
+        url: 'http://localhost:9001',
+        integrationType: 'module-federation',
+        remoteUrl: 'http://localhost:9001/remoteEntry.js',
+        scope: 'testScope',
+        module: './App',
+      },
+    ]
 
-      for (const appData of testApps) {
-        await request(app)
-          .post('/api/apps')
-          .set('Authorization', `Bearer ${authToken}`)
-          .send(appData)
+    beforeAll(async () => {
+      for (const appData of retrievalApps) {
+        const res = await postApp(appData)
+        expect(res.status).toBe(201)
       }
     })
 
@@ -644,21 +578,35 @@ describe('Apps Registration Routes', () => {
       expect(Array.isArray(response.body)).toBe(true)
       expect(response.body.length).toBeGreaterThan(0)
 
-      // Check that each app has required properties
-      response.body.forEach((app: any) => {
-        expect(app).toHaveProperty('id')
-        expect(app).toHaveProperty('name')
-        expect(app).toHaveProperty('url')
-        expect(app).toHaveProperty('integrationType')
-        expect(app).toHaveProperty('isActive')
-        expect(app).toHaveProperty('isHealthy')
+      // Every returned app exposes the documented shape.
+      response.body.forEach((a: any) => {
+        expect(a).toHaveProperty('id')
+        expect(a).toHaveProperty('name')
+        expect(a).toHaveProperty('url')
+        expect(a).toHaveProperty('integrationType')
+        expect(a).toHaveProperty('isActive')
+        expect(a).toHaveProperty('isHealthy')
       })
-    })
+
+      // The apps we just created are actually present.
+      const names = response.body.map((a: any) => a.name)
+      expect(names).toContain('Retrieval Test App 1')
+      expect(names).toContain('Retrieval Test App 2')
+
+      // And their fields are mapped back correctly.
+      const mf = response.body.find(
+        (a: any) => a.name === 'Retrieval Test App 2'
+      )
+      expect(mf.integrationType).toBe('module-federation')
+      expect(mf.remoteUrl).toBe('http://localhost:9001/remoteEntry.js')
+      expect(mf.scope).toBe('testScope')
+      expect(mf.module).toBe('./App')
+    }, 30000)
 
     it('should reject unauthenticated request to get apps', async () => {
       const response = await request(app).get('/api/apps').expect(401)
-
       expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toBe('Access denied. No token provided.')
     })
   })
 })

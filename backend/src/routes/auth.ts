@@ -143,19 +143,22 @@ router.post('/login', async (req, res) => {
 
     console.log(`✅ [${requestId}] Password verified, generating token...`)
 
+    // Create the session id first so it can be embedded in the token; this lets
+    // logout invalidate only THIS session rather than all of the user's sessions.
+    const sessionId = uuidv4()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
     // Generate JWT
-    const token = jwt.sign({ userId: userRow.id }, process.env.JWT_SECRET!, {
-      expiresIn: '24h',
-    })
+    const token = jwt.sign(
+      { userId: userRow.id, sessionId },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
 
     console.log(`🎫 [${requestId}] JWT token generated:`, {
       tokenLength: token.length,
       tokenPreview: token.substring(0, 20) + '...',
     })
-
-    // Create session
-    const sessionId = uuidv4()
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     console.log(`💾 [${requestId}] Creating session:`, {
       sessionId,
@@ -291,10 +294,12 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
         userId: string
+        sessionId?: string
       }
-      // In a real app, you'd add this token to a blacklist
-      // For now, we'll just remove the session
-      await db('sessions').where('user_id', decoded.userId).del()
+      // Invalidate only the current session, not every session the user has.
+      if (decoded.sessionId) {
+        await db('sessions').where('id', decoded.sessionId).del()
+      }
     }
 
     res.json({ message: 'Logged out successfully' })

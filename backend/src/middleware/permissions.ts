@@ -199,7 +199,9 @@ export function requireAppPermission(
       const organizationId =
         req.params.organizationId || req.user.organizationId
 
-      if (!appId) {
+      // 'create' has no app yet, so an appId is legitimately absent there.
+      // Every other action operates on an existing app and requires one.
+      if (!appId && action !== 'create') {
         return res.status(400).json({
           error: 'App ID required',
           code: 'APP_ID_REQUIRED',
