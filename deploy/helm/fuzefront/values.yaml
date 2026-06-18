@@ -54,9 +54,11 @@ secret:
   authentikBootstrapToken: "dev-bootstrap-token-change-me-0123456789"
   # OIDC client creds for the backend. Set deterministically by the blueprint
   # deploy/helm/fuzefront/authentik/blueprints/provider-oidc.yaml.
-  # Dev defaults match the blueprint values; override for prod via SealedSecret.
+  # authentikClientSecret has NO default — must be supplied via --set or a
+  # gitignored values file (or an existingSecret). The blueprint reads the
+  # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
-  authentikClientSecret: "fuzefront-oidc-secret-dev-change-me"
+  authentikClientSecret: ""
 
 backend:
   image:

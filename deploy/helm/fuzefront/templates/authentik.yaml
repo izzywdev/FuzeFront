@@ -50,8 +50,27 @@
       key: AUTHENTIK_BOOTSTRAP_TOKEN
 - name: AUTHENTIK_BOOTSTRAP_EMAIL
   value: {{ .Values.authentik.bootstrapEmail | quote }}
+# OIDC client secret — injected so the blueprint !Env resolver can read it.
+# Sourced from the chart Secret (key AUTHENTIK_CLIENT_SECRET). The worker uses
+# this when applying blueprints; the server also carries it so either process
+# can resolve the value if Authentik applies blueprints from the server path.
+- name: AUTHENTIK_OIDC_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: AUTHENTIK_CLIENT_SECRET
+      optional: true
+{{- end -}}
+{{- /* Guard: when OIDC is enabled an empty client secret would be silently
+     applied by the blueprint, leaving the provider with no usable secret.
+     Abort render early with a clear message. */}}
+{{- define "authentik.assertOidcSecret" -}}
+{{- if and .Values.authentik.oidc.enabled (not .Values.secret.authentikClientSecret) (not .Values.secret.existingSecret) }}
+{{- required "authentik.oidc.enabled is true but secret.authentikClientSecret is empty and no existingSecret is configured. Set secret.authentikClientSecret (or provide an existingSecret with AUTHENTIK_CLIENT_SECRET) so the OIDC provider gets a real client secret." "" }}
+{{- end }}
 {{- end -}}
 {{- if .Values.authentik.enabled }}
+{{- include "authentik.assertOidcSecret" . }}
 {{- $ak := .Values.authentik }}
 ---
 apiVersion: apps/v1

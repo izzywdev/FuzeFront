@@ -1,15 +1,14 @@
 # Authentik Blueprint — FuzeFront OIDC provider + Application
 #
 # Creates the OIDC provider and Application for the FuzeFront backend.
-# client_id and client_secret are set deterministically via attrs so the
-# backend wiring does NOT require an out-of-band patch step after seeding.
+# client_id is public/non-sensitive and kept as a literal.
+# client_secret is injected at blueprint-apply time via Authentik's !Env
+# YAML tag — it reads AUTHENTIK_OIDC_CLIENT_SECRET from the worker pod's
+# environment (sourced from the chart Secret via secretKeyRef). No secret
+# value is stored in this file or in the ConfigMap.
 #
-# The deterministic dev values are also in values.yaml under:
-#   authentik.blueprints.clientId    (rendered into this blueprint by the ConfigMap)
-#   authentik.blueprints.clientSecret
-#
-# For production: override via SealedSecret-backed Helm values so that
-# authentikClientId / authentikClientSecret in the chart Secret match.
+# For production: set AUTHENTIK_CLIENT_SECRET in the chart Secret
+# (e.g. via a SealedSecret); the worker propagates it to Authentik.
 #
 # NOTE: attrs.client_id / attrs.client_secret are respected at *creation time*
 # by Authentik 2024.x blueprint runner. If the provider already exists, these
@@ -28,10 +27,12 @@ entries:
     attrs:
       name: FuzeFront
       client_type: confidential
-      # Deterministic credentials — backend reads these from the chart Secret.
-      # Dev placeholders; override via Helm values in prod.
+      # client_id is public/non-sensitive — kept as a deterministic literal.
+      # client_secret is resolved at apply time from the worker pod env var
+      # AUTHENTIK_OIDC_CLIENT_SECRET (sourced from the chart Secret). No
+      # secret value is committed to git or stored in the ConfigMap.
       client_id: "fuzefront-oidc-client"
-      client_secret: "fuzefront-oidc-secret-dev-change-me"
+      client_secret: !Env [AUTHENTIK_OIDC_CLIENT_SECRET, ""]
       # Redirect URIs — local dev (http + https) + prod wildcard
       redirect_uris:
         - matching_mode: strict
