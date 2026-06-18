@@ -1,0 +1,49 @@
+{{- if .Values.permit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-permit-schema-sync
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: permit-schema-sync
+  annotations:
+    # Apply the authz schema to the Permit cloud control plane after the app is
+    # installed/upgraded. Idempotent (get-or-create|update), safe to re-run.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: permit-schema-sync
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: permit-schema-sync
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/permit/sync-permit-schema.js"]
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PERMIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: PERMIT_API_KEY
+            # Schema sync targets the Permit cloud API, not the PDP, but the
+            # config module requires the var to be present at import.
+            - name: PERMIT_PDP_URL
+              value: "http://fuzefront-permit-pdp:7000"
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+{{- end }}
