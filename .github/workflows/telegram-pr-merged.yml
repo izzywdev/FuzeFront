@@ -1,0 +1,18 @@
+name: Notify Telegram on PR merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  notify:
+    if: github.event.pull_request.merged == true
+    uses: izzywdev/AITools/.github/workflows/telegram-pr-merged.yml@main
+    with:
+      pr_title: ${{ github.event.pull_request.title }}
+      pr_url: ${{ github.event.pull_request.html_url }}
+      pr_number: ${{ github.event.pull_request.number }}
+      repository: ${{ github.repository }}
+      merged_by: ${{ github.event.pull_request.merged_by.login }}
+      base_branch: ${{ github.event.pull_request.base.ref }}
+    secrets: inherit
