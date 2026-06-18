@@ -155,15 +155,23 @@ export async function waitForPostgres(
 }
 
 export async function ensureDatabase(): Promise<void> {
-  console.log('🔧 Ensuring database exists...')
+  // Runtime is least-privilege: it connects as `fuzefront_user`, which has NO
+  // CREATEDB. The application database is provisioned out-of-band by the
+  // privileged Helm bootstrap Job (deploy/helm/fuzefront/templates/
+  // db-bootstrap-job.yaml), which runs as the FuzeInfra Postgres superuser.
+  // This function therefore only VERIFIES the database exists and fails fast
+  // with an actionable error if the bootstrap step has not run. It never
+  // issues CREATE DATABASE.
+  console.log('🔧 Verifying application database exists...')
 
+  const dbName = process.env.DB_NAME || 'fuzefront_platform'
   const dbUser = process.env.DB_USER || FUZEFRONT_USER
   const dbPassword = ensurePasswordString(process.env.DB_PASSWORD)
 
   const clientConfig: any = {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
-    database: 'postgres', // Connect to default database
+    database: 'postgres', // Connect to the default DB to probe pg_database
     user: dbUser,
   }
 
@@ -177,36 +185,23 @@ export async function ensureDatabase(): Promise<void> {
   try {
     await client.connect()
 
-    // Check if database exists
     const result = await client.query(
       'SELECT 1 FROM pg_database WHERE datname = $1',
-      [process.env.DB_NAME || 'fuzefront_platform']
+      [dbName]
     )
 
     if (result.rows.length === 0) {
-      console.log(
-        `📦 Creating database "${process.env.DB_NAME || 'fuzefront_platform'}"...`
+      throw new Error(
+        `Application database "${dbName}" does not exist. It must be created ` +
+          `by the privileged bootstrap step (Helm pre-install/pre-upgrade Job ` +
+          `running as the Postgres superuser) before the backend starts. ` +
+          `Runtime connects as a least-privilege role and cannot CREATE DATABASE.`
       )
-      try {
-        await client.query(
-          `CREATE DATABASE "${process.env.DB_NAME || 'fuzefront_platform'}"`
-        )
-        console.log('✅ Database created successfully!')
-      } catch (createError: any) {
-        // Concurrent creators (e.g. parallel test workers) race between the
-        // existence check above and CREATE. Treat "already exists" as success.
-        // 42P04 = duplicate_database; 23505 = unique_violation on pg_database.
-        if (createError?.code === '42P04' || createError?.code === '23505') {
-          console.log('✅ Database already exists (created concurrently)')
-        } else {
-          throw createError
-        }
-      }
-    } else {
-      console.log('✅ Database already exists')
     }
+
+    console.log(`✅ Database "${dbName}" exists`)
   } catch (error) {
-    console.error('❌ Error ensuring database:', error)
+    console.error('❌ Error verifying database:', error)
     throw error
   } finally {
     await client.end()
