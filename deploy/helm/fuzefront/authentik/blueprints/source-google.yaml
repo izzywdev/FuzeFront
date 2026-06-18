@@ -30,9 +30,10 @@ entries:
       slug: google
       enabled: true
       provider_type: google
-      # Replace with real creds from console.cloud.google.com
-      consumer_key: "GOOGLE_CLIENT_ID_PLACEHOLDER"
-      consumer_secret: "GOOGLE_CLIENT_SECRET_PLACEHOLDER"
+      # Resolved at blueprint-apply time from the worker env vars injected by the
+      # chart Secret. Empty strings leave the source disabled (inert) in dev.
+      consumer_key: !Env [GOOGLE_CLIENT_ID, ""]
+      consumer_secret: !Env [GOOGLE_CLIENT_SECRET, ""]
       # Link on verified email — merges accounts instead of creating duplicates
       user_matching_mode: link_by_email
       user_path_template: "goauthentik.io/sources/%(slug)s"

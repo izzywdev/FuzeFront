@@ -22,6 +22,6 @@ data:
   {{- range $path, $content := .Files.Glob "authentik/blueprints/*.yaml" }}
   {{- /* Strip the directory prefix so each key is just the filename. */}}
   {{ base $path }}: |
-    {{- $content | toString | nindent 4 }}
+    {{- $content | toString | nindent 2 }}
   {{- end }}
 {{- end }}

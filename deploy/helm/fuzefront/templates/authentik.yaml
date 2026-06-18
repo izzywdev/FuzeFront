@@ -50,16 +50,32 @@
       key: AUTHENTIK_BOOTSTRAP_TOKEN
 - name: AUTHENTIK_BOOTSTRAP_EMAIL
   value: {{ .Values.authentik.bootstrapEmail | quote }}
+# Google OAuth2 source creds — optional: absent Google source is inert.
+- name: GOOGLE_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: GOOGLE_CLIENT_ID
+      optional: true
+- name: GOOGLE_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: GOOGLE_CLIENT_SECRET
+      optional: true
+{{- if .Values.authentik.oidc.enabled }}
 # OIDC client secret — injected so the blueprint !Env resolver can read it.
 # Sourced from the chart Secret (key AUTHENTIK_CLIENT_SECRET). The worker uses
 # this when applying blueprints; the server also carries it so either process
 # can resolve the value if Authentik applies blueprints from the server path.
+# Non-optional: k8s will fail the pod loudly if the key is missing when OIDC
+# is enabled, complementing the render-time assertOidcSecret guard above.
 - name: AUTHENTIK_OIDC_CLIENT_SECRET
   valueFrom:
     secretKeyRef:
       name: {{ include "fuzefront.secretName" . }}
       key: AUTHENTIK_CLIENT_SECRET
-      optional: true
+{{- end }}
 {{- end -}}
 {{- /* Guard: when OIDC is enabled an empty client secret would be silently
      applied by the blueprint, leaving the provider with no usable secret.

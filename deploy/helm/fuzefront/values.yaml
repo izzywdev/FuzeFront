@@ -59,6 +59,11 @@ secret:
   # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
+  # Google OAuth2 source creds. Leave empty to disable the Google source
+  # (inert — Authentik skips sources whose consumer_key resolves to "").
+  # Override via --set or a gitignored values file. NEVER commit real creds.
+  googleClientId: ""
+  googleClientSecret: ""
 
 backend:
   image:
