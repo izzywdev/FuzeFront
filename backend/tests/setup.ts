@@ -14,12 +14,11 @@ process.env.FRONTEND_URL = 'http://localhost:3000'
 // Global test timeout
 jest.setTimeout(10000)
 
-// Use our custom migration script instead of Knex migrations
-const { applyAllMigrations } = require('../scripts/apply-all-migrations')
 import {
   db,
   waitForPostgres,
   ensureDatabase,
+  runMigrations,
   runSeeds,
   closeDatabase,
 } from '../src/config/database'
@@ -35,8 +34,9 @@ beforeAll(async () => {
     // 2. Ensure the database exists
     await ensureDatabase()
 
-    // 3. Apply migrations using our custom script (bypasses Knex migration issues)
-    await applyAllMigrations()
+    // 3. Apply the real Knex migrations (loaded as .ts under ts-jest) so the
+    //    schema matches the app + seeds (the old custom script was stale).
+    await runMigrations()
 
     // 4. Run seeds for test data
     await runSeeds()
