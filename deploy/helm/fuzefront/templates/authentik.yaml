@@ -96,13 +96,17 @@ spec:
             httpGet: { path: /-/health/ready/, port: 9000 }
             periodSeconds: 15
           volumeMounts:
-            - { name: media, mountPath: /media }
+            - { name: media,       mountPath: /media }
+            - { name: blueprints,  mountPath: /blueprints/fuzefront, readOnly: true }
           resources:
             requests: { cpu: 100m, memory: 384Mi }
             limits:   { cpu: "1",  memory: 768Mi }
       volumes:
         - name: media
           emptyDir: {}
+        - name: blueprints
+          configMap:
+            name: authentik-blueprints
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -134,13 +138,17 @@ spec:
           env:
             {{- include "authentik.commonEnv" . | nindent 12 }}
           volumeMounts:
-            - { name: media, mountPath: /media }
+            - { name: media,       mountPath: /media }
+            - { name: blueprints,  mountPath: /blueprints/fuzefront, readOnly: true }
           resources:
             requests: { cpu: 100m, memory: 384Mi }
             limits:   { cpu: "1",  memory: 768Mi }
       volumes:
         - name: media
           emptyDir: {}
+        - name: blueprints
+          configMap:
+            name: authentik-blueprints
 ---
 apiVersion: v1
 kind: Service
