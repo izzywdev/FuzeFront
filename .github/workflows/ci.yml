@@ -149,12 +149,8 @@ jobs:
           # No-op Permit config so permission checks don't crash without a PDP.
           PERMIT_API_KEY: ci-noop
           PERMIT_PDP_URL: http://localhost:7766
-        # The DB/schema/seed setup is now correct (migrations run, seeds apply),
-        # but this legacy suite still has ~71 pre-existing assertion failures in
-        # the auth/permissions tests that need dedicated debugging. Don't block
-        # the pipeline on it; the report is still uploaded for triage. The
-        # authenticated flow IS covered green by the Playwright e2e workflow.
-        continue-on-error: true
+        # Real integration tests (auth + apps + permissions) against the Postgres
+        # service — they genuinely assert behavior, so a failure is a real bug.
         run: cd backend && npm run test:integration
 
   security-scan:

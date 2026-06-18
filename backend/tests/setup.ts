@@ -1,15 +1,17 @@
 import path from 'path'
 
-// Mock environment variables for PostgreSQL testing
+// Test DB config — env-overridable so the suite can run against any Postgres
+// (CI service, a local throwaway container on another port, etc.). Defaults
+// match the CI Postgres service / docker-compose.
 process.env.NODE_ENV = 'test'
 process.env.USE_POSTGRES = 'true'
-process.env.DB_HOST = 'localhost'
-process.env.DB_PORT = '5432'
-process.env.DB_NAME = 'fuzefront_platform'
-process.env.DB_USER = 'postgres'
-process.env.DB_PASSWORD = 'postgres'
-process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only'
-process.env.FRONTEND_URL = 'http://localhost:3000'
+process.env.DB_HOST = process.env.DB_HOST || 'localhost'
+process.env.DB_PORT = process.env.DB_PORT || '5432'
+process.env.DB_NAME = process.env.DB_NAME || 'fuzefront_platform'
+process.env.DB_USER = process.env.DB_USER || 'postgres'
+process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'postgres'
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-for-testing-only'
+process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'
 
 // Global test timeout
 jest.setTimeout(10000)
