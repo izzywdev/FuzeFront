@@ -9,7 +9,7 @@ export async function up(knex: Knex): Promise<void> {
   
   const username = 'fuzefront_user'
   const password = 'FuzeFront_2024_SecureDB_Pass!'
-  const dbName = 'fuzefront_platform'
+  const dbName = process.env.DB_NAME || 'fuzefront_platform'
   
   try {
     // Check if user already exists
@@ -108,9 +108,10 @@ export async function down(knex: Knex): Promise<void> {
         REVOKE USAGE ON SCHEMA public FROM ??
       `, [username])
       
+      const dbName = process.env.DB_NAME || 'fuzefront_platform'
       await knex.raw(`
-        REVOKE CONNECT ON DATABASE fuzefront_platform FROM ??
-      `, [username])
+        REVOKE CONNECT ON DATABASE ?? FROM ??
+      `, [dbName, username])
       
       // Drop the user
       await knex.raw(`
