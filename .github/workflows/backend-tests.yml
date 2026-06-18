@@ -82,7 +82,7 @@ jobs:
           FRONTEND_URL: http://localhost:3000
         run: |
           echo "Running authentication tests..."
-          npm test -- --testPathPattern=auth --verbose
+          npm test -- --testPathPattern=auth --verbose --runInBand
 
       - name: Run production database tests
         working-directory: ./backend
@@ -98,7 +98,7 @@ jobs:
           FRONTEND_URL: http://localhost:8085
         run: |
           echo "Running production-like tests..."
-          npm test -- --testPathPattern=auth-production --verbose
+          npm test -- --testPathPattern=auth-production --verbose --runInBand
 
       - name: Generate test coverage
         working-directory: ./backend
@@ -112,7 +112,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
-        run: npm run test:coverage
+        run: npm run test:coverage -- --runInBand
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
