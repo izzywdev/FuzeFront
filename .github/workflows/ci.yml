@@ -48,8 +48,10 @@ jobs:
           cd ../frontend && npm run lint
           cd ../sdk && npm run lint
 
-      - name: Run backend tests
-        run: cd backend && npm test
+      # Backend tests need a Postgres service (and the Permit PDP), so they run
+      # in the dedicated jobs that provide that infra — the `integration-tests`
+      # job below and the `Backend Authentication Tests` workflow — not in this
+      # infra-less lint/type/unit job.
 
       - name: Run frontend tests
         run: cd frontend && npm test
