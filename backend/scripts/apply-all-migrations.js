@@ -13,6 +13,17 @@ async function applyAllMigrations() {
     await client.connect()
     console.log('✅ Connected to PostgreSQL database')
 
+    // Ledger table the migration records below are inserted into. Must exist
+    // before the first INSERT (knex normally creates this itself).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS knex_migrations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255),
+        batch INTEGER,
+        migration_time TIMESTAMPTZ DEFAULT NOW()
+      );
+    `)
+
     // Migration 001: Create users table
     console.log('🚀 Applying migration 001: Create users table')
     await client.query(`
