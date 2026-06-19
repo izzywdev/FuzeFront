@@ -73,13 +73,15 @@ describe('email-service integration (requires docker-compose.test.yml)', () => {
     const kafkaOk = await isKafkaReachable(KAFKA_BROKERS)
     const mailhogOk = await isMailhogReachable(MAILHOG_API)
     if (!kafkaOk || !mailhogOk) {
-      console.warn(
-        '[email-integration] Harness not running (Kafka reachable:',
-        kafkaOk,
-        'MailHog reachable:',
-        mailhogOk,
-        '). Tests will skip.',
-      )
+      const msg =
+        `[email-integration] Harness not running (Kafka reachable: ${kafkaOk}, ` +
+        `MailHog reachable: ${mailhogOk}).`
+      if (process.env.CI) {
+        // In CI the harness must be up — treat unreachability as a hard failure
+        // so the job never silently passes with 0 assertions.
+        throw new Error(`${msg} Refusing to skip in CI.`)
+      }
+      console.warn(`${msg} Tests will skip.`)
       skip = true
     }
   })

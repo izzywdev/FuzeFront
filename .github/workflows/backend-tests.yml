@@ -31,6 +31,23 @@ jobs:
         ports:
           - 5432:5432
 
+      permit-pdp:
+        image: permitio/pdp-v2:0.8.1
+        env:
+          PDP_API_KEY: ${{ secrets.PERMIT_API_KEY }}
+          PDP_DEBUG: 'false'
+          PDP_ENABLE_OFFLINE_MODE: 'true'
+          OPAL_INLINE_OPA_ENABLED: 'true'
+          OPAL_CLIENT_ENABLE_REALTIME_UPDATES: 'false'
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:7000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
+          --health-start-period 30s
+        ports:
+          - 7766:7000
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]

@@ -195,6 +195,12 @@ jobs:
             if curl -fsS http://localhost:8025/api/v2/messages >/dev/null 2>&1; then echo "MailHog up"; break; fi
             sleep 2
           done
+          echo "Waiting for Kafka (port 9094)..."
+          for i in $(seq 1 40); do
+            if nc -z localhost 9094 2>/dev/null; then echo "Kafka up"; break; fi
+            if [ "$i" -eq 40 ]; then echo "ERROR: Kafka did not become reachable" >&2; exit 1; fi
+            sleep 2
+          done
           echo "Waiting for email-service health..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
@@ -282,12 +288,12 @@ jobs:
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' }}
         run: |
           echo "❌ Some checks failed. Please review the logs."
           exit 1
