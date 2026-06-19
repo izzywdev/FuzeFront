@@ -11,11 +11,12 @@ async function main() {
   });
 
   // --- Graceful shutdown ---
+  // Await server.close so future async teardown (Kafka/DB in later tasks) can be
+  // sequenced before exit. Wrap the callback-based close in a Promise.
   const shutdown = async () => {
     console.log('[billing-service] Shutting down...');
-    server.close(() => {
-      process.exit(0);
-    });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    process.exit(0);
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
