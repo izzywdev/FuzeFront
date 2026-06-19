@@ -4,6 +4,7 @@ import { render, screen, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceProvisioningGate } from '../WorkspaceProvisioningGate'
 import { AppProvider } from '../../lib/shared'
+import { LanguageProvider } from '../../contexts/LanguageContext'
 import * as api from '../../services/api'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -16,9 +17,11 @@ const flushMicrotasks = () => act(async () => { await Promise.resolve() })
 
 function renderGate(children: React.ReactNode = <div>App content</div>) {
   return render(
-    <AppProvider>
-      <WorkspaceProvisioningGate>{children}</WorkspaceProvisioningGate>
-    </AppProvider>
+    <LanguageProvider>
+      <AppProvider>
+        <WorkspaceProvisioningGate>{children}</WorkspaceProvisioningGate>
+      </AppProvider>
+    </LanguageProvider>
   )
 }
 
@@ -186,3 +189,4 @@ describe('WorkspaceProvisioningGate', () => {
     expect(getOrgs.mock.calls.length).toBe(callCountAfterMount)
   })
 })
+

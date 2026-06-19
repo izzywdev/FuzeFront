@@ -17,6 +17,7 @@ import websocketService from './services/websocket'
 import { UserProfileManagement } from './components/UserProfileManagement'
 import { WorkspaceProvisioningGate } from './components/WorkspaceProvisioningGate'
 import CreateOrganizationPage from './pages/CreateOrganizationPage'
+import AcceptInvitePage from './pages/AcceptInvitePage'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -175,6 +176,12 @@ function App() {
 
 function AppContent() {
   const { isAuthenticated, user } = useCurrentUser()
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+
+  // Public route: invitation accept page — handle before auth check
+  if (currentPath.startsWith('/invitations/')) {
+    return <AcceptInvitePage />
+  }
 
   console.log('AppContent - Authentication state:', {
     isAuthenticated,
@@ -272,3 +279,4 @@ function NotFoundPage() {
 }
 
 export default App
+

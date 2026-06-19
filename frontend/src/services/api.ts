@@ -401,4 +401,56 @@ export const getUserRoles = async (
   }
 }
 
+
+// ── Invitation types ───────────────────────────────────────────────────────
+export interface OrganizationInvitation {
+  id: string
+  organizationId: string
+  email: string
+  role: string
+  token?: string
+  expiresAt: string
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  invitedBy: string
+  createdAt: string
+}
+
+// ── Invitation API ─────────────────────────────────────────────────────────
+
+/** Resolve a public invitation token (no auth required). */
+export const getInvitation = async (token: string) => {
+  const res = await api.get(`/invitations/${token}`)
+  return res.data
+}
+
+/** Accept an invitation via its token. */
+export const acceptInvitation = async (token: string) => {
+  const res = await api.post(`/invitations/${token}/accept`)
+  return res.data
+}
+
+/** Create a single invitation for an org. */
+export const createInvitation = async (orgId: string, email: string, role: string) => {
+  const res = await api.post(`/organizations/${orgId}/invitations`, { email, role })
+  return res.data
+}
+
+/** Bulk invite up to 50 emails to an org. */
+export const bulkInvite = async (orgId: string, emails: string[], role: string) => {
+  const res = await api.post(`/organizations/${orgId}/invitations/bulk`, { emails, role })
+  return res.data
+}
+
+/** Revoke an invitation. */
+export const revokeInvitation = async (orgId: string, invitationId: string) => {
+  const res = await api.delete(`/organizations/${orgId}/invitations/${invitationId}`)
+  return res.data
+}
+
+/** List pending invitations for an org. */
+export const listInvitations = async (orgId: string) => {
+  const res = await api.get(`/organizations/${orgId}/invitations`)
+  return res.data
+}
 export default api
+

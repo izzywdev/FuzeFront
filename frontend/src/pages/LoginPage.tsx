@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
+import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI, AuthMethods } from '../services/api'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function LoginPage() {
+  const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -419,7 +421,7 @@ function LoginPage() {
         }}
       >
         <p style={{ margin: '0 0 0.75rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          New to FuzeFront?
+          {t('signUpMessage')}
         </p>
         <button
           type="button"
@@ -428,7 +430,7 @@ function LoginPage() {
           className="btn btn-secondary"
           style={{ width: '100%' }}
         >
-          {loading ? 'Redirecting…' : 'Create an account'}
+          {loading ? 'Redirecting…' : t('signUp')}
         </button>
       </div>
 
@@ -442,3 +444,5 @@ function LoginPage() {
 }
 
 export default LoginPage
+
+
