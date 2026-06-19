@@ -3,6 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.up = up;
 exports.down = down;
 async function up(knex) {
+    if (await knex.schema.hasTable('apps')) {
+        return;
+    }
     return knex.schema.createTable('apps', table => {
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
         table.string('name').unique().notNullable();
