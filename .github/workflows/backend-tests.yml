@@ -112,7 +112,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
-        run: npm run test:coverage -- --runInBand
+        run: npm run test:coverage -- --runInBand --testPathIgnorePatterns=permit-integration
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
@@ -121,6 +121,25 @@ jobs:
           flags: backend
           name: backend-coverage
           fail_ci_if_error: false
+
+      - name: Run Permit.io integration tests
+        working-directory: ./backend
+        if: ${{ secrets.PERMIT_API_KEY != '' }}
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
+          USE_POSTGRES: true
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: fuzefront_platform_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          FRONTEND_URL: http://localhost:3000
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY }}
+          PERMIT_PDP_URL: http://localhost:7766
+        run: |
+          echo "Running Permit.io integration tests..."
+          npm test -- --testPathPattern=permit-integration --verbose --runInBand
 
       - name: Archive test results
         uses: actions/upload-artifact@v4

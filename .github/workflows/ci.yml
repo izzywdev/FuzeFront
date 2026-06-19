@@ -155,8 +155,9 @@ jobs:
           DB_NAME: frontfuse_test
           DB_USER: postgres
           DB_PASSWORD: postgres
-          # No-op Permit config so permission checks don't crash without a PDP.
-          PERMIT_API_KEY: ci-noop
+          # Use real PERMIT_API_KEY when available (secret); fall back to ci-noop
+          # so the job doesn't fail when the secret is absent (e.g. forks).
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-noop' }}
           PERMIT_PDP_URL: http://localhost:7766
         # Real integration tests (auth + apps + permissions) against the Postgres
         # service — they genuinely assert behavior, so a failure is a real bug.
