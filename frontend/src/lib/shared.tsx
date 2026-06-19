@@ -4,6 +4,10 @@ import React, {
   useState,
   ReactNode,
 } from 'react'
+import type { Organization } from '../services/api'
+
+// Re-export so consumers can import Organization from shared
+export type { Organization }
 
 // Types
 export interface User {
@@ -56,6 +60,10 @@ interface AppState {
   selectedAppId: string | null
   menuItems: MenuItem[]
   isLoading: boolean
+  /** All organizations the current user belongs to (populated by WorkspaceProvisioningGate). */
+  organizations: Organization[]
+  /** The currently active organization id (Plan G will use this for workspace switching). */
+  activeOrganizationId: string | null
 }
 
 interface AppAction {
@@ -67,6 +75,8 @@ interface AppAction {
     | 'UPDATE_APP_STATUS'
     | 'ADD_APP'
     | 'SET_MENU_ITEMS'
+    | 'SET_ORGANIZATIONS'
+    | 'SET_ACTIVE_ORGANIZATION'
   payload: any
 }
 
@@ -100,6 +110,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, apps: [...state.apps, action.payload] }
     case 'SET_MENU_ITEMS':
       return { ...state, menuItems: action.payload }
+    case 'SET_ORGANIZATIONS':
+      return { ...state, organizations: action.payload }
+    case 'SET_ACTIVE_ORGANIZATION':
+      return { ...state, activeOrganizationId: action.payload }
     default:
       return state
   }
@@ -113,6 +127,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectedAppId: null,
     menuItems: [],
     isLoading: false,
+    organizations: [],
+    activeOrganizationId: null,
   })
 
   return (
@@ -141,6 +157,25 @@ export function useCurrentUser() {
       dispatch({ type: 'SET_USER', payload: user }),
     setUser: (user: User | null) =>
       dispatch({ type: 'SET_USER', payload: user }),
+  }
+}
+
+/**
+ * useOrganizations — org context for the authenticated shell.
+ *
+ * Plan G builds on top of this: call setActiveOrganization(id) to switch
+ * the active workspace; read activeOrganization for the current org object.
+ */
+export function useOrganizations() {
+  const { state, dispatch } = useAppContext()
+  const activeOrganization =
+    state.organizations.find(o => o.id === state.activeOrganizationId) ?? null
+  return {
+    organizations: state.organizations,
+    activeOrganizationId: state.activeOrganizationId,
+    activeOrganization,
+    setActiveOrganization: (id: string) =>
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: id }),
   }
 }
 

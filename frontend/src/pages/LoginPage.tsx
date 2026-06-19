@@ -409,6 +409,29 @@ function LoginPage() {
         </div>
       )}
 
+      {/* Sign-up affordance — redirects into Authentik enrollment (the OIDC path) */}
+      <div
+        style={{
+          marginTop: '1.5rem',
+          paddingTop: '1.5rem',
+          borderTop: '1px solid var(--border-color)',
+          textAlign: 'center',
+        }}
+      >
+        <p style={{ margin: '0 0 0.75rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          New to FuzeFront?
+        </p>
+        <button
+          type="button"
+          onClick={handleOIDCLogin}
+          disabled={loading}
+          className="btn btn-secondary"
+          style={{ width: '100%' }}
+        >
+          {loading ? 'Redirecting…' : 'Create an account'}
+        </button>
+      </div>
+
       <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
         <p>Demo credentials:</p>
         <p>Email: admin@fuzefront.dev</p>
