@@ -291,8 +291,8 @@ describe('POST /api/tokens', () => {
     expect(res.status).toBe(201)
     expect(res.body).toHaveProperty('token')
     expect(createTokenMock).toHaveBeenCalledTimes(1)
-    // syncServiceTokenToPermit is non-blocking; wait a tick for it to fire
-    await new Promise(resolve => setTimeout(resolve, 20))
+    // syncServiceTokenToPermit is non-blocking; flush microtask queue deterministically
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
     expect(syncServiceTokenMock).toHaveBeenCalledWith('org-token-id', ORG_ID, 'viewer')
   })
 
@@ -451,8 +451,8 @@ describe('DELETE /api/tokens/:tokenId', () => {
     const res = await request(app).delete(`/api/tokens/${TOKEN_ID}`)
     expect(res.status).toBe(200)
     expect(revokeTokenMock).toHaveBeenCalledWith(TOKEN_ID)
-    // removeServiceTokenFromPermit is non-blocking; wait a tick
-    await new Promise(resolve => setTimeout(resolve, 20))
+    // removeServiceTokenFromPermit is non-blocking; flush microtask queue deterministically
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
     expect(removeServiceTokenMock).toHaveBeenCalledWith(TOKEN_ID, ORG_ID, 'viewer')
   })
 
