@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -8,6 +9,25 @@ import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
+
+const CODE_TTL_MS = 60_000
+interface PendingCode { token: string; sessionId: string; expiresAt: number }
+const pendingCodes = new Map<string, PendingCode>()
+
+// Use the configured frontend base URL for all redirects so that exchange codes
+// ride HTTPS in production rather than a hardcoded http:// origin.
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
+
+// Periodic sweep: remove never-redeemed codes that have passed their TTL.
+// .unref() prevents this interval from keeping the process alive in tests.
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of pendingCodes) {
+    if (value.expiresAt < now) {
+      pendingCodes.delete(key)
+    }
+  }
+}, CODE_TTL_MS).unref()
 
 const router = express.Router()
 
@@ -352,8 +372,9 @@ router.get('/oidc/login', async (req, res) => {
 
     const state = uuidv4()
     const authUrl = oidcService.generateAuthUrl(state)
-    
+
     console.log(`🔗 [${requestId}] Redirecting to Authentik:`, authUrl)
+    res.setHeader('Set-Cookie', `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`)
     res.redirect(authUrl)
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
@@ -400,29 +421,57 @@ router.get('/oidc/callback', async (req, res) => {
     error,
   })
 
+  // Helper: clear the state cookie and redirect to the frontend with an error.
+  // Called on every failure path so the cookie doesn't remain valid for its 10-min Max-Age.
+  const clearState = (res: import('express').Response) =>
+    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+
   try {
+    // CSRF guard: verify state cookie matches query param
+    const cookieHeader = req.headers.cookie || ''
+    const stateCookieMatch = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('oidc_state='))
+    const cookieState = stateCookieMatch ? stateCookieMatch.slice('oidc_state='.length) : null
+    const queryState = (req.query.state as string) || ''
+
+    if (!cookieState || cookieState.length !== queryState.length) {
+      clearState(res)
+      return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
+    }
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(cookieState, 'utf8'), Buffer.from(queryState, 'utf8'))) {
+        clearState(res)
+        return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
+      }
+    } catch (e) {
+      console.warn(`[${requestId}] State comparison error (fail-safe deny):`, e)
+      clearState(res)
+      return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
+    }
+    // Clear the cookie on the success path too
+    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+
     if (error) {
       console.log(`❌ [${requestId}] OIDC error:`, error)
-      return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+      return res.redirect(`${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
     }
 
     if (!code || !state) {
       console.log(`❌ [${requestId}] Missing code or state`)
-      return res.redirect(`http://fuzefront.dev.local/?error=missing_parameters`)
+      return res.redirect(`${FRONTEND_BASE}/?error=missing_parameters`)
     }
 
     // Handle the callback and get user
     const user = await oidcService.handleCallback(code as string, state as string)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
-      expiresIn: '24h',
-    })
-
-    // Create session
+    // Create session id first so it can be embedded in the token
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    // Generate JWT token (includes sessionId so logout can target this session)
+    const token = jwt.sign({ userId: user.id, sessionId }, process.env.JWT_SECRET!, {
+      expiresIn: '24h',
+    })
 
     await db('sessions').insert({
       id: sessionId,
@@ -435,13 +484,16 @@ router.get('/oidc/callback', async (req, res) => {
     // Self-heal provisioning in the background (does not block the redirect).
     selfHealProvisioningOnLogin(user.id)
 
-    // Redirect to frontend with token
-    const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`
-    res.redirect(frontendUrl)
+    // Issue a short-lived opaque exchange code instead of putting the bearer token in the URL
+    // (avoids token leakage via referrer headers, server logs, and browser history).
+    const exchangeCode = crypto.randomBytes(32).toString('hex')
+    pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS })
+    res.redirect(`${FRONTEND_BASE}/?code=${exchangeCode}`)
 
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC callback error:`, error)
-    res.redirect(`http://fuzefront.dev.local/?error=authentication_failed`)
+    clearState(res)
+    res.redirect(`${FRONTEND_BASE}/?error=authentication_failed`)
   }
 })
 
@@ -485,6 +537,47 @@ router.get('/method', (req, res) => {
     defaultMethod: oidcConfigured ? 'oidc' : 'local',
     oidcLoginUrl: oidcConfigured ? '/api/auth/oidc/login' : null,
   })
+})
+
+/**
+ * @swagger
+ * /api/auth/token-exchange:
+ *   post:
+ *     summary: Exchange OIDC code for token
+ *     description: Single-use, 60s TTL exchange of the opaque code issued by /oidc/callback for a JWT token and sessionId
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token and sessionId returned
+ *       400:
+ *         description: code required
+ *       401:
+ *         description: invalid or expired code
+ */
+router.post('/token-exchange', async (req, res) => {
+  const { code } = req.body
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'code required' })
+  }
+  const pending = pendingCodes.get(code)
+  if (!pending || Date.now() > pending.expiresAt) {
+    pendingCodes.delete(code)  // clean up expired entry if present
+    return res.status(401).json({ error: 'invalid or expired code' })
+  }
+  // Single-use: delete immediately
+  pendingCodes.delete(code)
+  return res.json({ token: pending.token, sessionId: pending.sessionId })
 })
 
 export default router

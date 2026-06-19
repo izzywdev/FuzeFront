@@ -17,30 +17,37 @@ function LoginPage() {
 
   // Handle OIDC callback on page load
   useEffect(() => {
-    const oidcResult = authAPI.handleOIDCCallback()
-    
-    if (oidcResult.error) {
-      setError(`Authentication failed: ${oidcResult.error}`)
-      return
-    }
+    authAPI.handleOIDCCallback().then(oidcResult => {
+      if (oidcResult.error) {
+        setError(`Authentication failed: ${oidcResult.error}`)
+        // Leave the login form usable so the user can retry
+        loadAuthMethods()
+        return
+      }
 
-    if (oidcResult.token) {
-      console.log('🎉 OIDC authentication successful')
-      // Get user info and redirect
-      authAPI.getCurrentUser()
-        .then(user => {
-          setUser(user)
-          window.location.href = '/dashboard'
-        })
-        .catch(err => {
-          console.error('❌ Failed to get user after OIDC login:', err)
-          setError('Failed to get user information')
-        })
-      return
-    }
+      if (oidcResult.token) {
+        console.log('🎉 OIDC authentication successful')
+        // Get user info and redirect
+        authAPI.getCurrentUser()
+          .then(user => {
+            setUser(user)
+            window.location.href = '/dashboard'
+          })
+          .catch(err => {
+            console.error('❌ Failed to get user after OIDC login:', err)
+            setError('Failed to get user information')
+          })
+        return
+      }
 
-    // Load authentication methods
-    loadAuthMethods()
+      // Load authentication methods
+      loadAuthMethods()
+    }).catch(err => {
+      // Backstop: a rejected promise must never freeze the page
+      console.error('❌ Unexpected error in OIDC callback handler:', err)
+      setError('Authentication encountered an unexpected error. Please try again.')
+      loadAuthMethods()
+    })
   }, [setUser])
 
   const loadAuthMethods = async () => {
