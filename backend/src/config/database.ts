@@ -192,9 +192,12 @@ export async function ensureDatabase(): Promise<void> {
 
     if (result.rows.length === 0) {
       throw new Error(
-        `Application database "${dbName}" does not exist. It must be created ` +
-          `by the privileged bootstrap step (Helm pre-install/pre-upgrade Job ` +
-          `running as the Postgres superuser) before the backend starts. ` +
+        `Application database "${dbName}" does not exist. ` +
+          `In Kubernetes, it must be created by the privileged Helm bootstrap Job ` +
+          `(pre-install/pre-upgrade, running as the Postgres superuser) before the ` +
+          `backend starts. ` +
+          `In CI / local dev, set POSTGRES_DB=${dbName} on the Postgres container ` +
+          `so the database is pre-created during container initialisation. ` +
           `Runtime connects as a least-privilege role and cannot CREATE DATABASE.`
       )
     }
