@@ -18,11 +18,59 @@ spec:
       secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
   {{- end }}
   rules:
-    # Single host -> frontend. The frontend's nginx fans /api and /socket.io
-    # out to the backend Service internally, mirroring the compose setup.
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          {{- if .Values.securityService.enabled }}
+          # Security-service direct paths (ingress-nginx longest-prefix-match
+          # makes these win over the /api catch-all below). /internal is NOT
+          # exposed — it stays cluster-internal (pod-to-pod via Service DNS).
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-security
+                port:
+                  number: {{ .Values.securityService.port }}
+          - path: /api/organizations
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-security
+                port:
+                  number: {{ .Values.securityService.port }}
+          {{- end }}
+          {{- if .Values.applicationsService.enabled }}
+          # Applications-service direct paths (+ Socket.IO).
+          - path: /api/apps
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-applications
+                port:
+                  number: {{ .Values.applicationsService.port }}
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-applications
+                port:
+                  number: {{ .Values.applicationsService.port }}
+          {{- end }}
+          {{- if or .Values.securityService.enabled .Values.applicationsService.enabled }}
+          # Thin backend: health + any remaining /api/* (still dual-serving the
+          # domain routes during the soak; this is the catch-all under the
+          # service-specific prefixes above).
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-backend
+                port:
+                  number: {{ .Values.backend.port }}
+          {{- end }}
+          # Frontend catch-all. The frontend nginx also fans /api and /socket.io
+          # to the per-service backends for in-pod / port-forward scenarios.
           - path: /
             pathType: Prefix
             backend:

@@ -1,0 +1,100 @@
+// FuzeFront security-service — identity, organizations, provisioning, OIDC,
+// Permit. Runs the original 001-009 migration chain against the existing
+// `knex_migrations` table (002/006 are no-op tombstones; applications-service
+// owns apps DDL). Dual-serves alongside the old monolith until Phase 3 cutover.
+import dotenv from 'dotenv'
+import { createServer } from 'http'
+import {
+  createExpressApp,
+  attachErrorHandlers,
+  initializeDatabase,
+  checkDatabaseHealth,
+  closeDatabase,
+} from '@fuzefront/core'
+import path from 'path'
+
+import authRoutes from './routes/auth'
+import organizationsRoutes from './routes/organizations'
+import internalRoutes from './routes/internal'
+import { oidcService } from './services/oidc'
+
+dotenv.config()
+
+const PORT = process.env.PORT || 3002
+const app = createExpressApp({ serviceName: 'security-service' })
+const httpServer = createServer(app)
+const startTime = Date.now()
+
+// Domain routes (identical paths to the monolith).
+app.use('/api/auth', authRoutes)
+app.use('/api/organizations', organizationsRoutes)
+// Cluster-internal only — NEVER exposed through the public ingress.
+app.use('/internal', internalRoutes)
+
+const health = async (_req: any, res: any) => {
+  const uptime = Math.floor((Date.now() - startTime) / 1000)
+  const dbHealthy = await checkDatabaseHealth().catch(() => false)
+  res.json({
+    status: dbHealthy ? 'ok' : 'degraded',
+    service: 'security-service',
+    timestamp: new Date().toISOString(),
+    uptime,
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    database: { status: dbHealthy ? 'connected' : 'disconnected' },
+  })
+}
+app.get('/health', health)
+app.get('/api/health', health)
+
+attachErrorHandlers(app)
+
+function gracefulShutdown(signal: string) {
+  console.log(`\n🛑 [security-service] Received ${signal}. Shutting down...`)
+  httpServer.close(async () => {
+    await closeDatabase().catch(() => undefined)
+    process.exit(0)
+  })
+  setTimeout(() => process.exit(1), 30000)
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
+async function startServer() {
+  try {
+    console.log('🔄 Starting FuzeFront security-service...')
+    const isProduction = process.env.NODE_ENV === 'production'
+    // Original chain keeps the original knex_migrations table; dirs resolve to
+    // THIS service's compiled output (dist/migrations) in prod, src in dev.
+    await initializeDatabase({
+      migrationsTableName: 'knex_migrations',
+      migrationsDir: path.join(__dirname, 'migrations'),
+      seedsDir: path.join(__dirname, 'seeds'),
+    })
+
+    try {
+      console.log('🔧 Initializing OIDC service...')
+      if (oidcService.isConfigured()) {
+        await oidcService.initialize()
+        console.log('✅ OIDC service initialized successfully')
+      } else {
+        console.log('⚠️  OIDC service not configured - local auth only')
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize OIDC service:', error)
+      console.log('⚠️  Continuing with local authentication only')
+    }
+
+    const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
+    httpServer.listen(portNumber, () => {
+      console.log(`🚀 security-service running on port ${portNumber}`)
+    })
+  } catch (error) {
+    console.error('❌ [security-service] Failed to start:', error)
+    process.exit(1)
+  }
+}
+
+startServer()
+
+export default app

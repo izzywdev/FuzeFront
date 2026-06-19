@@ -11,8 +11,8 @@ async function seed(knex) {
             name: 'Task Manager',
             url: 'http://localhost:3002',
             icon_url: '/icons/task-manager.svg',
-            status: 'active',
-            integration_type: 'module_federation',
+            is_active: true,
+            integration_type: 'module-federation',
             description: 'A comprehensive task management application for organizing and tracking work items.',
             marketplace_metadata: JSON.stringify({
                 category: 'productivity',
@@ -32,11 +32,11 @@ async function seed(knex) {
             updated_at: new Date(),
         },
         {
-            id: 'b2c3d4e5-f6g7-8901-2345-678901bcdefg',
+            id: 'b2c3d4e5-f6a7-8901-2345-678901bcdef0',
             name: 'Dashboard',
             url: 'http://localhost:5173',
             icon_url: '/icons/dashboard.svg',
-            status: 'active',
+            is_active: true,
             integration_type: 'spa',
             description: 'Main platform dashboard providing overview and navigation to all applications.',
             marketplace_metadata: JSON.stringify({
@@ -54,11 +54,11 @@ async function seed(knex) {
             updated_at: new Date(),
         },
         {
-            id: 'c3d4e5f6-g7h8-9012-3456-789012cdefgh',
+            id: 'c3d4e5f6-a7b8-9012-3456-789012cdef01',
             name: 'Demo External App',
             url: 'https://www.example.com',
             icon_url: '/icons/external.svg',
-            status: 'active',
+            is_active: true,
             integration_type: 'iframe',
             description: 'Demo external application to showcase iframe integration capabilities.',
             marketplace_metadata: JSON.stringify({

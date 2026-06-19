@@ -15,31 +15,43 @@ exports.closeDatabase = closeDatabase;
 const knex_1 = require("knex");
 const path_1 = __importDefault(require("path"));
 const pg_1 = require("pg");
-// Database credentials for FuzeFront dedicated user
+// Default DB username (non-secret). The password MUST be supplied via the
+// DB_PASSWORD environment variable (e.g. k8s secret / .env) — never hardcoded.
 const FUZEFRONT_USER = 'fuzefront_user';
-const FUZEFRONT_PASSWORD = 'FuzeFront_2024_SecureDB_Pass!';
-// Database configuration based on environment and phase (migration vs runtime)
-const getDatabaseConfig = (useMigrationCredentials = false) => {
+// Helper function to ensure password is always a string
+const ensurePasswordString = (password) => {
+    if (password === null || password === undefined || password === '') {
+        return undefined;
+    }
+    // Convert to string and ensure it's not 'undefined' or 'null' strings
+    const strPassword = String(password);
+    if (strPassword === 'undefined' || strPassword === 'null') {
+        return undefined;
+    }
+    return strPassword;
+};
+// Database configuration
+const getDatabaseConfig = () => {
     const isProduction = process.env.NODE_ENV === 'production';
     const usePostgres = process.env.USE_POSTGRES === 'true' || !isProduction;
     if (usePostgres) {
         // PostgreSQL configuration (shared infrastructure)
-        // Use postgres user for migrations, fuzefront_user for runtime
-        const dbUser = useMigrationCredentials
-            ? 'postgres'
-            : (process.env.DB_USER || FUZEFRONT_USER);
-        const dbPassword = useMigrationCredentials
-            ? null // postgres user has no password in FuzeInfra
-            : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD);
+        const dbUser = process.env.DB_USER || FUZEFRONT_USER;
+        const dbPassword = ensurePasswordString(process.env.DB_PASSWORD);
+        console.log(`🔧 Database config: User=${dbUser}, Password type=${typeof dbPassword}, Host=${process.env.DB_HOST || 'localhost'}`);
+        const connectionConfig = {
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '5432'),
+            database: process.env.DB_NAME || 'fuzefront_platform',
+            user: dbUser,
+        };
+        // Only add password if it exists and is not null
+        if (dbPassword) {
+            connectionConfig.password = dbPassword;
+        }
         return {
             client: 'pg',
-            connection: {
-                host: process.env.DB_HOST || 'localhost',
-                port: parseInt(process.env.DB_PORT || '5432'),
-                database: process.env.DB_NAME || 'fuzefront_platform',
-                user: dbUser,
-                ...(dbPassword && { password: dbPassword }),
-            },
+            connection: connectionConfig,
             pool: {
                 min: 2,
                 max: 10,
@@ -48,9 +60,15 @@ const getDatabaseConfig = (useMigrationCredentials = false) => {
                 tableName: 'knex_migrations',
                 directory: path_1.default.join(__dirname, isProduction ? '../migrations' : '../migrations'),
                 extension: isProduction ? 'js' : 'ts',
+                // Only load the compiled .js (or .ts in dev). Without this, knex's
+                // default loadExtensions also matches the emitted .d.ts declaration
+                // files in dist/migrations and require()s them -> "Unexpected token
+                // 'export'", which broke migrations on server startup in CI.
+                loadExtensions: [isProduction ? '.js' : '.ts'],
             },
             seeds: {
                 directory: path_1.default.join(__dirname, isProduction ? '../seeds' : '../seeds'),
+                loadExtensions: [isProduction ? '.js' : '.ts'],
             },
         };
     }
@@ -66,22 +84,29 @@ const getDatabaseConfig = (useMigrationCredentials = false) => {
                 tableName: 'knex_migrations',
                 directory: path_1.default.join(__dirname, isProduction ? '../migrations' : '../migrations'),
                 extension: isProduction ? 'js' : 'ts',
+                // Only load the compiled .js (or .ts in dev). Without this, knex's
+                // default loadExtensions also matches the emitted .d.ts declaration
+                // files in dist/migrations and require()s them -> "Unexpected token
+                // 'export'", which broke migrations on server startup in CI.
+                loadExtensions: [isProduction ? '.js' : '.ts'],
             },
             seeds: {
                 directory: path_1.default.join(__dirname, isProduction ? '../seeds' : '../seeds'),
+                loadExtensions: [isProduction ? '.js' : '.ts'],
             },
         };
     }
 };
-// Initialize database connection with runtime credentials
+// Initialize database connection
 function initializeDatabaseConnection() {
-    exports.db = (0, knex_1.knex)(getDatabaseConfig(false)); // Use fuzefront_user credentials
+    exports.db = (0, knex_1.knex)(getDatabaseConfig());
 }
-// Database initialization functions
-async function waitForPostgres(maxRetries = 30, retryDelay = 2000, useMigrationCredentials = false) {
+// Wait for PostgreSQL to be available
+async function waitForPostgres(maxRetries = 30, retryDelay = 2000) {
     console.log('🔍 Checking PostgreSQL availability...');
-    const dbUser = useMigrationCredentials ? 'postgres' : (process.env.DB_USER || FUZEFRONT_USER);
-    const dbPassword = useMigrationCredentials ? null : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD);
+    const dbUser = process.env.DB_USER || FUZEFRONT_USER;
+    const dbPassword = ensurePasswordString(process.env.DB_PASSWORD);
+    console.log(`🔧 Connection test: User=${dbUser}, Password type=${typeof dbPassword}`);
     for (let i = 0; i < maxRetries; i++) {
         try {
             const clientConfig = {
@@ -90,6 +115,7 @@ async function waitForPostgres(maxRetries = 30, retryDelay = 2000, useMigrationC
                 database: 'postgres', // Connect to default database first
                 user: dbUser,
             };
+            // Only add password if it exists
             if (dbPassword) {
                 clientConfig.password = dbPassword;
             }
@@ -102,6 +128,7 @@ async function waitForPostgres(maxRetries = 30, retryDelay = 2000, useMigrationC
         }
         catch (error) {
             console.log(`⏳ Waiting for PostgreSQL... (attempt ${i + 1}/${maxRetries}) [User: ${dbUser}]`);
+            console.log(`🔍 Error details: ${error}`);
             if (i === maxRetries - 1) {
                 throw new Error(`Failed to connect to PostgreSQL after ${maxRetries} attempts: ${error}`);
             }
@@ -109,35 +136,42 @@ async function waitForPostgres(maxRetries = 30, retryDelay = 2000, useMigrationC
         }
     }
 }
-async function ensureDatabase(useMigrationCredentials = false) {
-    console.log('🔧 Ensuring database exists...');
-    const dbUser = useMigrationCredentials ? 'postgres' : (process.env.DB_USER || FUZEFRONT_USER);
-    const dbPassword = useMigrationCredentials ? null : (process.env.DB_PASSWORD || FUZEFRONT_PASSWORD);
+async function ensureDatabase() {
+    // Runtime is least-privilege: it connects as `fuzefront_user`, which has NO
+    // CREATEDB. The application database is provisioned out-of-band by the
+    // privileged Helm bootstrap Job (deploy/helm/fuzefront/templates/
+    // db-bootstrap-job.yaml), which runs as the FuzeInfra Postgres superuser.
+    // This function therefore only VERIFIES the database exists and fails fast
+    // with an actionable error if the bootstrap step has not run. It never
+    // issues CREATE DATABASE.
+    console.log('🔧 Verifying application database exists...');
+    const dbName = process.env.DB_NAME || 'fuzefront_platform';
+    const dbUser = process.env.DB_USER || FUZEFRONT_USER;
+    const dbPassword = ensurePasswordString(process.env.DB_PASSWORD);
     const clientConfig = {
         host: process.env.DB_HOST || 'localhost',
         port: parseInt(process.env.DB_PORT || '5432'),
-        database: 'postgres', // Connect to default database
+        database: 'postgres', // Connect to the default DB to probe pg_database
         user: dbUser,
     };
+    // Only add password if it exists
     if (dbPassword) {
         clientConfig.password = dbPassword;
     }
     const client = new pg_1.Client(clientConfig);
     try {
         await client.connect();
-        // Check if database exists
-        const result = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [process.env.DB_NAME || 'fuzefront_platform']);
+        const result = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
         if (result.rows.length === 0) {
-            console.log(`📦 Creating database "${process.env.DB_NAME || 'fuzefront_platform'}"...`);
-            await client.query(`CREATE DATABASE "${process.env.DB_NAME || 'fuzefront_platform'}"`);
-            console.log('✅ Database created successfully!');
+            throw new Error(`Application database "${dbName}" does not exist. It must be created ` +
+                `by the privileged bootstrap step (Helm pre-install/pre-upgrade Job ` +
+                `running as the Postgres superuser) before the backend starts. ` +
+                `Runtime connects as a least-privilege role and cannot CREATE DATABASE.`);
         }
-        else {
-            console.log('✅ Database already exists');
-        }
+        console.log(`✅ Database "${dbName}" exists`);
     }
     catch (error) {
-        console.error('❌ Error ensuring database:', error);
+        console.error('❌ Error verifying database:', error);
         throw error;
     }
     finally {
@@ -146,8 +180,8 @@ async function ensureDatabase(useMigrationCredentials = false) {
 }
 async function runMigrations() {
     console.log('🚀 Running database migrations...');
-    // Create a temporary database instance with migration credentials (postgres user)
-    const migrationDb = (0, knex_1.knex)(getDatabaseConfig(false));
+    // Create a temporary database instance
+    const migrationDb = (0, knex_1.knex)(getDatabaseConfig());
     try {
         const [batchNo, log] = await migrationDb.migrate.latest();
         if (log.length === 0) {
@@ -171,8 +205,12 @@ async function runMigrations() {
 }
 async function runSeeds() {
     console.log('🌱 Running database seeds...');
+    // Use a local instance so this works before initializeDatabase() has run
+    // (e.g. in the test harness). Seeds are optional test/bootstrap data, so a
+    // failure here (e.g. knex can't load .ts seeds under ts-jest) is non-fatal.
+    const seedDb = exports.db ?? (0, knex_1.knex)(getDatabaseConfig());
     try {
-        const [log] = await exports.db.seed.run();
+        const [log] = await seedDb.seed.run();
         if (log.length === 0) {
             console.log('✅ No seeds to run');
         }
@@ -184,28 +222,25 @@ async function runSeeds() {
         }
     }
     catch (error) {
-        console.error('❌ Seeding failed:', error);
-        throw error;
+        console.warn('⚠️ Seeding skipped (non-fatal):', error.message);
+    }
+    finally {
+        if (seedDb !== exports.db)
+            await seedDb.destroy();
     }
 }
 async function initializeDatabase() {
     console.log('🔧 Initializing database...');
     try {
-        // PHASE 1: Use postgres user for initial setup and migrations
-        console.log('📋 Phase 1: Database setup and migrations (postgres user)');
-        // 1. Wait for PostgreSQL to be available with postgres user
-        await waitForPostgres(30, 2000, false);
-        // 2. Ensure the database exists (using postgres user)
-        await ensureDatabase(true);
-        // 3. Run migrations (using postgres user) - this includes creating fuzefront_user
+        // 1. Wait for PostgreSQL to be available
+        await waitForPostgres(30, 2000);
+        // 2. Ensure the database exists
+        await ensureDatabase();
+        // 3. Run migrations
         await runMigrations();
-        // PHASE 2: Switch to fuzefront_user for runtime operations
-        console.log('🔄 Phase 2: Switching to fuzefront_user for runtime operations');
-        // 4. Verify fuzefront_user can connect
-        await waitForPostgres(10, 1000, false);
-        // 5. Initialize runtime database connection with fuzefront_user
+        // 4. Initialize runtime database connection
         initializeDatabaseConnection();
-        // 6. Run seeds (only in development) using fuzefront_user
+        // 5. Run seeds (only in development)
         if (process.env.NODE_ENV !== 'production') {
             await runSeeds();
         }

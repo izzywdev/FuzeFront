@@ -13,6 +13,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const apps_1 = __importDefault(require("./routes/apps"));
 const organizations_1 = __importDefault(require("./routes/organizations"));
+const internal_1 = __importDefault(require("./routes/internal"));
 const socketHandler_1 = require("./sockets/socketHandler");
 const database_1 = require("./config/database");
 const oidc_1 = require("./services/oidc");
@@ -209,6 +210,8 @@ catch (error) {
 app.use('/api/auth', auth_1.default);
 app.use('/api/apps', apps_1.default);
 app.use('/api/organizations', organizations_1.default);
+// Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
+app.use('/internal', internal_1.default);
 // Serve static documentation files
 app.use('/docs', express_1.default.static('docs'));
 // User info route
@@ -342,7 +345,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // Function to find available port
 async function findAvailablePort(startPort, maxAttempts = 10) {
     return new Promise((resolve, reject) => {
-        let currentPort = startPort;
+        const currentPort = startPort;
         let attempts = 0;
         function tryPort(port) {
             const testServer = require('net').createServer();

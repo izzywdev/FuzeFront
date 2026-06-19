@@ -1,0 +1,1 @@
+{"version":3,"file":"002_create_apps_table.js","sourceRoot":"","sources":["../../src/migrations/002_create_apps_table.ts"],"names":[],"mappings":";;AAWA,gBAEC;AAED,oBAEC;AAfD,gEAAgE;AAChE,EAAE;AACF,iFAAiF;AACjF,6EAA6E;AAC7E,8EAA8E;AAC9E,2EAA2E;AAC3E,gFAAgF;AAChF,6EAA6E;AAEtE,KAAK,UAAU,EAAE,CAAC,KAAW;IAClC,2EAA2E;AAC7E,CAAC;AAEM,KAAK,UAAU,IAAI,CAAC,KAAW;IACpC,QAAQ;AACV,CAAC"}

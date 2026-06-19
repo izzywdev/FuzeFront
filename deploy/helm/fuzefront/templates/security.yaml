@@ -1,0 +1,156 @@
+{{- if .Values.securityService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-security
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: security-service
+spec:
+  replicas: {{ .Values.securityService.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: security-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: security-service
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.backendHostAliasIP }}
+      hostAliases:
+        - ip: {{ .Values.authentik.oidc.backendHostAliasIP | quote }}
+          hostnames:
+            - {{ .Values.authentik.host | quote }}
+      {{- end }}
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
+      volumes:
+        - name: fuzefront-ca
+          configMap:
+            name: {{ .Values.authentik.oidc.caConfigMap | quote }}
+      {{- end }}
+      containers:
+        - name: security
+          image: "{{ .Values.securityService.image.repository }}:{{ .Values.securityService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.securityService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: USE_POSTGRES
+              value: "true"
+            - name: PORT
+              value: {{ .Values.securityService.port | quote }}
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: JWT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: SESSION_SECRET
+            - name: FRONTEND_URL
+              value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}"
+            - name: PERMIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: PERMIT_API_KEY
+            - name: PERMIT_PDP_URL
+              {{- if .Values.permit.enabled }}
+              value: "http://fuzefront-permit-pdp:7000"
+              {{- else }}
+              value: "http://localhost:7766"
+              {{- end }}
+            - name: PERMIT_DEBUG
+              value: "false"
+            - name: INTERNAL_PROVISION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: INTERNAL_PROVISION_SECRET
+            - name: KAFKA_BROKERS
+              value: {{ .Values.securityService.kafka.brokers | quote }}
+            {{- if .Values.authentik.oidc.enabled }}
+            - name: AUTHENTIK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_ID
+            - name: AUTHENTIK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_SECRET
+            - name: AUTHENTIK_ISSUER_URL
+              value: {{ .Values.authentik.oidc.issuerUrl | quote }}
+            - name: AUTHENTIK_REDIRECT_URI
+              value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            {{- if .Values.authentik.oidc.caConfigMap }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/fuzefront-ca/ca.crt
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.securityService.resources | nindent 12 }}
+          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
+          volumeMounts:
+            - name: fuzefront-ca
+              mountPath: /etc/fuzefront-ca
+              readOnly: true
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Name is significant: the ingress / frontend nginx route /api/auth,
+  # /api/organizations, /api/internal to http://fuzefront-security:3002.
+  name: fuzefront-security
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: security-service
+spec:
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: security-service
+  ports:
+    - name: http
+      port: {{ .Values.securityService.port }}
+      targetPort: http
+{{- end }}

@@ -9,6 +9,17 @@
 global:
   imagePullPolicy: IfNotPresent
 
+# Backend 3-way split — dual-serving locally. security-service comes up in
+# Phase 1 (auth/organizations/internal on :3002) alongside the old backend,
+# which still serves the same routes. applications-service is enabled in Phase 2.
+# The ingress/nginx are NOT switched until Phase 3, so the old backend keeps
+# serving live traffic until then.
+securityService:
+  enabled: true
+
+applicationsService:
+  enabled: true
+
 ingress:
   enabled: true
   className: nginx
