@@ -15,7 +15,7 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test:coverage": "jest --coverage --testPathIgnorePatterns=permit-integration",
     "test:auth": "jest --testPathPattern=auth",
     "test:auth:production": "jest --testPathPattern=auth-production",
     "test:integration": "jest --runInBand --testPathPattern=\"(auth|apps|permissions)\" --testPathIgnorePatterns=permit-integration",
