@@ -3,6 +3,8 @@ import {
   TypedProducer,
   TypedConsumer,
   TOPICS,
+  FuzeEvent,
+  IdentityUserCreatedPayloadV1,
   identityUserCreatedSchemaV1,
 } from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
@@ -26,11 +28,33 @@ async function main() {
   await consumer.connect();
   await consumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
   await consumer.run(
-    (event) =>
-      handleUserCreated(event as any, {
-        securityServiceUrl: config.securityServiceUrl,
-        internalProvisionSecret: config.internalProvisionSecret,
-      }),
+    async (event: FuzeEvent<IdentityUserCreatedPayloadV1>) => {
+      try {
+        await handleUserCreated(event, {
+          securityServiceUrl: config.securityServiceUrl,
+          internalProvisionSecret: config.internalProvisionSecret,
+        });
+      } catch (err) {
+        // HTTP-layer failures (4xx or 5xx-exhaustion) must not crash the consumer.
+        // Route the message to the DLQ so the offset is committed and processing continues.
+        console.error(
+          `[provisioning-service] Handler failed for correlationId=${event.correlationId}, routing to DLQ: ${String(err)}`
+        );
+        const dlqTopicName = `${TOPICS.IDENTITY_USER_CREATED}.dlq`;
+        await dlqProducer.raw.send({
+          topic: dlqTopicName,
+          messages: [
+            {
+              value: JSON.stringify({
+                raw: JSON.stringify(event),
+                reason: String(err),
+                sourceTopic: TOPICS.IDENTITY_USER_CREATED,
+              }),
+            },
+          ],
+        });
+      }
+    },
     identityUserCreatedSchemaV1,
     dlqProducer
   );
