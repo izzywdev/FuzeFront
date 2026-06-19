@@ -12,8 +12,8 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix",
-    "test": "vitest run --passWithNoTests src",
-    "test:ui": "vitest --ui",
+    "test": "vitest run --config vitest.config.ts",
+    "test:ui": "vitest --ui --config vitest.config.ts",
     "test:coverage": "vitest --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -37,6 +37,9 @@
   "devDependencies": {
     "@playwright/test": "^1.53.1",
     "@tailwindcss/postcss": "^4.1.11",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.0.3",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
@@ -55,5 +58,8 @@
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.62.0"
   }
 }

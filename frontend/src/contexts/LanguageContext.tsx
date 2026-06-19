@@ -89,6 +89,24 @@ const translations = {
     welcomeToFrontFuse: 'Welcome to FrontFuse',
     login: 'Login',
     loginButton: 'Login',
+
+    // Provisioning gate
+    provisioningTitle: 'Creating your workspace…',
+    provisioningDescription: 'Setting up your personal organization. This takes a moment.',
+    provisioningTimeout: 'Taking longer than expected',
+    provisioningTimeoutDesc: 'Your workspace is still being created.',
+    provisioningError: 'Something went wrong',
+    provisioningErrorDesc: "We couldn't verify your workspace.",
+    provisioningRetry: 'Try again',
+
+    // Sign-up
+    signUp: 'Create an account',
+    signUpMessage: 'New to FuzeFront?',
+
+    // Create organization
+    createOrganization: 'Create Organization',
+    organizationName: 'Organization name',
+    createOrganizationDesc: 'Start collaborating with a new organization.',
   },
   he: {
     // Top bar
@@ -170,6 +188,24 @@ const translations = {
     welcomeToFrontFuse: 'ברוך הבא ל-FrontFuse',
     login: 'התחבר',
     loginButton: 'התחבר',
+
+    // Provisioning gate
+    provisioningTitle: 'יוצר את סביבת העבודה שלך…',
+    provisioningDescription: 'מגדיר את הארגון האישי שלך. זה אורך רגע.',
+    provisioningTimeout: 'לוקח יותר זמן ממצופה',
+    provisioningTimeoutDesc: 'סביבת העבודה שלך עדיין נוצרת.',
+    provisioningError: 'משהו השתבש',
+    provisioningErrorDesc: 'לא הצלחנו לאמת את סביבת העבודה שלך.',
+    provisioningRetry: 'נסה שוב',
+
+    // Sign-up
+    signUp: 'צור חשבון',
+    signUpMessage: 'חדש ב-FuzeFront?',
+
+    // Create organization
+    createOrganization: 'צור ארגון',
+    organizationName: 'שם הארגון',
+    createOrganizationDesc: 'התחל לשתף פעולה עם ארגון חדש.',
   },
 }
 
