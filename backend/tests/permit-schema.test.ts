@@ -34,7 +34,7 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Organization', 'UserManagement']
+      ['App', 'Chat', 'Docs', 'Organization', 'UserManagement']
     )
     expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
 
@@ -50,6 +50,11 @@ describe('permit schema IaC', () => {
     expect(Object.keys(um.actions).sort()).toEqual(
       ['invite', 'remove', 'update_role', 'view_members']
     )
+    const docs = permitSchema.resources.find(r => r.key === 'Docs')!
+    expect(Object.keys(docs.actions).sort()).toEqual(['read'])
+
+    const chat = permitSchema.resources.find(r => r.key === 'Chat')!
+    expect(Object.keys(chat.actions).sort()).toEqual(['manage', 'stream'])
   })
 
   it('admin role can manage organizations and user management', () => {
@@ -59,17 +64,38 @@ describe('permit schema IaC', () => {
     expect(admin.permissions).toContain('App:delete')
   })
 
-  it('viewer role is read-only (no write/manage perms)', () => {
+  it('viewer role is read-only (no write/manage perms for org/app/user resources)', () => {
     const viewer = permitSchema.roles.find(r => r.key === 'viewer')!
     expect(viewer.permissions).toContain('Organization:read')
     expect(viewer.permissions).toContain('App:read')
-    expect(viewer.permissions.some(p => /:(create|update|delete|manage|invite|remove|update_role)$/.test(p))).toBe(false)
+    expect(viewer.permissions.some(p => /:(create|update|delete|invite|remove|update_role)$/.test(p))).toBe(false)
+  })
+
+  it('admin gets Docs:read, Chat:stream, and Chat:manage', () => {
+    const admin = permitSchema.roles.find(r => r.key === 'admin')!
+    expect(admin.permissions).toContain('Docs:read')
+    expect(admin.permissions).toContain('Chat:stream')
+    expect(admin.permissions).toContain('Chat:manage')
+  })
+
+  it('editor gets Docs:read and Chat:stream but not Chat:manage', () => {
+    const editor = permitSchema.roles.find(r => r.key === 'editor')!
+    expect(editor.permissions).toContain('Docs:read')
+    expect(editor.permissions).toContain('Chat:stream')
+    expect(editor.permissions).not.toContain('Chat:manage')
+  })
+
+  it('viewer gets Docs:read and Chat:stream but not Chat:manage', () => {
+    const viewer = permitSchema.roles.find(r => r.key === 'viewer')!
+    expect(viewer.permissions).toContain('Docs:read')
+    expect(viewer.permissions).toContain('Chat:stream')
+    expect(viewer.permissions).not.toContain('Chat:manage')
   })
 
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Organization', 'UserManagement'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
     expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
@@ -77,13 +103,13 @@ describe('permit schema IaC', () => {
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Organization', 'UserManagement'],
+      resources: ['App', 'Chat', 'Docs', 'Organization', 'UserManagement'],
       roles: ['admin', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Organization', 'UserManagement'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
     expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
   })
 })
