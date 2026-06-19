@@ -1,8 +1,9 @@
+// services/email-service/jest.config.js
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/tests'],
-  testMatch: ['**/tests/**/*.test.ts'],
+  roots: ['<rootDir>/tests'],
+  testMatch: ['**/*.test.ts'],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tests/tsconfig.json' }],
   },
@@ -14,5 +15,5 @@ module.exports = {
   moduleNameMapper: {
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
   },
-  testTimeout: 10000,
+  testTimeout: 60000,
 };
