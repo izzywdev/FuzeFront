@@ -6,6 +6,7 @@
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
+import { assignOrganizationRole } from '../utils/permit/role-assignment'
 
 const router = express.Router()
 
@@ -116,6 +117,21 @@ router.post('/:token/accept', async (req: any, res) => {
         .where('id', invitation.id)
         .update({ status: 'accepted' })
     })
+
+    // Assign Permit role for the accepted member — non-blocking: a Permit outage
+    // must not undo an accepted invitation. The role can be reconciled later.
+    try {
+      await assignOrganizationRole(
+        req.user.id,
+        invitation.organization_id,
+        invitation.role as 'owner' | 'admin' | 'member' | 'viewer'
+      )
+    } catch (permitErr) {
+      console.error(
+        `Permit role assignment failed for user ${req.user.id} in org ${invitation.organization_id} (non-fatal):`,
+        permitErr
+      )
+    }
 
     res.json({
       message: 'Invitation accepted successfully',

@@ -5,6 +5,7 @@ import AcceptInvitePage from '../pages/AcceptInvitePage'
 import { AppProvider } from '../lib/shared'
 import { LanguageProvider } from '../contexts/LanguageContext'
 import * as api from '../services/api'
+import * as shared from '../lib/shared'
 
 // Silence console errors in tests
 vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -93,16 +94,32 @@ describe('AcceptInvitePage', () => {
   })
 
   it('shows email mismatch message when logged in as wrong user', async () => {
-    // We can't easily mock useCurrentUser, but we can verify the page renders
-    // the correct info. For a proper mismatch test we'd need to mock the context.
     vi.spyOn(api, 'getInvitation').mockResolvedValue(mockInvitationResponse)
+    // Mock useCurrentUser to return a different email than the invitation target.
+    vi.spyOn(shared, 'useCurrentUser').mockReturnValue({
+      isAuthenticated: true,
+      user: { id: 'user-2', email: 'wrong@example.com' } as any,
+      currentUser: { id: 'user-2', email: 'wrong@example.com' } as any,
+      setCurrentUser: vi.fn(),
+      setUser: vi.fn(),
+    })
+
     renderPage()
 
     await waitFor(() => {
       expect(screen.getByText(/acme corp/i)).toBeInTheDocument()
     })
-    // invitation email is shown
-    expect(screen.getByText(/user@example\.com/i)).toBeInTheDocument()
+
+    // Should show a message about being signed in as the wrong account.
+    // "wrong@example.com" appears once (in the mismatch message).
+    expect(screen.getByText(/wrong@example\.com/i)).toBeInTheDocument()
+    // "user@example.com" appears at least twice: "Invited to:" line + mismatch message.
+    const emailMatches = screen.getAllByText(/user@example\.com/i)
+    expect(emailMatches.length).toBeGreaterThanOrEqual(2)
+    // The "sign in with the correct account" guidance should be shown.
+    expect(screen.getByText(/sign in with the correct account/i)).toBeInTheDocument()
+    // The "Accept invitation" button should NOT be shown.
+    expect(screen.queryByText(/accept invitation/i)).not.toBeInTheDocument()
   })
 })
 

@@ -45,6 +45,16 @@ jest.mock('../src/services/organizationProvisioning', () => ({
   reconcileOrganizationProvisioning: jest.fn().mockResolvedValue(undefined),
 }))
 
+jest.mock('../src/utils/permit/role-assignment', () => ({
+  assignOrganizationRole: jest.fn().mockResolvedValue(true),
+  assignRoleInPermit: jest.fn().mockResolvedValue(true),
+  unassignRoleInPermit: jest.fn().mockResolvedValue(true),
+  getUserRoleAssignments: jest.fn().mockResolvedValue([]),
+  getTenantRoleAssignments: jest.fn().mockResolvedValue([]),
+  userHasRole: jest.fn().mockResolvedValue(false),
+  updateOrganizationRole: jest.fn().mockResolvedValue(true),
+}))
+
 import { db } from '../src/config/database'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
 import organizationsRouter from '../src/routes/organizations'
