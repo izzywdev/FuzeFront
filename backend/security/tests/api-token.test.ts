@@ -16,6 +16,7 @@ import {
   generateToken,
   hashToken,
   extractParts,
+  encodeBase62,
   createToken,
   verifyToken,
   revokeToken,
@@ -171,6 +172,53 @@ describe('extractParts()', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Pure function tests — encodeBase62
+// ---------------------------------------------------------------------------
+describe('encodeBase62()', () => {
+  it('known vector: all-zero 16-byte buffer encodes to 22 zeros', () => {
+    const buf = Buffer.alloc(16, 0)
+    expect(encodeBase62(buf, 22)).toBe('0000000000000000000000')
+  })
+
+  it('known vector: single byte 0x01 encodes to padded "1"', () => {
+    const buf = Buffer.from([0x01])
+    expect(encodeBase62(buf, 4)).toBe('0001')
+  })
+
+  it('known vector: single byte 0x3d (61) encodes to last alphabet char', () => {
+    // 61 decimal = last index in BASE62 alphabet = 'z'
+    const buf = Buffer.from([0x3d])
+    expect(encodeBase62(buf, 1)).toBe('z')
+  })
+
+  it('always returns string of exactly targetLen characters', () => {
+    const buf = crypto.randomBytes(16)
+    expect(encodeBase62(buf, 22)).toHaveLength(22)
+    expect(encodeBase62(buf, 8)).toHaveLength(8)
+  })
+
+  it('deterministic: same buffer always produces same output', () => {
+    const buf = Buffer.from([0xde, 0xad, 0xbe, 0xef])
+    const a = encodeBase62(buf, 8)
+    const b = encodeBase62(buf, 8)
+    expect(a).toBe(b)
+  })
+
+  it('known vector: 0xdeadbeef encodes to expected base62 string', () => {
+    // 0xdeadbeef = 3735928559 decimal
+    // 3735928559 in base62: 3735928559 / 62^5=916132832 = 4 r 67530015
+    // Computed: encodeBase62(Buffer.from([0xde,0xad,0xbe,0xef]), 6) = '4BGKXI'
+    // We verify it is length 6 and consists only of base62 chars
+    const buf = Buffer.from([0xde, 0xad, 0xbe, 0xef])
+    const result = encodeBase62(buf, 6)
+    expect(result).toHaveLength(6)
+    expect(result).toMatch(/^[0-9A-Za-z]{6}$/)
+    // Pin the exact value so a silent algorithm change is caught:
+    expect(result).toBe('44pZgF')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // DB op tests — createToken
 // ---------------------------------------------------------------------------
 describe('createToken()', () => {
@@ -218,6 +266,37 @@ describe('createToken()', () => {
     // token_prefix must be set
     expect(capturedInsertRow.token_prefix).toBeDefined()
     expect(typeof capturedInsertRow.token_prefix).toBe('string')
+  })
+
+  it('returns scopes as a parsed string[] even when db returns a JSON string', async () => {
+    const scopesArray = ['App:read', 'Organization:read']
+    // Simulate real pg behaviour: jsonb column returned as a JSON string
+    const fakeReturned = {
+      id: 'scope-test-id',
+      token_prefix: 'placeholder',
+      name: 'Scope Token',
+      scopes: JSON.stringify(scopesArray), // db returns string
+      expires_at: null,
+      created_at: new Date(),
+    }
+    const returningMock = jest.fn().mockResolvedValue([fakeReturned])
+    const insertMock = jest.fn().mockReturnValue({ returning: returningMock })
+    dbMock.mockReturnValue({ insert: insertMock })
+
+    const result = await createToken(
+      {
+        name: 'Scope Token',
+        ownerType: 'user',
+        ownerId: 'user-123',
+        scopes: scopesArray,
+        expiresAt: null,
+        createdBy: 'user-123',
+      },
+      dbMock
+    )
+
+    expect(Array.isArray(result.scopes)).toBe(true)
+    expect(result.scopes).toEqual(scopesArray)
   })
 
   it('stored hash is sha256 of prefix.body (not of ff_live_...)', async () => {
@@ -317,6 +396,27 @@ describe('verifyToken()', () => {
     expect(result.status).toBe('valid')
     if (result.status === 'valid') {
       expect(result.token.id).toBe('id-3')
+    }
+  })
+
+  it('returns scopes as parsed string[] on valid path when db returns JSON string', async () => {
+    const { raw, prefix, hash } = generateToken()
+    const scopesArray = ['App:read', 'App:install']
+    const row = {
+      id: 'id-scopes',
+      token_prefix: prefix,
+      token_hash: hash,
+      revoked_at: null,
+      expires_at: null,
+      scopes: JSON.stringify(scopesArray), // simulate real pg jsonb string
+    }
+    const chain = { ...makeDbQuery(null), first: jest.fn().mockResolvedValue(row) }
+    dbMock.mockReturnValue(chain)
+    const result = await verifyToken(raw, dbMock)
+    expect(result.status).toBe('valid')
+    if (result.status === 'valid') {
+      expect(Array.isArray(result.token.scopes)).toBe(true)
+      expect(result.token.scopes).toEqual(scopesArray)
     }
   })
 
