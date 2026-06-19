@@ -15,6 +15,7 @@ import path from 'path'
 
 import authRoutes from './routes/auth'
 import organizationsRoutes from './routes/organizations'
+import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
 import { oidcService } from './services/oidc'
 
@@ -28,6 +29,7 @@ const startTime = Date.now()
 // Domain routes (identical paths to the monolith).
 app.use('/api/auth', authRoutes)
 app.use('/api/organizations', organizationsRoutes)
+app.use('/api/invitations', invitationsRoutes)
 // Cluster-internal only — NEVER exposed through the public ingress.
 app.use('/internal', internalRoutes)
 
@@ -98,3 +100,4 @@ async function startServer() {
 startServer()
 
 export default app
+
