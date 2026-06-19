@@ -33,6 +33,10 @@ build:
           VITE_API_URL: http://fuzefront.dev.local
     - image: fuzefront/clock-app
       context: clock-app
+    - image: fuzefront/email-service
+      context: .
+      docker:
+        dockerfile: services/email-service/Dockerfile
 
 manifests:
   helm:
@@ -49,6 +53,8 @@ manifests:
           backend.image.tag: '{{.IMAGE_TAG_fuzefront_backend}}'
           frontend.image.repository: '{{.IMAGE_REPO_fuzefront_frontend}}'
           frontend.image.tag: '{{.IMAGE_TAG_fuzefront_frontend}}'
+          emailService.image.repository: "{{.IMAGE_REPO_fuzefront_email_service}}"
+          emailService.image.tag: "{{.IMAGE_TAG_fuzefront_email_service}}"
   # clock-app example: image ref is substituted automatically from the artifact.
   rawYaml:
     - deploy/examples/clock-app.yaml

@@ -61,6 +61,27 @@ services:
       - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3002'
 
   # ================================
+  # EMAIL SERVICE
+  # ================================
+  email-service:
+    build:
+      context: .
+      dockerfile: services/email-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - KAFKA_BROKERS=fuzeinfra-kafka:9092
+      - EMAIL_PROVIDER=smtp
+      - SMTP_HOST=localhost
+      - SMTP_PORT=1025
+      - EMAIL_FROM=noreply@fuzefront.local
+    networks:
+      - FuzeInfra
+    depends_on:
+      - fuzefront-backend
+
+  # ================================
   # FRONTEND SERVICE
   # ================================
   fuzefront-frontend:
