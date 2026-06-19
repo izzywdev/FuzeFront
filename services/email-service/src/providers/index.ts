@@ -10,7 +10,7 @@ export function createProvider(config: Config): EmailProvider {
     if (!config.email.sendgridApiKey) {
       throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
     }
-    return new SendGridProvider(config.email.sendgridApiKey);
+    return new SendGridProvider(config.email.sendgridApiKey, config.email.from);
   }
   if (!config.email.smtp) {
     throw new Error('SMTP config is required when EMAIL_PROVIDER=smtp');

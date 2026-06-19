@@ -1,16 +1,18 @@
 import sgMail from '@sendgrid/mail';
 import { EmailMessage, EmailProvider, SendResult } from './types';
-import { Config } from '../config';
 
 export class SendGridProvider implements EmailProvider {
-  constructor(apiKey: string) {
+  private defaultFrom: string;
+
+  constructor(apiKey: string, defaultFrom: string) {
     sgMail.setApiKey(apiKey);
+    this.defaultFrom = defaultFrom;
   }
 
   async send(msg: EmailMessage): Promise<SendResult> {
     const [response] = await sgMail.send({
       to: msg.to,
-      from: msg.from || 'noreply@fuzefront.com',
+      from: msg.from || this.defaultFrom,
       subject: msg.subject,
       html: msg.html,
       text: msg.text,
