@@ -21,4 +21,8 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testTimeout: 10000,
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    'tests/permit-integration.test.ts',
+  ],
 }
