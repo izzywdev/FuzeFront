@@ -205,9 +205,9 @@ router.post('/', authenticateFlexible, async (req: any, res: Response) => {
 
     // For org tokens: sync to Permit (non-fatal)
     if (owner_type === 'org') {
-      syncServiceTokenToPermit(created.id, owner_id, mapScopesToPermitRole(scopes as string[])).catch(err => {
-        console.error('[api-tokens] syncServiceTokenToPermit failed (non-fatal):', err)
-      })
+      syncServiceTokenToPermit(created.id, owner_id, mapScopesToPermitRole(scopes as string[]))
+        .then(ok => { if (!ok) console.warn('[api-tokens] syncServiceTokenToPermit returned false for token', created.id) })
+        .catch(err => console.error('[api-tokens] syncServiceTokenToPermit threw (non-fatal):', err))
     }
 
     // Return 201 with raw token ONCE — never returned again
@@ -348,9 +348,9 @@ router.delete('/:tokenId', authenticateFlexible, async (req: any, res: Response)
 
     // For org service tokens: remove Permit role (non-fatal)
     if (token.owner_type === 'org') {
-      removeServiceTokenFromPermit(tokenId, token.owner_id, mapScopesToPermitRole(token.scopes)).catch(err => {
-        console.error('[api-tokens] removeServiceTokenFromPermit failed (non-fatal):', err)
-      })
+      removeServiceTokenFromPermit(tokenId, token.owner_id, mapScopesToPermitRole(token.scopes))
+        .then(ok => { if (!ok) console.warn('[api-tokens] removeServiceTokenFromPermit returned false for token', tokenId) })
+        .catch(err => console.error('[api-tokens] removeServiceTokenFromPermit threw (non-fatal):', err))
     }
 
     return res.status(200).json({ message: 'Token revoked' })
