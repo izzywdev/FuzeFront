@@ -248,12 +248,17 @@ export const authAPI = {
     }
 
     if (code) {
-      const response = await api.post<{ token: string; sessionId: string }>('/auth/token-exchange', { code })
-      const { token, sessionId } = response.data
-      localStorage.setItem('authToken', token)
-      localStorage.setItem('sessionId', sessionId)
-      window.history.replaceState({}, document.title, window.location.pathname)
-      return { token, sessionId }
+      try {
+        const response = await api.post<{ token: string; sessionId: string }>('/auth/token-exchange', { code })
+        const { token, sessionId } = response.data
+        localStorage.setItem('authToken', token)
+        localStorage.setItem('sessionId', sessionId)
+        window.history.replaceState({}, document.title, window.location.pathname)
+        return { token, sessionId }
+      } catch (err: any) {
+        const message = err?.response?.data?.error || err?.message || 'Token exchange failed'
+        return { error: message }
+      }
     }
 
     return {}

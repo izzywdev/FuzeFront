@@ -14,6 +14,21 @@ const CODE_TTL_MS = 60_000
 interface PendingCode { token: string; sessionId: string; expiresAt: number }
 const pendingCodes = new Map<string, PendingCode>()
 
+// Use the configured frontend base URL for all redirects so that exchange codes
+// ride HTTPS in production rather than a hardcoded http:// origin.
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
+
+// Periodic sweep: remove never-redeemed codes that have passed their TTL.
+// .unref() prevents this interval from keeping the process alive in tests.
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of pendingCodes) {
+    if (value.expiresAt < now) {
+      pendingCodes.delete(key)
+    }
+  }
+}, CODE_TTL_MS).unref()
+
 const router = express.Router()
 
 /**
@@ -406,6 +421,11 @@ router.get('/oidc/callback', async (req, res) => {
     error,
   })
 
+  // Helper: clear the state cookie and redirect to the frontend with an error.
+  // Called on every failure path so the cookie doesn't remain valid for its 10-min Max-Age.
+  const clearState = (res: import('express').Response) =>
+    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+
   try {
     // CSRF guard: verify state cookie matches query param
     const cookieHeader = req.headers.cookie || ''
@@ -414,26 +434,30 @@ router.get('/oidc/callback', async (req, res) => {
     const queryState = (req.query.state as string) || ''
 
     if (!cookieState || cookieState.length !== queryState.length) {
-      return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+      clearState(res)
+      return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
     }
     try {
       if (!crypto.timingSafeEqual(Buffer.from(cookieState, 'utf8'), Buffer.from(queryState, 'utf8'))) {
-        return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+        clearState(res)
+        return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
       }
-    } catch {
-      return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+    } catch (e) {
+      console.warn(`[${requestId}] State comparison error (fail-safe deny):`, e)
+      clearState(res)
+      return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
     }
-    // Clear the cookie
+    // Clear the cookie on the success path too
     res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
 
     if (error) {
       console.log(`❌ [${requestId}] OIDC error:`, error)
-      return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+      return res.redirect(`${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
     }
 
     if (!code || !state) {
       console.log(`❌ [${requestId}] Missing code or state`)
-      return res.redirect(`http://fuzefront.dev.local/?error=missing_parameters`)
+      return res.redirect(`${FRONTEND_BASE}/?error=missing_parameters`)
     }
 
     // Handle the callback and get user
@@ -464,11 +488,12 @@ router.get('/oidc/callback', async (req, res) => {
     // (avoids token leakage via referrer headers, server logs, and browser history).
     const exchangeCode = crypto.randomBytes(32).toString('hex')
     pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS })
-    res.redirect(`http://fuzefront.dev.local/?code=${exchangeCode}`)
+    res.redirect(`${FRONTEND_BASE}/?code=${exchangeCode}`)
 
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC callback error:`, error)
-    res.redirect(`http://fuzefront.dev.local/?error=authentication_failed`)
+    clearState(res)
+    res.redirect(`${FRONTEND_BASE}/?error=authentication_failed`)
   }
 })
 

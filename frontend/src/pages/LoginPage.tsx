@@ -20,6 +20,8 @@ function LoginPage() {
     authAPI.handleOIDCCallback().then(oidcResult => {
       if (oidcResult.error) {
         setError(`Authentication failed: ${oidcResult.error}`)
+        // Leave the login form usable so the user can retry
+        loadAuthMethods()
         return
       }
 
@@ -39,6 +41,11 @@ function LoginPage() {
       }
 
       // Load authentication methods
+      loadAuthMethods()
+    }).catch(err => {
+      // Backstop: a rejected promise must never freeze the page
+      console.error('❌ Unexpected error in OIDC callback handler:', err)
+      setError('Authentication encountered an unexpected error. Please try again.')
       loadAuthMethods()
     })
   }, [setUser])

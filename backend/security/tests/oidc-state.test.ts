@@ -90,6 +90,19 @@ describe('OIDC state cookie CSRF protection', () => {
     expect(res.headers.location).toMatch(/error=invalid_state/)
   })
 
+  it('rejects callback when oidc_state cookie is same length as state param but different content (exercises timingSafeEqual)', async () => {
+    // Two distinct UUID-shaped strings of equal length — the length pre-check passes,
+    // so timingSafeEqual is the only guard that can fire here.
+    const cookieState = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+    const queryState  = 'z9y8x7w6-v5u4-3210-fedc-ba9876543210'
+    expect(cookieState.length).toBe(queryState.length) // sanity
+    const res = await request(app)
+      .get(`/api/auth/oidc/callback?code=abc&state=${queryState}`)
+      .set('Cookie', `oidc_state=${cookieState}`)
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toMatch(/error=invalid_state/)
+  })
+
   it('accepts callback when oidc_state cookie matches state param', async () => {
     // First get the state from a login redirect
     const loginRes = await request(app).get('/api/auth/oidc/login')
