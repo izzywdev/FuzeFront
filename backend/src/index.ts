@@ -9,6 +9,7 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
+import internalRoutes from './routes/internal'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -253,6 +254,8 @@ try {
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
+// Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
+app.use('/internal', internalRoutes)
 
 // Serve static documentation files
 app.use('/docs', express.static('docs'))
