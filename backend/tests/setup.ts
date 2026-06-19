@@ -1,4 +1,5 @@
 import path from 'path'
+import { Client } from 'pg'
 
 // Test DB config — env-overridable so the suite can run against any Postgres
 // (CI service, a local throwaway container on another port, etc.). Defaults
@@ -25,6 +26,39 @@ import {
   closeDatabase,
 } from '../src/config/database'
 
+// Create the test database if it doesn't exist yet.
+// In CI the Postgres service container starts without a pre-created DB that
+// matches our configured DB_NAME.  The test user (postgres in CI) is a
+// superuser and can CREATE DATABASE.  In production this step is handled by
+// the privileged Helm bootstrap Job instead — ensureDatabase() only verifies.
+async function bootstrapTestDatabase(): Promise<void> {
+  const dbName = process.env.DB_NAME || 'fuzefront_platform'
+  const clientConfig: any = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: 'postgres',
+    user: process.env.DB_USER || 'postgres',
+  }
+  if (process.env.DB_PASSWORD) {
+    clientConfig.password = process.env.DB_PASSWORD
+  }
+  const client = new Client(clientConfig)
+  await client.connect()
+  try {
+    const { rows } = await client.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [dbName]
+    )
+    if (rows.length === 0) {
+      // Safe: dbName comes from a controlled env var, not user input
+      await client.query(`CREATE DATABASE "${dbName.replace(/"/g, '""')}"`)
+      console.log(`✅ Created test database "${dbName}"`)
+    }
+  } finally {
+    await client.end()
+  }
+}
+
 // Global setup for all tests
 beforeAll(async () => {
   try {
@@ -33,14 +67,17 @@ beforeAll(async () => {
     // 1. Wait for PostgreSQL to be available
     await waitForPostgres()
 
-    // 2. Ensure the database exists
+    // 2. Create the database if it wasn't pre-provisioned (CI Postgres service)
+    await bootstrapTestDatabase()
+
+    // 3. Ensure the database exists
     await ensureDatabase()
 
-    // 3. Apply the real Knex migrations (loaded as .ts under ts-jest) so the
+    // 4. Apply the real Knex migrations (loaded as .ts under ts-jest) so the
     //    schema matches the app + seeds (the old custom script was stale).
     await runMigrations()
 
-    // 4. Run seeds for test data
+    // 5. Run seeds for test data
     await runSeeds()
 
     console.log('✅ Test database setup complete')
