@@ -10,6 +10,7 @@ import { db } from '../config/database'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
+import { assignOrganizationRole } from '../utils/permit/role-assignment'
 
 const router = express.Router()
 
@@ -846,6 +847,250 @@ router.delete('/:id/invitations/:invitationId', authenticateToken, async (req: a
   } catch (error: any) {
     console.error('Error revoking invitation:', error)
     res.status(500).json({ error: 'Failed to revoke invitation' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Members sub-routes: /api/organizations/:id/members
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/organizations/:id/members — list members (any active member may view)
+router.get('/:id/members', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = req.params
+
+    // Any active member (any role) may list members
+    const callerMembership = await db('organization_memberships')
+      .where('user_id', req.user.id)
+      .where('organization_id', id)
+      .where('status', 'active')
+      .first()
+
+    if (!callerMembership) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    const rows = await db('organization_memberships')
+      .select(
+        'organization_memberships.id',
+        'organization_memberships.role',
+        'organization_memberships.status',
+        'organization_memberships.joined_at',
+        'users.id as user_id',
+        'users.email as user_email',
+        'users.first_name',
+        'users.last_name'
+      )
+      .join('users', 'users.id', 'organization_memberships.user_id')
+      .where('organization_memberships.organization_id', id)
+      .orderBy('organization_memberships.joined_at', 'asc')
+
+    const members = rows.map((row: any) => ({
+      id: row.id,
+      role: row.role,
+      status: row.status,
+      user: {
+        id: row.user_id,
+        email: row.user_email,
+        firstName: row.first_name,
+        lastName: row.last_name,
+      },
+      joined_at: row.joined_at,
+      invited_at: null,
+    }))
+
+    res.json(members)
+  } catch (error: any) {
+    console.error('Error listing members:', error)
+    res.status(500).json({ error: 'Failed to list members' })
+  }
+})
+
+// POST /api/organizations/:id/members — invite a single member (legacy path)
+// Creates a pending invitation row, identical to POST /:id/invitations.
+router.post('/:id/members', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = req.params
+    const { email, role = 'member' } = req.body
+
+    // Validate email
+    if (!email || typeof email !== 'string' || !isValidEmail(email.trim())) {
+      return res.status(400).json({ error: 'A valid email address is required' })
+    }
+
+    // Validate role — owner cannot be invited
+    const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer']
+    if (!ALLOWED_INVITE_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` })
+    }
+
+    const normalizedEmail = email.toLowerCase().trim()
+
+    // Permission check — admin or owner only
+    const isAdmin = await requireOrgAdminOrOwner(req.user.id, id)
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    // Dedupe check
+    const existing = await db('organization_invitations')
+      .where('organization_id', id)
+      .where('email', normalizedEmail)
+      .where('status', 'pending')
+      .first()
+
+    if (existing) {
+      return res.status(409).json({ error: 'A pending invitation already exists for this email' })
+    }
+
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const invitationId = uuidv4()
+    const correlationId = uuidv4()
+
+    await db('organization_invitations').insert({
+      id: invitationId,
+      organization_id: id,
+      email: normalizedEmail,
+      role,
+      token,
+      expires_at: expiresAt,
+      status: 'pending',
+      invited_by: req.user.id,
+    })
+
+    // Fire email event (non-blocking)
+    try {
+      const org = await db('organizations').where('id', id).first()
+      const inviter = await db('users').where('id', req.user.id).first()
+      const inviterName = inviter
+        ? (`${inviter.first_name || ''} ${inviter.last_name || ''}`.trim() || inviter.email)
+        : req.user.email
+      const acceptUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invitations/${token}`
+
+      await defaultEventPublisher.publishNotifyEmailRequested(
+        {
+          to: normalizedEmail,
+          template: 'org-invite',
+          vars: { orgName: org?.name ?? '', inviterName, role, acceptUrl },
+          orgId: id,
+          correlationId,
+        },
+        correlationId
+      )
+    } catch (emailErr) {
+      console.error('Failed to publish invite email event (non-fatal):', emailErr)
+    }
+
+    res.status(201).json({
+      invitation: {
+        id: invitationId,
+        organizationId: id,
+        email: normalizedEmail,
+        role,
+        expiresAt,
+        status: 'pending',
+      },
+    })
+  } catch (error: any) {
+    console.error('Error creating member invitation:', error)
+    res.status(500).json({ error: 'Failed to create invitation' })
+  }
+})
+
+// PUT /api/organizations/:id/members/:memberId — change a member's role
+router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) => {
+  try {
+    const { id, memberId } = req.params
+    const { role } = req.body
+
+    // Validate role
+    const ALLOWED_ROLES = ['admin', 'member', 'viewer']
+    if (!role || !ALLOWED_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_ROLES.join(', ')}` })
+    }
+
+    // Permission check
+    const isAdmin = await requireOrgAdminOrOwner(req.user.id, id)
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    // Fetch target membership
+    const membership = await db('organization_memberships')
+      .where('id', memberId)
+      .where('organization_id', id)
+      .first()
+
+    if (!membership) {
+      return res.status(404).json({ error: 'Member not found' })
+    }
+
+    // Protect owner memberships
+    if (membership.role === 'owner') {
+      return res.status(403).json({ error: 'Cannot change the role of an owner' })
+    }
+
+    await db('organization_memberships')
+      .where('id', memberId)
+      .update({ role })
+
+    const updated = await db('organization_memberships')
+      .where('id', memberId)
+      .first()
+
+    // Assign Permit role — non-blocking
+    try {
+      await assignOrganizationRole(
+        membership.user_id,
+        id,
+        role as 'admin' | 'member' | 'viewer'
+      )
+    } catch (permitErr) {
+      console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr)
+    }
+
+    res.json(updated)
+  } catch (error: any) {
+    console.error('Error updating member role:', error)
+    res.status(500).json({ error: 'Failed to update member role' })
+  }
+})
+
+// DELETE /api/organizations/:id/members/:memberId — remove a member
+router.delete('/:id/members/:memberId', authenticateToken, async (req: any, res) => {
+  try {
+    const { id, memberId } = req.params
+
+    // Permission check
+    const isAdmin = await requireOrgAdminOrOwner(req.user.id, id)
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    // Fetch target membership
+    const membership = await db('organization_memberships')
+      .where('id', memberId)
+      .where('organization_id', id)
+      .first()
+
+    if (!membership) {
+      return res.status(404).json({ error: 'Member not found' })
+    }
+
+    // Protect owner memberships
+    if (membership.role === 'owner') {
+      return res.status(403).json({ error: 'Cannot remove the organization owner' })
+    }
+
+    await db('organization_memberships')
+      .where('id', memberId)
+      .delete()
+
+    res.json({ message: 'Member removed' })
+  } catch (error: any) {
+    console.error('Error removing member:', error)
+    res.status(500).json({ error: 'Failed to remove member' })
   }
 })
 
