@@ -1,8 +1,20 @@
 import { loadConfig } from './config';
 import { createApp } from './app';
+import { createPool, runMigrations } from './db';
 
 async function main() {
   const config = loadConfig();
+
+  // --- DB migrations (only when DATABASE_URL is configured) ---
+  if (config.databaseUrl) {
+    const pool = createPool(config.databaseUrl);
+    try {
+      await runMigrations(pool);
+      console.log('[billing-service] DB migrations complete');
+    } catch (err) {
+      console.error('[billing-service] DB migration failed (continuing):', err);
+    }
+  }
 
   // --- HTTP ---
   const app = createApp();
