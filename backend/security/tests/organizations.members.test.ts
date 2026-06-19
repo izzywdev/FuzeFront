@@ -148,6 +148,7 @@ describe('Organization Members', () => {
       expect(member.role).toBe('member')
       expect(member.status).toBe('active')
       expect(member).toHaveProperty('user')
+      expect(member.user.id).toBe('other-user-id')
       expect(member.user.email).toBe('alice@example.com')
       expect(member.user.firstName).toBe('Alice')
       expect(member.user.lastName).toBe('Smith')

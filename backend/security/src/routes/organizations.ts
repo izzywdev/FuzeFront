@@ -883,6 +883,7 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       )
       .join('users', 'users.id', 'organization_memberships.user_id')
       .where('organization_memberships.organization_id', id)
+      .where('organization_memberships.status', 'active')
       .orderBy('organization_memberships.joined_at', 'asc')
 
     const members = rows.map((row: any) => ({
