@@ -1,0 +1,157 @@
+# Authentik Blueprint — FuzeFront / fuse-seam brand
+#
+# Applies the fuse-seam design system to all Authentik-hosted pages (login,
+# enrollment, recovery, MFA). Uses Google Fonts CDN for Space Grotesk + Inter.
+# Logo/favicon are embedded as inline data-URIs so they survive the emptyDir
+# /media mount across pod restarts.
+#
+# Schema: version 3, entries[]
+# Model: authentik_brands.brand
+# Idempotent: state: present + unique slug "fuzefront-brand"
+version: 3
+metadata:
+  name: FuzeFront Brand — fuse-seam
+entries:
+  - model: authentik_brands.brand
+    state: present
+    identifiers:
+      domain: "fuzefront.dev.local"
+    attrs:
+      name: "FuzeFront"
+      domain: "fuzefront.dev.local"
+      default: true
+      branding_title: "FuzeFront"
+      # Inline SVG: a simple "seam" flame icon — safe across pod restarts
+      # (no dependency on /media, which is emptyDir and wiped on restart).
+      branding_logo: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InNlYW0iIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjNmU1Y2ZmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzI5ZDNlNiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHBhdGggZD0iTTI0IDRMMzggMTZMMjQgMjhMMTAgMTZaIiBmaWxsPSJ1cmwoI3NlYW0pIi8+CiAgPHBhdGggZD0iTTI0IDIwTDM4IDMyTDI0IDQ0TDEwIDMyWiIgZmlsbD0idXJsKCNzZWFtKSIgb3BhY2l0eT0iMC43Ii8+Cjwvc3ZnPg=="
+      branding_favicon: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InMiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjNmU1Y2ZmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzI5ZDNlNiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHBhdGggZD0iTTE2IDNMMjYgMTFMMTYgMTlMNiAxMVoiIGZpbGw9InVybCgjcykiLz4KICA8cGF0aCBkPSJNMTYgMTNMMjYgMjFMMTYgMjlMNiAyMVoiIGZpbGw9InVybCgjcykiIG9wYWNpdHk9IjAuNyIvPgo8L3N2Zz4="
+      # Custom CSS — fuse-seam palette + fonts injected into all Authentik pages.
+      # PatternFly (pf-*) class overrides target the login/enrollment shell.
+      branding_custom_css: |
+        /* ── FuzeFront / fuse-seam brand ── */
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&display=swap');
+
+        :root {
+          --fuse-bg-shell:   #0b0e15;
+          --fuse-bg-canvas:  #0f131c;
+          --fuse-bg-card:    #141a26;
+          --fuse-bg-raised:  #1c2433;
+          --fuse-border:     #232c3d;
+          --fuse-text:       #e7ecf5;
+          --fuse-text-muted: #9fa9bc;
+          --fuse-accent:     #6e5cff;
+          --fuse-accent-2:   #29d3e6;
+          --fuse-seam:       linear-gradient(90deg, #6e5cff 0%, #29d3e6 100%);
+        }
+
+        /* Page shell */
+        body,
+        .pf-v5-c-login,
+        .pf-v5-c-background-image {
+          background-color: var(--fuse-bg-shell) !important;
+          font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+          color: var(--fuse-text) !important;
+        }
+
+        /* Login / enrollment card */
+        .pf-v5-c-login__main,
+        .pf-v5-c-card {
+          background-color: var(--fuse-bg-card) !important;
+          border: 1px solid var(--fuse-border) !important;
+          border-radius: 0.75rem !important;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.45) !important;
+          color: var(--fuse-text) !important;
+        }
+
+        /* Header / title */
+        .pf-v5-c-login__header,
+        .pf-v5-c-login__main-header {
+          background: transparent !important;
+        }
+        .pf-v5-c-title,
+        .pf-v5-c-login__main-header-desc,
+        h1, h2, h3 {
+          font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif !important;
+          color: var(--fuse-text) !important;
+        }
+
+        /* Seam accent bar at card top */
+        .pf-v5-c-login__main::before {
+          content: '';
+          display: block;
+          height: 3px;
+          background: var(--fuse-seam);
+          border-radius: 0.75rem 0.75rem 0 0;
+          margin-bottom: 1rem;
+        }
+
+        /* Inputs */
+        .pf-v5-c-form-control,
+        input[type="text"],
+        input[type="email"],
+        input[type="password"] {
+          background-color: var(--fuse-bg-raised) !important;
+          border-color: var(--fuse-border) !important;
+          color: var(--fuse-text) !important;
+          border-radius: 0.5rem !important;
+        }
+        .pf-v5-c-form-control:focus,
+        input:focus {
+          border-color: var(--fuse-accent) !important;
+          box-shadow: 0 0 0 2px rgba(110, 92, 255, 0.25) !important;
+          outline: none !important;
+        }
+
+        /* Primary button — seam gradient */
+        .pf-v5-c-button.pf-m-primary,
+        button[type="submit"] {
+          background: var(--fuse-seam) !important;
+          border: none !important;
+          color: #fff !important;
+          font-weight: 600 !important;
+          border-radius: 0.5rem !important;
+          font-family: 'Space Grotesk', sans-serif !important;
+          letter-spacing: 0.01em !important;
+          transition: opacity 0.15s ease !important;
+        }
+        .pf-v5-c-button.pf-m-primary:hover,
+        button[type="submit"]:hover {
+          opacity: 0.88 !important;
+        }
+
+        /* Links */
+        a, .pf-v5-c-button.pf-m-link {
+          color: var(--fuse-accent) !important;
+        }
+        a:hover {
+          color: var(--fuse-accent-2) !important;
+        }
+
+        /* Labels + helper text */
+        .pf-v5-c-form__label-text,
+        .pf-v5-c-helper-text__item {
+          color: var(--fuse-text-muted) !important;
+        }
+
+        /* Alerts (error) */
+        .pf-v5-c-alert.pf-m-danger {
+          background-color: rgba(242, 107, 122, 0.12) !important;
+          border-color: #f26b7a !important;
+          color: #f26b7a !important;
+        }
+
+        /* Dividers */
+        .pf-v5-c-divider {
+          background-color: var(--fuse-border) !important;
+        }
+
+        /* Social/OAuth provider buttons */
+        .pf-v5-c-button.pf-m-secondary {
+          background-color: var(--fuse-bg-raised) !important;
+          border-color: var(--fuse-border) !important;
+          color: var(--fuse-text) !important;
+          border-radius: 0.5rem !important;
+        }
+        .pf-v5-c-button.pf-m-secondary:hover {
+          border-color: var(--fuse-accent) !important;
+        }
