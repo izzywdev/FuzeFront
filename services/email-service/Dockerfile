@@ -1,76 +1,58 @@
-# Use Node.js 18 Alpine as base image
+# syntax=docker/dockerfile:1
+
+# ---------- base: install production deps only ----------
 FROM node:18-alpine AS base
-
-# Set working directory
 WORKDIR /app
-
-# Install dependencies for native modules
-RUN apk add --no-cache python3 make g++
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install && npm cache clean --force
-
-# Build stage
-FROM node:18-alpine AS build
-
-WORKDIR /app
-
-# Install dependencies for build
-RUN apk add --no-cache python3 make g++
-
-# Copy package files
-COPY package*.json ./
-
-# Install all dependencies (including dev)
-RUN npm install
-
-# Copy source code (including shared/)
-COPY . .
-
-# Build the application
-RUN npm run build
-
-# Production stage
-FROM node:18-alpine AS production
-
-# Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S emailservice -u 1001
+# Copy workspace root manifests (needed so npm ci can resolve workspace links)
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY services/email-service/package.json ./services/email-service/
 
+# Install only production deps for email-service
+RUN npm ci --workspace=services/email-service --omit=dev --ignore-scripts
+
+# ---------- build: full compile ----------
+FROM node:18-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY services/email-service/package.json ./services/email-service/
+
+RUN npm ci --workspace=services/email-service --ignore-scripts
+
+# Copy source
+COPY shared/ ./shared/
+COPY services/email-service/ ./services/email-service/
+
+# Build shared first, then email-service
+RUN cd shared && npm run build
+RUN cd services/email-service && npm run build
+
+# ---------- production ----------
+FROM node:18-alpine AS production
 WORKDIR /app
 
-# Copy production dependencies
-COPY --from=base --chown=emailservice:nodejs /app/node_modules ./node_modules
+RUN apk add --no-cache dumb-init && \
+    addgroup -S emailservice && adduser -S emailservice -G emailservice -u 1001
 
-# Copy built application
-COPY --from=build --chown=emailservice:nodejs /app/dist ./dist
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/services/email-service/node_modules ./services/email-service/node_modules
+COPY --from=build /app/shared/dist ./shared/dist
+COPY --from=build /app/services/email-service/dist ./services/email-service/dist
 
-# Remove TypeScript declaration files to prevent conflicts
-RUN find ./dist -name "*.d.ts" -type f -delete
+# Remove declaration files from production image
+RUN find ./services/email-service/dist -name "*.d.ts" -type f -delete
 
-# Copy package.json for version info
-COPY --chown=emailservice:nodejs package.json ./
+WORKDIR /app/services/email-service
 
-# Set environment variables
-ENV NODE_ENV=production
 ENV PORT=3003
+ENV NODE_ENV=production
 
-# Expose port
 EXPOSE 3003
 
-# Switch to non-root user
 USER emailservice
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3003/health || exit 1
-
-# Start the application
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/index.js"]
