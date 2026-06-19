@@ -1,44 +1,97 @@
 import { Knex } from 'knex'
 
 export async function up(knex: Knex): Promise<void> {
-  // Create app visibility enum
+  // Create app visibility enum (idempotent)
   await knex.raw(`
-    CREATE TYPE app_visibility_enum AS ENUM ('private', 'organization', 'public', 'marketplace');
+    DO $$ BEGIN
+      CREATE TYPE app_visibility_enum AS ENUM ('private', 'organization', 'public', 'marketplace');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
   `)
 
-  // Add organization-related columns to apps table
-  return knex.schema.alterTable('apps', table => {
-    table
-      .uuid('organization_id')
-      .nullable()
-      .references('id')
-      .inTable('organizations')
-      .onDelete('CASCADE')
-    table
-      .enum('visibility', null, {
-        useNative: true,
-        existingType: true,
-        enumName: 'app_visibility_enum',
-      })
-      .defaultTo('private')
-    table.jsonb('marketplace_metadata').defaultTo('{}')
-    table.boolean('is_marketplace_approved').defaultTo(false)
-    table.timestamp('marketplace_submitted_at').nullable()
-    table.timestamp('marketplace_approved_at').nullable()
-    table.uuid('approved_by').nullable().references('id').inTable('users')
-    table.jsonb('install_permissions').defaultTo('{}')
-    table.integer('install_count').defaultTo(0)
-    table.decimal('rating', 3, 2).nullable()
-    table.integer('review_count').defaultTo(0)
+  // Add organization-related columns to apps table (each guarded individually)
+  if (!await knex.schema.hasColumn('apps', 'organization_id')) {
+    await knex.schema.alterTable('apps', table => {
+      table
+        .uuid('organization_id')
+        .nullable()
+        .references('id')
+        .inTable('organizations')
+        .onDelete('CASCADE')
+      table.index(['organization_id'])
+    })
+  }
 
-    // Indexes for performance
-    table.index(['organization_id'])
-    table.index(['visibility'])
-    table.index(['is_marketplace_approved'])
-    table.index(['marketplace_submitted_at'])
-    table.index(['install_count'])
-    table.index(['rating'])
-  })
+  if (!await knex.schema.hasColumn('apps', 'visibility')) {
+    await knex.schema.alterTable('apps', table => {
+      table
+        .enum('visibility', null, {
+          useNative: true,
+          existingType: true,
+          enumName: 'app_visibility_enum',
+        })
+        .defaultTo('private')
+      table.index(['visibility'])
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'marketplace_metadata')) {
+    await knex.schema.alterTable('apps', table => {
+      table.jsonb('marketplace_metadata').defaultTo('{}')
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'is_marketplace_approved')) {
+    await knex.schema.alterTable('apps', table => {
+      table.boolean('is_marketplace_approved').defaultTo(false)
+      table.index(['is_marketplace_approved'])
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'marketplace_submitted_at')) {
+    await knex.schema.alterTable('apps', table => {
+      table.timestamp('marketplace_submitted_at').nullable()
+      table.index(['marketplace_submitted_at'])
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'marketplace_approved_at')) {
+    await knex.schema.alterTable('apps', table => {
+      table.timestamp('marketplace_approved_at').nullable()
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'approved_by')) {
+    await knex.schema.alterTable('apps', table => {
+      table.uuid('approved_by').nullable().references('id').inTable('users')
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'install_permissions')) {
+    await knex.schema.alterTable('apps', table => {
+      table.jsonb('install_permissions').defaultTo('{}')
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'install_count')) {
+    await knex.schema.alterTable('apps', table => {
+      table.integer('install_count').defaultTo(0)
+      table.index(['install_count'])
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'rating')) {
+    await knex.schema.alterTable('apps', table => {
+      table.decimal('rating', 3, 2).nullable()
+      table.index(['rating'])
+    })
+  }
+
+  if (!await knex.schema.hasColumn('apps', 'review_count')) {
+    await knex.schema.alterTable('apps', table => {
+      table.integer('review_count').defaultTo(0)
+    })
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {
