@@ -1,0 +1,29 @@
+{
+  "name": "@fuzefront/core",
+  "version": "1.0.0",
+  "description": "Shared backend core: db config, auth middleware, types, express bootstrap. Zero business logic.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "pg": "^8.11.5",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.4.5",
+    "@types/pg": "^8.15.4",
+    "@types/uuid": "^9.0.2",
+    "typescript": "^5.1.6"
+  }
+}

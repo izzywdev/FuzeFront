@@ -17,6 +17,20 @@ frontend:
     tag: 57fecf6261f0
   replicas: 2
 
+# Backend 3-way split. Images built by release.yml; `enabled` flips to true in
+# the Phase 3 cutover. tag "" is rewritten by CI's release sed.
+securityService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-security-service
+    tag: ""
+  replicas: 2
+
+applicationsService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-applications-service
+    tag: ""
+  replicas: 2
+
 emailService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service

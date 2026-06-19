@@ -8,6 +8,7 @@ on:
     branches: [master]
     paths:
       - 'backend/**'
+      - 'shared/**'
       - 'frontend/**'
       - 'services/email-service/**'
       - 'services/sms-service/**'
@@ -87,6 +88,30 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-sms-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-sms-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push security-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/security/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-security-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-security-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push applications-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/applications/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-applications-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-applications-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -115,6 +115,33 @@ backend:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
 
+# Backend 3-way split (dual-serving). Both default to disabled; the old backend
+# still serves every route until the Phase 3 cutover flips routing. Enable in
+# values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
+securityService:
+  enabled: false
+  image:
+    repository: fuzefront/security-service
+    tag: local
+  port: 3002
+  replicas: 1
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+
+applicationsService:
+  enabled: false
+  image:
+    repository: fuzefront/applications-service
+    tag: local
+  port: 3003
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
 # read from the existing chart Secret. Local enablement needs a REAL key — the
