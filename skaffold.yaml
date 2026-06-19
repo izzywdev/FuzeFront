@@ -41,6 +41,10 @@ build:
       context: .
       docker:
         dockerfile: services/email-service/Dockerfile
+    - image: fuzefront/sms-service
+      context: .
+      docker:
+        dockerfile: services/sms-service/Dockerfile
 
 manifests:
   helm:
@@ -59,6 +63,8 @@ manifests:
           frontend.image.tag: '{{.IMAGE_TAG_fuzefront_frontend}}'
           emailService.image.repository: "{{.IMAGE_REPO_fuzefront_email_service}}"
           emailService.image.tag: "{{.IMAGE_TAG_fuzefront_email_service}}"
+          smsService.image.repository: "{{.IMAGE_REPO_fuzefront_sms_service}}"
+          smsService.image.tag: "{{.IMAGE_TAG_fuzefront_sms_service}}"
   # clock-app example: image ref is substituted automatically from the artifact.
   rawYaml:
     - deploy/examples/clock-app.yaml

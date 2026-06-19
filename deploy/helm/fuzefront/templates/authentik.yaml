@@ -76,6 +76,45 @@
       name: {{ include "fuzefront.secretName" . }}
       key: AUTHENTIK_CLIENT_SECRET
 {{- end }}
+{{- if .Values.smsService.enabled }}
+# SMS MFA — the stages-sms blueprint reads these env vars at apply time.
+# AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster
+# sms-service Service (fuzefront-sms-service:<port>).
+# AUTHENTIK_SMS_AUTH_SECRET is the shared Bearer token the blueprint injects
+# into outbound HTTP requests to sms-service.
+- name: AUTHENTIK_SMS_SEND_URL
+  value: "http://fuzefront-sms-service:{{ .Values.smsService.port }}/sms/send"
+- name: AUTHENTIK_SMS_VERIFY_URL
+  value: "http://fuzefront-sms-service:{{ .Values.smsService.port }}/sms/verify"
+- name: AUTHENTIK_SMS_AUTH_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: SMS_AUTH_SECRET
+{{- end }}
+{{- if .Values.authentik.smtp.host }}
+# Authentik global email backend (used by all email stages with use_global_settings: true)
+- name: AUTHENTIK_EMAIL__HOST
+  value: {{ .Values.authentik.smtp.host | quote }}
+- name: AUTHENTIK_EMAIL__PORT
+  value: {{ .Values.authentik.smtp.port | quote }}
+- name: AUTHENTIK_EMAIL__USERNAME
+  value: {{ .Values.authentik.smtp.username | quote }}
+- name: AUTHENTIK_EMAIL__PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: SMTP_PASSWORD
+      optional: true
+- name: AUTHENTIK_EMAIL__FROM
+  value: {{ .Values.authentik.smtp.from | quote }}
+- name: AUTHENTIK_EMAIL__USE_TLS
+  value: {{ .Values.authentik.smtp.useTls | quote }}
+- name: AUTHENTIK_EMAIL__USE_SSL
+  value: {{ .Values.authentik.smtp.useSSL | quote }}
+- name: AUTHENTIK_EMAIL__TIMEOUT
+  value: {{ .Values.authentik.smtp.timeout | quote }}
+{{- end }}
 {{- end -}}
 {{- /* Guard: when OIDC is enabled an empty client secret would be silently
      applied by the blueprint, leaving the provider with no usable secret.

@@ -26,3 +26,12 @@ WARNING: this release created its Secret from chart values (dev placeholders).
 Override secret.jwtSecret / secret.sessionSecret / secret.dbPassword for anything
 real, or set secret.existingSecret to a Secret you manage out-of-band.
 {{- end }}
+{{- if .Values.smsService.enabled }}
+
+SMS MFA is enabled. In production, your existingSecret (e.g. a SealedSecret) MUST
+contain the following keys:
+  - SMS_AUTH_SECRET       — shared Bearer token between Authentik and sms-service
+  - TWILIO_ACCOUNT_SID    — Twilio account SID
+  - TWILIO_AUTH_TOKEN     — Twilio auth token
+  - TWILIO_VERIFY_SERVICE_SID — Twilio Verify service SID
+{{- end }}

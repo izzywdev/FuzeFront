@@ -1,7 +1,7 @@
 {
-  "name": "@fuzefront/email-service",
+  "name": "@fuzefront/sms-service",
   "version": "1.0.0",
-  "description": "Kafka consumer that sends transactional emails for FuzeFront",
+  "description": "Twilio Verify SMS OTP gateway for FuzeFront MFA",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -10,21 +10,15 @@
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/shared": "1.0.0",
-    "@sendgrid/mail": "8.1.3",
     "express": "4.19.2",
-    "kafkajs": "2.2.4",
-    "nodemailer": "6.9.14",
+    "twilio": "^5.3.0",
     "zod": "3.22.4"
   },
   "devDependencies": {
     "@types/express": "4.17.21",
     "@types/node": "18.19.0",
-    "@types/nodemailer": "6.4.14",
     "@types/supertest": "6.0.2",
-    "@types/uuid": "10.0.0",
     "jest": "29.7.0",
-    "uuid": "9.0.1",
     "nodemon": "3.0.1",
     "supertest": "6.3.3",
     "ts-jest": "29.1.1",

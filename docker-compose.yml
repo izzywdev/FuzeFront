@@ -82,6 +82,24 @@ services:
       - fuzefront-backend
 
   # ================================
+  # SMS SERVICE (Twilio Verify MFA)
+  # ================================
+  sms-service:
+    build:
+      context: .
+      dockerfile: services/sms-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - TWILIO_MOCK=true
+      - SMS_AUTH_SECRET=${SMS_AUTH_SECRET:-dev-sms-secret}
+    networks:
+      - FuzeInfra
+    depends_on:
+      - fuzefront-backend
+
+  # ================================
   # FRONTEND SERVICE
   # ================================
   fuzefront-frontend:

@@ -89,11 +89,19 @@ secret:
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
   sendgridApiKey: ""
+  # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
+  # Supply real values via --set or a gitignored values file. NEVER commit real creds.
+  twilioAccountSid: ""
+  twilioAuthToken: ""
+  twilioVerifyServiceSid: ""
+  smsAuthSecret: "dev-sms-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
   # (inert — Authentik skips sources whose consumer_key resolves to "").
   # Override via --set or a gitignored values file. NEVER commit real creds.
   googleClientId: ""
   googleClientSecret: ""
+  # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
+  smtpPassword: ""
 
 backend:
   image:
@@ -148,6 +156,15 @@ emailService:
     from: "noreply@fuzefront.com"
   resources: {}
 
+smsService:
+  enabled: false
+  replicas: 1
+  port: 3004
+  image:
+    repository: fuzefront/sms-service
+    tag: local
+  resources: {}
+
 authentik:
   enabled: true
   image:
@@ -169,6 +186,19 @@ authentik:
     redirectUri: "" # https://fuzefront.dev.local/api/auth/oidc/callback
     backendHostAliasIP: "" # ingress-nginx ClusterIP (kubectl -n ingress-nginx get svc)
     caConfigMap: "" # configmap holding ca.crt for NODE_EXTRA_CA_CERTS
+  # SMTP for Authentik transactional email (enrollment verification, password reset).
+  # Leave all fields empty (default) to keep email disabled — Authentik will log a
+  # warning but won't crash. Supply real values via --set or an existingSecret in prod.
+  # In the local test harness, point host/port at MailHog (1025, no auth needed).
+  smtp:
+    host: ""        # e.g. "mailhog" (compose), "smtp.sendgrid.net" (prod)
+    port: 25        # 1025 for MailHog, 587 for TLS STARTTLS, 465 for SSL
+    username: ""    # leave empty for MailHog (no auth)
+    # password stored in chart Secret as SMTP_PASSWORD; set via --set secret.smtpPassword
+    from: "noreply@fuzefront.dev"
+    useTls: false
+    useSSL: false
+    timeout: 10
 
 ingress:
   enabled: true
