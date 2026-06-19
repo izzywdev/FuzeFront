@@ -8,12 +8,12 @@
       "allowBranch": ["main", "master", "develop"],
       "conventionalCommits": true,
       "message": "chore(release): publish %s",
-      "registry": "https://registry.npmjs.org/"
+      "registry": "https://npm.pkg.github.com"
     },
     "publish": {
       "conventionalCommits": true,
       "message": "chore(release): publish %s",
-      "registry": "https://registry.npmjs.org/"
+      "registry": "https://npm.pkg.github.com"
     }
   }
 }
