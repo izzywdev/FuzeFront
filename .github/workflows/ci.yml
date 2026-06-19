@@ -155,12 +155,71 @@ jobs:
           DB_NAME: frontfuse_test
           DB_USER: postgres
           DB_PASSWORD: postgres
-          # No-op Permit config so permission checks don't crash without a PDP.
-          PERMIT_API_KEY: ci-noop
+          # Use real PERMIT_API_KEY when available (secret); fall back to ci-noop
+          # so the job doesn't fail when the secret is absent (e.g. forks).
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-noop' }}
           PERMIT_PDP_URL: http://localhost:7766
         # Real integration tests (auth + apps + permissions) against the Postgres
         # service — they genuinely assert behavior, so a failure is a real bug.
         run: cd backend && npm run test:integration
+
+  email-integration:
+    name: Email Integration (MailHog)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install root workspace (shared deps)
+        run: npm ci
+
+      - name: Install email-service deps
+        run: cd services/email-service && npm ci
+
+      - name: Build email-service
+        run: cd services/email-service && npm run build
+
+      - name: Start MailHog + Kafka + email-service
+        run: |
+          docker compose -f docker-compose.test.yml up -d mailhog kafka-test email-service-test
+          echo "Waiting for MailHog API..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v2/messages >/dev/null 2>&1; then echo "MailHog up"; break; fi
+            sleep 2
+          done
+          echo "Waiting for Kafka (port 9094)..."
+          for i in $(seq 1 40); do
+            if nc -z localhost 9094 2>/dev/null; then echo "Kafka up"; break; fi
+            if [ "$i" -eq 40 ]; then echo "ERROR: Kafka did not become reachable" >&2; exit 1; fi
+            sleep 2
+          done
+          echo "Waiting for email-service health..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
+            sleep 2
+          done
+
+      - name: Run email integration tests
+        env:
+          KAFKA_BROKERS: localhost:9094
+          MAILHOG_API: http://localhost:8025
+        run: cd services/email-service && npm test
+
+      - name: Dump email-service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs email-service-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
   security-scan:
     name: Security Scan
@@ -224,17 +283,17 @@ jobs:
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
-    needs: [lint-and-test, build, integration-tests]
+    needs: [lint-and-test, build, integration-tests, email-integration]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' }}
         run: |
           echo "❌ Some checks failed. Please review the logs."
           exit 1

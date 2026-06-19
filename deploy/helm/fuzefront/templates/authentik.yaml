@@ -76,6 +76,29 @@
       name: {{ include "fuzefront.secretName" . }}
       key: AUTHENTIK_CLIENT_SECRET
 {{- end }}
+{{- if .Values.authentik.smtp.host }}
+# Authentik global email backend (used by all email stages with use_global_settings: true)
+- name: AUTHENTIK_EMAIL__HOST
+  value: {{ .Values.authentik.smtp.host | quote }}
+- name: AUTHENTIK_EMAIL__PORT
+  value: {{ .Values.authentik.smtp.port | quote }}
+- name: AUTHENTIK_EMAIL__USERNAME
+  value: {{ .Values.authentik.smtp.username | quote }}
+- name: AUTHENTIK_EMAIL__PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: SMTP_PASSWORD
+      optional: true
+- name: AUTHENTIK_EMAIL__FROM
+  value: {{ .Values.authentik.smtp.from | quote }}
+- name: AUTHENTIK_EMAIL__USE_TLS
+  value: {{ .Values.authentik.smtp.useTls | quote }}
+- name: AUTHENTIK_EMAIL__USE_SSL
+  value: {{ .Values.authentik.smtp.useSSL | quote }}
+- name: AUTHENTIK_EMAIL__TIMEOUT
+  value: {{ .Values.authentik.smtp.timeout | quote }}
+{{- end }}
 {{- end -}}
 {{- /* Guard: when OIDC is enabled an empty client secret would be silently
      applied by the blueprint, leaving the provider with no usable secret.
