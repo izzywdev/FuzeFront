@@ -1,0 +1,60 @@
+name: Publish packages (GitHub Packages, private)
+
+# On merge to master, version-bump and publish the reusable @fuzefront/* packages
+# to GitHub Packages (private/restricted). Lerna with conventional commits detects
+# which packages changed since their last release tag, computes the semver bump
+# from commit messages (feat->minor, fix->patch, BREAKING CHANGE->major), and
+# publishes only those. Private packages (apps + deployed services) are skipped.
+#
+# NOTE: GitHub Packages requires the npm scope to match the owning org/user.
+# @fuzefront/* can only publish once this repo is owned by the `fuzefront` GitHub
+# org. The job guard below makes this workflow a no-op under any other owner, so
+# it is safe to merge now and auto-activates after the org transfer.
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: packages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_owner == 'fuzefront'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push lerna version commits + tags
+      packages: write # publish to GitHub Packages
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # lerna needs full history for change detection
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@fuzefront'
+
+      - name: Install
+        run: npm ci || npm install
+
+      - name: Build packages (topological, if a build script exists)
+        run: npx lerna run build --if-present
+
+      - name: Configure git identity
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+
+      - name: Version + publish changed packages
+        # --conventional-commits: bump + changelog + tag from commit messages
+        # --no-private: skip "private": true packages (apps, deployed services)
+        # --yes: non-interactive; [skip ci] avoids retriggering CI on the bump commit
+        run: >-
+          npx lerna publish --conventional-commits --no-private --yes
+          --message "chore(release): publish %s [skip ci]"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
