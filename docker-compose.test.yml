@@ -1,0 +1,130 @@
+# docker-compose.test.yml
+# Standalone test harness. Bring up with:
+#   docker compose -f docker-compose.test.yml up -d
+# Tear down with:
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Ports (all on localhost, won't conflict with prod compose):
+#   5433  -> Postgres (test DB)
+#   9094  -> Kafka (KRaft, external listener)
+#   1025  -> MailHog SMTP
+#   8025  -> MailHog Web UI + API (http://localhost:8025)
+#   7767  -> Permit PDP
+
+networks:
+  test-harness:
+    name: test-harness
+    driver: bridge
+
+services:
+
+  # ── Postgres ────────────────────────────────────────────────────────────────
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fuzefront_platform_test
+    ports:
+      - "5433:5432"
+    networks:
+      - test-harness
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Kafka (KRaft — no ZooKeeper) ────────────────────────────────────────────
+  kafka-test:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: test-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-test:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-test:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    ports:
+      - "9094:9094"
+    networks:
+      - test-harness
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 2>/dev/null | grep -q 'ApiKey'"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # ── MailHog (SMTP sink + assertion API) ─────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: test-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI + REST API
+    networks:
+      - test-harness
+
+  # ── Permit PDP (offline mode — needs real API key for cloud-connected tests) ─
+  permit-pdp-test:
+    image: permitio/pdp-v2:0.8.1
+    container_name: test-permit-pdp
+    environment:
+      PDP_API_KEY: ${PERMIT_API_KEY:-ci-noop}
+      PDP_DEBUG: "false"
+      PDP_ENABLE_OFFLINE_MODE: "true"
+      OPAL_INLINE_OPA_ENABLED: "true"
+      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: "false"
+    ports:
+      - "7767:7000"
+    networks:
+      - test-harness
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7000/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── email-service wired to MailHog ──────────────────────────────────────────
+  email-service-test:
+    build:
+      context: .
+      dockerfile: services/email-service/Dockerfile
+    container_name: test-email-service
+    environment:
+      NODE_ENV: test
+      PORT: "3003"
+      KAFKA_BROKERS: kafka-test:9092
+      KAFKA_CLIENT_ID: email-service-test
+      KAFKA_GROUP_ID: email-service-test-group
+      EMAIL_PROVIDER: smtp
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      EMAIL_FROM: noreply@fuzefront.test
+    ports:
+      - "3004:3003"
+    networks:
+      - test-harness
+    depends_on:
+      kafka-test:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
