@@ -7,12 +7,7 @@ import {
 } from '../middleware/permissions'
 import { db } from '../config/database'
 import { Organization, OrganizationMembership } from '../types/shared'
-import {
-  syncUserToPermit,
-  createTenantInPermit,
-  assignOrganizationRole,
-  setupOrganizationWithRoles,
-} from '../utils/permit'
+import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 
 const router = express.Router()
 
@@ -51,8 +46,11 @@ function validateOrganizationInput(data: any) {
     )
   }
 
-  if (data.type && !['platform', 'organization'].includes(data.type)) {
-    errors.push('Type must be either "platform" or "organization"')
+  if (
+    data.type &&
+    !['platform', 'organization', 'personal'].includes(data.type)
+  ) {
+    errors.push('Type must be one of "platform", "organization", "personal"')
   }
 
   return errors
@@ -173,28 +171,19 @@ router.post('/', authenticateToken, async (req: any, res) => {
       updated_at: newOrganization.updated_at,
     }
 
-    // Integrate with Permit.io asynchronously (don't block response)
-    Promise.all([
-      // 1. Ensure user is synced to Permit.io
-      syncUserToPermit({
-        id: req.user.id,
-        email: req.user.email,
-        firstName: req.user.firstName,
-        lastName: req.user.lastName,
-        roles: req.user.roles || [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-
-      // 2. Create tenant for the organization
-      createTenantInPermit(organization),
-
-      // 3. Assign owner role to the creator
-      assignOrganizationRole(req.user.id, organizationId, 'owner'),
-    ]).catch(error => {
-      console.error('Error syncing organization to Permit.io:', error)
-      // Don't fail the API response, but log for monitoring
-    })
+    // Provision Permit wiring via the idempotent, resumable reconciler instead
+    // of a fire-and-forget Promise.all. We await it so the per-step state is
+    // recorded, but a Permit outage must not 500 the create — the org is created
+    // in `pending` and will self-heal on the user's next login (or via the
+    // internal provision endpoint), so we swallow reconciler errors here.
+    try {
+      await reconcileOrganizationProvisioning(organizationId)
+    } catch (error) {
+      console.error(
+        `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
+        error
+      )
+    }
 
     res.status(201).json(organization)
   } catch (error: any) {

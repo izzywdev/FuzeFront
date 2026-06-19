@@ -13,10 +13,11 @@ export interface Organization {
   slug: string
   parent_id?: string
   owner_id: string
-  type: 'platform' | 'organization'
+  type: 'platform' | 'organization' | 'personal'
   settings: Record<string, any>
   metadata: Record<string, any>
   is_active: boolean
+  provisioning_state?: 'pending' | 'active' | 'failed'
   created_at: string
   updated_at: string
 }

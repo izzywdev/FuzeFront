@@ -25,7 +25,11 @@ build:
     useBuildkit: true
   artifacts:
     - image: fuzefront/backend
-      context: backend
+      # Root context so the backend image can build the @fuzefront/shared kafka
+      # sub-barrel (mirrors email-service). See backend/Dockerfile.
+      context: .
+      docker:
+        dockerfile: backend/Dockerfile
     - image: fuzefront/frontend
       context: frontend
       docker:

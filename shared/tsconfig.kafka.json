@@ -1,0 +1,16 @@
+{
+  // Backend (and any non-React service) consumes only the kafka sub-tree of
+  // shared. Building just src/kafka avoids the React/JSX + socket.io-client
+  // dependencies of the full barrel, so server images don't need a DOM toolchain.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "jsx": "preserve",
+    "lib": ["es2020"],
+    "types": ["node"],
+    "rootDir": "./src/kafka",
+    "outDir": "./dist/kafka"
+  },
+  "include": ["src/kafka"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,6 +1,7 @@
 import { Issuer, Client, generators } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
+import { defaultEventPublisher } from './eventPublisher';
 
 interface OIDCConfig {
   issuerUrl: string;
@@ -148,10 +149,49 @@ class OIDCService {
           updated_at: new Date(),
         };
 
-        await db('users').insert(newUser);
+        // Atomically insert the user AND an outbox row for identity.user.created.
+        // The outbox guarantees the event is durably recorded even if the Kafka
+        // publish below fails; reconcile-on-login is the ultimate safety net.
+        const correlationId = `identity-${newUser.id}`;
+        await db.transaction(async trx => {
+          await trx('users').insert(newUser);
+          await trx('event_outbox').insert({
+            id: require('uuid').v4(),
+            topic: 'identity.user.created',
+            payload: JSON.stringify({
+              userId: newUser.id,
+              email,
+              firstName,
+              lastName,
+              intent: 'signup',
+            }),
+            correlation_id: correlationId,
+            status: 'pending',
+            attempts: 0,
+          });
+        });
         userRow = newUser;
 
         console.log(`✅ Created new user: ${email}`);
+
+        // Best-effort publish; failure leaves the outbox row 'pending' for replay.
+        try {
+          await defaultEventPublisher.publishIdentityUserCreated(
+            {
+              userId: newUser.id,
+              email,
+              firstName,
+              lastName,
+              intent: 'signup',
+            },
+            correlationId
+          );
+          await db('event_outbox')
+            .where({ correlation_id: correlationId })
+            .update({ status: 'sent', attempts: 1, sent_at: new Date() });
+        } catch (pubErr) {
+          console.error('⚠️ identity.user.created publish failed (outbox retains it):', pubErr);
+        }
       }
 
       // Return user object

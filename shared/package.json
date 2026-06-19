@@ -4,8 +4,19 @@
   "description": "Shared state library for FuzeFront platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./kafka": {
+      "types": "./dist/kafka/index.d.ts",
+      "default": "./dist/kafka/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
+    "build:kafka": "tsc -p tsconfig.kafka.json",
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit"
   },

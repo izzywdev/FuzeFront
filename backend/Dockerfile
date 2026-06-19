@@ -1,63 +1,57 @@
-# Use Node.js 18 Alpine as base image
-FROM node:18-alpine AS base
+# syntax=docker/dockerfile:1
+#
+# IMPORTANT: build context is the REPOSITORY ROOT (see skaffold.yaml), not
+# backend/. This lets the backend consume the @fuzefront/shared workspace
+# (kafka sub-barrel) the same way services/email-service does. Only the kafka
+# sub-tree of shared is built (npm run build:kafka) so the server image needs no
+# React/DOM toolchain.
 
-# Set working directory
-WORKDIR /app
-
-# Install dependencies for native modules
-RUN apk add --no-cache python3 make g++
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install && npm cache clean --force
-
-# Build stage
+# ---------- build: full compile ----------
 FROM node:18-alpine AS build
-
 WORKDIR /app
-
-# Install dependencies for build
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY backend/package.json ./backend/
 
-# Install all dependencies (including dev)
 RUN npm install
 
-# Copy source code
-COPY . .
+# Copy source
+COPY shared/ ./shared/
+COPY backend/ ./backend/
 
-# Build the application
-RUN npm run build
+# Build shared kafka sub-tree first, then the backend.
+RUN cd shared && npm run build:kafka
+RUN cd backend && npm run build
 
-# Production stage
+# ---------- production ----------
 FROM node:18-alpine AS production
-
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
+RUN apk add --no-cache dumb-init && \
+    addgroup -g 1001 -S nodejs && \
     adduser -S backend -u 1001
 
 WORKDIR /app
 
-# Copy production dependencies
-COPY --from=base --chown=backend:nodejs /app/node_modules ./node_modules
+# node_modules from the build stage. The full (dev+prod) root install hoists
+# shared's runtime deps (kafkajs, zod, react) to /app/node_modules — which is
+# where the @fuzefront/shared symlink (and shared/dist/kafka/*) resolves them.
+# A prod-only `--omit=dev` install does NOT hoist them consistently, so we take
+# the build stage's tree as-is. (Image carries devDeps; acceptable for parity.)
+COPY --from=build --chown=backend:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=backend:nodejs /app/backend/node_modules ./backend/node_modules
 
-# Copy built application
-COPY --from=build --chown=backend:nodejs /app/dist ./dist
+# Built shared kafka output + compiled backend.
+COPY --from=build --chown=backend:nodejs /app/shared/dist ./shared/dist
+COPY --from=build --chown=backend:nodejs /app/shared/package.json ./shared/package.json
+COPY --from=build --chown=backend:nodejs /app/backend/dist ./backend/dist
+COPY --from=build --chown=backend:nodejs /app/backend/package.json ./backend/package.json
 
-# Remove TypeScript declaration files to prevent conflicts
-RUN find ./dist -name "*.d.ts" -type f -delete
+# Remove declaration files to prevent conflicts.
+RUN find ./backend/dist -name "*.d.ts" -type f -delete
 
-# Copy package.json for version info
-COPY --chown=backend:nodejs package.json ./
+WORKDIR /app/backend
 
-# Set environment variables
 ENV NODE_ENV=production
 ENV USE_POSTGRES=true
 ENV DB_HOST=shared-postgres
@@ -68,16 +62,12 @@ ENV DB_PASSWORD=postgres
 ENV JWT_SECRET=fuzefront-production-secret-change-this
 ENV PORT=3001
 
-# Expose port
 EXPOSE 3001
 
-# Switch to non-root user
 USER backend
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
-# Start the application
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/index.js"] 
+CMD ["node", "dist/index.js"]

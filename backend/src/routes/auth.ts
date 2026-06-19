@@ -6,9 +6,22 @@ import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
+import { runInternalProvision } from '../services/organizationProvisioning'
 
 
 const router = express.Router()
+
+/**
+ * Self-heal provisioning on login: ensure the user has a personal org and that
+ * every org they own which isn't `active` gets reconciled. Fire-and-forget —
+ * this must never block or fail the login response. Acts as the safety net when
+ * the identity.user.created Kafka event was lost.
+ */
+function selfHealProvisioningOnLogin(userId: string): void {
+  runInternalProvision(userId).catch(err => {
+    console.error(`Login self-heal provisioning failed for ${userId}:`, err)
+  })
+}
 
 /**
  * @swagger
@@ -198,6 +211,9 @@ router.post('/login', async (req, res) => {
       sessionId,
       responseTime: Date.now() - startTime,
     })
+
+    // Self-heal provisioning in the background (does not block the response).
+    selfHealProvisioningOnLogin(user.id)
 
     res.json({
       token,
@@ -415,6 +431,9 @@ router.get('/oidc/callback', async (req, res) => {
     })
 
     console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email)
+
+    // Self-heal provisioning in the background (does not block the redirect).
+    selfHealProvisioningOnLogin(user.id)
 
     // Redirect to frontend with token
     const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`
