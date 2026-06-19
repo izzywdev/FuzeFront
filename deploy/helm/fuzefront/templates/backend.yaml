@@ -89,6 +89,17 @@ spec:
               {{- end }}
             - name: PERMIT_DEBUG
               value: "false"
+            # Kafka brokers for publishing identity/email events (Plan B/C).
+            # Empty => publisher is a logging no-op; provisioning still self-heals.
+            - name: KAFKA_BROKERS
+              value: {{ .Values.emailService.kafka.brokers | default "" | quote }}
+            # Shared secret guarding POST /internal/provision (Plan D calls this).
+            - name: INTERNAL_PROVISION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: INTERNAL_PROVISION_SECRET
+                  optional: true
             {{- if .Values.authentik.oidc.enabled }}
             # Authentik OIDC (SSO). client_id/secret come from the Secret (set
             # deterministically by blueprints); issuer/redirect from values.

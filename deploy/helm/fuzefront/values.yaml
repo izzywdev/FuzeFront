@@ -73,6 +73,10 @@ secret:
   # to be set at import time. The SDK is built with throwOnError:false, so with a
   # placeholder it boots and degrades gracefully (Permit-gated routes will deny).
   permitApiKey: "dev-no-permit"
+  # Shared secret for the backend's internal provisioning endpoint
+  # (POST /internal/provision), called by Plan D's provisioning-service.
+  # DEV ONLY default — override with a long random value in real deployments.
+  internalProvisionSecret: "dev-internal-provision-secret-change-me"
   # Authentik (DEV ONLY — override). Secret key must be long/random in real use.
   authentikSecretKey: "dev-authentik-secret-key-change-me-0123456789abcdef0123"
   authentikBootstrapPassword: "admin123"
