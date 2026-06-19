@@ -1,0 +1,151 @@
+# Authentik Blueprint — FuzeFront password recovery flow
+#
+# Stages (in order):
+#   1. fuzefront-recovery-source-identification — email lookup
+#   2. fuzefront-recovery-email                 — send recovery link by email
+#   3. fuzefront-recovery-prompt                — enter + confirm new password
+#   4. fuzefront-recovery-write                 — write the new password
+#   5. fuzefront-recovery-login                 — log the user in automatically
+version: 3
+metadata:
+  name: FuzeFront Recovery Flow
+entries:
+  # ── Source-identification stage (email) ──────────────────────────────────────
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: fuzefront-recovery-identification
+    attrs:
+      name: fuzefront-recovery-identification
+      user_fields:
+        - email
+      case_insensitive_matching: true
+      show_source_labels: false
+      show_matched_user: false
+
+  # ── Email challenge stage ─────────────────────────────────────────────────────
+  - model: authentik_stages_email.emailstage
+    state: present
+    identifiers:
+      name: fuzefront-recovery-email
+    attrs:
+      name: fuzefront-recovery-email
+      use_global_settings: true
+      from_address: "noreply@fuzefront.dev"
+      subject: "Reset your FuzeFront password"
+      template: email/password_reset.html
+      token_expiry: 30  # minutes
+      activate_user_on_success: false
+
+  # ── New-password prompt fields ────────────────────────────────────────────────
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-recovery-password
+    attrs:
+      name: ff-recovery-password
+      field_key: password
+      label: "New Password"
+      type: password
+      required: true
+      placeholder: "New password (12+ chars)"
+      order: 10
+
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-recovery-password-repeat
+    attrs:
+      name: ff-recovery-password-repeat
+      field_key: password_repeat
+      label: "Confirm New Password"
+      type: password
+      required: true
+      placeholder: "Repeat new password"
+      order: 20
+
+  # ── Prompt stage with password policy ────────────────────────────────────────
+  - model: authentik_stages_prompt.promptstage
+    state: present
+    identifiers:
+      name: fuzefront-recovery-prompt
+    attrs:
+      name: fuzefront-recovery-prompt
+      fields:
+        - !find [authentik_stages_prompt.prompt, [name, ff-recovery-password]]
+        - !find [authentik_stages_prompt.prompt, [name, ff-recovery-password-repeat]]
+      validation_policies:
+        - !find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
+
+  # ── User-write (password update) stage ───────────────────────────────────────
+  - model: authentik_stages_user_write.userwritestage
+    state: present
+    identifiers:
+      name: fuzefront-recovery-write
+    attrs:
+      name: fuzefront-recovery-write
+      create_users_as_inactive: false
+      user_type: internal
+
+  # ── User-login stage ──────────────────────────────────────────────────────────
+  - model: authentik_stages_user_login.userloginstage
+    state: present
+    identifiers:
+      name: fuzefront-recovery-login
+    attrs:
+      name: fuzefront-recovery-login
+      session_duration: "seconds=0"
+
+  # ── Recovery flow ─────────────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-recovery
+    attrs:
+      name: "FuzeFront Password Recovery"
+      slug: fuzefront-recovery
+      title: "Reset your FuzeFront password"
+      designation: recovery
+      authentication: none
+      layout: stacked
+
+  # ── Flow-stage bindings ───────────────────────────────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !find [authentik_stages_identification.identificationstage, [name, fuzefront-recovery-identification]]
+    attrs:
+      order: 10
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !find [authentik_stages_email.emailstage, [name, fuzefront-recovery-email]]
+    attrs:
+      order: 20
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !find [authentik_stages_prompt.promptstage, [name, fuzefront-recovery-prompt]]
+    attrs:
+      order: 30
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !find [authentik_stages_user_write.userwritestage, [name, fuzefront-recovery-write]]
+    attrs:
+      order: 40
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !find [authentik_stages_user_login.userloginstage, [name, fuzefront-recovery-login]]
+    attrs:
+      order: 50

@@ -8,13 +8,13 @@ global:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 1fbd206c5b2a
+    tag: 1ef37f346d6f
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 1fbd206c5b2a
+    tag: 1ef37f346d6f
   replicas: 2
 
 emailService:

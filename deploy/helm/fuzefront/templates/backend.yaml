@@ -90,8 +90,8 @@ spec:
             - name: PERMIT_DEBUG
               value: "false"
             {{- if .Values.authentik.oidc.enabled }}
-            # Authentik OIDC (SSO). client_id/secret come from the Secret (seeded
-            # by scripts/seed-authentik-fuzefront.py); issuer/redirect from values.
+            # Authentik OIDC (SSO). client_id/secret come from the Secret (set
+            # deterministically by blueprints); issuer/redirect from values.
             - name: AUTHENTIK_CLIENT_ID
               valueFrom:
                 secretKeyRef:
