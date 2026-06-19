@@ -85,6 +85,12 @@ secret:
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
   sendgridApiKey: ""
+  # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
+  # Supply real values via --set or a gitignored values file. NEVER commit real creds.
+  twilioAccountSid: ""
+  twilioAuthToken: ""
+  twilioVerifyServiceSid: ""
+  smsAuthSecret: "dev-sms-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
   # (inert — Authentik skips sources whose consumer_key resolves to "").
   # Override via --set or a gitignored values file. NEVER commit real creds.
@@ -142,6 +148,15 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
+  resources: {}
+
+smsService:
+  enabled: false
+  replicas: 1
+  port: 3004
+  image:
+    repository: fuzefront/sms-service
+    tag: local
   resources: {}
 
 authentik:

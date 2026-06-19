@@ -51,21 +51,8 @@ entries:
       # Not required for unenrolled users — allows graceful bypass until enrolled.
       not_configured_action: skip
 
-  # ── SMS stub stage (UNBOUND — deferred to later plan) ─────────────────────────
-  # Defined here for schema completeness. Not bound to any flow until Twilio
-  # credentials are available. To activate: bind this stage to an auth flow
-  # and set twilio_account_sid / twilio_auth_token / twilio_from_number via
-  # Helm values (backed by a SealedSecret).
-  - model: authentik_stages_authenticator_sms.authenticatorsmsstage
-    state: present
-    identifiers:
-      name: fuzefront-mfa-sms-stub
-    attrs:
-      name: fuzefront-mfa-sms-stub
-      friendly_name: "FuzeFront SMS (stub — not active)"
-      provider: twilio
-      # Placeholder credentials — replace with real Twilio creds in prod.
-      account_sid: ""
-      auth_token: ""
-      from_number: ""
-      verify_only: false
+  # ── SMS stage (superseded by stages-sms.yaml) ────────────────────────────────
+  # The real SMS MFA stage is defined in stages-sms.yaml (generic HTTP provider
+  # calling sms-service, which calls Twilio Verify internally).
+  # stages-sms.yaml is applied by the same Helm ConfigMap and Authentik worker
+  # auto-discovery. The stub entry above has been removed.

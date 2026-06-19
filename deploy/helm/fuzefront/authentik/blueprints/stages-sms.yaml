@@ -1,0 +1,67 @@
+# Authentik Blueprint — FuzeFront SMS MFA stages
+#
+# Wires Authentik's generic-SMS MFA stage to the sms-service HTTP gateway.
+# sms-service calls Twilio Verify internally; Authentik sees only the two
+# HTTP endpoints below.
+#
+# Prerequisites:
+#   - smsService.enabled=true in Helm values
+#   - secret.twilioAccountSid / twilioAuthToken / twilioVerifyServiceSid set
+#   - secret.smsAuthSecret set (used by Authentik to authenticate to sms-service)
+#   - AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL / AUTHENTIK_SMS_AUTH_SECRET
+#     injected into the Authentik worker pod via Helm deployment env
+#
+# The SMS factor is kept optional (not_configured_action: skip) so users
+# without a phone number enrolled are not blocked from logging in.
+# TOTP and passkey remain the primary factors.
+#
+# To activate SMS MFA for a user: bind the fuzefront-mfa-sms-setup stage to
+# the enrollment or user-settings flow, and add fuzefront-mfa-sms-setup to
+# the fuzefront-mfa-validate device_classes list (done below).
+version: 3
+metadata:
+  name: FuzeFront SMS MFA Stages
+entries:
+  # ── Generic-SMS setup stage ──────────────────────────────────────────────────
+  # Authentik's generic-SMS provider POSTs to send_url to trigger OTP delivery,
+  # then POSTs to verify_url to check the code.
+  # The Authorization header is injected via mapping_expression.
+  #
+  # account_sid field is repurposed as send_url for the generic provider.
+  # auth_token field is repurposed as verify_url for the generic provider.
+  # (Authentik 2024.x generic-SMS provider uses these fields this way.)
+  - model: authentik_stages_authenticator_sms.authenticatorsmsstage
+    state: present
+    identifiers:
+      name: fuzefront-mfa-sms-setup
+    attrs:
+      name: fuzefront-mfa-sms-setup
+      friendly_name: "FuzeFront SMS"
+      provider: generic
+      # Send URL: Authentik POSTs {"phone_number": "<phone>"} to this endpoint
+      account_sid: !Env [AUTHENTIK_SMS_SEND_URL, "http://fuzefront-sms-service:3004/sms/send"]
+      # Verify URL: Authentik POSTs {"phone_number": "<phone>", "token": "<code>"} to this endpoint
+      auth_token: !Env [AUTHENTIK_SMS_VERIFY_URL, "http://fuzefront-sms-service:3004/sms/verify"]
+      from_number: !Env [AUTHENTIK_SMS_FROM, "FuzeFront"]
+      verify_only: false
+      # mapping_expression adds the Authorization header to outbound requests
+      mapping_expression: |
+        import os
+        return {
+          "Authorization": "Bearer " + os.environ.get("AUTHENTIK_SMS_AUTH_SECRET", "")
+        }
+
+  # ── Authenticator-validation stage (updated to include SMS as optional) ──────
+  # Adds 'sms' to device_classes. Idempotent: re-applying updates the list.
+  # not_configured_action: skip keeps SMS optional (users without phones are not blocked).
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    state: present
+    identifiers:
+      name: fuzefront-mfa-validate
+    attrs:
+      name: fuzefront-mfa-validate
+      device_classes:
+        - totp
+        - webauthn
+        - sms
+      not_configured_action: skip

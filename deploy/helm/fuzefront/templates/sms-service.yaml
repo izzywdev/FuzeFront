@@ -1,0 +1,81 @@
+{{- if .Values.smsService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-sms-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sms-service
+spec:
+  replicas: {{ .Values.smsService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-sms-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-sms-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: sms-service
+          image: "{{ .Values.smsService.image.repository }}:{{ .Values.smsService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.smsService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.smsService.port | quote }}
+            {{- if .Values.secret.twilioAccountSid }}
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: TWILIO_ACCOUNT_SID
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: TWILIO_AUTH_TOKEN
+            - name: TWILIO_VERIFY_SERVICE_SID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: TWILIO_VERIFY_SERVICE_SID
+            {{- end }}
+            - name: SMS_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: SMS_AUTH_SECRET
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.smsService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.smsService.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.smsService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-sms-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: fuzefront-sms-service
+  ports:
+    - port: {{ .Values.smsService.port }}
+      targetPort: {{ .Values.smsService.port }}
+{{- end }}

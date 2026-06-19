@@ -22,6 +22,11 @@ emailService:
     repository: ghcr.io/izzywdev/fuzefront-email-service
     tag: 1fbd206c5b2a
 
+smsService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-sms-service
+    tag: local
+
 permit:
   enabled: true
 
