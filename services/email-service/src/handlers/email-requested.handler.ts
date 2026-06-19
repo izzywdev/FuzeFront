@@ -8,12 +8,16 @@ import {
 } from '@fuzefront/shared';
 import { EmailProvider } from '../providers';
 import { renderTemplate } from '../templates';
+import { maskEmail } from '../utils/mask';
+import { classifyProviderError } from '../utils/provider-error';
 
 export interface HandlerDeps {
   provider: EmailProvider;
   statusProducer: Pick<TypedProducer, 'send'>;
   from: string;
 }
+
+const DEBUG = process.env.EMAIL_SERVICE_DEBUG === 'true';
 
 export async function handleEmailRequested(
   event: FuzeEvent<NotifyEmailRequestedPayloadV1>,
@@ -23,7 +27,7 @@ export async function handleEmailRequested(
   const { provider, statusProducer, from } = deps;
 
   let status: NotifyEmailStatusPayloadV1['status'] = 'sent';
-  let error: string | undefined;
+  let errorCode: string | undefined;
   let providerMessageId: string | undefined;
 
   try {
@@ -36,10 +40,18 @@ export async function handleEmailRequested(
       text: rendered.text,
     });
     providerMessageId = result.messageId;
+    console.info(`[email-handler] Email sent to ${maskEmail(payload.to)} (correlationId=${payload.correlationId})`);
   } catch (err) {
     status = 'failed';
-    error = err instanceof Error ? err.message : String(err);
-    console.error(`[email-handler] Failed to send email to ${payload.to}:`, error);
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    errorCode = classifyProviderError(rawMessage);
+    // Only log raw provider message in debug mode — keep it out of prod logs
+    if (DEBUG) {
+      console.debug(`[email-handler] Raw provider error for ${maskEmail(payload.to)}: ${rawMessage}`);
+    }
+    console.error(
+      `[email-handler] Failed to send email to ${maskEmail(payload.to)} (correlationId=${payload.correlationId}): ${errorCode}`
+    );
   }
 
   const statusPayload: NotifyEmailStatusPayloadV1 = {
@@ -47,7 +59,8 @@ export async function handleEmailRequested(
     to: payload.to,
     template: payload.template,
     status,
-    error,
+    // Emit stable code only — never the raw provider message
+    error: errorCode,
     providerMessageId,
     attemptedAt: new Date().toISOString(),
   };

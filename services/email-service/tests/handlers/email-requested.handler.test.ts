@@ -64,6 +64,8 @@ describe('handleEmailRequested', () => {
     expect(deps.statusProducer.send).toHaveBeenCalledTimes(1);
     const event = deps.producedEvents[0];
     expect(event.payload.status).toBe('failed');
-    expect(event.payload.error).toContain('SMTP timeout');
+    // error field must be a stable code — NOT the raw provider message
+    expect(event.payload.error).toBe('provider_timeout');
+    expect(event.payload.error).not.toContain('SMTP');
   });
 });
