@@ -10,6 +10,17 @@ import { assignOrganizationRole } from '../utils/permit/role-assignment'
 
 const router = express.Router()
 
+/**
+ * Mask an email address for safe public exposure.
+ * Only the first character before '@' is preserved; the rest is replaced with '***'.
+ * Example: 'user@example.com' → 'u***@example.com'
+ */
+export function maskEmail(email: string): string {
+  const atIndex = email.indexOf('@')
+  if (atIndex <= 0) return '***'
+  return email[0] + '***' + email.slice(atIndex)
+}
+
 // GET /api/invitations/:token — public, no auth
 router.get('/:token', async (req: any, res) => {
   try {
@@ -35,7 +46,7 @@ router.get('/:token', async (req: any, res) => {
     res.json({
       invitation: {
         id: invitation.id,
-        email: invitation.email,
+        email: maskEmail(invitation.email),
         role: invitation.role,
         expires_at: invitation.expires_at,
         status: invitation.status,
@@ -82,18 +93,26 @@ router.post('/:token/accept', async (req: any, res) => {
       })
     }
 
-    // Already accepted
-    if (invitation.status === 'accepted') {
-      return res.status(409).json({ error: 'Invitation has already been accepted' })
-    }
-
-    // Revoked or expired
+    // Revoked or expired (check before CAS so we give an informative 410, not a 409)
     if (invitation.status === 'revoked' || new Date(invitation.expires_at) < new Date()) {
       return res.status(410).json({ error: 'This invitation has expired or been revoked' })
     }
 
-    // Accept: create membership + mark invitation accepted in a transaction
+    // Atomic compare-and-swap accept: transition status pending→accepted inside
+    // the transaction. If another request raced us, rowCount will be 0 → 409.
+    let casSucceeded = false
     await db.transaction(async (trx: any) => {
+      const result = await trx.raw(
+        `UPDATE organization_invitations SET status='accepted' WHERE id=? AND status='pending' RETURNING *`,
+        [invitation.id]
+      )
+      const rowCount = result.rowCount ?? (result.rows ? result.rows.length : 0)
+      if (rowCount === 0) {
+        // Another request already accepted this invitation (race condition).
+        return
+      }
+      casSucceeded = true
+
       // Upsert membership (user may already be a member)
       const existingMembership = await trx('organization_memberships')
         .where('user_id', req.user.id)
@@ -112,11 +131,11 @@ router.post('/:token/accept', async (req: any, res) => {
           metadata: JSON.stringify({}),
         })
       }
-
-      await trx('organization_invitations')
-        .where('id', invitation.id)
-        .update({ status: 'accepted' })
     })
+
+    if (!casSucceeded) {
+      return res.status(409).json({ error: 'Invitation has already been accepted' })
+    }
 
     // Assign Permit role for the accepted member — non-blocking: a Permit outage
     // must not undo an accepted invitation. The role can be reconciled later.
@@ -145,3 +164,5 @@ router.post('/:token/accept', async (req: any, res) => {
 })
 
 export default router
+
+

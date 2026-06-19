@@ -586,6 +586,12 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ error: 'A valid email address is required' })
     }
 
+    // Validate role — owner cannot be invited; only admin/member/viewer are allowed
+    const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer']
+    if (!ALLOWED_INVITE_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` })
+    }
+
     const normalizedEmail = email.toLowerCase().trim()
 
     // Permission check
@@ -673,6 +679,12 @@ router.post('/:id/invitations/bulk', authenticateToken, async (req: any, res) =>
     }
     if (emails.length > 50) {
       return res.status(400).json({ error: 'Cannot exceed 50 emails in a single bulk invite' })
+    }
+
+    // Validate role — owner cannot be invited; only admin/member/viewer are allowed
+    const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer']
+    if (!ALLOWED_INVITE_ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` })
     }
 
     const isAdmin = await requireOrgAdminOrOwner(req.user.id, id)
@@ -838,3 +850,4 @@ router.delete('/:id/invitations/:invitationId', authenticateToken, async (req: a
 })
 
 export default router
+

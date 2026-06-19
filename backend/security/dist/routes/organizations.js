@@ -5,10 +5,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const uuid_1 = require("uuid");
+const crypto_1 = __importDefault(require("crypto"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
 const database_1 = require("../config/database");
 const organizationProvisioning_1 = require("../services/organizationProvisioning");
+const eventPublisher_1 = require("../services/eventPublisher");
 const router = express_1.default.Router();
 // Input validation helpers
 function validateOrganizationInput(data) {
@@ -48,6 +50,19 @@ function sanitizeInput(data) {
         settings: data.settings && typeof data.settings === 'object' ? data.settings : {},
         metadata: data.metadata && typeof data.metadata === 'object' ? data.metadata : {},
     };
+}
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+// Helper: check if the requesting user is owner or admin of an org
+async function requireOrgAdminOrOwner(userId, orgId) {
+    const membership = await (0, database_1.db)('organization_memberships')
+        .where('user_id', userId)
+        .where('organization_id', orgId)
+        .where('status', 'active')
+        .whereIn('role', ['owner', 'admin'])
+        .first();
+    return !!membership;
 }
 // POST /api/organizations - Create a new organization
 router.post('/', auth_1.authenticateToken, async (req, res) => {
@@ -402,6 +417,259 @@ router.delete('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddlewa
     catch (error) {
         console.error('Error deactivating organization:', error);
         res.status(500).json({ error: 'Failed to deactivate organization' });
+    }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// Invitation sub-routes: /api/organizations/:id/invitations
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/organizations/:id/invitations — list pending invitations
+router.get('/:id/invitations', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        const invitations = await (0, database_1.db)('organization_invitations')
+            .where('organization_id', id)
+            .whereIn('status', ['pending'])
+            .orderBy('created_at', 'desc');
+        res.json({ invitations });
+    }
+    catch (error) {
+        console.error('Error listing invitations:', error);
+        res.status(500).json({ error: 'Failed to list invitations' });
+    }
+});
+// POST /api/organizations/:id/invitations — create invitation
+router.post('/:id/invitations', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { email, role = 'member' } = req.body;
+        // Validate email
+        if (!email || typeof email !== 'string' || !isValidEmail(email.trim())) {
+            return res.status(400).json({ error: 'A valid email address is required' });
+        }
+        // Validate role — owner cannot be invited; only admin/member/viewer are allowed
+        const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer'];
+        if (!ALLOWED_INVITE_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` });
+        }
+        const normalizedEmail = email.toLowerCase().trim();
+        // Permission check
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        // Check for existing pending invitation
+        const existing = await (0, database_1.db)('organization_invitations')
+            .where('organization_id', id)
+            .where('email', normalizedEmail)
+            .where('status', 'pending')
+            .first();
+        if (existing) {
+            return res.status(409).json({ error: 'A pending invitation already exists for this email' });
+        }
+        const token = crypto_1.default.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const invitationId = (0, uuid_1.v4)();
+        const correlationId = (0, uuid_1.v4)();
+        await (0, database_1.db)('organization_invitations').insert({
+            id: invitationId,
+            organization_id: id,
+            email: normalizedEmail,
+            role,
+            token,
+            expires_at: expiresAt,
+            status: 'pending',
+            invited_by: req.user.id,
+        });
+        // Fire email event (non-blocking — swallow errors so invite still succeeds)
+        try {
+            const org = await (0, database_1.db)('organizations').where('id', id).first();
+            const inviter = await (0, database_1.db)('users').where('id', req.user.id).first();
+            const inviterName = inviter
+                ? (`${inviter.first_name || ''} ${inviter.last_name || ''}`.trim() || inviter.email)
+                : req.user.email;
+            const acceptUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invitations/${token}`;
+            await eventPublisher_1.defaultEventPublisher.publishNotifyEmailRequested({
+                to: normalizedEmail,
+                template: 'org-invite',
+                vars: { orgName: org?.name ?? '', inviterName, role, acceptUrl },
+                orgId: id,
+                correlationId,
+            }, correlationId);
+        }
+        catch (emailErr) {
+            console.error('Failed to publish invite email event (non-fatal):', emailErr);
+        }
+        res.status(201).json({
+            invitation: {
+                id: invitationId,
+                organizationId: id,
+                email: normalizedEmail,
+                role,
+                expiresAt,
+                status: 'pending',
+            },
+        });
+    }
+    catch (error) {
+        console.error('Error creating invitation:', error);
+        res.status(500).json({ error: 'Failed to create invitation' });
+    }
+});
+// POST /api/organizations/:id/invitations/bulk — bulk create (max 50 emails)
+// NOTE: must be registered BEFORE /:id/invitations/:invitationId routes to avoid
+// "bulk" being treated as an invitationId.
+router.post('/:id/invitations/bulk', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { emails, role = 'member' } = req.body;
+        if (!Array.isArray(emails)) {
+            return res.status(400).json({ error: 'emails must be an array' });
+        }
+        if (emails.length > 50) {
+            return res.status(400).json({ error: 'Cannot exceed 50 emails in a single bulk invite' });
+        }
+        // Validate role — owner cannot be invited; only admin/member/viewer are allowed
+        const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer'];
+        if (!ALLOWED_INVITE_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` });
+        }
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        const org = await (0, database_1.db)('organizations').where('id', id).first();
+        const inviter = await (0, database_1.db)('users').where('id', req.user.id).first();
+        const inviterName = inviter
+            ? (`${inviter.first_name || ''} ${inviter.last_name || ''}`.trim() || inviter.email)
+            : req.user.email;
+        const results = [];
+        for (const rawEmail of emails) {
+            if (typeof rawEmail !== 'string' || !isValidEmail(rawEmail.trim())) {
+                results.push({ email: rawEmail, status: 'skipped', error: 'Invalid email format' });
+                continue;
+            }
+            const normalizedEmail = rawEmail.toLowerCase().trim();
+            try {
+                const existing = await (0, database_1.db)('organization_invitations')
+                    .where('organization_id', id)
+                    .where('email', normalizedEmail)
+                    .where('status', 'pending')
+                    .first();
+                if (existing) {
+                    results.push({ email: normalizedEmail, status: 'skipped', error: 'Pending invitation already exists' });
+                    continue;
+                }
+                const token = crypto_1.default.randomBytes(32).toString('hex');
+                const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+                const invitationId = (0, uuid_1.v4)();
+                const correlationId = (0, uuid_1.v4)();
+                await (0, database_1.db)('organization_invitations').insert({
+                    id: invitationId,
+                    organization_id: id,
+                    email: normalizedEmail,
+                    role,
+                    token,
+                    expires_at: expiresAt,
+                    status: 'pending',
+                    invited_by: req.user.id,
+                });
+                const acceptUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invitations/${token}`;
+                await eventPublisher_1.defaultEventPublisher.publishNotifyEmailRequested({
+                    to: normalizedEmail,
+                    template: 'org-invite',
+                    vars: { orgName: org?.name ?? '', inviterName, role, acceptUrl },
+                    orgId: id,
+                    correlationId,
+                }, correlationId).catch(err => console.error('Email event failed (non-fatal):', err));
+                results.push({ email: normalizedEmail, status: 'invited' });
+            }
+            catch (err) {
+                results.push({ email: normalizedEmail, status: 'error', error: 'Internal error' });
+            }
+        }
+        res.status(201).json({ results });
+    }
+    catch (error) {
+        console.error('Error bulk inviting:', error);
+        res.status(500).json({ error: 'Failed to process bulk invitations' });
+    }
+});
+// POST /api/organizations/:id/invitations/:invitationId/resend — resend email
+router.post('/:id/invitations/:invitationId/resend', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id, invitationId } = req.params;
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        const invitation = await (0, database_1.db)('organization_invitations')
+            .where('id', invitationId)
+            .where('organization_id', id)
+            .first();
+        if (!invitation) {
+            return res.status(404).json({ error: 'Invitation not found' });
+        }
+        if (invitation.status !== 'pending') {
+            return res.status(409).json({ error: `Cannot resend a ${invitation.status} invitation` });
+        }
+        // Extend expiry
+        const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await (0, database_1.db)('organization_invitations')
+            .where('id', invitationId)
+            .update({ expires_at: newExpiresAt });
+        try {
+            const org = await (0, database_1.db)('organizations').where('id', id).first();
+            const inviter = await (0, database_1.db)('users').where('id', req.user.id).first();
+            const inviterName = inviter
+                ? (`${inviter.first_name || ''} ${inviter.last_name || ''}`.trim() || inviter.email)
+                : req.user.email;
+            const acceptUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invitations/${invitation.token}`;
+            const correlationId = (0, uuid_1.v4)();
+            await eventPublisher_1.defaultEventPublisher.publishNotifyEmailRequested({
+                to: invitation.email,
+                template: 'org-invite',
+                vars: { orgName: org?.name ?? '', inviterName, role: invitation.role, acceptUrl },
+                orgId: id,
+                correlationId,
+            }, correlationId);
+        }
+        catch (emailErr) {
+            console.error('Failed to publish resend email event (non-fatal):', emailErr);
+        }
+        res.json({ message: 'Invitation resent successfully' });
+    }
+    catch (error) {
+        console.error('Error resending invitation:', error);
+        res.status(500).json({ error: 'Failed to resend invitation' });
+    }
+});
+// DELETE /api/organizations/:id/invitations/:invitationId — revoke
+router.delete('/:id/invitations/:invitationId', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id, invitationId } = req.params;
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        const invitation = await (0, database_1.db)('organization_invitations')
+            .where('id', invitationId)
+            .where('organization_id', id)
+            .first();
+        if (!invitation) {
+            return res.status(404).json({ error: 'Invitation not found' });
+        }
+        await (0, database_1.db)('organization_invitations')
+            .where('id', invitationId)
+            .update({ status: 'revoked' });
+        res.json({ message: 'Invitation revoked successfully' });
+    }
+    catch (error) {
+        console.error('Error revoking invitation:', error);
+        res.status(500).json({ error: 'Failed to revoke invitation' });
     }
 });
 exports.default = router;

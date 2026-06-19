@@ -171,6 +171,24 @@ describe('Organization Invitations', () => {
     })
   })
 
+  describe('POST /api/organizations/:id/invitations — role validation (M2)', () => {
+    it('returns 400 when role is owner', async () => {
+      const res = await request(app)
+        .post(`/api/organizations/${ORG_ID}/invitations`)
+        .send({ email: 'newuser@example.com', role: 'owner' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/Invalid role/i)
+    })
+
+    it('returns 400 when role is an arbitrary invalid string', async () => {
+      const res = await request(app)
+        .post(`/api/organizations/${ORG_ID}/invitations`)
+        .send({ email: 'newuser@example.com', role: 'superadmin' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/Invalid role/i)
+    })
+  })
+
   describe('GET /api/organizations/:id/invitations', () => {
     it('returns 200 with list of invitations for org admin', async () => {
       const membershipChain = makeDbQuery({ id: 'mem-1', role: 'owner' })
@@ -247,6 +265,9 @@ describe('Organization Invitations', () => {
       expect(res.body).toHaveProperty('invitation')
       expect(res.body).toHaveProperty('organization')
       expect(res.body.organization.name).toBe('Test Org')
+      // I1: public resolve must return a masked email, not the raw one
+      expect(res.body.invitation.email).toBe('u***@example.com')
+      expect(res.body.invitation.email).not.toBe('user@example.com')
     })
 
     it('returns 404 for unknown token', async () => {
@@ -291,7 +312,7 @@ describe('Organization Invitations', () => {
       expect(res.status).toBe(403)
     })
 
-    it('returns 409 when invitation is already accepted', async () => {
+    it('returns 409 when invitation is already accepted (pre-flight status check)', async () => {
       const acceptedApp = express()
       acceptedApp.use(express.json())
       acceptedApp.use((req: any, _res: any, next: any) => {
@@ -303,7 +324,51 @@ describe('Organization Invitations', () => {
         id: INV_ID, email: 'user@example.com', role: 'member',
         status: 'accepted', expires_at: new Date(Date.now() + 86400000), organization_id: ORG_ID,
       }))
+      // When status is 'accepted' the pre-flight fetch falls through to CAS; mock
+      // the transaction so CAS returns rowCount=0 → 409.
+      const trxMock: any = {
+        raw: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+        where: jest.fn().mockReturnThis(),
+        first: jest.fn().mockResolvedValue(null),
+      }
+      ;(db as any).transaction = jest.fn().mockImplementation(async (cb: any) => cb(trxMock))
       const res = await request(acceptedApp).post(`/api/invitations/${TOKEN}/accept`)
+      expect(res.status).toBe(409)
+    })
+  })
+
+  describe('POST /api/invitations/:token/accept — atomic CAS (I2)', () => {
+    it('returns 409 when CAS update affects 0 rows (simulated race)', async () => {
+      // Simulate: the pre-flight fetch returns a pending invitation, but by the
+      // time the transaction runs the CAS UPDATE, the row is already accepted
+      // (rowCount = 0 from trx.raw).
+      const matchingApp = express()
+      matchingApp.use(express.json())
+      matchingApp.use((req: any, _res: any, next: any) => {
+        req.user = { id: USER_ID, email: 'user@example.com', roles: [] }
+        next()
+      })
+      matchingApp.use('/api/invitations', invitationsRouter)
+
+      dbMock.mockImplementation((table: string) => {
+        if (table === 'organization_invitations') {
+          return makeDbQuery({
+            id: INV_ID, email: 'user@example.com', role: 'member',
+            status: 'pending', expires_at: new Date(Date.now() + 86400000), organization_id: ORG_ID,
+          })
+        }
+        return makeDbQuery(null)
+      })
+
+      // Mock db.transaction to invoke the callback with a trx that returns rowCount=0
+      const trxMock: any = {
+        raw: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+        where: jest.fn().mockReturnThis(),
+        first: jest.fn().mockResolvedValue(null),
+      }
+      ;(db as any).transaction = jest.fn().mockImplementation(async (cb: any) => cb(trxMock))
+
+      const res = await request(matchingApp).post(`/api/invitations/${TOKEN}/accept`)
       expect(res.status).toBe(409)
     })
   })
@@ -342,6 +407,14 @@ describe('Organization Invitations', () => {
         .post(`/api/organizations/${ORG_ID}/invitations/bulk`)
         .send({ emails: 'notanarray', role: 'member' })
       expect(res.status).toBe(400)
+    })
+
+    it('returns 400 when bulk invite role is owner (M2)', async () => {
+      const res = await request(app)
+        .post(`/api/organizations/${ORG_ID}/invitations/bulk`)
+        .send({ emails: ['a@example.com'], role: 'owner' })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/Invalid role/i)
     })
   })
 })

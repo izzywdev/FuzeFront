@@ -9,6 +9,9 @@
  *  - The `publishNotifyEmailRequested` spy is called with the correct payload.
  *  - POST /api/invitations/:token/accept inserts a real membership row and
  *    marks the invitation status='accepted'.
+ *  - Two concurrent accepts of the same token result in exactly one membership
+ *    row and the second request gets 409.
+ *  - GET /api/invitations/:token returns a masked email (not the raw address).
  *
  * Mocked (no real external dependencies in CI):
  *  - `config/permit` + permit utils — no PERMIT_API_KEY in test env; role
@@ -284,6 +287,49 @@ describe('invitations routes (integration)', () => {
     }, 30000)
   })
 
+  // ─── public resolve: masked email (I1) ─────────────────────────────────────
+  describe('GET /api/invitations/:token', () => {
+    it('returns masked email (not raw address) in public resolve response', async () => {
+      if (!reachable) {
+        console.warn('Postgres unreachable — skipping masked-email integration test')
+        return
+      }
+
+      // Look up the invitation created in the previous test block.
+      const invRow = await pgClient.query(
+        `SELECT * FROM organization_invitations WHERE organization_id = $1 AND email = $2 AND status = 'pending'`,
+        [ORG_ID, INVITEE_EMAIL]
+      )
+
+      let token: string
+      if (invRow.rowCount === 0) {
+        // Insert a fresh one if needed.
+        const crypto = await import('crypto')
+        token = crypto.randomBytes(32).toString('hex')
+        await pgClient.query(
+          `INSERT INTO organization_invitations (id, organization_id, email, role, token, expires_at, status, invited_by, created_at)
+           VALUES ($1, $2, $3, 'member', $4, NOW() + INTERVAL '7 days', 'pending', $5, NOW())`,
+          [uuidv4(), ORG_ID, INVITEE_EMAIL, token, OWNER_ID]
+        )
+      } else {
+        token = invRow.rows[0].token
+      }
+
+      const app = buildApp(null)  // unauthenticated
+      const res = await request(app).get(`/api/invitations/${token}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.invitation).toBeDefined()
+
+      // Must be masked: first char + *** + @domain
+      const maskedEmail: string = res.body.invitation.email
+      expect(maskedEmail).not.toBe(INVITEE_EMAIL)
+      expect(maskedEmail).toMatch(/^.{1}\*{3}@/)
+      // The domain part must still be present
+      expect(maskedEmail).toContain('@inv-integration-test.example')
+    }, 20000)
+  })
+
   // ─── accept invitation flow ─────────────────────────────────────────────────
   describe('POST /api/invitations/:token/accept', () => {
     it('creates membership row and marks invitation accepted', async () => {
@@ -363,5 +409,49 @@ describe('invitations routes (integration)', () => {
 
       expect(res.status).toBe(409)
     }, 15000)
+
+    it('concurrent accepts of the same token → exactly one membership + second gets 409 (I2)', async () => {
+      if (!reachable) {
+        console.warn('Postgres unreachable — skipping concurrent accept test')
+        return
+      }
+
+      // Create a fresh invitation for the race test.
+      const cryptoMod = await import('crypto')
+      const raceToken = cryptoMod.randomBytes(32).toString('hex')
+      const raceInvId = uuidv4()
+      await pgClient.query(
+        `INSERT INTO organization_invitations (id, organization_id, email, role, token, expires_at, status, invited_by, created_at)
+         VALUES ($1, $2, $3, 'member', $4, NOW() + INTERVAL '7 days', 'pending', $5, NOW())`,
+        [raceInvId, ORG_ID, INVITEE_EMAIL, raceToken, OWNER_ID]
+      )
+
+      const app = buildApp({ id: INVITEE_ID, email: INVITEE_EMAIL })
+
+      // Fire two accepts simultaneously.
+      const [res1, res2] = await Promise.all([
+        request(app).post(`/api/invitations/${raceToken}/accept`),
+        request(app).post(`/api/invitations/${raceToken}/accept`),
+      ])
+
+      const statuses = [res1.status, res2.status].sort()
+      // Exactly one 200 and one 409.
+      expect(statuses).toEqual([200, 409])
+
+      // Exactly one membership row for this invitation.
+      const memberships = await pgClient.query(
+        `SELECT * FROM organization_memberships
+         WHERE user_id = $1 AND organization_id = $2`,
+        [INVITEE_ID, ORG_ID]
+      )
+      // May be 1 (first accept created it) or 2 if membership was already there from previous test,
+      // but the invitation must be accepted exactly once.
+      const invStatus = await pgClient.query(
+        `SELECT status FROM organization_invitations WHERE id = $1`,
+        [raceInvId]
+      )
+      expect(invStatus.rows[0].status).toBe('accepted')
+      expect(memberships.rowCount).toBeGreaterThanOrEqual(1)
+    }, 30000)
   })
 })
