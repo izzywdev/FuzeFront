@@ -41,6 +41,11 @@ smsService:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
     tag: ""  # CI's release sed writes the real image SHA here
 
+provisioningService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-provisioning-service
+    tag: ""  # CI's release sed writes the real image SHA here
+
 permit:
   enabled: true
 

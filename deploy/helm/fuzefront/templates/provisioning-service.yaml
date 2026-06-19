@@ -1,0 +1,81 @@
+{{- if .Values.provisioningService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-provisioning-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: provisioning-service
+spec:
+  replicas: {{ .Values.provisioningService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-provisioning-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-provisioning-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: provisioning-service
+          image: "{{ .Values.provisioningService.image.repository }}:{{ .Values.provisioningService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.provisioningService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.provisioningService.port | quote }}
+            - name: KAFKA_BROKERS
+              value: {{ .Values.provisioningService.kafka.brokers | quote }}
+            - name: KAFKA_CLIENT_ID
+              value: {{ .Values.provisioningService.kafka.clientId | quote }}
+            - name: KAFKA_GROUP_ID
+              value: {{ .Values.provisioningService.kafka.groupId | quote }}
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service (port 3002).
+              # See deploy/helm/fuzefront/templates/security.yaml.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: INTERNAL_PROVISION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: INTERNAL_PROVISION_SECRET
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.provisioningService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Health probes only — no ingress; this is a consumer-only service.
+  name: fuzefront-provisioning-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: fuzefront-provisioning-service
+  ports:
+    - name: http
+      port: {{ .Values.provisioningService.port }}
+      targetPort: http
+{{- end }}
