@@ -2,7 +2,7 @@ import path from 'path'
 import { Client } from 'pg'
 import { runMigrations } from '@fuzefront/core'
 
-// Integration test: security-service runs the original 001-009 chain against the
+// Integration test: security-service runs the 001-010 chain against the
 // existing knex_migrations table. 002 and 006 are no-op tombstones, so the apps
 // table + app_visibility_enum must NOT be created here (applications-service owns
 // them). Re-running migrations is a clean no-op. Requires a reachable Postgres;
@@ -47,7 +47,7 @@ describe('security-service migrations (integration)', () => {
 
   const migDir = path.join(__dirname, '..', 'dist', 'migrations')
 
-  it('applies the 001-009 chain, then is a clean no-op on re-run', async () => {
+  it('applies the 001-010 chain, then is a clean no-op on re-run', async () => {
     if (!reachable) {
       console.warn('Postgres unreachable — skipping security migration integration test')
       return
@@ -62,6 +62,20 @@ describe('security-service migrations (integration)', () => {
     const enumRow = await c.query("SELECT 1 FROM pg_type WHERE typname='app_visibility_enum'")
     const orgs = await c.query("SELECT to_regclass('public.organizations') AS a")
     const users = await c.query("SELECT to_regclass('public.users') AS a")
+
+    // Migration 010: billing columns must exist on users and organizations.
+    const billingCols = await c.query(`
+      SELECT table_name, column_name, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN ('users', 'organizations')
+        AND column_name IN (
+          'stripe_customer_id', 'billing_plan_tier',
+          'billing_plan_status', 'trial_ends_at'
+        )
+      ORDER BY table_name, column_name
+    `)
+
     await c.end()
 
     // 002/006 tombstoned: apps DDL must NOT exist in security's chain.
@@ -70,5 +84,28 @@ describe('security-service migrations (integration)', () => {
     // Security owns these.
     expect(orgs.rows[0].a).not.toBeNull()
     expect(users.rows[0].a).not.toBeNull()
+
+    // Each of the 4 columns must exist on both tables = 8 rows total.
+    expect(billingCols.rowCount).toBe(8)
+
+    // Verify defaults and nullability for users.
+    const userCols = billingCols.rows.filter((r: { table_name: string }) => r.table_name === 'users')
+    const orgCols  = billingCols.rows.filter((r: { table_name: string }) => r.table_name === 'organizations')
+    expect(userCols).toHaveLength(4)
+    expect(orgCols).toHaveLength(4)
+
+    for (const rows of [userCols, orgCols]) {
+      const tier   = rows.find((r: { column_name: string }) => r.column_name === 'billing_plan_tier')
+      const status = rows.find((r: { column_name: string }) => r.column_name === 'billing_plan_status')
+      const stripe = rows.find((r: { column_name: string }) => r.column_name === 'stripe_customer_id')
+      const trial  = rows.find((r: { column_name: string }) => r.column_name === 'trial_ends_at')
+
+      expect(tier.is_nullable).toBe('NO')
+      expect(tier.column_default).toContain('free')
+      expect(status.is_nullable).toBe('NO')
+      expect(status.column_default).toContain('active')
+      expect(stripe.is_nullable).toBe('YES')
+      expect(trial.is_nullable).toBe('YES')
+    }
   }, 60000)
 })
