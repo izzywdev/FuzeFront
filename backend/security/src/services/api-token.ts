@@ -25,14 +25,15 @@ import type { Knex } from 'knex'
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ApiTokenRow {
+/** Full DB row shape (internal use only — includes token_hash). */
+interface ApiTokenDbRow {
   id: string
   token_prefix: string
   token_hash: string
   owner_type: 'user' | 'org'
   owner_id: string
   name: string
-  scopes: string[]
+  scopes: string[] | string
   expires_at: Date | null
   last_used_at: Date | null
   created_by: string | null
@@ -40,6 +41,9 @@ export interface ApiTokenRow {
   created_at: Date
   updated_at: Date
 }
+
+/** Public token row — token_hash is omitted; scopes is always string[]. */
+export type ApiTokenRow = Omit<ApiTokenDbRow, 'token_hash' | 'scopes'> & { scopes: string[] }
 
 /**
  * Discriminated union returned by verifyToken.
@@ -53,6 +57,20 @@ export type VerifyResult =
   | { status: 'revoked' }
   | { status: 'expired' }
   | { status: 'invalid' }
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Defensively parse a jsonb scopes value into string[].
+ * Real pg returns jsonb columns as a JSON string; mocked DBs in tests may
+ * hand back an already-parsed array.  This handles both.
+ */
+function parseScopes(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) return raw
+  return JSON.parse(raw || '[]')
+}
 
 // ---------------------------------------------------------------------------
 // Internal: base62 encoder
@@ -181,7 +199,7 @@ export async function createToken(
     token: raw, // raw returned ONCE; never stored
     token_prefix: inserted.token_prefix,
     name: inserted.name,
-    scopes: inserted.scopes,
+    scopes: parseScopes(inserted.scopes),
     expires_at: inserted.expires_at,
     created_at: inserted.created_at,
   }
@@ -204,7 +222,7 @@ export async function verifyToken(
 
   const { prefix, body } = parts
 
-  const row: ApiTokenRow | null = await (dbInstance as any)('api_tokens')
+  const row: ApiTokenDbRow | null = await (dbInstance as any)('api_tokens')
     .where({ token_prefix: prefix })
     .first()
 
@@ -231,8 +249,9 @@ export async function verifyToken(
 
   if (!match) return { status: 'invalid' }
 
-  // Return the row without token_hash exposed
+  // Return the row without token_hash exposed; parse scopes from jsonb string
   const { token_hash: _omit, ...safeRow } = row as any
+  safeRow.scopes = parseScopes(safeRow.scopes)
   return { status: 'valid', token: safeRow as ApiTokenRow }
 }
 
@@ -278,10 +297,11 @@ export async function listTokensForOwner(
   ownerId: string,
   dbInstance: Knex = defaultDb as unknown as Knex
 ): Promise<ApiTokenRow[]> {
-  return (dbInstance as any)('api_tokens')
+  const rows: ApiTokenDbRow[] = await (dbInstance as any)('api_tokens')
     .select(SAFE_COLUMNS)
     .where({ owner_type: ownerType, owner_id: ownerId })
     .orderBy('created_at', 'desc')
+  return rows.map(r => ({ ...r, scopes: parseScopes(r.scopes) }))
 }
 
 /**
@@ -292,11 +312,12 @@ export async function getTokenById(
   tokenId: string,
   dbInstance: Knex = defaultDb as unknown as Knex
 ): Promise<ApiTokenRow | null> {
-  const row = await (dbInstance as any)('api_tokens')
+  const row: ApiTokenDbRow | null = await (dbInstance as any)('api_tokens')
     .select(SAFE_COLUMNS)
     .where({ id: tokenId })
     .first()
-  return row ?? null
+  if (!row) return null
+  return { ...row, scopes: parseScopes(row.scopes) }
 }
 
 /**
