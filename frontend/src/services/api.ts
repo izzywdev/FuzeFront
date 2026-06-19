@@ -236,11 +236,10 @@ export const authAPI = {
     localStorage.removeItem('user')
   },
 
-  // Handle OIDC callback (extract token from URL)
-  handleOIDCCallback(): { token?: string; sessionId?: string; error?: string } {
+  // Handle OIDC callback (exchange ?code for token+sessionId)
+  async handleOIDCCallback(): Promise<{ token?: string; sessionId?: string; error?: string }> {
     const urlParams = new URLSearchParams(window.location.search)
-    const token = urlParams.get('token')
-    const sessionId = urlParams.get('sessionId')
+    const code = urlParams.get('code')
     const error = urlParams.get('error')
     const message = urlParams.get('message')
 
@@ -248,14 +247,13 @@ export const authAPI = {
       return { error: message || error }
     }
 
-    if (token) {
+    if (code) {
+      const response = await api.post<{ token: string; sessionId: string }>('/auth/token-exchange', { code })
+      const { token, sessionId } = response.data
       localStorage.setItem('authToken', token)
-      if (sessionId) {
-        localStorage.setItem('sessionId', sessionId)
-      }
-      // Clean up URL
+      localStorage.setItem('sessionId', sessionId)
       window.history.replaceState({}, document.title, window.location.pathname)
-      return { token, sessionId: sessionId ?? undefined }
+      return { token, sessionId }
     }
 
     return {}
