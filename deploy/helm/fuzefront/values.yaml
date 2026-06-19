@@ -56,6 +56,7 @@ secret:
   # left empty here and supplied out-of-band (kubectl patch / SealedSecret).
   authentikClientId: ""
   authentikClientSecret: ""
+  sendgridApiKey: ""
 
 backend:
   image:
@@ -93,6 +94,22 @@ frontend:
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+
+emailService:
+  enabled: false
+  replicas: 1
+  port: 3003
+  image:
+    repository: fuzefront/email-service
+    tag: local
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "email-service"
+    groupId: "email-service-group"
+  email:
+    provider: "smtp"  # "sendgrid" or "smtp"
+    from: "noreply@fuzefront.com"
+  resources: {}
 
 authentik:
   enabled: true

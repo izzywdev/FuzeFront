@@ -1,0 +1,76 @@
+{{- if .Values.emailService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-email-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: email-service
+spec:
+  replicas: {{ .Values.emailService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-email-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-email-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: email-service
+          image: "{{ .Values.emailService.image.repository }}:{{ .Values.emailService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.emailService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.emailService.port | quote }}
+            - name: KAFKA_BROKERS
+              value: {{ .Values.emailService.kafka.brokers | quote }}
+            - name: KAFKA_CLIENT_ID
+              value: {{ .Values.emailService.kafka.clientId | quote }}
+            - name: KAFKA_GROUP_ID
+              value: {{ .Values.emailService.kafka.groupId | quote }}
+            - name: EMAIL_PROVIDER
+              value: {{ .Values.emailService.email.provider | quote }}
+            - name: EMAIL_FROM
+              value: {{ .Values.emailService.email.from | quote }}
+            {{- if .Values.secret.sendgridApiKey }}
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: SENDGRID_API_KEY
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.emailService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.emailService.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.emailService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-email-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: fuzefront-email-service
+  ports:
+    - port: {{ .Values.emailService.port }}
+      targetPort: {{ .Values.emailService.port }}
+{{- end }}
