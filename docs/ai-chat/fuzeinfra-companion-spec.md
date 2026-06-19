@@ -6,6 +6,34 @@ in this repo depend on these additions.
 
 ---
 
+## Important: FuzeInfra is a git submodule — two-step merge required
+
+The Argo Application at `deploy/argocd/applications/litellm.yaml` uses
+`repoURL: https://github.com/izzywdev/FuzeFront.git` with `path: FuzeInfra/helm/litellm`.
+This works because **FuzeInfra is a git submodule** inside the FuzeFront repo — the same
+mechanism used by `deploy/argocd/applications/fuzeinfra.yaml` (`path: FuzeInfra/helm/fuzeinfra`).
+Argo CD initialises submodules by default and resolves paths relative to the submodule checkout.
+
+Two steps are therefore required before the `litellm` Argo Application can sync:
+
+1. **Merge the LiteLLM chart into the izzywdev/FuzeInfra repo** at `helm/litellm/` (see §1 below
+   for the full chart spec). Only after this PR is merged into FuzeInfra's default branch does
+   the chart exist at that path.
+
+2. **Bump the FuzeInfra submodule pointer inside the FuzeFront repo.** After the FuzeInfra PR
+   merges, update the submodule SHA that the FuzeFront repo records:
+   ```bash
+   cd FuzeInfra && git pull origin master   # fast-forward the submodule to the new commit
+   cd ..                                    # back to FuzeFront root
+   git add FuzeInfra                        # stage the updated submodule pointer
+   git commit -m "chore: bump FuzeInfra submodule to include LiteLLM chart"
+   ```
+   Until this second commit lands on `master` in the FuzeFront repo, Argo reads the old
+   submodule SHA — the one that predates the LiteLLM chart — and the `litellm` Application
+   **remains OutOfSync even though the FuzeInfra PR has already merged.**
+
+---
+
 ## 1. LiteLLM Helm Chart — `FuzeInfra/helm/litellm`
 
 The `deploy/argocd/applications/litellm.yaml` Argo Application points at this path. You must

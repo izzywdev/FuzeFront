@@ -68,7 +68,7 @@ describe('permit schema IaC', () => {
     const viewer = permitSchema.roles.find(r => r.key === 'viewer')!
     expect(viewer.permissions).toContain('Organization:read')
     expect(viewer.permissions).toContain('App:read')
-    expect(viewer.permissions.some(p => /:(create|update|delete|invite|remove|update_role)$/.test(p))).toBe(false)
+    expect(viewer.permissions.some(p => /:(create|update|delete|manage|invite|remove|update_role)$/.test(p))).toBe(false)
   })
 
   it('admin gets Docs:read, Chat:stream, and Chat:manage', () => {
