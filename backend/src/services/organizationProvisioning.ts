@@ -113,7 +113,10 @@ export async function ensurePersonalOrg(
   if (!user) throw new Error(`Cannot create personal org: user ${userId} not found`)
 
   const orgId = uuidv4()
-  const baseSlug = `personal-${userId.slice(0, 8)}`
+  // Use the full userId so the slug is globally unique per user (M1 — a
+  // truncated 8-char prefix shares only 32 bits of entropy and two different
+  // users can produce the same slug, silently losing the loser's personal org).
+  const baseSlug = `personal-${userId}`
 
   try {
     await db.transaction(async trx => {
@@ -154,7 +157,15 @@ export async function ensurePersonalOrg(
 }
 
 async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
-  const rows = await db('organization_provisioning').where({
+  await ensureStepRowsTrx(db, orgId)
+}
+
+// Accepts either a Knex instance or a transaction (both expose the same query API).
+async function ensureStepRowsTrx(
+  qb: Knex | Knex.Transaction,
+  orgId: string
+): Promise<void> {
+  const rows = await qb('organization_provisioning').where({
     organization_id: orgId,
   })
   const present = new Set(rows.map((r: any) => r.step))
@@ -167,7 +178,7 @@ async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
   }))
   if (missing.length > 0) {
     // onConflict guards against a concurrent reconcile inserting the same rows.
-    await db('organization_provisioning')
+    await qb('organization_provisioning')
       .insert(missing)
       .onConflict(['organization_id', 'step'])
       .ignore()
@@ -234,66 +245,75 @@ export async function reconcileOrganizationProvisioning(
   const deps = getDeps(overrides)
   const { db } = deps
 
-  const orgRow = await db('organizations').where({ id: orgId }).first()
-  if (!orgRow) throw new Error(`reconcile: organization ${orgId} not found`)
-  const org = rowToOrganization(orgRow)
+  // I2 — serialize concurrent reconciles of the same org with a Postgres
+  // advisory transaction lock so two concurrent callers never both execute the
+  // `welcome_email` step (or any step) simultaneously.  The lock is held for
+  // the duration of the transaction and released automatically on commit/rollback.
+  return db.transaction(async trx => {
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [orgId])
 
-  const owner = await db('users').where({ id: org.owner_id }).first()
-  const ownerEmail: string = owner?.email || `${org.owner_id}@unknown.local`
+    const orgRow = await trx('organizations').where({ id: orgId }).first()
+    if (!orgRow) throw new Error(`reconcile: organization ${orgId} not found`)
+    const org = rowToOrganization(orgRow)
 
-  await ensureStepRows(db, orgId)
+    const owner = await trx('users').where({ id: org.owner_id }).first()
+    const ownerEmail: string = owner?.email || `${org.owner_id}@unknown.local`
 
-  let anyFailed = false
+    // ensureStepRows must use the same transaction so its upsert is within the lock.
+    await ensureStepRowsTrx(trx, orgId)
 
-  for (const step of PROVISIONING_STEPS) {
-    const row = await db('organization_provisioning')
-      .where({ organization_id: orgId, step })
-      .first()
-    if (row?.status === 'done') continue
+    let anyFailed = false
 
-    try {
-      await runStep(deps, org, ownerEmail, step)
-      await db('organization_provisioning')
+    for (const step of PROVISIONING_STEPS) {
+      const row = await trx('organization_provisioning')
         .where({ organization_id: orgId, step })
-        .update({
-          status: 'done',
-          attempts: (row?.attempts || 0) + 1,
-          last_error: null,
-          updated_at: new Date(),
-        })
-    } catch (error: any) {
-      anyFailed = true
-      await db('organization_provisioning')
-        .where({ organization_id: orgId, step })
-        .update({
-          status: 'failed',
-          attempts: (row?.attempts || 0) + 1,
-          last_error: String(error?.message ?? error).slice(0, 1000),
-          updated_at: new Date(),
-        })
-      // Dependency-ordered: don't run later steps until this one succeeds.
-      break
+        .first()
+      if (row?.status === 'done') continue
+
+      try {
+        await runStep({ ...deps, db: trx as unknown as typeof db }, org, ownerEmail, step)
+        await trx('organization_provisioning')
+          .where({ organization_id: orgId, step })
+          .update({
+            status: 'done',
+            attempts: (row?.attempts || 0) + 1,
+            last_error: null,
+            updated_at: new Date(),
+          })
+      } catch (error: any) {
+        anyFailed = true
+        await trx('organization_provisioning')
+          .where({ organization_id: orgId, step })
+          .update({
+            status: 'failed',
+            attempts: (row?.attempts || 0) + 1,
+            last_error: String(error?.message ?? error).slice(0, 1000),
+            updated_at: new Date(),
+          })
+        // Dependency-ordered: don't run later steps until this one succeeds.
+        break
+      }
     }
-  }
 
-  const steps = await db('organization_provisioning').where({
-    organization_id: orgId,
+    const steps = await trx('organization_provisioning').where({
+      organization_id: orgId,
+    })
+    const allDone =
+      steps.length === PROVISIONING_STEPS.length &&
+      steps.every((s: any) => s.status === 'done')
+
+    const newState: 'active' | 'pending' | 'failed' = allDone
+      ? 'active'
+      : anyFailed
+        ? 'failed'
+        : 'pending'
+
+    await trx('organizations')
+      .where({ id: orgId })
+      .update({ provisioning_state: newState, updated_at: new Date() })
+
+    return newState
   })
-  const allDone =
-    steps.length === PROVISIONING_STEPS.length &&
-    steps.every((s: any) => s.status === 'done')
-
-  const newState: 'active' | 'pending' | 'failed' = allDone
-    ? 'active'
-    : anyFailed
-      ? 'failed'
-      : 'pending'
-
-  await db('organizations')
-    .where({ id: orgId })
-    .update({ provisioning_state: newState, updated_at: new Date() })
-
-  return newState
 }
 
 /**

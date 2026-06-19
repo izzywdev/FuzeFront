@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import express from 'express'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
@@ -24,8 +25,13 @@ router.post('/provision', async (req, res) => {
   const expected = process.env.INTERNAL_PROVISION_SECRET
   const provided = req.header('x-internal-secret')
 
-  // Fail closed: if no secret is configured, the endpoint is unusable.
-  if (!expected || !provided || provided !== expected) {
+  // Fail closed: if no secret is configured the endpoint is unusable; use a
+  // constant-time compare (I1) to prevent timing-based secret oracle attacks.
+  const a = Buffer.from(provided || '')
+  const b = Buffer.from(expected || '')
+  const unauthorised =
+    !expected || !provided || a.length !== b.length || !crypto.timingSafeEqual(a, b)
+  if (unauthorised) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 

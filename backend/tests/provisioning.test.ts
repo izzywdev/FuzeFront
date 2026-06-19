@@ -119,6 +119,78 @@ describe('ensurePersonalOrg', () => {
       .first()
     expect(membership).toBeTruthy()
   })
+
+  // C1 — DB-level unique index must reject a second personal org for the same owner.
+  it('DB unique index rejects a direct duplicate personal org insert (C1)', async () => {
+    const userId = await createUser()
+    const { v4: uuidv4 } = await import('uuid')
+
+    // Insert one personal org manually.
+    await db('organizations').insert({
+      id: uuidv4(),
+      name: 'Personal',
+      slug: `personal-${userId}-first`,
+      owner_id: userId,
+      type: 'personal',
+      settings: JSON.stringify({}),
+      metadata: JSON.stringify({ personal: true }),
+      is_active: true,
+      provisioning_state: 'pending',
+    })
+
+    // A second insert for the same owner with type='personal' must fail with 23505.
+    await expect(
+      db('organizations').insert({
+        id: uuidv4(),
+        name: 'Personal',
+        slug: `personal-${userId}-second`,
+        owner_id: userId,
+        type: 'personal',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({ personal: true }),
+        is_active: true,
+        provisioning_state: 'pending',
+      })
+    ).rejects.toMatchObject({ code: '23505' })
+
+    // Only one personal org row exists.
+    const count = await db('organizations')
+      .where({ owner_id: userId, type: 'personal' })
+      .count<{ c: string }[]>('* as c')
+    expect(Number(count[0].c)).toBe(1)
+  })
+
+  // C1 + race — concurrent ensurePersonalOrg calls for the same user must still
+  // yield exactly one personal org (the index catches the duplicate, not just app logic).
+  it('concurrent ensurePersonalOrg calls yield exactly one personal org (C1 race)', async () => {
+    const userId = await createUser()
+
+    // Run two concurrent calls; one will race-lose and recover via the catch branch.
+    const [a, b] = await Promise.all([
+      ensurePersonalOrg(userId, { db }),
+      ensurePersonalOrg(userId, { db }),
+    ])
+
+    expect(a.id).toBe(b.id)
+
+    const count = await db('organizations')
+      .where({ owner_id: userId, type: 'personal' })
+      .count<{ c: string }[]>('* as c')
+    expect(Number(count[0].c)).toBe(1)
+  })
+
+  // M1 — slug must include the full userId so two different users can't collide.
+  it('uses full userId in slug so two users never share a slug (M1)', async () => {
+    const userId1 = await createUser()
+    const userId2 = await createUser()
+
+    const org1 = await ensurePersonalOrg(userId1, { db })
+    const org2 = await ensurePersonalOrg(userId2, { db })
+
+    expect(org1.slug).not.toBe(org2.slug)
+    expect(org1.slug).toContain(userId1)
+    expect(org2.slug).toContain(userId2)
+  })
 })
 
 describe('reconcileOrganizationProvisioning', () => {
@@ -278,5 +350,44 @@ describe('runInternalProvision (reconcile-on-login self-heal)', () => {
     await runInternalProvision(userId, deps(permit, publisher))
     acme = await db('organizations').where({ id: orgId }).first()
     expect(acme.provisioning_state).toBe('active')
+  })
+})
+
+// I2 — concurrent reconciles of the same org must serialize so the
+// `welcome_email` step (and every other step) runs exactly once.
+describe('reconcileOrganizationProvisioning — concurrent serialization (I2)', () => {
+  it('two concurrent reconciles publish welcome_email exactly once', async () => {
+    const userId = await createUser()
+    const orgId = await createOrg(userId)
+
+    // Shared email collector across both reconcile calls.
+    const emails: any[] = []
+    const makePublisher = () => ({
+      async publishIdentityUserCreated() {},
+      async publishNotifyEmailRequested(payload: any) {
+        emails.push(payload)
+      },
+    })
+
+    const permit = makeFakePermit()
+
+    // Fire both reconciles concurrently; the advisory lock in Postgres serializes
+    // them so only one executes each step.
+    const [state1, state2] = await Promise.all([
+      reconcileOrganizationProvisioning(orgId, deps(permit, makePublisher())),
+      reconcileOrganizationProvisioning(orgId, deps(permit, makePublisher())),
+    ])
+
+    expect(state1).toBe('active')
+    expect(state2).toBe('active')
+
+    // welcome_email must have been published exactly once across both calls.
+    expect(emails).toHaveLength(1)
+    expect(emails[0].template).toBe('welcome')
+
+    // Each Permit step must also have run exactly once.
+    expect(permit.calls.syncUser).toBe(1)
+    expect(permit.calls.createTenant).toBe(1)
+    expect(permit.calls.assignOwnerRole).toBe(1)
   })
 })

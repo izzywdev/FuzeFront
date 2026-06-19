@@ -26,6 +26,15 @@ export async function up(knex: Knex): Promise<void> {
     ALTER TYPE organization_type_enum ADD VALUE IF NOT EXISTS 'personal'
   `)
 
+  // 1b. Enforce ≤1 personal org per user at the DB level (C1).
+  //     The partial unique index rejects a second personal org for the same owner
+  //     with a 23505 error, which ensurePersonalOrg catches as a race win.
+  await knex.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_personal_org_per_owner
+      ON organizations (owner_id)
+      WHERE type = 'personal'
+  `)
+
   // 2. provisioning_state on organizations (derive "active" => all steps done).
   await knex.raw(`
     DO $$ BEGIN

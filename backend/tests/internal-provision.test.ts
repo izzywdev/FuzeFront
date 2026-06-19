@@ -76,6 +76,37 @@ describe('POST /internal/provision', () => {
     expect(res.status).toBe(401)
   })
 
+  // I1 — timing-safe compare: empty string, same-length wrong value, and
+  // correct value all handled correctly (no oracle leak).
+  it('401s with an empty secret header (I1)', async () => {
+    const res = await request(app)
+      .post('/internal/provision')
+      .set('x-internal-secret', '')
+      .send({ userId: uuidv4() })
+    expect(res.status).toBe(401)
+  })
+
+  it('401s with a same-length-but-wrong secret (I1 timing-safe)', async () => {
+    // SECRET is 'test-internal-secret' (20 chars); craft same-length wrong value.
+    const sameLen = 'test-internal-WRONG!'
+    expect(sameLen.length).toBe(SECRET.length)
+    const res = await request(app)
+      .post('/internal/provision')
+      .set('x-internal-secret', sameLen)
+      .send({ userId: uuidv4() })
+    expect(res.status).toBe(401)
+  })
+
+  it('200s with the exact correct secret (I1)', async () => {
+    const userId = await createUser()
+    const res = await request(app)
+      .post('/internal/provision')
+      .set('x-internal-secret', SECRET)
+      .send({ userId })
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+  })
+
   it('400s when userId is missing', async () => {
     const res = await request(app)
       .post('/internal/provision')
