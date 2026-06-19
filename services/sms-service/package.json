@@ -1,0 +1,28 @@
+{
+  "name": "@fuzefront/sms-service",
+  "version": "1.0.0",
+  "description": "Twilio Verify SMS OTP gateway for FuzeFront MFA",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "4.19.2",
+    "twilio": "^5.3.0",
+    "zod": "3.22.4"
+  },
+  "devDependencies": {
+    "@types/express": "4.17.21",
+    "@types/node": "18.19.0",
+    "@types/supertest": "6.0.2",
+    "jest": "29.7.0",
+    "nodemon": "3.0.1",
+    "supertest": "6.3.3",
+    "ts-jest": "29.1.1",
+    "ts-node": "10.9.2",
+    "typescript": "5.1.6"
+  }
+}
