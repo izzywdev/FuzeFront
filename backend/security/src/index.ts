@@ -17,6 +17,8 @@ import authRoutes from './routes/auth'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
+import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
+import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { oidcService } from './services/oidc'
 
 dotenv.config()
@@ -29,7 +31,11 @@ const startTime = Date.now()
 // Domain routes (identical paths to the monolith).
 app.use('/api/auth', authRoutes)
 app.use('/api/organizations', organizationsRoutes)
+// Org-token sub-route: GET /api/organizations/:orgId/tokens (rate-limited)
+app.use('/api/organizations', tokenAuthRateLimiter, orgTokensRouter)
 app.use('/api/invitations', invitationsRoutes)
+// API token CRUD — rate limiter applied to all /api/tokens/* routes
+app.use('/api/tokens', tokenAuthRateLimiter, apiTokensRoutes)
 // Cluster-internal only — NEVER exposed through the public ingress.
 app.use('/internal', internalRoutes)
 
