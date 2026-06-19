@@ -17,6 +17,9 @@ global:
 securityService:
   enabled: true
 
+applicationsService:
+  enabled: true
+
 ingress:
   enabled: true
   className: nginx

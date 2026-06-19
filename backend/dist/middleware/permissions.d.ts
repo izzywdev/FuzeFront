@@ -10,6 +10,9 @@ export interface AuthenticatedRequest extends Request {
         id: string;
         role: string;
     };
+    params: Record<string, string>;
+    body: any;
+    query: any;
 }
 export interface PermissionConfig {
     resource: string;

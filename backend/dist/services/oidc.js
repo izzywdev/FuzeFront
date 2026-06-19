@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.oidcService = void 0;
 const openid_client_1 = require("openid-client");
 const database_1 = require("../config/database");
+const eventPublisher_1 = require("./eventPublisher");
 class OIDCService {
     constructor() {
         this.client = null;
@@ -110,9 +111,45 @@ class OIDCService {
                     created_at: new Date(),
                     updated_at: new Date(),
                 };
-                await (0, database_1.db)('users').insert(newUser);
+                // Atomically insert the user AND an outbox row for identity.user.created.
+                // The outbox guarantees the event is durably recorded even if the Kafka
+                // publish below fails; reconcile-on-login is the ultimate safety net.
+                const correlationId = `identity-${newUser.id}`;
+                await database_1.db.transaction(async (trx) => {
+                    await trx('users').insert(newUser);
+                    await trx('event_outbox').insert({
+                        id: require('uuid').v4(),
+                        topic: 'identity.user.created',
+                        payload: JSON.stringify({
+                            userId: newUser.id,
+                            email,
+                            firstName,
+                            lastName,
+                            intent: 'signup',
+                        }),
+                        correlation_id: correlationId,
+                        status: 'pending',
+                        attempts: 0,
+                    });
+                });
                 userRow = newUser;
                 console.log(`✅ Created new user: ${email}`);
+                // Best-effort publish; failure leaves the outbox row 'pending' for replay.
+                try {
+                    await eventPublisher_1.defaultEventPublisher.publishIdentityUserCreated({
+                        userId: newUser.id,
+                        email,
+                        firstName,
+                        lastName,
+                        intent: 'signup',
+                    }, correlationId);
+                    await (0, database_1.db)('event_outbox')
+                        .where({ correlation_id: correlationId })
+                        .update({ status: 'sent', attempts: 1, sent_at: new Date() });
+                }
+                catch (pubErr) {
+                    console.error('⚠️ identity.user.created publish failed (outbox retains it):', pubErr);
+                }
             }
             // Return user object
             const user = {

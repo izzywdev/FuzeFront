@@ -8,7 +8,7 @@ const uuid_1 = require("uuid");
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
 const database_1 = require("../config/database");
-const permit_1 = require("../utils/permit");
+const organizationProvisioning_1 = require("../services/organizationProvisioning");
 const router = express_1.default.Router();
 // Input validation helpers
 function validateOrganizationInput(data) {
@@ -33,8 +33,9 @@ function validateOrganizationInput(data) {
     if (data.slug && !/^[a-zA-Z0-9_-]+$/.test(data.slug)) {
         errors.push('Slug can only contain letters, numbers, hyphens, and underscores');
     }
-    if (data.type && !['platform', 'organization'].includes(data.type)) {
-        errors.push('Type must be either "platform" or "organization"');
+    if (data.type &&
+        !['platform', 'organization', 'personal'].includes(data.type)) {
+        errors.push('Type must be one of "platform", "organization", "personal"');
     }
     return errors;
 }
@@ -136,26 +137,17 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
             created_at: newOrganization.created_at,
             updated_at: newOrganization.updated_at,
         };
-        // Integrate with Permit.io asynchronously (don't block response)
-        Promise.all([
-            // 1. Ensure user is synced to Permit.io
-            (0, permit_1.syncUserToPermit)({
-                id: req.user.id,
-                email: req.user.email,
-                firstName: req.user.firstName,
-                lastName: req.user.lastName,
-                roles: req.user.roles || [],
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            }),
-            // 2. Create tenant for the organization
-            (0, permit_1.createTenantInPermit)(organization),
-            // 3. Assign owner role to the creator
-            (0, permit_1.assignOrganizationRole)(req.user.id, organizationId, 'owner'),
-        ]).catch(error => {
-            console.error('Error syncing organization to Permit.io:', error);
-            // Don't fail the API response, but log for monitoring
-        });
+        // Provision Permit wiring via the idempotent, resumable reconciler instead
+        // of a fire-and-forget Promise.all. We await it so the per-step state is
+        // recorded, but a Permit outage must not 500 the create — the org is created
+        // in `pending` and will self-heal on the user's next login (or via the
+        // internal provision endpoint), so we swallow reconciler errors here.
+        try {
+            await (0, organizationProvisioning_1.reconcileOrganizationProvisioning)(organizationId);
+        }
+        catch (error) {
+            console.error(`Provisioning reconcile failed for org ${organizationId} (will self-heal):`, error);
+        }
         res.status(201).json(organization);
     }
     catch (error) {
@@ -213,8 +205,9 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
                 this.whereILike('organizations.name', `%${search}%`).orWhereILike('organizations.slug', `%${search}%`);
             });
         }
-        // Get total count
-        const countQuery = query.clone().count('* as total').first();
+        // Get total count. clearSelect() drops the `organizations.*` projection so the
+        // count query is a plain count(*) (otherwise Postgres requires a GROUP BY).
+        const countQuery = query.clone().clearSelect().count('* as total').first();
         const totalResult = await countQuery;
         const total = parseInt(totalResult?.total || '0');
         // Apply sorting and pagination

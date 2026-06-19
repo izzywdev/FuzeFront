@@ -20,11 +20,11 @@ export declare function deleteResourceInstance(resourceKey: string): Promise<boo
 /**
  * Gets a resource instance from Permit.io
  */
-export declare function getResourceInstance(resourceKey: string): Promise<import("permitio/build/main/openapi").ResourceInstanceRead>;
+export declare function getResourceInstance(resourceKey: string): Promise<import("permitio/build/openapi").ResourceInstanceRead>;
 /**
  * Lists resource instances for a tenant
  */
-export declare function listResourceInstances(tenant: string, resourceType?: string): Promise<import("permitio/build/main/openapi").ResourceInstanceRead[]>;
+export declare function listResourceInstances(tenant: string, resourceType?: string): Promise<import("permitio/build/openapi").ResourceInstanceRead[]>;
 /**
  * Creates an organization resource instance
  */

@@ -10,7 +10,19 @@ const uuid_1 = require("uuid");
 const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const oidc_1 = require("../services/oidc");
+const organizationProvisioning_1 = require("../services/organizationProvisioning");
 const router = express_1.default.Router();
+/**
+ * Self-heal provisioning on login: ensure the user has a personal org and that
+ * every org they own which isn't `active` gets reconciled. Fire-and-forget —
+ * this must never block or fail the login response. Acts as the safety net when
+ * the identity.user.created Kafka event was lost.
+ */
+function selfHealProvisioningOnLogin(userId) {
+    (0, organizationProvisioning_1.runInternalProvision)(userId).catch(err => {
+        console.error(`Login self-heal provisioning failed for ${userId}:`, err);
+    });
+}
 /**
  * @swagger
  * /api/auth/login:
@@ -130,17 +142,16 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         console.log(`✅ [${requestId}] Password verified, generating token...`);
+        // Create the session id first so it can be embedded in the token; this lets
+        // logout invalidate only THIS session rather than all of the user's sessions.
+        const sessionId = (0, uuid_1.v4)();
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         // Generate JWT
-        const token = jsonwebtoken_1.default.sign({ userId: userRow.id }, process.env.JWT_SECRET, {
-            expiresIn: '24h',
-        });
+        const token = jsonwebtoken_1.default.sign({ userId: userRow.id, sessionId }, process.env.JWT_SECRET, { expiresIn: '24h' });
         console.log(`🎫 [${requestId}] JWT token generated:`, {
             tokenLength: token.length,
             tokenPreview: token.substring(0, 20) + '...',
         });
-        // Create session
-        const sessionId = (0, uuid_1.v4)();
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         console.log(`💾 [${requestId}] Creating session:`, {
             sessionId,
             expiresAt: expiresAt.toISOString(),
@@ -175,6 +186,8 @@ router.post('/login', async (req, res) => {
             sessionId,
             responseTime: Date.now() - startTime,
         });
+        // Self-heal provisioning in the background (does not block the response).
+        selfHealProvisioningOnLogin(user.id);
         res.json({
             token,
             user,
@@ -267,9 +280,10 @@ router.post('/logout', auth_1.authenticateToken, async (req, res) => {
         const token = authHeader && authHeader.split(' ')[1];
         if (token) {
             const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-            // In a real app, you'd add this token to a blacklist
-            // For now, we'll just remove the session
-            await (0, database_1.db)('sessions').where('user_id', decoded.userId).del();
+            // Invalidate only the current session, not every session the user has.
+            if (decoded.sessionId) {
+                await (0, database_1.db)('sessions').where('id', decoded.sessionId).del();
+            }
         }
         res.json({ message: 'Logged out successfully' });
     }
@@ -373,6 +387,8 @@ router.get('/oidc/callback', async (req, res) => {
             expires_at: expiresAt,
         });
         console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email);
+        // Self-heal provisioning in the background (does not block the redirect).
+        selfHealProvisioningOnLogin(user.id);
         // Redirect to frontend with token
         const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`;
         res.redirect(frontendUrl);

@@ -6,7 +6,18 @@ export interface PermitTenant {
     attributes?: Record<string, any>;
 }
 /**
- * Creates a tenant in Permit.io for an organization
+ * Returns true when `error` is a benign "already exists" conflict (HTTP 409 /
+ * duplicate / already exists) rather than a real failure. Permit's SDK surfaces
+ * the upstream status in a few different shapes depending on version, so we
+ * probe all of them plus the message text.
+ */
+export declare function isAlreadyExistsError(error: any): boolean;
+/**
+ * Creates a tenant in Permit.io for an organization.
+ *
+ * Idempotent: a 409 / "already exists" from a prior run is treated as success
+ * so reconciliation can be re-run safely. Any other error is rethrown so the
+ * caller records the step as `failed` (with `last_error`) and retries later.
  */
 export declare function createTenantInPermit(organization: Organization): Promise<boolean>;
 /**

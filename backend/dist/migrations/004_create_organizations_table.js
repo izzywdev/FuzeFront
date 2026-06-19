@@ -27,6 +27,7 @@ async function up(knex) {
         table
             .enum('type', null, {
             useNative: true,
+            existingType: true,
             enumName: 'organization_type_enum',
         })
             .notNullable();
