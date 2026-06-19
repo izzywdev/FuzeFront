@@ -1,5 +1,6 @@
 import permit from '../../config/permit'
 import { User } from '../../types/shared'
+import { assignRoleInPermit, unassignRoleInPermit } from './role-assignment'
 
 export interface PermitUser {
   key: string
@@ -70,6 +71,56 @@ export async function getUserFromPermit(userId: string) {
   } catch (error) {
     console.error(`Error getting user ${userId} from Permit.io:`, error)
     return null
+  }
+}
+
+/**
+ * Syncs a service/API token as a Permit principal and assigns it a role.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+export async function syncServiceTokenToPermit(
+  tokenId: string,
+  orgId: string,
+  permitRole: 'viewer' | 'editor' | 'admin'
+): Promise<boolean> {
+  try {
+    await permit.api.users.sync({
+      key: `svc_token:${tokenId}`,
+      attributes: { is_service_token: true, org_id: orgId },
+    })
+    await assignRoleInPermit({
+      user: `svc_token:${tokenId}`,
+      role: permitRole,
+      tenant: orgId,
+    })
+    console.log(`Service token ${tokenId} synced to Permit.io with role ${permitRole} in org ${orgId}`)
+    return true
+  } catch (error) {
+    console.error(`Error syncing service token ${tokenId} to Permit.io:`, error)
+    return false
+  }
+}
+
+/**
+ * Removes a service/API token role from Permit.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+export async function removeServiceTokenFromPermit(
+  tokenId: string,
+  orgId: string,
+  permitRole: 'viewer' | 'editor' | 'admin'
+): Promise<boolean> {
+  try {
+    await unassignRoleInPermit({
+      user: `svc_token:${tokenId}`,
+      role: permitRole,
+      tenant: orgId,
+    })
+    console.log(`Service token ${tokenId} removed from Permit.io (role ${permitRole}) in org ${orgId}`)
+    return true
+  } catch (error) {
+    console.error(`Error removing service token ${tokenId} from Permit.io:`, error)
+    return false
   }
 }
 
