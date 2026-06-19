@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
 """
+SUPERSEDED — replaced by Authentik blueprints (Plan E, 2026-06-19).
+============================================================
+This script has been superseded by version-controlled Authentik blueprints:
+  deploy/helm/fuzefront/authentik/blueprints/
+
+The blueprints are auto-applied by the Authentik worker on startup (mounted
+via ConfigMap authentik-blueprints at /blueprints/fuzefront/). No manual
+seeding or out-of-band patching is required.
+
+Blueprint coverage vs. this script:
+  - OIDC provider + Application (provider-oidc.yaml) — deterministic client_id/secret
+  - Enrollment flow + password policy (flow-enrollment.yaml)
+  - Password recovery flow (flow-recovery.yaml)
+  - MFA stages: TOTP + WebAuthn (stages-mfa.yaml)
+  - Google OAuth source (source-google.yaml)
+  - Fuse-seam brand + custom CSS (brand-fuseseam.yaml)
+
+This file is kept for historical reference only. Do NOT run it against a
+blueprint-managed Authentik instance — it will create duplicate objects.
+============================================================
+
 Seed Authentik for FuzeFront: OIDC provider + application, a strong sign-up
 password policy (bound to a FuzeFront enrollment flow), and an initial admin.
 

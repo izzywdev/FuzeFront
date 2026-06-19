@@ -9,6 +9,7 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'services/email-service/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
 
@@ -61,6 +62,18 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push email-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/email-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-email-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-email-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

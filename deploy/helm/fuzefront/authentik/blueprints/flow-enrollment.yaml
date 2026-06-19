@@ -1,0 +1,221 @@
+# Authentik Blueprint — FuzeFront self-service enrollment flow
+#
+# Stages (in order):
+#   1. fuzefront-enroll-captcha     — reCAPTCHA (keys empty in dev → skipped)
+#   2. fuzefront-enroll-prompt      — email, username, password, password_repeat
+#   3. fuzefront-enroll-email-verify — send verification email + token challenge
+#   4. fuzefront-enroll-write       — create the user account
+#   5. fuzefront-enroll-login       — automatically log the new user in
+#
+# Password policy (12+ chars, upper/lower/digit/symbol) is applied as a
+# validation_policy on the prompt stage.
+#
+# The captcha stage requires real reCAPTCHA site/secret keys in production.
+# Set them via values authentik.blueprints.captchaPublicKey /
+# authentik.blueprints.captchaPrivateKey. In dev, empty keys cause the stage
+# to be effectively bypassed (Authentik skips captcha validation when keys
+# are blank).
+version: 3
+metadata:
+  name: FuzeFront Enrollment Flow
+entries:
+  # ── Password policy ─────────────────────────────────────────────────────────
+  - model: authentik_policies_password.passwordpolicy
+    state: present
+    identifiers:
+      name: fuzefront-password-policy
+    attrs:
+      name: fuzefront-password-policy
+      length_min: 12
+      amount_uppercase: 1
+      amount_lowercase: 1
+      amount_digits: 1
+      amount_symbols: 1
+      password_field: password
+      error_message: "Password must be at least 12 characters with uppercase, lowercase, digit and symbol."
+
+  # ── Captcha stage ────────────────────────────────────────────────────────────
+  - model: authentik_stages_captcha.captchastage
+    state: present
+    identifiers:
+      name: fuzefront-enroll-captcha
+    attrs:
+      name: fuzefront-enroll-captcha
+      # Blank keys in dev — replace with real reCAPTCHA v2/v3 keys in prod.
+      public_key: ""
+      private_key: ""
+      js_url: "https://www.recaptcha.net/recaptcha/api.js"
+
+  # ── Prompt fields ─────────────────────────────────────────────────────────
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-enroll-email
+    attrs:
+      name: ff-enroll-email
+      field_key: email
+      label: "Email"
+      type: email
+      required: true
+      placeholder: "you@example.com"
+      order: 10
+
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-enroll-username
+    attrs:
+      name: ff-enroll-username
+      field_key: username
+      label: "Username"
+      type: username
+      required: true
+      placeholder: "your-username"
+      order: 20
+
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-enroll-password
+    attrs:
+      name: ff-enroll-password
+      field_key: password
+      label: "Password"
+      type: password
+      required: true
+      placeholder: "Password (12+ chars)"
+      order: 30
+
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-enroll-password-repeat
+    attrs:
+      name: ff-enroll-password-repeat
+      field_key: password_repeat
+      label: "Confirm Password"
+      type: password
+      required: true
+      placeholder: "Repeat password"
+      order: 40
+
+  # Consent / ToS acceptance field
+  - model: authentik_stages_prompt.prompt
+    state: present
+    identifiers:
+      name: ff-enroll-tos
+    attrs:
+      name: ff-enroll-tos
+      field_key: tos_accepted
+      label: "I agree to the Terms of Service"
+      type: checkbox
+      required: true
+      order: 50
+
+  # ── Prompt stage (bundles fields + policy) ──────────────────────────────────
+  - model: authentik_stages_prompt.promptstage
+    state: present
+    identifiers:
+      name: fuzefront-enroll-prompt
+    attrs:
+      name: fuzefront-enroll-prompt
+      fields:
+        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-email]]
+        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-username]]
+        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-password]]
+        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-password-repeat]]
+        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-tos]]
+      validation_policies:
+        - !find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
+
+  # ── Email verification stage ─────────────────────────────────────────────────
+  - model: authentik_stages_email.emailstage
+    state: present
+    identifiers:
+      name: fuzefront-enroll-email-verify
+    attrs:
+      name: fuzefront-enroll-email-verify
+      use_global_settings: true
+      activate_user_on_success: true
+      from_address: "noreply@fuzefront.dev"
+      subject: "Verify your FuzeFront account"
+      template: email/account_confirmation.html
+      token_expiry: 30  # minutes
+
+  # ── User-write stage ─────────────────────────────────────────────────────────
+  - model: authentik_stages_user_write.userwritestage
+    state: present
+    identifiers:
+      name: fuzefront-enroll-write
+    attrs:
+      name: fuzefront-enroll-write
+      create_users_as_inactive: true  # account is inactive until email verified
+      user_type: internal
+
+  # ── User-login stage ─────────────────────────────────────────────────────────
+  - model: authentik_stages_user_login.userloginstage
+    state: present
+    identifiers:
+      name: fuzefront-enroll-login
+    attrs:
+      name: fuzefront-enroll-login
+      session_duration: "seconds=0"  # browser-session (expires on close)
+
+  # ── Enrollment flow ───────────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-enrollment
+    attrs:
+      name: "FuzeFront Sign-up"
+      slug: fuzefront-enrollment
+      title: "Create your FuzeFront account"
+      designation: enrollment
+      authentication: none
+      layout: stacked
+
+  # ── Flow-stage bindings (order = execution order) ─────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !find [authentik_stages_captcha.captchastage, [name, fuzefront-enroll-captcha]]
+    attrs:
+      order: 10
+      re_evaluate_policies: false
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !find [authentik_stages_prompt.promptstage, [name, fuzefront-enroll-prompt]]
+    attrs:
+      order: 20
+      re_evaluate_policies: false
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !find [authentik_stages_user_write.userwritestage, [name, fuzefront-enroll-write]]
+    attrs:
+      order: 30
+      re_evaluate_policies: false
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !find [authentik_stages_email.emailstage, [name, fuzefront-enroll-email-verify]]
+    attrs:
+      order: 40
+      re_evaluate_policies: false
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !find [authentik_stages_user_login.userloginstage, [name, fuzefront-enroll-login]]
+    attrs:
+      order: 50
+      re_evaluate_policies: false
