@@ -10,6 +10,10 @@ import { oidcService } from '../services/oidc'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
 
+const CODE_TTL_MS = 60_000
+interface PendingCode { token: string; sessionId: string; expiresAt: number }
+const pendingCodes = new Map<string, PendingCode>()
+
 const router = express.Router()
 
 /**
@@ -436,14 +440,14 @@ router.get('/oidc/callback', async (req, res) => {
     const user = await oidcService.handleCallback(code as string, state as string)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
-      expiresIn: '24h',
-    })
-
-    // Create session
+    // Create session id first so it can be embedded in the token
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    // Generate JWT token (includes sessionId so logout can target this session)
+    const token = jwt.sign({ userId: user.id, sessionId }, process.env.JWT_SECRET!, {
+      expiresIn: '24h',
+    })
 
     await db('sessions').insert({
       id: sessionId,
@@ -456,9 +460,11 @@ router.get('/oidc/callback', async (req, res) => {
     // Self-heal provisioning in the background (does not block the redirect).
     selfHealProvisioningOnLogin(user.id)
 
-    // Redirect to frontend with token
-    const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`
-    res.redirect(frontendUrl)
+    // Issue a short-lived opaque exchange code instead of putting the bearer token in the URL
+    // (avoids token leakage via referrer headers, server logs, and browser history).
+    const exchangeCode = crypto.randomBytes(32).toString('hex')
+    pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS })
+    res.redirect(`http://fuzefront.dev.local/?code=${exchangeCode}`)
 
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC callback error:`, error)
@@ -506,6 +512,47 @@ router.get('/method', (req, res) => {
     defaultMethod: oidcConfigured ? 'oidc' : 'local',
     oidcLoginUrl: oidcConfigured ? '/api/auth/oidc/login' : null,
   })
+})
+
+/**
+ * @swagger
+ * /api/auth/token-exchange:
+ *   post:
+ *     summary: Exchange OIDC code for token
+ *     description: Single-use, 60s TTL exchange of the opaque code issued by /oidc/callback for a JWT token and sessionId
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token and sessionId returned
+ *       400:
+ *         description: code required
+ *       401:
+ *         description: invalid or expired code
+ */
+router.post('/token-exchange', async (req, res) => {
+  const { code } = req.body
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'code required' })
+  }
+  const pending = pendingCodes.get(code)
+  if (!pending || Date.now() > pending.expiresAt) {
+    pendingCodes.delete(code)  // clean up expired entry if present
+    return res.status(401).json({ error: 'invalid or expired code' })
+  }
+  // Single-use: delete immediately
+  pendingCodes.delete(code)
+  return res.json({ token: pending.token, sessionId: pending.sessionId })
 })
 
 export default router
