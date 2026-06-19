@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -352,8 +353,9 @@ router.get('/oidc/login', async (req, res) => {
 
     const state = uuidv4()
     const authUrl = oidcService.generateAuthUrl(state)
-    
+
     console.log(`🔗 [${requestId}] Redirecting to Authentik:`, authUrl)
+    res.setHeader('Set-Cookie', `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`)
     res.redirect(authUrl)
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
@@ -401,6 +403,25 @@ router.get('/oidc/callback', async (req, res) => {
   })
 
   try {
+    // CSRF guard: verify state cookie matches query param
+    const cookieHeader = req.headers.cookie || ''
+    const stateCookieMatch = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('oidc_state='))
+    const cookieState = stateCookieMatch ? stateCookieMatch.slice('oidc_state='.length) : null
+    const queryState = (req.query.state as string) || ''
+
+    if (!cookieState || cookieState.length !== queryState.length) {
+      return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+    }
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(cookieState, 'utf8'), Buffer.from(queryState, 'utf8'))) {
+        return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+      }
+    } catch {
+      return res.redirect('http://fuzefront.dev.local/?error=invalid_state')
+    }
+    // Clear the cookie
+    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+
     if (error) {
       console.log(`❌ [${requestId}] OIDC error:`, error)
       return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
