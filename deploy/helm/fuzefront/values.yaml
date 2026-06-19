@@ -59,6 +59,7 @@ secret:
   # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
+  sendgridApiKey: ""
   # Google OAuth2 source creds. Leave empty to disable the Google source
   # (inert — Authentik skips sources whose consumer_key resolves to "").
   # Override via --set or a gitignored values file. NEVER commit real creds.
@@ -101,6 +102,22 @@ frontend:
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+
+emailService:
+  enabled: false
+  replicas: 1
+  port: 3003
+  image:
+    repository: fuzefront/email-service
+    tag: local
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "email-service"
+    groupId: "email-service-group"
+  email:
+    provider: "smtp"  # "sendgrid" or "smtp"
+    from: "noreply@fuzefront.com"
+  resources: {}
 
 authentik:
   enabled: true

@@ -17,6 +17,11 @@ frontend:
     tag: 57fecf6261f0
   replicas: 2
 
+emailService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-email-service
+    tag: 1fbd206c5b2a
+
 permit:
   enabled: true
 
