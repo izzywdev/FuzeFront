@@ -40,11 +40,22 @@ fuzeinfra:
 
 database:
   name: fuzefront_platform
-  # Bootstraps as the FuzeInfra superuser for now; harden to fuzefront_user later.
-  user: fuzeinfra
+  # Least-privilege runtime role created by the bootstrap Job (connects with
+  # DB_PASSWORD from the SealedSecret).
+  user: fuzefront_user
+  bootstrap:
+    enabled: true
+    superuser:
+      # FuzeInfra Postgres superuser.
+      username: fuzeinfra
+      # Reads DB_SUPERUSER_PASSWORD from the existing (Sealed) Secret below.
+      secretName: ""
+      secretKey: DB_SUPERUSER_PASSWORD
 
-# Secrets come from a SealedSecret (JWT_SECRET, SESSION_SECRET, DB_PASSWORD,
-# PERMIT_API_KEY) — never plaintext in git.
+# Secrets come from a SealedSecret. With the bootstrap/runtime split it MUST now
+# include both DB_PASSWORD (the fuzefront_user runtime password) and
+# DB_SUPERUSER_PASSWORD (the FuzeInfra Postgres superuser password used only by
+# the bootstrap Job), alongside JWT_SECRET, SESSION_SECRET, PERMIT_API_KEY.
 secret:
   existingSecret: fuzefront-secrets
 

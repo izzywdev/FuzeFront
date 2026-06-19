@@ -19,6 +19,9 @@ jobs:
         env:
           POSTGRES_USER: fuzeinfra
           POSTGRES_PASSWORD: fuzeinfra_secure_password
+          # Pre-create the app DB: the backend no longer auto-creates it
+          # (the bootstrap/runtime split removed CREATE DATABASE from startup).
+          POSTGRES_DB: fuzefront_platform
         options: >-
           --health-cmd "pg_isready -U fuzeinfra"
           --health-interval 10s

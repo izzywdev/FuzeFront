@@ -25,14 +25,32 @@ fuzeinfra:
     host: redis.fuzeinfra.svc.cluster.local
     port: 6379
 
-# FuzeFront application database. The backend creates this DB on first startup,
-# so it only needs Postgres credentials that can CREATE DATABASE.
+# FuzeFront application database.
+#
+# Bootstrap/runtime split: a privileged Helm pre-install/pre-upgrade Job
+# (templates/db-bootstrap-job.yaml) connects as the FuzeInfra Postgres
+# SUPERUSER and idempotently creates the database + a least-privilege runtime
+# role. The backend Deployment then connects as that runtime role
+# (`database.user`), which has NO CREATEDB/CREATEROLE.
 database:
   name: fuzefront_platform
-  # For first light the backend authenticates as the FuzeInfra Postgres superuser
-  # (so it can bootstrap its own database). Harden later to a dedicated
-  # fuzefront_user with limited grants. Password comes from the Secret below.
-  user: fuzeinfra
+  # Least-privilege runtime role created by the bootstrap Job. Its password is
+  # DB_PASSWORD from the Secret below.
+  user: fuzefront_user
+  bootstrap:
+    enabled: true
+    superuser:
+      # The FuzeInfra Postgres superuser (its container runs with
+      # POSTGRES_USER=fuzeinfra, which makes `fuzeinfra` the cluster superuser).
+      username: fuzeinfra
+      # K8s Secrets are namespace-scoped; the `fuzeinfra` Secret lives in the
+      # fuzeinfra namespace and cannot be referenced from here. Leave secretName
+      # empty to read the superuser password from THIS chart's Secret (key
+      # below), into which you supply it (e.g. --set secret.dbSuperuserPassword,
+      # or a SealedSecret in prod). Or point secretName at any Secret in this
+      # namespace that holds the superuser password.
+      secretName: ""
+      secretKey: DB_SUPERUSER_PASSWORD
 
 # Secret handling. Either let the chart create a Secret from the values here
 # (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
@@ -43,7 +61,14 @@ secret:
   # or a gitignored values file. NEVER commit real secrets here.
   jwtSecret: "dev-only-change-me"
   sessionSecret: "dev-only-change-me"
-  dbPassword: "fuzeinfra_secure_password"   # matches FuzeInfra postgres default
+  # Password for the least-privilege runtime role (`database.user`). The
+  # bootstrap Job sets the role's password to this and the backend connects with
+  # it. DEV-ONLY default — override for anything real.
+  dbPassword: "dev-fuzefront-user-change-me"
+  # Password for the privileged bootstrap superuser (database.bootstrap.superuser
+  # = `fuzeinfra` by default). Matches the FuzeInfra postgres default in dev;
+  # OVERRIDE/seal in prod. Only consumed by the bootstrap Job, never the runtime.
+  dbSuperuserPassword: "fuzeinfra_secure_password"
   # Permit.io is deferred in the minimal cut, but the backend requires this var
   # to be set at import time. The SDK is built with throwOnError:false, so with a
   # placeholder it boots and degrades gracefully (Permit-gated routes will deny).

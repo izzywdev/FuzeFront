@@ -97,9 +97,18 @@ runtime — no rebuild of the host.
 
 ## Notes / known follow-ups
 
-- **DB credentials:** the backend authenticates as the FuzeInfra Postgres superuser
-  (`fuzeinfra`) to bootstrap its own `fuzefront_platform` DB. Harden later to a
-  dedicated `fuzefront_user` with limited grants.
+- **DB bootstrap vs. runtime (least-privilege):** a privileged Helm
+  `pre-install,pre-upgrade` Job (`templates/db-bootstrap-job.yaml`, running
+  `node dist/scripts/db-bootstrap.js`) connects as the FuzeInfra Postgres
+  superuser (`fuzeinfra`) and idempotently creates the `fuzefront_platform` DB,
+  a least-privilege `fuzefront_user` role (no CREATEDB/CREATEROLE), and grants
+  it ownership of the `public` schema. The backend then runs as `fuzefront_user`
+  and only verifies the DB exists — it never creates databases or roles.
+  Superuser creds come from a Secret in this namespace: by default
+  `DB_SUPERUSER_PASSWORD` in the chart Secret (set `secret.dbSuperuserPassword`,
+  or seal it in prod), or point `database.bootstrap.superuser.secretName` at an
+  existing Secret. The runtime role's password is `DB_PASSWORD`
+  (`secret.dbPassword`).
 - **No seed data:** `NODE_ENV=production` (required so the image's compiled `.js`
   migrations are found) skips seeds. The platform starts empty; apps self-register
   at runtime. Run seeds as a one-off Job if you want the demo apps.

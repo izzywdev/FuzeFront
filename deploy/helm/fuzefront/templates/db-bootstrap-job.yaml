@@ -1,0 +1,70 @@
+{{- if .Values.database.bootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-db-bootstrap
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-bootstrap
+  annotations:
+    # Privileged, idempotent provisioning of the application database + a
+    # least-privilege runtime role. Runs BEFORE the backend so that by the time
+    # the Deployment starts, the DB exists and `fuzefront_user` can connect.
+    # Runs as the FuzeInfra Postgres superuser (creds below) — the ONLY place
+    # that needs CREATEDB/CREATEROLE.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: db-bootstrap
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/scripts/db-bootstrap.js"]
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            # The least-privilege runtime role this Job creates. Must match the
+            # DB_USER the backend Deployment connects with.
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+            # Privileged bootstrap credentials (the FuzeInfra Postgres superuser).
+            # K8s Secrets are namespace-scoped, so the superuser secret cannot be
+            # the cross-namespace `fuzeinfra` Secret directly; point these at a
+            # Secret in THIS namespace (defaults to the chart Secret, into which
+            # the operator supplies DB_SUPERUSER_PASSWORD).
+            - name: DB_SUPERUSER
+              value: {{ .Values.database.bootstrap.superuser.username | quote }}
+            - name: DB_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
+                  key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+{{- end }}

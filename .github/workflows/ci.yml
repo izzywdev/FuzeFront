@@ -146,6 +146,15 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/frontfuse_test
           NODE_ENV: test
+          # The backend reads individual DB_* vars (not DATABASE_URL). Point them
+          # at the pre-created `frontfuse_test` service DB: ensureDatabase now
+          # verifies the DB exists (no auto-create since the bootstrap split), so
+          # DB_NAME must match the POSTGRES_DB the service created.
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: frontfuse_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
           # No-op Permit config so permission checks don't crash without a PDP.
           PERMIT_API_KEY: ci-noop
           PERMIT_PDP_URL: http://localhost:7766

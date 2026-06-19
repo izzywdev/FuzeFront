@@ -2,106 +2,23 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.up = up;
 exports.down = down;
-async function up(knex) {
-    console.log('🔧 Creating dedicated FuzeFront database user...');
-    // This migration creates a dedicated user for FuzeFront application
-    // It should run using the postgres superuser credentials, then create
-    // a restricted user for application use
-    const username = 'fuzefront_user';
-    const password = 'FuzeFront_2024_SecureDB_Pass!';
-    const dbName = 'fuzefront_platform';
-    try {
-        // Check if user already exists
-        const userExists = await knex.raw(`
-      SELECT 1 FROM pg_user WHERE usename = ?
-    `, [username]);
-        if (userExists.rows.length === 0) {
-            console.log(`📝 Creating user: ${username}`);
-            // Create the user with password
-            await knex.raw(`
-        CREATE USER ?? WITH PASSWORD ?
-      `, [username, password]);
-            console.log(`✅ User ${username} created successfully`);
-        }
-        else {
-            console.log(`✅ User ${username} already exists`);
-            // Update password in case it changed
-            await knex.raw(`
-        ALTER USER ?? WITH PASSWORD ?
-      `, [username, password]);
-            console.log(`✅ User ${username} password updated`);
-        }
-        // Grant necessary permissions to the user
-        console.log(`🔑 Granting permissions to ${username}...`);
-        // Grant connect privilege to database
-        await knex.raw(`
-      GRANT CONNECT ON DATABASE ?? TO ??
-    `, [dbName, username]);
-        // Grant usage on public schema
-        await knex.raw(`
-      GRANT USAGE ON SCHEMA public TO ??
-    `, [username]);
-        // Grant all privileges on all tables in public schema
-        await knex.raw(`
-      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ??
-    `, [username]);
-        // Grant all privileges on all sequences in public schema (for auto-increment)
-        await knex.raw(`
-      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ??
-    `, [username]);
-        // Grant privileges on future tables and sequences
-        await knex.raw(`
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public 
-      GRANT ALL PRIVILEGES ON TABLES TO ??
-    `, [username]);
-        await knex.raw(`
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public 
-      GRANT ALL PRIVILEGES ON SEQUENCES TO ??
-    `, [username]);
-        console.log(`✅ Permissions granted to ${username}`);
-        console.log(`🎉 FuzeFront database user setup complete!`);
-    }
-    catch (error) {
-        console.error(`❌ Error creating FuzeFront user:`, error);
-        throw error;
-    }
+// TOMBSTONE — do not delete this file and do not add SQL to it.
+//
+// The original migration 008 provisioned a least-privilege `fuzefront` Postgres
+// role and database.  That work has moved to the Helm pre-install bootstrap Job
+// (charts/fuzefront/templates/db-bootstrap-job.yaml) and the companion script
+// src/scripts/db-bootstrap.ts, which run with elevated credentials at deploy
+// time before the application container ever starts.
+//
+// This file is retained as a no-op tombstone so that knex's validateMigrationList
+// does not throw "The migration directory is corrupt, the following files are
+// missing: 008_create_fuzefront_user.js" on databases that already recorded
+// this migration number in their knex_migrations table.  Removing it would
+// crash every already-migrated deployment on the next startup.
+async function up(_knex) {
+    // no-op: see tombstone comment above
 }
-async function down(knex) {
-    console.log('🔧 Removing FuzeFront database user...');
-    const username = 'fuzefront_user';
-    try {
-        // Check if user exists before trying to drop
-        const userExists = await knex.raw(`
-      SELECT 1 FROM pg_user WHERE usename = ?
-    `, [username]);
-        if (userExists.rows.length > 0) {
-            console.log(`🗑️ Dropping user: ${username}`);
-            // Revoke all privileges first
-            await knex.raw(`
-        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ??
-      `, [username]);
-            await knex.raw(`
-        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM ??
-      `, [username]);
-            await knex.raw(`
-        REVOKE USAGE ON SCHEMA public FROM ??
-      `, [username]);
-            await knex.raw(`
-        REVOKE CONNECT ON DATABASE fuzefront_platform FROM ??
-      `, [username]);
-            // Drop the user
-            await knex.raw(`
-        DROP USER ??
-      `, [username]);
-            console.log(`✅ User ${username} removed successfully`);
-        }
-        else {
-            console.log(`✅ User ${username} does not exist`);
-        }
-    }
-    catch (error) {
-        console.error(`❌ Error removing FuzeFront user:`, error);
-        throw error;
-    }
+async function down(_knex) {
+    // no-op: see tombstone comment above
 }
 //# sourceMappingURL=008_create_fuzefront_user.js.map
