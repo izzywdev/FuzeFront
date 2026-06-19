@@ -41,6 +41,14 @@ smsService:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
     tag: ""  # CI's release sed writes the real image SHA here
 
+# IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
+# the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
+# Without it the provisioning-service pod will fail to start (missing env var).
+provisioningService:
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-provisioning-service
+    tag: ""  # CI's release sed writes the real image SHA here
+
 permit:
   enabled: true
 

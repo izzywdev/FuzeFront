@@ -12,6 +12,7 @@ on:
       - 'frontend/**'
       - 'services/email-service/**'
       - 'services/sms-service/**'
+      - 'services/provisioning-service/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
 
@@ -88,6 +89,18 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-sms-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-sms-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push provisioning-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/provisioning-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-provisioning-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-provisioning-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

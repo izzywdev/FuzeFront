@@ -45,6 +45,10 @@ build:
       context: .
       docker:
         dockerfile: services/sms-service/Dockerfile
+    - image: fuzefront/provisioning-service
+      context: .
+      docker:
+        dockerfile: services/provisioning-service/Dockerfile
     - image: fuzefront/security-service
       # Root context so the image can build @fuzefront/core + @fuzefront/shared.
       context: .
@@ -74,6 +78,8 @@ manifests:
           emailService.image.tag: "{{.IMAGE_TAG_fuzefront_email_service}}"
           smsService.image.repository: "{{.IMAGE_REPO_fuzefront_sms_service}}"
           smsService.image.tag: "{{.IMAGE_TAG_fuzefront_sms_service}}"
+          provisioningService.image.repository: "{{.IMAGE_REPO_fuzefront_provisioning_service}}"
+          provisioningService.image.tag: "{{.IMAGE_TAG_fuzefront_provisioning_service}}"
           securityService.image.repository: "{{.IMAGE_REPO_fuzefront_security_service}}"
           securityService.image.tag: "{{.IMAGE_TAG_fuzefront_security_service}}"
           applicationsService.image.repository: "{{.IMAGE_REPO_fuzefront_applications_service}}"

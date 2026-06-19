@@ -35,3 +35,9 @@ contain the following keys:
   - TWILIO_AUTH_TOKEN     — Twilio auth token
   - TWILIO_VERIFY_SERVICE_SID — Twilio Verify service SID
 {{- end }}
+{{- if .Values.provisioningService.enabled }}
+
+WARNING: provisioningService is enabled. Your SealedSecret (fuzefront-secrets) MUST
+contain the key INTERNAL_PROVISION_SECRET before the pod can start. Deploying
+without it will cause the provisioning-service pod to crash on startup.
+{{- end }}

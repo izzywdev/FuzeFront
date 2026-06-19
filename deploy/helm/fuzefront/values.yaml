@@ -192,6 +192,25 @@ smsService:
     tag: local
   resources: {}
 
+# Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
+# security-service POST /internal/provision. No DB, no domain logic.
+# SECURITY_SERVICE_URL is derived in the Helm template from securityService.port
+# (http://fuzefront-security:<port>) — do not override separately.
+provisioningService:
+  enabled: false
+  replicas: 1
+  port: 3005
+  image:
+    repository: fuzefront/provisioning-service
+    tag: local
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "provisioning-service"
+    groupId: "provisioning-service-group"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
 authentik:
   enabled: true
   image:
