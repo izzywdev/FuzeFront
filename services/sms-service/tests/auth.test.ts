@@ -24,6 +24,23 @@ describe('Auth middleware', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects a token that is a prefix of the real secret (length guard)', async () => {
+    // timingSafeEqual with mismatched lengths must return 401, not throw
+    const res = await request(app)
+      .post('/sms/send')
+      .set('Authorization', 'Bearer super-secre') // one char short
+      .send({ to: '+15551234567' });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a token that is longer than the real secret (length guard)', async () => {
+    const res = await request(app)
+      .post('/sms/send')
+      .set('Authorization', 'Bearer super-secret-extra')
+      .send({ to: '+15551234567' });
+    expect(res.status).toBe(401);
+  });
+
   it('accepts requests with correct secret', async () => {
     const res = await request(app)
       .post('/sms/send')

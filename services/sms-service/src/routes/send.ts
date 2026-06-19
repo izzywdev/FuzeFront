@@ -27,10 +27,10 @@ export function makeSendHandler(deps: SendDeps) {
       return;
     }
     const { to } = parsed.data;
-    const ip =
-      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      'unknown';
+    // req.ip is set by Express when app.set('trust proxy', 1) is configured,
+    // which honours the ingress-set X-Forwarded-For rather than the raw header
+    // that an attacker could freely forge.
+    const ip = req.ip ?? 'unknown';
 
     try {
       deps.rateLimiter.check(to, ip);

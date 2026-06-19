@@ -36,7 +36,15 @@ function createTwilioClient(cfg) {
     if (cfg.mock) {
         return createMockTwilioClient();
     }
-    return (0, twilio_1.default)(cfg.accountSid, cfg.authToken);
+    const client = (0, twilio_1.default)(cfg.accountSid, cfg.authToken);
+    // Verify the SDK object exposes the Verify v2 namespace before casting.
+    // The twilio SDK typings are looser than our internal interface, so we do a
+    // runtime check here to surface mis-configuration (wrong SDK version, etc.)
+    // rather than a cryptic runtime error deep in the request path.
+    if (!client.verify?.v2) {
+        throw new Error('Twilio client does not expose verify.v2 — check twilio SDK version');
+    }
+    return client;
 }
 exports.createTwilioClient = createTwilioClient;
 //# sourceMappingURL=twilio-client.js.map

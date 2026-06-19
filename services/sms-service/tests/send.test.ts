@@ -3,12 +3,12 @@ import { createApp } from '../src/app';
 import { createMockTwilioClient, TwilioVerifyClient } from '../src/twilio-client';
 import { RateLimiter } from '../src/rate-limiter';
 
-function makeApp(client: TwilioVerifyClient) {
+function makeApp(client: TwilioVerifyClient, rateLimiter?: RateLimiter) {
   return createApp({
     authSecret: 'secret',
     twilioClient: client,
     verifyServiceSid: 'VA_TEST',
-    rateLimiter: new RateLimiter({ cooldownMs: 0, maxPerHour: 100 }),
+    rateLimiter: rateLimiter ?? new RateLimiter({ cooldownMs: 0, maxPerHour: 100 }),
   });
 }
 
@@ -61,13 +61,9 @@ describe('POST /sms/send', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 429 when rate limiter blocks', async () => {
-    const app = createApp({
-      authSecret: 'secret',
-      twilioClient: createMockTwilioClient(),
-      verifyServiceSid: 'VA_TEST',
-      rateLimiter: new RateLimiter({ cooldownMs: 3_600_000, maxPerHour: 1 }),
-    });
+  it('returns 429 when rate limiter blocks (same phone, same IP)', async () => {
+    const rl = new RateLimiter({ cooldownMs: 3_600_000, maxPerHour: 10 });
+    const app = makeApp(createMockTwilioClient(), rl);
     // First request passes
     await request(app)
       .post('/sms/send')
@@ -78,6 +74,25 @@ describe('POST /sms/send', () => {
       .post('/sms/send')
       .set('Authorization', 'Bearer secret')
       .send({ to: '+15557654321' });
+    expect(res.status).toBe(429);
+  });
+
+  it('returns 429 when rate limiter blocks same phone even with a different IP (phone is the primary guard)', async () => {
+    // Cooldown keyed on the phone alone — varying IP must NOT bypass it.
+    const rl = new RateLimiter({ cooldownMs: 3_600_000, maxPerHour: 10 });
+    const app = makeApp(createMockTwilioClient(), rl);
+    // First request from IP "1.2.3.4" (simulated via X-Forwarded-For with trust proxy)
+    await request(app)
+      .post('/sms/send')
+      .set('Authorization', 'Bearer secret')
+      .set('X-Forwarded-For', '1.2.3.4')
+      .send({ to: '+15558888888' });
+    // Second request spoofing a different IP — must still be blocked
+    const res = await request(app)
+      .post('/sms/send')
+      .set('Authorization', 'Bearer secret')
+      .set('X-Forwarded-For', '9.9.9.9')
+      .send({ to: '+15558888888' });
     expect(res.status).toBe(429);
   });
 });

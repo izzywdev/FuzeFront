@@ -1,4 +1,7 @@
 {{- if .Values.smsService.enabled }}
+{{- if and (not .Values.secret.existingSecret) (not .Values.secret.smsAuthSecret) }}
+{{- required "secret.smsAuthSecret must be set when smsService.enabled=true without an existingSecret" "" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

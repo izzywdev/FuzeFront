@@ -25,7 +25,7 @@ emailService:
 smsService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: local
+    tag: ""  # CI's release sed writes the real image SHA here
 
 permit:
   enabled: true

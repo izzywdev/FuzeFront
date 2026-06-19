@@ -5,10 +5,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createApp = void 0;
 const express_1 = __importDefault(require("express"));
+const crypto_1 = require("crypto");
 const send_1 = require("./routes/send");
 const verify_1 = require("./routes/verify");
 function createApp(deps) {
     const app = (0, express_1.default)();
+    // Trust exactly one proxy hop (the ingress).  This lets Express set req.ip
+    // from the ingress-written X-Forwarded-For entry rather than from the raw
+    // header, which a client could forge arbitrarily.
+    app.set('trust proxy', 1);
     app.use(express_1.default.json());
     // Health — no auth required
     app.get('/health', (_req, res) => {
@@ -23,7 +28,15 @@ function createApp(deps) {
         }
         const header = req.headers['authorization'];
         const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-        if (!token || token !== deps.authSecret) {
+        // Constant-time comparison to prevent timing side-channel attacks.
+        // Length check is required first because timingSafeEqual throws when
+        // buffer lengths differ.
+        const secretBuf = Buffer.from(deps.authSecret);
+        const tokenBuf = token ? Buffer.from(token) : Buffer.alloc(0);
+        const valid = token !== undefined &&
+            tokenBuf.length === secretBuf.length &&
+            (0, crypto_1.timingSafeEqual)(tokenBuf, secretBuf);
+        if (!valid) {
             res.status(401).json({ error: 'Unauthorized' });
             return;
         }
