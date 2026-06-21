@@ -6,7 +6,7 @@ import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
-import { runInternalProvision } from '../services/organizationProvisioning'
+import { runInternalProvision, ensurePersonalOrg } from '../services/organizationProvisioning'
 
 
 const router = express.Router()
@@ -212,7 +212,18 @@ router.post('/login', async (req, res) => {
       responseTime: Date.now() - startTime,
     })
 
-    // Self-heal provisioning in the background (does not block the response).
+    // Synchronously ensure personal org exists before responding so that
+    // WorkspaceProvisioningGate finds it on its first GET /api/organizations
+    // call and transitions to 'ready' immediately instead of polling.
+    // ensurePersonalOrg is idempotent and a pure DB op (~10 ms); errors are
+    // non-fatal so login still succeeds if something unexpected goes wrong.
+    try {
+      await ensurePersonalOrg(user.id)
+    } catch (provErr) {
+      console.error(`⚠️ [${requestId}] ensurePersonalOrg failed (non-fatal):`, provErr)
+    }
+
+    // Fire-and-forget the rest of the provisioning pipeline (Permit, etc.).
     selfHealProvisioningOnLogin(user.id)
 
     res.json({
