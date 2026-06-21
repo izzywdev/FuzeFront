@@ -1,5 +1,12 @@
 import { Knex } from 'knex'
 
+// ⚠️ MIGRATION NUMBER COLLISION (must resolve before merging both tracks):
+// The identity track (feature/api-tokens) also adds a `010_*` migration
+// (`010_api_tokens`). Knex applies migrations by filename order, so two `010_*`
+// files in the same dir will collide / double-apply ordering. Final integration
+// MUST renumber ONE of the two `010` migrations (this one or `010_api_tokens`)
+// to a unique sequence number. Tracked in PR #66.
+
 /**
  * Migration 010 — billing columns on public-schema entities.
  *
