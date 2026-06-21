@@ -13,6 +13,10 @@ class FakeCustomerRepo implements CustomerRepository {
     );
   }
 
+  async findByStripeCustomerId(stripeCustomerId: string) {
+    return this.rows.find((r) => r.stripeCustomerId === stripeCustomerId) ?? null;
+  }
+
   async insert(row: { entityType: EntityType; entityId: string; stripeCustomerId: string }) {
     const created: BillingCustomer = { id: `cust_${++this.seq}`, ...row };
     this.rows.push(created);
