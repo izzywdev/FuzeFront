@@ -102,6 +102,15 @@ secret:
   googleClientSecret: ""
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
+  # Stripe billing secrets. Leave empty for inert/degraded mode (billing-service
+  # serves /health only). Supply Stripe TEST-mode keys locally via --set or a
+  # gitignored values file; SealedSecret in prod. NEVER commit real keys.
+  stripeSecretKey: ""
+  stripeWebhookSecret: ""
+  stripePublishableKey: ""
+  # Internal Bearer token the backend/billing-client present to billing-service.
+  # DEV-ONLY default — override with a long random value (or SealedSecret) in real deployments.
+  billingInternalToken: "dev-billing-internal-token-change-me"
 
 backend:
   image:
@@ -207,6 +216,32 @@ provisioningService:
     brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "provisioning-service"
     groupId: "provisioning-service-group"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# Billing & payments microservice (Stripe). Independently-lifecycled — has its
+# OWN Argo Application (deploy/argocd/applications/billing.yaml). Disabled by
+# default; enable in values-local (test-mode Stripe keys) / values-prod.
+# Connects to Postgres with the least-privilege billing_svc role (schema
+# `billing` + read on public.users/organizations). Secrets (STRIPE_SECRET_KEY,
+# STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN) come from the chart Secret.
+billingService:
+  enabled: false
+  replicas: 1
+  port: 3006
+  image:
+    repository: fuzefront/billing-service
+    tag: local
+  # Least-privilege DB role for billing-service (see db-bootstrap-job; role
+  # creation is a follow-up task — uses fuzefront_user until then).
+  dbUser: fuzefront_user
+  meterFlushIntervalSec: 60
+  permitPdpUrl: "http://fuzefront-permit-pdp:7766"
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "billing-service"
+    groupId: "billing-service-group"
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }

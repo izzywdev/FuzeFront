@@ -13,6 +13,7 @@ on:
       - 'services/email-service/**'
       - 'services/sms-service/**'
       - 'services/provisioning-service/**'
+      - 'services/billing-service/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
 
@@ -101,6 +102,18 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-provisioning-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-provisioning-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push billing-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/billing-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-billing-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-billing-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
