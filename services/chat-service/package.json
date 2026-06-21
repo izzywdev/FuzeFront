@@ -11,7 +11,7 @@
     "test": "jest",
     "migrate": "knex --knexfile src/db/knexfile.ts migrate:latest",
     "migrate:make": "knex --knexfile src/db/knexfile.ts migrate:make",
-    "index:docs": "echo 'indexer added in a later unit'"
+    "index:docs": "node dist/rag/index-docs.js"
   },
   "dependencies": {
     "@fuzefront/shared": "file:../../shared",

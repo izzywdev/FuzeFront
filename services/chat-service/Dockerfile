@@ -26,6 +26,9 @@ RUN npm ci --workspace=services/chat-service --ignore-scripts
 COPY shared/ ./shared/
 COPY services/chat-service/ ./services/chat-service/
 
+# Copy the product docs corpus the chat-doc-indexer Job indexes (RAG source).
+COPY docs/ ./services/chat-service/docs/
+
 # Build shared first, then chat-service
 RUN cd shared && npm run build
 RUN cd services/chat-service && npm run build
@@ -41,6 +44,8 @@ COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/chat-service/node_modules ./services/chat-service/node_modules
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
+# Product docs corpus for the chat-doc-indexer Job.
+COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs
 
 # Remove declaration files from production image
 RUN find ./services/chat-service/dist -name "*.d.ts" -type f -delete
