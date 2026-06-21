@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionRepository } from '../repositories/subscription.repository';
+import { CreateSubscriptionRequest, UpdateSubscriptionRequest } from '../types';
+import { validateBody } from './validate';
 
 const createSchema = z.object({
   entityType: z.enum(['user', 'organization']),
@@ -26,19 +28,19 @@ export function createSubscriptionsRouter(
 
   // POST /subscriptions — create/upgrade
   router.post('/subscriptions', async (req: Request, res: Response) => {
-    const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'invalid request', details: parsed.error.flatten() });
+    const parsed = validateBody(createSchema, req.body);
+    if (!parsed.ok) {
+      return res.status(400).json({ error: 'invalid request', details: parsed.details });
     }
     try {
-      const result = await service.create(parsed.data);
+      const result = await service.create(parsed.data as CreateSubscriptionRequest);
       return res.status(201).json(result);
     } catch (err) {
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
     }
   });
 
-  // GET /subscriptions/:entityId? — by stripe subscription id path param here is the stripe sub id
+  // GET /subscriptions/:stripeSubscriptionId
   router.get('/subscriptions/:stripeSubscriptionId', async (req: Request, res: Response) => {
     const sub = await repo.findByStripeId(req.params.stripeSubscriptionId);
     if (!sub) return res.status(404).json({ error: 'not found' });
@@ -47,12 +49,15 @@ export function createSubscriptionsRouter(
 
   // PATCH /subscriptions/:stripeSubscriptionId — change plan / seats
   router.patch('/subscriptions/:stripeSubscriptionId', async (req: Request, res: Response) => {
-    const parsed = updateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'invalid request', details: parsed.error.flatten() });
+    const parsed = validateBody(updateSchema, req.body);
+    if (!parsed.ok) {
+      return res.status(400).json({ error: 'invalid request', details: parsed.details });
     }
     try {
-      const sub = await service.update(req.params.stripeSubscriptionId, parsed.data);
+      const sub = await service.update(
+        req.params.stripeSubscriptionId,
+        parsed.data as UpdateSubscriptionRequest,
+      );
       return res.json({ subscription: sub });
     } catch (err) {
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });

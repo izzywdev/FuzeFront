@@ -1,0 +1,6 @@
+# Never copy host node_modules into build contexts — images install fresh.
+# A Windows host node_modules can shadow the in-image install and corrupt the
+# build (e.g. a partial/truncated typescript binary). Every service Dockerfile
+# runs its own npm install, so host node_modules are never needed.
+**/node_modules
+**/.git
