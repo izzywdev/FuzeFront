@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/part-of: fuzefront
         app.kubernetes.io/component: frontend
     spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.frontend "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
