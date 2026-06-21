@@ -27,6 +27,13 @@ observability:
   metrics:
     enabled: false
     path: /metrics
+  # Ship FuzeFront Grafana dashboards / Prometheus alert rules as labeled
+  # ConfigMaps (consumed by FuzeInfra discovery hooks). Only rendered when
+  # metrics.enabled is also true (no point shipping dashboards with no metrics).
+  dashboards:
+    enabled: true
+  alerts:
+    enabled: true
 
 # Image pull secrets for private registries (e.g. private GHCR). Sealed in prod.
 imagePullSecrets: []
