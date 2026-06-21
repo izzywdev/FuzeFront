@@ -14,7 +14,7 @@
     "index:docs": "echo 'indexer added in a later unit'"
   },
   "dependencies": {
-    "@fuzefront/shared": "1.0.0",
+    "@fuzefront/shared": "file:../../shared",
     "express": "4.19.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "2.2.4",
