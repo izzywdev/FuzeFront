@@ -3,7 +3,7 @@ import {
   createKafkaClient,
   TypedProducer,
   TypedConsumer,
-} from '@fuzefront/shared';
+} from '@fuzefront/shared/dist/kafka';
 import { loadConfig } from './config';
 import { createApp, AppDeps } from './app';
 import { createPool, runMigrations } from './db';

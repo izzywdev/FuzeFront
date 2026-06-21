@@ -5,7 +5,7 @@ import {
   billingUsageRecordedSchemaV1,
   BillingUsageRecordedPayloadV1,
   FuzeEvent,
-} from '@fuzefront/shared';
+} from '@fuzefront/shared/dist/kafka';
 import { MeteringService } from '../services/metering.service';
 
 /**

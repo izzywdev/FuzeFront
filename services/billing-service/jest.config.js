@@ -13,6 +13,7 @@ module.exports = {
   // cannot compile without --jsx. Since billing-service only ever imports from the kafka
   // sub-tree of shared, the narrower mapping is intentional — not a partial-import trap.
   moduleNameMapper: {
+    '^@fuzefront/shared/dist/kafka$': '<rootDir>/../../shared/src/kafka/index.ts',
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
   },
   testTimeout: 60000,

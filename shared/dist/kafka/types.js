@@ -1,8 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.TOPICS = void 0;
-exports.dlqTopic = dlqTopic;
-exports.TOPICS = {
+export const TOPICS = {
     IDENTITY_USER_CREATED: 'identity.user.created',
     NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
     NOTIFY_EMAIL_STATUS: 'notify.email.status',
@@ -12,6 +8,6 @@ exports.TOPICS = {
     BILLING_PAYMENT_FAILED: 'billing.payment.failed',
 };
 /** Returns the dead-letter queue topic name for a given topic */
-function dlqTopic(topic) {
+export function dlqTopic(topic) {
     return `${topic}.dlq`;
 }

@@ -1,9 +1,6 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.TypedConsumer = void 0;
-const zod_1 = require("zod");
-const types_1 = require("./types");
-class TypedConsumer {
+import { ZodError } from 'zod';
+import { dlqTopic } from './types';
+export class TypedConsumer {
     constructor(kafka, groupId) {
         this.consumer = kafka.consumer({ groupId });
     }
@@ -40,7 +37,7 @@ class TypedConsumer {
                     parsed = schema.parse(envelope.payload);
                 }
                 catch (err) {
-                    const msg = err instanceof zod_1.ZodError ? err.message : String(err);
+                    const msg = err instanceof ZodError ? err.message : String(err);
                     await this.deadLetter(topic, raw, msg, dlqProducer);
                     return;
                 }
@@ -54,7 +51,7 @@ class TypedConsumer {
     async deadLetter(sourceTopic, raw, reason, dlqProducer) {
         console.error(`[TypedConsumer] Dead-lettering message from ${sourceTopic}: ${reason}`);
         if (dlqProducer) {
-            const dlq = (0, types_1.dlqTopic)(sourceTopic);
+            const dlq = dlqTopic(sourceTopic);
             await dlqProducer.raw.send({
                 topic: dlq,
                 messages: [{ value: JSON.stringify({ raw, reason, sourceTopic }) }],
@@ -62,4 +59,3 @@ class TypedConsumer {
         }
     }
 }
-exports.TypedConsumer = TypedConsumer;

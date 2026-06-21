@@ -3,7 +3,7 @@ import {
   TOPICS,
   billingSubscriptionChangedSchemaV1,
   BillingSubscriptionChangedPayloadV1,
-} from '@fuzefront/shared';
+} from '@fuzefront/shared/dist/kafka';
 import { randomUUID } from 'crypto';
 
 /**
