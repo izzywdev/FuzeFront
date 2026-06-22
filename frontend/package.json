@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run build --workspace=@fuzefront/identity-ui",
     "build": "vite build",
     "build:check": "tsc && vite build",
     "preview": "vite preview",

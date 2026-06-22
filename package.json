@@ -9,6 +9,7 @@
     "backend/security",
     "backend/applications",
     "shared",
+    "frontend",
     "packages/identity-ui",
     "design-system"
   ],
