@@ -18,12 +18,16 @@ const designSystemDir = fileURLToPath(new URL('../design-system', import.meta.ur
 const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
 )
+const chatClientSrc = fileURLToPath(
+  new URL('../packages/chat-client/src/index.ts', import.meta.url)
+)
 
 export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/i18n': i18nSrc,
+      '@fuzefront/chat-client': chatClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
