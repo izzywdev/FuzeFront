@@ -8,7 +8,8 @@
     "backend/core",
     "backend/security",
     "backend/applications",
-    "shared"
+    "shared",
+    "services/email-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
