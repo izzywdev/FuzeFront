@@ -13,6 +13,17 @@ const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
 )
 
+// Force i18next and react-i18next to resolve from frontend/node_modules so that
+// packages/i18n (aliased from source) and the host share a single module instance.
+// Without this, Vite walks up from packages/i18n/src/ and can find a separate copy
+// installed there by the root workspace npm ci, giving two isolated singletons/contexts.
+const i18nextSrc = fileURLToPath(
+  new URL('./node_modules/i18next', import.meta.url)
+)
+const reactI18nextSrc = fileURLToPath(
+  new URL('./node_modules/react-i18next', import.meta.url)
+)
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -20,6 +31,8 @@ export default defineConfig({
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/i18n': i18nSrc,
       '@fuzefront/design-system': designSystemSrc,
+      'i18next': i18nextSrc,
+      'react-i18next': reactI18nextSrc,
     },
   },
   test: {
