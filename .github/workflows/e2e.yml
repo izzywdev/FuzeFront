@@ -68,7 +68,7 @@ jobs:
           cd backend
           node dist/index.js > /tmp/backend.log 2>&1 &
           echo "Waiting for backend /health..."
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "backend up"; exit 0; fi
             sleep 2
           done
@@ -131,7 +131,7 @@ jobs:
           npm ci --include=dev   # need vite/@playwright (devDeps) despite NODE_ENV=production
           npm run build
           npx vite preview --port 4173 --host 127.0.0.1 > /tmp/frontend.log 2>&1 &
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:4173 >/dev/null 2>&1; then echo "frontend up"; exit 0; fi
             sleep 2
           done
@@ -144,7 +144,7 @@ jobs:
           npm install --include=dev   # need vite (devDep) despite NODE_ENV=production
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:4174/assets/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
             sleep 2
           done
