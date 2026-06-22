@@ -17,7 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@fuzefront/i18n": ["../packages/i18n/src/index.ts"],
+      "@locales/*": ["../locales/*"]
     }
   },
   "include": ["src"],

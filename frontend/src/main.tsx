@@ -1,9 +1,11 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { I18nProvider } from '@fuzefront/i18n'
 import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
+import { resources } from './i18n/resources'
 import App from './App.tsx'
 import './index.css'
 
@@ -101,13 +103,19 @@ console.log('🚀 Frontend Application Starting:', {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <LanguageProvider>
-        <ThemeProvider>
-          <AppProvider>
-            <App />
-          </AppProvider>
-        </ThemeProvider>
-      </LanguageProvider>
+      {/* Shared i18n runtime: owns the single i18next instance + the centralized
+          <html dir/lang> direction manager. Bundled locale JSON is inlined from
+          the repo-root `locales/` tree. The legacy LanguageProvider stays mounted
+          for not-yet-migrated useLanguage() consumers during incremental rollout. */}
+      <I18nProvider resources={resources}>
+        <LanguageProvider>
+          <ThemeProvider>
+            <AppProvider>
+              <App />
+            </AppProvider>
+          </ThemeProvider>
+        </LanguageProvider>
+      </I18nProvider>
     </BrowserRouter>
   </React.StrictMode>
 )

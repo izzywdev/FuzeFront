@@ -22,6 +22,11 @@ const WarningIcon = ({ size = 14 }) => (
  * radius and focus match Input. Focus lights the "fuse seam" accent; `error`
  * borders red and surfaces the message. The native chevron is replaced with a
  * tokenized one so the control reads consistently on the dark shell.
+ *
+ * RTL: spacing and the chevron use CSS *logical* properties (padding-inline,
+ * inset-inline-end, text-align: start) so the control mirrors automatically
+ * under `dir="rtl"` — no per-direction branching. The platform's direction
+ * manager (@fuzefront/i18n) owns the `<html dir>` flip.
  */
 export function Select({
   label,
@@ -68,7 +73,10 @@ export function Select({
           style={{
             width: "100%",
             boxSizing: "border-box",
-            padding: "var(--space-3) calc(var(--space-3) + var(--space-6)) var(--space-3) var(--space-3)",
+            // Logical spacing: extra inline-end room for the chevron, mirrors in RTL.
+            paddingBlock: "var(--space-3)",
+            paddingInlineStart: "var(--space-3)",
+            paddingInlineEnd: "calc(var(--space-3) + var(--space-6))",
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-sm)",
             fontWeight: "var(--weight-regular)",
@@ -80,6 +88,7 @@ export function Select({
             outline: "none",
             opacity: disabled ? 0.5 : 1,
             cursor: disabled ? "not-allowed" : "pointer",
+            textAlign: "start",
             appearance: "none",
             WebkitAppearance: "none",
             MozAppearance: "none",
@@ -117,7 +126,8 @@ export function Select({
           aria-hidden="true"
           style={{
             position: "absolute",
-            right: "var(--space-3)",
+            // Logical inline-end so the chevron sits on the trailing edge in RTL too.
+            insetInlineEnd: "var(--space-3)",
             top: "50%",
             transform: "translateY(-50%)",
             display: "inline-flex",
