@@ -1,4 +1,5 @@
 export declare const TOPICS: {
+    readonly BILLING_LLM_USAGE: "billing.llm.usage";
     readonly IDENTITY_USER_CREATED: "identity.user.created";
     readonly NOTIFY_EMAIL_REQUESTED: "notify.email.requested";
     readonly NOTIFY_EMAIL_STATUS: "notify.email.status";

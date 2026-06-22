@@ -1,4 +1,5 @@
 import {
+  billingLlmUsageSchemaV1,
   notifyEmailRequestedSchemaV1,
   notifyEmailStatusSchemaV1,
   identityUserCreatedSchemaV1,
@@ -75,8 +76,46 @@ describe('identityUserCreatedSchemaV1', () => {
   });
 });
 
+describe('billingLlmUsageSchemaV1', () => {
+  const validPayload = {
+    userId: '550e8400-e29b-41d4-a716-446655440000',
+    orgId: '660e8400-e29b-41d4-a716-446655440001',
+    model: 'claude-3-5-sonnet',
+    promptTokens: 100,
+    completionTokens: 50,
+    totalTokens: 150,
+    conversationId: '770e8400-e29b-41d4-a716-446655440002',
+    timestamp: '2024-01-15T12:00:00.000Z',
+  };
+
+  it('accepts a valid payload', () => {
+    expect(() => billingLlmUsageSchemaV1.parse(validPayload)).not.toThrow();
+  });
+
+  it('rejects negative token count', () => {
+    const payload = { ...validPayload, promptTokens: -1 };
+    expect(() => billingLlmUsageSchemaV1.parse(payload)).toThrow();
+  });
+
+  it('rejects a bad userId (not a UUID)', () => {
+    const payload = { ...validPayload, userId: 'not-a-uuid' };
+    expect(() => billingLlmUsageSchemaV1.parse(payload)).toThrow();
+  });
+
+  it('rejects a missing required field', () => {
+    const { model: _omitted, ...payload } = validPayload;
+    expect(() => billingLlmUsageSchemaV1.parse(payload)).toThrow();
+  });
+
+  it('rejects an invalid timestamp', () => {
+    const payload = { ...validPayload, timestamp: 'not-a-date' };
+    expect(() => billingLlmUsageSchemaV1.parse(payload)).toThrow();
+  });
+});
+
 describe('TOPICS and dlqTopic', () => {
-  it('has the three required topics', () => {
+  it('has the four required topics', () => {
+    expect(TOPICS.BILLING_LLM_USAGE).toBe('billing.llm.usage');
     expect(TOPICS.IDENTITY_USER_CREATED).toBe('identity.user.created');
     expect(TOPICS.NOTIFY_EMAIL_REQUESTED).toBe('notify.email.requested');
     expect(TOPICS.NOTIFY_EMAIL_STATUS).toBe('notify.email.status');
