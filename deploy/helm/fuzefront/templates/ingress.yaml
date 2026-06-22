@@ -57,6 +57,19 @@ spec:
                 port:
                   number: {{ .Values.applicationsService.port }}
           {{- end }}
+          {{- if .Values.billingService.enabled }}
+          # Billing webhook carve-out: the Stripe webhook is the ONLY publicly
+          # reachable billing path (Stripe-signature verified via STRIPE_WEBHOOK_SECRET).
+          # Exact match so the rest of /api/v1/billing/* stays internal (no ingress) —
+          # internal callers reach it in-cluster with BILLING_INTERNAL_TOKEN.
+          - path: /api/v1/billing/webhooks/stripe
+            pathType: Exact
+            backend:
+              service:
+                name: fuzefront-billing-service
+                port:
+                  number: {{ .Values.billingService.port }}
+          {{- end }}
           {{- if or .Values.securityService.enabled .Values.applicationsService.enabled }}
           # Thin backend: health + any remaining /api/* (still dual-serving the
           # domain routes during the soak; this is the catch-all under the

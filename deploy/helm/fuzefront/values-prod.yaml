@@ -74,15 +74,28 @@ provisioningService:
     tag: ""  # CI's release sed writes the real image SHA here
 
 # Billing-service (Stripe). Independently-lifecycled — synced by its own Argo
-# Application (deploy/argocd/applications/billing.yaml). Keep enabled: false in
-# prod until the SealedSecret `fuzefront-secrets` holds STRIPE_SECRET_KEY,
-# STRIPE_WEBHOOK_SECRET, and BILLING_INTERNAL_TOKEN, AND the billing_svc DB role
-# exists (follow-up). NEVER hand-deploy — flip via GitOps.
+# Application (deploy/argocd/applications/billing.yaml). Enabled — but it only
+# actually serves once the per-service `billing-secrets` SealedSecret holds
+# STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN, BILLING_DB_PASSWORD
+# (seal them with deploy/scripts/seal-secret.sh). The billing_svc role + `billing`
+# schema are provisioned by the pre-install billing-db-bootstrap Job. Until the
+# secret keys exist the pod stays pending on them (it will NOT crash other services,
+# since billing has its own isolated secret). NEVER hand-deploy — flip via GitOps.
 billingService:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
     tag: ""  # CI's release sed writes the real image SHA here
+  # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]
 
 permit:
   enabled: true
@@ -183,13 +196,3 @@ chatService:
                 operator: In
                 values: ["fuzefront-node-2"]
 
-billingService:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
