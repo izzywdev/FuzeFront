@@ -1,0 +1,44 @@
+{
+  "name": "@fuzefront/design-system",
+  "version": "0.1.0",
+  "description": "FuzeFront \"fuse seam\" design system — CSS-variable tokens + React components. Single source of truth for FuzeFront UI.",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./styles.css": "./styles.css",
+    "./tokens/*": "./tokens/*",
+    "./components/*": "./components/*"
+  },
+  "files": [
+    "index.js",
+    "styles.css",
+    "tokens",
+    "components",
+    "_ds_manifest.json"
+  ],
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "design-system"
+  },
+  "author": "FuzeFront Team",
+  "license": "UNLICENSED"
+}

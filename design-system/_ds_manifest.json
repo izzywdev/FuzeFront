@@ -26,8 +26,20 @@
       "sourcePath": "components/core/Button.jsx"
     },
     {
+      "name": "Card",
+      "sourcePath": "components/core/Card.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
+    },
+    {
+      "name": "Modal",
+      "sourcePath": "components/feedback/Modal.jsx"
+    },
+    {
+      "name": "ProgressMeter",
+      "sourcePath": "components/feedback/ProgressMeter.jsx"
     },
     {
       "name": "StatusPill",
