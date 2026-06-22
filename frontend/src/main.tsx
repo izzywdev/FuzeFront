@@ -7,6 +7,11 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
 import { resources } from './i18n/resources'
 import App from './App.tsx'
+// Design-system token scales (spacing / type / radii / motion) the DS
+// components — e.g. the <Select> rendered by @fuzefront/i18n's
+// LanguageSelector — depend on. Imported before index.css so the host's own
+// color theme (defined there) still wins where the two overlap.
+import '@fuzefront/design-system/styles.css'
 import './index.css'
 
 // Enhanced console logging for debugging

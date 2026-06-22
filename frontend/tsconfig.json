@@ -18,7 +18,13 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@fuzefront/i18n": ["../packages/i18n/src/index.ts"]
+      "@fuzefront/i18n": ["../packages/i18n/src/index.ts"],
+      // The i18n source imports the design-system <Select>; resolve it (and its
+      // transitive "react" types, which live outside ./frontend) so the host
+      // type-check covers the wiring. Real installs resolve these as deps.
+      "@fuzefront/design-system": ["../design-system/index.d.ts"],
+      "react": ["./node_modules/@types/react"],
+      "react-dom": ["./node_modules/@types/react-dom"]
     }
   },
   "include": ["src"],

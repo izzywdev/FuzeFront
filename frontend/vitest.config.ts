@@ -10,13 +10,26 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 const i18nLocalSrc = r('../packages/i18n/src/index.ts')
 const i18nAlias = existsSync(i18nLocalSrc) ? { '@fuzefront/i18n': i18nLocalSrc } : {}
 
+// Mirror vite.config.ts: the LanguageSelector (in the i18n source) renders the
+// design-system <Select>, so tests must resolve @fuzefront/design-system too.
+const dsLocalSrc = r('../design-system/index.js')
+const dsLocalDir = r('../design-system')
+const dsAlias = existsSync(dsLocalSrc)
+  ? {
+      '@fuzefront/design-system/': `${dsLocalDir}/`,
+      '@fuzefront/design-system': dsLocalSrc,
+    }
+  : {}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
       '@': r('./src'),
       ...i18nAlias,
+      ...dsAlias,
     },
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'i18next', 'react-i18next'],
   },
   test: {
     environment: 'jsdom',
