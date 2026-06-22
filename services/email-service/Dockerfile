@@ -5,22 +5,22 @@ FROM node:18-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
-# Copy workspace root manifests (needed so npm ci can resolve workspace links)
+# Copy workspace root manifests and service manifest
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
-COPY services/email-service/package.json ./services/email-service/
+COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
 # Install only production deps for email-service
-RUN npm ci --workspace=services/email-service --omit=dev --ignore-scripts
+RUN cd services/email-service && npm install --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:18-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
-COPY services/email-service/package.json ./services/email-service/
+COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
-RUN npm ci --workspace=services/email-service --ignore-scripts
+RUN cd services/email-service && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
