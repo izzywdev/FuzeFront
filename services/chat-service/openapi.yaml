@@ -1,0 +1,461 @@
+openapi: 3.0.3
+info:
+  title: FuzeFront chat-service API
+  version: 1.0.0
+  description: >
+    AI chat microservice for FuzeFront — RAG-grounded streaming chat, conversation
+    history, feedback, and a confirmation gate for mutating agent tools. This
+    contract retro-documents the real routes in src/routes/chat.ts. The streaming
+    endpoint uses Server-Sent Events (text/event-stream), a deliberate deviation
+    from the plan's §6f AI-SDK data-stream protocol; each `data:` line is one JSON
+    ChatStreamEvent (see components.schemas.ChatStreamEvent).
+
+servers:
+  - url: /
+    description: Service root (mounted behind the platform gateway).
+
+tags:
+  - name: chat
+    description: Chat streaming, conversations, feedback, and tool confirmation.
+  - name: health
+    description: Liveness/readiness.
+
+paths:
+  /chat/stream:
+    post:
+      tags: [chat]
+      summary: Stream an AI chat turn over Server-Sent Events.
+      description: >
+        Runs one agent turn: RAG retrieval, then a streamed LLM completion.
+        Persists the latest user message and the assistant reply, scoped to the
+        JWT's userId/orgId, and emits a billing usage event. The response body is
+        an SSE stream (text/event-stream): each `data:` line is one JSON-encoded
+        ChatStreamEvent. The sequence is typically `rag_sources` (optional) →
+        `text_delta`* → `done`; mutating tools insert `tool_pending` / `tool_denied`
+        / `tool_result`; failures emit `error` then `done`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatStreamRequest'
+      responses:
+        '200':
+          description: SSE stream of ChatStreamEvent values.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  A sequence of SSE frames. Each frame is `data: <json>\n\n` where
+                  <json> is one ChatStreamEvent.
+              examples:
+                stream:
+                  summary: A typical turn
+                  value: |
+                    data: {"type":"rag_sources","sources":[{"title":"README","url":"https://x","excerpt":"..."}]}
+
+                    data: {"type":"text_delta","delta":"Hello"}
+
+                    data: {"type":"done"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /chat/conversations:
+    get:
+      tags: [chat]
+      summary: List the authenticated user's conversations.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Conversations, most-recently-updated first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /chat/conversations/{id}:
+    get:
+      tags: [chat]
+      summary: Fetch one conversation with its messages (owner-scoped).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The conversation and its message history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationWithMessages'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /chat/feedback:
+    post:
+      tags: [chat]
+      summary: Submit thumbs up/down feedback for an assistant message.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Feedback recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /chat/confirm/{id}:
+    post:
+      tags: [chat]
+      summary: Confirm and execute a pending mutating tool.
+      description: >
+        Releases the pending confirmation (owner-scoped), re-checks the caller's
+        live Permit permission (fail-closed), executes the tool against
+        fuzefront-backend, and writes a chat_audit_log row (allowed or denied)
+        before responding.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The confirmationId from a prior tool_pending event.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tool executed; the result is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmExecutedResponse'
+        '400':
+          description: The confirmed tool is unknown or not mutating.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Permit denied execution (a denied audit row is written).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No such pending confirmation (unknown, expired, or not owned).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: Tool execution failed (the error is audited).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness/readiness probe (unauthenticated).
+      responses:
+        '200':
+          description: Service healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: chat-service
+                required: [status, service]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Platform JWT. The userId/orgId claims scope every chat read/write.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Invalid request payload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found or not owned by the caller.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limit exceeded (§10f).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    ChatStreamRequest:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        conversationId:
+          type: string
+          format: uuid
+          description: Continue an existing conversation; omitted creates a new one.
+        orgId:
+          type: string
+          description: Tenant/organization id.
+      required: [messages, orgId]
+
+    RagSource:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+        excerpt:
+          type: string
+      required: [title, url, excerpt]
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, title, createdAt, updatedAt]
+
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, tool]
+        content:
+          description: Stored message content (typically {type:'text', text:string}).
+        createdAt:
+          type: string
+      required: [id, role, content, createdAt]
+
+    ConversationWithMessages:
+      allOf:
+        - $ref: '#/components/schemas/Conversation'
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: '#/components/schemas/ConversationMessage'
+          required: [messages]
+
+    FeedbackRequest:
+      type: object
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        rating:
+          type: string
+          enum: [positive, negative]
+      required: [messageId, rating]
+
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+      required: [ok]
+
+    ConfirmExecutedResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        toolName:
+          type: string
+        result:
+          description: The tool's result (e.g. {success, summary}).
+      required: [ok, toolName, result]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    # --- SSE event union (the /chat/stream wire format) ---
+    ChatStreamEvent:
+      oneOf:
+        - $ref: '#/components/schemas/TextDeltaEvent'
+        - $ref: '#/components/schemas/ToolPendingEvent'
+        - $ref: '#/components/schemas/ToolResultEvent'
+        - $ref: '#/components/schemas/ToolDeniedEvent'
+        - $ref: '#/components/schemas/RagSourcesEvent'
+        - $ref: '#/components/schemas/DoneEvent'
+        - $ref: '#/components/schemas/ErrorEvent'
+      discriminator:
+        propertyName: type
+
+    TextDeltaEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text_delta]
+        delta:
+          type: string
+      required: [type, delta]
+
+    ToolPendingEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [tool_pending]
+        confirmationId:
+          type: string
+        toolName:
+          type: string
+        args:
+          type: object
+          additionalProperties: true
+        description:
+          type: string
+      required: [type, confirmationId, toolName, args, description]
+
+    ToolResultEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [tool_result]
+        confirmationId:
+          type: string
+        success:
+          type: boolean
+        summary:
+          type: string
+      required: [type, confirmationId, success, summary]
+
+    ToolDeniedEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [tool_denied]
+        toolName:
+          type: string
+        reason:
+          type: string
+      required: [type, toolName, reason]
+
+    RagSourcesEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [rag_sources]
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagSource'
+      required: [type, sources]
+
+    DoneEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [done]
+      required: [type]
+
+    ErrorEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [error]
+        message:
+          type: string
+      required: [type, message]

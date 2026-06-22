@@ -9,9 +9,12 @@ import { buildToolRegistry } from './agent/tools';
 import { createSearchDocsTool } from './agent/tools/search-docs';
 import { runAgentTurn, AgentTurnInput, AgentCallbacks } from './agent/loop';
 import { ConfirmationStore } from './agent/confirmation';
+import { PermitClient } from './agent/permit';
+import { BackendActionClient } from './agent/backend-client';
 import { ConversationsRepository } from './db/repositories/conversations';
 import { MessagesRepository } from './db/repositories/messages';
 import { FeedbackRepository } from './db/repositories/feedback';
+import { AuditLogRepository } from './db/repositories/audit';
 import { BillingEmitter } from './billing/emitter';
 import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
 
@@ -28,15 +31,20 @@ async function main() {
   const chroma = new ChromaClient({ baseUrl: config.chromaUrl });
   const embedder = new Embedder(llm);
   const retriever = new Retriever(chroma, embedder);
-  const registry = buildToolRegistry({ retriever });
+
+  // --- Mutating tools: backend action client + Permit PDP gate ---
+  const backend = new BackendActionClient({ baseUrl: config.backendUrl });
+  const permit = new PermitClient({ pdpUrl: config.permitPdpUrl });
+  const registry = buildToolRegistry({ retriever, backend });
   const searchTool = createSearchDocsTool(retriever);
 
   // --- Persistence ---
   const conversations = new ConversationsRepository(db);
   const messages = new MessagesRepository(db);
   const feedback = new FeedbackRepository(db);
+  const audit = new AuditLogRepository(db);
 
-  // --- Confirmation gate (mutating tools deferred; store is ready) ---
+  // --- Confirmation gate (mutating tools execute on /chat/confirm/:id) ---
   const confirmations = new ConfirmationStore();
 
   // --- Billing emitter (Kafka, non-blocking) ---
@@ -62,6 +70,9 @@ async function main() {
       feedback,
       confirmations,
       billing,
+      registry,
+      permit,
+      audit,
     },
   });
 

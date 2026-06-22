@@ -40,9 +40,23 @@ function buildApp(overrides: any = {}) {
     },
     feedback: { submit: jest.fn().mockResolvedValue(undefined) },
     confirmations: {
-      confirm: jest.fn().mockReturnValue({ userId: USER_ID, toolName: 't', args: {} }),
+      confirm: jest.fn().mockReturnValue({
+        userId: USER_ID,
+        toolName: 'create_org',
+        args: { name: 'Acme', slug: 'acme', orgId: ORG_ID },
+      }),
     },
     billing: { emitUsage: jest.fn().mockResolvedValue(undefined) },
+    registry: {
+      get: jest.fn().mockReturnValue({
+        name: 'create_org',
+        mutating: true,
+        permit: { resource: 'organization', action: 'create' },
+        execute: jest.fn().mockResolvedValue({ success: true, summary: 'Created organization "Acme".' }),
+      }),
+    },
+    permit: { check: jest.fn().mockResolvedValue(true) },
+    audit: { record: jest.fn().mockResolvedValue(undefined) },
     ...overrides,
   };
 
@@ -157,13 +171,26 @@ describe('POST /chat/feedback', () => {
 });
 
 describe('POST /chat/confirm/:id', () => {
-  it('confirms a pending tool for the authenticated user', async () => {
+  it('executes the confirmed tool, audits allowed, and returns the result', async () => {
     const { app, deps } = buildApp();
-    await request(app)
+    const res = await request(app)
       .post('/chat/confirm/conf-1')
       .set('Authorization', `Bearer ${token()}`)
       .expect(200);
     expect(deps.confirmations.confirm).toHaveBeenCalledWith('conf-1', USER_ID);
+    // re-checked Permit at execution time
+    expect(deps.permit.check).toHaveBeenCalledWith(
+      expect.objectContaining({ user: USER_ID, action: 'create', resource: 'organization' }),
+    );
+    // executed
+    const tool = deps.registry.get();
+    expect(tool.execute).toHaveBeenCalled();
+    // audited as allowed + confirmed
+    expect(deps.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ permitDecision: 'allowed', confirmed: true, toolName: 'create_org' }),
+    );
+    expect(res.body).toMatchObject({ ok: true, toolName: 'create_org' });
+    expect(res.body.result).toMatchObject({ success: true });
   });
 
   it('404 when the confirmation is unknown or not owned', async () => {
@@ -174,5 +201,52 @@ describe('POST /chat/confirm/:id', () => {
       .post('/chat/confirm/conf-x')
       .set('Authorization', `Bearer ${token()}`)
       .expect(404);
+  });
+
+  it('400 when the confirmed tool is unknown', async () => {
+    const { app } = buildApp({
+      registry: { get: jest.fn().mockReturnValue(undefined) },
+    });
+    await request(app)
+      .post('/chat/confirm/conf-1')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(400);
+  });
+
+  it('denies execution (403) and writes a denied audit row when Permit denies', async () => {
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const { app } = buildApp({
+      permit: { check: jest.fn().mockResolvedValue(false) },
+      audit,
+    });
+    await request(app)
+      .post('/chat/confirm/conf-1')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(403);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ permitDecision: 'denied', confirmed: true }),
+    );
+  });
+
+  it('500 and audits when tool execution throws', async () => {
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const { app } = buildApp({
+      registry: {
+        get: jest.fn().mockReturnValue({
+          name: 'create_org',
+          mutating: true,
+          permit: { resource: 'organization', action: 'create' },
+          execute: jest.fn().mockRejectedValue(new Error('backend 500')),
+        }),
+      },
+      audit,
+    });
+    await request(app)
+      .post('/chat/confirm/conf-1')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(500);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ permitDecision: 'allowed', result: { error: 'backend 500' } }),
+    );
   });
 });

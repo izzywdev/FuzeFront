@@ -52,10 +52,19 @@ export interface AgentTurnInput {
   conversationId: string;
 }
 
-/** Events emitted by a turn — matches the chat-client SSE union. */
+/** Events emitted by a turn — matches the chat-client SSE union (packages/chat-client). */
 export type AgentEvent =
   | { type: 'rag_sources'; sources: RagSource[] }
   | { type: 'text_delta'; delta: string }
+  | {
+      type: 'tool_pending';
+      confirmationId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      description: string;
+    }
+  | { type: 'tool_result'; confirmationId: string; success: boolean; summary: string }
+  | { type: 'tool_denied'; toolName: string; reason: string }
   | { type: 'error'; message: string }
   | { type: 'done' };
 

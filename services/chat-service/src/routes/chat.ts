@@ -7,7 +7,10 @@
 //   GET  /chat/conversations     — list the caller's conversations.
 //   GET  /chat/conversations/:id — one conversation + messages (owner-scoped).
 //   POST /chat/feedback          — {messageId, rating} thumbs up/down.
-//   POST /chat/confirm/:id       — release a pending (mutating) tool.
+//   POST /chat/confirm/:id       — release a pending (mutating) tool: re-check
+//                                  Permit (fail-closed), execute the tool against
+//                                  fuzefront-backend, and write a chat_audit_log
+//                                  row (allowed/denied) before responding (§6d).
 //
 // Auth + rate-limit middleware are applied by the caller (createChatRouter wires
 // auth; index.ts adds the limiters) — see app.ts. Every read/write is scoped by
@@ -26,6 +29,9 @@ import type { MessagesRepository } from '../db/repositories/messages';
 import type { FeedbackRepository, FeedbackRating } from '../db/repositories/feedback';
 import type { ConfirmationStore } from '../agent/confirmation';
 import type { BillingEmitter } from '../billing/emitter';
+import type { ToolRegistry } from '../agent/tools';
+import type { PermitClient } from '../agent/permit';
+import type { AuditLogRepository } from '../db/repositories/audit';
 
 export interface ChatRouterDeps {
   /** Runs one agent turn, emitting events + reporting usage. */
@@ -35,6 +41,12 @@ export interface ChatRouterDeps {
   feedback: Pick<FeedbackRepository, 'submit'>;
   confirmations: Pick<ConfirmationStore, 'confirm'>;
   billing: Pick<BillingEmitter, 'emitUsage'>;
+  /** Look up the confirmed tool by name to execute it. */
+  registry: Pick<ToolRegistry, 'get'>;
+  /** Re-check the caller's LIVE permission at execution time (fail-closed). */
+  permit: Pick<PermitClient, 'check'>;
+  /** Immutable audit trail of mutating-tool executions (§6d). */
+  audit: Pick<AuditLogRepository, 'record'>;
 }
 
 const VALID_RATINGS: FeedbackRating[] = ['positive', 'negative'];
@@ -162,18 +174,91 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
     res.json({ ok: true });
   });
 
-  // POST /chat/confirm/:id — release a pending mutating tool (owner-scoped).
+  // POST /chat/confirm/:id — release a pending mutating tool (owner-scoped),
+  // re-check Permit, execute it against fuzefront-backend, and audit the outcome.
   router.post('/confirm/:id', async (req: Request, res: Response) => {
     const userId = req.userId as string;
+
+    // a. Release the pending confirmation (owner-scoped). 404 if unknown/expired.
     const pending = deps.confirmations.confirm(req.params.id, userId);
     if (!pending) {
       res.status(404).json({ error: 'No such pending confirmation.' });
       return;
     }
-    // Mutating tool execution is DEFERRED — confirming currently just releases the
-    // pending state. When mutating tools land they execute here and stream a
-    // tool_result. For now acknowledge the confirmation.
-    res.json({ ok: true, toolName: pending.toolName });
+
+    // b. Resolve the tool; it must exist and be mutating.
+    const tool = deps.registry.get(pending.toolName);
+    if (!tool || !tool.mutating) {
+      res.status(400).json({ error: 'Unknown or non-mutating tool.' });
+      return;
+    }
+
+    // orgId: prefer the orgId carried in the pending tool args, else the JWT.
+    const orgId =
+      (typeof pending.args.orgId === 'string' && pending.args.orgId) ||
+      (req.orgId as string) ||
+      '';
+    const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+
+    // c. Re-check the caller's LIVE permission (fail-closed). Deny → audit + 403.
+    const allowed = await deps.permit.check({
+      user: userId,
+      action: tool.permit.action,
+      resource: tool.permit.resource,
+      tenant: orgId,
+    });
+    if (!allowed) {
+      // Audit failure must never block the response (§6d) — best-effort.
+      try {
+        await deps.audit.record({
+          conversationId: null,
+          userId,
+          orgId,
+          toolName: pending.toolName,
+          args: pending.args,
+          permitDecision: 'denied',
+          confirmed: true,
+        });
+      } catch {
+        /* audit best-effort */
+      }
+      res.status(403).json({ error: `Permission denied: ${tool.permit.resource}:${tool.permit.action}.` });
+      return;
+    }
+
+    // d. Execute the tool. On success, audit (allowed) BEFORE responding.
+    try {
+      const result = await tool.execute(pending.args, { userId, orgId, token } as any);
+      await deps.audit.record({
+        conversationId: null,
+        userId,
+        orgId,
+        toolName: pending.toolName,
+        args: pending.args,
+        result,
+        permitDecision: 'allowed',
+        confirmed: true,
+      });
+      res.json({ ok: true, toolName: pending.toolName, result });
+    } catch (err) {
+      // e. Execution failed — audit the error (best-effort), respond 500.
+      const message = err instanceof Error ? err.message : String(err);
+      try {
+        await deps.audit.record({
+          conversationId: null,
+          userId,
+          orgId,
+          toolName: pending.toolName,
+          args: pending.args,
+          result: { error: message },
+          permitDecision: 'allowed',
+          confirmed: true,
+        });
+      } catch {
+        /* audit best-effort */
+      }
+      res.status(500).json({ error: message });
+    }
   });
 
   return router;
