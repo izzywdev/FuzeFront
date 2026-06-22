@@ -5,6 +5,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "jsx": "preserve",
     "lib": ["es2020"],
     "types": ["node"],
