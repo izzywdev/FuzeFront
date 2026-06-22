@@ -22,8 +22,8 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@fuzefront/design-system": "^1.0.0",
-    "@fuzefront/i18n": "^1.0.0",
+    "@fuzefront/design-system": "file:../design-system",
+    "@fuzefront/i18n": "file:../packages/i18n",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",

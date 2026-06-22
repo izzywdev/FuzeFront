@@ -60,8 +60,10 @@ export default defineConfig({
       shared: {
         react: { singleton: true },
         'react-dom': { singleton: true },
-        '@fuzefront/i18n': { singleton: true },
-        '@fuzefront/design-system': { singleton: true },
+        // Explicit version avoids the plugin reading package.json from the alias
+        // path (which is a source file, not a directory, and would ENOTDIR).
+        '@fuzefront/i18n': { singleton: true, version: '1.0.0' },
+        '@fuzefront/design-system': { singleton: true, version: '1.0.0' },
         i18next: { singleton: true },
         'react-i18next': { singleton: true },
       },
