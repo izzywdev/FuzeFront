@@ -7,13 +7,15 @@ import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'))
 
-// Treat React, i18next and react-i18next as external so consumers share singletons.
+// Treat React, i18next, react-i18next and the design system as external so the
+// consumer (the host frontend) shares singletons / its own copy of the DS.
 const external = [
   'react',
   'react-dom',
   'react/jsx-runtime',
   'i18next',
   'react-i18next',
+  '@fuzefront/design-system',
 ]
 
 export default [

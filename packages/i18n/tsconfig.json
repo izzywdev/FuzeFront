@@ -18,7 +18,17 @@
     "declarationMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@fuzefront/design-system": ["../../design-system/index.d.ts"],
+      // The design-system .d.ts lives outside this package and imports "react";
+      // map react/react-dom to this package's installed types so its
+      // React.SelectHTMLAttributes base resolves fully during the monorepo
+      // type-check (in a real install these resolve as peer deps).
+      "react": ["./node_modules/@types/react"],
+      "react-dom": ["./node_modules/@types/react-dom"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx"]
