@@ -115,12 +115,12 @@ describe('invite_member tool', () => {
     const backend = makeBackend();
     const tool = createInviteMemberTool(backend as any);
     const result = await tool.execute(
-      { orgId: 'org-1', email: 'a@b.c', role: 'member' },
+      { orgId: 'org-1', email: 'alice@example.com', role: 'member' },
       { userId: 'u', orgId: 'o', token: 'jwt-1' } as any,
     );
     expect(backend.inviteMember).toHaveBeenCalledWith('jwt-1', {
       orgId: 'org-1',
-      email: 'a@b.c',
+      email: 'alice@example.com',
       role: 'member',
     });
     expect(result.success).toBe(true);
