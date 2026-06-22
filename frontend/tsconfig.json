@@ -18,7 +18,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@fuzefront/identity-ui": ["../packages/identity-ui/src/index.ts"],
+      "@fuzefront/identity-ui": ["../packages/identity-ui/dist/index.d.ts"],
       "@fuzefront/design-system": ["../design-system/index.d.ts"]
     }
   },

@@ -35,6 +35,16 @@ jobs:
           cd ../api-client && npm ci
           cd ../task-manager-app && npm ci
 
+      # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
+      # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
+      # dist/index.d.ts (like @fuzefront/design-system), NOT its TSX source — so
+      # the frontend's tsc consumes validated types instead of recompiling the
+      # package's source under the frontend's separate @types/react + csstype
+      # copy (which produced the csstype CSSProperties clash). Bundling/tests
+      # still resolve from source via the vite/vitest aliases.
+      - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/identity-ui build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
