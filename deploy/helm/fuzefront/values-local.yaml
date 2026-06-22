@@ -20,6 +20,15 @@ securityService:
 applicationsService:
   enabled: true
 
+# Billing-service (Stripe). Enabled locally but runs in DEGRADED mode (/health
+# only) until you supply Stripe TEST-mode keys + a webhook secret — e.g. a
+# gitignored values-local.secret.yaml or:
+#   --set secret.stripeSecretKey=sk_test_... #   --set secret.stripeWebhookSecret=whsec_... #   --set secret.billingInternalToken=<long-random>
+# Local Stripe webhooks need the Stripe CLI:
+#   stripe listen --forward-to http://fuzefront.dev.local/api/v1/billing/webhooks/stripe
+billingService:
+  enabled: true
+
 ingress:
   enabled: true
   className: nginx

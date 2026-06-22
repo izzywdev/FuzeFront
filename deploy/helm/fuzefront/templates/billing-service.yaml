@@ -1,0 +1,105 @@
+{{- if .Values.billingService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-billing-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: billing-service
+spec:
+  replicas: {{ .Values.billingService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-billing-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-billing-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: billing-service
+          image: "{{ .Values.billingService.image.repository }}:{{ .Values.billingService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.billingService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.billingService.port | quote }}
+            - name: KAFKA_BROKERS
+              value: {{ .Values.billingService.kafka.brokers | quote }}
+            - name: KAFKA_CLIENT_ID
+              value: {{ .Values.billingService.kafka.clientId | quote }}
+            - name: KAFKA_GROUP_ID
+              value: {{ .Values.billingService.kafka.groupId | quote }}
+            - name: BILLING_METER_FLUSH_INTERVAL_SEC
+              value: {{ .Values.billingService.meterFlushIntervalSec | quote }}
+            # DB connection: billing-service connects with the least-privilege
+            # billing_svc role (granted on schema `billing` + read on public).
+            # DB_PASSWORD comes from the chart Secret; assembled into DATABASE_URL.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.billingService.dbUser }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+            {{- if .Values.secret.stripeSecretKey }}
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: STRIPE_SECRET_KEY
+            {{- end }}
+            {{- if .Values.secret.stripeWebhookSecret }}
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: STRIPE_WEBHOOK_SECRET
+            {{- end }}
+            {{- if .Values.secret.billingInternalToken }}
+            - name: BILLING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: BILLING_INTERNAL_TOKEN
+            {{- end }}
+            - name: PERMIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: PERMIT_API_KEY
+            - name: PERMIT_PDP_URL
+              value: {{ .Values.billingService.permitPdpUrl | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.billingService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.billingService.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.billingService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-billing-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: fuzefront-billing-service
+  ports:
+    - port: {{ .Values.billingService.port }}
+      targetPort: {{ .Values.billingService.port }}
+{{- end }}

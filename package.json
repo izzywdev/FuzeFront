@@ -9,6 +9,8 @@
     "backend/security",
     "backend/applications",
     "shared",
+    "billing-client",
+    "packages/billing-ui",
     "packages/chat-client",
     "packages/identity-ui",
     "packages/i18n",

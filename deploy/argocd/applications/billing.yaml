@@ -1,0 +1,52 @@
+# Dedicated Argo CD Application for the billing-service (hybrid Argo structure).
+#
+# Billing is INDEPENDENTLY-LIFECYCLED (its own release cadence, its own Stripe
+# secrets, its own DB role) so per the FuzeFront SDLC it gets its OWN Argo
+# Application rather than riding the umbrella `fuzefront` Application.
+#
+# MIGRATION NOTE (must resolve before enabling in prod):
+#   billing-service templates currently live in the umbrella chart
+#   (deploy/helm/fuzefront). The umbrella `fuzefront` Application also syncs
+#   that chart, so this Application and `fuzefront.yaml` would BOTH claim
+#   ownership of the billing-service Deployment/Service if billingService.enabled
+#   were true in values-prod under the umbrella app. To activate this dedicated
+#   Application cleanly, EITHER:
+#     (a) extract billing-service into its own chart at deploy/helm/billing and
+#         point this Application's source.path there, keeping billingService.enabled
+#         false in the umbrella values-prod.yaml; OR
+#     (b) leave billing in the umbrella chart and DELETE this file (billing then
+#         rides the umbrella Application — simpler, but not independently synced).
+#   Decision is deferred to prod-enablement; this file documents the intended
+#   hybrid shape and is inert while billingService.enabled is false everywhere.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzefront-billing
+  namespace: argocd
+  annotations:
+    # Sync billing after the umbrella app so shared infra (Secret, DB) exists.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    # TODO(prod): point at deploy/helm/billing once extracted (migration note above).
+    path: deploy/helm/fuzefront
+    helm:
+      valueFiles:
+        - values-prod.yaml
+      parameters:
+        - name: billingService.enabled
+          value: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fuzefront
+  syncPolicy:
+    # Manual sync until the migration note above is resolved — prevents
+    # double-ownership of the billing Deployment with the umbrella Application.
+    automated:
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true

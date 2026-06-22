@@ -1,0 +1,649 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Billing Service API
+  version: 1.0.0
+  description: >-
+    REST API for the FuzeFront billing-service. Bridges platform entities
+    (users / organizations, referenced by `(entityType, entityId)` only) to
+    Stripe customers, subscriptions, payment-method setup, usage metering, and
+    manual credits.
+
+    This contract is **derived from the real route handlers** in
+    `services/billing-service/src/routes/*` and `src/app.ts` and is the single
+    source of truth for `@fuzefront/billing-client`. Changing the API means
+    amending this file first (see the `api-contract-first` skill).
+
+    Card data never flows through this API — only Stripe ids and client secrets.
+
+    ### Async surface (events)
+    Beyond HTTP, the service emits Kafka events whose Zod schemas live in
+    `shared/src/kafka/schemas/`:
+      * `billing.subscription.changed` — `billingSubscriptionChangedSchemaV1`
+      * `billing.usage.recorded`       — `billingUsageRecordedSchemaV1`
+      * `billing.trial.ending`  / `billing.payment.failed` (raw notify envelopes)
+    Consumers (e.g. the backend plan-state projection) read
+    `billing.subscription.changed` rather than reading the billing DB directly.
+  license:
+    name: UNLICENSED
+servers:
+  - url: '{baseUrl}/api/v1/billing'
+    description: billing-service, mounted under /api/v1/billing
+    variables:
+      baseUrl:
+        default: http://fuzefront-billing-service:3006
+        description: Cluster-internal base URL of the billing-service.
+
+tags:
+  - name: plans
+    description: Public plan catalogue (read cache of the Stripe product/price catalogue).
+  - name: subscriptions
+    description: Subscription lifecycle against Stripe + local mirror.
+  - name: payment-methods
+    description: SetupIntent creation for collecting a payment method without an immediate charge.
+  - name: credits
+    description: Admin-only manual customer balance adjustments.
+  - name: webhooks
+    description: Stripe webhook receiver (public, Stripe-signature verified).
+  - name: health
+    description: Liveness / readiness.
+
+paths:
+  /plans:
+    get:
+      operationId: getPlans
+      tags: [plans]
+      summary: List active plans
+      description: >-
+        Public, cached list of active plans. No auth. Mirrors
+        `createPlansRouter` -> `GET /plans`.
+      security: []
+      responses:
+        '200':
+          description: The active plan catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [plans]
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plan'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /subscriptions:
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Create or upgrade a subscription
+      description: >-
+        Creates a Stripe subscription for the entity (creating the Stripe
+        customer if needed) and mirrors it locally. Returns a `clientSecret`
+        when Stripe needs SCA/3DS confirmation on the client. Mirrors
+        `POST /subscriptions`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created (may require client-side action).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /subscriptions/{stripeSubscriptionId}:
+    parameters:
+      - $ref: '#/components/parameters/StripeSubscriptionId'
+    get:
+      operationId: getSubscription
+      tags: [subscriptions]
+      summary: Get the local mirror of a subscription
+      description: >-
+        Returns the locally-mirrored subscription by Stripe subscription id, or
+        404 if no mirror exists. Mirrors `GET /subscriptions/:id`.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The locally-mirrored subscription.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateSubscription
+      tags: [subscriptions]
+      summary: Change plan or seat quantity
+      description: >-
+        Upgrades prorate immediately (`create_prorations`); downgrades take
+        effect at period end (`none`). Mirrors `PATCH /subscriptions/:id`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubscriptionRequest'
+      responses:
+        '200':
+          description: The updated subscription mirror.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+    delete:
+      operationId: cancelSubscription
+      tags: [subscriptions]
+      summary: Cancel at period end (soft cancel)
+      description: >-
+        Sets `cancel_at_period_end=true`; Stripe keeps the subscription active
+        until the period boundary. Mirrors `DELETE /subscriptions/:id`.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The subscription mirror with cancellation scheduled.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /setup-intent:
+    post:
+      operationId: createSetupIntent
+      tags: [payment-methods]
+      summary: Create a SetupIntent to collect a payment method
+      description: >-
+        Creates a Stripe SetupIntent (usage `off_session`) so the client can
+        collect a payment method without an immediate charge (e.g. add a card
+        during a no-card trial). Returns the `clientSecret` for the Stripe
+        Payment Element. Mirrors `POST /setup-intent`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityRef'
+      responses:
+        '200':
+          description: SetupIntent created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [clientSecret]
+                properties:
+                  clientSecret:
+                    type: string
+                    description: Stripe SetupIntent client secret for the Payment Element.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /credits:
+    post:
+      operationId: addCredits
+      tags: [credits]
+      summary: Add a one-time customer balance adjustment (admin only)
+      description: >-
+        Adds a one-time customer balance adjustment (credit) via a Stripe
+        customer balance transaction. A positive `amount` (in cents) credits
+        the customer (reduces what they owe). Mirrors `POST /credits`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCreditsRequest'
+      responses:
+        '201':
+          description: Balance transaction created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, endingBalance]
+                properties:
+                  id:
+                    type: string
+                    description: Stripe customer balance transaction id.
+                  endingBalance:
+                    type: integer
+                    description: Resulting customer balance in cents (negative = credit).
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /webhooks/stripe:
+    post:
+      operationId: receiveStripeWebhook
+      tags: [webhooks]
+      summary: Stripe webhook receiver
+      description: >-
+        Receives Stripe events. The body MUST be the raw signed bytes
+        (`application/json` consumed via `express.raw`) so signature
+        verification works. Public (no internal token) — authenticity is
+        established by the `Stripe-Signature` header. Idempotent: duplicate
+        deliveries of the same event id return 200 without re-processing.
+        Mirrors `POST /webhooks/stripe`.
+      security: []
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Stripe webhook signature header used to verify the payload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw Stripe Event object (not parsed by this service before verification).
+              additionalProperties: true
+      responses:
+        '200':
+          description: Event received (and processed, unless a duplicate).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [received]
+                properties:
+                  received:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                    description: True when the event id was already processed.
+        '400':
+          description: Missing/invalid signature header or payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness probe
+      description: >-
+        Always available, even in degraded mode (no DB / no Stripe key).
+        NOTE: mounted at the service root (`/health`), NOT under
+        `/api/v1/billing` -- call it on the bare server origin.
+      security: []
+      servers:
+        - url: '{baseUrl}'
+          variables:
+            baseUrl:
+              default: http://fuzefront-billing-service:3006
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    examples: [ok]
+                  service:
+                    type: string
+                    examples: [billing-service]
+
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      description: >-
+        `BILLING_INTERNAL_TOKEN` presented as a Bearer token by the backend /
+        `@fuzefront/billing-client` on all non-public routes. Verified by
+        `requireInternalToken`.
+
+  parameters:
+    StripeSubscriptionId:
+      name: stripeSubscriptionId
+      in: path
+      required: true
+      description: The Stripe subscription id (e.g. `sub_...`).
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid internal token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorBody'
+    StripeError:
+      description: Upstream Stripe error (bad gateway).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StripeErrorBody'
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    EntityType:
+      type: string
+      enum: [user, organization]
+      description: Which platform entity owns the billing relationship.
+
+    PlanTier:
+      type: string
+      description: >-
+        Plan tier name resolved from the Stripe price (free / starter / pro /
+        enterprise, or any custom tier). Open string by design.
+      examples: [free, starter, pro, enterprise]
+
+    SubscriptionStatus:
+      type: string
+      description: Mirrors Stripe subscription status values. Open string by design.
+      examples:
+        - trialing
+        - active
+        - past_due
+        - canceled
+        - unpaid
+        - incomplete
+        - incomplete_expired
+
+    EntityRef:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+          description: The id of the user or organization.
+
+    BillingSubscription:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - customerId
+        - stripeSubscriptionId
+        - stripePriceId
+        - planTier
+        - status
+        - seatQuantity
+        - trialStart
+        - trialEnd
+        - currentPeriodStart
+        - currentPeriodEnd
+        - cancelAtPeriodEnd
+        - canceledAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Local billing.subscriptions primary key.
+        customerId:
+          type: string
+          format: uuid
+          description: Local billing.customers primary key.
+        stripeSubscriptionId:
+          type: string
+        stripePriceId:
+          type: string
+        planTier:
+          $ref: '#/components/schemas/PlanTier'
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        seatQuantity:
+          type: integer
+          minimum: 0
+        trialStart:
+          type: [string, 'null']
+          format: date-time
+        trialEnd:
+          type: [string, 'null']
+          format: date-time
+        currentPeriodStart:
+          type: [string, 'null']
+          format: date-time
+        currentPeriodEnd:
+          type: [string, 'null']
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+        canceledAt:
+          type: [string, 'null']
+          format: date-time
+
+    Plan:
+      type: object
+      additionalProperties: false
+      required:
+        - stripePriceId
+        - stripeProductId
+        - tierName
+        - displayName
+        - billingInterval
+        - unitAmount
+        - currency
+        - seatBased
+        - meteredMeterName
+        - features
+        - isActive
+        - sortOrder
+      properties:
+        stripePriceId:
+          type: string
+        stripeProductId:
+          type: string
+        tierName:
+          $ref: '#/components/schemas/PlanTier'
+        displayName:
+          type: string
+        billingInterval:
+          type: string
+          description: Billing cadence (`month` / `year`, or any Stripe interval).
+          examples: [month, year]
+        unitAmount:
+          type: integer
+          description: Unit amount in the currency's minor unit (cents).
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 currency code.
+          examples: [usd]
+        seatBased:
+          type: boolean
+        meteredMeterName:
+          type: [string, 'null']
+        features:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        sortOrder:
+          type: integer
+
+    CreateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId, priceId]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        priceId:
+          type: string
+          minLength: 1
+        trial:
+          type: boolean
+          description: Start a no-card trial (Stripe trial_period_days).
+        trialPeriodDays:
+          type: integer
+          minimum: 1
+        seatQuantity:
+          type: integer
+          minimum: 1
+          description: Seat quantity for per-seat plans. Defaults to 1.
+        paymentMethodId:
+          type: string
+          description: Existing Stripe PaymentMethod to attach (omit for no-card trials).
+
+    CreateSubscriptionResponse:
+      type: object
+      additionalProperties: false
+      required: [subscription, requiresAction]
+      properties:
+        subscription:
+          $ref: '#/components/schemas/BillingSubscription'
+        clientSecret:
+          type: string
+          description: Set when Stripe needs SCA/3DS confirmation on the client.
+        requiresAction:
+          type: boolean
+          description: True when the client must confirm a PaymentIntent/SetupIntent.
+
+    UpdateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        priceId:
+          type: string
+          minLength: 1
+          description: New price (plan change).
+        seatQuantity:
+          type: integer
+          minimum: 1
+          description: New seat quantity.
+
+    AddCreditsRequest:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId, amount]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          description: Amount in cents; a positive value credits the customer.
+        note:
+          type: string
+          maxLength: 500
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    StripeErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples: ['stripe error']
+        message:
+          type: string
+
+    ValidationErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples: ['invalid request']
+        details:
+          description: Zod flatten() output describing the field errors.

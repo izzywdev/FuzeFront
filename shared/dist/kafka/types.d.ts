@@ -3,6 +3,10 @@ export declare const TOPICS: {
     readonly IDENTITY_USER_CREATED: "identity.user.created";
     readonly NOTIFY_EMAIL_REQUESTED: "notify.email.requested";
     readonly NOTIFY_EMAIL_STATUS: "notify.email.status";
+    readonly BILLING_USAGE_RECORDED: "billing.usage.recorded";
+    readonly BILLING_SUBSCRIPTION_CHANGED: "billing.subscription.changed";
+    readonly BILLING_TRIAL_ENDING: "billing.trial.ending";
+    readonly BILLING_PAYMENT_FAILED: "billing.payment.failed";
 };
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
 /** Envelope wrapping every event published on FuzeFront Kafka topics */
