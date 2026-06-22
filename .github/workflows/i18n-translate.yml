@@ -9,7 +9,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'locales/en/**'
+      - 'frontend/locales/en/**'
       - 'i18n.languages.json'
   workflow_dispatch:
 
@@ -45,7 +45,7 @@ jobs:
           I18N_LLM_ENDPOINT: ${{ secrets.I18N_LLM_ENDPOINT }}
           I18N_LLM_API_KEY: ${{ secrets.I18N_LLM_API_KEY }}
           I18N_LLM_MODEL: ${{ secrets.I18N_LLM_MODEL }}
-        run: node packages/i18n-translate/dist/cli.js --locales-dir locales --languages i18n.languages.json
+        run: node packages/i18n-translate/dist/cli.js --locales-dir frontend/locales --languages i18n.languages.json
 
       - name: Open bot PR with regenerated locales
         uses: peter-evans/create-pull-request@v6
@@ -56,8 +56,8 @@ jobs:
           delete-branch: true
           title: 'chore(i18n): regenerate AI translations'
           body: |
-            Automated build-time translation of `locales/en/**` into the curated
-            language set (see `i18n.languages.json`).
+            Automated build-time translation of `frontend/locales/en/**` into the
+            curated language set (see `i18n.languages.json`).
 
             - Only missing/changed keys were translated (per-key source hash).
             - ICU placeholders and `{{interpolation}}` tokens preserved.

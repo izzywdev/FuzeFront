@@ -4,8 +4,15 @@ FROM node:20-bookworm-slim AS build
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files + the scoped .npmrc so @fuzefront/* (e.g. @fuzefront/i18n)
+# resolves from GitHub Packages during install.
 COPY package*.json ./
+COPY .npmrc ./
+
+# GitHub token used only to read @fuzefront/* from GitHub Packages. Passed as a
+# build secret/arg by CI; not baked into the final image (build stage only).
+ARG GITHUB_TOKEN=""
+ENV GITHUB_TOKEN=$GITHUB_TOKEN
 
 # Install dependencies. Drop the host (Windows) lockfile first so npm re-resolves
 # platform-native optional deps (e.g. @tailwindcss/oxide linux binding) inside the

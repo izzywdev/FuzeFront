@@ -1,22 +1,24 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 import federation from '@originjs/vite-plugin-federation'
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
+// The shared i18n runtime is published privately to GitHub Packages. For host
+// dev/test/type-check (and any build outside the Docker context) we resolve it
+// from local monorepo source when that source is present; inside the frontend
+// Docker image — whose build context is only ./frontend — it resolves from
+// node_modules (installed from the @fuzefront registry with a token).
+const i18nLocalSrc = r('../packages/i18n/src/index.ts')
+const i18nAlias = existsSync(i18nLocalSrc) ? { '@fuzefront/i18n': i18nLocalSrc } : {}
+
 export default defineConfig({
   resolve: {
     alias: {
       '@': r('./src'),
-      // Resolve the shared i18n runtime from local source for dev/build/tests so
-      // the container does not require the private @fuzefront registry to be
-      // reachable at build time. The dependency is still declared in
-      // package.json so installs from GitHub Packages resolve in CI/prod.
-      '@fuzefront/i18n': r('../packages/i18n/src/index.ts'),
-      // Single source of truth for locales: the repo-root `locales/` tree that
-      // the i18n-translate workflow regenerates. Bundled via import.meta.glob.
-      '@locales': r('../locales'),
+      ...i18nAlias,
     },
   },
   plugins: [
