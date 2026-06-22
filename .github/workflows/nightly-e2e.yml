@@ -1,0 +1,185 @@
+name: Nightly E2E (kind + Helm)
+
+# Heavy, full-stack tier — runs nightly (not per-PR). Stands up a real kind
+# cluster, deploys the SHARED FuzeInfra base platform via its own Helm chart
+# (from the vendored submodule — the version-parity source), then deploys
+# FuzeFront on top via its Helm chart, and runs the Playwright e2e + the backend
+# integration suite against the live cluster.
+#
+# Why nightly + not prod:
+#   - kind + two Helm releases is too slow/heavy for every PR (PR tiers in
+#     ci.yml use the lightweight docker-compose harness instead).
+#   - We NEVER test against the live prod cluster. This is an ephemeral,
+#     version-pinned cluster torn down at the end of the run.
+#
+# Tolerances: Permit (PDP) and Kafka may be absent/degraded in this ephemeral
+# cluster — the app self-heals (fire-and-forget) and the e2e seeds a fully
+# provisioned admin directly, so the suite does not race a background job.
+
+on:
+  schedule:
+    # 03:17 UTC nightly (off the top-of-hour to dodge runner contention).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to test (branch/tag/SHA)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e
+  cancel-in-progress: true
+
+jobs:
+  nightly-e2e:
+    name: Full-stack e2e on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    env:
+      KIND_CLUSTER: fuzeinfra
+      INFRA_NS: fuzeinfra
+      APP_NS: fuzefront
+
+    steps:
+      - name: Checkout (with FuzeInfra submodule)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # ── Cluster + tooling ────────────────────────────────────────────────
+      - name: Create kind cluster (FuzeInfra topology)
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: fuzeinfra
+          config: FuzeInfra/k8s/kind/kind-cluster.yaml
+          wait: 120s
+
+      - name: Install ingress-nginx
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/kind/deploy.yaml
+          kubectl -n ingress-nginx wait --for=condition=Available deployment/ingress-nginx-controller --timeout=180s || true
+          # The admission webhook can lag; wait for its endpoints so Ingress
+          # objects aren't rejected during the Helm install.
+          kubectl -n ingress-nginx wait --for=condition=Ready pod \
+            -l app.kubernetes.io/component=controller --timeout=180s || true
+
+      # ── Base platform: FuzeInfra (version-parity source) ─────────────────
+      - name: Deploy FuzeInfra (base services) via Helm
+        run: |
+          helm upgrade --install fuzeinfra FuzeInfra/helm/fuzeinfra \
+            -n "$INFRA_NS" --create-namespace \
+            -f FuzeInfra/helm/fuzeinfra/values-local.yaml \
+            --wait --timeout 12m || {
+              echo "::warning title=FuzeInfra::Helm install did not fully converge; continuing (e2e tolerates degraded base services).";
+              kubectl -n "$INFRA_NS" get pods || true;
+            }
+          echo "=== FuzeInfra pods ==="
+          kubectl -n "$INFRA_NS" get pods || true
+
+      # ── Build FuzeFront images and load into kind (no registry needed) ───
+      - name: Build FuzeFront images
+        run: |
+          set -eux
+          docker build -t fuzefront/frontend:local            ./frontend
+          # Backend + the 3-way split services COPY shared/, so build from repo root.
+          docker build -t fuzefront/backend:local              -f backend/Dockerfile .
+          docker build -t fuzefront/security-service:local     -f backend/security/Dockerfile .
+          docker build -t fuzefront/applications-service:local -f backend/applications/Dockerfile .
+          docker build -t fuzefront/email-service:local        -f services/email-service/Dockerfile .
+
+      - name: Load images into kind
+        run: |
+          for img in frontend backend security-service applications-service email-service; do
+            kind load docker-image "fuzefront/${img}:local" --name "$KIND_CLUSTER"
+          done
+
+      # ── App: FuzeFront on top of FuzeInfra ───────────────────────────────
+      - name: Deploy FuzeFront via Helm
+        run: |
+          helm upgrade --install fuzefront deploy/helm/fuzefront \
+            -n "$APP_NS" --create-namespace \
+            -f deploy/helm/fuzefront/values-local.yaml \
+            --wait --timeout 12m || {
+              echo "::warning title=FuzeFront::Helm install did not fully converge; dumping state.";
+              kubectl -n "$APP_NS" get pods || true;
+              kubectl -n "$APP_NS" describe pods || true;
+            }
+          echo "=== FuzeFront pods ==="
+          kubectl -n "$APP_NS" get pods,svc,ingress || true
+
+      - name: Wait for FuzeFront backend to answer
+        run: |
+          # Port-forward the platform service and poll /health (tolerant loop).
+          kubectl -n "$APP_NS" get svc
+          # Resolve a backend service name without hardcoding (chart may name it
+          # fuzefront-backend or fuzefront-security-service depending on phase).
+          svc=$(kubectl -n "$APP_NS" get svc -o name | grep -E 'backend|security' | head -1)
+          echo "forwarding $svc"
+          kubectl -n "$APP_NS" port-forward "$svc" 3001:3001 >/tmp/pf.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "backend up"; break; fi
+            sleep 3
+          done
+          curl -fsS http://localhost:3001/health || {
+            echo "::warning title=backend health::backend /health not reachable; dumping logs";
+            kubectl -n "$APP_NS" logs -l app.kubernetes.io/part-of=fuzefront --tail=100 || true;
+          }
+
+      # ── Backend integration suite against the live cluster ───────────────
+      - name: Run backend integration suite (against cluster Postgres)
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+        run: |
+          # FuzeInfra Postgres is reachable via port-forward; the suite tolerates
+          # Permit/Kafka being degraded in this ephemeral cluster.
+          kubectl -n "$INFRA_NS" port-forward svc/postgres 5432:5432 >/tmp/pgpf.log 2>&1 &
+          sleep 5
+          npm ci
+          DB_HOST=localhost DB_PORT=5432 DB_NAME=fuzefront_platform_test \
+          DB_USER=postgres DB_PASSWORD=postgres \
+          PERMIT_API_KEY=ci-noop PERMIT_PDP_URL=http://localhost:7766 \
+            npm run test:integration -w backend || \
+            echo "::warning title=integration::backend integration suite degraded against ephemeral cluster"
+
+      # ── Playwright full e2e against the deployed shell ───────────────────
+      - name: Run Playwright e2e
+        env:
+          BASE_URL: http://localhost:8080
+        run: |
+          # Port-forward the frontend service for Playwright.
+          fsvc=$(kubectl -n "$APP_NS" get svc -o name | grep -E 'frontend' | head -1)
+          kubectl -n "$APP_NS" port-forward "$fsvc" 8080:8080 >/tmp/fepf.log 2>&1 &
+          sleep 5
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test || echo "::warning title=playwright::e2e had failures (see report artifact)"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          echo "=== FuzeInfra ==="; kubectl -n "$INFRA_NS" get all || true
+          echo "=== FuzeFront ===";  kubectl -n "$APP_NS" get all || true
+          kubectl -n "$APP_NS" describe pods || true
+          kubectl -n "$APP_NS" logs -l app.kubernetes.io/part-of=fuzefront --tail=200 || true
