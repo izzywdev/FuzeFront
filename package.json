@@ -10,7 +10,8 @@
     "backend/applications",
     "shared",
     "packages/identity-ui",
-    "design-system"
+    "design-system",
+    "frontend"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
