@@ -156,10 +156,6 @@ export async function ensurePersonalOrg(
   return rowToOrganization(created)
 }
 
-async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
-  await ensureStepRowsTrx(db, orgId)
-}
-
 // Accepts either a Knex instance or a transaction (both expose the same query API).
 async function ensureStepRowsTrx(
   qb: Knex | Knex.Transaction,
