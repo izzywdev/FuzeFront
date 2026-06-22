@@ -24,6 +24,9 @@ export function Textarea({
 }) {
   const hasError = Boolean(error);
   const baseBorder = hasError ? "var(--error-color)" : "var(--border-color)";
+  // Always associate the label with the control (see Input.jsx).
+  const reactId = React.useId();
+  const fieldId = id ?? reactId;
 
   return (
     <div
@@ -36,7 +39,7 @@ export function Textarea({
     >
       {label && (
         <label
-          htmlFor={id}
+          htmlFor={fieldId}
           style={{
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-sm)",
@@ -49,7 +52,7 @@ export function Textarea({
         </label>
       )}
       <textarea
-        id={id}
+        id={fieldId}
         rows={rows}
         disabled={disabled}
         aria-invalid={hasError || undefined}

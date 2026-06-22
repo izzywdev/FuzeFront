@@ -50,7 +50,7 @@ export function TokenList({ tokens, loading, error, onRevoke, onRetry }: TokenLi
       <DataTable
         columns={columns}
         loading={loading}
-        emptyState={<EmptyState variant="no-tokens" message={`${t.emptyTitle}. ${t.emptyBody}`} />}
+        emptyState={<EmptyState variant="no-tokens" title={t.emptyTitle} message={t.emptyBody} />}
       >
         {tokens.length > 0 && (
           <tbody>
