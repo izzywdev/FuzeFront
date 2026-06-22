@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   Elements,
   PaymentElement,
@@ -75,7 +75,7 @@ function CheckoutForm({
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setSubmitting(true);

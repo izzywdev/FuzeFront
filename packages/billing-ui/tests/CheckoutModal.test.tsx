@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 
 // --- Stripe SDK mocks (hoisted) --------------------------------------------
 const confirmPayment = vi.fn();
 const confirmSetup = vi.fn();
 
 vi.mock('@stripe/react-stripe-js', () => ({
-  Elements: ({ children }: { children: React.ReactNode }) => (
+  Elements: ({ children }: { children: ReactNode }) => (
     <div data-testid="stripe-elements">{children}</div>
   ),
   PaymentElement: ({ onReady }: { onReady?: () => void }) => {

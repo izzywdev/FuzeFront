@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { useBillingI18n } from '../i18n';
 import { CloseIcon } from './primitives';
 
@@ -35,7 +42,7 @@ export function Modal({
   const subtitleId = useId();
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Escape' && dismissable) {
         e.stopPropagation();
         onClose();
