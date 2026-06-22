@@ -147,9 +147,19 @@ jobs:
           # Permit/Kafka being degraded in this ephemeral cluster.
           kubectl -n "$INFRA_NS" port-forward svc/postgres 5432:5432 >/tmp/pgpf.log 2>&1 &
           sleep 5
+          # Read the real credentials from the FuzeInfra secret rather than
+          # hardcoding (FuzeInfra defaults: fuzeinfra / fuzeinfra_db).
+          secret=$(kubectl -n "$INFRA_NS" get secret -o name | grep -iE 'fuzeinfra' | head -1)
+          DB_USER=$(kubectl -n "$INFRA_NS" get "$secret" -o jsonpath='{.data.POSTGRES_USER}' | base64 -d)
+          DB_PASSWORD=$(kubectl -n "$INFRA_NS" get "$secret" -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d)
+          export DB_USER DB_PASSWORD
+          # Ensure the test DB exists (integration suite verifies, doesn't create).
+          PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d postgres \
+            -tc "SELECT 1 FROM pg_database WHERE datname='fuzefront_platform_test'" | grep -q 1 || \
+            PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d postgres \
+              -c "CREATE DATABASE fuzefront_platform_test" || true
           npm ci
           DB_HOST=localhost DB_PORT=5432 DB_NAME=fuzefront_platform_test \
-          DB_USER=postgres DB_PASSWORD=postgres \
           PERMIT_API_KEY=ci-noop PERMIT_PDP_URL=http://localhost:7766 \
             npm run test:integration -w backend || \
             echo "::warning title=integration::backend integration suite degraded against ephemeral cluster"
