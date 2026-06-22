@@ -1,0 +1,79 @@
+name: Helm validate
+
+# Lint + schema-validate the FuzeFront Helm chart against both overlays on every
+# PR that touches the chart. Mirrors FuzeInfra's helm-validate.yml: helm lint
+# then `helm template | kubeconform --strict` (Kubernetes 1.29 schemas). Catches
+# malformed templates and invalid resource specs before they reach Argo.
+on:
+  pull_request:
+    paths:
+      - 'deploy/helm/**'
+      - '.github/workflows/helm-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  helm-validate:
+    name: Lint & kubeconform
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        values: [values-local.yaml, values-prod.yaml]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          sudo install kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: helm lint (${{ matrix.values }})
+        run: |
+          helm lint deploy/helm/fuzefront \
+            -f deploy/helm/fuzefront/${{ matrix.values }} \
+            --set secret.authentikClientSecret=ci-placeholder
+
+      - name: helm template + kubeconform (${{ matrix.values }})
+        run: |
+          # Render with every optional workload enabled so kubeconform sees the
+          # full surface. Placeholder secrets satisfy the OIDC render guard;
+          # existingSecret="" forces the chart Secret to render too. permit is
+          # also enabled so the PDP + schema-sync Job are validated. --output-dir
+          # writes one file per template so we can exclude a single one below.
+          rm -rf rendered
+          helm template fuzefront deploy/helm/fuzefront \
+            -f deploy/helm/fuzefront/${{ matrix.values }} \
+            --set secret.existingSecret="" \
+            --set secret.authentikClientSecret=ci-placeholder \
+            --set securityService.enabled=true \
+            --set applicationsService.enabled=true \
+            --set emailService.enabled=true \
+            --set smsService.enabled=true \
+            --set provisioningService.enabled=true \
+            --set permit.enabled=true \
+            --output-dir rendered
+
+          # Strict: reject unknown fields. Skip CRDs cert-manager/sealed-secrets
+          # owns (not in upstream k8s schemas). Helm hooks render as plain Jobs.
+          #
+          # Exclude authentik-blueprints.yaml: that ConfigMap's `data` keys embed
+          # multi-document Authentik blueprint YAML with custom tags (!Env/!Find)
+          # and repeated top-level keys, which kubeconform's strict unmarshaller
+          # mis-reads. It is opaque string data to Kubernetes — no schema applies.
+          kubeconform \
+            -strict \
+            -kubernetes-version 1.29.0 \
+            -schema-location default \
+            -skip CustomResourceDefinition \
+            -ignore-filename-pattern 'authentik-blueprints' \
+            -summary \
+            rendered/fuzefront/templates/

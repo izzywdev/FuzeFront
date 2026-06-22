@@ -1,9 +1,33 @@
 # =============================================================================
 # Production overlay (Contabo k3s), consumed by the Argo CD `fuzefront` Application.
-# Differs from local only by: GHCR images, public host + TLS, sealed secret.
+# Differs from local by: GHCR images, public host + TLS, sealed secret, prod
+# Authentik OIDC, Prometheus metrics, pre-created Kafka topics, and node-2
+# placement for heavy stateless services.
+#
+# Node topology (see docs/deployment/CONTABO_DEPLOYMENT.md):
+#   node-1 (kubernetes.io/hostname=fuzefront-node-1): control-plane + stateful
+#           (FuzeInfra Postgres/Redis/Kafka/Chroma live here on local-path).
+#   node-2 (kubernetes.io/hostname=fuzefront-node-2): heavy stateless compute
+#           (litellm/chat/billing). Relabel/rename to match the real join.
+# All secrets come from the SealedSecret `fuzefront-secrets` — never inline here.
 # =============================================================================
 global:
   imagePullPolicy: IfNotPresent
+  # Default placement: none (let the scheduler spread app pods across both nodes).
+  # Heavy stateless services pin to node-2 via their own affinity blocks below.
+  scheduling:
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
+
+# Prometheus scrape annotations on FuzeFront pods. The FuzeInfra Prometheus
+# auto-discovers pods carrying prometheus.io/scrape=true (see Phase E). The
+# backend exposes /metrics via prom-client; other pods are annotated for when
+# their /metrics lands.
+observability:
+  metrics:
+    enabled: true
+    path: /metrics
 
 backend:
   image:
@@ -95,3 +119,66 @@ ingress:
   tls:
     enabled: true
     secretName: fuzefront-app-tls
+
+# Authentik IdP — production. Public host with Let's Encrypt TLS via the same
+# ingress annotation as the app. OIDC SSO enabled with the prod issuer/redirect.
+# Cookie domain is the apex so the session is shared across *.fuzefront.com.
+# Secrets (AUTHENTIK_SECRET_KEY/BOOTSTRAP_*/CLIENT_SECRET) come from the
+# SealedSecret `fuzefront-secrets` — none are set here.
+authentik:
+  enabled: true
+  host: auth.fuzefront.com
+  cookieDomain: fuzefront.com
+  bootstrapEmail: admin@fuzefront.com
+  oidc:
+    enabled: true
+    issuerUrl: "https://auth.fuzefront.com/application/o/fuzefront/"
+    redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
+    # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
+    # backend reaches Authentik over the internet without a hostAlias or a custom
+    # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
+    backendHostAliasIP: ""
+    caConfigMap: ""
+
+# Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
+# overlay). Avoids relying on broker auto-create for the prefixed topics.
+kafkaTopics:
+  enabled: true
+
+# --- Heavy stateless services → node-2 -------------------------------------
+# These are forward-looking placeholders (enabled flipped by Phase F). The
+# affinity steers them onto node-2 so the LLM/chat/billing load stays off the
+# DB-heavy node-1. nodeSelector uses the standard hostname label; adjust the
+# value to the real node name after the 2nd-node join.
+litellm:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]
+
+chatService:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]
+
+billingService:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]

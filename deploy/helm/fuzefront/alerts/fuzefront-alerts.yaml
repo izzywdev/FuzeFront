@@ -1,0 +1,66 @@
+# Prometheus alert rules for FuzeFront. Shipped as a ConfigMap labeled
+# prometheus_rule: "1" so the FuzeInfra Prometheus rule_files mount / sidecar
+# discovers and loads it (discovery hook added in FuzeInfra separately). This is
+# a plain Prometheus rule-group file (NOT a PrometheusRule CRD), since FuzeInfra
+# runs vanilla Prometheus, not the prometheus-operator.
+groups:
+  - name: fuzefront.rules
+    rules:
+      - alert: FuzeFrontPodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="fuzefront"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          team: fuzefront
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash-looping"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} restarted >3 times in 15m."
+
+      - alert: FuzeFrontPodNotReady
+        expr: |
+          sum by (pod) (kube_pod_status_ready{namespace="fuzefront",condition="true"}) == 0
+          and on (pod) (kube_pod_status_phase{namespace="fuzefront",phase="Running"} == 1)
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+        annotations:
+          summary: "Pod {{ $labels.pod }} not ready"
+          description: "{{ $labels.pod }} has been Running but not Ready for 10m."
+
+      - alert: FuzeFrontHigh5xxRate
+        expr: |
+          100 * sum by (service) (rate(http_requests_total{service=~"fuzefront.*",status_code=~"5.."}[5m]))
+          / clamp_min(sum by (service) (rate(http_requests_total{service=~"fuzefront.*"}[5m])), 1) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: fuzefront
+        annotations:
+          summary: "High 5xx rate on {{ $labels.service }}"
+          description: "{{ $labels.service }} is serving >5% 5xx responses over 5m."
+
+      - alert: FuzeFrontHighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket{service=~"fuzefront.*"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+        annotations:
+          summary: "High p95 latency on {{ $labels.service }}"
+          description: "{{ $labels.service }} p95 request latency >1s over 10m."
+
+      - alert: FuzeFrontTargetDown
+        expr: |
+          up{service=~"fuzefront.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: fuzefront
+        annotations:
+          summary: "Scrape target down for {{ $labels.service }}"
+          description: "Prometheus cannot scrape {{ $labels.service }} ({{ $labels.instance }}) for 5m."

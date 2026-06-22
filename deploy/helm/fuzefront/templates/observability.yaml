@@ -1,0 +1,56 @@
+{{- /*
+  Observability ConfigMaps (Phase E).
+
+  Wraps the FuzeFront Grafana dashboards (dashboards/*.json) and Prometheus alert
+  rules (alerts/*.yaml) into ConfigMaps carrying the discovery labels the
+  FuzeInfra monitoring stack watches for:
+    - grafana_dashboard: "1"  → Grafana dashboard sidecar imports the JSON
+    - prometheus_rule:  "1"   → Prometheus rule_files mount / sidecar loads the rules
+  These discovery hooks live in FuzeInfra (added separately); we ship the
+  ConfigMaps regardless so they are present the moment the hooks land.
+
+  Gated behind observability.dashboards.enabled / observability.alerts.enabled
+  (both default true under observability so prod gets them; harmless locally —
+  they are inert ConfigMaps if nothing watches the labels).
+*/}}
+{{- $obs := .Values.observability | default dict }}
+{{- if $obs.metrics }}
+{{- if $obs.metrics.enabled }}
+{{- $dash := $obs.dashboards | default (dict "enabled" true) }}
+{{- if $dash.enabled }}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "fuzefront-dashboard-%s" $name }}
+  labels:
+    {{- include "fuzefront.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: grafana-dashboard
+    grafana_dashboard: "1"
+data:
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- $alerts := $obs.alerts | default (dict "enabled" true) }}
+{{- if $alerts.enabled }}
+{{- range $path, $_ := .Files.Glob "alerts/*.yaml" }}
+{{- $name := base $path | trimSuffix ".yaml" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "fuzefront-alert-%s" $name }}
+  labels:
+    {{- include "fuzefront.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: prometheus-rule
+    prometheus_rule: "1"
+data:
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
