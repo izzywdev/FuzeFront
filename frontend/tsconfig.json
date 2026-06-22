@@ -17,7 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@fuzefront/identity-ui": ["../packages/identity-ui/src/index.ts"],
+      "@fuzefront/design-system": ["../design-system/index.d.ts"]
     }
   },
   "include": ["src"],
