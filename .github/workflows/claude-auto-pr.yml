@@ -1,0 +1,42 @@
+name: Auto-PR from claude branches
+
+# Closes the issue->PR autonomy gap: `anthropics/claude-code-action` (in claude.yml)
+# pushes a `claude/**` branch and only posts a "Create PR" link — it does not open
+# the PR itself. This workflow opens a DRAFT PR from any pushed `claude/**` branch
+# when one doesn't already exist (draft = a human still reviews before merge).
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-draft-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open draft PR if none exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for $BRANCH — nothing to do."
+            exit 0
+          fi
+          # Only open a PR if the branch actually diverges from base.
+          if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
+            gh pr create --draft --base "$BASE" --head "$BRANCH" --fill \
+              || echo "gh pr create failed (no diff or transient) — skipping."
+          else
+            echo "No commits on $BRANCH ahead of $BASE — no PR opened."
+          fi

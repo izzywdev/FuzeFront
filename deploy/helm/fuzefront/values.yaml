@@ -11,6 +11,29 @@ global:
   # Applied to every workload. IfNotPresent so kind uses images loaded via
   # `kind load docker-image` rather than trying to pull from a registry.
   imagePullPolicy: IfNotPresent
+  # Default pod placement for ALL workloads (per-service blocks override these).
+  # Empty = no-op (the scheduler decides). In prod, set per-service nodeSelector/
+  # affinity to steer heavy stateless services (litellm/chat/billing) onto node-2
+  # and keep app pods spread; see values-prod.yaml.
+  scheduling:
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
+
+# Observability (Phase E). Disabled by default → metrics annotations and the
+# backend /metrics scrape are a no-op locally. Enabled in values-prod.yaml so the
+# FuzeInfra Prometheus auto-discovers FuzeFront pods via prometheus.io/* annots.
+observability:
+  metrics:
+    enabled: false
+    path: /metrics
+  # Ship FuzeFront Grafana dashboards / Prometheus alert rules as labeled
+  # ConfigMaps (consumed by FuzeInfra discovery hooks). Only rendered when
+  # metrics.enabled is also true (no point shipping dashboards with no metrics).
+  dashboards:
+    enabled: true
+  alerts:
+    enabled: true
 
 # Image pull secrets for private registries (e.g. private GHCR). Sealed in prod.
 imagePullSecrets: []
@@ -114,6 +137,10 @@ backend:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  # Per-service placement overrides (empty → falls back to global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
@@ -130,6 +157,11 @@ securityService:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # security-service owns auth; keep it co-located with the DB-heavy node-1 by
+  # default (no-op here, set in values-prod if desired).
 
 applicationsService:
   enabled: false
@@ -141,6 +173,9 @@ applicationsService:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
@@ -156,6 +191,9 @@ permit:
     resources:
       requests: { cpu: 100m, memory: 256Mi }
       limits:   { cpu: 500m, memory: 512Mi }
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
 
 frontend:
   image:
@@ -166,6 +204,9 @@ frontend:
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 emailService:
   enabled: false
@@ -181,7 +222,13 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
-  resources: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  # Per-service placement overrides (default empty → falls back to global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 smsService:
   enabled: false
@@ -190,7 +237,12 @@ smsService:
   image:
     repository: fuzefront/sms-service
     tag: local
-  resources: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
@@ -210,6 +262,69 @@ provisioningService:
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# ---------------------------------------------------------------------------
+# Forward-looking service placeholders (disabled by default). These are wired
+# into deploy/CD ahead of the feature merges (billing #65, chat #66, litellm).
+# The chart does NOT yet ship Deployment templates for them; these blocks exist
+# so values-prod can size/place them and so the release pipeline (Phase F, owned
+# by the orchestrator) can flip `enabled` + bump tags without a schema change.
+# When enabled with no matching template, Helm simply ignores the extra values.
+# ---------------------------------------------------------------------------
+billingService:
+  enabled: false
+  image:
+    repository: fuzefront/billing-service
+    tag: local
+  port: 3006
+  replicas: 1
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "billing-service"
+    groupId: "billing-service-group"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+chatService:
+  enabled: false
+  image:
+    repository: fuzefront/chat-service
+    tag: local
+  port: 3007
+  replicas: 1
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "chat-service"
+    groupId: "chat-service-group"
+  chromadb:
+    url: "http://chromadb.fuzeinfra.svc.cluster.local:8000"
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: "1Gi" }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+litellm:
+  enabled: false
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: "main-stable"
+  port: 4000
+  replicas: 1
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: "1Gi" }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 authentik:
   enabled: true
@@ -245,6 +360,10 @@ authentik:
     useTls: false
     useSSL: false
     timeout: 10
+  # Placement for the Authentik server + worker (empty → global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 ingress:
   enabled: true
@@ -256,3 +375,66 @@ ingress:
     enabled: false
     # Defaults to "<host>-tls" when empty.
     secretName: ''
+
+# ---------------------------------------------------------------------------
+# Kafka topic pre-creation (Phase D). A Helm post-install/post-upgrade Job runs
+# `kafka-topics.sh --create --if-not-exists` for each topic below so prod does
+# not rely on broker auto-create. Disabled by default (local kind has no Kafka);
+# enabled in values-prod.yaml. `topics[]` is the reconciled set from the shared
+# Kafka constants (@fuzefront/shared TOPICS: identity.user.created,
+# notify.email.requested, notify.email.status) plus the planned billing/chat
+# events. Edit this list when the shared TOPICS constant changes.
+kafkaTopics:
+  enabled: false
+  # Bitnami Kafka image ships kafka-topics.sh; pin a concrete tag (no :latest).
+  image:
+    repository: bitnami/kafka
+    tag: "3.7.0"
+  # Bootstrap server the Job talks to (FuzeInfra Kafka, cross-namespace DNS).
+  bootstrapServer: "kafka.fuzeinfra.svc.cluster.local:9092"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # retentionMs default applied when a topic omits its own. 7 days.
+  defaultRetentionMs: 604800000
+  # Each topic: name (required), partitions, replicationFactor, retentionMs.
+  # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
+  topics:
+    # --- identity (security-service → provisioning-service) ---
+    - name: identity.user.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    # --- notifications (backend/security → email-service) ---
+    - name: notify.email.requested
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: notify.email.requested.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000 # 14d — keep failures longer for triage
+    - name: notify.email.status
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    # --- billing (planned: billing-service / chat-service emitters) ---
+    - name: billing.subscription.changed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 2592000000 # 30d — billing audit trail
+    - name: billing.usage.recorded
+      partitions: 6
+      replicationFactor: 1
+      retentionMs: 2592000000
+    - name: billing.usage.recorded.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 2592000000
+    - name: billing.llm.usage
+      partitions: 6
+      replicationFactor: 1
+      retentionMs: 2592000000
