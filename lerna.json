@@ -11,7 +11,10 @@
     "services/sms-service",
     "services/provisioning-service",
     "services/billing-service",
-    "billing-client"
+    "billing-client",
+    "design-system",
+    "packages/i18n",
+    "packages/billing-ui"
   ],
   "command": {
     "version": {

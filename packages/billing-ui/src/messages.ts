@@ -1,0 +1,61 @@
+import type { Messages } from '@fuzefront/i18n'
+
+/**
+ * Billing-UI string tables. Passed to the host's <I18nProvider messages={...}>
+ * (merged with other packages' tables) so billing ships its own translations.
+ * `he` exercises the RTL path.
+ */
+export const billingMessages: Messages = {
+  en: {
+    'billing.plan.current': 'Current plan',
+    'billing.plan.recommended': 'Recommended',
+    'billing.plan.perMonth': '/ month',
+    'billing.plan.perYear': '/ year',
+    'billing.plan.perSeat': 'per seat',
+    'billing.plan.free': 'Free',
+    'billing.plan.select': 'Choose {plan}',
+    'billing.plan.currentCta': 'Current plan',
+    'billing.checkout.title': 'Complete your subscription',
+    'billing.checkout.pay': 'Subscribe',
+    'billing.checkout.cancel': 'Cancel',
+    'billing.checkout.processing': 'Processing…',
+    'billing.checkout.error': 'Payment could not be completed. Please try again.',
+    'billing.subscription.title': 'Subscription',
+    'billing.subscription.status': 'Status',
+    'billing.subscription.renews': 'Renews on {date}',
+    'billing.subscription.endsOn': 'Ends on {date}',
+    'billing.subscription.seats': '{count} seats',
+    'billing.subscription.changePlan': 'Change plan',
+    'billing.subscription.cancel': 'Cancel subscription',
+    'billing.subscription.canceling': 'Cancellation scheduled',
+    'billing.usage.title': 'Usage',
+    'billing.usage.of': '{used} of {limit}',
+    'billing.usage.unlimited': 'Unlimited',
+  },
+  he: {
+    'billing.plan.current': 'התוכנית הנוכחית',
+    'billing.plan.recommended': 'מומלץ',
+    'billing.plan.perMonth': '/ חודש',
+    'billing.plan.perYear': '/ שנה',
+    'billing.plan.perSeat': 'למשתמש',
+    'billing.plan.free': 'חינם',
+    'billing.plan.select': 'בחירת {plan}',
+    'billing.plan.currentCta': 'התוכנית הנוכחית',
+    'billing.checkout.title': 'השלמת המנוי',
+    'billing.checkout.pay': 'הרשמה',
+    'billing.checkout.cancel': 'ביטול',
+    'billing.checkout.processing': 'מעבד…',
+    'billing.checkout.error': 'התשלום לא הושלם. נסו שוב.',
+    'billing.subscription.title': 'מנוי',
+    'billing.subscription.status': 'סטטוס',
+    'billing.subscription.renews': 'מתחדש בתאריך {date}',
+    'billing.subscription.endsOn': 'מסתיים בתאריך {date}',
+    'billing.subscription.seats': '{count} מושבים',
+    'billing.subscription.changePlan': 'שינוי תוכנית',
+    'billing.subscription.cancel': 'ביטול המנוי',
+    'billing.subscription.canceling': 'הביטול מתוזמן',
+    'billing.usage.title': 'שימוש',
+    'billing.usage.of': '{used} מתוך {limit}',
+    'billing.usage.unlimited': 'ללא הגבלה',
+  },
+}
