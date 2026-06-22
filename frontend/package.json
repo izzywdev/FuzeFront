@@ -22,7 +22,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@fuzefront/identity-ui": "^0.1.0",
+    "@fuzefront/identity-ui": "file:../packages/identity-ui",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",

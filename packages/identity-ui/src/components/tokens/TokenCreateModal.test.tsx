@@ -74,7 +74,7 @@ describe('TokenCreateModal', () => {
   it('does not submit with an empty name', async () => {
     const { onCreate } = setup()
     fireEvent.click(screen.getByRole('button', { name: /create token/i }))
-    await waitFor(() => expect(screen.getByText(/required|name/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(onCreate).not.toHaveBeenCalled()
   })
 
