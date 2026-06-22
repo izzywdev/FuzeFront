@@ -3,7 +3,9 @@ import { HandlerContext } from './types';
 
 /**
  * Handles `invoice.payment_failed` (dunning): mark the entity `past_due`, sync
- * Permit + cache, and emit billing.payment.failed so email-service can notify.
+ * Permit, emit billing.subscription.changed (so the backend projects `past_due`
+ * onto its public plan-state tables — billing-service never writes public.*),
+ * and emit billing.payment.failed so email-service can notify.
  * Stripe Smart Retries handle the actual retry schedule; final failure arrives
  * as customer.subscription.deleted (handled separately → downgrade to free).
  */
@@ -32,12 +34,14 @@ export async function handleInvoiceFailed(
     status: 'past_due',
   });
 
-  await ctx.writePlanCache({
-    entityType: entity.entityType,
+  // Emit the status change so the backend projection moves the entity to
+  // past_due (billing-service owns only the billing schema; no public.* write).
+  await ctx.emitter.subscriptionChanged({
     entityId: entity.entityId,
+    entityType: entity.entityType,
     planTier,
     status: 'past_due',
-    trialEnd: existing?.trialEnd ?? null,
+    stripeSubscriptionId: existing?.stripeSubscriptionId ?? '',
   });
 
   await ctx.emitter.paymentFailed({
