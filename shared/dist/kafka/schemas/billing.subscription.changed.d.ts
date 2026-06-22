@@ -8,16 +8,16 @@ export declare const billingSubscriptionChangedSchemaV1: z.ZodObject<{
     seatQuantity: z.ZodOptional<z.ZodNumber>;
     stripeSubscriptionId: z.ZodString;
 }, "strip", z.ZodTypeAny, {
+    status: string;
     entityId: string;
     entityType: "user" | "organization";
-    status: string;
     planTier: string;
     stripeSubscriptionId: string;
     seatQuantity?: number | undefined;
 }, {
+    status: string;
     entityId: string;
     entityType: "user" | "organization";
-    status: string;
     planTier: string;
     stripeSubscriptionId: string;
     seatQuantity?: number | undefined;
