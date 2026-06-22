@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useCurrentUser, useAppContext, MenuItem } from './lib/shared'
 import { installBridge, bridge } from './platform/bridge'
-import { ChatProvider } from './contexts/ChatContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -196,7 +195,6 @@ function AppContent() {
   console.log('User authenticated, showing main app')
   return (
     <WorkspaceProvisioningGate>
-    <ChatProvider>
       <Layout>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -212,7 +210,6 @@ function AppContent() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Layout>
-    </ChatProvider>
     </WorkspaceProvisioningGate>
   )
 }

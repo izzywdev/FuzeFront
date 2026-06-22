@@ -1,6 +1,5 @@
 import { useCurrentUser } from '../lib/shared'
 import { useTheme } from '../contexts/ThemeContext'
-import { useChat } from '../contexts/ChatContext'
 import { LanguageSelector, useT } from '@fuzefront/i18n'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
@@ -11,7 +10,6 @@ function TopBar() {
   const { user } = useCurrentUser()
   const { theme, toggleTheme } = useTheme()
   const { t } = useT()
-  const { state: chatState, toggleChat } = useChat()
 
   return (
     <div className="top-bar">
@@ -46,20 +44,8 @@ function TopBar() {
           <LanguageSelector hideLabel />
         </div>
 
-        {/* Chat Toggle */}
-        <button
-          className={`theme-toggle ${chatState.isOpen ? 'active' : ''}`}
-          onClick={toggleChat}
-          title={t(chatState.isOpen ? 'assistant.close' : 'assistant.open')}
-          style={{
-            backgroundColor: chatState.isOpen
-              ? 'var(--accent-color)'
-              : 'transparent',
-            color: chatState.isOpen ? 'white' : 'var(--text-primary)',
-          }}
-        >
-          🤖
-        </button>
+        {/* AI assistant is launched from its own floating fuse-seam launcher
+            (FuzeChatWidget / @fuzefront/chat-ui), so no top-bar toggle here. */}
 
         {/* Theme Toggle */}
         <button
