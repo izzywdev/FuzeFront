@@ -21,7 +21,8 @@
     "build:backend": "npm run build -w backend",
     "build:shared": "npm run build -w shared",
     "test:backend": "npm run test -w backend",
-    "type-check:backend": "npm run type-check -w backend"
+    "type-check:backend": "npm run type-check -w backend",
+    "check:workspace-deps": "node scripts/check-workspace-deps.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
