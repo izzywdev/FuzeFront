@@ -226,7 +226,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
       limit = 25,
       type,
       parent_id,
-      is_active = true,
+      is_active = 'true',
       search,
       sort = 'name',
       order = 'asc',
