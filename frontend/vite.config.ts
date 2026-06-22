@@ -14,12 +14,23 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 const i18nLocalSrc = r('../packages/i18n/src/index.ts')
 const i18nAlias = existsSync(i18nLocalSrc) ? { '@fuzefront/i18n': i18nLocalSrc } : {}
 
+// The design-system is also a private GitHub-Packages publication. When the
+// monorepo source is present (local dev or full CI checkout), resolve it
+// directly so the build never needs a registry token. Same pattern as i18n.
+const dsLocalSrc = r('../design-system/index.js')
+const dsAlias = existsSync(dsLocalSrc) ? { '@fuzefront/design-system': dsLocalSrc } : {}
+
 export default defineConfig({
   resolve: {
     alias: {
       '@': r('./src'),
       ...i18nAlias,
+      ...dsAlias,
     },
+    // The local source aliases (i18n, design-system) live outside frontend/
+    // and have no node_modules of their own.  Deduplication forces their
+    // imports to resolve from frontend/node_modules instead of failing.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'i18next', 'react-i18next'],
   },
   plugins: [
     react(),
@@ -38,7 +49,10 @@ export default defineConfig({
       shared: {
         react: { singleton: true },
         'react-dom': { singleton: true },
-        '@fuzefront/i18n': { singleton: true },
+        // version is pinned so the federation plugin doesn't try to read
+        // @fuzefront/i18n/package.json — the Vite alias maps that import to
+        // a source file, not a directory, which would produce an ENOTDIR error.
+        '@fuzefront/i18n': { singleton: true, version: '1.0.0', requiredVersion: '>=1.0.0' },
         i18next: { singleton: true },
         'react-i18next': { singleton: true },
       },
