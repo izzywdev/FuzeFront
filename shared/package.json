@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.kafka.json",
     "build:kafka": "tsc -p tsconfig.kafka.json",
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit",
