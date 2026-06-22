@@ -1,6 +1,7 @@
-# Managed by fuzeone — @claude interactive handler. Thin caller of the hub's reusable workflow
-# so central fixes propagate; re-run `fuzeone sync` to update the pinned ref.
-name: claude
+# Managed by fuzeone — @claude interactive handler. Mention @claude in an issue/comment/PR/review;
+# Claude reads the thread + repo and pushes a claude/** branch (claude-auto-pr.yml opens the draft PR).
+# Requires repo secret: ANTHROPIC_API_KEY.
+name: Claude
 on:
   issue_comment:
     types: [created]
@@ -12,5 +13,24 @@ on:
     types: [submitted]
 jobs:
   claude:
-    uses: {{HUB}}/.github/workflows/reusable-claude.yml@{{HUB_REF}}
-    secrets: inherit
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

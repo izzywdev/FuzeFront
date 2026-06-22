@@ -12,7 +12,7 @@ This repo is a member of the **FuzeOne** family — the app-of-apps framework ho
 - **GitOps for deploy**: prod is GitOps-only (never hand-deploy); infra/cluster changes are *declared* in `deploy/` and reconciled by FuzeInfra — never edit FuzeInfra directly (delegate via a `@claude` issue).
 
 ## Standard automation (installed by fuzeone)
-`claude.yml` (@claude handler) · `claude-auto-pr.yml` · `claude-ci-autofix.yml` · `telegram-pr-merged.yml` · `auto-merge.yml` · `deliverable-verify.yml` (+ `helm-validate.yml` and `infra-dispatch.yml` when this repo has a chart / declared infra). CI workflows reference the hub's reusable definitions (`uses: {{HUB}}/.github/workflows/reusable-*.yml@{{HUB_REF}}`) so central fixes propagate; re-run `fuzeone sync` to update the local files.
+`claude.yml` (@claude handler) · `claude-auto-pr.yml` (issue→draft-PR) · `auto-merge.yml` (merge-on-green) · `claude-ci-autofix.yml` + `telegram-pr-merged.yml` (these call the family **reusable** workflows in `izzywdev/AITools`, so central fixes propagate) (+ `helm-validate.yml` and `infra-dispatch.yml` when this repo has a chart / declared infra). Re-run `fuzeone sync` to update the local files.
 
 ## Re-sync / check drift
 Ask `fuzefront-expert`: "set me up / update me to the latest FuzeOne standard", or run the hub's `fuzeone/sync.mjs --target .` (use `--check` to see drift). See {{HUB}} → `fuzeone/README.md`.

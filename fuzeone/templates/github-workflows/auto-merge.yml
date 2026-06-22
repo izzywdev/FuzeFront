@@ -1,15 +1,21 @@
-# Managed by fuzeone — merge a PR automatically once all required checks are green.
-name: auto-merge
+# Managed by fuzeone — squash-merge a non-draft PR once checks pass, when opened by the repo owner
+# or labelled 'auto-merge'. Uses gh's --auto so it waits for required checks.
+name: Auto Merge PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   check_suite:
     types: [completed]
-permissions:
-  contents: write
-  pull-requests: write
-  checks: read
 jobs:
   auto-merge:
-    uses: {{HUB}}/.github/workflows/reusable-auto-merge.yml@{{HUB_REF}}
-    secrets: inherit
+    name: Auto Merge PR
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Enable auto-merge
+        if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
+        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,7 +26,6 @@
     { "src": "fuzeone/templates/github-workflows/claude-ci-autofix.yml", "dest": ".github/workflows/claude-ci-autofix.yml", "mode": "template" },
     { "src": "fuzeone/templates/github-workflows/telegram-pr-merged.yml","dest": ".github/workflows/telegram-pr-merged.yml","mode": "template" },
     { "src": "fuzeone/templates/github-workflows/auto-merge.yml",        "dest": ".github/workflows/auto-merge.yml",        "mode": "template" },
-    { "src": "fuzeone/templates/github-workflows/deliverable-verify.yml","dest": ".github/workflows/deliverable-verify.yml","mode": "template" },
 
     { "src": "fuzeone/templates/github-workflows/helm-validate.yml",     "dest": ".github/workflows/helm-validate.yml",     "mode": "template", "when": "has-helm" },
     { "src": "fuzeone/templates/github-workflows/infra-dispatch.yml",    "dest": ".github/workflows/infra-dispatch.yml",    "mode": "template", "when": "has-infra" }

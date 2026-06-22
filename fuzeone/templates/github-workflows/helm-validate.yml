@@ -1,6 +1,7 @@
-# Managed by fuzeone — helm lint + kubeconform (strict) for repos with a chart. Installed only
-# when deploy/helm/ exists in the target repo.
-name: helm-validate
+# Managed by fuzeone — helm lint + kubeconform (strict) for any chart under deploy/helm/.
+# Generic: discovers each chart dir and validates every values-*.yaml overlay it finds.
+# Tighten per-chart (--set placeholders, skipped CRDs) as your chart grows; mirrors FuzeInfra's gate.
+name: Helm validate
 on:
   pull_request:
     paths:
@@ -9,6 +10,35 @@ on:
 permissions:
   contents: read
 jobs:
-  validate:
-    uses: {{HUB}}/.github/workflows/reusable-helm-validate.yml@{{HUB_REF}}
-    secrets: inherit
+  helm-validate:
+    name: Lint & kubeconform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: Install kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          sudo install kubeconform /usr/local/bin/kubeconform
+      - name: Lint + template + kubeconform every chart/overlay
+        run: |
+          set -e
+          shopt -s nullglob
+          for chart in deploy/helm/*/; do
+            [ -f "${chart}Chart.yaml" ] || continue
+            overlays=( "${chart}"values*.yaml )
+            [ ${#overlays[@]} -eq 0 ] && overlays=( "" )
+            for v in "${overlays[@]}"; do
+              vf=""; [ -n "$v" ] && vf="-f $v"
+              echo "::group::$chart $v"
+              helm lint "$chart" $vf
+              rm -rf rendered && helm template "$(basename "$chart")" "$chart" $vf --output-dir rendered
+              kubeconform -strict -kubernetes-version 1.29.0 -schema-location default \
+                -skip CustomResourceDefinition -summary rendered/
+              echo "::endgroup::"
+            done
+          done

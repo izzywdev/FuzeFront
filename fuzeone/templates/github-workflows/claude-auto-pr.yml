@@ -1,5 +1,6 @@
-# Managed by fuzeone — open a PR automatically when @claude pushes a claude/** branch.
-name: claude-auto-pr
+# Managed by fuzeone — opens a DRAFT PR from any pushed claude/** branch (claude-code-action only
+# posts a "Create PR" link; this closes the issue->PR autonomy gap). Draft = a human reviews first.
+name: Auto-PR from claude branches
 on:
   push:
     branches:
@@ -8,6 +9,23 @@ permissions:
   contents: read
   pull-requests: write
 jobs:
-  auto-pr:
-    uses: {{HUB}}/.github/workflows/reusable-claude-auto-pr.yml@{{HUB_REF}}
-    secrets: inherit
+  open-draft-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open draft PR if none exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then echo "PR #$existing already open for $BRANCH."; exit 0; fi
+          if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
+            gh pr create --draft --base "$BASE" --head "$BRANCH" --fill || echo "gh pr create failed — skipping."
+          else
+            echo "No commits on $BRANCH ahead of $BASE — no PR opened."
+          fi

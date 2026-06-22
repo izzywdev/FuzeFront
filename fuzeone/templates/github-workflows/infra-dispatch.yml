@@ -1,7 +1,8 @@
-# Managed by fuzeone — when this repo's declared infra changes (deploy/terraform, deploy/argocd),
-# trigger FuzeInfra to reconcile it via repository_dispatch. Needs FUZEINFRA_DISPATCH_TOKEN secret.
-# Installed only when deploy/terraform/ or deploy/argocd/ exists in the target repo.
-name: infra-dispatch
+# Managed by fuzeone — event-driven, decoupled IaC. When this repo's declarative infra/deploy intent
+# changes (deploy/terraform/** , deploy/argocd/**), notify FuzeInfra (the cluster owner + sole
+# credential holder) to reconcile it. This repo holds NO cluster creds — only FUZEINFRA_DISPATCH_TOKEN,
+# a narrowly-scoped token whose only power is to fire a repository_dispatch on izzywdev/FuzeInfra.
+name: Infra request → FuzeInfra
 on:
   push:
     branches: [master]
@@ -10,11 +11,31 @@ on:
       - 'deploy/argocd/**'
   workflow_dispatch: {}
 concurrency:
-  group: infra-dispatch-${{ github.ref }}
+  group: infra-dispatch
   cancel-in-progress: false
 jobs:
   dispatch:
-    uses: {{HUB}}/.github/workflows/reusable-infra-dispatch.yml@{{HUB_REF}}
-    with:
-      source_repo: ${{ github.repository }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Compute changed infra paths
+        id: changed
+        run: |
+          base="${{ github.event.before }}"
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base="HEAD~1"; fi
+          changed=$(git diff --name-only "$base" HEAD -- deploy/terraform deploy/argocd | tr '\n' ',' | sed 's/,$//')
+          echo "paths=$changed" >> "$GITHUB_OUTPUT"
+      - name: Dispatch infra-request to FuzeInfra
+        env:
+          GH_TOKEN: ${{ secrets.FUZEINFRA_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::FUZEINFRA_DISPATCH_TOKEN not set — cannot dispatch to FuzeInfra."; exit 1
+          fi
+          gh api repos/izzywdev/FuzeInfra/dispatches \
+            -f event_type=infra-request \
+            -F "client_payload[repo]=${{ github.repository }}" \
+            -F "client_payload[ref]=${{ github.sha }}" \
+            -F "client_payload[changed]=${{ steps.changed.outputs.paths }}"
