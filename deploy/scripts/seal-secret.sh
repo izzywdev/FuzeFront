@@ -16,11 +16,16 @@
 # Then: git add the manifest, commit, push. Argo (FuzeInfra-operated) syncs it and
 # the in-cluster controller decrypts it into a real Secret. Plaintext NEVER touches
 # git, chat, or shell history.
+# NOTE: this is an INTERIM, vendored copy. The CANONICAL seal-secret.sh + the
+# secrets-management methodology + the published public-cert URL are owned by
+# FuzeInfra (it runs the controller and holds the decrypt key). Tracked for
+# migration to the fuzeone onboarding toolkit. Until then this copy unblocks
+# FuzeFront sealing.
 set -euo pipefail
 
 # ---- per-repo defaults (this is the FuzeFront repo) ----------------------------
 NS="fuzefront"
-NAME="fuzefront-secrets"
+NAME="billing-secrets"
 # FuzeInfra publishes the sealed-secrets public cert here (single source of truth,
 # always current). Override via env if the URL differs.
 CERT_URL="${FUZEINFRA_SEALED_CERT_URL:-https://sealed-secrets.fuzeinfra.fuzefront.com/v1/cert.pem}"

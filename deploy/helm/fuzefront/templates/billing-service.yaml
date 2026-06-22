@@ -50,21 +50,21 @@ spec:
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: STRIPE_SECRET_KEY
             {{- end }}
             {{- if .Values.secret.stripeWebhookSecret }}
             - name: STRIPE_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: STRIPE_WEBHOOK_SECRET
             {{- end }}
             {{- if .Values.secret.billingInternalToken }}
             - name: BILLING_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: BILLING_INTERNAL_TOKEN
             {{- end }}
             - name: PERMIT_API_KEY
