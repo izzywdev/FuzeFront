@@ -33,7 +33,12 @@ export default defineConfig({
         // leaves __rf_placeholder__shareScope unresolved → runtime ReferenceError.
         _dynamic: 'http://localhost/remoteEntry.js',
       },
-      shared: ['react', 'react-dom', '@fuzefront/identity-ui', '@fuzefront/design-system'],
+      // Only true cross-remote singletons go in the shared scope. The host's own
+      // UI packages (@fuzefront/identity-ui, @fuzefront/design-system) are aliased
+      // to source files above; listing them here makes the federation plugin read
+      // `<aliased-file>/package.json` (ENOTDIR) — so they are bundled into the host
+      // directly rather than shared.
+      shared: ['react', 'react-dom'],
     }),
   ],
   build: {
