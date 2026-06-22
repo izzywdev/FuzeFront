@@ -45,7 +45,7 @@ describe('frontend i18n integration', () => {
     await waitFor(() =>
       expect(screen.getByTestId('dashboard')).toHaveTextContent('Dashboard')
     )
-    expect(screen.getByTestId('theme')).toHaveTextContent('Switch to light mode')
+    expect(screen.getByTestId('theme')).toHaveTextContent('Switch to dark mode')
     expect(document.documentElement.getAttribute('dir')).toBe('ltr')
   })
 
