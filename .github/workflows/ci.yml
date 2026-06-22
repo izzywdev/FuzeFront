@@ -35,6 +35,23 @@ jobs:
           cd ../api-client && npm ci
           cd ../task-manager-app && npm ci
 
+      # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
+      # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
+      # dist/index.d.ts (like @fuzefront/design-system), NOT its TSX source — so
+      # the frontend's tsc consumes validated types instead of recompiling the
+      # package's source under the frontend's separate @types/react + csstype
+      # copy (which produced the csstype CSSProperties clash). Bundling/tests
+      # still resolve from source via the vite/vitest aliases.
+      - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/identity-ui build
+
+      # @fuzefront/i18n is consumed by the host (main.tsx, contexts, components).
+      # frontend/tsconfig.json resolves it to dist/index.d.ts (like identity-ui),
+      # so build it before the frontend type-check. vite/vitest still alias it to
+      # source for bundling/tests.
+      - name: Build @fuzefront/i18n (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/i18n build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -58,6 +75,56 @@ jobs:
 
       - name: Run SDK tests
         run: cd sdk && npm test
+
+  identity-ui-and-security:
+    name: Identity UI + Security (unit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # Root install links the @fuzefront/* workspaces (design-system,
+      # identity-ui, security-service, core, shared) as local symlinks, so no
+      # GitHub Packages auth is needed here.
+      - name: Install dependencies (root workspaces)
+        run: npm ci
+
+      # --- @fuzefront/identity-ui -----------------------------------------
+      - name: identity-ui — type-check (tsc --noEmit)
+        run: npm run -w @fuzefront/identity-ui type-check
+
+      - name: identity-ui — unit tests (vitest)
+        run: npm run -w @fuzefront/identity-ui test
+
+      - name: identity-ui — library build (es/cjs/d.ts)
+        run: npm run -w @fuzefront/identity-ui build
+
+      - name: identity-ui — assert build artifacts
+        run: |
+          test -f packages/identity-ui/dist/index.js
+          test -f packages/identity-ui/dist/index.cjs
+          test -f packages/identity-ui/dist/index.d.ts
+          echo "identity-ui dist artifacts present (es + cjs + d.ts)"
+
+      # --- @fuzefront/security-service (API tokens) -----------------------
+      # core + shared/kafka must be built first — the jest moduleNameMapper
+      # resolves them from their dist/ output.
+      - name: build core + shared (jest deps)
+        run: |
+          npm run -w @fuzefront/core build
+          npm run -w @fuzefront/shared build
+
+      - name: security — API-token jest suite (DB mocked, no Postgres)
+        run: |
+          cd backend/security
+          npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
 
   build:
     name: Build Applications

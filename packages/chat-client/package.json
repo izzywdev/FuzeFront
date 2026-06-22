@@ -1,0 +1,32 @@
+{
+  "name": "@fuzefront/chat-client",
+  "version": "1.0.0",
+  "description": "TypeScript SSE+HTTP client for FuzeFront chat-service",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/chat-client"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "eventsource-parser": "^1.1.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "18.19.0",
+    "jest": "29.7.0",
+    "ts-jest": "29.1.1",
+    "typescript": "5.1.6"
+  }
+}

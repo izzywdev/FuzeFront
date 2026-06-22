@@ -41,6 +41,9 @@ export function Select({
 }) {
   const hasError = Boolean(error);
   const baseBorder = hasError ? "var(--error-color)" : "var(--border-color)";
+  // Always associate the label with the control (see Input.jsx).
+  const reactId = React.useId();
+  const fieldId = id ?? reactId;
 
   return (
     <div
@@ -53,7 +56,7 @@ export function Select({
     >
       {label && (
         <label
-          htmlFor={id}
+          htmlFor={fieldId}
           style={{
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-sm)",
@@ -67,7 +70,7 @@ export function Select({
       )}
       <div style={{ position: "relative", width: "100%" }}>
         <select
-          id={id}
+          id={fieldId}
           disabled={disabled}
           aria-invalid={hasError || undefined}
           style={{

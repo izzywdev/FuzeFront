@@ -1,35 +1,26 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 
-const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
-
-// Mirror vite.config.ts: resolve the shared i18n runtime from local monorepo
-// source for tests when present (host); falls back to node_modules otherwise.
-const i18nLocalSrc = r('../packages/i18n/src/index.ts')
-const i18nAlias = existsSync(i18nLocalSrc) ? { '@fuzefront/i18n': i18nLocalSrc } : {}
-
-// Mirror vite.config.ts: the LanguageSelector (in the i18n source) renders the
-// design-system <Select>, so tests must resolve @fuzefront/design-system too.
-const dsLocalSrc = r('../design-system/index.js')
-const dsLocalDir = r('../design-system')
-const dsAlias = existsSync(dsLocalSrc)
-  ? {
-      '@fuzefront/design-system/': `${dsLocalDir}/`,
-      '@fuzefront/design-system': dsLocalSrc,
-    }
-  : {}
+// Mirror vite.config.ts: resolve the @fuzefront/* workspace UI packages from source.
+const identityUiSrc = fileURLToPath(
+  new URL('../packages/identity-ui/src/index.ts', import.meta.url)
+)
+const designSystemSrc = fileURLToPath(
+  new URL('../design-system/index.js', import.meta.url)
+)
+const i18nSrc = fileURLToPath(
+  new URL('../packages/i18n/src/index.ts', import.meta.url)
+)
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': r('./src'),
-      ...i18nAlias,
-      ...dsAlias,
+      '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/i18n': i18nSrc,
+      '@fuzefront/design-system': designSystemSrc,
     },
-    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'i18next', 'react-i18next'],
   },
   test: {
     environment: 'jsdom',

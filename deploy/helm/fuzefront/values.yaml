@@ -125,6 +125,11 @@ secret:
   googleClientSecret: ""
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
+  # AI provider keys for the chat-service and LiteLLM gateway.
+  # Leave empty to disable; supply via --set or a gitignored values file. NEVER commit real keys.
+  anthropicApiKey: ""
+  openaiApiKey: ""
+  litellmMasterKey: ""
 
 backend:
   image:
@@ -243,6 +248,43 @@ smsService:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+
+chatService:
+  enabled: false
+  replicas: 1
+  # Port 3006: 3001=backend, 3002=security, 3003=apps/email, 3004=sms, 3005=provisioning
+  port: 3006
+  image:
+    repository: fuzefront/chat-service
+    tag: local
+  # LiteLLM gateway in fuzeinfra namespace (its own Argo App).
+  litellmUrl: "http://litellm.fuzeinfra.svc.cluster.local:4000"
+  # ChromaDB vector store in fuzeinfra namespace (enabled via fuzeinfra Argo values).
+  chromaUrl: "http://chromadb.fuzeinfra.svc.cluster.local:8000"
+  # FuzeFront backend for user/org lookups.
+  backendUrl: "http://fuzefront-backend:3001"
+  # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs
+  # at fuzefront-permit-pdp:7000; otherwise falls back to the offline stub port.
+  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
+  embeddingModel: "text-embedding-3-small"
+  # Resource requests/limits. Local/dev single replica; prod overrides upward.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
+  # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
+  # LiteLLM + ChromaDB are reachable in fuzeinfra.
+  docIndexer:
+    enabled: false
+    # Directory inside the chat-service image that holds the docs to index.
+    docsDir: "/app/services/chat-service/docs"
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.

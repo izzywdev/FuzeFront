@@ -57,6 +57,21 @@ export const permitSchema: PermitSchema = {
         view_members: action('View Members'),
       },
     },
+    {
+      key: 'Docs',
+      name: 'Docs',
+      actions: {
+        read: action('Read'),
+      },
+    },
+    {
+      key: 'Chat',
+      name: 'Chat',
+      actions: {
+        stream: action('Stream'),
+        manage: action('Manage'),
+      },
+    },
   ],
   roles: [
     {
@@ -68,6 +83,8 @@ export const permitSchema: PermitSchema = {
         'App:create', 'App:read', 'App:update', 'App:delete', 'App:install', 'App:uninstall',
         'UserManagement:invite', 'UserManagement:remove',
         'UserManagement:update_role', 'UserManagement:view_members',
+        'Docs:read',
+        'Chat:stream', 'Chat:manage',
       ],
     },
     {
@@ -77,6 +94,8 @@ export const permitSchema: PermitSchema = {
         'Organization:read',
         'App:create', 'App:read', 'App:update', 'App:install', 'App:uninstall',
         'UserManagement:view_members',
+        'Docs:read',
+        'Chat:stream',
       ],
     },
     {
@@ -86,6 +105,8 @@ export const permitSchema: PermitSchema = {
         'Organization:read',
         'App:read',
         'UserManagement:view_members',
+        'Docs:read',
+        'Chat:stream',
       ],
     },
   ],

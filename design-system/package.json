@@ -1,57 +1,18 @@
 {
   "name": "@fuzefront/design-system",
   "version": "1.0.0",
-  "description": "FuzeFront \"fuse seam\" design system — dark-default tokens and React components (the single source of truth for all FuzeFront UI).",
+  "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
   "type": "module",
   "main": "index.js",
   "module": "index.js",
   "types": "index.d.ts",
   "exports": {
-    ".": {
-      "types": "./index.d.ts",
-      "import": "./index.js"
-    },
-    "./styles.css": "./styles.css",
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
     "./tokens/*": "./tokens/*",
-    "./package.json": "./package.json"
+    "./styles.css": "./styles.css"
   },
-  "files": [
-    "index.js",
-    "index.d.ts",
-    "components",
-    "tokens",
-    "styles.css",
-    "_ds_manifest.json",
-    "readme.md"
-  ],
-  "keywords": [
-    "fuzefront",
-    "design-system",
-    "fuse-seam",
-    "react",
-    "tokens",
-    "rtl"
-  ],
-  "author": "FuzeFront Team <team@fuzefront.dev>",
-  "license": "MIT",
-  "homepage": "https://fuzefront.dev",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/izzywdev/FuzeFront.git",
-    "directory": "design-system"
-  },
-  "bugs": {
-    "url": "mailto:team@fuzefront.dev"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "scripts": {
-    "build": "node build.mjs"
-  },
-  "peerDependencies": {
-    "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
-  }
+  "files": ["components", "tokens", "index.js", "index.d.ts", "styles.css", "_ds_manifest.json"],
+  "peerDependencies": { "react": "^18.0.0", "react-dom": "^18.0.0" },
+  "publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" },
+  "repository": { "type": "git", "url": "https://github.com/fuzefront/FuzeFront.git", "directory": "design-system" }
 }
