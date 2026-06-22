@@ -6,7 +6,7 @@ import type { IdentityApiClient } from '../../types'
 function makeClient(over: Partial<IdentityApiClient> = {}): IdentityApiClient {
   return {
     listMembers: vi.fn().mockResolvedValue([
-      { id: 'm1', role: 'admin', status: 'active', user: { id: 'u1', email: 'a@b.co' } },
+      { id: 'm1', role: 'admin', status: 'active', user: { id: 'u1', email: 'a@b.co', firstName: 'Alice' } },
     ]),
     updateMemberRole: vi.fn().mockResolvedValue(undefined),
     removeMember: vi.fn().mockResolvedValue(undefined),

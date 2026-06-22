@@ -150,6 +150,7 @@ export function TokenCreateModal({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {createError && <Toast level="error" message={createError} />}
           <Input
+            id="token-name"
             label={t.nameLabel}
             placeholder={t.namePlaceholder}
             value={name}

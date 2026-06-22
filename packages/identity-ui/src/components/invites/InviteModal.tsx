@@ -145,6 +145,7 @@ export function InviteModal({ open, onClose, onInvite, onBulkInvite, onSuccess, 
         {tab === 'single' ? (
           <>
             <Input
+              id="invite-email"
               label={inv.email}
               type="email"
               placeholder={inv.emailPlaceholder}
@@ -164,6 +165,7 @@ export function InviteModal({ open, onClose, onInvite, onBulkInvite, onSuccess, 
         ) : (
           <>
             <Textarea
+              id="invite-emails-bulk"
               label={inv.bulkTextareaLabel}
               placeholder={inv.bulkTextareaPlaceholder}
               value={bulkText}
