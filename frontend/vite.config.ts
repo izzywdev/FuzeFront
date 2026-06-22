@@ -12,7 +12,7 @@ const identityUiSrc = fileURLToPath(
   new URL('../packages/identity-ui/src/index.ts', import.meta.url)
 )
 const designSystemSrc = fileURLToPath(
-  new URL('../design-system/index.js', import.meta.url)
+  new URL('../design-system', import.meta.url)
 )
 const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
