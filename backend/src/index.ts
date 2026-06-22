@@ -17,6 +17,10 @@ import {
   checkDatabaseHealth,
 } from './config/database'
 import { oidcService } from './services/oidc'
+import {
+  startBillingProjection,
+  stopBillingProjection,
+} from './services/billingProjection'
 
 // Load environment variables
 dotenv.config()
@@ -369,6 +373,13 @@ function gracefulShutdown(signal: string) {
     io.close(async () => {
       console.log('✅ Socket.IO server closed')
 
+      // Stop the billing plan-state projection consumer.
+      try {
+        await stopBillingProjection()
+      } catch (error) {
+        console.error('❌ Error stopping billing projection:', error)
+      }
+
       // Close database connections
       try {
         await closeDatabase()
@@ -483,6 +494,10 @@ async function startServer() {
       console.error('❌ Failed to initialize OIDC service:', error)
       console.log('⚠️  Continuing with local authentication only')
     }
+
+    // Start the billing plan-state projection (consumes
+    // billing.subscription.changed; no-op when Kafka is disabled).
+    await startBillingProjection()
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)
