@@ -25,6 +25,10 @@ export default defineConfig({
       '@fuzefront/i18n': i18nSrc,
       '@fuzefront/design-system': designSystemSrc,
     },
+    // @fuzefront/i18n is bundled from source and pulls react-i18next (which has a
+    // nested react copy under packages/i18n/node_modules). Dedupe so the host
+    // bundle has a single React instance — otherwise hooks crash at runtime.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
   plugins: [
     react(),

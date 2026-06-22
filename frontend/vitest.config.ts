@@ -21,6 +21,12 @@ export default defineConfig({
       '@fuzefront/i18n': i18nSrc,
       '@fuzefront/design-system': designSystemSrc,
     },
+    // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
+    // its own nested react copy under packages/i18n/node_modules. Without dedupe
+    // the host renders with one React while react-i18next uses another → invalid
+    // hook call ("Cannot read properties of null (reading 'useMemo')"). Force a
+    // single instance of React and the i18n runtime.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
   test: {
     environment: 'jsdom',
