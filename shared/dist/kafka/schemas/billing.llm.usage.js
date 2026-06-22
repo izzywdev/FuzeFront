@@ -1,11 +1,14 @@
-import { z } from 'zod';
-export const billingLlmUsageSchemaV1 = z.object({
-    userId: z.string().uuid(),
-    orgId: z.string().uuid(),
-    model: z.string(),
-    promptTokens: z.number().int().nonnegative(),
-    completionTokens: z.number().int().nonnegative(),
-    totalTokens: z.number().int().nonnegative(),
-    conversationId: z.string().uuid(),
-    timestamp: z.string().datetime(),
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.billingLlmUsageSchemaV1 = void 0;
+const zod_1 = require("zod");
+exports.billingLlmUsageSchemaV1 = zod_1.z.object({
+    userId: zod_1.z.string().uuid(),
+    orgId: zod_1.z.string().uuid(),
+    model: zod_1.z.string(),
+    promptTokens: zod_1.z.number().int().nonnegative(),
+    completionTokens: zod_1.z.number().int().nonnegative(),
+    totalTokens: zod_1.z.number().int().nonnegative(),
+    conversationId: zod_1.z.string().uuid(),
+    timestamp: zod_1.z.string().datetime(),
 });
