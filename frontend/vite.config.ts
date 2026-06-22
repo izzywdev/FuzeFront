@@ -14,6 +14,7 @@ const identityUiSrc = fileURLToPath(
 const designSystemSrc = fileURLToPath(
   new URL('../design-system/index.js', import.meta.url)
 )
+const designSystemDir = fileURLToPath(new URL('../design-system', import.meta.url))
 const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
 )
@@ -23,6 +24,10 @@ export default defineConfig({
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/i18n': i18nSrc,
+      // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
+      // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
+      // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
+      '@fuzefront/design-system/': `${designSystemDir}/`,
       '@fuzefront/design-system': designSystemSrc,
     },
     // @fuzefront/i18n is bundled from source and pulls react-i18next (which has a
