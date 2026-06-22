@@ -45,6 +45,15 @@ jobs:
       - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
         run: npm run -w @fuzefront/identity-ui build
 
+      # @fuzefront/chat-ui is consumed by the host frontend (FuzeChatWidget) and
+      # has NO vite source alias, so both the frontend type-check (tsconfig →
+      # chat-ui/dist/index.d.ts) and `vite build` resolve it from dist. Build its
+      # dependency @fuzefront/chat-client first, then chat-ui.
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend type-check)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+
       # @fuzefront/i18n is consumed by the host (main.tsx, contexts, components).
       # frontend/tsconfig.json resolves it to dist/index.d.ts (like identity-ui),
       # so build it before the frontend type-check. vite/vitest still alias it to
@@ -150,6 +159,13 @@ jobs:
 
       - name: Build backend
         run: cd backend && npm run build
+
+      # chat-ui is bundled into the host frontend from its dist (no vite source
+      # alias), and depends on chat-client — build both before `vite build`.
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend bundle)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
 
       - name: Build frontend
         run: cd frontend && npm run build

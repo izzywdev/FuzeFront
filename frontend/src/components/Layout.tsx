@@ -1,8 +1,7 @@
 import React from 'react'
 import TopBar from './TopBar'
 import SidePanel from './SidePanel'
-import ChatPanel from './ChatPanel'
-import { useChat } from '../contexts/ChatContext'
+import FuzeChatWidget from './FuzeChatWidget'
 import Toaster from './Toaster'
 
 interface LayoutProps {
@@ -10,25 +9,17 @@ interface LayoutProps {
 }
 
 function Layout({ children }: LayoutProps) {
-  const { state, sendMessage, toggleChat, addFeedback } = useChat()
-
   return (
-    <div className={`app-layout ${state.isOpen ? 'chat-open' : ''}`}>
+    <div className="app-layout">
       <TopBar />
       <div className="main-content">
         <SidePanel />
         <div className="content-area">{children}</div>
       </div>
 
-      {/* Chat Panel */}
-      <ChatPanel
-        isOpen={state.isOpen}
-        onToggle={toggleChat}
-        messages={state.messages}
-        onSendMessage={sendMessage}
-        onFeedback={addFeedback}
-        isLoading={state.isLoading}
-      />
+      {/* AI assistant — real chat-service backed, design-system @fuzefront/chat-ui.
+          Replaces the former simulated ChatPanel/ChatContext. */}
+      <FuzeChatWidget />
 
       {/* Toast region fed by window.__FUZEFRONT__.notify() (host + any app) */}
       <Toaster />

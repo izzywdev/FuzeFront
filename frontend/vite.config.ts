@@ -47,10 +47,10 @@ export default defineConfig({
         _dynamic: 'http://localhost/remoteEntry.js',
       },
       // Only true cross-remote singletons go in the shared scope. The host's own
-      // UI packages (@fuzefront/identity-ui, @fuzefront/design-system) are aliased
-      // to source files above; listing them here makes the federation plugin read
-      // `<aliased-file>/package.json` (ENOTDIR) — so they are bundled into the host
-      // directly rather than shared.
+      // UI packages (@fuzefront/identity-ui, @fuzefront/design-system,
+      // @fuzefront/chat-ui) resolve from source/workspace; listing them here makes
+      // the federation plugin read `<aliased-file>/package.json` (ENOTDIR) — so they
+      // are bundled into the host directly rather than shared.
       shared: ['react', 'react-dom'],
     }),
   ],

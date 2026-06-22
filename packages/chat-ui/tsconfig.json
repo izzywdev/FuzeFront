@@ -1,9 +1,16 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
-    "outDir": "./dist",
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "rootDir": "./src",
+    "outDir": "./dist",
     "strict": true,
     "declaration": true,
     "declarationMap": true,
@@ -11,6 +18,13 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "ignoreDeprecations": "6.0"
   },
   "include": [

@@ -1,0 +1,368 @@
+/* ============================================================
+   @fuzefront/chat-ui — component styles.
+
+   RULES (enforced by the design-system-first contract):
+   - ZERO hard-coded colors / spacing / type. Every value is a
+     design-system CSS variable (--bg-*, --text-*, --accent-*,
+     --space-*, --radius-*, --font-*, --seam, --shadow-*, …)
+     defined by @fuzefront/design-system / frontend/src/index.css.
+   - RTL/LTR mirrors automatically: only LOGICAL properties
+     (margin-inline, padding-inline-start, inset-inline-end,
+     border-start-*, text-align: start). No left/right.
+   ============================================================ */
+
+/* ---- Launcher (floating toggle button) ---------------------- */
+.ffc-launcher {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-end: var(--space-6);
+  inline-size: var(--space-12);
+  block-size: var(--space-12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--seam);
+  color: var(--primary-foreground);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard);
+  z-index: 1000;
+}
+.ffc-launcher:hover {
+  transform: translateY(-2px);
+}
+.ffc-launcher:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: var(--space-1);
+}
+
+/* ---- Drawer ------------------------------------------------- */
+.ffc-drawer {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: min(420px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+  border-inline-start: var(--border-width) solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+}
+
+/* The signature fuse seam along the joining edge of the drawer. */
+.ffc-drawer::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: var(--border-width-strong);
+  background: var(--seam);
+}
+
+.ffc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-inline: var(--space-4);
+  padding-block: var(--space-3);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+.ffc-header__title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  margin: 0;
+}
+.ffc-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+  padding: 0;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ffc-iconbtn:hover {
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+}
+.ffc-iconbtn:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: var(--space-1);
+}
+
+/* ---- Message list ------------------------------------------- */
+.ffc-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-inline: var(--space-4);
+  padding-block: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ffc-empty {
+  margin: auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.ffc-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-inline-size: 90%;
+}
+.ffc-msg--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.ffc-msg--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.ffc-bubble {
+  padding-inline: var(--space-4);
+  padding-block: var(--space-3);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ffc-msg--user .ffc-bubble {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  border-start-end-radius: var(--radius-sm);
+}
+.ffc-msg--assistant .ffc-bubble {
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+  border-start-start-radius: var(--radius-sm);
+}
+.ffc-msg__role {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide, 0.04em);
+}
+
+/* Streaming caret. */
+.ffc-caret {
+  display: inline-block;
+  inline-size: var(--space-2);
+  block-size: 1em;
+  margin-inline-start: var(--space-1);
+  background: var(--accent-color);
+  vertical-align: text-bottom;
+  animation: ffc-blink 1s steps(2, start) infinite;
+}
+@keyframes ffc-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ffc-caret {
+    animation: none;
+  }
+  .ffc-launcher {
+    transition: none;
+  }
+}
+
+/* ---- RAG citations ------------------------------------------ */
+.ffc-sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+}
+.ffc-sources__heading {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+.ffc-citation {
+  display: block;
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+.ffc-citation:hover {
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+}
+.ffc-citation:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: var(--space-1);
+}
+.ffc-citation__title {
+  color: var(--accent-2);
+  font-weight: var(--weight-medium, 500);
+}
+.ffc-citation__excerpt {
+  margin-block-start: var(--space-1);
+  color: var(--text-tertiary);
+}
+
+/* ---- Confirmation card -------------------------------------- */
+.ffc-confirm {
+  border: var(--border-width) solid var(--warning-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ffc-confirm__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--warning-color);
+  font-weight: var(--weight-semibold, 600);
+}
+.ffc-confirm__desc {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+.ffc-confirm__tool {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.ffc-confirm__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.ffc-confirm__resolved {
+  font-size: var(--text-sm);
+}
+.ffc-confirm__resolved--approved {
+  color: var(--success-color);
+}
+.ffc-confirm__resolved--denied {
+  color: var(--error-color);
+}
+
+/* ---- Buttons ------------------------------------------------ */
+.ffc-btn {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  padding-inline: var(--space-4);
+  padding-block: var(--space-2);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid transparent;
+  cursor: pointer;
+}
+.ffc-btn:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: var(--space-1);
+}
+.ffc-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.ffc-btn--primary {
+  background: var(--accent-color);
+  color: var(--primary-foreground);
+}
+.ffc-btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.ffc-btn--ghost {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+.ffc-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+}
+
+/* ---- Composer ----------------------------------------------- */
+.ffc-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-inline: var(--space-4);
+  padding-block: var(--space-3);
+  border-block-start: var(--border-width) solid var(--border-color);
+}
+.ffc-composer__input {
+  flex: 1 1 auto;
+  resize: none;
+  max-block-size: var(--space-16);
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  text-align: start;
+}
+.ffc-composer__input::placeholder {
+  color: var(--text-tertiary);
+}
+.ffc-composer__input:focus-visible {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 var(--border-width) var(--accent-color);
+}
+
+/* ---- Feedback ----------------------------------------------- */
+.ffc-feedback {
+  display: flex;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+}
+.ffc-feedback__btn {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+.ffc-feedback__btn:hover {
+  color: var(--text-primary);
+}
+.ffc-feedback__btn[aria-pressed='true'] {
+  color: var(--accent-color);
+}
+.ffc-feedback__btn:focus-visible {
+  outline: var(--border-width-strong) solid var(--accent-color);
+  outline-offset: var(--space-1);
+}
+
+/* ---- Error -------------------------------------------------- */
+.ffc-error {
+  color: var(--error-color);
+  font-size: var(--text-sm);
+  border: var(--border-width) solid var(--error-color);
+  border-radius: var(--radius-md);
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  background: var(--bg-secondary);
+}

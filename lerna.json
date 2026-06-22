@@ -2,7 +2,7 @@
   "$schema": "node_modules/lerna/schemas/lerna-schema.json",
   "version": "1.0.0",
   "npmClient": "npm",
-  "packages": ["backend", "frontend", "shared", "task-manager-app", "services/email-service", "services/sms-service", "services/provisioning-service", "services/chat-service", "packages/chat-client", "packages/identity-ui", "design-system", "packages/i18n", "packages/i18n-translate"],
+  "packages": ["backend", "frontend", "shared", "sdk", "task-manager-app", "services/email-service", "services/sms-service", "services/provisioning-service", "services/chat-service", "packages/chat-client", "packages/chat-ui", "packages/identity-ui", "design-system", "packages/i18n", "packages/i18n-translate"],
   "command": {
     "version": {
       "allowBranch": ["main", "master", "develop"],
