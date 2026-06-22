@@ -17,6 +17,10 @@ export default defineConfig({
       '@': r('./src'),
       ...i18nAlias,
     },
+    // Force singleton React: when @fuzefront/i18n source is resolved from
+    // packages/i18n/src/, its react-i18next import walks up to the root
+    // node_modules and loads a second React copy, breaking hook invariants.
+    dedupe: ['react', 'react-dom', 'react-i18next', 'i18next'],
   },
   test: {
     environment: 'jsdom',
