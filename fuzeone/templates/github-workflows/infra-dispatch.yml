@@ -1,0 +1,20 @@
+# Managed by fuzeone — when this repo's declared infra changes (deploy/terraform, deploy/argocd),
+# trigger FuzeInfra to reconcile it via repository_dispatch. Needs FUZEINFRA_DISPATCH_TOKEN secret.
+# Installed only when deploy/terraform/ or deploy/argocd/ exists in the target repo.
+name: infra-dispatch
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/terraform/**'
+      - 'deploy/argocd/**'
+  workflow_dispatch: {}
+concurrency:
+  group: infra-dispatch-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    uses: {{HUB}}/.github/workflows/reusable-infra-dispatch.yml@{{HUB_REF}}
+    with:
+      source_repo: ${{ github.repository }}
+    secrets: inherit

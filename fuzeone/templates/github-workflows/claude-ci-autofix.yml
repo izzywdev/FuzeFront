@@ -1,0 +1,17 @@
+# Managed by fuzeone — on CI failure, delegate the fix to Claude (loop-guarded by branch prefix).
+# List this repo's CI workflow names in `with.watched_workflows` (comma-separated).
+name: claude-ci-autofix
+on:
+  workflow_run:
+    workflows: ["CI", "CI/CD Pipeline"]
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  issues: write
+  id-token: write
+jobs:
+  autofix:
+    uses: {{HUB}}/.github/workflows/reusable-claude-ci-autofix.yml@{{HUB_REF}}
+    secrets: inherit

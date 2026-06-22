@@ -1,0 +1,10 @@
+# Managed by fuzeone — notify on PR merge (Telegram). Needs TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID secrets.
+name: telegram-pr-merged
+on:
+  pull_request:
+    types: [closed]
+jobs:
+  notify:
+    if: github.event.pull_request.merged == true
+    uses: {{HUB}}/.github/workflows/reusable-telegram-pr-merged.yml@{{HUB_REF}}
+    secrets: inherit

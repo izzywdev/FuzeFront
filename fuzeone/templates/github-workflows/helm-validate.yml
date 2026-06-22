@@ -1,0 +1,14 @@
+# Managed by fuzeone — helm lint + kubeconform (strict) for repos with a chart. Installed only
+# when deploy/helm/ exists in the target repo.
+name: helm-validate
+on:
+  pull_request:
+    paths:
+      - 'deploy/helm/**'
+      - '.github/workflows/helm-validate.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    uses: {{HUB}}/.github/workflows/reusable-helm-validate.yml@{{HUB_REF}}
+    secrets: inherit

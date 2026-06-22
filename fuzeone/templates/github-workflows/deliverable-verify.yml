@@ -1,0 +1,16 @@
+# Managed by fuzeone — verify the deliverable, not the "finished" claim: when @claude reports done on
+# an issue, confirm the claude/issue-N-* branch + PR exist (+ CI); auto re-nudge once if missing.
+name: deliverable-verify
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+jobs:
+  verify:
+    uses: {{HUB}}/.github/workflows/reusable-deliverable-verify.yml@{{HUB_REF}}
+    secrets: inherit

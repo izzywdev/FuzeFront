@@ -1,0 +1,15 @@
+# Managed by fuzeone — merge a PR automatically once all required checks are green.
+name: auto-merge
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  check_suite:
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+jobs:
+  auto-merge:
+    uses: {{HUB}}/.github/workflows/reusable-auto-merge.yml@{{HUB_REF}}
+    secrets: inherit

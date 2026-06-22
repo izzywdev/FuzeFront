@@ -1,0 +1,13 @@
+# Managed by fuzeone — open a PR automatically when @claude pushes a claude/** branch.
+name: claude-auto-pr
+on:
+  push:
+    branches:
+      - 'claude/**'
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  auto-pr:
+    uses: {{HUB}}/.github/workflows/reusable-claude-auto-pr.yml@{{HUB_REF}}
+    secrets: inherit
