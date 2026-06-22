@@ -21,9 +21,24 @@ export function getStripe(secretKey = process.env.STRIPE_SECRET_KEY): Stripe {
   if (!secretKey) {
     throw new Error('STRIPE_SECRET_KEY is required to initialise the Stripe client');
   }
+  // Test/CI only: point the SDK at stripe-mock (or any compatible mock) by
+  // setting STRIPE_API_BASE, e.g. http://localhost:12111. No effect in
+  // production where the var is unset, so this is fully backward-compatible.
+  const apiBase = process.env.STRIPE_API_BASE;
+  const override = apiBase
+    ? (() => {
+        const u = new URL(apiBase);
+        return {
+          host: u.hostname,
+          port: u.port ? Number(u.port) : undefined,
+          protocol: u.protocol.replace(':', '') as 'http' | 'https',
+        };
+      })()
+    : {};
   singleton = new Stripe(secretKey, {
     apiVersion: STRIPE_API_VERSION as Stripe.LatestApiVersion,
     typescript: true,
+    ...override,
   });
   return singleton;
 }
