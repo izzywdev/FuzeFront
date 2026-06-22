@@ -14,7 +14,7 @@ Author **contract / acceptance / integration / e2e tests against the frozen spec
 - **Deploy wiring** → `devops-engineer`. **Docs** → `docs-maintainer`.
 
 ## How
-Load `api-contract-first` + repo context from `fuzefront-expert`. Tests assert the **contract/acceptance criteria**, are deterministic, and don't weaken coverage to go green (no skipping to pass — a skip is a flagged gap with a reason). Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
+**Skills (load these):** `api-contract-first`, `test-driven-development` (test design discipline), `systematic-debugging` (when a test fails, isolate the real cause before deciding bug-vs-test), `verification-before-completion` (report exactly what passed/failed, no rounding up), `a11y-debugging` (for UI acceptance) + repo context from `fuzefront-expert`. Tests assert the **contract/acceptance criteria**, are deterministic, and don't weaken coverage to go green (no skipping to pass — a skip is a flagged gap with a reason). Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** tests authored + exact run results; **which acceptance criteria pass vs fail** against the current implementation (a failing test against a real bug is a *valid, valuable* deliverable — report it, don't hide it).

@@ -13,7 +13,7 @@ Consumer/integration guides (how downstream products build on FuzeFront), operat
 - **Product code / UI / migrations** → the engineers. **Tests** → `test-engineer`. **Helm/Argo/CI** → `devops-engineer`.
 
 ## How
-Load repo context from `fuzefront-expert`. Cross-check every claim against the actual code/contract/values before writing it. Keep consumer-facing docs (e.g. `docs/guides/BUILDING_ON_FUZEFRONT.md`) current as features land. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
+**Skills (load these):** `writing-rules` (clear, durable docs), `verification-before-completion` (every claim verified against source) + repo context from `fuzefront-expert`. Cross-check every claim against the actual code/contract/values before writing it. Keep consumer-facing docs (e.g. `docs/guides/BUILDING_ON_FUZEFRONT.md`) current as features land. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** docs written/updated + how you verified accuracy against source.

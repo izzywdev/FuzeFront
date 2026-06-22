@@ -16,7 +16,7 @@ HTTP API + services + business logic + DB schema/migrations + event producers/co
 - **Consumer docs / runbooks** → `docs-maintainer`.
 
 ## How
-Load `api-contract-first` (contract) + the repo context from `fuzefront-expert`. Follow the platform rules: services use FuzeInfra base services by Service DNS; reference cross-service entities **by ID, no cross-service FK / no writes into another service's tables**; secrets via env/SealedSecret refs; TDD; least-privilege DB role per service. Never enter plan mode/brainstorming; push continuously (WIP/`[skip ci]` fine, never hold work only locally); if blocked, push + RETURN `BLOCKED: <q>`.
+**Skills (load these):** `api-contract-first` (contract), `test-driven-development` (TDD — test first), `systematic-debugging` (when something fails, find root cause — never paper over), `security-review` (your endpoints/queries), `verification-before-completion` (prove it before you report) + repo context from `fuzefront-expert`. Follow the platform rules: services use FuzeInfra base services by Service DNS; reference cross-service entities **by ID, no cross-service FK / no writes into another service's tables**; secrets via env/SealedSecret refs; least-privilege DB role per service. Never enter plan mode/brainstorming; push continuously (WIP/`[skip ci]` fine, never hold work only locally); if blocked, push + RETURN `BLOCKED: <q>`.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** what you built + exact commands/results (tsc, unit/integration tests, counts).

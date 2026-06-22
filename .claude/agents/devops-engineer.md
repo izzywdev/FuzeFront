@@ -14,7 +14,7 @@ Helm Deployment+Service+values (with an `enabled` gate), the service's image in 
 - **Never hand-deploy to prod** and **never edit the FuzeInfra repo** — prod is GitOps (Argo syncs from git); cluster/node changes are *declared* (deploy/terraform + deploy/argocd) and reconciled by FuzeInfra. Local only = Helm/Skaffold on kind.
 
 ## How
-Load repo context from `fuzefront-expert` (+ `fuzeinfra-expert` for cluster-contract questions). Follow the platform rules: GitOps-only, no kubeconfig, secrets sealed/ref'd never inline, per-service `enabled` gate + resource limits + node affinity. Validate with `helm lint` + `kubeconform` + `actionlint`. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
+**Skills (load these):** `observability` (metrics/dashboards/alerts are part of your slice), `well-architected` (reliability/cost/ops trade-offs), `verification-before-completion` (render + validate before reporting) + repo context from `fuzefront-expert` (+ `fuzeinfra-expert` for cluster-contract questions). Follow the platform rules: GitOps-only, no kubeconfig, secrets sealed/ref'd never inline, per-service `enabled` gate + resource limits + node affinity. Validate with `helm lint` + `kubeconform` + `actionlint`. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** deploy/CI artifacts + exact validation (`helm lint`, `kubeconform`, `actionlint`, `helm template` render).

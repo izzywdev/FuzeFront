@@ -19,7 +19,7 @@ Lint the spec (**Spectral**), validate the schemas, and **open the contract PR**
 - You design the interface, you do not build behind it. If implementation later proves the contract wrong, you **amend the contract PR** (rippling deliberately) — implementers never diverge silently.
 
 ## How
-Load `feature-tech-planning` (build-vs-adopt + the package/service boundary and its public interface) and `api-contract-first` (the freeze→generate→fan-out procedure) + repo context from `fuzefront-expert`. Design for the componentized architecture: name the package/service boundary and its public interface explicitly. Never enter plan mode/brainstorming inside the agent run; push continuously (WIP fine); if blocked on a genuine product decision, push what you have and RETURN `BLOCKED: <q>` — never idle.
+**Skills (load these):** `feature-tech-planning` (build-vs-adopt + the package/service boundary and its public interface), `api-contract-first` (the freeze→generate→fan-out procedure), `writing-plans` (structure the design before freezing it), `well-architected` (architecture trade-offs) + repo context from `fuzefront-expert`. Design for the componentized architecture: name the package/service boundary and its public interface explicitly. Never enter plan mode/brainstorming inside the agent run; push continuously (WIP fine); if blocked on a genuine product decision, push what you have and RETURN `BLOCKED: <q>` — never idle.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** the contract artifacts (OpenAPI path, event-schema files, generated client package) + validation results (Spectral lint, type generation succeeds, client builds) + the contract PR link.
