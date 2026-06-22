@@ -11,6 +11,24 @@ import { reconcileOrganizationProvisioning } from '../services/organizationProvi
 
 const router = express.Router()
 
+// `settings`/`metadata` are jsonb columns. The `pg` driver already parses jsonb
+// into JS objects on read, so calling JSON.parse() on them throws
+// ("[object Object]" is not valid JSON) and 500s the route. Older code paths /
+// other drivers (e.g. sqlite) may hand back a string instead, so accept both:
+// pass objects through, parse strings, and fall back to {} on anything invalid.
+function parseJsonColumn(value: unknown): Record<string, any> {
+  if (value == null) return {}
+  if (typeof value === 'object') return value as Record<string, any>
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
 // Input validation helpers
 function validateOrganizationInput(data: any) {
   const errors: string[] = []
@@ -164,8 +182,8 @@ router.post('/', authenticateToken, async (req: any, res) => {
       parent_id: newOrganization.parent_id,
       owner_id: newOrganization.owner_id,
       type: newOrganization.type,
-      settings: JSON.parse(newOrganization.settings || '{}'),
-      metadata: JSON.parse(newOrganization.metadata || '{}'),
+      settings: parseJsonColumn(newOrganization.settings),
+      metadata: parseJsonColumn(newOrganization.metadata),
       is_active: newOrganization.is_active,
       created_at: newOrganization.created_at,
       updated_at: newOrganization.updated_at,
@@ -298,8 +316,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
       parent_id: org.parent_id,
       owner_id: org.owner_id,
       type: org.type,
-      settings: JSON.parse(org.settings || '{}'),
-      metadata: JSON.parse(org.metadata || '{}'),
+      settings: parseJsonColumn(org.settings),
+      metadata: parseJsonColumn(org.metadata),
       is_active: org.is_active,
       created_at: org.created_at,
       updated_at: org.updated_at,
@@ -374,8 +392,8 @@ router.get(
         parent_id: organization.parent_id,
         owner_id: organization.owner_id,
         type: organization.type,
-        settings: JSON.parse(organization.settings || '{}'),
-        metadata: JSON.parse(organization.metadata || '{}'),
+        settings: parseJsonColumn(organization.settings),
+        metadata: parseJsonColumn(organization.metadata),
         is_active: organization.is_active,
         created_at: organization.created_at,
         updated_at: organization.updated_at,
@@ -459,8 +477,8 @@ router.put(
         parent_id: updatedOrganization.parent_id,
         owner_id: updatedOrganization.owner_id,
         type: updatedOrganization.type,
-        settings: JSON.parse(updatedOrganization.settings || '{}'),
-        metadata: JSON.parse(updatedOrganization.metadata || '{}'),
+        settings: parseJsonColumn(updatedOrganization.settings),
+        metadata: parseJsonColumn(updatedOrganization.metadata),
         is_active: updatedOrganization.is_active,
         created_at: updatedOrganization.created_at,
         updated_at: updatedOrganization.updated_at,
