@@ -68,17 +68,25 @@ jobs:
           cd backend
           node dist/index.js > /tmp/backend.log 2>&1 &
           echo "Waiting for backend /health..."
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "backend up"; exit 0; fi
             sleep 2
           done
           echo "backend failed to start"; cat /tmp/backend.log; exit 1
 
-      - name: Create admin user
+      # Seed a FULLY-PROVISIONED admin: user + personal org + active owner
+      # membership. The authenticated shell sits behind WorkspaceProvisioningGate
+      # (frontend/src/components/WorkspaceProvisioningGate.tsx), which only renders
+      # the app layout once the user has a personal org. Real logins provision that
+      # org asynchronously (fire-and-forget self-heal on login); seeding it directly
+      # makes the gate open immediately, so the e2e is deterministic instead of
+      # racing a background job (and tolerant of Permit/Kafka being absent in CI).
+      - name: Create admin user (provisioned with personal org)
         working-directory: backend
         run: |
           node -e '
             const bcrypt = require("bcrypt");
+            const crypto = require("crypto");
             const knex = require("knex")({
               client: "pg",
               connection: { host: process.env.DB_HOST, port: +process.env.DB_PORT,
@@ -86,10 +94,32 @@ jobs:
             });
             (async () => {
               const password_hash = await bcrypt.hash("admin123", 10);
-              await knex("users").insert({ email: "admin@fuzefront.dev", password_hash,
+              const [u] = await knex("users").insert({ email: "admin@fuzefront.dev", password_hash,
                 first_name: "Admin", last_name: "User", roles: JSON.stringify(["admin","user"]) })
-                .onConflict("email").merge({ password_hash });
-              console.log("admin user ready");
+                .onConflict("email").merge({ password_hash }).returning("id");
+              const userId = u.id || u;
+              console.log("admin user ready", userId);
+
+              // Mirror ensurePersonalOrg(): one active personal org owned by the user.
+              const existing = await knex("organizations")
+                .where({ owner_id: userId, type: "personal" }).first();
+              if (!existing) {
+                const orgId = crypto.randomUUID();
+                await knex.transaction(async trx => {
+                  await trx("organizations").insert({ id: orgId, name: "Personal",
+                    slug: "personal-" + userId, parent_id: null, owner_id: userId,
+                    type: "personal", settings: JSON.stringify({}),
+                    metadata: JSON.stringify({ personal: true }), is_active: true,
+                    provisioning_state: "active" });
+                  await trx("organization_memberships").insert({ id: crypto.randomUUID(),
+                    user_id: userId, organization_id: orgId, role: "owner", status: "active",
+                    joined_at: new Date(), permissions: JSON.stringify({}),
+                    metadata: JSON.stringify({}) });
+                });
+                console.log("personal org provisioned", orgId);
+              } else {
+                console.log("personal org already present", existing.id);
+              }
               await knex.destroy();
             })().catch(e => { console.error(e); process.exit(1); });
           '
@@ -101,7 +131,7 @@ jobs:
           npm ci --include=dev   # need vite/@playwright (devDeps) despite NODE_ENV=production
           npm run build
           npx vite preview --port 4173 --host 127.0.0.1 > /tmp/frontend.log 2>&1 &
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:4173 >/dev/null 2>&1; then echo "frontend up"; exit 0; fi
             sleep 2
           done
@@ -114,7 +144,7 @@ jobs:
           npm install --include=dev   # need vite (devDep) despite NODE_ENV=production
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:4174/assets/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
             sleep 2
           done

@@ -1,7 +1,7 @@
 import { Knex } from 'knex'
 
 /**
- * Migration 010 — billing columns on public-schema entities.
+ * Migration 011 — billing columns on public-schema entities.
  *
  * Adds the four billing hot-path cache columns to both `users` and
  * `organizations`.  These are written back by the billing-service and read

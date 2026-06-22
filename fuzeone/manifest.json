@@ -1,0 +1,43 @@
+{
+  "fuzeoneVersion": "1",
+  "description": "Canonical FuzeOne family standard: the files an app-layer repo needs to be a member of the FuzeFront system and work in the proper SDLC.",
+  "hub": "izzywdev/FuzeFront",
+  "hubRef": "v1",
+  "vars": {
+    "REPO": "(target repo name, auto-detected from --target dir basename)",
+    "SCOPE": "@fuzefront",
+    "HUB": "izzywdev/FuzeFront",
+    "HUB_REF": "v1"
+  },
+  "managed": [
+    { "src": ".claude/agents/README.md",            "dest": ".claude/agents/README.md",            "mode": "copy" },
+    { "src": ".claude/agents/contract-designer.md",  "dest": ".claude/agents/contract-designer.md",  "mode": "copy" },
+    { "src": ".claude/agents/backend-engineer.md",   "dest": ".claude/agents/backend-engineer.md",   "mode": "copy" },
+    { "src": ".claude/agents/frontend-engineer.md",  "dest": ".claude/agents/frontend-engineer.md",  "mode": "copy" },
+    { "src": ".claude/agents/test-engineer.md",      "dest": ".claude/agents/test-engineer.md",      "mode": "copy" },
+    { "src": ".claude/agents/devops-engineer.md",    "dest": ".claude/agents/devops-engineer.md",    "mode": "copy" },
+    { "src": ".claude/agents/docs-maintainer.md",    "dest": ".claude/agents/docs-maintainer.md",    "mode": "copy" },
+
+    { "src": "fuzeone/templates/CLAUDE.fuzeone.md",  "dest": "CLAUDE.md",  "mode": "region", "marker": "FUZEONE" },
+    { "src": "fuzeone/templates/npmrc",              "dest": ".npmrc",     "mode": "template" },
+
+    { "src": "fuzeone/templates/github-workflows/claude.yml",            "dest": ".github/workflows/claude.yml",            "mode": "template" },
+    { "src": "fuzeone/templates/github-workflows/claude-auto-pr.yml",    "dest": ".github/workflows/claude-auto-pr.yml",    "mode": "template" },
+    { "src": "fuzeone/templates/github-workflows/claude-ci-autofix.yml", "dest": ".github/workflows/claude-ci-autofix.yml", "mode": "template" },
+    { "src": "fuzeone/templates/github-workflows/telegram-pr-merged.yml","dest": ".github/workflows/telegram-pr-merged.yml","mode": "template" },
+    { "src": "fuzeone/templates/github-workflows/auto-merge.yml",        "dest": ".github/workflows/auto-merge.yml",        "mode": "template" },
+
+    { "src": "fuzeone/templates/github-workflows/helm-validate.yml",     "dest": ".github/workflows/helm-validate.yml",     "mode": "template", "when": "has-helm" },
+    { "src": "fuzeone/templates/github-workflows/infra-dispatch.yml",    "dest": ".github/workflows/infra-dispatch.yml",    "mode": "template", "when": "has-infra" }
+  ],
+  "requiredSecrets": [
+    { "name": "ANTHROPIC_API_KEY",       "why": "@claude interactive handler + CI autofix" },
+    { "name": "TELEGRAM_BOT_TOKEN",      "why": "PR-merged notifications", "optional": true },
+    { "name": "TELEGRAM_CHAT_ID",        "why": "PR-merged notifications", "optional": true },
+    { "name": "FUZEINFRA_DISPATCH_TOKEN","why": "infra-request -> FuzeInfra repository_dispatch", "when": "has-infra" }
+  ],
+  "conditions": {
+    "has-helm": "target has deploy/helm/",
+    "has-infra": "target has deploy/terraform/ or deploy/argocd/"
+  }
+}

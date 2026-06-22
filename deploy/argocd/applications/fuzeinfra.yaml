@@ -11,8 +11,9 @@ spec:
     # Chart lives in the FuzeInfra git submodule (Argo inits submodules by default).
     path: FuzeInfra/helm/fuzeinfra
     helm:
-      # Contabo prod overlay: Postgres + Redis + monitoring only (no Mongo/Neo4j/
-      # ES/Kafka/RabbitMQ/Airflow). k3s local-path storage; public domain.
+      # Contabo prod overlay: Postgres + Redis + monitoring + Kafka + ChromaDB
+      # (no Mongo/Neo4j/ES/RabbitMQ/Airflow). Kafka backs the FuzeFront event bus
+      # and ChromaDB backs chat-RAG. k3s local-path storage; public domain.
       values: |
         global:
           storageClass: local-path
@@ -29,9 +30,11 @@ spec:
         mongoExpress: { enabled: false }
         neo4j: { enabled: false }
         elasticsearch: { enabled: false }
-        chromadb: { enabled: false }
-        kafka: { enabled: false }
-        kafkaUi: { enabled: false }
+        # ChromaDB + Kafka enabled: chat-RAG (vector store) and the event bus
+        # (email/sms/provisioning/billing/chat consumers) depend on them.
+        chromadb: { enabled: true }
+        kafka: { enabled: true }
+        kafkaUi: { enabled: false } # admin UI only — keep off in prod
         rabbitmq: { enabled: false }
         airflow: { enabled: false }
         dnsmasq: { enabled: false }

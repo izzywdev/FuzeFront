@@ -76,12 +76,15 @@
   --accent-hover: var(--indigo-700);
   --accent-soft:  rgba(110, 92, 255, 0.14);
   --accent-2:     var(--cyan-400);
+  --drop-active:  rgba(110, 92, 255, 0.18);   /* FileDropZone hover fill */
   /* status */
   --success-color: var(--mint-500);
   --warning-color: var(--amber-500);
   --error-color:   var(--coral-500);
   /* elevation */
   --shadow: rgba(0, 0, 0, 0.45);
+  /* modal / dialog scrim — dims the shell behind overlays */
+  --scrim: rgba(0, 0, 0, 0.55);
   /* signature: the seam where modules fuse at runtime */
   --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
 
@@ -122,10 +125,12 @@
   --accent-hover: var(--indigo-800);
   --accent-soft:  rgba(96, 72, 245, 0.10);
   --accent-2:     var(--cyan-500);
+  --drop-active:  rgba(96, 72, 245, 0.14);   /* FileDropZone hover fill (light) */
   --success-color: var(--mint-600);
   --warning-color: var(--amber-600);
   --error-color:   var(--coral-600);
   --shadow: rgba(15, 23, 42, 0.12);
+  --scrim: rgba(15, 23, 42, 0.32);
   --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
 
   --background: var(--bg-primary);
