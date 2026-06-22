@@ -1,4 +1,3 @@
-import React from 'react'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { SCOPE_GROUPS, type ScopeGroupKey } from './scopes'
 

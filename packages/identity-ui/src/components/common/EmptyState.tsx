@@ -1,4 +1,3 @@
-import React from 'react'
 import { Button, SeamDivider } from '@fuzefront/design-system'
 
 export type EmptyStateVariant =
