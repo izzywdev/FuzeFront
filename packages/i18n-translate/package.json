@@ -4,7 +4,6 @@
   "description": "Build-time CLI that AI-translates FuzeFront's English locale files into the curated language set via an OpenAI-compatible gateway (LiteLLM). Idempotent, ICU/interpolation-preserving, glossary-aware.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "type": "module",
   "bin": {
     "fuzefront-i18n-translate": "dist/cli.js"
   },
@@ -33,9 +32,6 @@
     "test:watch": "vitest --watch",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run clean && npm run build"
-  },
-  "dependencies": {
-    "fast-glob": "^3.3.2"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
