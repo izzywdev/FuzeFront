@@ -45,6 +45,13 @@ jobs:
       - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
         run: npm run -w @fuzefront/identity-ui build
 
+      # @fuzefront/i18n is consumed by the host (main.tsx, contexts, components).
+      # frontend/tsconfig.json resolves it to dist/index.d.ts (like identity-ui),
+      # so build it before the frontend type-check. vite/vitest still alias it to
+      # source for bundling/tests.
+      - name: Build @fuzefront/i18n (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/i18n build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check

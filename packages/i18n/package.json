@@ -1,0 +1,82 @@
+{
+  "name": "@fuzefront/i18n",
+  "version": "1.0.0",
+  "description": "Shared FuzeFront internationalization runtime: i18next + react-i18next provider, design-system language selector, and centralized RTL/LTR direction management.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "fuzefront",
+    "i18n",
+    "i18next",
+    "react-i18next",
+    "rtl",
+    "localization",
+    "internationalization"
+  ],
+  "author": "FuzeFront Team <team@fuzefront.dev>",
+  "license": "MIT",
+  "homepage": "https://fuzefront.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/i18n"
+  },
+  "bugs": {
+    "url": "mailto:team@fuzefront.dev"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "build:watch": "rollup -c -w",
+    "dev": "rollup -c -w",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests src",
+    "test:watch": "vitest --watch",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "dependencies": {
+    "@fuzefront/design-system": "^1.0.0",
+    "i18next": "^23.11.5",
+    "react-i18next": "^14.1.2"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.4",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.1",
+    "@rollup/plugin-typescript": "^11.1.3",
+    "@testing-library/dom": "^10.1.0",
+    "@testing-library/jest-dom": "^6.4.6",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "jsdom": "^24.1.0",
+    "rimraf": "^5.0.1",
+    "rollup": "^3.29.2",
+    "rollup-plugin-dts": "^6.0.2",
+    "tslib": "^2.8.1",
+    "typescript": "^5.1.6",
+    "vitest": "^3.2.4"
+  }
+}
