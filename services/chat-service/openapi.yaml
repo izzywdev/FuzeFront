@@ -197,6 +197,7 @@ paths:
     get:
       tags: [health]
       summary: Liveness/readiness probe (unauthenticated).
+      security: []
       responses:
         '200':
           description: Service healthy.
