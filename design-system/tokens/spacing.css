@@ -39,6 +39,8 @@
   --top-bar-height: 60px;
   --side-panel-width: 240px;
   --container-max: 1440px;
+  --modal-max-w: 560px;
+  --modal-max-w-lg: 720px;
 
   /* ---- Motion -------------------------------------------- */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
