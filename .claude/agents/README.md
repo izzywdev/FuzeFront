@@ -5,10 +5,13 @@ A standard set of **single-responsibility** agents, fanned out one-per-slice for
 ## Roles (scope is exclusive)
 - **contract-designer** — the detailed-design phase that runs **first**: user story → frozen API contract (OpenAPI/Swagger) + event contract (Kafka Zod schemas) + the generated `@fuzefront/<svc>-client` package, PR'd as the gate. Designs the interface; does NOT implement behind it.
 - **backend-engineer** — API / services / DB / migrations + the backend's own unit tests. NOT UI, NOT the independent test suite, NOT deploy, NOT docs.
-- **frontend-engineer** — UI as a private design-system-first npm package, built against the contract/client. NOT backend, NOT deploy.
-- **test-engineer** — INDEPENDENT verification: contract / acceptance / integration tests written against the **spec** (not the implementer's self-tests). Does NOT implement the feature.
+- **frontend-engineer** — UI as a private design-system-first npm package, built against the contract/client. **Sole owner of `design-system/`**: derives needed components from the user story, adds missing primitives to the design system FIRST (landed as a foundation), then builds the feature UI consuming them. NOT backend, NOT UI e2e, NOT deploy.
+- **test-engineer** — INDEPENDENT **API/service** verification: contract / integration / event tests against the **spec** (not the implementer's self-tests). Does NOT implement; does NOT do UI/browser e2e.
+- **frontend-test-engineer** — INDEPENDENT **UI** verification: Playwright/browser e2e against acceptance criteria, **pre-production** (ephemeral stack) **and post-production** (smoke/synthetic vs the live app). Runs after `frontend-engineer`. Does NOT build the UI or design system.
 - **devops-engineer** — Helm / Argo / CI/CD / infra-request wiring. NOT app code, NOT UI.
 - **docs-maintainer** — consumer guides / runbooks / READMEs / API docs from the contract. NOT code.
+
+> **Only `frontend-engineer` edits `design-system/`.** Every other agent consumes it. When several UI features run in parallel, design-system extensions land in **one foundation PR first** — never re-edited per feature branch (that parallel duplication is what strands features in merge conflicts).
 
 ## Mandatory DONE contract (every domain agent, no exceptions)
 An agent reports completion **only for its own domain**. The final report MUST contain both:
@@ -19,7 +22,8 @@ Rules: **Never** claim the *feature* is "done" or "green" — only your slice. I
 
 ## Orchestration (sequence)
 1. **contract-designer** runs alone first → frozen contract PR (the gate). Nothing fans out until it's merged/frozen.
-2. Then fan out **backend-engineer + frontend-engineer + test-engineer + devops-engineer** (+ **docs-maintainer**) **in parallel**, each gated only on the contract — not on each other (UI builds against a contract mock, tests against the spec).
-3. Each slice is its own draft PR; the feature is "done" only when **every** slice's PR is green and merged — the orchestrator's judgement, never a single agent's.
+2. Then fan out **backend-engineer + frontend-engineer + test-engineer + devops-engineer** (+ **docs-maintainer**) **in parallel**, each gated only on the contract — not on each other (UI builds against a contract mock, tests against the spec). `frontend-engineer` does its **design-system foundation step first**; if multiple UI features run together, that DS foundation is its own PR merged before the parallel UI builds.
+3. **`frontend-test-engineer` runs after `frontend-engineer`** — Playwright pre-production verification gates the merge; post-production smoke runs after deploy.
+4. Each slice is its own draft PR; the feature is "done" only when **every** slice's PR is green and merged — the orchestrator's judgement, never a single agent's.
 
 See CLAUDE.md → "Contract-first parallel fan-out" + "Domain agents".
