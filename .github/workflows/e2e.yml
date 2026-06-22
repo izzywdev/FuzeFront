@@ -90,40 +90,6 @@ jobs:
                 first_name: "Admin", last_name: "User", roles: JSON.stringify(["admin","user"]) })
                 .onConflict("email").merge({ password_hash });
               console.log("admin user ready");
-
-              // Fetch user id so we can create their personal org (required by
-              // WorkspaceProvisioningGate: it blocks the app shell until a
-              // personal org exists for the authenticated user).
-              const [user] = await knex("users")
-                .where({ email: "admin@fuzefront.dev" })
-                .select("id");
-
-              // Create personal org if absent (idempotent: check first).
-              let [org] = await knex("organizations")
-                .where({ owner_id: user.id, type: "personal" })
-                .select("id");
-              if (!org) {
-                [org] = await knex("organizations")
-                  .insert({
-                    name: "Admin Personal Workspace",
-                    slug: "admin-personal-" + user.id.substring(0, 8),
-                    owner_id: user.id,
-                    type: "personal",
-                    is_active: true,
-                    provisioning_state: "active",
-                  })
-                  .returning("id");
-              }
-              console.log("personal org ready:", org.id);
-
-              // Create owner membership so the org is visible via GET /organizations.
-              await knex("organization_memberships")
-                .insert({ user_id: user.id, organization_id: org.id,
-                          role: "owner", status: "active" })
-                .onConflict(["user_id", "organization_id"])
-                .merge({ role: "owner", status: "active" });
-              console.log("membership ready");
-
               await knex.destroy();
             })().catch(e => { console.error(e); process.exit(1); });
           '
