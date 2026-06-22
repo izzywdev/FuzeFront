@@ -14,7 +14,7 @@ export default defineConfig({
         // leaves __rf_placeholder__shareScope unresolved → runtime ReferenceError.
         _dynamic: 'http://localhost/remoteEntry.js',
       },
-      shared: ['react', 'react-dom'],
+      shared: ['react', 'react-dom', '@fuzefront/identity-ui', '@fuzefront/design-system'],
     }),
   ],
   build: {
