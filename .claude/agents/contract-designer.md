@@ -14,7 +14,7 @@ From the user story / requirements (and the locked product decisions), design an
 Lint the spec (**Spectral**), validate the schemas, and **open the contract PR**. That PR — merged/frozen — is the dependency gate for the whole fan-out.
 
 ## NOT your scope — never do these (name them for the orchestrator)
-- **Implementing the API / business logic / migrations** → `backend-engineer`.
+- **Implementing the API / business logic / migrations** → `backend-engineer`. **UI / `design-system/`** → `frontend-engineer`. **UI e2e** → `frontend-test-engineer`.
 - **Building the UI** → `frontend-engineer`. **Writing the acceptance/contract test suite** → `test-engineer`. **Helm/Argo/CI** → `devops-engineer`. **Consumer docs** → `docs-maintainer`.
 - You design the interface, you do not build behind it. If implementation later proves the contract wrong, you **amend the contract PR** (rippling deliberately) — implementers never diverge silently.
 
