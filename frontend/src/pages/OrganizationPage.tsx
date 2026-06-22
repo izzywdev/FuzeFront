@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useCurrentUser } from '../lib/shared'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
-import { MembersManagement } from '../components/MembersManagement'
+import { IdentityPage } from '@fuzefront/identity-ui'
 import {
   getOrganizations,
   getOrganizationMembers,
@@ -477,9 +477,10 @@ function OrganizationPage() {
           )}
 
           {activeTab === 'members' && (
-            <MembersManagement
-              organization={currentOrg}
-              members={members}
+            <IdentityPage
+              organizationId={currentOrg.id}
+              userRole={currentOrg.user_role ?? 'viewer'}
+              userId={user?.id}
               onMembersChange={() => loadMembers(currentOrg.id)}
             />
           )}

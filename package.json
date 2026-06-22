@@ -9,7 +9,9 @@
     "backend/security",
     "backend/applications",
     "shared",
-    "packages/chat-client"
+    "packages/chat-client",
+    "packages/identity-ui",
+    "design-system"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

@@ -1,0 +1,18 @@
+{
+  "name": "@fuzefront/design-system",
+  "version": "1.0.0",
+  "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./tokens/*": "./tokens/*",
+    "./styles.css": "./styles.css"
+  },
+  "files": ["components", "tokens", "index.js", "index.d.ts", "styles.css", "_ds_manifest.json"],
+  "peerDependencies": { "react": "^18.0.0", "react-dom": "^18.0.0" },
+  "publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" },
+  "repository": { "type": "git", "url": "https://github.com/fuzefront/FuzeFront.git", "directory": "design-system" }
+}
