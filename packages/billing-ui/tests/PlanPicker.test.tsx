@@ -5,22 +5,30 @@ import { PlanPicker } from '../src/components/PlanPicker';
 import { renderWithI18n, makePlan } from './helpers';
 
 const plans = [
-  makePlan({ stripePriceId: 'free_m', tierName: 'free', displayName: 'Free', unitAmount: 0, sortOrder: 0, billingInterval: 'month', features: ['1 app'] }),
+  makePlan({ stripePriceId: 'free_m', tierName: 'free', displayName: 'Starter', unitAmount: 0, sortOrder: 0, billingInterval: 'month', features: ['1 app'] }),
   makePlan({ stripePriceId: 'pro_m', displayName: 'Pro', unitAmount: 2900, sortOrder: 2, billingInterval: 'month' }),
-  makePlan({ stripePriceId: 'pro_y', displayName: 'Pro', unitAmount: 29000, sortOrder: 2, billingInterval: 'year' }),
+  makePlan({ stripePriceId: 'pro_y', displayName: 'Pro Annual', unitAmount: 29000, sortOrder: 2, billingInterval: 'year' }),
 ];
+
+/** Locate a plan card section by its heading text. */
+function cardByName(name: string): HTMLElement {
+  const heading = screen.getByRole('heading', { level: 3, name });
+  return heading.closest('section') as HTMLElement;
+}
 
 describe('PlanPicker / PlanCard', () => {
   it('renders one card per plan for the active interval', () => {
     renderWithI18n(<PlanPicker plans={plans} />);
-    // Default interval month → Free + Pro monthly (2 cards)
+    // Default interval month → Starter + Pro monthly (2 cards)
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(2);
   });
 
-  it('formats a paid plan price as localized currency and free as "Free"', () => {
+  it('formats a paid plan price as localized currency and a zero-cost plan as "Free"', () => {
     renderWithI18n(<PlanPicker plans={plans} showIntervalToggle={false} />);
     expect(screen.getByText('$29.00')).toBeInTheDocument();
-    expect(screen.getByText('Free')).toBeInTheDocument();
+    // The zero-cost Starter plan shows the "Free" price label inside its card.
+    const starter = cardByName('Starter');
+    expect(within(starter).getByText('Free')).toBeInTheDocument();
   });
 
   it('toggles between monthly and yearly intervals', async () => {
@@ -35,7 +43,7 @@ describe('PlanPicker / PlanCard', () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     renderWithI18n(<PlanPicker plans={plans} showIntervalToggle={false} onSelect={onSelect} />);
-    const proCard = screen.getByText('Pro').closest('section')!;
+    const proCard = cardByName('Pro');
     await user.click(within(proCard).getByRole('button', { name: 'Select' }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ stripePriceId: 'pro_m' }));
   });
@@ -44,8 +52,10 @@ describe('PlanPicker / PlanCard', () => {
     renderWithI18n(
       <PlanPicker plans={plans} showIntervalToggle={false} currentPriceId="pro_m" />,
     );
-    expect(screen.getByText('Current plan')).toBeInTheDocument();
-    const proCard = screen.getAllByText('Pro')[0].closest('section')!;
+    const proCard = cardByName('Pro');
+    // The current-plan badge marks the card…
+    expect(within(proCard).getByText('Current plan', { selector: 'span' })).toBeInTheDocument();
+    // …and its select button is disabled (cannot re-select the active plan).
     expect(within(proCard).getByRole('button')).toBeDisabled();
   });
 
