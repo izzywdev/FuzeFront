@@ -47,7 +47,8 @@ jobs:
       - name: Build & push backend
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: .
+          file: backend/Dockerfile
           push: true
           tags: |
             ghcr.io/izzywdev/fuzefront-backend:${{ steps.tag.outputs.sha }}
