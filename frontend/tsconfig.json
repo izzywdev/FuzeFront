@@ -23,8 +23,16 @@
       // transitive "react" types, which live outside ./frontend) so the host
       // type-check covers the wiring. Real installs resolve these as deps.
       "@fuzefront/design-system": ["../design-system/index.d.ts"],
+      // The @fuzefront/i18n + design-system source live outside ./frontend and
+      // resolve their runtime/type deps relative to their own location (which
+      // has no node_modules in this tree). Map those deps to the host's
+      // installed copies so the host type-check resolves the wiring. Real
+      // installs resolve them as the packages' own deps.
       "react": ["./node_modules/@types/react"],
-      "react-dom": ["./node_modules/@types/react-dom"]
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "i18next": ["./node_modules/i18next"],
+      "react-i18next": ["./node_modules/react-i18next"]
     }
   },
   "include": ["src"],
