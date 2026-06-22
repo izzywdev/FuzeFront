@@ -79,7 +79,10 @@
   .ff-select {
     width: 100%;
     box-sizing: border-box;
-    padding: var(--space-3) calc(var(--space-3) + var(--space-6)) var(--space-3) var(--space-3);
+    /* Logical spacing: inline-end room for the chevron mirrors under dir="rtl". */
+    padding-block: var(--space-3);
+    padding-inline-start: var(--space-3);
+    padding-inline-end: calc(var(--space-3) + var(--space-6));
     font-family: var(--font-sans);
     font-size: var(--text-sm);
     font-weight: var(--weight-regular);
@@ -89,6 +92,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     outline: none;
+    text-align: start;
     cursor: pointer;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -105,7 +109,7 @@
   .ff-select option { background: var(--bg-tertiary); color: var(--text-primary); }
   .chevron {
     position: absolute;
-    right: var(--space-3);
+    inset-inline-end: var(--space-3);
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;

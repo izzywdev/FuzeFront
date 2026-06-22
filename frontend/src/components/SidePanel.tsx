@@ -1,12 +1,12 @@
 import { useGlobalMenu, useCurrentUser, useAppContext } from '../lib/shared'
-import { useLanguage } from '../contexts/LanguageContext'
+import { useT } from '@fuzefront/i18n'
 import type { MenuItem } from '../lib/shared'
 
 function SidePanel() {
   const globalMenu = useGlobalMenu() as any // Temporary type assertion while types are updating
   const { user } = useCurrentUser()
   const { state } = useAppContext()
-  const { t } = useLanguage()
+  const { t } = useT()
 
   // Safely access new menu properties with fallbacks
   const portalMenuItems =
@@ -50,7 +50,7 @@ function SidePanel() {
             marginBottom: '0.5rem',
           }}
         >
-          {t('portal')}
+          {t('nav.portal')}
         </div>
         {portalMenuItems
           .filter((item: MenuItem) => item.id !== 'help') // Filter out help for now
@@ -61,7 +61,11 @@ function SidePanel() {
               onClick={() => handleMenuClick(item)}
             >
               <span>{item.icon}</span>
-              <span>{t(item.label.toLowerCase())}</span>
+              <span>
+                {t(`nav.${item.label.toLowerCase()}`, {
+                  defaultValue: item.label,
+                })}
+              </span>
             </div>
           ))}
 
@@ -71,7 +75,7 @@ function SidePanel() {
           onClick={() => (window.location.href = '/organizations')}
         >
           <span>🏢</span>
-          <span>Organizations</span>
+          <span>{t('nav.organizations')}</span>
         </div>
 
         {/* Profile section */}
@@ -80,7 +84,7 @@ function SidePanel() {
           onClick={() => (window.location.href = '/profile')}
         >
           <span>👤</span>
-          <span>Profile</span>
+          <span>{t('nav.profile')}</span>
         </div>
 
         {/* Admin section within portal */}
@@ -90,7 +94,7 @@ function SidePanel() {
             onClick={() => (window.location.href = '/admin')}
           >
             <span>⚙️</span>
-            <span>{t('adminPanel')}</span>
+            <span>{t('nav.adminPanel')}</span>
           </div>
         )}
       </div>
@@ -113,7 +117,7 @@ function SidePanel() {
               marginBottom: '0.5rem',
             }}
           >
-            {state.activeApp ? state.activeApp.name : t('appMenu')}
+            {state.activeApp ? state.activeApp.name : t('nav.appMenu')}
           </div>
           {appMenuItems.map((item: MenuItem) => (
             <div
@@ -151,7 +155,7 @@ function SidePanel() {
           onClick={() => (window.location.href = '/test')}
         >
           <span>🧪</span>
-          <span>Test Components</span>
+          <span>{t('nav.testComponents')}</span>
         </div>
 
         <div
@@ -159,7 +163,7 @@ function SidePanel() {
           onClick={() => (window.location.href = '/help')}
         >
           <span>❓</span>
-          <span>{t('help')}</span>
+          <span>{t('nav.help')}</span>
         </div>
 
         <div
@@ -167,7 +171,7 @@ function SidePanel() {
           onClick={() => (window.location.href = '/status')}
         >
           <span>🩺</span>
-          <span>{t('status')}</span>
+          <span>{t('nav.status')}</span>
         </div>
       </div>
     </div>

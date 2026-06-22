@@ -221,9 +221,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   })
 
   useEffect(() => {
-    // Apply language direction to document
-    document.documentElement.dir = language === 'he' ? 'rtl' : 'ltr'
-    document.documentElement.lang = language
+    // NOTE: `<html dir>`/`<html lang>` are now owned by the centralized direction
+    // manager in @fuzefront/i18n (driven by the active i18next language), so this
+    // legacy provider no longer writes them — doing so would race the manager.
+    // We still persist the legacy key for not-yet-migrated useLanguage() consumers.
     localStorage.setItem('language', language)
   }, [language])
 

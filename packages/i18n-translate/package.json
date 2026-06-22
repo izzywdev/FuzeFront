@@ -1,0 +1,42 @@
+{
+  "name": "@fuzefront/i18n-translate",
+  "version": "1.0.0",
+  "description": "Build-time CLI that AI-translates FuzeFront's English locale files into the curated language set via an OpenAI-compatible gateway (LiteLLM). Idempotent, ICU/interpolation-preserving, glossary-aware.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "fuzefront-i18n-translate": "dist/cli.js"
+  },
+  "files": ["dist", "README.md"],
+  "keywords": ["fuzefront", "i18n", "translation", "litellm", "icu", "build-time", "cli"],
+  "author": "FuzeFront Team <team@fuzefront.dev>",
+  "license": "MIT",
+  "homepage": "https://fuzefront.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/i18n-translate"
+  },
+  "bugs": {
+    "url": "mailto:team@fuzefront.dev"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests src",
+    "test:watch": "vitest --watch",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "rimraf": "^5.0.1",
+    "typescript": "^5.1.6",
+    "vitest": "^3.2.4"
+  }
+}

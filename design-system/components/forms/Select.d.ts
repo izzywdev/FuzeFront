@@ -21,6 +21,8 @@ export interface SelectProps
   label?: string;
   /** Options to render; alternatively pass `<option>` children directly. */
   options?: SelectOption[];
+  /** `<option>` elements, rendered after `options`/`placeholder`. */
+  children?: React.ReactNode;
   /** Disabled leading option shown when nothing is selected (e.g. "Choose a role"). */
   placeholder?: string;
   /** Validation message; when present, borders the control red and renders below it. */

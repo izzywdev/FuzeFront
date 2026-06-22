@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { useCurrentUser } from '../lib/shared'
 import { useTheme } from '../contexts/ThemeContext'
-import { useLanguage } from '../contexts/LanguageContext'
 import { useChat } from '../contexts/ChatContext'
+import { LanguageSelector, useT } from '@fuzefront/i18n'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
 import { OrganizationSelector } from './OrganizationSelector'
@@ -11,9 +10,8 @@ import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 function TopBar() {
   const { user } = useCurrentUser()
   const { theme, toggleTheme } = useTheme()
-  const { language, setLanguage, t } = useLanguage()
+  const { t } = useT()
   const { state: chatState, toggleChat } = useChat()
-  const [isLanguageOpen, setIsLanguageOpen] = useState(false)
 
   return (
     <div className="top-bar">
@@ -41,120 +39,18 @@ function TopBar() {
         <OrganizationSelector compact={true} />
         <AppSelector />
 
-        {/* Language Selector */}
-        <div style={{ position: 'relative' }}>
-          <button
-            className="theme-toggle"
-            onClick={() => setIsLanguageOpen(!isLanguageOpen)}
-            title="Change Language"
-          >
-            🌐
-          </button>
-
-          {isLanguageOpen && (
-            <>
-              <div
-                style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'transparent',
-                  zIndex: 999,
-                }}
-                onClick={() => setIsLanguageOpen(false)}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: '0',
-                  marginTop: '8px',
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  padding: '8px',
-                  minWidth: '120px',
-                  zIndex: 1000,
-                  boxShadow: '0 8px 32px var(--shadow)',
-                }}
-              >
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    color: 'var(--text-primary)',
-                    fontSize: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor:
-                      language === 'en' ? 'var(--accent-color)' : 'transparent',
-                    transition: 'background-color 0.2s ease',
-                  }}
-                  onClick={() => {
-                    setLanguage('en')
-                    setIsLanguageOpen(false)
-                  }}
-                  onMouseEnter={e => {
-                    if (language !== 'en') {
-                      e.currentTarget.style.backgroundColor =
-                        'var(--bg-quaternary)'
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (language !== 'en') {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                    }
-                  }}
-                >
-                  🇺🇸 English
-                </div>
-
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    color: 'var(--text-primary)',
-                    fontSize: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor:
-                      language === 'he' ? 'var(--accent-color)' : 'transparent',
-                    transition: 'background-color 0.2s ease',
-                  }}
-                  onClick={() => {
-                    setLanguage('he')
-                    setIsLanguageOpen(false)
-                  }}
-                  onMouseEnter={e => {
-                    if (language !== 'he') {
-                      e.currentTarget.style.backgroundColor =
-                        'var(--bg-quaternary)'
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (language !== 'he') {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                    }
-                  }}
-                >
-                  🇮🇱 עברית
-                </div>
-              </div>
-            </>
-          )}
+        {/* Language Selector — design-system Select via @fuzefront/i18n.
+            Selecting a language drives the shared i18next instance, persists the
+            choice, and flips <html dir> through the centralized direction manager. */}
+        <div style={{ minWidth: '150px' }}>
+          <LanguageSelector hideLabel />
         </div>
 
         {/* Chat Toggle */}
         <button
           className={`theme-toggle ${chatState.isOpen ? 'active' : ''}`}
           onClick={toggleChat}
-          title={chatState.isOpen ? 'Close AI Assistant' : 'Open AI Assistant'}
+          title={t(chatState.isOpen ? 'assistant.close' : 'assistant.open')}
           style={{
             backgroundColor: chatState.isOpen
               ? 'var(--accent-color)'
@@ -169,7 +65,7 @@ function TopBar() {
         <button
           className="theme-toggle"
           onClick={toggleTheme}
-          title={t(theme === 'dark' ? 'switchToLight' : 'switchToDark')}
+          title={t(theme === 'dark' ? 'theme.switchToLight' : 'theme.switchToDark')}
         >
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>

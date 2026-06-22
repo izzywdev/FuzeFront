@@ -1,10 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { I18nProvider } from '@fuzefront/i18n'
 import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
+import { resources } from './i18n/resources'
 import App from './App.tsx'
+// Design-system token scales (spacing / type / radii / motion) the DS
+// components — e.g. the <Select> rendered by @fuzefront/i18n's
+// LanguageSelector — depend on. Imported before index.css so the host's own
+// color theme (defined there) still wins where the two overlap.
+import '@fuzefront/design-system/styles.css'
 import './index.css'
 
 // Enhanced console logging for debugging
@@ -101,13 +108,19 @@ console.log('🚀 Frontend Application Starting:', {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <LanguageProvider>
-        <ThemeProvider>
-          <AppProvider>
-            <App />
-          </AppProvider>
-        </ThemeProvider>
-      </LanguageProvider>
+      {/* Shared i18n runtime: owns the single i18next instance + the centralized
+          <html dir/lang> direction manager. Bundled locale JSON is inlined from
+          the repo-root `locales/` tree. The legacy LanguageProvider stays mounted
+          for not-yet-migrated useLanguage() consumers during incremental rollout. */}
+      <I18nProvider resources={resources}>
+        <LanguageProvider>
+          <ThemeProvider>
+            <AppProvider>
+              <App />
+            </AppProvider>
+          </ThemeProvider>
+        </LanguageProvider>
+      </I18nProvider>
     </BrowserRouter>
   </React.StrictMode>
 )
