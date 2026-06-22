@@ -283,8 +283,15 @@ router.get('/', authenticateToken, async (req: any, res) => {
       }
     }
 
+    // `is_active` defaults to the boolean `true` (when no query param is sent),
+    // but arrives as a string when it IS sent. Comparing `true === 'true'`
+    // yields false, which previously filtered to is_active=false and hid every
+    // active org (including the user's personal org) — leaving the frontend
+    // WorkspaceProvisioningGate stuck on "Creating your workspace…". Coerce both
+    // shapes: treat boolean true and the string 'true' as active.
     if (is_active !== undefined) {
-      query = query.where('organizations.is_active', is_active === 'true')
+      const wantActive = is_active === true || is_active === 'true'
+      query = query.where('organizations.is_active', wantActive)
     }
 
     if (search) {
