@@ -33,7 +33,10 @@ export default defineConfig({
         // leaves __rf_placeholder__shareScope unresolved → runtime ReferenceError.
         _dynamic: 'http://localhost/remoteEntry.js',
       },
-      shared: ['react', 'react-dom', '@fuzefront/identity-ui', '@fuzefront/design-system'],
+      // @fuzefront/* packages are aliased to local source (not real npm packages),
+      // so they must NOT be in shared — the federation plugin would try to read
+      // their package.json from the alias target (a .ts file), causing ENOTDIR.
+      shared: ['react', 'react-dom'],
     }),
   ],
   build: {
