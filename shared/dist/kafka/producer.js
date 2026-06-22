@@ -1,4 +1,7 @@
-export class TypedProducer {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TypedProducer = void 0;
+class TypedProducer {
     constructor(kafka) {
         this.producer = kafka.producer();
     }
@@ -24,3 +27,4 @@ export class TypedProducer {
         return this.producer;
     }
 }
+exports.TypedProducer = TypedProducer;
