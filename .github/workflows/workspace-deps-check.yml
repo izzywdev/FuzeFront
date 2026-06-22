@@ -1,0 +1,29 @@
+name: Workspace deps
+
+# Fail fast when a consumer references an in-repo package by a registry spec
+# instead of resolving it from source. This is the PR #65 break: frontend listed
+# "@fuzefront/identity-ui": "^0.1.0" for a package that lives in this repo but was
+# not a resolvable workspace, so `npm ci` 404'd against the registry. The check is
+# dependency-free and needs no install, so it gates every PR cheaply. See the
+# fuzefront-ui-package skill, non-negotiable #7.
+on:
+  pull_request:
+    paths:
+      - '**/package.json'
+      - 'scripts/check-workspace-deps.mjs'
+      - '.github/workflows/workspace-deps-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-deps:
+    name: In-repo packages resolve from source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+      - name: Check workspace dependency wiring
+        run: node scripts/check-workspace-deps.mjs
