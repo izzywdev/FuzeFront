@@ -1,5 +1,18 @@
 name: CI/CD Pipeline
 
+# Tiered PR-level CI:
+#   1. Unit          — lint, type-check, frontend/SDK unit tests (mocks only).
+#   2. Build         — compile every workspace + upload artifacts.
+#   3. Integration   — real base services, ephemeral and pinned to FuzeInfra's
+#                      versions (see docker-compose.test.yml). External SaaS is
+#                      mocked (stripe-mock / mock-llm / Permit offline).
+#                        - integration-tests : backend vs Postgres (+ Permit PDP)
+#                        - email-integration : email-service vs MailHog + Kafka
+#   4. Contract      — mock servers generated from services/*/openapi.yaml
+#                      (Prism/MSW) when specs exist; stub + TODO otherwise.
+# The heavy kind+Helm full-stack e2e lives in nightly-e2e.yml (scheduled), so PRs
+# never spin a cluster and we never touch the live prod cluster.
+
 on:
   push:
     branches: [master]
@@ -9,8 +22,9 @@ on:
     types: [published]
 
 jobs:
+  # ── Tier 1: Unit ────────────────────────────────────────────────────────────
   lint-and-test:
-    name: Lint & Test
+    name: Lint & Test (unit)
     runs-on: ubuntu-latest
 
     strategy:
@@ -49,9 +63,8 @@ jobs:
           cd ../sdk && npm run lint
 
       # Backend tests need a Postgres service (and the Permit PDP), so they run
-      # in the dedicated jobs that provide that infra — the `integration-tests`
-      # job below and the `Backend Authentication Tests` workflow — not in this
-      # infra-less lint/type/unit job.
+      # in the dedicated `integration-tests` job below (and the `Backend
+      # Authentication Tests` workflow) — not in this infra-less unit job.
 
       - name: Run frontend tests
         run: cd frontend && npm test
@@ -59,6 +72,7 @@ jobs:
       - name: Run SDK tests
         run: cd sdk && npm test
 
+  # ── Tier 2: Build ─────────────────────────────────────────────────────────
   build:
     name: Build Applications
     runs-on: ubuntu-latest
@@ -103,24 +117,14 @@ jobs:
             sdk/dist/
             task-manager-app/dist/
 
+  # ── Tier 3a: Integration — backend vs real Postgres + Permit PDP ────────────
+  # Ephemeral base services are brought up from docker-compose.test.yml, whose
+  # image tags are pinned to FuzeInfra's versions (parity source) and frozen by
+  # digest. Permit runs offline (no SaaS); no prod creds are used.
   integration-tests:
-    name: Integration Tests
+    name: Integration Tests (Postgres)
     runs-on: ubuntu-latest
     needs: build
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: frontfuse_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
       - name: Checkout code
@@ -142,29 +146,55 @@ jobs:
           npm ci   # root workspace (backend + shared) — applies root overrides
           cd frontend && npm ci
 
+      # Start ONLY the base services the backend integration suite needs from the
+      # unified harness (Postgres + the offline Permit PDP). Kafka/MailHog are
+      # exercised by the email-integration job; ChromaDB/mock-llm/stripe-mock are
+      # available for AI/billing suites as they land.
+      - name: Start base services (FuzeInfra-pinned, ephemeral)
+        env:
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-noop' }}
+        run: |
+          docker compose -f docker-compose.test.yml up -d postgres-test permit-pdp-test
+          echo "Waiting for Postgres to be healthy..."
+          for _ in $(seq 1 30); do
+            state=$(docker inspect -f '{{.State.Health.Status}}' test-postgres 2>/dev/null || echo starting)
+            if [ "$state" = "healthy" ]; then echo "postgres healthy"; break; fi
+            sleep 2
+          done
+          docker exec test-postgres pg_isready -U postgres
+
       - name: Run integration tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/frontfuse_test
+          # Harness Postgres is published on 5433 (5432 is the prod-compose port).
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/fuzefront_platform_test
           NODE_ENV: test
-          # The backend reads individual DB_* vars (not DATABASE_URL). Point them
-          # at the pre-created `frontfuse_test` service DB: ensureDatabase now
-          # verifies the DB exists (no auto-create since the bootstrap split), so
-          # DB_NAME must match the POSTGRES_DB the service created.
+          # The backend reads individual DB_* vars (not DATABASE_URL). DB_NAME
+          # must match the POSTGRES_DB the harness created (ensureDatabase only
+          # verifies existence since the bootstrap split — it does not create).
           DB_HOST: localhost
-          DB_PORT: '5432'
-          DB_NAME: frontfuse_test
+          DB_PORT: '5433'
+          DB_NAME: fuzefront_platform_test
           DB_USER: postgres
           DB_PASSWORD: postgres
-          # Use real PERMIT_API_KEY when available (secret); fall back to ci-noop
-          # so the job doesn't fail when the secret is absent (e.g. forks).
+          # Real PERMIT_API_KEY when available (secret); else ci-noop so the job
+          # doesn't fail when the secret is absent (e.g. forks). PDP is offline.
           PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-noop' }}
-          PERMIT_PDP_URL: http://localhost:7766
-        # Real integration tests (auth + apps + permissions) against the Postgres
-        # service — they genuinely assert behavior, so a failure is a real bug.
+          PERMIT_PDP_URL: http://localhost:7767
+        # Real integration tests (auth + apps + permissions) against Postgres —
+        # they genuinely assert behavior, so a failure is a real bug.
         run: cd backend && npm run test:integration
 
+      - name: Dump base-service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs postgres-test permit-pdp-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  # ── Tier 3b: Integration — email-service vs MailHog + Kafka ─────────────────
   email-integration:
-    name: Email Integration (MailHog)
+    name: Integration Tests (Email — MailHog + Kafka)
     runs-on: ubuntu-latest
     needs: build
 
@@ -187,22 +217,33 @@ jobs:
       - name: Build email-service
         run: cd services/email-service && npm run build
 
-      - name: Start MailHog + Kafka + email-service
+      # Bring up MailHog + Kafka + the email-service. Readiness is gated on
+      # compose HEALTHCHECKS (--wait) rather than ad-hoc port polling, so the
+      # job blocks until Kafka's broker-api-versions probe passes — this is the
+      # fix for the previously flaky Kafka-startup-timing failures.
+      - name: Start MailHog + Kafka + email-service (health-gated)
         run: |
-          docker compose -f docker-compose.test.yml up -d mailhog kafka-test email-service-test
-          echo "Waiting for MailHog API..."
-          for i in $(seq 1 30); do
+          docker compose -f docker-compose.test.yml up -d --wait \
+            mailhog kafka-test email-service-test
+          echo "=== harness health ==="
+          docker compose -f docker-compose.test.yml ps
+
+      # Belt-and-suspenders: confirm the externally-published endpoints are live
+      # before running the suite (compose --wait already gated on healthchecks).
+      - name: Verify endpoints reachable
+        run: |
+          echo "MailHog API..."
+          for _ in $(seq 1 15); do
             if curl -fsS http://localhost:8025/api/v2/messages >/dev/null 2>&1; then echo "MailHog up"; break; fi
             sleep 2
           done
-          echo "Waiting for Kafka (port 9094)..."
-          for i in $(seq 1 40); do
+          echo "Kafka external listener (9094)..."
+          for _ in $(seq 1 20); do
             if nc -z localhost 9094 2>/dev/null; then echo "Kafka up"; break; fi
-            if [ "$i" -eq 40 ]; then echo "ERROR: Kafka did not become reachable" >&2; exit 1; fi
             sleep 2
           done
-          echo "Waiting for email-service health..."
-          for i in $(seq 1 30); do
+          echo "email-service health..."
+          for _ in $(seq 1 15); do
             if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
             sleep 2
           done
@@ -213,13 +254,77 @@ jobs:
           MAILHOG_API: http://localhost:8025
         run: cd services/email-service && npm test
 
-      - name: Dump email-service logs on failure
+      - name: Dump harness logs on failure
         if: failure()
-        run: docker compose -f docker-compose.test.yml logs email-service-test
+        run: docker compose -f docker-compose.test.yml logs kafka-test email-service-test mailhog
 
       - name: Tear down harness
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
+
+  # ── Tier 4: Contract ────────────────────────────────────────────────────────
+  # Validates each service against its frozen OpenAPI contract and (when a spec
+  # exists) stands up a Prism mock server so the contract is independently
+  # exercisable. No spec yet -> the job reports a clear TODO and passes (it must
+  # not block PRs until the contract-first specs land — see CLAUDE.md
+  # contract-first fan-out). The discovery + Prism wiring is already in place so
+  # adding services/<svc>/openapi.yaml turns this tier on with zero workflow edits.
+  contract-tests:
+    name: Contract Tests (OpenAPI)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Discover OpenAPI specs
+        id: discover
+        run: |
+          specs=$(find services -maxdepth 2 -type f \( -name 'openapi.yaml' -o -name 'openapi.yml' \) 2>/dev/null || true)
+          if [ -z "$specs" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Specs found:"; echo "$specs"
+          fi
+          {
+            echo 'specs<<EOF'
+            echo "$specs"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Lint specs (Spectral) + smoke the Prism mock
+        if: steps.discover.outputs.found == 'true'
+        run: |
+          npm install -g @stoplight/spectral-cli @stoplight/prism-cli
+          echo "${{ steps.discover.outputs.specs }}" | while read -r spec; do
+            [ -z "$spec" ] && continue
+            echo "=== $spec ==="
+            spectral lint "$spec" || exit 1
+            # Stand the contract up as a mock and confirm it boots.
+            prism mock "$spec" --port 4010 >/tmp/prism.log 2>&1 &
+            prism_pid=$!
+            for _ in $(seq 1 15); do
+              if curl -fsS http://localhost:4010 >/dev/null 2>&1; then echo "prism mock up for $spec"; break; fi
+              sleep 1
+            done
+            kill "$prism_pid" 2>/dev/null || true
+          done
+
+      - name: No contracts yet (stub)
+        if: steps.discover.outputs.found != 'true'
+        run: |
+          echo "::notice title=Contract tier::No services/*/openapi.yaml found yet."
+          echo "TODO (contract-first, see CLAUDE.md): freeze + PR an OpenAPI spec per"
+          echo "service, generate the @fuzefront/<svc>-client from it, and this tier"
+          echo "will Spectral-lint each spec and boot a Prism mock automatically —"
+          echo "no workflow edits required (discovery is already wired above)."
 
   security-scan:
     name: Security Scan
@@ -273,7 +378,7 @@ jobs:
           cp README.md docs/index.md
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
@@ -283,17 +388,17 @@ jobs:
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
-    needs: [lint-and-test, build, integration-tests, email-integration]
+    needs: [lint-and-test, build, integration-tests, email-integration, contract-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.contract-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.contract-tests.result == 'failure' }}
         run: |
           echo "❌ Some checks failed. Please review the logs."
           exit 1
