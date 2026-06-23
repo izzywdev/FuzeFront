@@ -1,0 +1,124 @@
+name: Harden Gate
+
+# Unified protection gate shared verbatim across all hardened repos.
+# Emits canonical status-check contexts: lint, test, build, sast, secret-scan, dependency-scan.
+# First-pass policy: lint/test/build/sast/dependency-scan are REPORT-ONLY (never fail the job;
+# findings are surfaced to the Security tab via SARIF). secret-scan (gitleaks) DOES gate new
+# secrets in a PR. Flip a job to enforcing later by removing its "|| true" / setting exit-code.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: harden-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Lint (adaptive, report-only)
+        shell: bash
+        run: |
+          set +e
+          if [ -f package.json ] && grep -q '"lint"' package.json; then
+            echo "::group::npm run lint"; (npm ci || npm install) >/dev/null 2>&1; npm run lint; echo "::endgroup::"
+          fi
+          if git ls-files '*.py' | grep -q .; then
+            echo "::group::ruff"; pipx run ruff check . ; echo "::endgroup::"
+          fi
+          if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then
+            echo "::group::node --check"; git ls-files '*.js' '*.cjs' '*.mjs' | while read -r f; do node --check "$f" || echo "syntax error: $f"; done; echo "::endgroup::"
+          fi
+          echo "lint complete (report-only)"; exit 0
+
+  gate-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Test (adaptive, report-only)
+        shell: bash
+        run: |
+          set +e
+          if [ -f package.json ] && grep -q '"test"' package.json; then
+            echo "::group::npm test"; (npm ci || npm install) >/dev/null 2>&1; npm test --if-present; echo "::endgroup::"
+          fi
+          for req in $(git ls-files '**/requirements*.txt' 'requirements*.txt' 2>/dev/null | head -3); do
+            d=$(dirname "$req"); echo "::group::pytest $d"; ( cd "$d" && pip install -q -r "$(basename "$req")" pytest 2>/dev/null && pytest -q ) ; echo "::endgroup::"
+          done
+          echo "test complete (report-only)"; exit 0
+
+  gate-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Build (adaptive, report-only)
+        shell: bash
+        run: |
+          set +e
+          if [ -f package.json ] && grep -q '"build"' package.json; then
+            echo "::group::npm run build"; (npm ci || npm install) >/dev/null 2>&1; npm run build --if-present; echo "::endgroup::"
+          fi
+          echo "build complete (report-only)"; exit 0
+
+  gate-sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (report-only, SARIF)
+        shell: bash
+        run: |
+          pip install -q semgrep
+          semgrep scan --config auto --sarif --output semgrep.sarif || true
+          test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  gate-secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks (gates new secrets)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  gate-dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan (report-only, SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy

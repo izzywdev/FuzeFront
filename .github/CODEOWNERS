@@ -11,6 +11,11 @@
 # Requiring the infra owner's review on these is the gate that makes "merge = ship"
 # safe (the merge approval IS the deploy/apply approval).
 
+# Catch-all: every change requires the owner's review (contribution-ready default,
+# from #93). The path-specific entries below are redundant under this but kept to
+# document the highest-risk deploy surface explicitly.
+* @izzywdev
+
 /deploy/terraform/    @izzywdev
 /deploy/argocd/       @izzywdev
 /deploy/helm/         @izzywdev
