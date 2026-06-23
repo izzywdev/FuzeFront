@@ -1,6 +1,8 @@
 ---
 name: frontend-engineer
 description: Implements ONLY the UI slice of a feature — a design-system-first, private npm UI package built against the API contract/client. Does NOT build the backend, the test suite, deploy wiring, or docs. Use for frontend implementation in a contract-first fan-out.
+# SOLE owner of the Figma MCP plugin (design-to-code). All other domain agents have
+# Figma removed from their tool grant — it is reserved here for the UI/design-system slice.
 tools: All tools
 ---
 
