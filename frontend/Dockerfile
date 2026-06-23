@@ -12,10 +12,10 @@ FROM node:20-bookworm-slim AS build
 
 WORKDIR /app
 
-# GitHub token used only to read @fuzefront/* from GitHub Packages. Passed as a
-# build arg by CI; not baked into the final image (build stage only).
-ARG GITHUB_TOKEN=""
-ENV GITHUB_TOKEN=$GITHUB_TOKEN
+# No GitHub Packages token is needed: every @fuzefront/* package resolves from the
+# local workspace (members + file: deps + vite source aliases), so the install never
+# hits the private registry. (Verified by a clean local build with no token.) This
+# avoids baking a credential into an image layer/cache that gets pushed to GHCR.
 
 # Copy the whole monorepo (node_modules/.git excluded via .dockerignore). The
 # frontend's vite config aliases the @fuzefront/* UI packages (identity-ui, i18n,

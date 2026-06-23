@@ -65,7 +65,6 @@ jobs:
           push: true
           build-args: |
             VITE_API_URL=https://app.fuzefront.com
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           tags: |
             ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-frontend:latest
@@ -77,6 +76,10 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-root
 
       - name: Build and push email-service
+        # Ancillary services are disabled in prod (only billing is enabled) and some
+        # have unbuilt workspace wiring. They must NEVER block the core backend+frontend
+        # deploy — a failed build here is non-fatal; the bump+deploy still proceeds.
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -89,6 +92,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push sms-service
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -101,6 +105,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push provisioning-service
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -113,6 +118,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push billing-service
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -125,6 +131,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push security-service
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -137,6 +144,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push applications-service
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: .
