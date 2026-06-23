@@ -1,0 +1,76 @@
+name: Billing Service Tests
+
+# Runs the billing-service jest suite (unit + DATABASE_URL-gated integration)
+# against a live Postgres and stripe-mock, with coverage thresholds enforced.
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'services/billing-service/**'
+      - 'shared/**'
+      - 'billing-client/**'
+      - '.github/workflows/billing-tests.yml'
+  pull_request:
+    branches: [main, master, develop, feature/billing-payments]
+    paths:
+      - 'services/billing-service/**'
+      - 'shared/**'
+      - 'billing-client/**'
+      - '.github/workflows/billing-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: billing_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      stripe-mock:
+        image: stripe/stripe-mock:latest
+        ports:
+          - 12111:12111
+          - 12112:12112
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Build shared (kafka sub-barrel is consumed by the service tests)
+        working-directory: shared
+        run: |
+          npm ci || npm install
+          npm run build --if-present
+
+      - name: Install billing-service dependencies
+        working-directory: services/billing-service
+        run: npm ci || npm install
+
+      - name: Run billing-service tests with coverage (live Postgres + stripe-mock)
+        working-directory: services/billing-service
+        env:
+          # Setting DATABASE_URL un-skips the integration describe blocks
+          # (db.test.ts + integration/*.integration.test.ts). The migration runs
+          # CREATE SCHEMA billing, so connect as the postgres superuser in CI.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/billing_test
+          # stripe-mock for any Stripe-touching integration tests. STRIPE_SECRET_KEY
+          # is a throwaway test key; getStripe honours STRIPE_API_BASE to target the mock.
+          STRIPE_API_BASE: http://localhost:12111
+          STRIPE_SECRET_KEY: sk_test_123
+        run: npx jest --coverage --runInBand
