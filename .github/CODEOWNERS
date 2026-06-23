@@ -1,0 +1,17 @@
+# CODEOWNERS — required reviewers for changes that reach the cluster or cloud.
+#
+# The "Protect Master" ruleset has require_code_owner_review: true, but that only
+# bites on paths listed here. These paths are the deploy surface:
+#   - deploy/terraform/** : out-of-cluster IaC, applied by FuzeInfra (Cloudflare,
+#     nodes, cloud). A bad change here can alter prod infrastructure.
+#   - deploy/argocd/**    : Argo Applications (pull-reconciled onto the cluster).
+#   - deploy/helm/**      : the prod chart + values-prod (image tags, ingress) that
+#     Argo deploys — changes here ship to prod.
+#   - .github/workflows/** : CI/CD incl. the infra-dispatch + release pipelines.
+# Requiring the infra owner's review on these is the gate that makes "merge = ship"
+# safe (the merge approval IS the deploy/apply approval).
+
+/deploy/terraform/    @izzywdev
+/deploy/argocd/       @izzywdev
+/deploy/helm/         @izzywdev
+/.github/workflows/   @izzywdev
