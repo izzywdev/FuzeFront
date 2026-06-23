@@ -60,15 +60,21 @@ jobs:
       - name: Build & push frontend
         uses: docker/build-push-action@v5
         with:
-          context: ./frontend
+          context: .
+          file: frontend/Dockerfile
           push: true
           build-args: |
             VITE_API_URL=https://app.fuzefront.com
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           tags: |
             ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Dedicated scope: the frontend build context changed from ./frontend to
+          # repo root, so the old shared gha cache snapshot (where nginx.conf sat at
+          # the context root, not frontend/) no longer matches and buildkit errors
+          # with "frontend/nginx.conf: not found". A fresh scope busts that.
+          cache-from: type=gha,scope=frontend-root
+          cache-to: type=gha,mode=max,scope=frontend-root
 
       - name: Build and push email-service
         uses: docker/build-push-action@v5
