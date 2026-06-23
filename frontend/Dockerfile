@@ -37,8 +37,10 @@ RUN rm -f package-lock.json && npm install
 # /app/node_modules.
 WORKDIR /app/frontend
 
-# Accept build arguments
-ARG VITE_API_URL=http://localhost:3001
+# Accept build arguments. VITE_API_URL defaults EMPTY so the app resolves the API
+# same-origin (window.location.origin) unless a caller overrides it — correct for
+# the CF-edge/same-origin prod model.
+ARG VITE_API_URL=
 ARG VITE_APP_TITLE="FuzeFront Platform"
 
 # Set environment variables for build

@@ -64,7 +64,11 @@ jobs:
           file: frontend/Dockerfile
           push: true
           build-args: |
-            VITE_API_URL=https://app.fuzefront.com
+            # Empty => the frontend uses window.location.origin (same-origin /api).
+            # Robust across hosts: works on app.prod.fuzefront.com now and on
+            # app.fuzefront.com after the 301 fast-follow, with no cross-origin/mixed
+            # -content risk under the Cloudflare TLS edge. (api.ts: VITE_API_URL || origin)
+            VITE_API_URL=
           tags: |
             ghcr.io/izzywdev/fuzefront-frontend:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-frontend:latest

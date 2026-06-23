@@ -2,7 +2,7 @@ name: Prod smoke
 
 # After release.yml bumps image tags in values-prod.yaml (commit message starts
 # with "release:"), Argo CD syncs the new images onto Contabo. This job waits for
-# the rollout, then polls https://app.fuzefront.com/api/health until it returns
+# the rollout, then polls https://app.prod.fuzefront.com/api/health until it returns
 # 200 (or fails after the timeout). Pure black-box check over the public ingress —
 # no cluster credentials needed.
 on:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Wait for Argo to roll out, then poll health
         env:
-          URL: https://app.fuzefront.com/api/health
+          URL: https://app.prod.fuzefront.com/api/health
         run: |
           echo "Smoke target: $URL"
           # Give Argo CD time to detect the git change and roll the Deployments.
