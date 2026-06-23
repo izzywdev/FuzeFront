@@ -8,10 +8,32 @@ A standard set of **single-responsibility** agents, fanned out one-per-slice for
 - **frontend-engineer** — UI as a private design-system-first npm package, built against the contract/client. **Sole owner of `design-system/`**: derives needed components from the user story, adds missing primitives to the design system FIRST (landed as a foundation), then builds the feature UI consuming them. NOT backend, NOT UI e2e, NOT deploy.
 - **test-engineer** — INDEPENDENT **API/service** verification: contract / integration / event tests against the **spec** (not the implementer's self-tests). Does NOT implement; does NOT do UI/browser e2e.
 - **frontend-test-engineer** — INDEPENDENT **UI** verification: Playwright/browser e2e against acceptance criteria, **pre-production** (ephemeral stack) **and post-production** (smoke/synthetic vs the live app). Runs after `frontend-engineer`. Does NOT build the UI or design system.
-- **devops-engineer** — Helm / Argo / CI/CD / infra-request wiring. NOT app code, NOT UI.
+- **devops-engineer** — Helm / Argo / CI/CD / infra-request wiring **+ edge/DNS/CDN/Workers (Cloudflare) and cloud (AWS)**. NOT app code, NOT UI.
 - **docs-maintainer** — consumer guides / runbooks / READMEs / API docs from the contract. NOT code.
 
+### Integration & coordination specialists (own a single external surface)
+- **billing-payments-engineer** — the **Stripe/payments** integration slice (checkout, subscriptions, webhooks, plans, usage, billing-service payment logic). Defers contract → `contract-designer`, billing UI → `frontend-engineer`, deploy → `devops-engineer`.
+- **telephony-integrator** — the **Twilio/SendGrid** communications-channel slice (SMS/voice/WhatsApp/Verify/email) wired into the email/sms services. Same deferrals.
+- **agile-manager** — delivery coordination only: **Atlassian** (Jira/Confluence tickets, sprints, status) + **Slack** (team comms) + cross-repo `@claude` delegation tracking. Writes tickets/reports, never product code.
+- **wordpress-engineer** — WordPress sites/themes/plugins, kept separate from the app shell. Skill-driven (no WP MCP).
+
 > **Only `frontend-engineer` edits `design-system/`.** Every other agent consumes it. When several UI features run in parallel, design-system extensions land in **one foundation PR first** — never re-edited per feature branch (that parallel duplication is what strands features in merge conflicts).
+
+## Tool & MCP ownership (each external surface has ONE owner)
+MCP servers are granted via each agent's `tools:` allowlist; plugin **skills** are referenced in the agent body. Routing an external surface to exactly one hat keeps the code agents lean and makes misroutes self-correct (the wrong agent lacks the tool).
+
+| External surface | MCP server(s) | Owner agent | Plugin skills |
+|---|---|---|---|
+| Design-to-code | Figma | **frontend-engineer** (sole) | `frontend-design`, `figma-*` |
+| Browser e2e / QA | Playwright + Chrome DevTools | **frontend-test-engineer** | `chrome-devtools`, `a11y-debugging` |
+| Edge / DNS / Workers | Cloudflare (api/bindings/builds/docs/observability) | **devops-engineer** | `cloudflare`, `wrangler`, `workers-best-practices`, `cloudflare-one` |
+| Cloud (AWS) | *(skills only)* | **devops-engineer** | `aws-iam`, `aws-cdk`/`aws-cloudformation`, `aws-serverless`, `aws-containers`, `aws-secrets-manager`, `aws-observability` |
+| Payments | Stripe | **billing-payments-engineer** | `stripe-*` + `stripe:Company Researcher` agent |
+| Telephony / messaging / email | Twilio (+ SendGrid) | **telephony-integrator** | `twilio-*`, `twilio-sendgrid-*` |
+| Project tracking + team comms | Atlassian + Slack | **agile-manager** | `ticket-*`, `triage-issue`, `spec-to-backlog`, `generate-status-report`, `slack-*` |
+| WordPress | *(skills only)* | **wordpress-engineer** | `build-with-wordpress`, `site-specification` |
+
+> **Unassigned:** the **Shopify** MCP has no named hat yet — it stays available to general agents until an e-commerce hat is created. Pure-code agents (`backend-engineer`, `contract-designer`, `test-engineer`, `docs-maintainer`) intentionally get **core tools only, no MCP**.
 
 ## Mandatory DONE contract (every domain agent, no exceptions)
 An agent reports completion **only for its own domain**. The final report MUST contain both:
