@@ -4,3 +4,17 @@
 # runs its own npm install, so host node_modules are never needed.
 **/node_modules
 **/.git
+
+# Large dirs irrelevant to any image build — keep the build context small (a
+# repo-root context otherwise pulls these in, e.g. for the frontend image which
+# now builds from `context: .`). Worktrees alone are >1GB.
+.claude
+FuzeInfra
+fuzefront-website
+.remember
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+*.log
+**/*.tsbuildinfo

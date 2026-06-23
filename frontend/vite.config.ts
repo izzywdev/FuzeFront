@@ -18,12 +18,29 @@ const designSystemDir = fileURLToPath(new URL('../design-system', import.meta.ur
 const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
 )
+// @fuzefront/chat-client and @fuzefront/chat-ui are file: workspace packages whose
+// dist/ is not built in CI (same reason as identity-ui), so resolve them from
+// SOURCE too. chat-ui's stylesheet lives at src/styles/chat-ui.css (tsup copies it
+// to dist/styles.css on a real build); map the published ./styles.css subpath to it.
+const chatClientSrc = fileURLToPath(
+  new URL('../packages/chat-client/src/index.ts', import.meta.url)
+)
+const chatUiSrc = fileURLToPath(
+  new URL('../packages/chat-ui/src/index.ts', import.meta.url)
+)
+const chatUiStyles = fileURLToPath(
+  new URL('../packages/chat-ui/src/styles/chat-ui.css', import.meta.url)
+)
 
 export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/i18n': i18nSrc,
+      // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.
+      '@fuzefront/chat-ui/styles.css': chatUiStyles,
+      '@fuzefront/chat-ui': chatUiSrc,
+      '@fuzefront/chat-client': chatClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
