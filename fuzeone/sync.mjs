@@ -40,11 +40,15 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv);
 const target = resolve(args.target || process.cwd());
+const HUB = args.hub || manifest.hub;
 const vars = {
   REPO: args.repo || basename(target),
   SCOPE: args.scope || manifest.vars.SCOPE || '@fuzefront',
-  HUB: args.hub || manifest.hub,
+  HUB,
   HUB_REF: args.hubRef || manifest.hubRef,
+  // Repo owner (org/user), derived from HUB "owner/repo" — used to template the
+  // Argo app-of-apps/project repoURL for the target member repo.
+  OWNER: (HUB || 'izzywdev/FuzeFront').split('/')[0],
 };
 
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };

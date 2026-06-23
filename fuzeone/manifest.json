@@ -33,7 +33,10 @@
     { "src": "fuzeone/templates/github-workflows/auto-merge.yml",        "dest": ".github/workflows/auto-merge.yml",        "mode": "template" },
 
     { "src": "fuzeone/templates/github-workflows/helm-validate.yml",     "dest": ".github/workflows/helm-validate.yml",     "mode": "template", "when": "has-helm" },
-    { "src": "fuzeone/templates/github-workflows/infra-dispatch.yml",    "dest": ".github/workflows/infra-dispatch.yml",    "mode": "template", "when": "has-infra" }
+    { "src": "fuzeone/templates/github-workflows/infra-dispatch.yml",    "dest": ".github/workflows/infra-dispatch.yml",    "mode": "template", "when": "has-infra" },
+
+    { "src": "fuzeone/templates/argocd/project.yaml",     "dest": "deploy/argocd/project.yaml",     "mode": "template", "when": "has-helm" },
+    { "src": "fuzeone/templates/argocd/app-of-apps.yaml", "dest": "deploy/argocd/app-of-apps.yaml", "mode": "template", "when": "has-helm" }
   ],
   "requiredSecrets": [
     { "name": "ANTHROPIC_API_KEY",       "why": "@claude interactive handler + CI autofix" },

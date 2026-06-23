@@ -1,24 +1,28 @@
 name: Infra request → FuzeInfra
 
-# Event-driven, decoupled IaC: when FuzeFront's declarative infra/deploy intent
-# changes (deploy/terraform/** = node/infra requests, deploy/argocd/** = Argo
-# Applications), notify FuzeInfra (the cluster owner + sole credential holder) to
-# reconcile it into the live cluster. FuzeFront holds NO Contabo/cluster creds —
-# only FUZEINFRA_DISPATCH_TOKEN, a narrowly-scoped PAT/App token whose ONLY power
-# is to fire a repository_dispatch on izzywdev/FuzeInfra.
+# Event-driven, decoupled IaC for the TERRAFORM plane only.
 #
-# FuzeInfra's `on: repository_dispatch: types: [infra-request]` handler then:
-#   - validates the request against its whitelist → auto-applies if it matches,
-#     else opens a gated PR/approval (terraform plan);
-#   - runs `terraform apply` (Contabo provider) to provision + k3s-join + label
-#     the node, using ITS secrets + TF state;
-#   - applies/syncs the changed Argo Applications.
+# Two planes, two mechanisms (see deploy/argocd/README + docs):
+#   - Argo plane (deploy/argocd/**): PULL-reconciled. Once this repo's app-of-apps
+#     is registered in Argo (a ONE-TIME install — see the FuzeOne onboarding
+#     toolkit / fuzeone/README), Argo polls deploy/argocd/applications (recurse)
+#     and self-discovers every inner-service Application on each merge. FuzeInfra
+#     does NOT need to be notified for ongoing Argo changes — so this workflow no
+#     longer fires on deploy/argocd/**.
+#   - Terraform plane (deploy/terraform/**): OUT-of-cluster (Contabo nodes,
+#     Cloudflare, cloud). Needs an explicit `terraform apply` with creds+state that
+#     ONLY FuzeInfra holds. So on a change here we notify FuzeInfra to reconcile it.
+#
+# FuzeFront holds NO Contabo/cluster creds — only FUZEINFRA_DISPATCH_TOKEN, a
+# narrowly-scoped token whose ONLY power is to fire a repository_dispatch on
+# izzywdev/FuzeInfra. FuzeInfra's `on: repository_dispatch: types: [infra-request]`
+# handler validates the request against its whitelist (never applies foreign HCL
+# verbatim) and applies via its own state/creds (gated PR/plan as configured).
 on:
   push:
     branches: [master]
     paths:
       - 'deploy/terraform/**'
-      - 'deploy/argocd/**'
   workflow_dispatch: {}
 
 concurrency:
@@ -33,12 +37,12 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Compute changed infra paths
+      - name: Compute changed terraform paths
         id: changed
         run: |
           base="${{ github.event.before }}"
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base="HEAD~1"; fi
-          changed=$(git diff --name-only "$base" HEAD -- deploy/terraform deploy/argocd | tr '\n' ',' | sed 's/,$//')
+          changed=$(git diff --name-only "$base" HEAD -- deploy/terraform | tr '\n' ',' | sed 's/,$//')
           echo "paths=$changed" >> "$GITHUB_OUTPUT"
           echo "changed: $changed"
 

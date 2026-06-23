@@ -1,0 +1,26 @@
+# Root "app of apps" for {{REPO}} — this is what REGISTERS the repo with Argo CD.
+#
+# Apply it ONCE (needs cluster creds → done by FuzeInfra at onboarding, see
+# fuzeone/README "Register with Argo"). After that one apply, Argo polls
+# deploy/argocd/applications (recurse:true) and self-discovers every inner-service
+# Application on each merge — no further FuzeInfra action, no per-merge dispatch.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{REPO}}-apps
+  namespace: argocd
+spec:
+  project: {{REPO}}
+  source:
+    repoURL: https://github.com/{{OWNER}}/{{REPO}}.git
+    targetRevision: master
+    path: deploy/argocd/applications
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

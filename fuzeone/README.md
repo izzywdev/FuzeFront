@@ -91,6 +91,28 @@ Set `CLAUDE_HOME` to install under a non-default Claude home. Re-run after pulli
 The per-repo `.claude/agents/*` sync entries above remain for repos that prefer self-contained clones;
 with the user-level install you can rely on the user scope and skip per-repo copies.
 
+## Register with Argo (one-time install — the bootstrap step)
+GitOps has two planes that reconcile differently:
+- **Argo plane** (`deploy/argocd/**`, `deploy/helm/**`): **pull**. Argo continuously
+  reconciles git→cluster. But Argo only watches a repo once its **app-of-apps** is
+  installed. `fuzeone sync` writes `deploy/argocd/{project,app-of-apps}.yaml` for the
+  member (the app-of-apps recurses `deploy/argocd/applications/`), but applying it
+  needs cluster creds — so it's a **one-time install done by FuzeInfra**:
+  ```bash
+  kubectl apply -f deploy/argocd/project.yaml
+  kubectl apply -f deploy/argocd/app-of-apps.yaml
+  ```
+  After that single apply, **every merge to the member's `deploy/argocd/applications/`
+  is auto-discovered by Argo — no further FuzeInfra action, no per-merge dispatch.**
+  The member's `project.yaml` is **namespace-confined** (deploys only into its own
+  namespace, no cluster-scoped resources) so a merged manifest can't escalate.
+- **Terraform plane** (`deploy/terraform/**`): **push**. Out-of-cluster resources
+  (nodes, Cloudflare, cloud) need an explicit apply with FuzeInfra's creds/state, so a
+  merge here fires `infra-dispatch.yml` → FuzeInfra. (Argo changes do NOT dispatch.)
+
+So FuzeInfra's role for a new member is the **one-time Argo install above** + applying
+that member's Terraform requests; steady-state Argo is hands-off.
+
 ## Required secrets (sync prints the applicable set)
 - `ANTHROPIC_API_KEY` — `@claude` handler + CI autofix.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — merge notifications (optional).
