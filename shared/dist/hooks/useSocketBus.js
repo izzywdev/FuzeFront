@@ -1,12 +1,15 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { io } from 'socket.io-client';
-export function useSocketBus(appId) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.useSocketBus = useSocketBus;
+const react_1 = require("react");
+const socket_io_client_1 = require("socket.io-client");
+function useSocketBus(appId) {
     var _a;
-    const socketRef = useRef(null);
-    const handlersRef = useRef(new Map());
-    useEffect(() => {
+    const socketRef = (0, react_1.useRef)(null);
+    const handlersRef = (0, react_1.useRef)(new Map());
+    (0, react_1.useEffect)(() => {
         // Initialize socket connection
-        const socket = io(process.env.REACT_APP_WS_URL || 'ws://localhost:3001', {
+        const socket = (0, socket_io_client_1.io)(process.env.REACT_APP_WS_URL || 'ws://localhost:3001', {
             auth: {
                 appId: appId || 'container',
             },
@@ -24,10 +27,10 @@ export function useSocketBus(appId) {
             socketRef.current = null;
         };
     }, [appId]);
-    const on = useCallback((eventType, handler) => {
+    const on = (0, react_1.useCallback)((eventType, handler) => {
         handlersRef.current.set(eventType, handler);
     }, []);
-    const emit = useCallback((eventType, payload, targetAppId) => {
+    const emit = (0, react_1.useCallback)((eventType, payload, targetAppId) => {
         if (socketRef.current) {
             const event = {
                 type: eventType,
