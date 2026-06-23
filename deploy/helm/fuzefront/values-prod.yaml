@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 57fecf6261f0
+    tag: 9d79c9eb3cbe
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 57fecf6261f0
+    tag: 9d79c9eb3cbe
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
