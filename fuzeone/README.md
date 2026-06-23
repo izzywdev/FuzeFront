@@ -21,6 +21,38 @@ This is the **hybrid** model: workflows whose logic benefits from central update
 the family reusable workflows in `izzywdev/AITools`; everything else is a local file `fuzeone sync`
 re-stamps. Re-run sync to pick up new standard versions.
 
+## Installing the agents — two independent dimensions
+
+The FuzeOne **engineer hats** (`.claude/agents/*`) can reach you two ways. You usually want **both**,
+but they answer different questions:
+
+| Dimension | Question it answers | Mechanism | Run |
+|---|---|---|---|
+| **Per machine** (user-level) | "I cloned a FuzeOne repo on a new laptop — how do I get the hats in *every* repo I open here?" | copies the hub's defs into `~/.claude/agents/` | `node fuzeone/install-user-agents.mjs` |
+| **Per repo** (project-level) | "A brand-new repo wants to join the family with the standard SDLC + workflows" | `sync.mjs` stamps `.claude/agents/*` + workflows + CLAUDE region into the repo | `node fuzeone/sync.mjs --target .` |
+
+**Why user-level is preferred for the hats:** the engineer hats are generic across the family, so
+installing them once per machine (user scope) means *every* FuzeOne repo you open sees them — no
+per-repo copies to duplicate and drift. The hub repo still **commits** the canonical defs under
+`.claude/agents/`, so a fresh clone always carries the source of truth; the user-level install just
+*promotes* them. (Claude resolves user-level + project-level agents both; project wins on a name clash.)
+
+### New machine (first clone of any FuzeOne repo)
+```bash
+git clone https://github.com/izzywdev/FuzeFront        # or any family repo that carries fuzeone/
+cd FuzeFront
+node fuzeone/install-user-agents.mjs --check           # preview (writes nothing)
+node fuzeone/install-user-agents.mjs                   # install/update ~/.claude/agents
+#   or: fuzeone/bin/fuzeone.sh user-agents   (fuzeone\bin\fuzeone.ps1 user-agents on Windows)
+```
+Re-run after pulling new agent defs. Set `CLAUDE_HOME` to target a non-default Claude home.
+
+### New repo joining the family
+Run the repo sync (below) for the workflows/CLAUDE-region/npmrc, **and** make sure the hats are
+installed at user level once on that machine (above). With the user-level install present a member
+repo does not need its own `.claude/agents/` copies — though `sync.mjs` will still stamp them if you
+prefer a fully self-contained clone.
+
 ## How to onboard a repo
 
 **The easy way — just ask the expert agent** (it's globally available in any repo):
