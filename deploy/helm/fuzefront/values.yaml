@@ -360,6 +360,18 @@ billingService:
     tag: local
   port: 3006
   replicas: 1
+  # Dedicated least-privilege DB role (created by the billing-db-bootstrap Job),
+  # NOT the shared fuzefront_user. Its password is BILLING_DB_PASSWORD in the
+  # per-service billing-secrets SealedSecret.
+  dbUser: billing_svc
+  # Per-service secret (billing-only keys: STRIPE_*, BILLING_INTERNAL_TOKEN,
+  # BILLING_DB_PASSWORD). Shared creds (PERMIT_API_KEY) stay in fuzefront-secrets.
+  secretName: billing-secrets
+  meterFlushIntervalSec: 60
+  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
+  dbBootstrap:
+    enabled: true
   kafka:
     brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "billing-service"

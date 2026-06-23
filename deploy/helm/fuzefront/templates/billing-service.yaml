@@ -42,31 +42,28 @@ spec:
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: DB_PASSWORD
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: BILLING_DB_PASSWORD
             - name: DATABASE_URL
               value: "postgresql://{{ .Values.billingService.dbUser }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
-            {{- if .Values.secret.stripeSecretKey }}
+            # Always rendered when billing is enabled — the per-service billing-secrets
+            # SealedSecret provides these at runtime (the pod stays pending until the
+            # keys are sealed). No Helm-values gate (values are empty under SealedSecrets).
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: STRIPE_SECRET_KEY
-            {{- end }}
-            {{- if .Values.secret.stripeWebhookSecret }}
             - name: STRIPE_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: STRIPE_WEBHOOK_SECRET
-            {{- end }}
-            {{- if .Values.secret.billingInternalToken }}
             - name: BILLING_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: BILLING_INTERNAL_TOKEN
-            {{- end }}
             - name: PERMIT_API_KEY
               valueFrom:
                 secretKeyRef:

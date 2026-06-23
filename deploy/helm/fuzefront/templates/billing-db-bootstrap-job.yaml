@@ -1,0 +1,76 @@
+{{- if and .Values.billingService.enabled .Values.billingService.dbBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-billing-db-bootstrap
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: billing-db-bootstrap
+  annotations:
+    # Idempotent, privileged provisioning of the least-privilege billing_svc role
+    # and the `billing` schema it owns. Runs BEFORE billing-service starts (which
+    # self-migrates its schema on boot as billing_svc). Runs as the FuzeInfra
+    # Postgres superuser — the only place that needs CREATEROLE.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: billing-db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: billing-db-bootstrap
+          image: postgres:15
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              export PGPASSWORD="$DB_SUPERUSER_PASSWORD"
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
+                -v ON_ERROR_STOP=1 -v billing_pw="$BILLING_DB_PASSWORD" <<'SQL'
+              DO $do$
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'billing_svc') THEN
+                  CREATE ROLE billing_svc LOGIN PASSWORD :'billing_pw';
+                ELSE
+                  ALTER ROLE billing_svc WITH LOGIN PASSWORD :'billing_pw';
+                END IF;
+              END
+              $do$;
+              CREATE SCHEMA IF NOT EXISTS billing AUTHORIZATION billing_svc;
+              GRANT USAGE ON SCHEMA public TO billing_svc;
+              SQL
+              echo "billing_svc role + billing schema ensured"
+          env:
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_SUPERUSER
+              value: {{ .Values.database.bootstrap.superuser.username | quote }}
+            - name: DB_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
+                  key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+            # billing_svc's own password — lives in the per-service billing-secrets.
+            - name: BILLING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: BILLING_DB_PASSWORD
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+{{- end }}

@@ -2,13 +2,13 @@
   "name": "@fuzefront/billing-client",
   "version": "1.0.0",
   "description": "Typed HTTP client for the FuzeFront billing-service REST API",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "clean": "rimraf dist",
@@ -38,6 +38,15 @@
     "openapi-typescript": "^7.4.0",
     "rimraf": "^5.0.1",
     "ts-jest": "29.1.1",
-    "typescript": "5.1.6"
+    "typescript": "5.1.6",
+    "tsup": "^8.0.2"
+  },
+  "module": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   }
 }
