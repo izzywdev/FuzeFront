@@ -9,7 +9,7 @@ single source of truth lives here, in the hub.
 
 | File(s) | What | Update model |
 |---|---|---|
-| `.claude/agents/*` (6 + README) | Single-responsibility domain agents (`contract-designer` → backend/frontend/test/devops/docs) with the honest-"done" contract | synced (copy) |
+| `.claude/agents/*` (11 + README) | Single-responsibility domain agents (`contract-designer` → backend/frontend/frontend-test/test/devops/docs + the integration & coordination hats: billing-payments / telephony / agile-manager / wordpress) with the honest-"done" contract | synced (copy); **prefer the user-level install below** |
 | `CLAUDE.md` `<!-- FUZEONE -->` region | The committed family SDLC (so the team + GitHub-runner `@claude` + this repo all see it) | synced (region merge) |
 | `.npmrc` | `@fuzefront/*` resolve privately from GitHub Packages | synced (template) |
 | `.github/workflows/claude.yml`, `claude-auto-pr.yml`, `auto-merge.yml` | `@claude` handler, issue→draft-PR autonomy, merge-on-green | synced, self-contained |
@@ -42,6 +42,22 @@ node /tmp/fuzeone-hub/fuzeone/sync.mjs --target /path/to/FuzePlan
 #    options: --scope @fuzefront  --hub izzywdev/FuzeFront  --hub-ref v1  --repo FuzePlan  --dry-run
 ```
 Then set the repo secrets it lists (`gh secret set …`), commit on a branch, and open a PR.
+
+## Engineer hats: install once at USER level (recommended)
+The engineer "hats" are generic across the family, so install them **once per machine** at the user
+scope (`~/.claude/agents/`) instead of copying them into every member repo. The hub repo still commits
+the canonical defs under `.claude/agents/` (so they travel with a fresh clone and stay version-
+controlled) — this step just promotes them to the user scope, where every repo you open sees them:
+
+```bash
+# from a checkout of the hub (this repo):
+node fuzeone/install-user-agents.mjs --check     # preview drift, writes nothing
+node fuzeone/install-user-agents.mjs             # install/update ~/.claude/agents
+fuzeone/bin/fuzeone.sh user-agents               # same, via the shim
+```
+Set `CLAUDE_HOME` to install under a non-default Claude home. Re-run after pulling new agent defs.
+The per-repo `.claude/agents/*` sync entries above remain for repos that prefer self-contained clones;
+with the user-level install you can rely on the user scope and skip per-repo copies.
 
 ## Required secrets (sync prints the applicable set)
 - `ANTHROPIC_API_KEY` — `@claude` handler + CI autofix.
