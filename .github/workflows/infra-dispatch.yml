@@ -54,9 +54,19 @@ jobs:
             echo "::error::FUZEINFRA_DISPATCH_TOKEN not set — cannot dispatch to FuzeInfra."
             exit 1
           fi
-          gh api repos/izzywdev/FuzeInfra/dispatches \
-            -f event_type=infra-request \
-            -F "client_payload[repo]=${{ github.repository }}" \
-            -F "client_payload[ref]=${{ github.sha }}" \
-            -F "client_payload[changed]=${{ steps.changed.outputs.paths }}"
-          echo "Dispatched infra-request → izzywdev/FuzeInfra (ref ${{ github.sha }})."
+          # Infra requests are declared in deploy/terraform/node-requests.json (the
+          # single source of truth, also read by node-request.tf). FuzeInfra's
+          # validator reads client_payload.requests to decide skip|apply|gate — so
+          # we MUST include them inline (sending only {repo,ref,changed} yields a
+          # no-op "not an infra-request"). Every node must match FuzeInfra's
+          # whitelist (allowed_product_ids/regions/roles) to auto-apply.
+          REQ_FILE=deploy/terraform/node-requests.json
+          if [ -f "$REQ_FILE" ]; then REQUESTS=$(cat "$REQ_FILE"); else REQUESTS='[]'; fi
+          jq -nc \
+            --arg repo "${{ github.repository }}" \
+            --arg ref "${{ github.sha }}" \
+            --arg changed "${{ steps.changed.outputs.paths }}" \
+            --argjson requests "$REQUESTS" \
+            '{event_type:"infra-request", client_payload:{repo:$repo, ref:$ref, changed:$changed, requests:$requests}}' \
+            | gh api repos/izzywdev/FuzeInfra/dispatches --input -
+          echo "Dispatched infra-request ($(echo "$REQUESTS" | jq -c 'length') node(s)) → izzywdev/FuzeInfra (ref ${{ github.sha }})."

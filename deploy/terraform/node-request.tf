@@ -21,25 +21,15 @@ module "fuzefront_nodes" {
   # join + node labeling). Pinned by ref; FuzeInfra publishes/updates it.
   source = "git::https://github.com/izzywdev/FuzeInfra.git//modules/contabo-k3s-node?ref=main"
 
-  # The whitelisted request: a single workload worker node to offload the
-  # heavy stateless services (LiteLLM / chat / billing) off the primary node.
-  # Stateful pods stay on node-1 (local-path); see deploy/helm/fuzefront node
-  # affinity (added in the prod-CD chart).
-  #
-  # Re-applied 2026-06-24: ensure fuzefront-worker-2 is provisioned + joined to
-  # the k3s cluster so Argo can schedule the FuzeFront workloads on it.
-  requests = [
-    {
-      name       = "fuzefront-worker-2"
-      product_id = "V92"        # ~8 vCPU / 30 GB (whitelisted tier); adjust within the allow-list
-      region     = "EU"         # must match the existing FuzeInfra cluster region
-      role       = "workload"   # → node label node-role=workload (FuzeFront affinity targets this)
-      labels = {
-        "node-role"            = "workload"
-        "app.fuzefront.com/by" = "fuzefront"
-      }
-    }
-  ]
+  # The request is declared ONCE in node-requests.json (single source of truth):
+  # .github/workflows/infra-dispatch.yml sends that exact JSON as the dispatch
+  # payload's `requests` (what FuzeInfra's validator checks against its whitelist),
+  # and Terraform reads the SAME file here for the apply — so validation and apply
+  # can never drift. product_id MUST be one of FuzeInfra's whitelisted tiers
+  # (currently V1/V45/V46/V47) or the request routes to a gated manual-approval PR
+  # instead of auto-applying. A single workload worker to offload the heavy
+  # stateless services (LiteLLM/chat/billing) off the primary node.
+  requests = jsondecode(file("${path.module}/node-requests.json"))
 
   # Injected by FuzeInfra's handler (NOT defined/committed here):
   #   oauth2_client_id / oauth2_client_secret / oauth2_user / oauth2_pass  (Contabo)

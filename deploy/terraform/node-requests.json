@@ -1,0 +1,12 @@
+[
+  {
+    "name": "fuzefront-worker-2",
+    "product_id": "V47",
+    "region": "EU",
+    "role": "workload",
+    "labels": {
+      "node-role": "workload",
+      "app.fuzefront.com/by": "fuzefront"
+    }
+  }
+]
