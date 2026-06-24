@@ -25,6 +25,9 @@ module "fuzefront_nodes" {
   # heavy stateless services (LiteLLM / chat / billing) off the primary node.
   # Stateful pods stay on node-1 (local-path); see deploy/helm/fuzefront node
   # affinity (added in the prod-CD chart).
+  #
+  # Re-applied 2026-06-24: ensure fuzefront-worker-2 is provisioned + joined to
+  # the k3s cluster so Argo can schedule the FuzeFront workloads on it.
   requests = [
     {
       name       = "fuzefront-worker-2"
