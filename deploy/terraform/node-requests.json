@@ -1,7 +1,7 @@
 [
   {
     "name": "fuzefront-worker-2",
-    "product_id": "V45",
+    "product_id": "V1",
     "region": "EU",
     "role": "workload",
     "labels": {
