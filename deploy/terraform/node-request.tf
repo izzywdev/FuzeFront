@@ -31,8 +31,15 @@ module "fuzefront_nodes" {
   # stateless services (LiteLLM/chat/billing) off the primary node.
   requests = jsondecode(file("${path.module}/node-requests.json"))
 
-  # Injected by FuzeInfra's handler (NOT defined/committed here):
-  #   oauth2_client_id / oauth2_client_secret / oauth2_user / oauth2_pass  (Contabo)
-  #   k3s_server_url / k3s_node_token                                      (existing cluster)
-  #   backend config                                                       (TF state in FuzeInfra)
+  # Required provider + cluster-join args. Declared in variables.tf; their REAL
+  # values are injected at apply time by FuzeInfra's handler tfvars (from its
+  # secrets) — never committed here.
+  contabo_client_id     = var.contabo_client_id
+  contabo_client_secret = var.contabo_client_secret
+  contabo_api_user      = var.contabo_api_user
+  contabo_api_password  = var.contabo_api_password
+  k3s_server_url        = var.k3s_server_url
+  k3s_node_token        = var.k3s_node_token
+  image_id              = var.image_id
+  ssh_public_key        = var.ssh_public_key
 }
