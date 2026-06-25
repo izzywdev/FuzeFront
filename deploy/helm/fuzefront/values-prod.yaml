@@ -105,7 +105,10 @@ billingService:
                 values: ["fuzefront-node-2"]
 
 permit:
-  enabled: true
+  # First-light: disabled. The PDP CrashLoopBackOffs on the placeholder
+  # PERMIT_API_KEY; the backend boots without it (Permit SDK throwOnError:false).
+  # Re-enable once a real PERMIT_API_KEY is sealed.
+  enabled: false
 
 # Private GHCR pull secret (sealed; see deploy/contabo/README.md).
 imagePullSecrets:

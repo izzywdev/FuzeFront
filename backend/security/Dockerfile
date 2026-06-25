@@ -15,7 +15,12 @@ COPY shared/package.json ./shared/
 COPY backend/core/package.json ./backend/core/
 COPY backend/security/package.json ./backend/security/
 
-RUN npm install
+# --no-package-lock: the root package-lock.json is stale — express-rate-limit
+# (a backend/security dependency) is an orphan entry not linked to the security
+# workspace, so a lockfile-honoring `npm install` PRUNES it → the image crashes
+# at boot with "Cannot find module 'express-rate-limit'". Resolving fresh from
+# package.json installs it. (Proper long-term fix: regenerate package-lock.json.)
+RUN npm install --no-package-lock
 
 # Copy source
 COPY shared/ ./shared/
