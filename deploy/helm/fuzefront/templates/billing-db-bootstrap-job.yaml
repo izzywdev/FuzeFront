@@ -37,12 +37,17 @@ spec:
               export PGPASSWORD="$DB_SUPERUSER_PASSWORD"
               psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
                 -v ON_ERROR_STOP=1 -v billing_pw="$BILLING_DB_PASSWORD" <<'SQL'
+              -- psql ':var' interpolation works ONLY in plain SQL, never inside a
+              -- dollar-quoted ($do$...$do$) body. So stash the password in a session
+              -- GUC here (plain SQL → psql substitutes), then read it back inside the
+              -- DO block via current_setting() + format(%L) for safe literal quoting.
+              SET fuzefront.billing_pw TO :'billing_pw';
               DO $do$
               BEGIN
                 IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'billing_svc') THEN
-                  CREATE ROLE billing_svc LOGIN PASSWORD :'billing_pw';
+                  EXECUTE format('CREATE ROLE billing_svc LOGIN PASSWORD %L', current_setting('fuzefront.billing_pw'));
                 ELSE
-                  ALTER ROLE billing_svc WITH LOGIN PASSWORD :'billing_pw';
+                  EXECUTE format('ALTER ROLE billing_svc WITH LOGIN PASSWORD %L', current_setting('fuzefront.billing_pw'));
                 END IF;
               END
               $do$;
