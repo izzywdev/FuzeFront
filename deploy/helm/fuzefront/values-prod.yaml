@@ -82,7 +82,12 @@ provisioningService:
 # secret keys exist the pod stays pending on them (it will NOT crash other services,
 # since billing has its own isolated secret). NEVER hand-deploy — flip via GitOps.
 billingService:
-  enabled: true
+  # First-light: DISABLED. Its image isn't published to GHCR yet (empty tag →
+  # InvalidImageName) and STRIPE_* are placeholders. Billing is a backend
+  # microservice, not part of the MF platform shell, and the host backend's
+  # billing proxy degrades gracefully without it — so it must not gate go-live.
+  # Re-enable once the release publishes a tag here and real STRIPE_* are sealed.
+  enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
     tag: ""  # CI's release sed writes the real image SHA here
