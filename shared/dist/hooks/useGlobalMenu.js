@@ -1,4 +1,4 @@
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/AppContext.js';
 export function useGlobalMenu() {
     const { state, dispatch } = useAppContext();
     const portalMenuItems = state.menuItems

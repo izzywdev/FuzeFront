@@ -1,5 +1,5 @@
 import { ZodError } from 'zod';
-import { dlqTopic } from './types';
+import { dlqTopic } from './types.js';
 export class TypedConsumer {
     constructor(kafka, groupId) {
         this.consumer = kafka.consumer({ groupId });

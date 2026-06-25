@@ -1,4 +1,4 @@
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/AppContext.js';
 export function useSession() {
     var _a;
     const { state, dispatch } = useAppContext();

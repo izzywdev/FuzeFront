@@ -1,4 +1,4 @@
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/AppContext.js';
 export function useCurrentUser() {
     const { state, dispatch } = useAppContext();
     const setUser = (user) => {
