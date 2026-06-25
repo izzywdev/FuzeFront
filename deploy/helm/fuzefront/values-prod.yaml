@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 9d79c9eb3cbe
+    tag: 05c848aea280
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 9d79c9eb3cbe
+    tag: 05c848aea280
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -47,14 +47,14 @@ securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 9d79c9eb3cbe
+    tag: 05c848aea280
   replicas: 2
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 9d79c9eb3cbe
+    tag: 05c848aea280
   replicas: 2
 
 emailService:
