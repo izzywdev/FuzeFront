@@ -11,21 +11,28 @@ spec:
     # Chart lives in the FuzeInfra git submodule (Argo inits submodules by default).
     path: FuzeInfra/helm/fuzeinfra
     helm:
-      # Contabo prod overlay: Postgres + Redis + monitoring + Kafka + ChromaDB
-      # (no Mongo/Neo4j/ES/RabbitMQ/Airflow). Kafka backs the FuzeFront event bus
-      # and ChromaDB backs chat-RAG. k3s local-path storage; public domain.
+      # Consumer-model overlay. The authoritative shared platform is the
+      # `fuzeinfra-prod` Argo app (terraform-provisioned from the FuzeInfra repo,
+      # values-contabo) — it already runs Postgres/Redis/monitoring. This app must
+      # NOT redeploy those: doing so created a SECOND postgres/redis with identical
+      # selector labels (app.kubernetes.io/name=postgres, instance=fuzeinfra), which
+      # split-brained the `fuzeinfra-postgres` Service (round-robined both pods) and
+      # intermittently 404'd app.fuzefront.com. This app now supplies ONLY the
+      # components the base Contabo overlay disables but FuzeFront needs: Kafka
+      # (event bus) + ChromaDB (chat-RAG). FuzeFront consumes the shared
+      # fuzeinfra-postgres / fuzeinfra-redis (see values-prod.yaml fuzeinfra.* hosts).
       values: |
         global:
           storageClass: local-path
           domain: fuzefront.com
-        postgres: { enabled: true }
-        redis: { enabled: true }
-        prometheus: { enabled: true }
-        grafana: { enabled: true }
-        alertmanager: { enabled: true }
-        loki: { enabled: true }
-        promtail: { enabled: true }
-        nodeExporter: { enabled: true }
+        postgres: { enabled: false }    # shared: fuzeinfra-postgres (fuzeinfra-prod)
+        redis: { enabled: false }       # shared: fuzeinfra-redis (fuzeinfra-prod)
+        prometheus: { enabled: false }  # shared platform owns monitoring
+        grafana: { enabled: false }
+        alertmanager: { enabled: false }
+        loki: { enabled: false }
+        promtail: { enabled: false }
+        nodeExporter: { enabled: false }
         mongodb: { enabled: false }
         mongoExpress: { enabled: false }
         neo4j: { enabled: false }

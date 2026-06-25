@@ -106,11 +106,15 @@ imagePullSecrets:
 
 fuzeinfra:
   namespace: fuzeinfra
+  # Consume the AUTHORITATIVE shared platform services (fuzeinfra-prod, the
+  # terraform-provisioned FuzeInfra). Names are fuzeinfra-<component> per the
+  # chart's databases.yaml. FuzeFront no longer deploys its own postgres/redis
+  # (see deploy/argocd/applications/fuzeinfra.yaml) — that caused a split-brain.
   postgres:
-    host: postgres.fuzeinfra.svc.cluster.local
+    host: fuzeinfra-postgres.fuzeinfra.svc.cluster.local
     port: 5432
   redis:
-    host: redis.fuzeinfra.svc.cluster.local
+    host: fuzeinfra-redis.fuzeinfra.svc.cluster.local
     port: 6379
 
 database:
