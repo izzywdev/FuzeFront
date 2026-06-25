@@ -43,6 +43,12 @@ spec:
               value: {{ .Values.fuzeinfra.postgres.port | quote }}
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
+            {{- if .Values.authentik.enabled }}
+            # Authentik needs its own DB (chart: authentik.dbName "must pre-exist").
+            # The bootstrap creates + grants it here so Authentik can connect + migrate.
+            - name: EXTRA_DATABASES
+              value: {{ .Values.authentik.dbName | quote }}
+            {{- end }}
             # The least-privilege runtime role this Job creates. Must match the
             # DB_USER the backend Deployment connects with.
             - name: DB_USER

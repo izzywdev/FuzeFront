@@ -143,6 +143,47 @@ async function bootstrap(): Promise<void> {
     await dbAdmin.end()
   }
 
+  // --- Step 4: additional databases co-located on this Postgres that other
+  // components own (e.g. Authentik uses its own `authentik` DB — see the chart
+  // comment "must pre-exist in the FuzeInfra Postgres"). Created + owned by the
+  // same least-privilege app role so the component can run its own migrations.
+  // Comma-separated EXTRA_DATABASES env; idempotent. ---
+  const extraDbs = (process.env.EXTRA_DATABASES || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  for (const extra of extraDbs) {
+    const a = new Client({ host, port, user: superUser, password: superPassword, database: 'postgres' })
+    await a.connect()
+    try {
+      const exists = await a.query('SELECT 1 FROM pg_database WHERE datname = $1', [extra])
+      if (exists.rows.length === 0) {
+        console.log(`📦 Creating database ${extra}...`)
+        try {
+          await a.query(`CREATE DATABASE ${ident(extra)}`)
+        } catch (e: any) {
+          if (e?.code === '42P04' || e?.code === '23505') console.log(`✅ Database ${extra} exists (concurrent)`)
+          else throw e
+        }
+      } else {
+        console.log(`✅ Database ${extra} exists`)
+      }
+      await a.query(`GRANT CONNECT ON DATABASE ${ident(extra)} TO ${ident(appUser)}`)
+    } finally {
+      await a.end()
+    }
+    const ea = new Client({ host, port, user: superUser, password: superPassword, database: extra })
+    await ea.connect()
+    try {
+      console.log(`🔑 Granting ${appUser} ownership of ${extra}.public...`)
+      await ea.query(`GRANT ${ident(appUser)} TO CURRENT_USER`)
+      await ea.query(`ALTER SCHEMA public OWNER TO ${ident(appUser)}`)
+      await ea.query(`GRANT ALL ON SCHEMA public TO ${ident(appUser)}`)
+    } finally {
+      await ea.end()
+    }
+  }
+
   console.log('🎉 DB bootstrap complete')
 }
 

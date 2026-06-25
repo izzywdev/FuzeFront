@@ -105,10 +105,7 @@ billingService:
                 values: ["fuzefront-node-2"]
 
 permit:
-  # First-light: disabled. The PDP CrashLoopBackOffs on the placeholder
-  # PERMIT_API_KEY; the backend boots without it (Permit SDK throwOnError:false).
-  # Re-enable once a real PERMIT_API_KEY is sealed.
-  enabled: false
+  enabled: true
 
 # Private GHCR pull secret (sealed; see deploy/contabo/README.md).
 imagePullSecrets:
@@ -174,18 +171,13 @@ ingress:
 # Cookie domain is the apex so the session is shared across *.fuzefront.com.
 # Secrets (AUTHENTIK_SECRET_KEY/BOOTSTRAP_*/CLIENT_SECRET) come from the
 # SealedSecret `fuzefront-secrets` — none are set here.
-# First-light: Authentik (OIDC SSO) DISABLED — its server/worker churn (plus
-# permit-pdp + the old security image) saturated the single control-plane node,
-# flapping Traefik → cluster-wide 502, and selfHeal kept reviving it. Sign-in uses
-# LOCAL auth via the security service. Re-enable when Authentik is properly
-# provisioned and the cluster has headroom.
 authentik:
-  enabled: false
+  enabled: true
   host: auth.fuzefront.com
   cookieDomain: fuzefront.com
   bootstrapEmail: admin@fuzefront.com
   oidc:
-    enabled: false
+    enabled: true
     issuerUrl: "https://auth.fuzefront.com/application/o/fuzefront/"
     redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
     # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
