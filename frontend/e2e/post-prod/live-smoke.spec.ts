@@ -20,7 +20,9 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  *   admin creds, which may or may not exist in prod).
  */
 
-const EMAIL = process.env.POST_PROD_EMAIL || 'admin@fuzefront.com'
+// The live /login page advertises these demo creds (note the .dev domain, as
+// rendered on app.fuzefront.com). Override via env for real prod accounts.
+const EMAIL = process.env.POST_PROD_EMAIL || 'admin@fuzefront.dev'
 const PASSWORD = process.env.POST_PROD_PASSWORD || 'admin123'
 
 // Console/network errors that indicate a real federation / mixed-content /
