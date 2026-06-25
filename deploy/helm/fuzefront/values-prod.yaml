@@ -44,15 +44,17 @@ frontend:
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
 # the Phase 3 cutover. tag "" is rewritten by CI's release sed.
 securityService:
+  enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: ""
+    tag: 9d79c9eb3cbe
   replicas: 2
 
 applicationsService:
+  enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: ""
+    tag: 9d79c9eb3cbe
   replicas: 2
 
 emailService:
