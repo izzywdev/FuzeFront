@@ -14,6 +14,17 @@ import { assignOrganizationRole } from '../utils/permit/role-assignment'
 
 const router = express.Router()
 
+// `settings`/`metadata`/`permissions` are JSONB columns. The `pg` driver already
+// parses JSONB into JS objects on read, so calling JSON.parse on them again throws
+// "Unexpected token o in JSON" (it stringifies the object to "[object Object]"
+// first). This tolerates both shapes — a string (parse it) or an already-parsed
+// object/null (pass through) — so reads never 500 regardless of driver behavior.
+function parseJsonb(value: any): any {
+  if (value === null || value === undefined) return {}
+  if (typeof value === 'string') return JSON.parse(value || '{}')
+  return value
+}
+
 // Input validation helpers
 function validateOrganizationInput(data: any) {
   const errors: string[] = []
@@ -182,8 +193,8 @@ router.post('/', authenticateToken, async (req: any, res) => {
       parent_id: newOrganization.parent_id,
       owner_id: newOrganization.owner_id,
       type: newOrganization.type,
-      settings: JSON.parse(newOrganization.settings || '{}'),
-      metadata: JSON.parse(newOrganization.metadata || '{}'),
+      settings: parseJsonb(newOrganization.settings),
+      metadata: parseJsonb(newOrganization.metadata),
       is_active: newOrganization.is_active,
       created_at: newOrganization.created_at,
       updated_at: newOrganization.updated_at,
@@ -316,8 +327,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
       parent_id: org.parent_id,
       owner_id: org.owner_id,
       type: org.type,
-      settings: JSON.parse(org.settings || '{}'),
-      metadata: JSON.parse(org.metadata || '{}'),
+      settings: parseJsonb(org.settings),
+      metadata: parseJsonb(org.metadata),
       is_active: org.is_active,
       created_at: org.created_at,
       updated_at: org.updated_at,
@@ -392,8 +403,8 @@ router.get(
         parent_id: organization.parent_id,
         owner_id: organization.owner_id,
         type: organization.type,
-        settings: JSON.parse(organization.settings || '{}'),
-        metadata: JSON.parse(organization.metadata || '{}'),
+        settings: parseJsonb(organization.settings),
+        metadata: parseJsonb(organization.metadata),
         is_active: organization.is_active,
         created_at: organization.created_at,
         updated_at: organization.updated_at,
@@ -477,8 +488,8 @@ router.put(
         parent_id: updatedOrganization.parent_id,
         owner_id: updatedOrganization.owner_id,
         type: updatedOrganization.type,
-        settings: JSON.parse(updatedOrganization.settings || '{}'),
-        metadata: JSON.parse(updatedOrganization.metadata || '{}'),
+        settings: parseJsonb(updatedOrganization.settings),
+        metadata: parseJsonb(updatedOrganization.metadata),
         is_active: updatedOrganization.is_active,
         created_at: updatedOrganization.created_at,
         updated_at: updatedOrganization.updated_at,
