@@ -62,6 +62,14 @@ const getDatabaseConfig = (): Knex.Config => {
         // files in dist/migrations and require()s them -> "Unexpected token
         // 'export'", which broke migrations on server startup in CI.
         loadExtensions: [isProduction ? '.js' : '.ts'],
+        // Backend, security, and applications share this `knex_migrations` table on
+        // fuzefront_platform but each image ships only its own migration chain.
+        // knex's default validateMigrationList aborts when the table records a
+        // migration absent from this image's dir (e.g. security's
+        // 010_create_api_tokens / 011_add_billing_to_entities) — which crashlooped
+        // backend replicas after security migrated. Migrations are idempotent;
+        // skip the strict check so each service tolerates the others' recorded rows.
+        disableMigrationsListValidation: true,
       },
       seeds: {
         directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
@@ -88,6 +96,14 @@ const getDatabaseConfig = (): Knex.Config => {
         // files in dist/migrations and require()s them -> "Unexpected token
         // 'export'", which broke migrations on server startup in CI.
         loadExtensions: [isProduction ? '.js' : '.ts'],
+        // Backend, security, and applications share this `knex_migrations` table on
+        // fuzefront_platform but each image ships only its own migration chain.
+        // knex's default validateMigrationList aborts when the table records a
+        // migration absent from this image's dir (e.g. security's
+        // 010_create_api_tokens / 011_add_billing_to_entities) — which crashlooped
+        // backend replicas after security migrated. Migrations are idempotent;
+        // skip the strict check so each service tolerates the others' recorded rows.
+        disableMigrationsListValidation: true,
       },
       seeds: {
         directory: path.join(__dirname, isProduction ? '../seeds' : '../seeds'),
