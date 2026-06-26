@@ -38,5 +38,5 @@ entries:
       user_matching_mode: link_by_email
       user_path_template: "goauthentik.io/sources/%(slug)s"
       # Show a "Sign in with Google" button on the login page
-      authentication_flow: !find [authentik_flows.flow, [slug, default-source-authentication]]
-      enrollment_flow: !find [authentik_flows.flow, [slug, default-source-enrollment]]
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
