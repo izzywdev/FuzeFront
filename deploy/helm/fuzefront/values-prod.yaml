@@ -189,7 +189,7 @@ authentik:
 # Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
 # overlay). Avoids relying on broker auto-create for the prefixed topics.
 kafkaTopics:
-  enabled: true
+  enabled: false
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The
