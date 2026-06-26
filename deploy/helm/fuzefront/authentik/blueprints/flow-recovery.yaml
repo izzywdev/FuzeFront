@@ -72,10 +72,10 @@ entries:
     attrs:
       name: fuzefront-recovery-prompt
       fields:
-        - !find [authentik_stages_prompt.prompt, [name, ff-recovery-password]]
-        - !find [authentik_stages_prompt.prompt, [name, ff-recovery-password-repeat]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-recovery-password]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-recovery-password-repeat]]
       validation_policies:
-        - !find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
+        - !Find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
 
   # ── User-write (password update) stage ───────────────────────────────────────
   - model: authentik_stages_user_write.userwritestage
@@ -113,39 +113,39 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      stage: !find [authentik_stages_identification.identificationstage, [name, fuzefront-recovery-identification]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !Find [authentik_stages_identification.identificationstage, [name, fuzefront-recovery-identification]]
     attrs:
       order: 10
 
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      stage: !find [authentik_stages_email.emailstage, [name, fuzefront-recovery-email]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !Find [authentik_stages_email.emailstage, [name, fuzefront-recovery-email]]
     attrs:
       order: 20
 
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      stage: !find [authentik_stages_prompt.promptstage, [name, fuzefront-recovery-prompt]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !Find [authentik_stages_prompt.promptstage, [name, fuzefront-recovery-prompt]]
     attrs:
       order: 30
 
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      stage: !find [authentik_stages_user_write.userwritestage, [name, fuzefront-recovery-write]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !Find [authentik_stages_user_write.userwritestage, [name, fuzefront-recovery-write]]
     attrs:
       order: 40
 
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      stage: !find [authentik_stages_user_login.userloginstage, [name, fuzefront-recovery-login]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, fuzefront-recovery-login]]
     attrs:
       order: 50

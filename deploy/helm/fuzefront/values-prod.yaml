@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: ca7734822954
+    tag: 46ceb6ad7a59
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: ca7734822954
+    tag: 46ceb6ad7a59
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -47,14 +47,14 @@ securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: ca7734822954
+    tag: 46ceb6ad7a59
   replicas: 2
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: ca7734822954
+    tag: 46ceb6ad7a59
   replicas: 2
 
 emailService:
@@ -189,7 +189,7 @@ authentik:
 # Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
 # overlay). Avoids relying on broker auto-create for the prefixed topics.
 kafkaTopics:
-  enabled: true
+  enabled: false
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The

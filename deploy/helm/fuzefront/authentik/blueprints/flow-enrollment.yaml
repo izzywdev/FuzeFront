@@ -120,13 +120,13 @@ entries:
     attrs:
       name: fuzefront-enroll-prompt
       fields:
-        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-email]]
-        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-username]]
-        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-password]]
-        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-password-repeat]]
-        - !find [authentik_stages_prompt.prompt, [name, ff-enroll-tos]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-enroll-email]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-enroll-username]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-enroll-password]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-enroll-password-repeat]]
+        - !Find [authentik_stages_prompt.prompt, [name, ff-enroll-tos]]
       validation_policies:
-        - !find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
+        - !Find [authentik_policies_password.passwordpolicy, [name, fuzefront-password-policy]]
 
   # ── Email verification stage ─────────────────────────────────────────────────
   - model: authentik_stages_email.emailstage
@@ -178,8 +178,8 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      stage: !find [authentik_stages_captcha.captchastage, [name, fuzefront-enroll-captcha]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !Find [authentik_stages_captcha.captchastage, [name, fuzefront-enroll-captcha]]
     attrs:
       order: 10
       re_evaluate_policies: false
@@ -187,8 +187,8 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      stage: !find [authentik_stages_prompt.promptstage, [name, fuzefront-enroll-prompt]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !Find [authentik_stages_prompt.promptstage, [name, fuzefront-enroll-prompt]]
     attrs:
       order: 20
       re_evaluate_policies: false
@@ -196,8 +196,8 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      stage: !find [authentik_stages_user_write.userwritestage, [name, fuzefront-enroll-write]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !Find [authentik_stages_user_write.userwritestage, [name, fuzefront-enroll-write]]
     attrs:
       order: 30
       re_evaluate_policies: false
@@ -205,8 +205,8 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      stage: !find [authentik_stages_email.emailstage, [name, fuzefront-enroll-email-verify]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !Find [authentik_stages_email.emailstage, [name, fuzefront-enroll-email-verify]]
     attrs:
       order: 40
       re_evaluate_policies: false
@@ -214,8 +214,8 @@ entries:
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
-      target: !find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      stage: !find [authentik_stages_user_login.userloginstage, [name, fuzefront-enroll-login]]
+      target: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, fuzefront-enroll-login]]
     attrs:
       order: 50
       re_evaluate_policies: false

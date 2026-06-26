@@ -41,15 +41,15 @@ entries:
           url: "https://fuzefront.dev.local/api/auth/oidc/callback"
       # Standard OIDC scopes (openid, email, profile)
       property_mappings:
-        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
-        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
-        - !find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
       # Use email as the `sub` claim — consistent with the seeder behaviour
       sub_mode: user_email
       include_claims_in_id_token: true
       # Wire to the default authorization + invalidation flows
-      authorization_flow: !find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
-      invalidation_flow: !find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application
@@ -59,7 +59,7 @@ entries:
     attrs:
       name: FuzeFront
       slug: fuzefront
-      provider: !find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
       meta_launch_url: "https://fuzefront.dev.local/"
       meta_description: "FuzeFront runtime microfrontend platform"
       policy_engine_mode: any
