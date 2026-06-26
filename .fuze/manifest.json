@@ -1,5 +1,6 @@
 {
   "repo": "izzywdev/FuzeFront",
+  "class": "oss-public",
   "tier": "product",
   "expert": "fuzefront-expert",
   "baselineRef": "main",
