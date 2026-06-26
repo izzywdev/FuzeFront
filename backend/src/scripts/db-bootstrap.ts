@@ -169,6 +169,11 @@ async function bootstrap(): Promise<void> {
         console.log(`✅ Database ${extra} exists`)
       }
       await a.query(`GRANT CONNECT ON DATABASE ${ident(extra)} TO ${ident(appUser)}`)
+      // Make the app role OWN the extra DB: components like Authentik create
+      // their own SCHEMAS (e.g. `template`), which needs DB-level CREATE — schema
+      // ownership of `public` alone is not enough (CREATE SCHEMA → permission
+      // denied for database). Ownership grants that. Superuser bootstrap can do this.
+      await a.query(`ALTER DATABASE ${ident(extra)} OWNER TO ${ident(appUser)}`)
     } finally {
       await a.end()
     }
