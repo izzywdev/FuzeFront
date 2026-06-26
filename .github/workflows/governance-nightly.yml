@@ -1,0 +1,59 @@
+name: Governance Nightly
+
+# platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
+# stale/drifting branches, open-PR triage, open-issue completion, and drift vs FuzeSDLC.
+# Takes only safe/reversible actions; files one "Governance reconciliation — <date>" issue.
+# Requires repo secret ANTHROPIC_API_KEY.
+
+on:
+  schedule:
+    - cron: '23 7 * * *'   # 07:23 UTC nightly (off-peak, off the :00 herd)
+  workflow_dispatch:        # manual run
+
+permissions:
+  contents: write           # delete merged branches, open follow-up PRs
+  pull-requests: write      # triage/update/comment, update-branch
+  issues: write             # file the tracking issue, close resolved issues
+  actions: read
+  id-token: write           # claude-code-action OIDC
+
+concurrency:
+  group: governance-nightly
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run platform-governance reconciliation
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the **platform-governance** agent running the nightly **governance-reconciliation**
+            sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
+
+            Do, for THIS repo only:
+            1. BRANCHES — list non-default branches; delete merged-but-undeleted ones; for branches with
+               no PR, either open a draft PR (recent, has unique commits) or recommend deletion (stale).
+            2. OPEN PRs — for each, state why it is still open and the single next action to completion;
+               take safe actions (update-branch, request review, nudge autofix). NEVER auto-merge; never
+               merge a deploy-on-push repo.
+            3. OPEN ISSUES — drive each to a concrete next step: close ones demonstrably resolved (with
+               evidence), open a PR or delegate small actionable ones via an @claude comment with a STATE
+               block, and summarize decision-needing ones for the human.
+            4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
+               .fuze/manifest.json and the FuzeSDLC canonical; open a fix PR for mechanical drift, flag
+               judgment calls.
+
+            Then open or UPDATE a single issue titled "Governance reconciliation — <today's date>"
+            (label: governance) with: branch actions, per-PR blocker+next-action, per-issue disposition,
+            and the drift report; link everything you touched. Keep it idempotent (update, don't duplicate).
+            Guardrails: only safe/reversible actions automatically (delete merged branches, close proven-
+            resolved issues, open draft/follow-up PRs, comment/label, update-branch). Never force-push,
+            never auto-merge, never delete branches with unique unmerged commits, never close an issue you
+            cannot prove resolved.
