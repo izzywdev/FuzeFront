@@ -47,7 +47,7 @@ securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 46ceb6ad7a59
+    tag: 5633ee99318f
   replicas: 2
 
 applicationsService:
