@@ -188,8 +188,11 @@ authentik:
 
 # Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
 # overlay). Avoids relying on broker auto-create for the prefixed topics.
+# Re-enabled once the image was switched bitnami/kafka -> apache/kafka (the
+# bitnami tag was unpullable and froze the sync hook) and the broker
+# (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
 kafkaTopics:
-  enabled: false
+  enabled: true
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The

@@ -50,6 +50,10 @@ spec:
           command: ["/bin/bash", "-ec"]
           args:
             - |
+              # kafka-topics.sh lives in /opt/kafka/bin on apache/kafka and
+              # /opt/bitnami/kafka/bin on bitnami images — add both so the bare
+              # command resolves regardless of which image is pinned.
+              export PATH="/opt/kafka/bin:/opt/bitnami/kafka/bin:${PATH}"
               BOOTSTRAP="{{ $kt.bootstrapServer }}"
               echo "Reconciling FuzeFront Kafka topics against ${BOOTSTRAP}"
               # Wait for the broker to accept connections (FuzeInfra Kafka may
