@@ -1,0 +1,32 @@
+{
+  "repo": "izzywdev/FuzeFront",
+  "class": "oss-public",
+  "tier": "product",
+  "expert": "fuzefront-expert",
+  "baselineRef": "main",
+  "agents": [
+    "contract-designer",
+    "backend-engineer",
+    "database-engineer",
+    "frontend-engineer",
+    "test-engineer",
+    "frontend-test-engineer",
+    "devops-engineer",
+    "docs-maintainer",
+    "agile-manager",
+    "billing-payments-engineer",
+    "telephony-integrator",
+    "security",
+    "fuzefront-expert",
+    "fuzeinfra-expert"
+  ],
+  "designSystem": {
+    "base": "@fuzefront/design-system",
+    "extendsAs": "@fuzefront/design-system"
+  },
+  "hardening": {
+    "ruleset": true,
+    "requireSignatures": true,
+    "deployOnPush": true
+  }
+}
