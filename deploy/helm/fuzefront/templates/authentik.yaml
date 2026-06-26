@@ -241,6 +241,23 @@ spec:
       targetPort: 9000
 ---
 {{- if .Values.ingress.enabled }}
+# Force X-Forwarded-Proto=https for Authentik. TLS terminates at the Cloudflare
+# edge and the tunnel reaches Traefik over HTTP, so Authentik would otherwise see
+# scheme=http and emit http:// URLs in its OIDC discovery doc (issuer/
+# authorization_endpoint/token_endpoint) — which breaks the server-side token
+# exchange and `iss` validation in the OIDC client. Pinning the header makes
+# Authentik build https URLs.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authentik-forwarded-proto
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -249,6 +266,7 @@ metadata:
     {{- include "fuzefront.labels" . | nindent 4 }}
   annotations:
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
