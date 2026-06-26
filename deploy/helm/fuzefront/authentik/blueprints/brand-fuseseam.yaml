@@ -8,7 +8,7 @@
 # Schema: version 3, entries[]
 # Model: authentik_brands.brand
 # Idempotent: state: present + unique slug "fuzefront-brand"
-version: 3
+version: 1
 metadata:
   name: FuzeFront Brand — fuse-seam
 entries:

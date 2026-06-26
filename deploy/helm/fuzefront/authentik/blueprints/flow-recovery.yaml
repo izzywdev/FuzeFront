@@ -6,7 +6,7 @@
 #   3. fuzefront-recovery-prompt                — enter + confirm new password
 #   4. fuzefront-recovery-write                 — write the new password
 #   5. fuzefront-recovery-login                 — log the user in automatically
-version: 3
+version: 1
 metadata:
   name: FuzeFront Recovery Flow
 entries:

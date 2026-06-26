@@ -15,7 +15,7 @@
 # authentik.blueprints.captchaPrivateKey. In dev, empty keys cause the stage
 # to be effectively bypassed (Authentik skips captcha validation when keys
 # are blank).
-version: 3
+version: 1
 metadata:
   name: FuzeFront Enrollment Flow
 entries:

@@ -18,7 +18,7 @@
 # To activate SMS MFA for a user: bind the fuzefront-mfa-sms-setup stage to
 # the enrollment or user-settings flow, and add fuzefront-mfa-sms-setup to
 # the fuzefront-mfa-validate device_classes list (done below).
-version: 3
+version: 1
 metadata:
   name: FuzeFront SMS MFA Stages
 entries:

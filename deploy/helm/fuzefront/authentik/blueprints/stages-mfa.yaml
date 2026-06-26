@@ -11,7 +11,7 @@
 # The setup stages are bound to the default user-settings flow so users can
 # enroll devices from their profile. The validation stage is unbound here
 # (bind it to your authentication flow to enforce MFA).
-version: 3
+version: 1
 metadata:
   name: FuzeFront MFA Stages
 entries:

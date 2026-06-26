@@ -15,7 +15,7 @@
 # fields are not updated (Authentik generates a new secret on provider creation
 # if client_secret is absent from attrs). Rotation requires deleting the
 # provider entry and re-applying.
-version: 3
+version: 1
 metadata:
   name: FuzeFront OIDC Provider
 entries:

@@ -12,7 +12,7 @@
 #   authentik.blueprints.googleClientId / authentik.blueprints.googleClientSecret
 # (backed by SealedSecret in prod). The placeholders below disable the source
 # in dev until real creds are provided — Authentik skips sources with empty keys.
-version: 3
+version: 1
 metadata:
   name: FuzeFront Google OAuth Source
 entries:
