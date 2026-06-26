@@ -10,13 +10,6 @@ interface OIDCConfig {
   redirectUri: string;
 }
 
-// Declare global types for code verifier storage
-declare global {
-  // `var` is required here — global augmentation can't use let/const.
-  // eslint-disable-next-line no-var
-  var codeVerifiers: Map<string, string> | undefined;
-}
-
 class OIDCService {
   private client: Client | null = null;
   private config: OIDCConfig;
@@ -54,7 +47,7 @@ class OIDCService {
     }
   }
 
-  generateAuthUrl(state?: string): string {
+  generateAuthUrl(state?: string): { url: string; codeVerifier: string } {
     if (!this.client) {
       throw new Error('OIDC client not initialized');
     }
@@ -62,36 +55,36 @@ class OIDCService {
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
-    const authUrl = this.client.authorizationUrl({
+    const url = this.client.authorizationUrl({
       scope: 'openid email profile',
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       state: state || generators.state(),
     });
 
-    // Store code verifier for later use (in production, use Redis or database)
-    // For now, we'll store it in memory (not suitable for production)
-    if (!global.codeVerifiers) {
-      global.codeVerifiers = new Map();
-    }
-    global.codeVerifiers.set(state || 'default', codeVerifier);
-
-    return authUrl;
+    // Stateless by design: the caller persists `codeVerifier` in an HttpOnly
+    // cookie alongside `state`, then hands it back to handleCallback(). The
+    // security service runs multiple replicas, so an in-memory map only works
+    // on the pod that started the flow — the callback often lands on a different
+    // replica and the token exchange then fails with "Code verifier not found"
+    // (surfaced to the user as authentication_failed). A cookie round-trips.
+    return { url, codeVerifier };
   }
 
-  async handleCallback(code: string, state?: string): Promise<User> {
+  async handleCallback(
+    code: string,
+    state: string | undefined,
+    codeVerifier: string
+  ): Promise<User> {
     if (!this.client) {
       throw new Error('OIDC client not initialized');
     }
+    if (!codeVerifier) {
+      throw new Error('Code verifier not found');
+    }
 
     try {
-      // Get the stored code verifier
-      const codeVerifier = global.codeVerifiers?.get(state || 'default');
-      if (!codeVerifier) {
-        throw new Error('Code verifier not found');
-      }
-
-      // Exchange code for tokens
+      // Exchange code for tokens (PKCE: code_verifier comes from the cookie)
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
@@ -106,9 +99,6 @@ class OIDCService {
 
       // Sync user to local database
       const user = await this.syncUserToDatabase(userinfo);
-
-      // Clean up code verifier
-      global.codeVerifiers?.delete(state || 'default');
 
       return user;
     } catch (error) {

@@ -371,11 +371,17 @@ router.get('/oidc/login', async (req, res) => {
     }
 
     const state = uuidv4()
-    const authUrl = oidcService.generateAuthUrl(state)
+    const { url, codeVerifier } = oidcService.generateAuthUrl(state)
 
-    console.log(`🔗 [${requestId}] Redirecting to Authentik:`, authUrl)
-    res.setHeader('Set-Cookie', `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`)
-    res.redirect(authUrl)
+    console.log(`🔗 [${requestId}] Redirecting to Authentik:`, url)
+    // Persist BOTH the CSRF state and the PKCE code_verifier in HttpOnly cookies
+    // so the callback is replica-agnostic (the service runs >1 replica; the
+    // callback frequently lands on a different pod than /oidc/login).
+    res.setHeader('Set-Cookie', [
+      `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+      `oidc_cv=${codeVerifier}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+    ])
+    res.redirect(url)
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
     res.status(500).json({ error: 'Failed to initiate OIDC login' })
@@ -421,10 +427,14 @@ router.get('/oidc/callback', async (req, res) => {
     error,
   })
 
-  // Helper: clear the state cookie and redirect to the frontend with an error.
-  // Called on every failure path so the cookie doesn't remain valid for its 10-min Max-Age.
+  // Helper: clear the state + code_verifier cookies and redirect to the frontend
+  // with an error. Called on every failure path so the cookies don't remain
+  // valid for their 10-min Max-Age.
   const clearState = (res: import('express').Response) =>
-    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+    res.setHeader('Set-Cookie', [
+      'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+      'oidc_cv=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+    ])
 
   try {
     // CSRF guard: verify state cookie matches query param
@@ -447,8 +457,16 @@ router.get('/oidc/callback', async (req, res) => {
       clearState(res)
       return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
     }
-    // Clear the cookie on the success path too
-    res.setHeader('Set-Cookie', 'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
+    // Read the PKCE code_verifier from its cookie (set at /oidc/login) before we
+    // clear the cookies on the success path.
+    const cvCookieMatch = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('oidc_cv='))
+    const codeVerifier = cvCookieMatch ? cvCookieMatch.slice('oidc_cv='.length) : ''
+
+    // Clear both cookies on the success path too
+    res.setHeader('Set-Cookie', [
+      'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+      'oidc_cv=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+    ])
 
     if (error) {
       console.log(`❌ [${requestId}] OIDC error:`, error)
@@ -460,8 +478,13 @@ router.get('/oidc/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_BASE}/?error=missing_parameters`)
     }
 
-    // Handle the callback and get user
-    const user = await oidcService.handleCallback(code as string, state as string)
+    if (!codeVerifier) {
+      console.log(`❌ [${requestId}] Missing oidc_cv cookie (PKCE verifier)`)
+      return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`)
+    }
+
+    // Handle the callback and get user (PKCE verifier from the cookie)
+    const user = await oidcService.handleCallback(code as string, state as string, codeVerifier)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
     // Create session id first so it can be embedded in the token
