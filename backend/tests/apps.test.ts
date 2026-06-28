@@ -1,5 +1,6 @@
 import request from 'supertest'
 import express from 'express'
+import { v4 as uuidv4 } from 'uuid'
 import appsRoutes from '../src/routes/apps'
 import authRoutes from '../src/routes/auth'
 import {
@@ -566,6 +567,15 @@ describe('Apps Registration Routes', () => {
       for (const appData of retrievalApps) {
         const res = await postApp(appData)
         expect(res.status).toBe(201)
+        // GET /api/apps is now object-level scoped (org membership + visibility,
+        // appsec HIGH-4). Apps created via POST /api/apps have no organization_id
+        // and default to visibility 'private', so they are correctly excluded
+        // from a non-member's listing. To assert the listing/shape behaviour we
+        // mark these fixtures 'public' so the authenticated caller is entitled
+        // to see them.
+        await db('apps')
+          .where('id', res.body.id)
+          .update({ visibility: 'public' })
       }
     })
 
@@ -607,6 +617,188 @@ describe('Apps Registration Routes', () => {
       const response = await request(app).get('/api/apps').expect(401)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toBe('Access denied. No token provided.')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // appsec #100: authentication on previously-OPEN routes (CRITICAL-1/2)
+  // ---------------------------------------------------------------------------
+  describe('Authentication on register/heartbeat (appsec #100)', () => {
+    it('POST /api/apps/register requires authentication (was open)', async () => {
+      const response = await request(app)
+        .post('/api/apps/register')
+        .send({
+          name: 'Anon Self Register',
+          url: 'http://localhost:9100',
+          integrationType: 'iframe',
+        })
+        .expect(401)
+
+      expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toBe('Access denied. No token provided.')
+
+      // Side effect: nothing was injected into the registry.
+      const row = await db('apps').where('name', 'Anon Self Register').first()
+      expect(row).toBeUndefined()
+    })
+
+    it('POST /api/apps/:id/heartbeat requires authentication (was open)', async () => {
+      const response = await request(app)
+        .post(`/api/apps/${'00000000-0000-0000-0000-000000000000'}/heartbeat`)
+        .send({ status: 'online' })
+        .expect(401)
+
+      expect(response.body).toHaveProperty('error')
+      expect(response.body.error).toBe('Access denied. No token provided.')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // appsec #100: object-level authorization on app mutations (HIGH-3)
+  //
+  // Replaces the old global requireRole(['admin']) on activate/delete with an
+  // object-level check against the app's owning organization. We seed an org +
+  // owner membership for the seeded admin user and an app owned by that org,
+  // then assert: owner -> 200, non-member -> 403. This exercises the
+  // membership-table path of requireAppAction deterministically (no Permit PDP
+  // dependency).
+  // ---------------------------------------------------------------------------
+  describe('Object-level authz on activate/delete (appsec #100)', () => {
+    const ADMIN_USER_ID = '8dbf6a1b-c0a1-462a-9bf5-934c8c7339c3'
+    let orgId: string
+    let demoToken: string
+
+    beforeAll(async () => {
+      // A non-owner caller: the seeded demo user (roles: ['user']).
+      const demoLogin = await request(app).post('/api/auth/login').send({
+        email: 'demo@fuzefront.dev',
+        password: 'demo123',
+      })
+      expect(demoLogin.status).toBe(200)
+      demoToken = demoLogin.body.token
+
+      // Seed an organization owned by the admin user with an active 'owner'
+      // membership, so the admin is an object-level owner of its apps.
+      orgId = uuidv4()
+      await db('organizations').insert({
+        id: orgId,
+        name: 'AuthZ Test Org',
+        slug: `authz-test-org-${orgId.slice(0, 8)}`,
+        owner_id: ADMIN_USER_ID,
+        type: 'organization',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+        is_active: true,
+      })
+      await db('organization_memberships').insert({
+        id: uuidv4(),
+        user_id: ADMIN_USER_ID,
+        organization_id: orgId,
+        role: 'owner',
+        status: 'active',
+        joined_at: new Date(),
+        permissions: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+      })
+    })
+
+    afterAll(async () => {
+      await db('organization_memberships')
+        .where('organization_id', orgId)
+        .del()
+      await db('apps').where('organization_id', orgId).del()
+      await db('organizations').where('id', orgId).del()
+    })
+
+    // Helper: insert an org-owned app directly and remember it for cleanup.
+    async function seedOwnedApp(name: string): Promise<string> {
+      const id = uuidv4()
+      createdAppNames.add(name)
+      await db('apps').insert({
+        id,
+        name,
+        url: 'http://localhost:9200',
+        integration_type: 'iframe',
+        organization_id: orgId,
+        visibility: 'organization',
+        is_active: true,
+      })
+      return id
+    }
+
+    it('PUT /:id/activate: owner of the app org gets 200', async () => {
+      const appId = await seedOwnedApp('AuthZ Owned Activate App')
+
+      const response = await request(app)
+        .put(`/api/apps/${appId}/activate`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ isActive: false })
+        .expect(200)
+
+      expect(response.body.message).toBe('App status updated successfully')
+      const row = await db('apps').where('id', appId).first()
+      expect(Boolean(row.is_active)).toBe(false)
+    })
+
+    it('PUT /:id/activate: non-member gets 403 (no cross-tenant mutation)', async () => {
+      const appId = await seedOwnedApp('AuthZ NonOwner Activate App')
+
+      const response = await request(app)
+        .put(`/api/apps/${appId}/activate`)
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({ isActive: false })
+        .expect(403)
+
+      expect(response.body).toHaveProperty('error')
+      // Side effect: app left untouched (still active).
+      const row = await db('apps').where('id', appId).first()
+      expect(Boolean(row.is_active)).toBe(true)
+    })
+
+    it('PUT /:id/activate: rejects non-boolean isActive (mass-assign guard)', async () => {
+      const appId = await seedOwnedApp('AuthZ Activate Coerce App')
+
+      const response = await request(app)
+        .put(`/api/apps/${appId}/activate`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ isActive: 'true' })
+        .expect(400)
+
+      expect(response.body).toHaveProperty('error')
+    })
+
+    it('DELETE /:id: non-member gets 403, app not deleted', async () => {
+      const appId = await seedOwnedApp('AuthZ NonOwner Delete App')
+
+      await request(app)
+        .delete(`/api/apps/${appId}`)
+        .set('Authorization', `Bearer ${demoToken}`)
+        .expect(403)
+
+      const row = await db('apps').where('id', appId).first()
+      expect(row).toBeDefined()
+    })
+
+    it('DELETE /:id: owner gets 200 and the app is removed', async () => {
+      const appId = await seedOwnedApp('AuthZ Owner Delete App')
+
+      const response = await request(app)
+        .delete(`/api/apps/${appId}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200)
+
+      expect(response.body.message).toBe('App deleted successfully')
+      const row = await db('apps').where('id', appId).first()
+      expect(row).toBeUndefined()
+    })
+
+    it('DELETE /:id: requires authentication', async () => {
+      const appId = await seedOwnedApp('AuthZ Unauth Delete App')
+
+      await request(app).delete(`/api/apps/${appId}`).expect(401)
+
+      const row = await db('apps').where('id', appId).first()
+      expect(row).toBeDefined()
     })
   })
 })
