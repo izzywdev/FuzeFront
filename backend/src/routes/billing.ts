@@ -164,6 +164,65 @@ async function authorizeBillingEntity(
   return { entityType: 'organization', entityId: organizationId }
 }
 
+/**
+ * Authorize a CHECKOUT request. Checkout is always organization-scoped (it
+ * starts a Stripe Checkout Session for an org's subscription), so unlike the
+ * generic billing routes it does not fall back to user-scope: a target
+ * `organizationId` is REQUIRED and the caller must hold 'manage' on it. Returns
+ * the SERVER-DERIVED authorized org entity, or writes the response + returns
+ * null on any failure (caller must stop). The client-supplied organizationId is
+ * treated as an untrusted *request* and is re-authorized here, never trusted.
+ */
+async function authorizeCheckout(
+  req: BillingRequest,
+  res: Response
+): Promise<AuthorizedEntity | null> {
+  const userId = req.user?.id
+  if (!userId) {
+    res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' })
+    return null
+  }
+
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<
+    string,
+    unknown
+  >
+  const organizationId =
+    typeof body.organizationId === 'string' && body.organizationId
+      ? body.organizationId
+      : undefined
+
+  if (!organizationId) {
+    res.status(400).json({
+      error: 'Organization id required for checkout',
+      code: 'ORG_ID_REQUIRED',
+    })
+    return null
+  }
+
+  let allowed: boolean
+  try {
+    allowed = await checkOrganizationPermission(userId, 'manage', organizationId)
+  } catch (err) {
+    console.error('[billing-proxy] checkout org permission check failed:', err)
+    res
+      .status(500)
+      .json({ error: 'Authorization check failed', code: 'AUTHZ_CHECK_ERROR' })
+    return null
+  }
+
+  if (!allowed) {
+    res.status(403).json({
+      error: 'Insufficient organization permissions for billing',
+      code: 'ORG_PERMISSION_DENIED',
+      required: { action: 'manage', organizationId },
+    })
+    return null
+  }
+
+  return { entityType: 'organization', entityId: organizationId }
+}
+
 // Cluster-internal base URL of the billing-service. Overridable via env so the
 // same code works locally (port-forward / compose) and in-cluster.
 const BILLING_SERVICE_URL = (
@@ -230,6 +289,13 @@ async function forward(
     authorizedEntity?: AuthorizedEntity
     /** Inject the authorized entity into the forwarded JSON body. */
     injectEntityToBody?: boolean
+    /**
+     * Re-add the authorized ORGANIZATION id as `organizationId` in the body.
+     * The /checkout upstream schema names the org `organizationId` (not the
+     * generic entityType/entityId selector), so this server-derives that field
+     * the same way — the client value was already stripped above.
+     */
+    injectOrgIdToBody?: boolean
     /** Authenticated actor (req.user.id), forwarded as a trusted header. */
     actorUserId?: string
   }
@@ -273,6 +339,15 @@ async function forward(
       sanitized.entityType = options.authorizedEntity.entityType
       sanitized.entityId = options.authorizedEntity.entityId
     }
+    // /checkout names the org `organizationId` in its upstream schema — re-add
+    // the SERVER-DERIVED authorized org id under that field.
+    if (
+      options.authorizedEntity &&
+      options.injectOrgIdToBody &&
+      options.authorizedEntity.entityType === 'organization'
+    ) {
+      sanitized.organizationId = options.authorizedEntity.entityId
+    }
     data = sanitized
   } else {
     data = undefined
@@ -290,10 +365,18 @@ async function forward(
   // them as authoritative and re-check the subscription↔entity binding.
   if (options.actorUserId) {
     headers['X-Billing-Actor-User-Id'] = options.actorUserId
+    // Service-tier defence-in-depth contract: the billing-service re-verifies
+    // ownership against these EXACT header names (X-FF-Actor-Id / X-FF-Org-Id).
+    headers['X-FF-Actor-Id'] = options.actorUserId
   }
   if (options.authorizedEntity) {
     headers['X-Billing-Entity-Type'] = options.authorizedEntity.entityType
     headers['X-Billing-Entity-Id'] = options.authorizedEntity.entityId
+    // The authorized organization id, for org-scoped billing only; user-scope
+    // has no org context so X-FF-Org-Id is omitted there.
+    if (options.authorizedEntity.entityType === 'organization') {
+      headers['X-FF-Org-Id'] = options.authorizedEntity.entityId
+    }
   }
 
   for (const h of options.passHeaders || []) {
@@ -428,6 +511,29 @@ router.post(
       internalAuth: true,
       authorizedEntity: entity,
       injectEntityToBody: true,
+      actorUserId: req.user!.id,
+    })
+  }
+)
+
+// Checkout — start a Stripe Checkout Session for an organization's plan.
+//
+// Always organization-scoped: the caller must hold 'manage' on the target org.
+// The proxy server-derives the authorized organizationId into the forwarded
+// body and ALSO sends it as the trusted X-FF-Org-Id / X-FF-Actor-Id headers so
+// the billing-service re-verifies ownership (service-tier defence-in-depth).
+// The browser receives the upstream { url, sessionId } verbatim.
+router.post(
+  '/checkout',
+  authenticateToken,
+  async (req: BillingRequest, res) => {
+    const entity = await authorizeCheckout(req, res)
+    if (!entity) return
+    return forward(req, res, {
+      path: '/checkout',
+      internalAuth: true,
+      authorizedEntity: entity,
+      injectOrgIdToBody: true,
       actorUserId: req.user!.id,
     })
   }
