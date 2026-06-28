@@ -10,6 +10,7 @@ import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
+import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -69,6 +70,11 @@ app.use(
     credentials: true,
   })
 )
+
+// Stripe webhook passthrough MUST be mounted before the global JSON body parser
+// so the raw signed bytes survive for downstream signature verification. It uses
+// its own express.raw() parser. (See routes/billing.ts.)
+app.use('/api/v1/billing/webhooks/stripe', billingWebhookRouter)
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
@@ -264,6 +270,9 @@ try {
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
+// Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
+// internal token). Webhook subroute is mounted separately above (raw body).
+app.use('/api/v1/billing', billingRoutes)
 // Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
 app.use('/internal', internalRoutes)
 
