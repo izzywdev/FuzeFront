@@ -330,6 +330,10 @@ describe('billing proxy', () => {
         expect((call.headers as any)['X-Billing-Actor-User-Id']).toBe('user-1')
         expect((call.headers as any)['X-Billing-Entity-Type']).toBe('organization')
         expect((call.headers as any)['X-Billing-Entity-Id']).toBe(ORG)
+        // Service-tier defence-in-depth headers (the billing-service re-verifies
+        // ownership against these exact names).
+        expect((call.headers as any)['X-FF-Actor-Id']).toBe('user-1')
+        expect((call.headers as any)['X-FF-Org-Id']).toBe(ORG)
       })
 
       it('PATCH /subscriptions/:id forwards (manage) without polluting the body schema', async () => {
@@ -436,6 +440,104 @@ describe('billing proxy', () => {
         const call = mockedAxios.request.mock.calls[0][0]
         expect(call.params).toEqual({ limit: '10' })
       })
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // POST /checkout — start a Stripe Checkout Session. Always org-scoped: the
+  // caller must hold 'manage' on the target org. Asserts deny (non-member ->
+  // 403, no forward) and the authorized forward (server-derived org in the
+  // body, X-FF-Actor-Id / X-FF-Org-Id present, plan/url fields forwarded, and
+  // the upstream { url, sessionId } relayed back).
+  // -------------------------------------------------------------------------
+  describe('POST /checkout', () => {
+    const ORG = '22222222-2222-2222-2222-222222222222'
+
+    it('non-member -> 403 and the request never reaches the billing-service', async () => {
+      mockCheckOrgPermission.mockResolvedValue(false)
+
+      const res = await request(app)
+        .post('/api/v1/billing/checkout')
+        .set('Authorization', 'Bearer user-jwt')
+        .send({
+          planId: 'plan_pro',
+          organizationId: ORG,
+          successUrl: 'https://app/ok',
+          cancelUrl: 'https://app/no',
+        })
+
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('ORG_PERMISSION_DENIED')
+      expect(mockedAxios.request).not.toHaveBeenCalled()
+      expect(mockCheckOrgPermission).toHaveBeenCalledWith('user-1', 'manage', ORG)
+    })
+
+    it('400 when no organizationId is supplied (checkout is always org-scoped)', async () => {
+      const res = await request(app)
+        .post('/api/v1/billing/checkout')
+        .set('Authorization', 'Bearer user-jwt')
+        .send({ planId: 'plan_pro', successUrl: 'https://app/ok', cancelUrl: 'https://app/no' })
+
+      expect(res.status).toBe(400)
+      expect(res.body.code).toBe('ORG_ID_REQUIRED')
+      expect(mockedAxios.request).not.toHaveBeenCalled()
+      expect(mockCheckOrgPermission).not.toHaveBeenCalled()
+    })
+
+    it('owner -> forwarded with X-FF-Actor-Id/X-FF-Org-Id + body forwarded, relays { url, sessionId }', async () => {
+      mockCheckOrgPermission.mockResolvedValue(true)
+      okUpstream({ url: 'https://checkout.stripe.com/c/sess_1', sessionId: 'sess_1' })
+
+      const res = await request(app)
+        .post('/api/v1/billing/checkout')
+        .set('Authorization', 'Bearer user-jwt')
+        .send({
+          planId: 'plan_pro',
+          organizationId: ORG,
+          successUrl: 'https://app/ok',
+          cancelUrl: 'https://app/no',
+        })
+
+      expect(res.status).toBe(200)
+      // Upstream { url, sessionId } relayed to the browser verbatim.
+      expect(res.body).toEqual({
+        url: 'https://checkout.stripe.com/c/sess_1',
+        sessionId: 'sess_1',
+      })
+      expect(mockCheckOrgPermission).toHaveBeenCalledWith('user-1', 'manage', ORG)
+
+      const call = mockedAxios.request.mock.calls[0][0]
+      expect(call.method).toBe('POST')
+      expect(call.url).toBe('http://billing.test:3006/api/v1/billing/checkout')
+      expect((call.headers as any).Authorization).toBe('Bearer test-internal-token')
+      // Body: plan + url fields forwarded; organizationId is SERVER-DERIVED to
+      // the authorized org (entityType/entityId selectors are not used here).
+      expect(call.data).toEqual({
+        planId: 'plan_pro',
+        organizationId: ORG,
+        successUrl: 'https://app/ok',
+        cancelUrl: 'https://app/no',
+      })
+      // Service-tier defence-in-depth headers present and authoritative.
+      expect((call.headers as any)['X-FF-Actor-Id']).toBe('user-1')
+      expect((call.headers as any)['X-FF-Org-Id']).toBe(ORG)
+    })
+
+    it('overrides a client-smuggled organizationId with the authorized org', async () => {
+      mockCheckOrgPermission.mockResolvedValue(true)
+      okUpstream({ url: 'https://checkout.stripe.com/c/sess_2', sessionId: 'sess_2' })
+
+      // Client authorizes against ORG (via the route body) but tries to smuggle
+      // a victim org. authorizeCheckout reads organizationId for the authz, and
+      // the forwarded body must carry exactly the authorized org id.
+      await request(app)
+        .post('/api/v1/billing/checkout')
+        .set('Authorization', 'Bearer user-jwt')
+        .send({ planId: 'plan_pro', organizationId: ORG, successUrl: 'u', cancelUrl: 'c' })
+
+      const call = mockedAxios.request.mock.calls[0][0]
+      expect((call.data as any).organizationId).toBe(ORG)
+      expect((call.headers as any)['X-FF-Org-Id']).toBe(ORG)
     })
   })
 })
