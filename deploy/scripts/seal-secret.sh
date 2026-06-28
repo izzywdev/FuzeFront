@@ -61,12 +61,18 @@ else
 fi
 
 # ---- get the value (hidden prompt, or from a file) -----------------------------
+# Strip ALL whitespace (CR, LF, space, tab), not just \r\n. A single stray byte —
+# a trailing newline from `echo`/an editor, or a pasted space — is invisible in the
+# sealed blob but fatal downstream: e.g. a token sealed with a trailing \n makes
+# authentik's embedded outpost emit an Authorization header that Go's HTTP client
+# rejects ("invalid header field value"), looping forever. Secrets/tokens never
+# legitimately contain whitespace, so scrubbing it is always safe here.
 if [ -n "$INFILE" ]; then
-  tr -d '\r\n' < "$INFILE" > "$VAL"
+  tr -d '[:space:]' < "$INFILE" > "$VAL"
 else
   printf 'Paste value for %s (hidden, will not echo): ' "$KEY" >&2
   read -rs _V; echo >&2
-  printf '%s' "$_V" > "$VAL"; unset _V
+  printf '%s' "$_V" | tr -d '[:space:]' > "$VAL"; unset _V
 fi
 [ -s "$VAL" ] || { echo "empty value — aborting" >&2; exit 1; }
 
