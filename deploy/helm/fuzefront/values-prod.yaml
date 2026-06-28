@@ -75,20 +75,29 @@ provisioningService:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
     tag: ""  # CI's release sed writes the real image SHA here
 
-# Billing-service (Stripe). Independently-lifecycled — synced by its own Argo
-# Application (deploy/argocd/applications/billing.yaml). Enabled — but it only
-# actually serves once the per-service `billing-secrets` SealedSecret holds
-# STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN, BILLING_DB_PASSWORD
-# (seal them with deploy/scripts/seal-secret.sh). The billing_svc role + `billing`
-# schema are provisioned by the pre-install billing-db-bootstrap Job. Until the
-# secret keys exist the pod stays pending on them (it will NOT crash other services,
-# since billing has its own isolated secret). NEVER hand-deploy — flip via GitOps.
+# Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
+# (gated by billingService.enabled), NOT a separate Application: billing's
+# templates live in this umbrella chart, so a second Argo app on the same chart
+# path would DOUBLE-CLAIM the billing Deployment (that is exactly why the prior
+# deploy/argocd/applications/billing.yaml was removed). A dedicated Argo app is
+# only correct once billing is extracted into its own chart (tracked follow-up).
+# Isolation that the hybrid model wants is still satisfied: billing has its OWN
+# per-service `billing-secrets` SealedSecret + its own billing_svc DB role, so a
+# pending/crashing billing pod CANNOT take down other services or read their
+# secrets. Billing serves only once `billing-secrets` holds STRIPE_SECRET_KEY,
+# STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN, BILLING_DB_PASSWORD (seal real
+# values with deploy/scripts/seal-secret.sh; placeholders are committed in
+# deploy/contabo/sealed/billing-secrets.yaml). The billing_svc role + `billing`
+# schema are provisioned by the pre-install billing-db-bootstrap Job. NEVER
+# hand-deploy — flip via GitOps.
 billingService:
-  # First-light: DISABLED. Its image isn't published to GHCR yet (empty tag →
-  # InvalidImageName) and STRIPE_* are placeholders. Billing is a backend
-  # microservice, not part of the MF platform shell, and the host backend's
-  # billing proxy degrades gracefully without it — so it must not gate go-live.
-  # Re-enable once the release publishes a tag here and real STRIPE_* are sealed.
+  # First-light: DISABLED. While false, NEITHER the billing Deployment NOR the
+  # pre-install billing-db-bootstrap hook render — so billing has ZERO freeze
+  # surface on the umbrella sync (no InvalidImageName, no PreSync-hook gate).
+  # Billing is a backend microservice, not part of the MF platform shell, and the
+  # host backend's billing proxy degrades gracefully without it — so it must not
+  # gate go-live. GO-LIVE = flip this to true (the image tag below is already
+  # auto-bumped to the built SHA by release.yml) AND seal the real STRIPE_* keys.
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
