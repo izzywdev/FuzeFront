@@ -16,7 +16,14 @@ spec:
       labels:
         app: fuzefront-billing-service
         {{- include "fuzefront.labels" . | nindent 8 }}
+      annotations:
+        {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.billingService.port "root" .) | nindent 8 }}
     spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.billingService "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: billing-service
           image: "{{ .Values.billingService.image.repository }}:{{ .Values.billingService.image.tag }}"
