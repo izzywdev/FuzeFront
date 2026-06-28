@@ -103,6 +103,22 @@ spec:
                   name: {{ include "fuzefront.secretName" . }}
                   key: INTERNAL_PROVISION_SECRET
                   optional: true
+            {{- if .Values.billingService.enabled }}
+            # Billing proxy: the host backend forwards /api/v1/billing/* to the
+            # cluster-internal billing-service, presenting BILLING_INTERNAL_TOKEN
+            # as the upstream bearer. Sourced from the SAME per-service
+            # `billing-secrets` the billing-service reads, so they match by
+            # construction. optional:true so the backend still boots if the
+            # secret hasn't synced yet (the proxy then returns a clean 5xx).
+            - name: BILLING_SERVICE_URL
+              value: "http://fuzefront-billing-service:{{ .Values.billingService.port | default 3006 }}"
+            - name: BILLING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: BILLING_INTERNAL_TOKEN
+                  optional: true
+            {{- end }}
             {{- if .Values.authentik.oidc.enabled }}
             # Authentik OIDC (SSO). client_id/secret come from the Secret (set
             # deterministically by blueprints); issuer/redirect from values.
