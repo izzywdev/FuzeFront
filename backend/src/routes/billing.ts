@@ -219,11 +219,17 @@ async function forward(
     /** Extra headers to forward verbatim (e.g. Stripe-Signature). */
     passHeaders?: string[]
     /**
-     * Server-derived, authorized entity. When set, its (entityType, entityId)
-     * OVERRIDES whatever the client sent in the body, and the same identity is
-     * forwarded as trusted X-Billing-* headers so the service can re-verify.
+     * Server-derived, authorized entity. Always forwarded as trusted
+     * X-Billing-* headers so the service can re-verify. When
+     * `injectEntityToBody` is true it ALSO overrides the body's
+     * entityType/entityId (for routes whose upstream schema carries the entity
+     * selector — create / setup-intent). The :stripeSubscriptionId routes use
+     * an upstream schema with `additionalProperties: false` and NO entity
+     * selector, so for those the entity travels via headers only.
      */
     authorizedEntity?: AuthorizedEntity
+    /** Inject the authorized entity into the forwarded JSON body. */
+    injectEntityToBody?: boolean
     /** Authenticated actor (req.user.id), forwarded as a trusted header. */
     actorUserId?: string
   }
@@ -256,11 +262,14 @@ async function forward(
       unknown
     >
     const sanitized: Record<string, unknown> = { ...src }
-    // Never trust client-supplied entity selectors.
+    // Never trust client-supplied entity selectors — strip them unconditionally.
     delete sanitized.entityType
     delete sanitized.entityId
     delete sanitized.organizationId
-    if (options.authorizedEntity) {
+    // Re-add the SERVER-DERIVED entity only for routes whose upstream schema
+    // accepts it (create / setup-intent). For :stripeSubscriptionId routes the
+    // upstream schema forbids extra props, so the entity goes via headers only.
+    if (options.authorizedEntity && options.injectEntityToBody) {
       sanitized.entityType = options.authorizedEntity.entityType
       sanitized.entityId = options.authorizedEntity.entityId
     }
@@ -356,6 +365,7 @@ router.post(
       path: '/subscriptions',
       internalAuth: true,
       authorizedEntity: entity,
+      injectEntityToBody: true,
       actorUserId: req.user!.id,
     })
   }
@@ -417,6 +427,7 @@ router.post(
       path: '/setup-intent',
       internalAuth: true,
       authorizedEntity: entity,
+      injectEntityToBody: true,
       actorUserId: req.user!.id,
     })
   }
