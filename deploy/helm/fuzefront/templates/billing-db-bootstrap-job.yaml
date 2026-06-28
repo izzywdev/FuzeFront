@@ -51,10 +51,35 @@ spec:
                 END IF;
               END
               $do$;
+              -- pgcrypto: created here by the SUPERUSER. billing_svc (NOSUPERUSER,
+              -- non-DB-owner) CANNOT run CREATE EXTENSION at migration time, so the
+              -- migration must not — it would fail "permission denied to create
+              -- extension". (gen_random_uuid() is core in PG13+ so this is belt-and-
+              -- suspenders, but keep it for any future pgcrypto use.)
+              CREATE EXTENSION IF NOT EXISTS pgcrypto;
+              -- billing_svc OWNS the `billing` schema (so it can run its own table
+              -- migrations: CREATE TABLE/sequences inside `billing`). Idempotent.
               CREATE SCHEMA IF NOT EXISTS billing AUTHORIZATION billing_svc;
               GRANT USAGE ON SCHEMA public TO billing_svc;
+              -- Least-privilege cross-schema write: billing-service's writePlanCache
+              -- UPDATEs the billing cache columns on public.users / public.organizations
+              -- (owned by the identity/security service, not billing). Grant SELECT+UPDATE
+              -- on exactly those two tables — NOT blanket grants on the public schema.
+              -- Guarded with to_regclass so this is a no-op (not a hard pre-install
+              -- failure) if the identity migrations haven't created the tables yet; the
+              -- grant is re-applied on the next pre-upgrade sync once they exist.
+              DO $grant$
+              BEGIN
+                IF to_regclass('public.users') IS NOT NULL THEN
+                  EXECUTE 'GRANT SELECT, UPDATE ON public.users TO billing_svc';
+                END IF;
+                IF to_regclass('public.organizations') IS NOT NULL THEN
+                  EXECUTE 'GRANT SELECT, UPDATE ON public.organizations TO billing_svc';
+                END IF;
+              END
+              $grant$;
               SQL
-              echo "billing_svc role + billing schema ensured"
+              echo "billing_svc role + billing schema + pgcrypto + public grants ensured"
           env:
             - name: DB_HOST
               value: {{ .Values.fuzeinfra.postgres.host | quote }}

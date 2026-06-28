@@ -1,9 +1,19 @@
 -- Migration 001: billing schema
--- Idempotent: safe to re-run (all CREATE statements use IF NOT EXISTS)
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE SCHEMA IF NOT EXISTS billing;
+-- Idempotent: safe to re-run (all CREATE statements use IF NOT EXISTS).
+--
+-- LEAST-PRIVILEGE: this migration is executed at billing-service startup by the
+-- runtime role `billing_svc`, which is NOSUPERUSER and is NOT the platform
+-- database owner — it only OWNS the `billing` schema (granted by the pre-install
+-- billing-db-bootstrap Job via CREATE SCHEMA billing AUTHORIZATION billing_svc).
+-- So this file MUST NOT contain database-level DDL billing_svc cannot run:
+--   * CREATE EXTENSION -> "permission denied to create extension" (needs CREATE
+--                         on the DB / superuser). The bootstrap Job creates
+--                         pgcrypto as the superuser instead.
+--   * CREATE SCHEMA    -> "permission denied for database" (needs CREATE on the
+--                         DB). The bootstrap Job creates the `billing` schema.
+-- Both were empirically reproduced against postgres:15 as billing_svc and moved
+-- into the bootstrap. gen_random_uuid() is CORE in PostgreSQL 13+ (FuzeInfra runs
+-- postgres:15), so the UUID defaults below need no pgcrypto dependency.
 
 -- billing.customers
 -- Links platform entities (users / organizations) to Stripe customers.
