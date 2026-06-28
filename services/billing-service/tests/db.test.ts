@@ -29,12 +29,29 @@ describe('001_billing_schema.sql — DDL shape', () => {
     expect(sql.length).toBeGreaterThan(0);
   });
 
-  it('creates the pgcrypto extension idempotently', () => {
-    expect(sql).toMatch(/CREATE EXTENSION IF NOT EXISTS pgcrypto/i);
+  // LEAST-PRIVILEGE: the migration is run by the NOSUPERUSER runtime role
+  // billing_svc, which cannot run CREATE EXTENSION (permission denied to create
+  // extension) or CREATE SCHEMA (permission denied for database). Those are the
+  // superuser billing-db-bootstrap Job's responsibility — the migration MUST NOT
+  // contain them, else it fails and billing runs degraded with no tables.
+  // Strip SQL line comments so the explanatory header (which mentions these
+  // statements by name) does not trip the "must not contain" assertions.
+  const executableSql = () =>
+    sql
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+  it('does NOT run CREATE EXTENSION (bootstrap superuser does it)', () => {
+    expect(executableSql()).not.toMatch(/CREATE\s+EXTENSION/i);
   });
 
-  it('creates billing schema idempotently', () => {
-    expect(sql).toMatch(/CREATE SCHEMA IF NOT EXISTS billing/i);
+  it('does NOT run CREATE SCHEMA (bootstrap creates billing schema)', () => {
+    expect(executableSql()).not.toMatch(/CREATE\s+SCHEMA/i);
+  });
+
+  it('uses core gen_random_uuid() for UUID defaults (no pgcrypto dependency)', () => {
+    expect(sql).toMatch(/gen_random_uuid\(\)/i);
   });
 
   it('creates billing.customers table idempotently', () => {
