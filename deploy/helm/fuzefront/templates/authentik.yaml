@@ -132,6 +132,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: authentik-server
+  {{- if $ak.reloader.enabled }}
+  annotations:
+    # stakater/Reloader: roll this Deployment when the backing Secret changes
+    # (e.g. AUTHENTIK_BOOTSTRAP_TOKEN rotation) — no human restart step.
+    secret.reloader.stakater.com/reload: {{ include "fuzefront.secretName" . | quote }}
+  {{- end }}
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
     app: authentik-server
@@ -187,6 +193,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: authentik-worker
+  {{- if $ak.reloader.enabled }}
+  annotations:
+    # stakater/Reloader: roll this Deployment when the backing Secret changes
+    # (e.g. AUTHENTIK_BOOTSTRAP_TOKEN rotation) — no human restart step.
+    secret.reloader.stakater.com/reload: {{ include "fuzefront.secretName" . | quote }}
+  {{- end }}
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
     app: authentik-worker

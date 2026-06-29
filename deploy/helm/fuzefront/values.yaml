@@ -455,6 +455,18 @@ authentik:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Auto-restart server + worker when the backing Secret (fuzefront-secrets)
+  # changes — e.g. after a `rotate-sealed-secret` run rotates the
+  # AUTHENTIK_BOOTSTRAP_TOKEN. Adds a stakater/Reloader annotation
+  # (https://github.com/stakater/Reloader) that watches the Secret and triggers a
+  # rolling restart on change, with NO human step. In prod the Secret is sourced
+  # from a SealedSecret (secret.existingSecret), so a Helm `checksum/secret`
+  # annotation cannot see the rotated value — Reloader (which watches the live
+  # Secret object) is the correct primitive here. The annotation is inert if
+  # Reloader is not installed cluster-side (pods just won't auto-restart — fall
+  # back to the workflow's `reload_argocd_app` input or a manual rollout).
+  reloader:
+    enabled: true
 
 ingress:
   enabled: true

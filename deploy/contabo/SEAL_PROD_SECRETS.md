@@ -69,3 +69,20 @@ created, and `prod-smoke` flips `https://app.fuzefront.com/api/health` to 200.
 
 > Billing/chat run as separate Argo apps; their secrets (`billing-secrets`, etc.) are not
 > required for the host app's `/api/health` and can be sealed later the same way.
+
+## Rotating a secret (automated — no manual reseal)
+
+The recipe above is for **first seal / from-scratch** provisioning. To **rotate** a
+single key thereafter, do not reseal by hand — use the rotation workflow
+(`rotate-sealed-secret`, staged at `deploy/ci/rotate-sealed-secret.yml` until a
+maintainer `git mv`s it into `.github/workflows/`; see `deploy/ci/README.md`):
+
+> Actions → **Rotate sealed secret** → Run workflow → `key=AUTHENTIK_BOOTSTRAP_TOKEN`,
+> `scope=fuzefront/fuzefront-secrets`, `value_mode=generate`.
+
+It generates a fresh value, seals it **offline** via `deploy/scripts/seal-secret.sh`
+(plaintext never logged), and opens an auto-merging PR. On merge the `fuzefront-sealed`
+Argo app syncs the SealedSecret, the controller decrypts it, and **stakater/Reloader**
+auto-restarts `authentik-server` + `authentik-worker` (see `authentik.reloader.enabled`
+in the Helm values) — clearing the `invalid header field value for "Authorization"`
+outpost loop with no human step.
