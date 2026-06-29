@@ -95,7 +95,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running authentication tests..."
-          npm test -- --testPathPattern=auth --verbose --runInBand
+          npm test -- --testPathPattern=auth --verbose --runInBand --forceExit
 
       - name: Run apps routes tests (BOLA authz coverage)
         working-directory: ./backend
@@ -113,7 +113,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running apps routes tests (incl. apps.test.ts)..."
-          npm test -- --testPathPattern=apps --verbose --runInBand
+          npm test -- --testPathPattern=apps --verbose --runInBand --forceExit
 
       - name: Run production database tests
         working-directory: ./backend
@@ -131,7 +131,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running production-like tests..."
-          npm test -- --testPathPattern=auth-production --verbose --runInBand
+          npm test -- --testPathPattern=auth-production --verbose --runInBand --forceExit
 
       - name: Generate test coverage
         working-directory: ./backend
@@ -147,7 +147,7 @@ jobs:
           FRONTEND_URL: http://localhost:3000
           PERMIT_API_KEY: 'ci-no-real-permit-calls'
           PERMIT_PDP_URL: 'http://localhost:7766'
-        run: npm run test:coverage -- --runInBand --testPathIgnorePatterns=permit-integration
+        run: npm run test:coverage -- --runInBand --testPathIgnorePatterns=permit-integration --forceExit
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -258,4 +258,4 @@ jobs:
           PERMIT_PDP_URL: http://localhost:7766
         run: |
           echo "Running Permit.io integration tests..."
-          npm test -- --testPathPattern=permit-integration --verbose --runInBand
+          npm test -- --testPathPattern=permit-integration --verbose --runInBand --forceExit
