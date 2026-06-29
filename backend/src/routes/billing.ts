@@ -45,10 +45,11 @@ interface AuthorizedEntity {
   entityId: string
 }
 
-// AuthenticatedRequest-like shape. `authenticateToken` populates req.user; we
-// also stash the server-derived, authorized entity for the forwarder to use.
+// AuthenticatedRequest-like shape. `authenticateToken` populates req.user (typed
+// globally as Express.Request.user?: User in src/types/express.d.ts — do NOT
+// redeclare it here, that conflicts with the augmentation: TS2430). We only add
+// the server-derived, authorized entity for the forwarder to use.
 interface BillingRequest extends Request {
-  user?: { id: string; email?: string; roles?: string[] }
   billingEntity?: AuthorizedEntity
 }
 
