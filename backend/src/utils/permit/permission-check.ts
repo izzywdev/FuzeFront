@@ -1,5 +1,4 @@
 import permit from '../../config/permit'
-import { db } from '../../config/database'
 
 export interface PermissionCheck {
   user: string
@@ -69,7 +68,13 @@ export async function checkOrganizationPermission(
   organizationId: string,
   context?: Record<string, any>
 ): Promise<boolean> {
-  const allowed = await checkPermission({
+  // Authoritative source is Permit.io. We deliberately do NOT fall back to a DB
+  // membership check on a clean Permit deny — that would fail OPEN and let a
+  // local membership row override an intentional Permit denial (auth bypass on a
+  // money path). The correct fix for "owner wrongly denied" is to ensure
+  // provisioning SYNCS the owner role into Permit (see ensurePersonalOrg /
+  // reconcileOrganizationProvisioning in the security service), not to bypass it.
+  return checkPermission({
     user: userId,
     action,
     resource: {
@@ -78,29 +83,6 @@ export async function checkOrganizationPermission(
     },
     context,
   })
-  if (allowed) return true
-
-  // Authoritative DB-membership fallback. Permit.io role-sync can lag or miss on
-  // provisioning (e.g. a freshly-provisioned personal org whose owner role never
-  // synced), which would wrongly deny a legitimate owner. The
-  // organization_memberships table is the source of truth the org list query
-  // uses, so fall back to it: an ACTIVE member may 'read'; an active owner/admin
-  // may 'update'/'delete'/'manage'. A non-member is still denied → BOLA holds.
-  try {
-    const membership = await db('organization_memberships')
-      .where({
-        user_id: userId,
-        organization_id: organizationId,
-        status: 'active',
-      })
-      .first()
-    if (!membership) return false
-    if (action === 'read') return true
-    return ['owner', 'admin'].includes(membership.role)
-  } catch (err) {
-    console.error('Org-membership permission fallback failed:', err)
-    return false
-  }
 }
 
 /**
