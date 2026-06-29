@@ -104,6 +104,9 @@ async function main() {
     permit,
     emitter,
     writePlanCache,
+    // Lets the checkout.session.completed handler fetch the full subscription
+    // (the session payload only carries its id) to mirror price/status/periods.
+    retrieveSubscription: (id) => stripe.subscriptions.retrieve(id),
   };
 
   // --- HTTP ---

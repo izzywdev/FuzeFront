@@ -11,6 +11,7 @@ import request from 'supertest';
 import {
   buildApp,
   authHeader,
+  adminHeader,
   makeSubscription,
   makeBasicPlan,
   BASIC_PRICE_ID,
@@ -322,6 +323,7 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
     const res = await request(app)
       .post(`${BASE}/credits`)
       .set(...authHeader())
+      .set(adminHeader())
       .send({ entityType: 'organization', entityId: ORG_ID, amount: 500, note: 'goodwill' });
     expect(res.status).toBe(201); // spec: 201
     expect(Object.keys(res.body).sort()).toEqual(['endingBalance', 'id']);
@@ -335,6 +337,7 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
     await request(app)
       .post(`${BASE}/credits`)
       .set(...authHeader())
+      .set(adminHeader())
       .send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
     expect(stubs.stripe.customers.createBalanceTransaction).toHaveBeenCalledWith(
       'cus_test123',
@@ -347,6 +350,7 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
     const res = await request(app)
       .post(`${BASE}/credits`)
       .set(...authHeader())
+      .set(adminHeader())
       .send({ entityType: 'organization', entityId: ORG_ID });
     expect(res.status).toBe(400);
     assertValidationErrorBody(res.body);
@@ -358,6 +362,7 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
     const res = await request(app)
       .post(`${BASE}/credits`)
       .set(...authHeader())
+      .set(adminHeader())
       .send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
     expect(res.status).toBe(502);
     assertStripeErrorBody(res.body);
@@ -367,5 +372,17 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).post(`${BASE}/credits`).send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
     expect(res.status).toBe(401);
+  });
+
+  it('403 Forbidden with a valid token but WITHOUT admin context (HIGH-1)', async () => {
+    const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
+    const res = await request(app)
+      .post(`${BASE}/credits`)
+      .set(...authHeader()) // valid internal token, but no X-Billing-Actor-Is-Admin
+      .send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
+    expect(res.status).toBe(403);
+    expect(typeof res.body.error).toBe('string');
+    // Must NOT have touched Stripe.
+    expect(stubs.stripe.customers.createBalanceTransaction).not.toHaveBeenCalled();
   });
 });

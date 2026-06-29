@@ -67,7 +67,7 @@ export function makeBasicPlan(overrides: Partial<Plan> = {}): Plan {
 }
 
 export interface DepStubs {
-  plans: { getActivePlans: jest.Mock };
+  plans: { getActivePlans: jest.Mock; resolvePriceId?: jest.Mock };
   subscriptionService: {
     create: jest.Mock;
     update: jest.Mock;
@@ -82,6 +82,7 @@ export interface DepStubs {
   stripe: {
     setupIntents: { create: jest.Mock };
     customers: { createBalanceTransaction: jest.Mock };
+    checkout: { sessions: { create: jest.Mock } };
     webhooks: { constructEvent: jest.Mock };
   };
   webhook: {
@@ -103,7 +104,14 @@ export function buildApp(
   const constructEvent = jest.fn();
 
   const stubs: DepStubs = {
-    plans: { getActivePlans: jest.fn().mockResolvedValue([makeBasicPlan()]) },
+    plans: {
+      getActivePlans: jest.fn().mockResolvedValue([makeBasicPlan()]),
+      // Default: 'basic' resolves to the live $9/mo price; anything else rejects.
+      resolvePriceId: jest.fn().mockImplementation(async (planId: string) => {
+        if (planId === 'basic' || planId === BASIC_PRICE_ID) return BASIC_PRICE_ID;
+        throw new Error(`unknown or inactive plan: ${planId}`);
+      }),
+    },
     subscriptionService: {
       create: jest.fn(),
       update: jest.fn(),
@@ -125,6 +133,14 @@ export function buildApp(
     stripe: {
       setupIntents: { create: jest.fn() },
       customers: { createBalanceTransaction: jest.fn() },
+      checkout: {
+        sessions: {
+          create: jest.fn().mockResolvedValue({
+            id: 'cs_test_session',
+            url: 'https://checkout.stripe.com/c/pay/cs_test_session',
+          }),
+        },
+      },
       webhooks: { constructEvent },
     },
     webhook: {
@@ -158,6 +174,27 @@ export function buildApp(
 
 export function authHeader(token = INTERNAL_TOKEN): [string, string] {
   return ['Authorization', `Bearer ${token}`];
+}
+
+/**
+ * The trusted actor/entity context headers the host proxy injects after it has
+ * authenticated + authorized the caller (backend/src/routes/billing.ts). The
+ * money-mutating routes re-verify the request target against these.
+ */
+export function actorOrgHeaders(
+  orgId = ORG_ID,
+  actorUserId = USER_ID,
+): Record<string, string> {
+  return {
+    'X-Billing-Actor-User-Id': actorUserId,
+    'X-Billing-Entity-Type': 'organization',
+    'X-Billing-Entity-Id': orgId,
+  };
+}
+
+/** Marks the caller as a platform admin (proxy-set) — required by /credits. */
+export function adminHeader(): Record<string, string> {
+  return { 'X-Billing-Actor-Is-Admin': 'true' };
 }
 
 export type { BillingSubscription, CreateSubscriptionResponse, Plan };
