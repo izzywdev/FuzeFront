@@ -179,6 +179,30 @@ test.describe('LIVE: Subscribe to Basic $9 — new org → provisioning → Stri
     // Wait out the "Loading plans…" state.
     await page.getByText(/loading plans/i).waitFor({ state: 'hidden', timeout: 20_000 }).catch(() => {})
 
+    // Self-diagnosing: the BillingPage loads plans + subscription in a single
+    // Promise.all; a 404 on GET /api/v1/billing/subscriptions (the normal
+    // "no subscription yet" state — that GET route is currently unimplemented)
+    // rejects the whole load and blanks the page, hiding the plans + Subscribe
+    // button. Detect that exact state and fail loudly with the root cause.
+    const billingBroken = await page
+      .getByText(/Billing is not available right now|No plans are available right now/i)
+      .first()
+      .isVisible()
+      .catch(() => false)
+    if (billingBroken) {
+      await page.screenshot({ path: SHOT('04-billing-ERROR'), fullPage: true })
+      throw new Error(
+        'LIVE /billing renders an ERROR ("Billing is not available… / No plans are available…") ' +
+          'so the Basic plan + Subscribe button never render. Root cause: BillingPage.load() does ' +
+          'Promise.all([listPlans(), getSubscription(orgId)]); GET /api/v1/billing/subscriptions ' +
+          'returns 404 (collection GET unimplemented — only POST /subscriptions + GET ' +
+          '/subscriptions/:id exist), which rejects the whole load and wipes the plan list. ' +
+          'GET /api/v1/billing/plans itself returns 200 with FuzeFront Basic $9. ' +
+          'FRONTEND-ENGINEER: decouple plan rendering from the subscription fetch (tolerate 404). ' +
+          'BACKEND/BILLING: implement org-scoped GET /api/v1/billing/subscriptions.'
+      )
+    }
+
     const basicCard = page
       .locator('[role="listitem"].card', { hasText: new RegExp(PLAN_NAME, 'i') })
       .filter({ hasText: new RegExp(PRICE_BILLING.replace('$', '\\$')) })
