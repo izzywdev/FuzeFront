@@ -6,11 +6,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-tests.yml'
+  # pull_request: no paths filter — mirrors ci.yml. A paths filter on
+  # pull_request can suppress the trigger when GitHub reads the workflow
+  # from a base branch where the filter evaluation is ambiguous.
   pull_request:
     branches: [main, master, develop]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-tests.yml'
+  workflow_dispatch:
 
 jobs:
   test:
