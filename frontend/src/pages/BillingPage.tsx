@@ -35,12 +35,27 @@ const BillingPage: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true)
     setError(undefined)
+
+    // Plan listing is the ONLY thing whose failure means "billing not
+    // available". The subscription fetch is best-effort: a 404 / missing
+    // subscription is simply "no current subscription" for a new org and must
+    // NOT clear the plans or surface an error (that bug made the in-app
+    // Subscribe button unreachable in prod).
     try {
-      const [p, s] = await Promise.all([listPlans(), getSubscription(organizationId)])
+      const p = await listPlans()
       setPlans(p)
+    } catch {
+      setPlans([])
+      setError('Billing is not available right now. Please try again shortly.')
+      setLoading(false)
+      return
+    }
+
+    try {
+      const s = await getSubscription(organizationId)
       setSubscription(s)
     } catch {
-      setError('Billing is not available right now. Please try again shortly.')
+      setSubscription(undefined)
     } finally {
       setLoading(false)
     }
@@ -51,7 +66,7 @@ const BillingPage: React.FC = () => {
   }, [load])
 
   const subscribe = async (plan: BillingPlan) => {
-    const planId = (plan.id || plan.priceId) as string
+    const planId = (plan.id || plan.stripePriceId || plan.priceId) as string
     if (!planId) return
     setBusyPlanId(planId)
     setError(undefined)
@@ -119,7 +134,7 @@ const BillingPage: React.FC = () => {
             }}
           >
             {plans.map(plan => {
-              const planId = (plan.id || plan.priceId) as string
+              const planId = (plan.id || plan.stripePriceId || plan.priceId) as string
               return (
                 <div role="listitem" key={planId} className="card">
                   <h3>{plan.displayName || plan.name || planId}</h3>

@@ -23,8 +23,13 @@ const P = 'v1/billing'
 export interface BillingPlan {
   id?: string
   priceId?: string
+  // The backend `/plans` payload carries the Stripe price id here.
+  stripePriceId?: string
+  stripeProductId?: string
   name?: string
   displayName?: string
+  // The backend `/plans` payload carries the catalogue tier label here.
+  tierName?: string
   description?: string
   // price may arrive as cents (priceCents/unitAmount) — render defensively
   priceCents?: number
@@ -52,19 +57,47 @@ export interface CheckoutSessionResponse {
   url?: string
 }
 
+/**
+ * Normalize a raw plan payload into a shape the UI can rely on.
+ *
+ * The `/plans` payload exposes the Stripe price id as `stripePriceId` and the
+ * label split across `displayName` / `tierName`. We resolve a single canonical
+ * `id` (the Stripe price id `/checkout` expects) and a `name`/`displayName`
+ * here so every consumer (key, title, the subscribe call) reads from one place.
+ */
+function normalizePlan(raw: BillingPlan): BillingPlan {
+  const id = raw.stripePriceId ?? raw.id ?? raw.priceId
+  const name = raw.displayName ?? raw.name ?? raw.tierName
+  return {
+    ...raw,
+    id,
+    name,
+    displayName: raw.displayName ?? raw.tierName ?? name,
+  }
+}
+
 export async function listPlans(): Promise<BillingPlan[]> {
   const { data } = await api.get<{ plans?: BillingPlan[] }>(`${P}/plans`)
-  return data?.plans ?? []
+  return (data?.plans ?? []).map(normalizePlan)
 }
 
 export async function getSubscription(
   organizationId?: string
 ): Promise<BillingSubscriptionView | undefined> {
-  const { data } = await api.get<{ subscription?: BillingSubscriptionView }>(
-    `${P}/subscriptions`,
-    organizationId ? { params: { organizationId } } : undefined
-  )
-  return data?.subscription
+  try {
+    const { data } = await api.get<{ subscription?: BillingSubscriptionView }>(
+      `${P}/subscriptions`,
+      organizationId ? { params: { organizationId } } : undefined
+    )
+    return data?.subscription
+  } catch (err) {
+    // A missing subscription (404) is a NORMAL state for a freshly-created org,
+    // not an error — return undefined so the caller renders "no current
+    // subscription" instead of wiping the plan list. Re-throw anything else.
+    const status = (err as { response?: { status?: number } })?.response?.status
+    if (status === 404) return undefined
+    throw err
+  }
 }
 
 export async function createCheckoutSession(input: {
