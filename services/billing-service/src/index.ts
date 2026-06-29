@@ -168,3 +168,11 @@ async function loadPermitClient(config: ReturnType<typeof loadConfig>): Promise<
     return { api: { users: { update: noop }, tenants: { update: noop } } };
   }
 }
+
+// Entrypoint. Without this the module just defines main() and never runs it, so
+// `node dist/index.js` loads, the event loop empties, and the container exits 0
+// with no server (CrashLoopBackOff with reason "Completed"). Invoke + fail loud.
+main().catch((err) => {
+  console.error('[billing-service] fatal startup error:', err);
+  process.exit(1);
+});
