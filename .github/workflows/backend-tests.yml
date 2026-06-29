@@ -71,6 +71,10 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
+          # Dummy value so src/config/permit.ts does not throw at module load time.
+          # The non-permit tests never call permit.check() so no real key is needed.
+          PERMIT_API_KEY: 'ci-no-real-permit-calls'
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Setting up test database..."
           npm run db:init || echo "Database initialization completed"
@@ -87,6 +91,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
+          PERMIT_API_KEY: 'ci-no-real-permit-calls'
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running authentication tests..."
           npm test -- --testPathPattern=auth --verbose --runInBand
@@ -103,6 +109,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
+          PERMIT_API_KEY: 'ci-no-real-permit-calls'
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running apps routes tests (incl. apps.test.ts)..."
           npm test -- --testPathPattern=apps --verbose --runInBand
@@ -119,6 +127,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:8085
+          PERMIT_API_KEY: 'ci-no-real-permit-calls'
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running production-like tests..."
           npm test -- --testPathPattern=auth-production --verbose --runInBand
@@ -135,6 +145,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
+          PERMIT_API_KEY: 'ci-no-real-permit-calls'
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: npm run test:coverage -- --runInBand --testPathIgnorePatterns=permit-integration
 
       - name: Upload coverage reports
@@ -222,6 +234,8 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           FRONTEND_URL: http://localhost:3000
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY }}
+          PERMIT_PDP_URL: 'http://localhost:7766'
         run: npm run db:init || echo "Database initialization completed"
 
       - name: Run Permit.io integration tests
