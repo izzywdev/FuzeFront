@@ -99,21 +99,49 @@ async function login(page: Page) {
  * the gate card is gone AND the authenticated shell is visible.
  */
 async function assertInsideApp(page: Page, label: string) {
-  // The provisioning gate (spinner OR timeout/error card) must NOT be on screen.
-  const gateCard = page.locator('.provisioning-card')
-  await expect(
-    gateCard,
-    `${label}: WorkspaceProvisioningGate is still showing its card — workspace provisioning HUNG, TIMED OUT, or ERRORED (this is the exact previously-broken failure: org-create / personal-org provisioning not completing)`
-  ).toHaveCount(0, { timeout: 35_000 })
+  // The authenticated shell (any of these) confirms the provisioning gate
+  // RESOLVED and we are inside the app for the active org.
+  const shell = page.locator(
+    '.app-layout, .top-bar, .main-content, .dashboard, .page, .sidebar'
+  )
+  // The provisioning gate's terminal-but-not-ready states. If one is showing we
+  // are NOT in the app — name the exact one so a failure is self-diagnosing
+  // rather than a bare "shell not found". (Live-confirmed 2026-06-29: this user
+  // hangs on the spinner because GET /api/organizations returns [] — no personal
+  // org is ever provisioned, so the gate polls forever then times out.)
+  const provisioningSpinner = page.getByText('Setting up your personal organization', {
+    exact: false,
+  })
+  const provisioningTimeout = page.getByText(/taking longer than expected|timed out/i)
+  const provisioningError = page.getByText(/couldn't|could not|something went wrong/i)
 
-  // And the authenticated shell must be present (any of these confirms we're in).
-  const shell = page
-    .locator('.app-layout, .top-bar, .main-content, .dashboard, .page, .sidebar')
-    .first()
-  await expect(
-    shell,
-    `${label}: authenticated app shell not visible after provisioning gate resolved`
-  ).toBeVisible({ timeout: 20_000 })
+  // Poll because the gate re-renders on its ~1.75s personal-org poll: succeed as
+  // soon as the shell appears; fail fast (with the exact stuck state) otherwise.
+  const DEADLINE = Date.now() + 40_000
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (await shell.first().isVisible().catch(() => false)) return // inside the app
+
+    const stuckSpinner = await provisioningSpinner.isVisible().catch(() => false)
+    const stuckTimeout = await provisioningTimeout.isVisible().catch(() => false)
+    const stuckError = await provisioningError.isVisible().catch(() => false)
+
+    if (Date.now() > DEADLINE || stuckTimeout || stuckError) {
+      const state = stuckTimeout
+        ? 'TIMEOUT card ("taking longer than expected")'
+        : stuckError
+        ? 'ERROR card'
+        : stuckSpinner
+        ? 'still on the "Creating your workspace… / Setting up your personal organization" SPINNER'
+        : 'neither the app shell nor a known gate state is visible'
+      throw new Error(
+        `${label}: WorkspaceProvisioningGate did NOT resolve — ${state}. ` +
+          `Workspace/personal-org provisioning is not completing (the previously-broken failure). ` +
+          `Verify GET /api/organizations returns a personal org for this user.`
+      )
+    }
+    await page.waitForTimeout(1500)
+  }
 }
 
 test.describe('Subscribe to Basic $9 — new org + workspace provisioning + checkout', () => {
