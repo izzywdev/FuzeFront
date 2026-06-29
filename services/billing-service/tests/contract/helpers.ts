@@ -67,7 +67,7 @@ export function makeBasicPlan(overrides: Partial<Plan> = {}): Plan {
 }
 
 export interface DepStubs {
-  plans: { getActivePlans: jest.Mock };
+  plans: { getActivePlans: jest.Mock; resolvePriceId?: jest.Mock };
   subscriptionService: {
     create: jest.Mock;
     update: jest.Mock;
@@ -104,7 +104,14 @@ export function buildApp(
   const constructEvent = jest.fn();
 
   const stubs: DepStubs = {
-    plans: { getActivePlans: jest.fn().mockResolvedValue([makeBasicPlan()]) },
+    plans: {
+      getActivePlans: jest.fn().mockResolvedValue([makeBasicPlan()]),
+      // Default: 'basic' resolves to the live $9/mo price; anything else rejects.
+      resolvePriceId: jest.fn().mockImplementation(async (planId: string) => {
+        if (planId === 'basic' || planId === BASIC_PRICE_ID) return BASIC_PRICE_ID;
+        throw new Error(`unknown or inactive plan: ${planId}`);
+      }),
+    },
     subscriptionService: {
       create: jest.fn(),
       update: jest.fn(),
