@@ -38,6 +38,18 @@ spec:
                   key: PERMIT_API_KEY
             - name: PDP_DEBUG
               value: "false"
+            # The PDP container runs OPAL + an embedded OPA started inline. OPA's
+            # HTTP server takes ~6s to bind :8181, but OPAL pushes the initial
+            # policy+data bundle at ~3s and, with the default connection-retry
+            # (~5 attempts / ~3s), gives up with a ClientConnectorError
+            # ("Cannot connect to host localhost:8181"). It then only polls for
+            # DELTAS (none on a quiet env), so OPA is left EMPTY — no policy, no
+            # facts — and EVERY permit.check() returns a clean false (legitimate
+            # org admins got 403 ORG_PERMISSION_DENIED at billing /checkout).
+            # Widen the policy-store connection retry so the initial bundle push
+            # survives OPA's startup. Covers both set_policies and set_policy_data.
+            - name: OPAL_POLICY_STORE_CONN_RETRY
+              value: '{"attempts":15,"wait_time":2}'
           readinessProbe:
             httpGet:
               path: /health
