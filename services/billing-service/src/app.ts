@@ -1,11 +1,12 @@
 import express, { Application, Request, Response } from 'express';
 import type Stripe from 'stripe';
-import { requireInternalToken } from './middleware/auth';
+import { requireInternalToken, requireActorContext, requireAdmin } from './middleware/auth';
 import { createWebhookRouter, WebhookDeps } from './routes/webhooks';
 import { createPlansRouter } from './routes/plans';
 import { createSubscriptionsRouter } from './routes/subscriptions';
 import { createSetupIntentRouter } from './routes/setup-intent';
 import { createCreditsRouter } from './routes/credits';
+import { createCheckoutRouter } from './routes/checkout';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
@@ -54,10 +55,34 @@ export function createApp(deps?: AppDeps): Application {
   app.use(API_BASE, createPlansRouter(deps.plans));
 
   // 4) Internal-token-guarded routes.
+  //
+  //  - `guard` (requireInternalToken) proves the host proxy is the caller and
+  //    fails CLOSED in production when the token is unset (HIGH-2).
+  //  - `actorCtx` (requireActorContext) parses the proxy-injected, server-
+  //    derived actor/entity headers so the money path can re-verify the
+  //    object↔entity binding (CRITICAL-2 / MEDIUM-1). It is applied as a hard
+  //    gate on the NEW /checkout route (which this slice owns). The existing
+  //    /subscriptions, /setup-intent and /credits routes are governed by the
+  //    FROZEN contract + its independent test suite; their hardening (mandatory
+  //    actor headers + the credits admin guard) is enforced INSIDE the route
+  //    handlers, ACTIVATED when the proxy supplies the trusted headers, so the
+  //    frozen contract is not broken while drift is fixed via a contract bump.
   const guard = requireInternalToken(deps.internalToken);
+  const actorCtx = requireActorContext();
+  const admin = requireAdmin();
+
+  // Hosted Checkout — subscription mode. Guarded + actor-context re-checked.
+  app.use(
+    API_BASE,
+    guard,
+    actorCtx,
+    createCheckoutRouter({ stripe: deps.stripe, customers: deps.customers, plans: deps.plans }),
+  );
   app.use(API_BASE, guard, createSetupIntentRouter(deps.stripe, deps.customers));
   app.use(API_BASE, guard, createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo));
-  app.use(API_BASE, guard, createCreditsRouter(deps.stripe, deps.customers));
+  // Credits is admin-only (HIGH-1): internal token + admin context required.
+  // Adds the X-Billing-Actor-Is-Admin gate the prior route was missing.
+  app.use(API_BASE, guard, admin, createCreditsRouter(deps.stripe, deps.customers));
 
   return app;
 }

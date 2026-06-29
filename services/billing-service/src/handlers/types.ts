@@ -23,6 +23,13 @@ export interface HandlerContext {
     status: string;
     trialEnd: string | null;
   }) => Promise<void>;
+  /**
+   * Retrieves a full Stripe Subscription by id. Used by the
+   * `checkout.session.completed` handler: the session payload only carries the
+   * subscription id, so we fetch the object to mirror its price/status/periods.
+   * Optional + injected so handler unit tests can stub it without a Stripe SDK.
+   */
+  retrieveSubscription?: (stripeSubscriptionId: string) => Promise<Stripe.Subscription>;
 }
 
 export type StripeEventHandler = (

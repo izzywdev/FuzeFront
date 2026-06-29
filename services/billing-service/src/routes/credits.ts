@@ -4,10 +4,20 @@ import { z } from 'zod';
 import { CustomerService } from '../services/customer.service';
 import { validateBody } from './validate';
 
+/**
+ * MEDIUM-1: bound the credit amount. Previously `amount` was an unbounded
+ * integer, so a compromised/buggy admin call could issue an arbitrarily large
+ * (or zero/negative) balance adjustment. We require a positive amount and cap
+ * it at $100,000 (10,000,000 cents) per call — large enough for any legitimate
+ * goodwill credit, small enough to blunt a fat-finger / abuse.
+ */
+const MAX_CREDIT_CENTS = 10_000_000;
+
 const schema = z.object({
   entityType: z.enum(['user', 'organization']),
   entityId: z.string().uuid(),
-  amount: z.number().int(), // cents; positive credits the customer
+  // cents; positive credits the customer. Bounded (MEDIUM-1).
+  amount: z.number().int().positive().max(MAX_CREDIT_CENTS),
   note: z.string().max(500).optional(),
 });
 
