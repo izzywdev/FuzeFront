@@ -226,7 +226,10 @@ jobs:
 
       - name: Run Permit.io integration tests
         working-directory: ./backend
-        if: ${{ secrets.PERMIT_API_KEY != '' }}
+        # NOTE: Do NOT use 'if: ${{ secrets.PERMIT_API_KEY != "" }}' here.
+        # The 'secrets' context is not valid in step-level if: expressions and
+        # causes GitHub Actions to fail parsing the entire workflow (all jobs = 0).
+        # The test itself will skip gracefully when PERMIT_API_KEY is empty.
         env:
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-key-for-ci-testing-only
