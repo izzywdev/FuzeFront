@@ -40,6 +40,8 @@ tags:
     description: Subscription lifecycle against Stripe + local mirror.
   - name: payment-methods
     description: SetupIntent creation for collecting a payment method without an immediate charge.
+  - name: checkout
+    description: Hosted Stripe Checkout Session creation (subscription mode).
   - name: credits
     description: Admin-only manual customer balance adjustments.
   - name: webhooks
@@ -231,6 +233,59 @@ paths:
         '502':
           $ref: '#/components/responses/StripeError'
 
+  /checkout:
+    post:
+      operationId: createCheckoutSession
+      tags: [checkout]
+      summary: Create a hosted Stripe Checkout Session (subscription mode)
+      description: >-
+        Creates a hosted Stripe Checkout Session in `subscription` mode for the
+        given organization and plan, and returns the Stripe-hosted `url` to
+        redirect the customer to. Stripe collects the card on its hosted page;
+        on completion Stripe fires `checkout.session.completed`, which activates
+        the local subscription mirror. We use HOSTED Checkout (not in-app
+        Elements) so no raw card data touches our surface. Mirrors
+        `POST /checkout`.
+
+
+        Authorization (money path): the host proxy authenticates the platform
+        JWT, authorizes the caller against the target organization, and forwards
+        the SERVER-DERIVED actor + entity as trusted headers
+        (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`).
+        The service RE-VERIFIES that `organizationId` matches the authorized
+        entity before creating any Stripe object (rejects with 403 otherwise),
+        and validates `planId` against the active plan catalogue (rejects
+        unknown/inactive plans with 400). `planId: "basic"` resolves to the live
+        $9/mo price.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequest'
+      responses:
+        '200':
+          description: Checkout Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
   /credits:
     post:
       operationId: addCredits
@@ -238,10 +293,26 @@ paths:
       summary: Add a one-time customer balance adjustment (admin only)
       description: >-
         Adds a one-time customer balance adjustment (credit) via a Stripe
-        customer balance transaction. A positive `amount` (in cents) credits
-        the customer (reduces what they owe). Mirrors `POST /credits`.
+        customer balance transaction. A positive `amount` (in cents, bounded)
+        credits the customer (reduces what they owe). Mirrors `POST /credits`.
+
+
+        ADMIN-ONLY: in addition to the internal token, the host proxy must
+        supply `X-Billing-Actor-Is-Admin: true` (it sets this only for callers
+        it has authorized as platform admins). Without it the service responds
+        403. `amount` must be a positive integer and is capped server-side.
       security:
         - internalToken: []
+      parameters:
+        - name: X-Billing-Actor-Is-Admin
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: ['true']
+          description: >-
+            Set to `true` by the proxy ONLY for platform-admin-authorized
+            callers. Required — absent/other values are rejected with 403.
       requestBody:
         required: true
         content:
@@ -268,6 +339,8 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '502':
           $ref: '#/components/responses/StripeError'
 
@@ -371,10 +444,49 @@ components:
       description: The Stripe subscription id (e.g. `sub_...`).
       schema:
         type: string
+    ActorUserIdHeader:
+      name: X-Billing-Actor-User-Id
+      in: header
+      required: true
+      description: >-
+        Authenticated actor (the platform user id) — set by the host proxy
+        AFTER it authenticates + authorizes the caller. Short alias:
+        `X-FF-Actor-Id`.
+      schema:
+        type: string
+    EntityTypeHeader:
+      name: X-Billing-Entity-Type
+      in: header
+      required: true
+      description: >-
+        Server-derived authorized entity type (`user`|`organization`) set by the
+        proxy. When the `X-FF-Org-Id` alias is used this is implied to be
+        `organization`.
+      schema:
+        $ref: '#/components/schemas/EntityType'
+    EntityIdHeader:
+      name: X-Billing-Entity-Id
+      in: header
+      required: true
+      description: >-
+        Server-derived authorized entity id set by the proxy. The service
+        re-verifies the request target matches this. Short alias: `X-FF-Org-Id`.
+      schema:
+        type: string
+        format: uuid
 
   responses:
     Unauthorized:
-      description: Missing or invalid internal token.
+      description: Missing or invalid internal token, or missing actor context.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: >-
+        The authenticated/authorized caller may not act on the target object
+        (e.g. organizationId does not match the authorized entity, or the
+        operation requires platform-admin context).
       content:
         application/json:
           schema:
@@ -613,10 +725,53 @@ components:
           format: uuid
         amount:
           type: integer
-          description: Amount in cents; a positive value credits the customer.
+          minimum: 1
+          maximum: 10000000
+          description: >-
+            Amount in cents; a positive value credits the customer. Bounded
+            server-side (1..10_000_000 cents) — MEDIUM-1.
         note:
           type: string
           maxLength: 500
+
+    CheckoutSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [planId, organizationId, successUrl, cancelUrl]
+      properties:
+        planId:
+          type: string
+          minLength: 1
+          description: >-
+            Logical plan id (e.g. `basic`), a tier name, or a Stripe price id
+            present in the active catalogue. Validated against active plans;
+            `basic` resolves to the live $9/mo price.
+        organizationId:
+          type: string
+          format: uuid
+          description: >-
+            Target organization. MUST match the proxy-authorized entity
+            (re-verified server-side; mismatch → 403).
+        successUrl:
+          type: string
+          format: uri
+          description: Where Stripe redirects after a completed checkout.
+        cancelUrl:
+          type: string
+          format: uri
+          description: Where Stripe redirects if the customer cancels.
+
+    CheckoutSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [url, sessionId]
+      properties:
+        url:
+          type: [string, 'null']
+          description: Stripe-hosted Checkout URL to redirect the customer to.
+        sessionId:
+          type: string
+          description: The Stripe Checkout Session id (`cs_...`).
 
     Error:
       type: object
