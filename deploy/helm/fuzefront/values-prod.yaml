@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 9b93d26270ce
+    tag: 84b07a728fee
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 9b93d26270ce
+    tag: 84b07a728fee
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -101,7 +101,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: b3f6476c3223
+    tag: 84b07a728fee
   # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
   affinity:
     nodeAffinity:
