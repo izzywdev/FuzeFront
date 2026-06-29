@@ -42,6 +42,11 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/services/billing-service/node_modules ./services/billing-service/node_modules
 COPY --from=build /app/shared/dist ./shared/dist
+# shared/dist/kafka/* does `require('zod')` (+ kafkajs) at runtime; Node resolves
+# those from shared's OWN node_modules (walking up from the file), NOT the sibling
+# service's node_modules — without this the billing pod crashlooped with
+# "Cannot find module 'zod'". Ship shared's deps alongside its dist.
+COPY --from=build /app/shared/node_modules ./shared/node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
 
 # Remove declaration files from production image
