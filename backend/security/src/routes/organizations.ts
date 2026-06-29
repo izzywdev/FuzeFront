@@ -295,7 +295,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
     }
 
     if (is_active !== undefined) {
-      query = query.where('organizations.is_active', is_active === 'true')
+      // is_active arrives EITHER as the boolean default (true, when the client
+      // omits it) OR as a query-string ('true'/'false'). The old `=== 'true'`
+      // test made the boolean default `true` compare false → the query filtered
+      // for is_active=FALSE and hid every active org, so GET returned an empty
+      // list and the WorkspaceProvisioningGate spun forever. Coerce both shapes.
+      const activeBool = is_active === true || is_active === 'true' || is_active === '1'
+      query = query.where('organizations.is_active', activeBool)
     }
 
     if (search) {
