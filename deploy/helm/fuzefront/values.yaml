@@ -193,9 +193,17 @@ permit:
       repository: permitio/pdp-v2
       # Pin to a concrete tag (Step: verify before commit). Do NOT use :latest.
       tag: "0.8.1"
+    # The PDP container runs BOTH the OPAL/Python client and an embedded OPA
+    # subprocess. OPA loads the full Permit fact snapshot (users/tenants/role
+    # assignments) into memory on startup. At a 512Mi limit the cgroup OOM-killer
+    # reaped the OPA subprocess mid-write — the container stayed up (restarts=0,
+    # so it looked healthy) but OPAL logged "Failed to save data update to
+    # policy-store: ClientConnectorError" and OPA ended up with the policy but NO
+    # facts, so EVERY permit.check() returned a clean false (e.g. checkout 403
+    # "ORG_PERMISSION_DENIED" for a legitimate org admin). Give OPA headroom.
     resources:
-      requests: { cpu: 100m, memory: 256Mi }
-      limits:   { cpu: 500m, memory: 512Mi }
+      requests: { cpu: 100m, memory: 384Mi }
+      limits:   { cpu: 500m, memory: 1Gi }
     nodeSelector: {}
     affinity: {}
     tolerations: []
