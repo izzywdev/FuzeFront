@@ -32,6 +32,12 @@ COPY services/billing-service/ ./services/billing-service/
 # Build shared kafka sub-tree first (avoids socket.io-client / React dep), then billing-service
 RUN cd shared && npm run build:kafka
 RUN cd services/billing-service && npm run build
+# tsc does NOT copy non-TS assets. runMigrations reads
+# dist/migrations/001_billing_schema.sql at startup; without this the pod logs
+# "ENOENT ... dist/migrations/001_billing_schema.sql", the migration is skipped,
+# and every billing table is missing ("relation billing.* does not exist").
+RUN mkdir -p services/billing-service/dist/migrations && \
+    cp services/billing-service/src/migrations/*.sql services/billing-service/dist/migrations/
 
 # ---------- production ----------
 FROM node:18-alpine AS production
