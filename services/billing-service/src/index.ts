@@ -116,6 +116,7 @@ async function main() {
     plans,
     subscriptionService,
     subscriptionRepo,
+    customerRepo,
     customers,
     webhook: {
       stripe,

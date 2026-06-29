@@ -11,6 +11,7 @@ import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
 import { SubscriptionRepository } from './repositories/subscription.repository';
+import { CustomerRepository } from './repositories/customer.repository';
 
 export interface AppDeps {
   stripe: Stripe;
@@ -18,6 +19,8 @@ export interface AppDeps {
   plans: PlanService;
   subscriptionService: SubscriptionService;
   subscriptionRepo: SubscriptionRepository;
+  /** Read-only entity->customer resolver for GET /subscriptions (list by org). */
+  customerRepo: CustomerRepository;
   customers: CustomerService;
   webhook: WebhookDeps;
 }
@@ -83,7 +86,11 @@ export function createApp(deps?: AppDeps): Application {
     createCheckoutRouter({ stripe: deps.stripe, customers: deps.customers, plans: deps.plans }),
   );
   app.use(API_BASE, guard, createSetupIntentRouter(deps.stripe, deps.customers));
-  app.use(API_BASE, guard, createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo));
+  app.use(
+    API_BASE,
+    guard,
+    createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo, deps.customerRepo),
+  );
   // Credits is admin-only (HIGH-1): the credits router applies requireAdmin on
   // its POST (the X-Billing-Actor-Is-Admin gate the prior route was missing).
   app.use(API_BASE, guard, createCreditsRouter(deps.stripe, deps.customers));

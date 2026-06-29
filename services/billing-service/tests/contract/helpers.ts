@@ -78,6 +78,11 @@ export interface DepStubs {
     upsert: jest.Mock;
     findByCustomer: jest.Mock;
   };
+  customerRepo: {
+    findByEntity: jest.Mock;
+    findByStripeCustomerId: jest.Mock;
+    insert: jest.Mock;
+  };
   customers: { ensureCustomer: jest.Mock };
   stripe: {
     setupIntents: { create: jest.Mock };
@@ -122,6 +127,11 @@ export function buildApp(
       upsert: jest.fn(),
       findByCustomer: jest.fn().mockResolvedValue(null),
     },
+    customerRepo: {
+      findByEntity: jest.fn().mockResolvedValue(null),
+      findByStripeCustomerId: jest.fn().mockResolvedValue(null),
+      insert: jest.fn(),
+    },
     customers: {
       ensureCustomer: jest.fn().mockResolvedValue({
         id: '66666666-6666-4666-8666-666666666666',
@@ -165,6 +175,7 @@ export function buildApp(
     plans: stubs.plans as any,
     subscriptionService: stubs.subscriptionService as any,
     subscriptionRepo: stubs.subscriptionRepo as any,
+    customerRepo: stubs.customerRepo as any,
     customers: stubs.customers as any,
     webhook: stubs.webhook as any,
   };

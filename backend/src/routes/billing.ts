@@ -455,6 +455,33 @@ router.post(
   }
 )
 
+// GET /subscriptions?organizationId=<uuid> — the current subscription for the
+// authorized entity (the shell Billing page reads this). Object-level authz is
+// the SAME gate as the other org-scoped reads: authenticate, then require
+// 'read' on the target entity (org-scope -> Permit.io check; user-scope ->
+// self). The authorized entity is server-derived and forwarded ONLY via the
+// trusted X-Billing-*/X-FF-* headers (GET has no body); the billing-service
+// resolves entity -> customer -> current subscription and returns
+// { subscription: <view> | null }. Absence is 200 {subscription:null}, never a
+// 404 — the UI treats null as "no current subscription".
+//
+// MUST be registered BEFORE GET /subscriptions/:stripeSubscriptionId so the
+// param route does not shadow this collection route.
+router.get(
+  '/subscriptions',
+  authenticateToken,
+  async (req: BillingRequest, res) => {
+    const entity = await authorizeBillingEntity(req, res, 'read')
+    if (!entity) return
+    return forward(req, res, {
+      path: '/subscriptions',
+      internalAuth: true,
+      authorizedEntity: entity,
+      actorUserId: req.user!.id,
+    })
+  }
+)
+
 router.get(
   '/subscriptions/:stripeSubscriptionId',
   authenticateToken,

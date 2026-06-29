@@ -19,6 +19,7 @@ export interface SubscriptionUpsert {
 export interface SubscriptionRepository {
   upsert(row: SubscriptionUpsert): Promise<BillingSubscription>;
   findByStripeId(stripeSubscriptionId: string): Promise<BillingSubscription | null>;
+  /** Most-recent (current) subscription for a customer, or null. */
   findByCustomer(customerId: string): Promise<BillingSubscription | null>;
 }
 
