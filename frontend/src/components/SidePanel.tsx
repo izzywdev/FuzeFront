@@ -87,6 +87,15 @@ function SidePanel() {
           <span>{t('nav.profile')}</span>
         </div>
 
+        {/* Billing / subscription section */}
+        <div
+          className="menu-item"
+          onClick={() => (window.location.href = '/billing')}
+        >
+          <span>💳</span>
+          <span>{t('nav.billing', { defaultValue: 'Billing' })}</span>
+        </div>
+
         {/* Admin section within portal */}
         {user?.roles.includes('admin') && (
           <div

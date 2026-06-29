@@ -22,6 +22,8 @@
       "@fuzefront/i18n": ["../packages/i18n/dist/index.d.ts"],
       "@fuzefront/chat-ui": ["../packages/chat-ui/dist/index.d.ts"],
       "@fuzefront/chat-client": ["../packages/chat-client/dist/index.d.ts"],
+      "@fuzefront/billing-ui": ["../packages/billing-ui/src/index.ts"],
+      "@fuzefront/billing-client": ["../billing-client/index.ts"],
       "@fuzefront/design-system": ["../design-system/index.d.ts"]
     }
   },

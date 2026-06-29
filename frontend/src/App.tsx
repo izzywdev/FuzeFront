@@ -17,6 +17,7 @@ import { UserProfileManagement } from './components/UserProfileManagement'
 import { WorkspaceProvisioningGate } from './components/WorkspaceProvisioningGate'
 import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
+import BillingPage from './pages/BillingPage'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -202,6 +203,7 @@ function AppContent() {
           <Route path="/organizations" element={<OrganizationPage />} />
           <Route path="/organizations/new" element={<CreateOrganizationPage />} />
           <Route path="/profile" element={<UserProfileManagement />} />
+          <Route path="/billing" element={<BillingPage />} />
           <Route path="/app/:appId" element={<AppRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
           <Route path="/help" element={<HelpPage />} />

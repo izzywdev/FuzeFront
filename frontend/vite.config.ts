@@ -31,6 +31,16 @@ const chatUiSrc = fileURLToPath(
 const chatUiStyles = fileURLToPath(
   new URL('../packages/chat-ui/src/styles/chat-ui.css', import.meta.url)
 )
+// @fuzefront/billing-ui (packages/billing-ui) + @fuzefront/billing-client (top-level
+// billing-client/) are unpublished file: workspace packages — resolve from SOURCE,
+// same as identity-ui/chat-ui. billing-ui components are token-based (inline --ff-*),
+// so there's no separate stylesheet subpath to map.
+const billingUiSrc = fileURLToPath(
+  new URL('../packages/billing-ui/src/index.ts', import.meta.url)
+)
+const billingClientSrc = fileURLToPath(
+  new URL('../billing-client/index.ts', import.meta.url)
+)
 
 export default defineConfig({
   resolve: {
@@ -41,6 +51,8 @@ export default defineConfig({
       '@fuzefront/chat-ui/styles.css': chatUiStyles,
       '@fuzefront/chat-ui': chatUiSrc,
       '@fuzefront/chat-client': chatClientSrc,
+      '@fuzefront/billing-ui': billingUiSrc,
+      '@fuzefront/billing-client': billingClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
