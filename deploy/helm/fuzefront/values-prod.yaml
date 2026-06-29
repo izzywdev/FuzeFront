@@ -101,7 +101,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 9b93d26270ce
+    tag: 35cc87fed20f
   # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
   affinity:
     nodeAffinity:
