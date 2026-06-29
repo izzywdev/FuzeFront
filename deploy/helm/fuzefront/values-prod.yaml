@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 46ceb6ad7a59
+    tag: 9b93d26270ce
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 46ceb6ad7a59
+    tag: 9b93d26270ce
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -47,7 +47,7 @@ securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 3b6295dcd518
+    tag: 9b93d26270ce
   replicas: 2
 
 applicationsService:
@@ -98,10 +98,10 @@ billingService:
   # host backend's billing proxy degrades gracefully without it — so it must not
   # gate go-live. GO-LIVE = flip this to true (the image tag below is already
   # auto-bumped to the built SHA by release.yml) AND seal the real STRIPE_* keys.
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: ""  # CI's release sed writes the real image SHA here
+    tag: 9b93d26270ce
   # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
   affinity:
     nodeAffinity:
