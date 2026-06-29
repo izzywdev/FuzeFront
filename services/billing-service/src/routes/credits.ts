@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import type Stripe from 'stripe';
 import { z } from 'zod';
 import { CustomerService } from '../services/customer.service';
+import { requireAdmin } from '../middleware/auth';
 import { validateBody } from './validate';
 
 /**
@@ -30,7 +31,8 @@ export function createCreditsRouter(
   customers: CustomerService,
 ): Router {
   const router = Router();
-  router.post('/credits', async (req: Request, res: Response) => {
+  // HIGH-1: admin gate scoped to POST /credits (X-Billing-Actor-Is-Admin: true).
+  router.post('/credits', requireAdmin(), async (req: Request, res: Response) => {
     const parsed = validateBody(schema, req.body);
     if (!parsed.ok) {
       return res.status(400).json({ error: 'invalid request', details: parsed.details });

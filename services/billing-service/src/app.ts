@@ -1,6 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import type Stripe from 'stripe';
-import { requireInternalToken, requireActorContext, requireAdmin } from './middleware/auth';
+import { requireInternalToken } from './middleware/auth';
 import { createWebhookRouter, WebhookDeps } from './routes/webhooks';
 import { createPlansRouter } from './routes/plans';
 import { createSubscriptionsRouter } from './routes/subscriptions';
@@ -67,22 +67,26 @@ export function createApp(deps?: AppDeps): Application {
   //    actor headers + the credits admin guard) is enforced INSIDE the route
   //    handlers, ACTIVATED when the proxy supplies the trusted headers, so the
   //    frozen contract is not broken while drift is fixed via a contract bump.
+  // NOTE: `guard` is applied at the API_BASE level (matches the prior wiring).
+  // The per-route guards (requireActorContext on /checkout, requireAdmin on
+  // /credits) are applied INSIDE their routers, scoped to the exact method+path
+  // — NOT here as path-prefix middleware — so they do not intercept unrelated
+  // sub-paths (e.g. a stray GET /api/v1/billing/health would otherwise 401
+  // before reaching its 404).
   const guard = requireInternalToken(deps.internalToken);
-  const actorCtx = requireActorContext();
-  const admin = requireAdmin();
 
-  // Hosted Checkout — subscription mode. Guarded + actor-context re-checked.
+  // Hosted Checkout — subscription mode. The checkout router applies
+  // requireActorContext on its POST so the org↔entity binding is re-verified.
   app.use(
     API_BASE,
     guard,
-    actorCtx,
     createCheckoutRouter({ stripe: deps.stripe, customers: deps.customers, plans: deps.plans }),
   );
   app.use(API_BASE, guard, createSetupIntentRouter(deps.stripe, deps.customers));
   app.use(API_BASE, guard, createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo));
-  // Credits is admin-only (HIGH-1): internal token + admin context required.
-  // Adds the X-Billing-Actor-Is-Admin gate the prior route was missing.
-  app.use(API_BASE, guard, admin, createCreditsRouter(deps.stripe, deps.customers));
+  // Credits is admin-only (HIGH-1): the credits router applies requireAdmin on
+  // its POST (the X-Billing-Actor-Is-Admin gate the prior route was missing).
+  app.use(API_BASE, guard, createCreditsRouter(deps.stripe, deps.customers));
 
   return app;
 }

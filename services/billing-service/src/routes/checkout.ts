@@ -3,7 +3,7 @@ import type Stripe from 'stripe';
 import { z } from 'zod';
 import { CustomerService } from '../services/customer.service';
 import { PlanService } from '../services/plan.service';
-import { BillingRequest } from '../middleware/auth';
+import { BillingRequest, requireActorContext } from '../middleware/auth';
 import { validateBody } from './validate';
 
 /**
@@ -43,7 +43,10 @@ export interface CheckoutDeps {
 export function createCheckoutRouter(deps: CheckoutDeps): Router {
   const router = Router();
 
-  router.post('/checkout', async (req: BillingRequest, res: Response) => {
+  // requireActorContext runs FIRST (scoped to this route): it 401s when the
+  // proxy-injected actor/entity headers are absent so the org re-check below
+  // can never be bypassed by a client body field.
+  router.post('/checkout', requireActorContext(), async (req: BillingRequest, res: Response) => {
     const parsed = validateBody(schema, req.body);
     if (!parsed.ok) {
       return res.status(400).json({ error: 'invalid request', details: parsed.details });
