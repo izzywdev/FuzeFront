@@ -283,6 +283,13 @@ test.describe('LIVE: Subscribe to Basic $9 — new org → provisioning → Stri
       page.getByText(new RegExp(PLAN_NAME, 'i')).first(),
       'Stripe Checkout did not show the "FuzeFront Basic" line item'
     ).toBeVisible({ timeout: 20_000 })
+    // Price is geo-localized (ILS by default with a USD toggle); the catalog
+    // price is USD $9.00 — switch to USD if offered, then assert "$9.00".
+    const usdToggle = page.getByRole('button', { name: /USD/i }).first()
+    if (await usdToggle.isVisible().catch(() => false)) {
+      await usdToggle.click().catch(() => {})
+      await page.waitForTimeout(1000)
+    }
     await expect(
       page.getByText(PRICE_STRIPE, { exact: false }).first(),
       'Stripe Checkout did not display the expected $9.00 amount'

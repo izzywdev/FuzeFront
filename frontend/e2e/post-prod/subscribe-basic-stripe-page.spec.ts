@@ -94,13 +94,33 @@ test.describe('LIVE: Stripe Checkout page shows FuzeFront Basic $9.00 (no card)'
 
     // 5. Open the LIVE Stripe Checkout page in the browser — assert Basic + $9.00.
     await page.goto(stripeUrl, { waitUntil: 'domcontentloaded' })
+
+    // "Subscribe to FuzeFront Basic" header + the line item must be present.
+    await expect(
+      page.getByText(new RegExp(`Subscribe to ${PLAN_NAME}`, 'i')).first(),
+      'Stripe Checkout shows "Subscribe to FuzeFront Basic"'
+    ).toBeVisible({ timeout: 30_000 })
     await expect(
       page.getByText(new RegExp(PLAN_NAME, 'i')).first(),
       'Stripe Checkout shows the "FuzeFront Basic" line item'
     ).toBeVisible({ timeout: 30_000 })
     await expect(
+      page.getByText(/billed monthly|per\s*month/i).first(),
+      'Stripe Checkout shows the monthly billing interval'
+    ).toBeVisible({ timeout: 20_000 })
+    await page.screenshot({ path: SHOT('stripe-page-default-currency'), fullPage: true })
+
+    // The price is geo-localized (e.g. ILS by default with a USD toggle). The
+    // underlying catalog price is USD $9.00 — click the USD currency toggle if
+    // present, then assert "$9.00". (If already USD, the assertion just passes.)
+    const usdToggle = page.getByRole('button', { name: /USD/i }).first()
+    if (await usdToggle.isVisible().catch(() => false)) {
+      await usdToggle.click().catch(() => {})
+      await page.waitForTimeout(1000)
+    }
+    await expect(
       page.getByText(PRICE_STRIPE, { exact: false }).first(),
-      'Stripe Checkout displays "$9.00"'
+      'Stripe Checkout displays "$9.00" (USD) for FuzeFront Basic'
     ).toBeVisible({ timeout: 30_000 })
     await page.screenshot({ path: SHOT('stripe-page-basic-9'), fullPage: true })
 
