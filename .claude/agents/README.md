@@ -15,6 +15,7 @@ A standard set of **single-responsibility** agents, fanned out one-per-slice for
 ### Integration & coordination specialists (own a single external surface)
 - **billing-payments-engineer** — the **Stripe/payments** integration slice (checkout, subscriptions, webhooks, plans, usage, billing-service payment logic). Defers contract → `contract-designer`, billing UI → `frontend-engineer`, deploy → `devops-engineer`.
 - **telephony-integrator** — the **Twilio/SendGrid** communications-channel slice (SMS/voice/WhatsApp/Verify/email) wired into the email/sms services. Same deferrals.
+- **feature-flags-engineer** — the **feature-flag platform** slice: the FuzeFront-hosted **Unleash** config + the flag taxonomy/naming/lifecycle + creating/managing flags (release / ops-kill-switch / experiment / permission), and the `@fuzefront/feature-flags` (OpenFeature + Unleash) client conventions. Advises product teams. Defers the Unleash *deploy* → `devops-engineer`, the client *package build* → `backend-engineer`, the gated feature logic/UI → `backend-engineer`/`frontend-engineer`, and real authz → Permit. Family products manage flags **through this agent**.
 - **agile-manager** — delivery coordination only: **Atlassian** (Jira/Confluence tickets, sprints, status) + **Slack** (team comms) + cross-repo `@claude` delegation tracking. Writes tickets/reports, never product code.
 - **wordpress-engineer** — WordPress sites/themes/plugins, kept separate from the app shell. Skill-driven (no WP MCP).
 
@@ -34,7 +35,7 @@ MCP servers are granted via each agent's `tools:` allowlist; plugin **skills** a
 | Project tracking + team comms | Atlassian + Slack | **agile-manager** | `ticket-*`, `triage-issue`, `spec-to-backlog`, `generate-status-report`, `slack-*` |
 | WordPress | *(skills only)* | **wordpress-engineer** | `build-with-wordpress`, `site-specification` |
 
-> **Unassigned:** the **Shopify** MCP has no named hat yet — it stays available to general agents until an e-commerce hat is created. Pure-code agents (`backend-engineer`, `contract-designer`, `test-engineer`, `docs-maintainer`) intentionally get **core tools only, no MCP**.
+> **Unassigned:** the **Shopify** MCP has no named hat yet — it stays available to general agents until an e-commerce hat is created. Pure-code/platform agents (`backend-engineer`, `contract-designer`, `test-engineer`, `docs-maintainer`, `feature-flags-engineer`) intentionally get **core tools only, no MCP** — flag administration is config/API, not an MCP surface.
 
 ## Mandatory DONE contract (every domain agent, no exceptions)
 An agent reports completion **only for its own domain**. The final report MUST contain both:

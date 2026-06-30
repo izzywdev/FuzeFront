@@ -17,11 +17,14 @@ The feature's UI as a **private npm package** (`@fuzefront/<name>`), built **des
 3. **Land the design-system additions as the foundation** before the feature UI depends on them. When multiple UI features run in parallel, DS extensions go in **one foundation PR merged first** — parallel branches must NOT each re-edit `design-system/` (that is the cross-branch conflict that strands features). If another in-flight feature needs the same primitive, coordinate through the orchestrator so it lands once.
 4. *Then* build the feature UI consuming only DS tokens/components (zero hard-coded color/spacing/type).
 
+**Plan with feature flags (`feature-flags` skill).** Gate **new or risky** UI behind a flag, **default OFF** — render the new component/route only when the flag is on, so UI ships dark and releases with the matching backend toggle. Read flags via `@fuzefront/feature-flags` (the web/proxy SDK — `useFlag(...)`, never the server admin token in the browser), passing the standard evaluation context from the host session. **Test BOTH states** in your component tests (flag off = old/empty path, flag on = new UI). Retire stale flags + their dead UI branch in a cleanup PR. Creating/typing the flag itself is `feature-flags-engineer`; you consume it.
+
 ## NOT your scope — never implement these (name them for the orchestrator)
 - **Backend / API / services / migrations** → `backend-engineer`.
 - **Playwright / browser e2e + pre- & post-production UI verification** → `frontend-test-engineer`.
 - The **independent API acceptance/contract test suite** → `test-engineer`.
 - **Helm / Argo / CI/CD** → `devops-engineer`.
+- **Feature-flag administration** (creating/naming/typing flags, Unleash config, the `@fuzefront/feature-flags` client conventions) → `feature-flags-engineer`. You *consume* flags to gate UI; you don't administer the flag platform.
 - **Consumer docs** → `docs-maintainer`.
 
 ## How
