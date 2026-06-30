@@ -22,6 +22,8 @@ import {
 } from '@fuzefront/core'
 
 import appsRoutes from './routes/apps'
+import appRegistryRoutes from './routes/app-registry'
+import { ensureBuiltins } from './app-registry/builtins'
 import { initializeSocketIO } from './sockets/socketHandler'
 
 dotenv.config()
@@ -37,6 +39,9 @@ const io = initializeSocketIO(httpServer)
 app.set('io', io)
 
 app.use('/api/apps', appsRoutes)
+// Frozen versioned app-registry contract surface (services/app-registry-service/
+// openapi.yaml) — mounted ALONGSIDE the legacy /api/apps for back-compat.
+app.use('/api/v1/app-registry', appRegistryRoutes)
 
 const health = async (_req: any, res: any) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
@@ -94,6 +99,12 @@ async function startServer() {
     if (process.env.NODE_ENV !== 'production') {
       await runSeeds(dbOptions)
     }
+    // Built-in apps (e.g. Clock) are provisioned idempotently on EVERY boot
+    // (production included) so they appear in the menu out of the box, separate
+    // from the dev-only demo seeds above. Best-effort: never aborts startup.
+    await ensureBuiltins().catch(err =>
+      console.error('⚠️  [applications-service] ensureBuiltins failed:', err)
+    )
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

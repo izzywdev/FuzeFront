@@ -1,4 +1,5 @@
-import { App } from '../lib/shared'
+import { App as LegacyApp } from '../lib/shared'
+import type { App } from '@fuzefront/app-registry-client'
 // Dynamic remote-loading helpers from @originjs/vite-plugin-federation (the
 // federation runtime this host actually builds with). The previous
 // webpack-style __webpack_init_sharing__ approach never worked with Vite remotes.
@@ -47,13 +48,17 @@ const getRetryDelay = (
 /**
  * Load a remote module at runtime via @originjs/vite-plugin-federation:
  * register the remote dynamically, fetch the exposed module, unwrap its default.
+ *
+ * `remoteEntry` is the FULL entry URL (e.g. `https://…/remoteEntry.js`) — the
+ * frozen contract resolved the legacy base-vs-entry ambiguity in favor of the
+ * complete entry URL, so we register it verbatim.
  */
 async function loadRemoteModule(
-  remoteUrl: string,
+  remoteEntry: string,
   scope: string,
   module: string
 ): Promise<LoadedModule> {
-  const cacheKey = `${remoteUrl}:${scope}:${module}`
+  const cacheKey = `${remoteEntry}:${scope}:${module}`
 
   // Return cached module if available
   if (moduleCache.has(cacheKey)) {
@@ -61,9 +66,9 @@ async function loadRemoteModule(
   }
 
   const loadPromise = (async () => {
-    // Register the remote at runtime (remoteUrl is the base; remoteEntry.js lives under it).
+    // Register the remote at runtime. remoteEntry is the complete entry URL.
     __federation_method_setRemote(scope, {
-      url: `${remoteUrl}/remoteEntry.js`,
+      url: remoteEntry,
       format: 'esm',
       from: 'vite',
     })
@@ -87,10 +92,70 @@ async function loadRemoteModule(
 }
 
 /**
+ * Load a federated app described by a FROZEN-contract manifest `App`. This is
+ * the path the host uses now (the registry client returns this shape); it reads
+ * `integration.remoteEntry` (full URL), `scope`, and `module` directly.
+ */
+export async function loadFederatedAppFromManifest(
+  app: App,
+  retryOptions: Partial<RetryOptions> = {}
+): Promise<LoadedModule> {
+  const options = { ...DEFAULT_RETRY_OPTIONS, ...retryOptions }
+  const { integration } = app.manifest
+
+  if (integration.type !== 'module-federation') {
+    throw new Error(
+      `App '${app.manifest.name}' is not configured for Module Federation`
+    )
+  }
+  if (!integration.remoteEntry || !integration.scope || !integration.module) {
+    throw new Error(
+      `App '${app.manifest.name}' is missing required Module Federation configuration ` +
+        `(remoteEntry/scope/module)`
+    )
+  }
+
+  let lastError: Error | null = null
+  for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
+    try {
+      console.log(
+        `📦 Loading federated app '${app.manifest.name}' (attempt ${attempt}/${options.maxAttempts})`
+      )
+      const module = await loadRemoteModule(
+        integration.remoteEntry,
+        integration.scope,
+        integration.module
+      )
+      console.log(`✅ Successfully loaded federated app '${app.manifest.name}'`)
+      return module
+    } catch (error) {
+      lastError = error as Error
+      console.error(
+        `❌ Failed to load federated app '${app.manifest.name}' (attempt ${attempt}):`,
+        error
+      )
+      if (attempt < options.maxAttempts) {
+        const delay = getRetryDelay(
+          attempt,
+          options.baseDelay,
+          options.maxDelay
+        )
+        console.log(`⏳ Retrying in ${delay}ms...`)
+        await sleep(delay)
+      }
+    }
+  }
+
+  throw new Error(
+    `Failed to load federated app '${app.manifest.name}' after ${options.maxAttempts} attempts. Last error: ${lastError?.message}`
+  )
+}
+
+/**
  * Load a federated app with retry logic
  */
 export async function loadFederatedApp(
-  app: App,
+  app: LegacyApp,
   retryOptions: Partial<RetryOptions> = {}
 ): Promise<LoadedModule> {
   const options = { ...DEFAULT_RETRY_OPTIONS, ...retryOptions }
@@ -113,8 +178,9 @@ export async function loadFederatedApp(
         `📦 Loading federated app '${app.name}' (attempt ${attempt}/${options.maxAttempts})`
       )
 
+      // Legacy shape stores the BASE url; the entry lives under it.
       const module = await loadRemoteModule(
-        app.remoteUrl,
+        `${app.remoteUrl.replace(/\/$/, '')}/remoteEntry.js`,
         app.scope,
         app.module
       )
@@ -165,7 +231,7 @@ export async function loadApp(appId: string): Promise<LoadedModule> {
       throw new Error(`Failed to fetch apps: ${response.statusText}`)
     }
 
-    const apps: App[] = await response.json()
+    const apps: LegacyApp[] = await response.json()
     const app = apps.find(a => a.id === appId)
 
     if (!app) {
