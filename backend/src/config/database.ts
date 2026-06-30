@@ -315,25 +315,39 @@ export async function checkDatabaseHealth(): Promise<boolean> {
 }
 
 export async function closeDatabase(): Promise<void> {
-  // tarn.js pool.destroy() waits indefinitely for borrowed connections to be
-  // returned. In tests, fire-and-forget provisioning calls that borrow
-  // connections can cause this to hang. We cap the wait at 3 s; if destroy
-  // hasn't settled by then we proceed anyway — the process will exit once all
-  // in-flight queries complete (the test suite is done, no more work scheduled).
-  const destroyWithTimeout = (): Promise<void> =>
-    Promise.race([
-      db.destroy(),
-      new Promise<void>(resolve => {
-        const t = setTimeout(resolve, 3000)
-        // Unref the timer so it alone does not keep the event loop alive.
-        if (t.unref) t.unref()
-      }),
-    ])
+  if (!db) return
 
   try {
-    if (db) {
-      await destroyWithTimeout()
+    // tarn.js pool.destroy() waits indefinitely for borrowed connections to be
+    // returned. In tests, fire-and-forget provisioning calls (from
+    // selfHealProvisioningOnLogin) may still hold borrowed connections when
+    // afterAll runs.  We force-end each borrowed pg client so tarn can
+    // immediately release them and pool.destroy() resolves.
+    const pool: any = (db as any)?.client?.pool
+    if (pool) {
+      // pool.used is an Array<{resource, promise}> in tarn.js.
+      // The resource IS the raw pg connection (decorated with __knexUid).
+      const used: any[] = Array.isArray(pool.used) ? pool.used : []
+      if (used.length > 0) {
+        console.log(`⚡ Force-ending ${used.length} borrowed DB connection(s)...`)
+        await Promise.allSettled(
+          used.map((slot: any) => {
+            try {
+              // Try common shapes: slot.resource (tarn Used<T>), or slot itself
+              const conn = slot?.resource ?? slot
+              if (conn && typeof conn.end === 'function') {
+                return conn.end()
+              }
+            } catch {
+              // best-effort
+            }
+            return Promise.resolve()
+          })
+        )
+      }
     }
+
+    await db.destroy()
     console.log('✅ Database connection closed')
   } catch (error) {
     console.error('❌ Error closing database:', error)
