@@ -181,7 +181,6 @@ test.describe('FuzeFront live post-prod smoke', () => {
     // Surface console errors as a soft signal (logged, not always fatal — the
     // app emits diagnostic console output by design).
     if (consoleErrors.length) {
-      // eslint-disable-next-line no-console
       console.log('Console errors observed (informational):\n' + consoleErrors.join('\n'))
     }
   })
