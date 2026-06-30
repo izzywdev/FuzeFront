@@ -78,7 +78,10 @@ beforeAll(async () => {
   }
 })
 
-// Clean up after all tests
+// Clean up after all tests.
+// Timeout: 30 s — up to 10 s draining in-flight provisioning + time for
+// pool.destroy() to close all connections.  The global jest timeout (10 s) is
+// too short for teardown that involves real async DB work.
 afterAll(async () => {
   try {
     console.log('🧹 Cleaning up test database...')
@@ -89,9 +92,9 @@ afterAll(async () => {
     // holds a borrowed tarn.js connection.  pool.destroy() waits indefinitely for
     // borrowed connections, so we must drain the queue first.
     // drainProvisioningQueue() resolves when every tracked promise settles OR
-    // after a 10 s hard timeout — whichever comes first.
+    // after a 8 s hard timeout — whichever comes first.
     console.log('⏳ Draining in-flight provisioning queue...')
-    await drainProvisioningQueue(10_000)
+    await drainProvisioningQueue(8_000)
     console.log('✅ Provisioning queue drained')
 
     await closeDatabase()
@@ -104,7 +107,7 @@ afterAll(async () => {
   // (from supertest, axios, openid-client, or the Permit SDK) are released and
   // jest can exit cleanly without --forceExit.
   destroyPermitClient()
-})
+}, 30_000)
 
 // Add custom matchers or global test utilities here
 declare global {
