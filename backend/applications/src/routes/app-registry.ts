@@ -12,6 +12,7 @@ import {
   registerAppRequestSchema,
   heartbeatRequestSchema,
   toValidationErrorBody,
+  zodParseError,
 } from '../app-registry/manifest.schema'
 import { appRegistryService, canRead, canMutate } from '../app-registry/service'
 import { resolveCaller } from '../app-registry/caller'
@@ -91,7 +92,7 @@ router.post('/apps', authenticateToken, async (req: any, res) => {
   try {
     const parsed = registerAppRequestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody(zodParseError(parsed)))
     }
     const { manifest, organizationId } = parsed.data
     const orgId = organizationId ?? null
@@ -188,7 +189,7 @@ router.put('/apps/:slug', authenticateToken, async (req: any, res) => {
 
     const parsed = appManifestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody(zodParseError(parsed)))
     }
     const manifest = parsed.data
 
@@ -352,7 +353,7 @@ router.post('/apps/:slug/heartbeat', async (req: any, res) => {
   try {
     const parsed = heartbeatRequestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody(zodParseError(parsed)))
     }
     const { status, metadata } = parsed.data
 

@@ -154,3 +154,13 @@ export function toValidationErrorBody(err: z.ZodError): ValidationErrorBody {
     })),
   }
 }
+
+/**
+ * Extracts the ZodError from a failed safeParse result.
+ * TypeScript ≥6.0 does not narrow SafeParseReturnType via `!result.success`
+ * inside if-blocks; this helper encapsulates the one explicit cast needed.
+ * Only call this when you have already checked `!result.success`.
+ */
+export function zodParseError(result: z.SafeParseReturnType<any, any>): z.ZodError {
+  return (result as { error: z.ZodError }).error
+}
