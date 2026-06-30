@@ -164,6 +164,29 @@ const allowed = await permit.check(userId, 'read', {
 })
 ```
 
+## Machine / Service-Account (Agent) Identities
+
+FuzeFront's family-standard machine-identity primitive is an **Authentik service
+account authenticating via the OAuth2 client-credentials grant**. An agent acts
+**on behalf of a single user, within a single tenant**, and its authorization is
+*exactly* that user's reach — cross-user and cross-tenant access are denied by
+construction.
+
+- **No bespoke bearer scheme:** agents present a standard OAuth2 access token
+  (`Authorization: Bearer <token>`); FuzeFront validates it against the Authentik
+  issuer JWKS (`iss`/`aud`/`azp`/`exp`).
+- **Permit model:** the agent is a *distinct* Permit principal (`agent:<sub>`),
+  with an `Agent —delegate_of→ User` relation recorded for audit. Enforcement
+  resolves the agent to its bound `(user, tenant)` and checks **as the user**
+  (`backend/src/utils/permit/agent-identity.ts`).
+- **Registration + rotation runbook, the worked `permit.check`, and the
+  post-freeze runtime tasks** are in
+  [`docs/superpowers/plans/2026-06-30-agent-identities.md`](superpowers/plans/2026-06-30-agent-identities.md).
+
+> Status: the Permit-side model + delegation helpers are in place; the runtime
+> verification middleware + agent-binding store land in a later deploy-window
+> change. Until then the interim hashed-token fallback stands for consumers.
+
 ## Service Dependencies
 
 ### Startup Order

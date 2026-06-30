@@ -34,7 +34,7 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Chat', 'Docs', 'Organization', 'UserManagement']
+      ['Agent', 'App', 'Chat', 'Docs', 'Organization', 'User', 'UserManagement']
     )
     expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
 
@@ -95,7 +95,7 @@ describe('permit schema IaC', () => {
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['Agent', 'App', 'Chat', 'Docs', 'Organization', 'User', 'UserManagement'])
     expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
@@ -103,13 +103,13 @@ describe('permit schema IaC', () => {
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Chat', 'Docs', 'Organization', 'UserManagement'],
+      resources: ['Agent', 'App', 'Chat', 'Docs', 'Organization', 'User', 'UserManagement'],
       roles: ['admin', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['Agent', 'App', 'Chat', 'Docs', 'Organization', 'User', 'UserManagement'])
     expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
   })
 })
