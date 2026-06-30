@@ -179,6 +179,10 @@ function scopeAppsQuery(query: any, memberOrgIds: string[]) {
     if (memberOrgIds.length > 0) {
       this.orWhereIn('apps.organization_id', memberOrgIds)
     }
+    // Legacy / platform apps registered by admins without an org anchor remain
+    // visible to all authenticated users (consistent with requireAppAction's
+    // "un-owned app" handling).
+    this.orWhereNull('apps.organization_id')
   })
 }
 
