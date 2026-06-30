@@ -204,6 +204,8 @@ function AppContent() {
           <Route path="/organizations/new" element={<CreateOrganizationPage />} />
           <Route path="/profile" element={<UserProfileManagement />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/billing/invoices" element={<BillingPage />} />
+          <Route path="/billing/payments" element={<BillingPage />} />
           <Route path="/app/:appId" element={<AppRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
           <Route path="/help" element={<HelpPage />} />
