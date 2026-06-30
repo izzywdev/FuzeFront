@@ -148,9 +148,21 @@ jobs:
             if curl -fsS http://localhost:4174/assets/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
             sleep 2
           done
+          # POST /api/apps/register is now AUTHENTICATED + org-scoped (the BOLA
+          # fix in #101: an anonymous caller can no longer inject a federated
+          # remote into the host shell). Log in as the seeded admin to get a
+          # JWT, then register as that user. The admin is an active OWNER of a
+          # single personal org, so requireAppPermission('create') resolves that
+          # org from the caller's membership and grants the create object-level.
+          TOKEN=$(curl -fsS -X POST http://localhost:3001/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@fuzefront.dev","password":"admin123"}' \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{process.stdout.write(JSON.parse(s).token||"")})')
+          if [ -z "$TOKEN" ]; then echo "login failed — no token"; cat /tmp/backend.log; exit 1; fi
           # url = backend-reachable (drives the health check); remoteUrl = browser-reachable.
           curl -fsS -X POST http://localhost:3001/api/apps/register \
             -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $TOKEN" \
             -d '{"name":"FuzeClock","url":"http://localhost:4174","integrationType":"module-federation","remoteUrl":"http://localhost:4174/assets","scope":"fuzeClock","module":"./App","description":"on-the-fly clock"}'
 
       # ---- Playwright: sign-in + runtime federated load ----
