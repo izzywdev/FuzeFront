@@ -74,6 +74,46 @@ describe('POST /checkout — hosted Stripe Checkout Session', () => {
     expect(opts).toEqual(expect.objectContaining({ idempotencyKey: expect.any(String) }));
   });
 
+  // BUG 1: the idempotency key must be a deterministic function of the request
+  // params. Identical requests -> identical key (dedupe double-clicks); a changed
+  // successUrl -> a DIFFERENT key (no Stripe "same parameters" 24h poisoning).
+  async function postCheckout(app: any, body: Record<string, unknown>) {
+    return request(app)
+      .post(URL)
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID, USER_ID))
+      .send(body);
+  }
+
+  it('idempotency key: identical params -> SAME key; changed successUrl -> DIFFERENT key (BUG 1)', async () => {
+    const { app, stubs } = buildApp({
+      internalToken: INTERNAL_TOKEN,
+      stubs: { ...orgCustomerStub() },
+    });
+
+    const base = {
+      planId: 'basic',
+      organizationId: ORG_ID,
+      successUrl: 'https://app.fuzefront.com/billing/success',
+      cancelUrl: 'https://app.fuzefront.com/billing/cancel',
+    };
+
+    await postCheckout(app, base);
+    await postCheckout(app, { ...base }); // identical
+    await postCheckout(app, { ...base, successUrl: 'https://app.fuzefront.com/billing/done' });
+
+    const keyOf = (i: number) =>
+      stubs.stripe.checkout.sessions.create.mock.calls[i][1].idempotencyKey as string;
+
+    const k0 = keyOf(0);
+    const k1 = keyOf(1);
+    const k2 = keyOf(2);
+
+    expect(k0).toBe(k1); // identical params -> same key (true retry / dedupe)
+    expect(k2).not.toBe(k0); // changed successUrl -> new key
+    expect(k0).toMatch(/^checkout-/); // human-readable prefix retained
+  });
+
   it('401 when the internal token is missing', async () => {
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
     const res = await request(app)
@@ -165,7 +205,7 @@ describe('POST /checkout — hosted Stripe Checkout Session', () => {
     expect(res.status).toBe(400);
   });
 
-  it('502 when Stripe throws creating the session', async () => {
+  it('502 when Stripe throws an unknown/upstream error creating the session', async () => {
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
     stubs.stripe.checkout.sessions.create.mockRejectedValue(new Error('stripe boom'));
     const res = await request(app)
@@ -179,5 +219,69 @@ describe('POST /checkout — hosted Stripe Checkout Session', () => {
         cancelUrl: 'https://a/c',
       });
     expect(res.status).toBe(502);
+    expect(res.body).toEqual(
+      expect.objectContaining({ error: expect.any(String), code: expect.any(String), message: expect.any(String) }),
+    );
+  });
+
+  // BUG 2: an idempotency-key conflict (reuse with different params) is a
+  // CLIENT/caller problem, not an upstream failure -> 409, NOT 502.
+  it('409 when Stripe raises an idempotency_error (BUG 2)', async () => {
+    const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
+    stubs.stripe.checkout.sessions.create.mockRejectedValue(
+      Object.assign(new Error('Keys for idempotent requests can only be used with the same parameters'), {
+        type: 'StripeIdempotencyError',
+        code: 'idempotency_error',
+        statusCode: 400,
+      }),
+    );
+    const res = await request(app)
+      .post(URL)
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID))
+      .send({ planId: 'basic', organizationId: ORG_ID, successUrl: 'https://a/s', cancelUrl: 'https://a/c' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual(
+      expect.objectContaining({ code: 'idempotency_error', message: expect.stringContaining('same parameters') }),
+    );
+  });
+
+  // BUG 2: a StripeInvalidRequestError / 4xx is a client error -> forward the
+  // Stripe statusCode (here 400), NOT a blanket 502.
+  it('400 when Stripe raises a StripeInvalidRequestError (BUG 2)', async () => {
+    const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
+    stubs.stripe.checkout.sessions.create.mockRejectedValue(
+      Object.assign(new Error('No such price'), {
+        type: 'StripeInvalidRequestError',
+        code: 'resource_missing',
+        statusCode: 400,
+      }),
+    );
+    const res = await request(app)
+      .post(URL)
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID))
+      .send({ planId: 'basic', organizationId: ORG_ID, successUrl: 'https://a/s', cancelUrl: 'https://a/c' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'resource_missing' }));
+  });
+
+  // BUG 2: a card decline (402) forwards faithfully rather than collapsing to 502.
+  it('402 when Stripe raises a StripeCardError (BUG 2)', async () => {
+    const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
+    stubs.stripe.checkout.sessions.create.mockRejectedValue(
+      Object.assign(new Error('Your card was declined'), {
+        type: 'StripeCardError',
+        code: 'card_declined',
+        statusCode: 402,
+      }),
+    );
+    const res = await request(app)
+      .post(URL)
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID))
+      .send({ planId: 'basic', organizationId: ORG_ID, successUrl: 'https://a/s', cancelUrl: 'https://a/c' });
+    expect(res.status).toBe(402);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'card_declined' }));
   });
 });
