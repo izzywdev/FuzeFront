@@ -1,0 +1,69 @@
+{
+  "name": "@fuzefront/authn",
+  "version": "1.0.0",
+  "description": "Reference validator for the Fuze family AuthN federation contract: validates Authentik-issued RS256 tokens via the shared JWKS (no JWT_SECRET sharing). Ships a framework-agnostic validator and an Express middleware.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "fuzefront",
+    "authn",
+    "authentik",
+    "oidc",
+    "jwks",
+    "jwt",
+    "rs256",
+    "federation"
+  ],
+  "author": "FuzeFront Team <team@fuzefront.dev>",
+  "license": "MIT",
+  "homepage": "https://fuzefront.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/authn"
+  },
+  "bugs": {
+    "url": "mailto:team@fuzefront.dev"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "build:watch": "rollup -c -w",
+    "dev": "rollup -c -w",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests src",
+    "test:watch": "vitest --watch",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.4",
+    "@rollup/plugin-node-resolve": "^15.2.1",
+    "@rollup/plugin-typescript": "^11.1.3",
+    "rimraf": "^5.0.1",
+    "rollup": "^3.29.2",
+    "rollup-plugin-dts": "^6.0.2",
+    "tslib": "^2.8.1",
+    "typescript": "^5.1.6",
+    "vitest": "^3.2.4"
+  }
+}

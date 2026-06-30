@@ -1,5 +1,13 @@
 # FuzeFront Authentication & Authorization Setup
 
+> **Federating auth to sibling apps?** See the
+> [**Fuze family AuthN federation contract**](auth/federation-authn-contract.md)
+> (`v1.0.0`) — the authoritative spec for how sibling services (FuzeKeys, etc.)
+> validate Authentik tokens without sharing `JWT_SECRET`. Reference validators:
+> [`@fuzefront/authn`](../packages/authn/README.md) (TS) and
+> [`examples/fuzekeys-fastapi`](../examples/fuzekeys-fastapi/README.md) (Python).
+
+
 > **Status — migration in progress.** FuzeFront and FuzeInfra have moved to
 > Kubernetes (Helm chart + ingress-nginx; see
 > [`docs/PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md) and
