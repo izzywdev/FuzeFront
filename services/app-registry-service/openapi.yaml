@@ -280,6 +280,7 @@ paths:
       operationId: getHealth
       tags: [health]
       summary: Liveness / readiness
+      description: Unauthenticated liveness/readiness probe for the applications-service.
       security: []
       responses:
         '200':
@@ -506,6 +507,8 @@ components:
         integration: { $ref: '#/components/schemas/Integration' }
         chrome: { $ref: '#/components/schemas/Chrome' }
         routing: { $ref: '#/components/schemas/Routing' }
+        infra:
+          $ref: '#/components/schemas/Infra'
         visibility:
           $ref: '#/components/schemas/Visibility'
         roles:
