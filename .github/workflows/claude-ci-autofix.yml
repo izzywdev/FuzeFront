@@ -2,7 +2,7 @@ name: Claude Auto-Fix CI
 
 on:
   workflow_run:
-    workflows: ["CI/CD Pipeline", "Backend Authentication Tests", "E2E (sign-in)"]
+    workflows: ["CI/CD Pipeline", "Backend Authentication Tests", "E2E (sign-in)", "Harden Gate"]
     types: [completed]
 
 permissions:
