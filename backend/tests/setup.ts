@@ -24,6 +24,7 @@ import {
   runSeeds,
   closeDatabase,
 } from '../src/config/database'
+import { destroyPermitClient } from '../src/config/permit'
 
 // Global setup for all tests
 beforeAll(async () => {
@@ -59,6 +60,10 @@ afterAll(async () => {
   } catch (error) {
     console.warn('⚠️ Error cleaning up test database:', error)
   }
+
+  // Destroy the Permit SDK's axios http agent so its keep-alive sockets are
+  // released and jest can exit cleanly without --forceExit.
+  destroyPermitClient()
 })
 
 // Add custom matchers or global test utilities here

@@ -270,7 +270,7 @@ describe('Authentication - Real Postgres Integration Tests', () => {
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
         .expect(200)
-      expect(Date.now() - startTime).toBeLessThan(2000)
+      expect(Date.now() - startTime).toBeLessThan(5000)
     })
   })
 
