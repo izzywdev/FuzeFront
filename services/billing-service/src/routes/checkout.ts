@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router, Response } from 'express';
 import type Stripe from 'stripe';
 import { z } from 'zod';
@@ -5,6 +6,45 @@ import { CustomerService } from '../services/customer.service';
 import { PlanService } from '../services/plan.service';
 import { BillingRequest, requireActorContext } from '../middleware/auth';
 import { validateBody } from './validate';
+import { sendStripeError } from './stripe-error';
+
+/**
+ * Build the Checkout-Session idempotency key.
+ *
+ * BUG 1 fix — the key MUST incorporate a stable fingerprint of the request
+ * parameters. A purely org+price+user key is OVER-deterministic: Stripe's 24h
+ * idempotency window rejects a reuse with *different* params
+ * ("Keys for idempotent requests can only be used with the same parameters they
+ * were first used with"), which in prod poisoned an org's key for ~24h when the
+ * successUrl/cancelUrl changed.
+ *
+ * By hashing {organizationId, userId, priceId, mode, successUrl, cancelUrl} we
+ * keep TRUE retries idempotent (identical inputs -> identical key, so rapid
+ * double-clicks dedupe to one session) while a changed param set yields a NEW
+ * key — a fresh session instead of a hard Stripe error.
+ */
+export function checkoutIdempotencyKey(parts: {
+  organizationId: string;
+  userId: string;
+  priceId: string;
+  mode: string;
+  successUrl: string;
+  cancelUrl: string;
+}): string {
+  // Order is fixed and explicit so the digest is deterministic across calls.
+  const fingerprint = JSON.stringify([
+    parts.organizationId,
+    parts.userId,
+    parts.priceId,
+    parts.mode,
+    parts.successUrl,
+    parts.cancelUrl,
+  ]);
+  const hash = createHash('sha256').update(fingerprint).digest('hex').slice(0, 16);
+  // Keep the human-readable prefix for log/dashboard correlation; the hash makes
+  // it param-sensitive. (Stripe idempotency keys allow up to 255 chars.)
+  return `checkout-${parts.organizationId}-${parts.priceId}-${parts.userId}-${hash}`;
+}
 
 /**
  * POST /api/v1/billing/checkout — create a hosted Stripe Checkout Session
@@ -83,9 +123,10 @@ export function createCheckoutRouter(deps: CheckoutDeps): Router {
     try {
       const customer = await deps.customers.ensureCustomer('organization', organizationId);
 
+      const mode = 'subscription';
       const session = await deps.stripe.checkout.sessions.create(
         {
-          mode: 'subscription',
+          mode,
           customer: customer.stripeCustomerId,
           line_items: [{ price: priceId, quantity: 1 }],
           success_url: successUrl,
@@ -96,17 +137,29 @@ export function createCheckoutRouter(deps: CheckoutDeps): Router {
           metadata: { organizationId, planId },
           client_reference_id: organizationId,
         },
-        // Idempotency: a retry of the same actor+org+plan won't create a second
-        // Checkout Session (Stripe replays the original response within 24h).
-        { idempotencyKey: `checkout-${organizationId}-${priceId}-${actor.actorUserId}` },
+        // Idempotency: a retry of the SAME actor+org+plan AND SAME params won't
+        // create a second Checkout Session (Stripe replays the original within
+        // 24h). The key embeds a param fingerprint (BUG 1) so a changed
+        // success/cancel URL yields a fresh key instead of a 24h-poisoning
+        // "same parameters" idempotency error.
+        {
+          idempotencyKey: checkoutIdempotencyKey({
+            organizationId,
+            userId: actor.actorUserId,
+            priceId,
+            mode,
+            successUrl,
+            cancelUrl,
+          }),
+        },
       );
 
       return res.status(200).json({ url: session.url, sessionId: session.id });
     } catch (err) {
-      return res.status(502).json({
-        error: 'stripe error',
-        message: err instanceof Error ? err.message : String(err),
-      });
+      // BUG 2: classify Stripe errors. Client/validation/idempotency-conflict
+      // map to 4xx/409 (so Cloudflare/the browser sees the real cause); only
+      // genuine upstream/unknown failures map to 502.
+      return sendStripeError(res, err);
     }
   });
 
