@@ -74,7 +74,7 @@ applicationsService:
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
 # by CI's release sed to the built SHA.
 clockApp:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
     tag: ""  # CI's release sed writes the real image SHA here
