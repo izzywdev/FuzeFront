@@ -38,7 +38,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 84b07a728fee
+    tag: 2db0027f27d7
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
