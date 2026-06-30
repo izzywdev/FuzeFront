@@ -14,6 +14,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  pull-requests: read
 
 concurrency:
   group: harden-gate-${{ github.ref }}
@@ -89,6 +90,7 @@ jobs:
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
       - uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -100,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -109,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (report-only, SARIF)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -118,7 +120,105 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
           sarif_file: trivy.sarif
           category: trivy
+
+  gate-authz:
+    # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
+    # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Semgrep authz/appsec scan (report-only, SARIF)
+        shell: bash
+        run: |
+          pip install -q semgrep
+          CFG=""
+          [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
+          semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
+          test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: authz.sarif
+          category: authz
+
+  gate-localup:
+    # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
+    # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
+    # to enforcing per-repo (see local-environment.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Consumer-test bounded up + smoke
+        shell: bash
+        run: |
+          CT=$(git ls-files '**/docker-compose.consumer-test.yml' 'docker-compose.consumer-test.yml' 2>/dev/null | head -1)
+          if [ -z "$CT" ]; then
+            echo "::warning title=local-up::No bounded local-up (FuzeInfra consumer-test) wired yet — tracked by local-env-verifier"; exit 0
+          fi
+          dir=$(dirname "$CT"); env=""; [ -f "$dir/versions.env" ] && env="--env-file $dir/versions.env"
+          echo "::group::consumer-test up"
+          docker compose $env -f "$CT" up -d --wait || { echo "consumer-test infra failed to come up"; docker compose -f "$CT" logs | tail -50; exit 1; }
+          echo "::endgroup::"
+          docker compose -f "$CT" down -v || true
+          echo "bounded local-up smoke OK"
+      - name: Validate Helm chart (helm lint, if present)
+        shell: bash
+        run: |
+          chart=$(git ls-files '**/Chart.yaml' 'Chart.yaml' 2>/dev/null | head -1)
+          if [ -z "$chart" ]; then echo "no Helm chart — skipping chart validation"; exit 0; fi
+          cdir=$(dirname "$chart")
+          curl -sSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp >/dev/null 2>&1 && sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm || true
+          helm lint "$cdir" || echo "::warning title=helm-lint::chart findings (report)"
+
+  gate-version:
+    # SemVer discipline (governance/versioning.md): a changed npm package or API contract
+    # must bump its version. Report-only first pass; ratchet to enforcing per repo.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: SemVer bump check (packages + API contracts, report-only)
+        shell: bash
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set +e
+          git fetch origin "$BASE" --depth=1 >/dev/null 2>&1
+          base="origin/$BASE"
+          SEMVER='^[0-9]+\.[0-9]+\.[0-9]+([-+.0-9A-Za-z]*)?$'
+          findings=0
+          # --- npm packages: source changed => version must change ---
+          for pj in $(git ls-files '**/package.json' 'package.json'); do
+            d=$(dirname "$pj"); case "$d" in *node_modules*) continue;; esac
+            git diff --name-only "$base"...HEAD -- "$d" | grep -v 'package-lock.json' | grep -q . || continue
+            new=$(jq -r '.version // empty' "$pj" 2>/dev/null); [ -z "$new" ] && continue
+            name=$(jq -r '.name // "(unnamed)"' "$pj" 2>/dev/null)
+            old=$(git show "$base:$pj" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)
+            if ! echo "$new" | grep -Eq "$SEMVER"; then
+              echo "::warning title=gate-version::$name version '$new' is not valid SemVer"; findings=1
+            elif [ -n "$old" ] && [ "$old" = "$new" ]; then
+              echo "::warning title=gate-version::package '$name' ($d) changed but version not bumped (still $old) — bump per SemVer (governance/versioning.md)"; findings=1
+            fi
+          done
+          # --- API contracts (OpenAPI/Swagger): spec changed => the info `version:` must change ---
+          # (heredoc-free: match the indented version: under info, not the top-level openapi:/swagger:)
+          verline() { grep -aE '(^[[:space:]]+version:)|("version"[[:space:]]*:)' 2>/dev/null | head -1 | tr -d " \"',"; }
+          for spec in $(git ls-files '**/openapi*.y*ml' '**/openapi*.json' '**/swagger*.y*ml' 'contracts/**/*.y*ml' 'contracts/**/*.json' 2>/dev/null); do
+            git diff --name-only "$base"...HEAD -- "$spec" | grep -q . || continue
+            newv=$(verline < "$spec")
+            oldv=$(git show "$base:$spec" 2>/dev/null | verline)
+            if [ -n "$oldv" ] && [ "$oldv" = "$newv" ]; then
+              echo "::warning title=gate-version::API contract '$spec' changed but info version not bumped (still $oldv) — bump per SemVer; breaking changes require a MAJOR bump (governance/versioning.md)"; findings=1
+            fi
+          done
+          [ "$findings" = "0" ] && echo "gate-version: OK (no unbumped package/contract changes)" || echo "gate-version: findings above (report-only — will gate once ratcheted)"
+          exit 0
