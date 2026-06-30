@@ -13,6 +13,8 @@ export { PendingInvitesList } from './components/invites/PendingInvitesList'
 export type { PendingInvitesListProps } from './components/invites/PendingInvitesList'
 export { EmptyState } from './components/common/EmptyState'
 export type { EmptyStateProps, EmptyStateVariant } from './components/common/EmptyState'
+export { RolesPermissionsPanel } from './components/permissions/RolesPermissionsPanel'
+export type { RolesPermissionsPanelProps } from './components/permissions/RolesPermissionsPanel'
 
 // ---- API tokens -----------------------------------------------------------
 export { TokenList } from './components/tokens/TokenList'
@@ -47,4 +49,11 @@ export type {
   ApiTokenSummary,
   CreatedApiToken,
   IdentityApiClient,
+  OrgRoleDefinition,
+  ResourceDef,
+  ResourceActionDef,
+  RolesCatalog,
+  PaginationMeta,
+  MembersPage,
+  ListMembersOptions,
 } from './types'

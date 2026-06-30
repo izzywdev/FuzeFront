@@ -355,10 +355,13 @@ export const deleteOrganization = async (id: string) => {
   return res.data
 }
 
-// Organization members
+// Organization members.
+// The endpoint returns a paginated envelope `{ members, pagination }`; older
+// callers expect a bare array, so unwrap to the members array (tolerating both
+// the new envelope and a legacy array response).
 export const getOrganizationMembers = async (orgId: string) => {
   const res = await api.get(`/organizations/${orgId}/members`)
-  return res.data
+  return Array.isArray(res.data) ? res.data : (res.data?.members ?? [])
 }
 export const inviteOrganizationMember = async (
   orgId: string,
