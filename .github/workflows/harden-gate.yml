@@ -122,3 +122,55 @@ jobs:
         with:
           sarif_file: trivy.sarif
           category: trivy
+
+  gate-pagination:
+    # Pagination standard (FuzeSDLC baseline §4.1 / governance/pagination-standard.md). Inspects
+    # OpenAPI/Swagger contracts and FAILS unbounded collection GETs lacking limit + cursor|offset +
+    # the {items,page} envelope, unless `x-pagination: exempt` or allowlisted. Report-only first pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Pagination gate
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          SCRIPT=""
+          for c in scripts/gate_pagination.py .fuze/gate_pagination.py .github/scripts/gate_pagination.py; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-pagination::no gate_pagination.py found in repo — skipping"; exit 0
+          fi
+          python "$SCRIPT" . || true   # report-only first pass; remove "|| true" to enforce
+
+  gate-ds-conformance:
+    # Design-system conformance (FuzeSDLC baseline §6). HARD-FAILS raw design values in feature code
+    # (hex/rgb/hsl/px/font outside tokens, excludes the DS package). SEPARATELY, on push to the
+    # default branch, opens one idempotent `ds-extraction` GitHub issue per recurring UI pattern that
+    # should become a DS primitive. Report-only first pass.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: DS conformance gate (+ extraction issues on push to default branch)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          SCRIPT=""
+          for c in scripts/gate_ds_conformance.py .fuze/gate_ds_conformance.py .github/scripts/gate_ds_conformance.py; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-ds-conformance::no gate_ds_conformance.py found in repo — skipping"; exit 0
+          fi
+          EMIT=""
+          if [ "${{ github.event_name }}" = "push" ]; then EMIT="--emit-issues"; fi
+          python "$SCRIPT" . $EMIT || true   # report-only first pass; remove "|| true" to enforce
