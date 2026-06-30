@@ -1,0 +1,588 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront App Registry API
+  version: 1.0.0
+  description: >-
+    REST API for the FuzeFront **app registry** — the contract by which a
+    federated (or standalone) application is registered, activated, and surfaced
+    in the host shell's application menu. This contract is frozen OVER the
+    existing applications-service (`backend/applications/`); it does not replace
+    the legacy `/api/apps` routes but supersedes them under the versioned path
+    `/api/v1/app-registry`.
+
+    This file is the single source of truth for `@fuzefront/app-registry-client`.
+    Changing the API means amending this file first (see the `api-contract-first`
+    skill), then regenerating the client (`openapi-typescript`).
+
+    ### The App Manifest
+    The heart of this contract is the **App Manifest** (`AppManifest`): a single
+    declarative document, submitted at registration and served back on read, that
+    fully describes how the host mounts and chromes an app. It covers four
+    capabilities:
+      1. registration + activation lifecycle (`registered → activated → suspended`);
+      2. **menu substitution** (`chrome.menu = host | substitute`);
+      3. **standalone / non-portal** mode (`mode = portal | standalone`);
+      4. built-in apps (`builtin: true`, e.g. the seeded `clock` app).
+
+    ### Async surface (events)
+    Beyond HTTP, the registry emits Kafka events whose Zod schemas live in
+    `shared/src/kafka/schemas/`:
+      * `app.registered`  — `appRegisteredSchemaV1`
+      * `app.activated`   — `appActivatedSchemaV1`
+      * `app.suspended`   — `appSuspendedSchemaV1`
+      * `app.heartbeat`   — `appHeartbeatSchemaV1`
+    These are the durable, cross-service system-of-record successors to the
+    legacy Socket.io `app-registered` / `app-status-changed` emits (which the host
+    may keep purely as a live UI push).
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: '{baseUrl}/api/v1/app-registry'
+    description: applications-service, app-registry surface mounted under /api/v1/app-registry
+    variables:
+      baseUrl:
+        default: http://fuzefront-applications:3003
+        description: Cluster-internal base URL of the applications-service.
+
+tags:
+  - name: apps
+    description: Application registry — list/read/register apps.
+  - name: lifecycle
+    description: Activation / suspension lifecycle transitions.
+  - name: heartbeat
+    description: App liveness heartbeat (called by the app, not by users).
+  - name: health
+    description: Service liveness / readiness.
+
+security:
+  - sessionAuth: []
+
+paths:
+  /apps:
+    get:
+      operationId: listApps
+      tags: [apps]
+      summary: List registered apps
+      description: >-
+        Returns the apps visible to the caller, filtered by the caller's
+        org/roles and the requested `status`/`mode`. The host launcher and side
+        menu call this to render the application menu. Replaces the legacy
+        unfiltered `GET /api/apps`.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by lifecycle status. Omit for all non-suspended.
+          schema:
+            $ref: '#/components/schemas/AppStatus'
+        - name: mode
+          in: query
+          required: false
+          description: Filter by app mode (portal | standalone).
+          schema:
+            $ref: '#/components/schemas/AppMode'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor returned as `nextCursor`.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The page of apps visible to the caller.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [apps]
+                properties:
+                  apps:
+                    type: array
+                    items: { $ref: '#/components/schemas/App' }
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Cursor for the next page, or null if last page.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: registerApp
+      tags: [apps]
+      summary: Register an app
+      description: >-
+        Registers a new app from its **manifest**. The app starts in `registered`
+        status (NOT visible) — it must be activated to appear in the menu. The
+        `slug` must be unique. Requires the `apps:register` scope (platform-admin
+        or org-admin per visibility). Emits `app.registered`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterAppRequest' }
+      responses:
+        '201':
+          description: App registered (status = registered).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: An app with this slug already exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /apps/{slug}:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    get:
+      operationId: getApp
+      tags: [apps]
+      summary: Get an app by slug
+      description: Returns the full app record (including its manifest).
+      responses:
+        '200':
+          description: The app.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      operationId: updateApp
+      tags: [apps]
+      summary: Replace an app's manifest
+      description: >-
+        Replaces the manifest of an existing app. `slug`, `builtin`, and
+        `manifestVersion` are immutable and must match. Requires `apps:write`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppManifest' }
+      responses:
+        '200':
+          description: Updated app.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      operationId: deleteApp
+      tags: [apps]
+      summary: Delete a registered app
+      description: >-
+        Permanently removes a registered app. **Built-in apps cannot be
+        deleted** (only suspended) — returns 403. Requires `apps:write`.
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Forbidden, or the app is built-in and cannot be deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /apps/{slug}/activate:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: activateApp
+      tags: [lifecycle]
+      summary: Activate an app
+      description: >-
+        Transitions an app to `activated` so it appears in the application menu /
+        launcher. Idempotent: activating an already-activated app is a no-op 200.
+        Requires `apps:activate`. Emits `app.activated`.
+      responses:
+        '200':
+          description: App activated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /apps/{slug}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: suspendApp
+      tags: [lifecycle]
+      summary: Suspend an app
+      description: >-
+        Transitions an app to `suspended` (hidden from the menu, record retained).
+        Works for built-in apps too. Idempotent. Requires `apps:activate`.
+        Emits `app.suspended`.
+      responses:
+        '200':
+          description: App suspended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/App' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /apps/{slug}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: heartbeatApp
+      tags: [heartbeat]
+      summary: Report app liveness
+      description: >-
+        Called by a running app (or its SDK) to report liveness. Authenticated by
+        a per-app heartbeat token, not a user session. Updates `lastSeenAt` and
+        emits `app.heartbeat`. Mirrors the legacy `POST /api/apps/:id/heartbeat`.
+      security:
+        - appHeartbeatToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HeartbeatRequest' }
+      responses:
+        '200':
+          description: Heartbeat accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accepted, at]
+                properties:
+                  accepted: { type: boolean }
+                  at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness
+      description: Unauthenticated liveness/readiness probe for the applications-service.
+      security: []
+      responses:
+        '200':
+          description: Service healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Platform user session (Authentik OIDC bearer). The applications-service
+        authorizes via Permit. Scopes referenced in this contract:
+        `apps:register`, `apps:write`, `apps:activate`.
+    appHeartbeatToken:
+      type: http
+      scheme: bearer
+      description: >-
+        Per-app heartbeat token issued at registration. Authenticates the app
+        process (not a user) for the heartbeat endpoint only.
+
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: The app's immutable url-safe slug (e.g. `clock`).
+      schema: { $ref: '#/components/schemas/Slug' }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid session / token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The caller lacks the required scope for this object.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: App not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Request body / manifest failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationErrorBody' }
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Slug:
+      type: string
+      description: URL-safe unique identifier, immutable once registered.
+      pattern: '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'
+      examples: ['clock', 'market']
+
+    AppMode:
+      type: string
+      description: >-
+        `portal` — mounted inside the host shell at `/app/:slug` with chrome.
+        `standalone` — rendered without portal chrome on its own host/path.
+      enum: [portal, standalone]
+
+    AppStatus:
+      type: string
+      description: Lifecycle status. registered → activated → suspended.
+      enum: [registered, activated, suspended]
+
+    IntegrationType:
+      type: string
+      enum: [module-federation, iframe, web-component, spa]
+
+    Visibility:
+      type: string
+      enum: [private, organization, public, marketplace]
+
+    Icon:
+      type: object
+      additionalProperties: false
+      required: [kind, value]
+      description: App icon — either an emoji glyph or an image URL.
+      properties:
+        kind: { type: string, enum: [emoji, url] }
+        value:
+          type: string
+          description: The emoji character, or an https URL to the icon image.
+
+    Integration:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: How the host loads/mounts the app.
+      properties:
+        type: { $ref: '#/components/schemas/IntegrationType' }
+        remoteEntry:
+          type: string
+          format: uri
+          description: >-
+            FULL Module-Federation remote entry URL, e.g.
+            `https://clock.example.com/remoteEntry.js`. Required when
+            `type = module-federation`. This freezes the legacy base-vs-entry
+            ambiguity: the value is the complete entry URL, NOT a base.
+        scope:
+          type: string
+          description: MF remote scope/name. Required for module-federation.
+        module:
+          type: string
+          description: Exposed module path, e.g. `./ClockApp`. Required for module-federation.
+        url:
+          type: string
+          format: uri
+          description: >-
+            Navigable URL for `iframe` and `standalone`/`spa` integrations.
+
+    MenuItem:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      description: An app-declared menu item (for chrome substitution or app section).
+      properties:
+        id: { type: string }
+        label: { type: string }
+        icon: { type: string, description: 'icon name or emoji' }
+        route: { type: string, description: 'in-app route the item navigates to' }
+        order: { type: integer }
+
+    Chrome:
+      type: object
+      additionalProperties: false
+      description: >-
+        How the host's chrome behaves while this app is active. Ignored for
+        `mode = standalone` (standalone apps render with no portal chrome).
+      properties:
+        menu:
+          type: string
+          enum: [host, substitute]
+          default: host
+          description: >-
+            `host` — keep the portal side menu (app may still push runtime items).
+            `substitute` — the app provides its OWN full side menu; the host yields
+            its portal menu and renders `items` instead. The host always retains a
+            minimal "return to portal" affordance so the user is never trapped.
+        topbar:
+          type: string
+          enum: [host, hidden]
+          default: host
+        items:
+          type: array
+          description: App-declared menu items, used when `menu = substitute`.
+          items: { $ref: '#/components/schemas/MenuItem' }
+
+    Routing:
+      type: object
+      additionalProperties: false
+      description: Routing for the app. `host` applies to standalone only.
+      properties:
+        path:
+          type: string
+          pattern: '^/[a-zA-Z0-9/_-]*$'
+          description: >-
+            Path the app is reachable at. For portal apps this is informational
+            (host mounts at `/app/:slug`); for standalone it is the routed path.
+        host:
+          type: string
+          description: >-
+            Standalone-only: a dedicated host (e.g. `clock.fuzefront.com`). When
+            omitted, standalone apps are path-based under the main app host.
+
+    Infra:
+      type: object
+      additionalProperties: false
+      description: >-
+        Platform infrastructure the (typically standalone) app opts into. Portal
+        apps implicitly get auth + api; this block is mainly meaningful for
+        standalone apps that selectively use FuzeFront infra.
+      properties:
+        auth: { type: boolean, default: true, description: 'Authentik identity/SSO' }
+        billing: { type: boolean, default: false, description: 'Stripe billing surface' }
+        api: { type: boolean, default: true, description: 'Same-origin platform API' }
+        deployOnFuzeInfra:
+          type: boolean
+          default: true
+          description: 'Deployed via the FuzeInfra GitOps pipeline'
+
+    AppManifest:
+      type: object
+      additionalProperties: false
+      required: [manifestVersion, slug, name, menuLabel, mode, integration]
+      description: >-
+        The declarative document describing how the host mounts and chromes an
+        app. Stored on the app row, served back on read, and the single shared
+        type across UI / backend / tests.
+      properties:
+        manifestVersion: { type: string, enum: ['1'] }
+        slug: { $ref: '#/components/schemas/Slug' }
+        name: { type: string, maxLength: 120 }
+        menuLabel:
+          type: string
+          maxLength: 40
+          description: Label shown in the application menu / launcher (e.g. "Market").
+        description: { type: string, maxLength: 1024 }
+        icon: { $ref: '#/components/schemas/Icon' }
+        mode: { $ref: '#/components/schemas/AppMode' }
+        builtin:
+          type: boolean
+          default: false
+          description: Shipped with the platform; cannot be deleted, only suspended.
+        integration: { $ref: '#/components/schemas/Integration' }
+        chrome: { $ref: '#/components/schemas/Chrome' }
+        routing: { $ref: '#/components/schemas/Routing' }
+        infra:
+          $ref: '#/components/schemas/Infra'
+        visibility:
+          $ref: '#/components/schemas/Visibility'
+        roles:
+          type: array
+          description: Roles permitted to see/activate the app. Empty = all members.
+          items: { type: string }
+
+    App:
+      type: object
+      additionalProperties: false
+      required: [slug, status, mode, builtin, manifest, createdAt, updatedAt]
+      description: A registered app — its server-managed state plus its manifest.
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        status: { $ref: '#/components/schemas/AppStatus' }
+        mode: { $ref: '#/components/schemas/AppMode' }
+        builtin: { type: boolean }
+        organizationId:
+          type: [string, 'null']
+          format: uuid
+          description: Owning org, or null for platform-global apps.
+        manifest: { $ref: '#/components/schemas/AppManifest' }
+        isHealthy:
+          type: [boolean, 'null']
+          description: Latest heartbeat-derived health, or null if unknown.
+        lastSeenAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    RegisterAppRequest:
+      type: object
+      additionalProperties: false
+      required: [manifest]
+      properties:
+        manifest: { $ref: '#/components/schemas/AppManifest' }
+        organizationId:
+          type: [string, 'null']
+          format: uuid
+          description: Owning org for org-scoped apps; omit for platform-global.
+
+    HeartbeatRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [online, degraded] , default: online }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Free-form app-reported metadata (version, build, etc).
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, description: 'Stable machine-readable error code' }
+        message: { type: string, description: 'Human-readable detail' }
+
+    ValidationErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error, fields]
+      properties:
+        error: { type: string, enum: [validation_error] }
+        message: { type: string }
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }

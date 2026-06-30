@@ -1,0 +1,72 @@
+{
+  "_comment": "Reference manifest fixtures for the four capabilities. Not auto-seeded (only clock.manifest.json is). Used by the test-engineer and as documentation of each shape.",
+  "manifests": [
+    {
+      "manifestVersion": "1",
+      "slug": "market",
+      "name": "Market",
+      "menuLabel": "Market",
+      "description": "A federated marketplace app mounted in the portal shell.",
+      "icon": { "kind": "emoji", "value": "🛒" },
+      "mode": "portal",
+      "builtin": false,
+      "integration": {
+        "type": "module-federation",
+        "remoteEntry": "https://market.example.com/remoteEntry.js",
+        "scope": "marketApp",
+        "module": "./MarketApp"
+      },
+      "chrome": { "menu": "host", "topbar": "host" },
+      "routing": { "path": "/market" },
+      "visibility": "organization",
+      "roles": ["admin", "member"]
+    },
+    {
+      "manifestVersion": "1",
+      "slug": "studio",
+      "name": "Studio",
+      "menuLabel": "Studio",
+      "description": "A full IDE-style app that SUBSTITUTES the portal side menu with its own navigation while active.",
+      "icon": { "kind": "emoji", "value": "🎛️" },
+      "mode": "portal",
+      "builtin": false,
+      "integration": {
+        "type": "module-federation",
+        "remoteEntry": "https://studio.example.com/remoteEntry.js",
+        "scope": "studioApp",
+        "module": "./StudioApp"
+      },
+      "chrome": {
+        "menu": "substitute",
+        "topbar": "host",
+        "items": [
+          { "id": "files", "label": "Files", "icon": "📁", "route": "/files", "order": 1 },
+          { "id": "build", "label": "Build", "icon": "🔨", "route": "/build", "order": 2 },
+          { "id": "deploy", "label": "Deploy", "icon": "🚀", "route": "/deploy", "order": 3 },
+          { "id": "settings", "label": "Settings", "icon": "⚙️", "route": "/settings", "order": 4 }
+        ]
+      },
+      "routing": { "path": "/studio" },
+      "visibility": "organization",
+      "roles": ["admin"]
+    },
+    {
+      "manifestVersion": "1",
+      "slug": "landing",
+      "name": "Acme Landing",
+      "menuLabel": "Landing",
+      "description": "A standalone marketing landing page that uses FuzeFront deploy infra but renders WITHOUT portal chrome.",
+      "icon": { "kind": "emoji", "value": "🌐" },
+      "mode": "standalone",
+      "builtin": false,
+      "integration": {
+        "type": "spa",
+        "url": "https://acme.fuzefront.com"
+      },
+      "routing": { "host": "acme.fuzefront.com", "path": "/" },
+      "infra": { "auth": false, "billing": false, "api": false, "deployOnFuzeInfra": true },
+      "visibility": "public",
+      "roles": []
+    }
+  ]
+}

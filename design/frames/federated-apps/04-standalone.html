@@ -1,0 +1,87 @@
+<!-- @dsCard group="Federated Apps" viewport="1180x720" name="(d) Standalone app" subtitle="A standalone (non-portal) landing page: FuzeFront infra, no portal chrome" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Federated Apps — (d) Standalone</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  /* NO portal shell: no topbar, no side menu — renders edge to edge */
+  .standalone-page {
+    min-height: 100vh; display: flex; flex-direction: column;
+    background:
+      radial-gradient(1200px 480px at 70% -10%, rgba(110,92,255,0.18), transparent 60%),
+      radial-gradient(900px 420px at 10% 110%, rgba(41,211,230,0.14), transparent 60%),
+      var(--bg-primary);
+  }
+  .sa-bar {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-5) var(--space-10);
+  }
+  .sa-bar .brand { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-lg); }
+  .sa-bar .spacer { flex: 1; }
+  .url-chip {
+    font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-pill); padding: 4px 10px;
+  }
+  .hero {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: var(--space-12) var(--space-8) var(--space-16);
+  }
+  .hero .eyebrow {
+    font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-4);
+  }
+  .hero h1 {
+    font-family: var(--font-display); font-size: 52px; line-height: 1.05;
+    letter-spacing: var(--tracking-display); margin: 0 0 var(--space-4); max-width: 14ch;
+  }
+  .hero h1 .seam-text { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { color: var(--text-secondary); font-size: var(--text-lg); max-width: 52ch; margin: 0 0 var(--space-8); }
+  .hero .cta { display: flex; gap: var(--space-3); }
+  .infra-strip {
+    display: flex; gap: var(--space-3); justify-content: center; flex-wrap: wrap;
+    padding: var(--space-5) var(--space-8) var(--space-10);
+  }
+  .infra-chip {
+    display: flex; align-items: center; gap: 6px; font-size: var(--text-xs);
+    padding: 6px 12px; border-radius: var(--radius-pill);
+    border: 1px solid var(--border-color); color: var(--text-tertiary);
+  }
+  .infra-chip.on { color: var(--success-color); border-color: rgba(52,211,153,0.4); }
+  .infra-chip.off { opacity: 0.5; }
+</style>
+</head>
+<body data-frame="04-standalone">
+<div class="standalone-page" data-mode="standalone" data-chrome="none">
+  <div class="sa-bar">
+    <span class="brand">Acme</span>
+    <div class="spacer"></div>
+    <span class="url-chip">acme.fuzefront.com · mode=standalone · chrome=none</span>
+  </div>
+  <div class="hero">
+    <div class="eyebrow">Standalone app · no portal chrome</div>
+    <h1>Build on the <span class="seam-text">Fuze seam</span>.</h1>
+    <p>A standalone landing page registered in the app registry. It runs on FuzeFront's
+       deploy infra (FuzeInfra GitOps) but renders with no side menu or topbar — its own host/path.</p>
+    <div class="cta">
+      <button class="btn btn-primary">Get started</button>
+      <button class="btn btn-ghost">Learn more</button>
+    </div>
+  </div>
+  <div class="infra-strip">
+    <span class="infra-chip off">○ auth (opted out)</span>
+    <span class="infra-chip off">○ billing (opted out)</span>
+    <span class="infra-chip off">○ platform API (opted out)</span>
+    <span class="infra-chip on">● deployOnFuzeInfra</span>
+  </div>
+</div>
+<nav class="frame-nav">
+  <span class="caption">Frame <b>(d)</b> of 4 · Standalone — <b>mode=standalone</b>, infra opt-ins, no chrome</span>
+  <span>
+    <a href="03-menu-substitution.html" class="btn btn-ghost">← Back</a>
+    <a href="index.html" class="btn btn-primary">Done — back to index</a>
+  </span>
+</nav>
+</body>
+</html>

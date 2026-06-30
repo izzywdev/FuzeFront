@@ -1,0 +1,175 @@
+<!-- @dsCard group="Federated Apps" viewport="1180x760" name="(b) Register → Activate" subtitle="Add-application form (manifest fields) → registered → activate → visible" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Federated Apps — (b) Register → Activate</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wizard { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: var(--space-8); max-width: 980px; }
+  .form-card, .preview {
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6);
+  }
+  .field { margin-bottom: var(--space-4); }
+  .field label {
+    display: block; font-size: var(--text-sm); color: var(--text-secondary);
+    margin-bottom: var(--space-1);
+  }
+  .field label .req { color: var(--accent-2); }
+  .field input, .field select {
+    width: 100%; background: var(--bg-primary); color: var(--text-primary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3); font-size: var(--text-md); font-family: var(--font-sans);
+  }
+  .field input.mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .hint { font-size: var(--text-2xs); color: var(--text-tertiary); margin-top: 4px; font-family: var(--font-mono); }
+
+  .steps { display: flex; gap: var(--space-2); margin-bottom: var(--space-6); align-items: center; }
+  .step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .step .num {
+    width: 22px; height: 22px; border-radius: var(--radius-pill); display: grid; place-items: center;
+    font-size: var(--text-2xs); border: 1px solid var(--border-color);
+  }
+  .step.done { color: var(--text-primary); }
+  .step.done .num { background: var(--success-color); color: #0b0e15; border-color: transparent; }
+  .step.current { color: var(--text-primary); }
+  .step.current .num { background: var(--accent-color); color: #0b0e15; border-color: transparent; }
+  .step .arrow { color: var(--text-tertiary); }
+
+  .preview h4 { margin: 0 0 var(--space-3); font-family: var(--font-mono); font-size: var(--text-2xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
+  .preview pre {
+    margin: 0; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6;
+    color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+  }
+  .preview .k { color: var(--cyan-400); }
+  .actions { display: flex; gap: var(--space-3); margin-top: var(--space-5); }
+  .lifecycle {
+    margin-top: var(--space-6); padding: var(--space-4);
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+    display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm);
+  }
+  .lifecycle .badge { font-size: var(--text-2xs); }
+</style>
+</head>
+<body data-frame="02-register-activate">
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark">Fuze<span class="fuse">Front</span></div>
+    <div class="spacer"></div>
+    <div class="avatar">IZ</div>
+  </header>
+  <div class="body">
+    <main class="content">
+      <h1 class="page-title">Add application</h1>
+      <p class="page-sub">Register an app from its <b>manifest</b>. It starts <b>registered</b> (hidden), then you <b>activate</b> it to appear in the menu.</p>
+
+      <div class="steps">
+        <div class="step done"><span class="num">✓</span> Manifest</div>
+        <span class="arrow">→</span>
+        <div class="step current"><span class="num">2</span> Registered</div>
+        <span class="arrow">→</span>
+        <div class="step"><span class="num">3</span> Activated</div>
+      </div>
+
+      <div class="wizard">
+        <div class="form-card">
+          <div class="row2">
+            <div class="field">
+              <label>Slug <span class="req">*</span></label>
+              <input class="mono" value="market" />
+              <div class="hint">immutable · ^[a-z0-9-]+$</div>
+            </div>
+            <div class="field">
+              <label>Menu label <span class="req">*</span></label>
+              <input value="Market" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Display name <span class="req">*</span></label>
+            <input value="Market" />
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label>Mode <span class="req">*</span></label>
+              <select><option>portal</option><option>standalone</option></select>
+            </div>
+            <div class="field">
+              <label>Integration type <span class="req">*</span></label>
+              <select><option>module-federation</option><option>iframe</option><option>web-component</option><option>spa</option></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Remote entry URL <span class="req">*</span></label>
+            <input class="mono" value="https://market.example.com/remoteEntry.js" />
+            <div class="hint">FULL entry URL (…/remoteEntry.js)</div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label>Scope <span class="req">*</span></label>
+              <input class="mono" value="marketApp" />
+            </div>
+            <div class="field">
+              <label>Module <span class="req">*</span></label>
+              <input class="mono" value="./MarketApp" />
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label>Visibility</label>
+              <select><option>organization</option><option>private</option><option>public</option></select>
+            </div>
+            <div class="field">
+              <label>Menu chrome</label>
+              <select><option>host (keep portal menu)</option><option>substitute (app owns menu)</option></select>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost">Cancel</button>
+            <button class="btn btn-primary" data-action="activate">Register &amp; activate</button>
+          </div>
+          <div class="lifecycle">
+            <span class="badge registered">registered</span>
+            <span style="color:var(--text-tertiary)">→ activate →</span>
+            <span class="badge activated">activated</span>
+            <span style="color:var(--text-secondary)">→ appears in the application menu</span>
+          </div>
+        </div>
+
+        <aside class="preview">
+          <h4>POST /api/v1/app-registry/apps</h4>
+          <pre>{
+  <span class="k">"manifest"</span>: {
+    <span class="k">"manifestVersion"</span>: "1",
+    <span class="k">"slug"</span>: "market",
+    <span class="k">"name"</span>: "Market",
+    <span class="k">"menuLabel"</span>: "Market",
+    <span class="k">"mode"</span>: "portal",
+    <span class="k">"integration"</span>: {
+      <span class="k">"type"</span>: "module-federation",
+      <span class="k">"remoteEntry"</span>: "https://market.example.com/remoteEntry.js",
+      <span class="k">"scope"</span>: "marketApp",
+      <span class="k">"module"</span>: "./MarketApp"
+    },
+    <span class="k">"chrome"</span>: { <span class="k">"menu"</span>: "host" },
+    <span class="k">"visibility"</span>: "organization"
+  }
+}</pre>
+          <h4 style="margin-top:var(--space-5)">→ 201 · then POST …/market/activate</h4>
+          <pre><span class="k">"status"</span>: "activated"</pre>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav">
+  <span class="caption">Frame <b>(b)</b> of 4 · Register → Activate</span>
+  <span>
+    <a href="01-app-menu.html" class="btn btn-ghost">← Back</a>
+    <a href="03-menu-substitution.html" class="btn btn-primary">Next: Menu substitution →</a>
+  </span>
+</nav>
+</body>
+</html>
