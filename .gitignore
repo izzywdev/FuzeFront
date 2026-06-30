@@ -44,3 +44,4 @@ packages/*/.npmrc
 
 # Per-package lockfiles (generated locally; CI installs fresh).
 packages/*/package-lock.json
+.npm-cache/
