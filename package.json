@@ -16,6 +16,7 @@
     "packages/identity-ui",
     "packages/i18n",
     "packages/i18n-translate",
+    "packages/feature-flags",
     "design-system"
   ],
   "scripts": {
