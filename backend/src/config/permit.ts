@@ -20,15 +20,62 @@ if (!config.token) {
   throw new Error('PERMIT_API_KEY environment variable is required')
 }
 
-// Initialize Permit SDK
-const permit = new Permit({
-  token: config.token,
-  pdp: config.pdp,
-  log: {
-    level: config.debug ? 'debug' : 'error',
-  },
-  throwOnError: false,
-})
+// ─── CI / test no-op mock ────────────────────────────────────────────────────
+//
+// When running under CI with the well-known dummy key we return a zero-network
+// mock that satisfies every call site without opening any TCP connections.
+// This prevents the ~49 fire-and-forget permit.api.users.sync() calls that
+// each login test triggers from leaving open HTTPS keep-alive sockets that
+// block jest from exiting cleanly (the "open handle" problem).
+//
+// Production (real key) → fall through and create the real SDK instance below.
+//
+const CI_DUMMY_KEYS = new Set([
+  'ci-no-real-permit-calls',
+  'ci-noop',
+  'ci-offline-pdp-key',
+])
+
+const isNoOpMode =
+  CI_DUMMY_KEYS.has(config.token) ||
+  (process.env.NODE_ENV === 'test' && !config.token.startsWith('permit_key_'))
+
+// Recursively build a Proxy that resolves every property access to another
+// no-op Proxy and every call to a resolved Promise.  This covers any depth
+// of chained permit.api.users.sync(...), permit.check(...), etc.
+function makeNoOpProxy(): any {
+  const handler: ProxyHandler<object> = {
+    get(_target, _prop) {
+      return makeNoOpProxy()
+    },
+    apply(_target, _thisArg, _args) {
+      return Promise.resolve(undefined)
+    },
+    construct(_target, _args) {
+      return makeNoOpProxy()
+    },
+  }
+  // The target must be a function so the proxy can be both called and have
+  // properties accessed on it (i.e. permit.check() AND permit.api.users.sync()).
+  return new Proxy(function () {} as any, handler)
+}
+
+let permit: any
+
+if (isNoOpMode) {
+  // No-op mock — zero network calls, zero open handles.
+  permit = makeNoOpProxy()
+} else {
+  // Initialize real Permit SDK for production / integration-test use.
+  permit = new Permit({
+    token: config.token,
+    pdp: config.pdp,
+    log: {
+      level: config.debug ? 'debug' : 'error',
+    },
+    throwOnError: false,
+  })
+}
 
 // Export permit instance as default
 export default permit
@@ -41,11 +88,10 @@ export { config as permitConfig }
  * agent releases open sockets. Call this in jest afterAll to allow jest to
  * exit without --forceExit.
  *
- * The Permit SDK creates an axios instance (axios.create()) whose http.Agent
- * defaults to keepAlive in Node ≥ 18. Without explicit destruction those
- * sockets keep the event loop alive after all tests finish.
+ * In no-op / CI mode this is a safe no-op because no real SDK was created.
  */
 export function destroyPermitClient(): void {
+  if (isNoOpMode) return // nothing to destroy in mock mode
   try {
     // Access the axios instance via the internal config
     const axiosInstance = (permit as any)?.config?.axiosInstance
