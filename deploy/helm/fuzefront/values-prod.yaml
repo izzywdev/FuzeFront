@@ -54,7 +54,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 46ceb6ad7a59
+    tag: 28840d4d4eed
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
