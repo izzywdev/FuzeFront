@@ -7,6 +7,8 @@ import { createSubscriptionsRouter } from './routes/subscriptions';
 import { createSetupIntentRouter } from './routes/setup-intent';
 import { createCreditsRouter } from './routes/credits';
 import { createCheckoutRouter } from './routes/checkout';
+import { createInvoicesRouter } from './routes/invoices';
+import { createPortalRouter } from './routes/portal';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
@@ -94,6 +96,13 @@ export function createApp(deps?: AppDeps): Application {
   // Credits is admin-only (HIGH-1): the credits router applies requireAdmin on
   // its POST (the X-Billing-Actor-Is-Admin gate the prior route was missing).
   app.use(API_BASE, guard, createCreditsRouter(deps.stripe, deps.customers));
+
+  // Read invoices + open the Stripe Customer Portal. Both are guarded by the
+  // internal token AND re-derive the SERVER-DERIVED entity via
+  // requireActorContext (applied inside their routers, scoped to their exact
+  // method+path) — identity is never taken from a client query/body.
+  app.use(API_BASE, guard, createInvoicesRouter({ stripe: deps.stripe, customerRepo: deps.customerRepo }));
+  app.use(API_BASE, guard, createPortalRouter({ stripe: deps.stripe, customerRepo: deps.customerRepo }));
 
   return app;
 }

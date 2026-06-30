@@ -6,6 +6,10 @@
       "sourcePath": "components/access/RoleBadge.jsx"
     },
     {
+      "name": "PricingCard",
+      "sourcePath": "components/billing/PricingCard.jsx"
+    },
+    {
       "name": "BrandMark",
       "sourcePath": "components/brand/BrandMark.jsx"
     },
@@ -32,6 +36,10 @@
     {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
+    },
+    {
+      "name": "Skeleton",
+      "sourcePath": "components/feedback/Skeleton.jsx"
     },
     {
       "name": "StatusPill",
@@ -76,6 +84,10 @@
     {
       "name": "MenuItem",
       "sourcePath": "components/shell/MenuItem.jsx"
+    },
+    {
+      "name": "Tabs",
+      "sourcePath": "components/shell/Tabs.jsx"
     },
     {
       "name": "ThemeToggle",

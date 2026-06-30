@@ -1,5 +1,6 @@
 /* AUTO-GENERATED type barrel — mirrors index.js exports */
 export * from './components/access/RoleBadge';
+export * from './components/billing/PricingCard';
 export * from './components/brand/BrandMark';
 export * from './components/brand/SeamDivider';
 export * from './components/core/Avatar';
@@ -7,6 +8,7 @@ export * from './components/core/Badge';
 export * from './components/core/Button';
 export * from './components/core/IconButton';
 export * from './components/data/DataTable';
+export * from './components/feedback/Skeleton';
 export * from './components/feedback/StatusPill';
 export * from './components/feedback/Toast';
 export * from './components/forms/FileDropZone';
@@ -18,6 +20,7 @@ export * from './components/launcher/HealthDot';
 export * from './components/launcher/IntegrationBadge';
 export * from './components/overlay/Modal';
 export * from './components/shell/MenuItem';
+export * from './components/shell/Tabs';
 export * from './components/shell/ThemeToggle';
 export * from './components/shell/TopBar';
 export * from './components/shell/UserMenu';
