@@ -41,6 +41,12 @@ const billingUiSrc = fileURLToPath(
 const billingClientSrc = fileURLToPath(
   new URL('../billing-client/index.ts', import.meta.url)
 )
+// @fuzefront/app-registry-client (apps-client/) is an unpublished file: workspace
+// package whose dist/ is not built in CI — resolve from SOURCE, same as
+// billing-client. Its src/index.ts re-exports the generated schema + axios client.
+const appRegistryClientSrc = fileURLToPath(
+  new URL('../apps-client/src/index.ts', import.meta.url)
+)
 
 export default defineConfig({
   resolve: {
@@ -53,6 +59,7 @@ export default defineConfig({
       '@fuzefront/chat-client': chatClientSrc,
       '@fuzefront/billing-ui': billingUiSrc,
       '@fuzefront/billing-client': billingClientSrc,
+      '@fuzefront/app-registry-client': appRegistryClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.

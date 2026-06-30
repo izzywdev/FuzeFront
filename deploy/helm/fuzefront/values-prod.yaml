@@ -56,6 +56,28 @@ applicationsService:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
     tag: 46ceb6ad7a59
   replicas: 2
+  # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
+  kafka:
+    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # Family Unleash hosted by FuzeFront. The scoped client token is in the
+  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
+  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
+  # the sealed token land, leave unleashUrl empty so the client stays inert and
+  # the app-registry flags fall back to their safe in-code defaults.
+  featureFlags:
+    unleashUrl: ""   # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    appName: "applications-service"
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+
+# Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
+# (matches the seeded built-in manifest remoteEntry). Image built by release.yml
+# (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
+# by CI's release sed to the built SHA.
+clockApp:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-clock-app
+    tag: ""  # CI's release sed writes the real image SHA here
 
 emailService:
   image:

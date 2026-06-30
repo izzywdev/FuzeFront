@@ -3,15 +3,22 @@ import TopBar from './TopBar'
 import SidePanel from './SidePanel'
 import FuzeChatWidget from './FuzeChatWidget'
 import Toaster from './Toaster'
+import { useActiveApp } from '../platform/useActiveApp'
+import { isTopbarHidden } from '../platform/appManifest'
 
 interface LayoutProps {
   children: React.ReactNode
 }
 
 function Layout({ children }: LayoutProps) {
+  const activeApp = useActiveApp()
+  // Honor the active portal app's chrome.topbar = "hidden" (the side menu is
+  // still managed by SidePanel's own substitution logic).
+  const hideTopBar = !!activeApp && isTopbarHidden(activeApp.manifest)
+
   return (
     <div className="app-layout">
-      <TopBar />
+      {!hideTopBar && <TopBar />}
       <div className="main-content">
         <SidePanel />
         <div className="content-area">{children}</div>
