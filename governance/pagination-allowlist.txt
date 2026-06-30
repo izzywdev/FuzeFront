@@ -1,0 +1,16 @@
+# pagination-allowlist — gate-pagination exemptions (governance/pagination-standard.md §3)
+#
+# List collection GET routes that are EXEMPT from the pagination standard because their
+# result set is inherently bounded or a singleton (fixed enum/lookup, aggregate/scalar,
+# hard server-capped feed). Prefer annotating the OpenAPI operation with
+# `x-pagination: exempt` (+ `x-pagination-reason`) instead; use this file only when you
+# cannot edit the operation object (e.g. a vendored/generated spec).
+#
+# Format:
+#   - one route per line, as `GET /path` (matched case-insensitively against the spec route)
+#   - `#` begins a comment; blank lines are ignored
+#
+# Example (remove — illustrative only):
+#   GET /v1/plan-tiers      # closed enum of 7 plan tiers, never grows with user data
+#
+# (Empty by default — no exemptions.)
