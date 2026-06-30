@@ -1,0 +1,151 @@
+name: Nightly Integration
+
+# ADLC govern-loop, integration arm (sibling of governance-nightly.yml).
+# Each night: stand the repo up in its BOUNDED local environment (vendored FuzeInfra
+# consumer-test stack + external-service mocks, no prod egress) and run its integration/
+# contract suite. On failure -> Claude opens a loop-guarded DRAFT fix PR + tracking issue
+# (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
+# and files ONE idempotent @claude issue to build it (self-propagating adoption).
+#
+# Requires repo secret ANTHROPIC_API_KEY. Reuses the gate-localup mechanism
+# (governance/local-environment.md). Install with a per-repo staggered cron minute.
+
+on:
+  schedule:
+    - cron: '7 4 * * *'   # off-peak, off the :00 herd; per-repo offset set at install time
+  workflow_dispatch:        # manual run
+
+permissions:
+  contents: write           # open fix branches/PRs
+  pull-requests: write      # draft fix PR
+  issues: write             # tracking issue + @claude build issue
+  actions: read             # read the failed run for diagnosis
+  id-token: write           # claude-code-action OIDC
+
+concurrency:
+  group: nightly-integration
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    outputs:
+      ran: ${{ steps.detect.outputs.ran }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Detect bounded local-up + integration suite
+        id: detect
+        shell: bash
+        run: |
+          set -e
+          CT=$(git ls-files '**/docker-compose.consumer-test.yml' 'docker-compose.consumer-test.yml' | head -1)
+          SUITE=""
+          if [ -f package.json ] && grep -qE '"(test:integration|test:e2e)"[[:space:]]*:' package.json; then SUITE="npm"; fi
+          if [ -z "$SUITE" ] && { git ls-files 'tests/integration/**' '**/tests/integration/**' | grep -q . || grep -rqs "pytest.mark.integration" --include='*.py' .; }; then SUITE="pytest"; fi
+          if [ -z "$SUITE" ] && [ -f .fuze/manifest.json ] && grep -q '"integrationTest"' .fuze/manifest.json; then SUITE="manifest"; fi
+          if [ -z "$CT" ] || [ -z "$SUITE" ]; then
+            echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
+            echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @claude build issue."
+          else
+            echo "ran=true" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=true" >> "$GITHUB_ENV"
+            echo "CT=$CT" >> "$GITHUB_ENV"; echo "SUITE=$SUITE" >> "$GITHUB_ENV"
+            echo "::notice title=nightly-integration::Detected suite=$SUITE, local-up=$CT"
+          fi
+
+      - name: Stand up bounded local-up (consumer-test + mocks)
+        if: env.SUITE_PRESENT == 'true'
+        shell: bash
+        run: |
+          dir=$(dirname "$CT"); envf=""
+          [ -f "$dir/versions.env" ] && envf="--env-file $dir/versions.env"
+          echo "::group::consumer-test up"
+          docker compose $envf -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
+          echo "::endgroup::"
+
+      - name: Run integration/contract suite (mocks only — no real external egress)
+        if: env.SUITE_PRESENT == 'true'
+        shell: bash
+        env:
+          TWILIO_MOCK: "true"
+          NODE_ENV: test
+        run: |
+          set -e
+          case "$SUITE" in
+            npm)
+              (npm ci || npm install) >/dev/null 2>&1
+              if npm run | grep -q 'test:integration'; then npm run test:integration; else npm run test:e2e; fi ;;
+            pytest)
+              for req in $(git ls-files '**/requirements*.txt' 'requirements*.txt' | head -3); do pip install -q -r "$req" 2>/dev/null || true; done
+              pip install -q pytest
+              pytest -m integration -q ;;
+            manifest)
+              cmd=$(jq -r '.integrationTest' .fuze/manifest.json); echo "running: $cmd"; bash -lc "$cmd" ;;
+          esac
+
+      - name: Tear down
+        if: always() && env.SUITE_PRESENT == 'true'
+        shell: bash
+        run: docker compose -f "$CT" down -v || true
+
+      - name: No suite yet — file ONE idempotent @claude build issue
+        if: env.SUITE_PRESENT == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          title="Build nightly integration suite + bounded local-up"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then echo "tracking issue #$existing already open — not re-mentioning @claude"; exit 0; fi
+          gh label create integration --color 1d76db --description "nightly integration tests" 2>/dev/null || true
+          gh issue create --repo "$GITHUB_REPOSITORY" --label integration --title "$title" --body "$(cat <<'EOF'
+          @claude — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
+
+          - **devops-engineer** — vendor FuzeInfra as a submodule; wire `docker-compose.consumer-test.yml` + `versions.env` + the external-service mock matrix (MailHog / Twilio-mock / Permit-offline / Stripe-test / Prism-MSW / LocalStack); enforce no prod egress.
+          - **test-engineer** — author the integration/contract suite against that bounded stack; expose it as `test:integration` (npm) or `pytest -m integration`, or declare `integrationTest` in `.fuze/manifest.json`.
+          - **local-env-verifier** — verify the boundary (stack stands up, mocks are hit, no real external host contacted).
+
+          Follow `governance/local-environment.md` + the `api-contract-first` skill. Do NOT use plan mode / AskUserQuestion; if blocked, push what you have and comment `BLOCKED: <question>`.
+
+          STATE:
+          - done: nothing yet
+          - remaining: bounded local-up wiring · integration/contract suite · boundary verification
+          - next action: devops-engineer stands up the consumer-test compose
+          EOF
+          )"
+
+  autofix:
+    needs: integration
+    # Only when a real suite ran AND failed; loop-guarded so a fix branch never re-triggers itself.
+    if: >-
+      ${{ always() && needs.integration.result == 'failure' &&
+          needs.integration.outputs.ran == 'true' &&
+          !startsWith(github.ref_name, 'nightly-autofix-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Auto-fix → DRAFT PR (never auto-merge)
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            The **nightly integration suite** for ${{ github.repository }} FAILED
+            (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            Diagnose from the failed run logs and the integration suite.
+
+            Open exactly ONE loop-guarded fix on a branch named `nightly-autofix-<short-slug>` and a
+            **DRAFT** pull request. NEVER merge it; NEVER push to the default branch. Route by root cause:
+              - product/business-logic bug  -> backend-engineer
+              - env / CI / bounded local-up -> devops-engineer
+              - flaky or contract mismatch  -> test-engineer
+            Keep the bounded local-up boundary (mocks only, no real external egress).
+
+            File or UPDATE one idempotent tracking issue (label `integration`) linking the failed run and
+            the draft PR with a STATE block. If you cannot reproduce, or the fix needs a human decision,
+            post the diagnosis on the issue and stop. Do NOT use plan mode / AskUserQuestion.
+        # No merge step — draft PR + tracking issue only, per the ADLC (never auto-merge).
