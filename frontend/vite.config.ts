@@ -87,7 +87,17 @@ export default defineConfig({
       // @fuzefront/chat-ui) resolve from source/workspace; listing them here makes
       // the federation plugin read `<aliased-file>/package.json` (ENOTDIR) — so they
       // are bundled into the host directly rather than shared.
-      shared: ['react', 'react-dom'],
+      //
+      // React/react-dom are declared as explicit SINGLETONS (not the bare array
+      // shorthand) so they EXACTLY match the clock-app remote's shared config
+      // (clock-app/vite.config.ts). The host seeds the shared scope with its one
+      // React instance and runtime-loaded remotes (Clock) reuse it across the
+      // federation boundary — a singleton mismatch would let the remote pull its
+      // own React copy and crash on "Invalid hook call" / hang on the spinner.
+      shared: {
+        react: { singleton: true, requiredVersion: '^18.0.0' } as any,
+        'react-dom': { singleton: true, requiredVersion: '^18.0.0' } as any,
+      },
     }),
   ],
   build: {
