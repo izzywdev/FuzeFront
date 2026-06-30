@@ -1,4 +1,6 @@
 import path from 'path'
+import http from 'http'
+import https from 'https'
 
 // Test DB config — env-overridable so the suite can run against any Postgres
 // (CI service, a local throwaway container on another port, etc.). Defaults
@@ -12,6 +14,23 @@ process.env.DB_USER = process.env.DB_USER || 'postgres'
 process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'postgres'
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-for-testing-only'
 process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'
+
+// ─── Prevent HTTP/HTTPS keep-alive open handles in tests ─────────────────────
+//
+// In Node 18+, http.globalAgent has keepAlive:true by default.  supertest
+// creates an ephemeral server per request and calls server.close(), but
+// server.close() does NOT force-close existing keep-alive connections.  Those
+// linger for the server's keepAliveTimeout (5 s in Node 18), which means jest
+// sees open handles after all tests finish and waits indefinitely.
+//
+// Fix: disable keep-alive on the global agents at the test-process level so
+// every HTTP request (supertest loopback + any internal HTTP calls) sends
+// "Connection: close", causing servers to close sockets immediately after
+// each response.
+//
+// We also set both agents to maxSockets: Infinity to avoid connection queuing.
+;(http.globalAgent as any).keepAlive = false
+;(https.globalAgent as any).keepAlive = false
 
 // Global test timeout
 jest.setTimeout(10000)
