@@ -1,4 +1,8 @@
 export const TOPICS = {
+  APP_REGISTERED: 'app.registered',
+  APP_ACTIVATED: 'app.activated',
+  APP_SUSPENDED: 'app.suspended',
+  APP_HEARTBEAT: 'app.heartbeat',
   BILLING_LLM_USAGE: 'billing.llm.usage',
   IDENTITY_USER_CREATED: 'identity.user.created',
   NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',

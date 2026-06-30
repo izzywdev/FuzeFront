@@ -1,0 +1,13 @@
+# Spectral ruleset for the app-registry-service OpenAPI contract.
+# Mirrors services/billing-service/.spectral.yaml — internal, cluster-only service.
+extends: ['spectral:oas']
+
+rules:
+  # Internal service: no externally-hosted contact/license URL required.
+  info-contact: off
+  license-url: off
+  # operationId + summary + tags are present on every operation; descriptions
+  # are present on operations but we keep this as a warning, not an error.
+  operation-description: warn
+  # oas3-valid-schema-example can false-positive on `examples` arrays in 3.1.
+  oas3-valid-schema-example: warn
