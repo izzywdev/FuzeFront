@@ -11,6 +11,33 @@ import { runInternalProvision } from '../services/organizationProvisioning'
 
 const router = express.Router()
 
+// ─── Fire-and-forget provisioning tracker ────────────────────────────────────
+//
+// selfHealProvisioningOnLogin fires runInternalProvision() without awaiting.
+// In tests, multiple pending promises can keep Knex/tarn DB connections borrowed
+// after the test suite finishes, causing pool.destroy() to hang indefinitely.
+//
+// We register every promise in this Set and expose drainProvisioningQueue() for
+// test teardown so setup.ts can await all in-flight operations before calling
+// closeDatabase(). Production code never calls drainProvisioningQueue(), so the
+// Set stays small (just the tail of the last login's provisioning).
+//
+const _pendingProvisioningPromises: Set<Promise<unknown>> = new Set()
+
+/**
+ * Wait for all in-flight selfHealProvisioningOnLogin promises to settle.
+ * Call this in test afterAll BEFORE closeDatabase() to prevent tarn.js
+ * pool.destroy() from hanging on borrowed connections.
+ */
+export function drainProvisioningQueue(timeoutMs = 10_000): Promise<void> {
+  if (_pendingProvisioningPromises.size === 0) return Promise.resolve()
+  const pending = Array.from(_pendingProvisioningPromises)
+  return Promise.race([
+    Promise.allSettled(pending).then(() => undefined),
+    new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
+  ])
+}
+
 /**
  * Self-heal provisioning on login: ensure the user has a personal org and that
  * every org they own which isn't `active` gets reconciled. Fire-and-forget —
@@ -18,9 +45,11 @@ const router = express.Router()
  * the identity.user.created Kafka event was lost.
  */
 function selfHealProvisioningOnLogin(userId: string): void {
-  runInternalProvision(userId).catch(err => {
+  const p = runInternalProvision(userId).catch(err => {
     console.error(`Login self-heal provisioning failed for ${userId}:`, err)
   })
+  _pendingProvisioningPromises.add(p)
+  p.finally(() => _pendingProvisioningPromises.delete(p))
 }
 
 /**

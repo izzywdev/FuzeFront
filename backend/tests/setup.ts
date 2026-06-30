@@ -41,9 +41,11 @@ import {
   ensureDatabase,
   runMigrations,
   runSeeds,
+  initializeDatabaseConnection,
   closeDatabase,
 } from '../src/config/database'
 import { destroyPermitClient } from '../src/config/permit'
+import { drainProvisioningQueue } from '../src/routes/auth'
 
 // Global setup for all tests
 beforeAll(async () => {
@@ -60,7 +62,13 @@ beforeAll(async () => {
     //    schema matches the app + seeds (the old custom script was stale).
     await runMigrations()
 
-    // 4. Run seeds for test data
+    // 4. Initialize the runtime DB connection NOW so every test file that
+    //    calls initializeDatabase() hits the idempotency guard and reuses
+    //    this single pool instead of creating a new, abandoned pool that
+    //    holds open connections and prevents jest from exiting.
+    initializeDatabaseConnection()
+
+    // 5. Run seeds for test data
     await runSeeds()
 
     console.log('✅ Test database setup complete')
@@ -75,16 +83,16 @@ afterAll(async () => {
   try {
     console.log('🧹 Cleaning up test database...')
 
-    // Give fire-and-forget provisioning calls (selfHealProvisioningOnLogin)
-    // that were dispatched during login tests a brief window to complete their
-    // in-flight DB queries and release borrowed connections back to the pool.
-    // Without this, tarn.js pool.destroy() (called inside closeDatabase)
-    // waits indefinitely for those borrowed connections, hanging jest.
-    await new Promise<void>(resolve => {
-      const t = setTimeout(resolve, 500)
-      // Don't let the timer itself keep the event loop alive.
-      if (t.unref) t.unref()
-    })
+    // Wait for ALL in-flight selfHealProvisioningOnLogin promises to settle
+    // before destroying the DB pool.  The concurrency test fires 10 simultaneous
+    // logins, each dispatching a fire-and-forget runInternalProvision() call that
+    // holds a borrowed tarn.js connection.  pool.destroy() waits indefinitely for
+    // borrowed connections, so we must drain the queue first.
+    // drainProvisioningQueue() resolves when every tracked promise settles OR
+    // after a 10 s hard timeout — whichever comes first.
+    console.log('⏳ Draining in-flight provisioning queue...')
+    await drainProvisioningQueue(10_000)
+    console.log('✅ Provisioning queue drained')
 
     await closeDatabase()
     console.log('✅ Test database cleanup complete')

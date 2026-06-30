@@ -116,9 +116,15 @@ const getDatabaseConfig = (): Knex.Config => {
 // Create database instance
 export let db: Knex
 
-// Initialize database connection
+// Initialize database connection.
+// Idempotent: if a Knex instance already exists this is a no-op so that
+// multiple calls (e.g. from test files that each invoke initializeDatabase())
+// share a single pool rather than abandoning the previous one (an abandoned
+// pool holds open connections that prevent jest from exiting cleanly).
 export function initializeDatabaseConnection(): void {
-  db = knex(getDatabaseConfig())
+  if (!db) {
+    db = knex(getDatabaseConfig())
+  }
 }
 
 // Wait for PostgreSQL to be available
