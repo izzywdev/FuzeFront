@@ -1,0 +1,81 @@
+<!-- @dsCard group="Federated Apps" viewport="1180x720" name="(c) Menu substitution" subtitle="Studio app has substituted the portal side menu with its own; host keeps a return-to-portal affordance" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Federated Apps — (c) Menu substitution</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  /* the substituted side menu is the APP's, marked with a seam top edge */
+  .side.substituted { position: relative; background: var(--bg-tertiary); }
+  .side.substituted::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam);
+  }
+  .app-menu-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-3);
+    margin-bottom: var(--space-2); border-bottom: 1px solid var(--border-color);
+  }
+  .app-menu-head .glyph { font-size: var(--text-lg); }
+  .app-menu-head .name { font-family: var(--font-display); font-weight: var(--weight-semibold); }
+  /* host-owned, non-removable return-to-portal control (anti-trap guarantee) */
+  .return-portal {
+    margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+    background: var(--accent-soft); color: var(--text-primary); cursor: pointer;
+    font-size: var(--text-sm); border: 1px solid rgba(110,92,255,0.3);
+  }
+  .return-portal .lock { margin-left: auto; font-size: var(--text-2xs); color: var(--text-tertiary); }
+  .note {
+    margin-top: var(--space-6); max-width: 640px; padding: var(--space-4);
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    font-size: var(--text-sm); color: var(--text-secondary);
+  }
+  .note code { font-family: var(--font-mono); color: var(--cyan-400); }
+  .stage {
+    height: 320px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+    display: grid; place-items: center; color: var(--text-tertiary);
+    background: repeating-linear-gradient(45deg, transparent, transparent 12px, rgba(255,255,255,0.015) 12px, rgba(255,255,255,0.015) 24px);
+  }
+</style>
+</head>
+<body data-frame="03-menu-substitution">
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark">Fuze<span class="fuse">Front</span></div>
+    <span class="badge" style="margin-left:var(--space-3)">🎛️ Studio · chrome.menu = substitute</span>
+    <div class="spacer"></div>
+    <div class="avatar">IZ</div>
+  </header>
+  <div class="body">
+    <!-- The portal side menu has been YIELDED; this is the app's own menu -->
+    <nav class="side substituted" data-substituted="true">
+      <div class="return-portal" data-app="__host_return"><span>←</span> Return to portal <span class="lock">host</span></div>
+      <div class="app-menu-head"><span class="glyph">🎛️</span><span class="name">Studio</span></div>
+      <a class="nav-item active"><span class="ico">📁</span> Files</a>
+      <a class="nav-item"><span class="ico">🔨</span> Build</a>
+      <a class="nav-item"><span class="ico">🚀</span> Deploy</a>
+      <a class="nav-item"><span class="ico">⚙️</span> Settings</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Studio</h1>
+      <p class="page-sub">While Studio is active its manifest declares <b>chrome.menu = "substitute"</b>: the host yields the portal side menu and renders the app's own items.</p>
+      <div class="stage">⟨ federated Studio remote renders here ⟩</div>
+      <div class="note">
+        The portal menu (Organizations / Billing / Profile …) is hidden while substituted.
+        The host always keeps a non-removable <code>Return to portal</code> control so the
+        user is never trapped — supplied by the host, not the app. On exit the host
+        <b>restores</b> its own chrome. Menu items come from <code>manifest.chrome.items</code>.
+      </div>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav">
+  <span class="caption">Frame <b>(c)</b> of 4 · Menu substitution — app owns the side menu</span>
+  <span>
+    <a href="02-register-activate.html" class="btn btn-ghost">← Back</a>
+    <a href="04-standalone.html" class="btn btn-primary">Next: Standalone →</a>
+  </span>
+</nav>
+</body>
+</html>
