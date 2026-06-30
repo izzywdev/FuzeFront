@@ -220,6 +220,12 @@ function AddApplicationPage() {
               onChange={e => setName(e.target.value)}
             />
             <Input
+              label="Description"
+              value={description}
+              placeholder="A short description of the app"
+              onChange={e => setDescription(e.target.value)}
+            />
+            <Input
               label="Icon (emoji)"
               value={iconEmoji}
               placeholder="🛒"
