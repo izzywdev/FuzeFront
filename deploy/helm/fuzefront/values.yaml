@@ -425,6 +425,69 @@ litellm:
   affinity: {}
   tolerations: []
 
+# ---------------------------------------------------------------------------
+# Unleash — self-hosted OSS feature-flag server (issue #116, Deliverable 1).
+#
+# EXTERNAL upstream image (unleashorg/unleash-server) — NOT built by release.yml
+# and NOT in its build matrix. Pin a concrete tag below (never :latest).
+#
+# Gated by `unleash.enabled` (default false). When enabled, the umbrella chart
+# renders, in order:
+#   1. a pre-install/pre-upgrade bootstrap Job (unleash-db-bootstrap) that creates
+#      the least-privilege `unleash_svc` role + a DEDICATED `unleash` database it
+#      OWNS on the shared FuzeInfra Postgres (Unleash self-migrates its schema on
+#      boot as unleash_svc — that's why it must own the db).
+#   2. the Unleash Deployment + a cluster-internal Service `fuzefront-unleash`.
+#
+# Admin UI is NOT public: the Service is cluster-internal. Reach the admin UI via
+# `kubectl port-forward svc/fuzefront-unleash 4242:4242`, or (optionally) an
+# admin-gated host under the *.prod.fuzefront.com Cloudflare-Access zone — see
+# `unleash.ingress` below (default off; requires FuzeInfra to wire the CF host).
+#
+# Secrets live in the per-service `unleash-secrets` SealedSecret (keys:
+# UNLEASH_DB_PASSWORD, INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN). Seal real
+# values with:  deploy/scripts/seal-secret.sh <KEY> --scope fuzefront/unleash-secrets
+# Placeholders are committed in deploy/contabo/sealed/unleash-secrets.yaml.
+#
+# Client connection (the @fuzefront/feature-flags package): the unleash API is at
+#   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+# authenticated with the UNLEASH_CLIENT_TOKEN.
+# ---------------------------------------------------------------------------
+unleash:
+  enabled: false
+  image:
+    repository: unleashorg/unleash-server
+    # Concrete, widely-published OSS tag (verified-available fallback per #116).
+    # Bump deliberately in a deploy window (external image — not auto-bumped by CI).
+    tag: "5.12.0"
+  port: 4242
+  replicas: 1
+  # Least-privilege DB role created by the unleash-db-bootstrap Job (NOT the shared
+  # fuzefront_user). Its password is UNLEASH_DB_PASSWORD in unleash-secrets.
+  dbUser: unleash_svc
+  # Dedicated database OWNED by unleash_svc (Unleash self-migrates into it).
+  dbName: unleash
+  # Per-service secret (unleash-only keys). Shared creds stay in fuzefront-secrets.
+  secretName: unleash-secrets
+  # Pre-install Job that creates the unleash_svc role + `unleash` database.
+  dbBootstrap:
+    enabled: true
+  # Unleash needs headroom for its Node runtime + in-memory flag cache.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  # OPTIONAL admin-gated ingress for the admin UI (default OFF). Requires the host
+  # to sit under the *.prod.fuzefront.com Cloudflare-Access zone; the CF tunnel
+  # rule + CNAME are FuzeInfra-owned (delegated). See the chart README.
+  ingress:
+    enabled: false
+    className: ""        # defaults to ingress.className when empty
+    host: ""             # e.g. unleash.prod.fuzefront.com (CF-Access gated)
+    annotations: {}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 authentik:
   enabled: true
   image:

@@ -1,0 +1,139 @@
+{{- if .Values.unleash.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-unleash
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unleash
+spec:
+  replicas: {{ .Values.unleash.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-unleash
+  template:
+    metadata:
+      labels:
+        app: fuzefront-unleash
+        {{- include "fuzefront.labels" . | nindent 8 }}
+      annotations:
+        {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.unleash.port "root" .) | nindent 8 }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.unleash "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: unleash
+          # EXTERNAL upstream image (unleashorg/unleash-server) — NOT built by
+          # release.yml. Pinned to a concrete tag in values (never :latest).
+          image: "{{ .Values.unleash.image.repository }}:{{ .Values.unleash.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.unleash.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: LOG_LEVEL
+              value: "warn"
+            # Unleash listens on 0.0.0.0:4242 by default; set explicitly.
+            - name: HTTP_PORT
+              value: {{ .Values.unleash.port | quote }}
+            # In-cluster Postgres — no TLS on the FuzeInfra Postgres service.
+            - name: DATABASE_SSL
+              value: "false"
+            # DB connection: Unleash runs as the least-privilege unleash_svc role
+            # which OWNS the dedicated `unleash` database (created by the
+            # unleash-db-bootstrap Job) and self-migrates its schema on boot.
+            # UNLEASH_DB_PASSWORD comes from the per-service unleash-secrets Secret;
+            # assembled into DATABASE_URL via $(VAR) interpolation.
+            - name: UNLEASH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.unleash.secretName | default "unleash-secrets" }}
+                  key: UNLEASH_DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.unleash.dbUser }}:$(UNLEASH_DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.unleash.dbName }}"
+            # Bootstrap tokens. Always rendered when Unleash is enabled — the
+            # per-service unleash-secrets SealedSecret provides these at runtime (the
+            # pod stays pending until the keys are sealed). No Helm-values gate.
+            # INIT_ADMIN_API_TOKENS: admin/bootstrap token (format `*:*.<hex>`).
+            - name: INIT_ADMIN_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.unleash.secretName | default "unleash-secrets" }}
+                  key: INIT_ADMIN_API_TOKENS
+            # INIT_CLIENT_API_TOKENS: the client/SDK token the @fuzefront/feature-flags
+            # package uses (format `default:development.<hex>` / `[project]:[env].<hex>`).
+            - name: INIT_CLIENT_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.unleash.secretName | default "unleash-secrets" }}
+                  key: UNLEASH_CLIENT_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.unleash.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.unleash.port }}
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.unleash.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-unleash
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unleash
+spec:
+  # Cluster-internal ONLY. The admin UI is NOT publicly exposed (see README +
+  # the optional unleash.ingress stub). Clients connect to:
+  #   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+  selector:
+    app: fuzefront-unleash
+  ports:
+    - port: {{ .Values.unleash.port }}
+      targetPort: {{ .Values.unleash.port }}
+{{- if and .Values.unleash.ingress .Values.unleash.ingress.enabled }}
+---
+# OPTIONAL admin-gated ingress for the Unleash admin UI. Default OFF.
+# This does NOT make Unleash public: the host MUST sit under the
+# *.prod.fuzefront.com Cloudflare-Access zone (admin Zero-Trust). The CF tunnel
+# ingress rule (<host> -> traefik.kube-system:80) + the proxied CNAME are
+# FuzeInfra-owned (Terraform) — this Ingress only host-matches once FuzeInfra has
+# wired that. See deploy/helm/fuzefront/README.md (Unleash admin access).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-unleash
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: unleash
+  {{- with .Values.unleash.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.unleash.ingress.className | default .Values.ingress.className }}
+  rules:
+    - host: {{ required "unleash.ingress.host is required when unleash.ingress.enabled" .Values.unleash.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-unleash
+                port:
+                  number: {{ .Values.unleash.port }}
+{{- end }}
+{{- end }}
