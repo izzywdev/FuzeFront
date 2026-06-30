@@ -34,7 +34,7 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Chat', 'Docs', 'Organization', 'UserManagement']
+      ['App', 'Chat', 'Docs', 'Organization', 'Secret', 'UserManagement']
     )
     expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
 
@@ -55,6 +55,28 @@ describe('permit schema IaC', () => {
 
     const chat = permitSchema.resources.find(r => r.key === 'Chat')!
     expect(Object.keys(chat.actions).sort()).toEqual(['manage', 'stream'])
+
+    const secret = permitSchema.resources.find(r => r.key === 'Secret')!
+    expect(Object.keys(secret.actions).sort()).toEqual(['read', 'read_sensitive'])
+  })
+
+  it('Secret declares a sensitivity attribute (LOW/MEDIUM/HIGH tiers)', () => {
+    const secret = permitSchema.resources.find(r => r.key === 'Secret')!
+    expect(secret.attributes).toBeDefined()
+    expect(secret.attributes!.sensitivity).toBeDefined()
+    expect(secret.attributes!.sensitivity.type).toBe('string')
+  })
+
+  it('Secret instance-scoped roles: agent_reader reads, approved_release reads sensitive', () => {
+    const secret = permitSchema.resources.find(r => r.key === 'Secret')!
+    expect(secret.roles).toBeDefined()
+
+    // In-scope reader: `read` only — never the sensitive action.
+    expect(secret.roles!.agent_reader.permissions).toEqual(['read'])
+    expect(secret.roles!.agent_reader.permissions).not.toContain('read_sensitive')
+
+    // Time-boxed approval grant: satisfies the default-denied `read_sensitive`.
+    expect(secret.roles!.approved_release.permissions).toContain('read_sensitive')
   })
 
   it('admin role can manage organizations and user management', () => {
@@ -95,7 +117,7 @@ describe('permit schema IaC', () => {
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'Secret', 'UserManagement'])
     expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
@@ -103,13 +125,13 @@ describe('permit schema IaC', () => {
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Chat', 'Docs', 'Organization', 'UserManagement'],
+      resources: ['App', 'Chat', 'Docs', 'Organization', 'Secret', 'UserManagement'],
       roles: ['admin', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'Secret', 'UserManagement'])
     expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
   })
 })

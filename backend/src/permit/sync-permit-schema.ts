@@ -27,15 +27,22 @@ export async function syncPermitSchema(
   log: (m: string) => void = console.log
 ): Promise<void> {
   for (const resource of schema.resources) {
+    // Carry the full resource definition (including optional ABAC attributes
+    // and instance-scoped resource roles) on both the create and update paths,
+    // so e.g. Secret's `sensitivity` attribute and agent_reader/approved_release
+    // roles are kept in sync. Undefined keys are simply omitted by the SDK.
+    const def = {
+      name: resource.name,
+      actions: resource.actions,
+      ...(resource.attributes ? { attributes: resource.attributes } : {}),
+      ...(resource.roles ? { roles: resource.roles } : {}),
+    }
     try {
       await permit.api.resources.get(resource.key)
-      await permit.api.resources.update(resource.key, {
-        name: resource.name,
-        actions: resource.actions,
-      })
+      await permit.api.resources.update(resource.key, def)
       log(`Permit resource updated: ${resource.key}`)
     } catch {
-      await permit.api.resources.create(resource)
+      await permit.api.resources.create({ key: resource.key, ...def })
       log(`Permit resource created: ${resource.key}`)
     }
   }
