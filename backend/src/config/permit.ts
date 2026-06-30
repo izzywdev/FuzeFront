@@ -85,24 +85,29 @@ export { config as permitConfig }
 
 /**
  * Destroy the Permit SDK's underlying axios instance so its HTTP keep-alive
- * agent releases open sockets. Call this in jest afterAll to allow jest to
- * exit without --forceExit.
+ * agent releases open sockets. Also destroys the Node global HTTP/HTTPS agents
+ * so keep-alive sockets from any library (supertest, openid-client, etc.) are
+ * released. Call this in jest afterAll to allow jest to exit without --forceExit.
  *
- * In no-op / CI mode this is a safe no-op because no real SDK was created.
+ * In no-op / CI mode the Permit SDK was never created, but the global agent
+ * cleanup still runs — it closes any keep-alive sockets that supertest or other
+ * HTTP libraries left open during the test suite.
  */
 export function destroyPermitClient(): void {
-  if (isNoOpMode) return // nothing to destroy in mock mode
   try {
-    // Access the axios instance via the internal config
-    const axiosInstance = (permit as any)?.config?.axiosInstance
-    if (axiosInstance?.defaults?.httpAgent) {
-      axiosInstance.defaults.httpAgent.destroy()
+    if (!isNoOpMode) {
+      // Real SDK: also tear down the SDK's own axios instance agents.
+      const axiosInstance = (permit as any)?.config?.axiosInstance
+      if (axiosInstance?.defaults?.httpAgent) {
+        axiosInstance.defaults.httpAgent.destroy()
+      }
+      if (axiosInstance?.defaults?.httpsAgent) {
+        axiosInstance.defaults.httpsAgent.destroy()
+      }
     }
-    if (axiosInstance?.defaults?.httpsAgent) {
-      axiosInstance.defaults.httpsAgent.destroy()
-    }
-    // Also destroy the global Node http/https agents used by axios when no
-    // custom agent is set, by clearing the socket pool on axios's adapter.
+    // Always destroy the global Node http/https agents — this closes keep-alive
+    // sockets from supertest, axios, openid-client, or any other HTTP library
+    // that used the global agent during tests.
     const http = require('http')
     const https = require('https')
     if (http.globalAgent) http.globalAgent.destroy()

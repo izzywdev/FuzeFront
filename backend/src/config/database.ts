@@ -315,10 +315,27 @@ export async function checkDatabaseHealth(): Promise<boolean> {
 }
 
 export async function closeDatabase(): Promise<void> {
+  // tarn.js pool.destroy() waits indefinitely for borrowed connections to be
+  // returned. In tests, fire-and-forget provisioning calls that borrow
+  // connections can cause this to hang. We cap the wait at 3 s; if destroy
+  // hasn't settled by then we proceed anyway — the process will exit once all
+  // in-flight queries complete (the test suite is done, no more work scheduled).
+  const destroyWithTimeout = (): Promise<void> =>
+    Promise.race([
+      db.destroy(),
+      new Promise<void>(resolve => {
+        const t = setTimeout(resolve, 3000)
+        // Unref the timer so it alone does not keep the event loop alive.
+        if (t.unref) t.unref()
+      }),
+    ])
+
   try {
-    await db.destroy()
+    if (db) {
+      await destroyWithTimeout()
+    }
     console.log('✅ Database connection closed')
   } catch (error) {
     console.error('❌ Error closing database:', error)
   }
-} 
+}

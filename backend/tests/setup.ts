@@ -55,14 +55,27 @@ beforeAll(async () => {
 afterAll(async () => {
   try {
     console.log('🧹 Cleaning up test database...')
+
+    // Give fire-and-forget provisioning calls (selfHealProvisioningOnLogin)
+    // that were dispatched during login tests a brief window to complete their
+    // in-flight DB queries and release borrowed connections back to the pool.
+    // Without this, tarn.js pool.destroy() (called inside closeDatabase)
+    // waits indefinitely for those borrowed connections, hanging jest.
+    await new Promise<void>(resolve => {
+      const t = setTimeout(resolve, 500)
+      // Don't let the timer itself keep the event loop alive.
+      if (t.unref) t.unref()
+    })
+
     await closeDatabase()
     console.log('✅ Test database cleanup complete')
   } catch (error) {
     console.warn('⚠️ Error cleaning up test database:', error)
   }
 
-  // Destroy the Permit SDK's axios http agent so its keep-alive sockets are
-  // released and jest can exit cleanly without --forceExit.
+  // Destroy the Node.js global http/https agents so any keep-alive sockets
+  // (from supertest, axios, openid-client, or the Permit SDK) are released and
+  // jest can exit cleanly without --forceExit.
   destroyPermitClient()
 })
 
