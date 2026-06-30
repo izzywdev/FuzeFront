@@ -1,7 +1,18 @@
-import { permitSchema, PermitSchema } from './schema'
+import { permitSchema, PermitSchema, PermitResourceDef } from './schema'
+import { ProductPolicy, buildEnvSchema } from './product-policy'
 
 export { permitSchema } from './schema'
 export type { PermitSchema, PermitResourceDef, PermitRoleDef } from './schema'
+export {
+  mergeProductPolicy,
+  namespaceProductPolicy,
+  buildEnvSchema,
+  namespaceKey,
+  validateProductPolicy,
+  ProductPolicyError,
+  PRODUCT_NS_SEP,
+} from './product-policy'
+export type { ProductPolicy, ProductResourceDecl, ProductRoleDecl } from './product-policy'
 
 // The slice of the permitio client surface this routine uses. Declared
 // structurally so tests can inject a fake without the real SDK / PERMIT_API_KEY.
@@ -20,6 +31,20 @@ export interface PermitSchemaClient {
   }
 }
 
+// The resource payload we send to Permit on update — name + actions plus the
+// optional ReBAC bits (relations between resources, resource-instance-scoped
+// roles with derivation). Only included when the resource declares them, so
+// existing flat resources are sent unchanged.
+function resourceUpdatePayload(resource: PermitResourceDef) {
+  const payload: Record<string, unknown> = {
+    name: resource.name,
+    actions: resource.actions,
+  }
+  if (resource.relations) payload.relations = resource.relations
+  if (resource.roles) payload.roles = resource.roles
+  return payload
+}
+
 // get-or-(create|update): idempotent and agnostic to SDK error shapes.
 export async function syncPermitSchema(
   permit: PermitSchemaClient,
@@ -29,10 +54,7 @@ export async function syncPermitSchema(
   for (const resource of schema.resources) {
     try {
       await permit.api.resources.get(resource.key)
-      await permit.api.resources.update(resource.key, {
-        name: resource.name,
-        actions: resource.actions,
-      })
+      await permit.api.resources.update(resource.key, resourceUpdatePayload(resource))
       log(`Permit resource updated: ${resource.key}`)
     } catch {
       await permit.api.resources.create(resource)
@@ -53,6 +75,19 @@ export async function syncPermitSchema(
       log(`Permit role created: ${role.key}`)
     }
   }
+}
+
+// Sync the platform base schema MERGED with the given consumer product policies.
+// This is the entrypoint a product-onboarding job calls after a product submits
+// its policy. Each product's resources/actions/roles are namespaced (fuzemarket.*)
+// before the merge, so re-running for one product never disturbs another.
+export async function syncPermitSchemaWithProducts(
+  permit: PermitSchemaClient,
+  products: ProductPolicy[],
+  log: (m: string) => void = console.log
+): Promise<void> {
+  const merged = buildEnvSchema(...products)
+  await syncPermitSchema(permit, merged, log)
 }
 
 // CLI entry — only runs when executed directly (node dist/permit/sync-permit-schema.js).

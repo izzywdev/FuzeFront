@@ -145,6 +145,80 @@ export async function createOrganizationResourceInstance(
   }
 }
 
+// ReBAC org hierarchy ------------------------------------------------------
+// FuzeOne is the root/parent tenant; customer organizations are its children.
+// The schema declares Organization.relations.parent and an `org-admin` resource
+// role that derives parent→child (see src/permit/schema.ts). The two helpers
+// below are the *provisioning* side: link a child org to its parent, and grant a
+// user org-admin on a specific Organization instance (FuzeOne staff get it on the
+// root org and thereby derive admin on every child).
+
+/**
+ * Records the parent→child link for the ReBAC org hierarchy by creating the
+ * `parent` relationship tuple between two Organization instances. After this,
+ * any user holding `org-admin` on `parentOrgId` derives `org-admin` on
+ * `childOrgId` (and transitively down the tree).
+ *
+ * Idempotent: a benign "already exists" is treated as success.
+ */
+export async function setOrganizationParent(
+  childOrgId: string,
+  parentOrgId: string
+): Promise<boolean> {
+  try {
+    await permit.api.relationshipTuples.create({
+      subject: `Organization:${childOrgId}`,
+      relation: 'parent',
+      object: `Organization:${parentOrgId}`,
+      tenant: childOrgId,
+    })
+    console.log(
+      `Org hierarchy: ${childOrgId} parent set to ${parentOrgId} in Permit.io`
+    )
+    return true
+  } catch (error: any) {
+    const msg = String(error?.message ?? '').toLowerCase()
+    if (msg.includes('already exists') || msg.includes('409') || msg.includes('duplicate')) {
+      return true
+    }
+    console.error(
+      `Error setting org parent (${childOrgId} -> ${parentOrgId}):`,
+      error
+    )
+    return false
+  }
+}
+
+/**
+ * Grants a user the ReBAC `org-admin` role on a specific Organization instance.
+ * Use on the FuzeOne ROOT org to make a staff member an administrator of the
+ * whole tree (children inherit via the `parent` relation), or on a specific org
+ * to scope them to that subtree.
+ */
+export async function assignOrgAdminRebac(
+  userId: string,
+  organizationId: string
+): Promise<boolean> {
+  try {
+    await permit.api.roleAssignments.assign({
+      user: userId,
+      role: 'org-admin',
+      tenant: organizationId,
+      resource_instance: `Organization:${organizationId}`,
+    })
+    console.log(
+      `ReBAC org-admin granted to ${userId} on Organization ${organizationId}`
+    )
+    return true
+  } catch (error) {
+    console.error(
+      `Error granting ReBAC org-admin to ${userId} on ${organizationId}:`,
+      error
+    )
+    return false
+  }
+}
+
 /**
  * Grants access to a resource instance for a user
  */
