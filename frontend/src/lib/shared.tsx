@@ -9,6 +9,31 @@ import type { Organization } from '../services/api'
 // Re-export so consumers can import Organization from shared
 export type { Organization }
 
+// --- Active-organization persistence -----------------------------------------
+// The active org MUST survive full-page reloads: the SidePanel nav links
+// navigate via the browser (full reload), and BillingPage/checkout bill
+// `activeOrganizationId`. Without persistence every reload reset it (the gate
+// forced the personal org), so a user who selected/created an org and then
+// clicked a menu item silently billed their personal org. Persist it here.
+const ACTIVE_ORG_STORAGE_KEY = 'ff.activeOrganizationId'
+
+export function getPersistedActiveOrganizationId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_ORG_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistActiveOrganizationId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, id)
+    else localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY)
+  } catch {
+    // localStorage unavailable (privacy mode) — degrade gracefully.
+  }
+}
+
 // Types
 export interface User {
   id: string
@@ -113,6 +138,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_ORGANIZATIONS':
       return { ...state, organizations: action.payload }
     case 'SET_ACTIVE_ORGANIZATION':
+      persistActiveOrganizationId(action.payload)
       return { ...state, activeOrganizationId: action.payload }
     default:
       return state
@@ -128,7 +154,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     menuItems: [],
     isLoading: false,
     organizations: [],
-    activeOrganizationId: null,
+    // Hydrate the previously-selected org so a full-page reload keeps billing
+    // pointed at the org the user is actually viewing.
+    activeOrganizationId: getPersistedActiveOrganizationId(),
   })
 
   return (

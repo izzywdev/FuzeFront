@@ -1,4 +1,4 @@
-import { useCurrentUser } from '../lib/shared'
+import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { useTheme } from '../contexts/ThemeContext'
 import { LanguageSelector, useT } from '@fuzefront/i18n'
 import AppSelector from './AppSelector'
@@ -8,6 +8,7 @@ import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 function TopBar() {
   const { user } = useCurrentUser()
+  const { activeOrganizationId, setActiveOrganization } = useOrganizations()
   const { theme, toggleTheme } = useTheme()
   const { t } = useT()
 
@@ -34,7 +35,13 @@ function TopBar() {
           gap: '12px',
         }}
       >
-        <OrganizationSelector compact={true} />
+        <OrganizationSelector
+          compact={true}
+          selectedOrganizationId={activeOrganizationId ?? undefined}
+          onOrganizationChange={org => {
+            if (org) setActiveOrganization(org.id)
+          }}
+        />
         <AppSelector />
 
         {/* Language Selector — design-system Select via @fuzefront/i18n.

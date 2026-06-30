@@ -1,11 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { organizationsAPI } from '../services/api'
-import { useAppContext } from '../lib/shared'
+import {
+  useAppContext,
+  getPersistedActiveOrganizationId,
+} from '../lib/shared'
 import { ProvisioningCard, ProvisioningState } from './ProvisioningCard'
 import type { Organization } from '../services/api'
 
 const POLL_INTERVAL_MS = 1750
 const TIMEOUT_MS = 30_000
+// Once the workspace is confirmed provisioned in this browser session, remember
+// it so subsequent full-page-reload navigations (the SidePanel uses real <a>
+// navigation) render the app immediately instead of re-flashing the
+// "Creating your workspace…" card on every menu click.
+const READY_SESSION_KEY = 'ff.workspaceReady'
 
 interface WorkspaceProvisioningGateProps {
   children: React.ReactNode
@@ -37,7 +45,15 @@ export function WorkspaceProvisioningGate({
 
   const [gateState, setGateState] = useState<
     'checking' | 'provisioning' | 'ready' | 'timeout' | 'error'
-  >('checking')
+  >(() =>
+    // Optimistically render the app on reload if we already confirmed the
+    // workspace this session — the background check below still runs to populate
+    // org context. This is what removes the per-navigation provisioning flash.
+    typeof sessionStorage !== 'undefined' &&
+    sessionStorage.getItem(READY_SESSION_KEY) === '1'
+      ? 'ready'
+      : 'checking'
+  )
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -53,7 +69,21 @@ export function WorkspaceProvisioningGate({
     dispatch({ type: 'SET_ORGANIZATIONS', payload: orgs })
     const personal = orgs.find(o => o.type === 'personal')
     if (personal) {
-      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: personal.id })
+      // Prefer the org the user previously selected (persisted across reloads)
+      // over blindly forcing the personal org — otherwise every reload reset
+      // the active org to personal and billed the wrong org. Only fall back to
+      // personal when there is no valid persisted selection.
+      const persistedId = getPersistedActiveOrganizationId()
+      const persisted = persistedId
+        ? orgs.find(o => o.id === persistedId)
+        : null
+      const active = persisted ?? personal
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active.id })
+      try {
+        sessionStorage.setItem(READY_SESSION_KEY, '1')
+      } catch {
+        // ignore
+      }
       stopPolling()
       setGateState('ready')
     }
@@ -89,6 +119,12 @@ export function WorkspaceProvisioningGate({
 
   useEffect(() => {
     let cancelled = false
+    // If we rendered the app optimistically (workspace already confirmed this
+    // session), the background check only refreshes org context — it must never
+    // downgrade to the provisioning/error card and re-flash on navigation.
+    const startedReady =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(READY_SESSION_KEY) === '1'
 
     const check = async () => {
       try {
@@ -96,11 +132,11 @@ export function WorkspaceProvisioningGate({
         if (cancelled) return
         if (hasPersonalOrg(orgs)) {
           onOrgsLoaded(orgs)
-        } else {
+        } else if (!startedReady) {
           startPolling()
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !startedReady) {
           setGateState('error')
         }
       }

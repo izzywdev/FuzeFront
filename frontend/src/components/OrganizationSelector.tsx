@@ -79,8 +79,15 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
 
       setOrganizations(formattedOrganizations)
 
-      // Set first organization as default if none selected
-      if (!selectedOrg && formattedOrganizations.length > 0) {
+      // Set first organization as default ONLY when the parent hasn't already
+      // chosen one (selectedOrganizationId). Otherwise the auto-default would
+      // override the persisted/active org the shell restored on load and switch
+      // billing to the wrong org.
+      if (
+        !selectedOrg &&
+        !selectedOrganizationId &&
+        formattedOrganizations.length > 0
+      ) {
         const defaultOrg = formattedOrganizations[0]
         setSelectedOrg(defaultOrg)
         onOrganizationChange?.(defaultOrg)
