@@ -91,7 +91,7 @@ router.post('/apps', authenticateToken, async (req: any, res) => {
   try {
     const parsed = registerAppRequestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
     }
     const { manifest, organizationId } = parsed.data
     const orgId = organizationId ?? null
@@ -188,7 +188,7 @@ router.put('/apps/:slug', authenticateToken, async (req: any, res) => {
 
     const parsed = appManifestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
     }
     const manifest = parsed.data
 
@@ -352,7 +352,7 @@ router.post('/apps/:slug/heartbeat', async (req: any, res) => {
   try {
     const parsed = heartbeatRequestSchema.safeParse(req.body)
     if (!parsed.success) {
-      return res.status(400).json(toValidationErrorBody(parsed.error))
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
     }
     const { status, metadata } = parsed.data
 
