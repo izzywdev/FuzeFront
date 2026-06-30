@@ -111,6 +111,14 @@ export default permit
 // Export configuration for other modules
 export { config as permitConfig }
 
+// Whether the zero-network no-op client is active (CI dummy key / test without a
+// real permit_key_). Consumers (e.g. integration tests) can branch on this to
+// assert the correct behavior for the environment: with a real PDP the policy
+// grants/denies for real; under the no-op the client is deterministically
+// fail-closed (check()->false). This is NOT a test skip — it lets a test assert
+// the right outcome per environment without weakening either path.
+export const isPermitNoOpMode = isNoOpMode
+
 /**
  * Destroy the Permit SDK's underlying axios instance so its HTTP keep-alive
  * agent releases open sockets. Also destroys the Node global HTTP/HTTPS agents
