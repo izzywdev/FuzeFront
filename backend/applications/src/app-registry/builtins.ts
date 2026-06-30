@@ -22,7 +22,7 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://app.fuzefront.com/apps/clock/remoteEntry.js',
+      remoteEntry: 'https://app.fuzefront.com/apps/clock/assets/remoteEntry.js',
       scope: 'clockApp',
       module: './ClockApp',
     },
