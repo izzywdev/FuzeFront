@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "build:check": "tsc && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
@@ -39,8 +40,10 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@hookform/resolvers": "^3.10.0",
     "@playwright/test": "^1.53.1",
     "@tailwindcss/postcss": "^4.1.11",
+    "@tanstack/react-table": "^8.21.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -55,13 +58,18 @@
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "eventsource-parser": "^1.1.2",
     "jsdom": "^22.1.0",
+    "papaparse": "^5.5.4",
     "postcss": "^8.5.6",
+    "react-hook-form": "^7.80.0",
     "tailwindcss": "^4.1.10",
     "tw-animate-css": "^1.3.4",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
-    "vitest": "^3.2.4"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^3.2.4",
+    "zod": "^3.25.76"
   },
   "optionalDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.62.0"

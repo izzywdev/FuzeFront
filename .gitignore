@@ -44,3 +44,18 @@ packages/*/.npmrc
 
 # Per-package lockfiles (generated locally; CI installs fresh).
 packages/*/package-lock.json
+
+# Android TWA keystore binary — store as base64 in ANDROID_KEYSTORE_B64 GitHub Secret
+android/keystore/*.keystore
+android/keystore/*.jks
+# Bubblewrap-generated Android project (reproducible via `bubblewrap init`)
+android/app/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+android/build.gradle
+android/settings.gradle
+android/local.properties
+
+# Vite build output (generated; not committed)
+frontend/dist/

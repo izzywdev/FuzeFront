@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import react from '@vitejs/plugin-react'
 import federation from '@originjs/vite-plugin-federation'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // Resolve the @fuzefront/* workspace UI packages from SOURCE rather than from a
 // published registry build. @fuzefront/identity-ui is an unpublished local
@@ -47,6 +49,25 @@ const billingClientSrc = fileURLToPath(
 const appRegistryClientSrc = fileURLToPath(
   new URL('../apps-client/src/index.ts', import.meta.url)
 )
+// Workspace packages resolved from SOURCE (via alias) live outside the frontend/
+// directory tree. Rollup walks UP from each file to find node_modules, so it never
+// reaches frontend/node_modules for those files. This resolver fills the gap: it
+// tries require.resolve from frontend/node_modules as a fallback so packages like
+// @tanstack/react-table, eventsource-parser, etc. are found even though they're
+// not installed in the workspace package's own node_modules.
+const frontendRequire = createRequire(import.meta.url) // resolves from frontend/
+const workspaceDepResolver = {
+  name: 'resolve-workspace-transitive-deps',
+  resolveId(id: string) {
+    if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return null
+    try {
+      const resolved = frontendRequire.resolve(id)
+      return { id: resolved, external: false }
+    } catch {
+      return null
+    }
+  },
+}
 
 export default defineConfig({
   resolve: {
@@ -72,6 +93,7 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
   plugins: [
+    workspaceDepResolver,
     react(),
     federation({
       name: 'container',
@@ -88,6 +110,89 @@ export default defineConfig({
       // the federation plugin read `<aliased-file>/package.json` (ENOTDIR) — so they
       // are bundled into the host directly rather than shared.
       shared: ['react', 'react-dom'],
+    }),
+    VitePWA({
+      registerType: 'autoUpdate',
+      devOptions: { enabled: false },
+      // Don't precache JS bundles — MFE remotes change independently and stale
+      // cached JS would break federation. Let Workbox runtime-cache JS with
+      // NetworkFirst so the shell always fetches fresh federation assets.
+      globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
+      workbox: {
+        runtimeCaching: [
+          {
+            // API + WebSocket upgrade paths — never cache
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith('/api/') ||
+              url.pathname.startsWith('/chat-api/') ||
+              url.pathname.startsWith('/socket.io/'),
+            handler: 'NetworkOnly',
+          },
+          {
+            // JS bundles (host + remote entry points) — NetworkFirst so
+            // updated remotes always load without a full SW update cycle.
+            urlPattern: ({ request }) => request.destination === 'script',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'js-cache',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 80, maxAgeSeconds: 86400 },
+            },
+          },
+          {
+            // CSS — StaleWhileRevalidate for fast paint + background refresh
+            urlPattern: ({ request }) => request.destination === 'style',
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'css-cache' },
+          },
+        ],
+      },
+      manifest: {
+        id: '/',
+        name: 'FuzeFront',
+        short_name: 'FuzeFront',
+        description: 'Runtime Microfrontend Platform',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        background_color: '#0b0e15',
+        theme_color: '#6e5cff',
+        categories: ['productivity', 'utilities'],
+        icons: [
+          {
+            src: '/icons/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: '/icons/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+          {
+            src: '/icons/pwa-maskable-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icons/pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+        screenshots: [
+          {
+            src: '/FrontFuseLogo.png',
+            sizes: '1024x1024',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'FuzeFront dashboard',
+          },
+        ],
+      },
     }),
   ],
   build: {

@@ -66,8 +66,8 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   // Set up the platform context that runtime-loaded apps read off `window`.
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      ;(window as any).__FRONTFUSE_PLATFORM__ = true
-      ;(window as any).__FRONTFUSE_CONTEXT__ = {
+      (window as any).__FRONTFUSE_PLATFORM__ = true;
+      (window as any).__FRONTFUSE_CONTEXT__ = {
         user,
         session: user
           ? {

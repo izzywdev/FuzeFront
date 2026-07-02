@@ -25,7 +25,7 @@ function AddApplicationPage() {
   const [slug, setSlug] = useState('')
   const [menuLabel, setMenuLabel] = useState('')
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [description] = useState('')
   const [mode, setMode] = useState<AppMode>('portal')
   const [integrationType, setIntegrationType] =
     useState<IntegrationType>('module-federation')
