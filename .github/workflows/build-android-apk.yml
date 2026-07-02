@@ -35,8 +35,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
+
+      - name: Pre-configure Bubblewrap to skip interactive JDK/SDK prompts
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" \
+            > ~/.bubblewrap/config.json
 
       - name: Restore keystore from secret
         env:
