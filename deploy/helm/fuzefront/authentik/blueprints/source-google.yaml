@@ -4,14 +4,19 @@
 # strategy, so a user who signs up with password and then signs in with Google
 # (same email) is merged into one account rather than creating a duplicate.
 #
-# Prerequisites: create a Google OAuth2 app at console.cloud.google.com,
-# add Authorized redirect URI:
-#   https://auth.fuzefront.dev.local/source/oauth/callback/google/
+# Prerequisites: create a Google OAuth2 app at console.cloud.google.com
+# (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
+# and add ALL of the following Authorized redirect URIs:
+#   Local dev:  https://auth.fuzefront.dev.local/source/oauth/callback/google/
+#   Production: https://auth.fuzefront.com/source/oauth/callback/google/
 #
-# Set real consumer_key/secret via Helm values:
-#   authentik.blueprints.googleClientId / authentik.blueprints.googleClientSecret
-# (backed by SealedSecret in prod). The placeholders below disable the source
-# in dev until real creds are provided — Authentik skips sources with empty keys.
+# Supply credentials via:
+#   Helm (k8s):        secret.googleClientId / secret.googleClientSecret in values
+#                      (use SealedSecret for prod — see deploy/contabo/sealed-secrets/)
+#   Docker Compose:    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in .env
+#
+# Leave credentials empty to disable Google sign-in — the source is inert when
+# consumer_key is an empty string, so no button appears on the login page.
 version: 1
 metadata:
   name: FuzeFront Google OAuth Source
