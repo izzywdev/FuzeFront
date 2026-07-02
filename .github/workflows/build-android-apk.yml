@@ -47,15 +47,20 @@ jobs:
 
       - name: Set version code from input or run number
         id: version
+        env:
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          CODE="${{ github.event.inputs.version_code || github.run_number }}"
+          CODE="${INPUT_VERSION_CODE:-$RUN_NUMBER}"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          # Patch appVersionCode in the manifest
-          node -e "
+          # Patch appVersionCode in the manifest — pass code via env so the
+          # node script never interpolates untrusted data directly in the script.
+          VERSION_CODE="$CODE" node -e "
             const fs = require('fs');
+            const code = process.env.VERSION_CODE;
             const m = JSON.parse(fs.readFileSync('android/twa-manifest.json','utf8'));
-            m.appVersionCode = parseInt('$CODE');
-            m.appVersion = '$CODE';
+            m.appVersionCode = parseInt(code, 10);
+            m.appVersion = code;
             fs.writeFileSync('android/twa-manifest.json', JSON.stringify(m, null, 2));
           "
 
