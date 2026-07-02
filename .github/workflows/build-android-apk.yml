@@ -79,17 +79,26 @@ jobs:
           KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
           KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
         run: |
-          # Patch passwords from secrets (don't store plaintext creds in the manifest)
+          # Patch passwords from secrets and redirect icon URLs to a local HTTP server.
+          # bubblewrap downloads icons during project generation; the prod URL may not be
+          # live yet, so we serve the committed icons from frontend/public locally instead.
           node -e "
             const fs = require('fs');
             const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
             m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
             m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
+            m.iconUrl          = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.maskableIconUrl  = 'http://localhost:8080/icons/pwa-maskable-512x512.png';
+            m.monochromeIconUrl = 'http://localhost:8080/icons/pwa-512x512.png';
             fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
           "
-          # bubblewrap init --manifest only accepts a web manifest URL, not a local path.
-          # bubblewrap update reads the existing twa-manifest.json and scaffolds the project.
+          # Serve frontend/public so bubblewrap can fetch the icon files
+          python3 -m http.server 8080 --directory ../frontend/public &
+          HTTP_PID=$!
+          sleep 1
+          # bubblewrap update reads twa-manifest.json and scaffolds the Android Gradle project
           bubblewrap update --skipPwaValidation
+          kill $HTTP_PID || true
 
       - name: Build APK
         working-directory: android
