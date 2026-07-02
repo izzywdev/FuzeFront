@@ -73,7 +73,7 @@ jobs:
             fs.writeFileSync('android/twa-manifest.json', JSON.stringify(m, null, 2));
           "
 
-      - name: Initialise Bubblewrap project
+      - name: Scaffold Android project from TWA manifest
         working-directory: android
         env:
           KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
@@ -87,8 +87,9 @@ jobs:
             m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
             fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
           "
-          # bubblewrap init reads twa-manifest.json and scaffolds the Android project
-          bubblewrap init --manifest twa-manifest.json --skipPwaValidation
+          # bubblewrap init --manifest only accepts a web manifest URL, not a local path.
+          # bubblewrap update reads the existing twa-manifest.json and scaffolds the project.
+          bubblewrap update --skipPwaValidation
 
       - name: Build APK
         working-directory: android
