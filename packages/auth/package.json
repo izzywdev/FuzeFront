@@ -1,0 +1,53 @@
+{
+  "name": "@fuzefront/auth",
+  "version": "0.1.0",
+  "description": "Consumable authN/authZ client for the FuzeFront family — stable Identity shape with a pluggable token verifier (legacy-hs256 today, oidc-jwks target). Fail-closed. Never mints tokens.",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "sideEffects": false,
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/auth"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "express": "^4.17.21"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.12",
+    "@types/node": "18.19.0",
+    "jest": "29.7.0",
+    "ts-jest": "29.1.1",
+    "tsup": "^8.0.2",
+    "typescript": "5.1.6"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  }
+}

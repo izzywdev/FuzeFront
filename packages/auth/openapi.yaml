@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Auth Contract
+  version: 0.1.0
+  description: >-
+    Contract for the FuzeFront authN/authZ surface consumed via the
+    `@fuzefront/auth` client (issue #117). Documents the current auth HTTP
+    endpoints (verified against `backend/src/routes/auth.ts`) and the stable
+    `Identity` shape that `@fuzefront/auth` normalizes tokens into, invariant
+    across the HS256 -> OIDC/JWKS migration.
+
+    This is a CONTRACT FREEZE. Endpoints below describe TODAY's behavior; the
+    normalized `Identity` and the `oidc-jwks` verifier are the target the
+    package interface is frozen against. Token minting stays in the identity
+    service — `@fuzefront/auth` only verifies.
+  license:
+    name: MIT
+servers:
+  - url: /api
+    description: Same-origin API base (works identically under local TLS and prod ingress)
+tags:
+  - name: auth
+    description: Authentication endpoints (current FuzeFront behavior)
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Local login — issues the current HS256 session token
+      operationId: login
+      description: >-
+        Validates credentials and returns a signed HS256 JWT (claims
+        `{ userId, sessionId }`). `@fuzefront/auth` VERIFIES this token in
+        `legacy-hs256` mode but never issues it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated; token + user returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/user:
+    get:
+      tags: [auth]
+      summary: Current authenticated user
+      operationId: getCurrentUser
+      description: >-
+        Returns the hydrated user for the bearer token. This is the source of
+        the out-of-band `roles`/tenant hydration `@fuzefront/auth` uses in
+        `legacy-hs256` mode (the token itself carries neither).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout — revokes the current session
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/oidc/login:
+    get:
+      tags: [auth]
+      summary: Begin Authentik OIDC login (PKCE)
+      operationId: oidcLogin
+      description: Redirects to the Authentik authorization endpoint (target IdP).
+      responses:
+        '302':
+          description: Redirect to the OIDC provider
+  /auth/oidc/callback:
+    get:
+      tags: [auth]
+      summary: Authentik OIDC callback
+      operationId: oidcCallback
+      description: >-
+        Exchanges the OIDC code, syncs the user, and (today) mints a local
+        HS256 token. The target state has `@fuzefront/auth` verifying the
+        provider's RS256/JWKS token directly (`oidc-jwks` mode).
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirect back to the app with a session established
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/method:
+    get:
+      tags: [auth]
+      summary: Which auth method is configured (local vs OIDC)
+      operationId: getAuthMethod
+      responses:
+        '200':
+          description: Configured auth method
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  method:
+                    type: string
+                    enum: [local, oidc]
+                required: [method]
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        `Authorization: Bearer <token>`. Verified by `@fuzefront/auth`. Today
+        HS256/shared-secret; target Authentik RS256/JWKS. The verifier is
+        pluggable; consumers depend on the normalized `Identity`, not the raw JWT.
+  responses:
+    Unauthorized:
+      description: Authentication failed (fail-closed)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthErrorBody'
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthErrorBody'
+  schemas:
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: HS256 JWT (claims userId, sessionId)
+        user:
+          $ref: '#/components/schemas/User'
+      required: [token, user]
+    User:
+      type: object
+      description: Hydrated user (source of out-of-band role/tenant resolution)
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        defaultAppId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+      required: [id, email, roles]
+    Identity:
+      type: object
+      description: >-
+        The STABLE normalized identity produced by `@fuzefront/auth`,
+        invariant across the HS256 -> OIDC/JWKS migration. Mirrors the
+        TypeScript `Identity` interface in `src/types.ts`.
+      properties:
+        userId:
+          type: string
+          description: Stable subject id. Always present.
+        tenantId:
+          type: [string, 'null']
+          description: >-
+            Tenant/org scope. May be null in legacy-hs256 mode when unresolved.
+            Consumers fail-closed on tenant-scoped authz when null.
+        roles:
+          type: array
+          items:
+            type: string
+          description: Always an array; empty means "no roles known".
+        email:
+          type: string
+        authMode:
+          type: string
+          enum: [legacy-hs256, oidc-jwks]
+        issuedAt:
+          type: integer
+        expiresAt:
+          type: integer
+        issuer:
+          type: string
+      required: [userId, tenantId, roles, authMode]
+    AuthErrorBody:
+      type: object
+      description: Stable error body emitted by the requireAuth middleware / API.
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - NO_TOKEN
+            - MALFORMED
+            - INVALID_SIGNATURE
+            - EXPIRED
+            - NOT_ACTIVE
+            - INVALID_ISSUER
+            - INVALID_AUDIENCE
+            - MISSING_CLAIM
+            - JWKS_UNAVAILABLE
+            - VERIFIER_UNAVAILABLE
+            - UNKNOWN
+      required: [error, code]
