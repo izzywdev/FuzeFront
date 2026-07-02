@@ -12,7 +12,13 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "vitest": ["./node_modules/vitest"],
+      "vitest/*": ["./node_modules/vitest/*"],
+      "@vitest/expect": ["./node_modules/@vitest/expect"],
+      "@vitest/expect/*": ["./node_modules/@vitest/expect/*"]
+    }
   },
   "include": ["src"]
 }
