@@ -126,7 +126,7 @@ export function RolesPermissionsPanel({ catalog, loading, error, onRetry }: Role
                 <th scope="row" style={{ ...cellStyle, fontFamily: 'var(--font-sans)', fontSize: 'var(--text-sm)', fontWeight: 'var(--weight-normal)', color: 'var(--text-primary)' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>{row.resourceName}</span>
                   {' · '}
-                  {row.actionName}
+                  <span>{row.actionName}</span>
                 </th>
                 {catalog.roles.map((role) => {
                   const granted = grantedSets.get(role.key)?.has(row.key) ?? false
