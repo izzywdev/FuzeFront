@@ -89,6 +89,29 @@ git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
 > is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
 > This recipe only SEALS the token feature-flags-engineer hands over.
 
+## Unleash secrets (`unleash-secrets`) — sealed AND moved at go-live
+
+While `unleash.enabled: false` (first-light), the `unleash-secrets` SealedSecret is a
+**placeholder parked in `deploy/contabo/sealed-staging/`**, which the `fuzefront-sealed`
+Argo app does **not** sync. This is deliberate: a placeholder with undecryptable
+`AgPLACEHOLDER_...` ciphertext left in the synced `deploy/contabo/sealed/` directory
+holds the `fuzefront-sealed` app in **Degraded** health (Synced but unhealthy) because
+the controller can never unseal it (FuzeFront#140).
+
+At Unleash go-live, seal the real values into the staged file, then move it into the
+synced dir so Argo reconciles the real Secret:
+
+```bash
+deploy/scripts/seal-secret.sh UNLEASH_DB_PASSWORD   --scope fuzefront/unleash-secrets \
+  --manifest deploy/contabo/sealed-staging/unleash-secrets.yaml
+deploy/scripts/seal-secret.sh INIT_ADMIN_API_TOKENS --scope fuzefront/unleash-secrets \
+  --manifest deploy/contabo/sealed-staging/unleash-secrets.yaml
+deploy/scripts/seal-secret.sh UNLEASH_CLIENT_TOKEN  --scope fuzefront/unleash-secrets \
+  --manifest deploy/contabo/sealed-staging/unleash-secrets.yaml
+git mv deploy/contabo/sealed-staging/unleash-secrets.yaml deploy/contabo/sealed/
+git add -A && git commit -m "secrets(prod): seal + activate unleash-secrets for go-live" && git push
+```
+
 ## ⚠️ Resealing a single value (e.g. `AUTHENTIK_BOOTSTRAP_TOKEN`)
 
 To rotate or repair ONE key without retyping the rest, use the offline merge helper —

@@ -274,8 +274,11 @@ chatService:
 unleash:
   # First-light: DISABLED. While false, NEITHER the Unleash Deployment NOR the
   # pre-install unleash-db-bootstrap hook render — so Unleash adds ZERO freeze
-  # surface to the umbrella sync. GO-LIVE = flip this to true AND seal the real
-  # unleash-secrets keys.
+  # surface to the umbrella sync. The placeholder unleash-secrets SealedSecret is
+  # also parked in deploy/contabo/sealed-staging/ (NOT synced) so it can't hold the
+  # `fuzefront-sealed` app Degraded on an undecryptable placeholder (FuzeFront#140).
+  # GO-LIVE = flip this to true, seal the real unleash-secrets keys, AND move
+  # deploy/contabo/sealed-staging/unleash-secrets.yaml into deploy/contabo/sealed/.
   enabled: false
   image:
     repository: unleashorg/unleash-server
