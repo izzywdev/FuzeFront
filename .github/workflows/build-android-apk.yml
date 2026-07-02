@@ -1,0 +1,122 @@
+name: Build Android APK (TWA)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'android/**'
+      - 'frontend/public/.well-known/assetlinks.json'
+      - 'frontend/public/icons/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Android version code (integer, e.g. 2)'
+        required: false
+        default: '1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & sign TWA APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Restore keystore from secret
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          mkdir -p android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > android/keystore/fuzefront-release.keystore
+
+      - name: Set version code from input or run number
+        id: version
+        run: |
+          CODE="${{ github.event.inputs.version_code || github.run_number }}"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          # Patch appVersionCode in the manifest
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('android/twa-manifest.json','utf8'));
+            m.appVersionCode = parseInt('$CODE');
+            m.appVersion = '$CODE';
+            fs.writeFileSync('android/twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+
+      - name: Initialise Bubblewrap project
+        working-directory: android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # Patch passwords from secrets (don't store plaintext creds in the manifest)
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
+            m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
+            m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
+            fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          # bubblewrap init reads twa-manifest.json and scaffolds the Android project
+          bubblewrap init --manifest twa-manifest.json --skipPwaValidation
+
+      - name: Build APK
+        working-directory: android
+        run: bubblewrap build --skipPwaValidation
+
+      - name: Locate signed APK
+        id: apk
+        working-directory: android
+        run: |
+          APK=$(find . -name "*.apk" | head -1)
+          echo "path=android/$APK" >> "$GITHUB_OUTPUT"
+          echo "Found: $APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzefront-android-v${{ steps.version.outputs.code }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 90
+
+      - name: Create GitHub Release with APK
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.version.outputs.code }}
+          name: FuzeFront Android v${{ steps.version.outputs.code }}
+          body: |
+            ## FuzeFront Android APK (TWA)
+
+            Trusted Web Activity wrapping **https://app.fuzefront.com** — connects to the production cluster.
+
+            ### Install
+            1. Download `fuzefront.apk` below
+            2. On your Android phone: **Settings → Apps → Install unknown apps** → allow your browser/Files app
+            3. Open the downloaded APK and tap **Install**
+            4. Launch **FuzeFront** from your home screen
+
+            The app opens Chrome in standalone mode (no browser chrome) — backed by your live prod cluster.
+
+            ### Requirements
+            - Android 5.0+ (API 21+)
+            - Chrome 72+ installed on device
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: false
