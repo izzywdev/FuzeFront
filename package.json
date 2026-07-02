@@ -40,7 +40,8 @@
   },
   "overrides": {
     "@types/express": "^4.17.21",
-    "@types/express-serve-static-core": "^4.19.6"
+    "@types/express-serve-static-core": "^4.19.6",
+    "tar": ">=7.5.16"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
