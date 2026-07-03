@@ -85,6 +85,20 @@ if ! gcloud auth application-default print-access-token &>/dev/null 2>&1; then
 fi
 
 # ── step 3: select / create GCP project ────────────────────────────────────────
+# If GCP_PROJECT_NAME is set, look up the project ID by display name.
+# This lets callers do: GCP_PROJECT_NAME=FuzeOne bash setup-google-oauth.sh
+if [[ -n "${GCP_PROJECT_NAME:-}" && -z "${GCP_PROJECT:-}" ]]; then
+  info "Looking up project by name: $GCP_PROJECT_NAME"
+  GCP_PROJECT=$(gcloud projects list \
+    --filter="name=$GCP_PROJECT_NAME" \
+    --format="value(projectId)" 2>/dev/null | head -1)
+  if [[ -z "$GCP_PROJECT" ]]; then
+    warn "No project with name '$GCP_PROJECT_NAME' found — will create it."
+  else
+    ok "Found project '$GCP_PROJECT_NAME' → ID: $GCP_PROJECT"
+  fi
+fi
+
 if [[ -z "${GCP_PROJECT:-}" ]]; then
   echo ""
   echo "Available projects:"
@@ -94,9 +108,16 @@ if [[ -z "${GCP_PROJECT:-}" ]]; then
 fi
 
 if [[ -z "$GCP_PROJECT" ]]; then
-  read -rp "Enter a new project ID (lowercase letters, digits, hyphens, 6-30 chars): " GCP_PROJECT
-  info "Creating project: $GCP_PROJECT"
-  gcloud projects create "$GCP_PROJECT" --name="$GCP_PROJECT"
+  # Derive a project ID from GCP_PROJECT_NAME if provided, else prompt
+  if [[ -n "${GCP_PROJECT_NAME:-}" ]]; then
+    # Convert display name to a valid project ID (lowercase, hyphens, max 30 chars)
+    GCP_PROJECT=$(echo "$GCP_PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/-$//' | cut -c1-30)
+    info "Derived project ID from name: $GCP_PROJECT"
+  else
+    read -rp "Enter a new project ID (lowercase letters, digits, hyphens, 6-30 chars): " GCP_PROJECT
+  fi
+  info "Creating project: $GCP_PROJECT (name: ${GCP_PROJECT_NAME:-$GCP_PROJECT})"
+  gcloud projects create "$GCP_PROJECT" --name="${GCP_PROJECT_NAME:-$GCP_PROJECT}"
   ok "Project created: $GCP_PROJECT"
 fi
 
