@@ -210,17 +210,23 @@ jobs:
           PDP_DEBUG: 'false'
           PDP_ENABLE_OFFLINE_MODE: 'true'
           OPAL_INLINE_OPA_ENABLED: 'true'
-          # Disable realtime WebSocket updates so the PDP does not keep
-          # trying to connect to wss://opal.permit.io (which fails in CI
-          # and prevents the /health endpoint from returning 200).
           OPAL_CLIENT_ENABLE_REALTIME_UPDATES: 'false'
           OPAL_SPLIT_ROOT_DATA: 'false'
+          # Prevent the OPAL client from attempting ANY outbound connection to
+          # opal.permit.io at startup. Even with REALTIME_UPDATES disabled the
+          # client still tries a one-shot policy-fetch via RPC, which fails with
+          # DNS [Errno -5] in the GitHub Actions Docker network and keeps the OPA
+          # bundle in a "not ready" state — causing the PDP /health endpoint
+          # (port 7000) to stay unhealthy until the health-check retries exhaust.
+          # Pointing OPAL_SERVER_URL at a non-existent local address makes the
+          # connection attempt fail immediately rather than retrying forever.
+          OPAL_SERVER_URL: 'http://localhost:17766'
         options: >-
-          --health-cmd "wget --spider -q http://localhost:7000/health || exit 1"
-          --health-interval 10s
-          --health-timeout 10s
-          --health-retries 12
-          --health-start-period 60s
+          --health-cmd "wget --spider -q http://localhost:8181/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
         ports:
           - 7766:7000
 
