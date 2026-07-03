@@ -1,6 +1,7 @@
 import request from 'supertest'
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import bcrypt from 'bcrypt'
 import { db } from '../src/config/database'
 import authRoutes from '../src/routes/auth'
 import organizationsRoutes from '../src/routes/organizations'
@@ -89,6 +90,10 @@ describePermit('Permit.io Integration Tests', () => {
     testOrgId = uuidv4()
     testAppId = uuidv4()
 
+    // Hash passwords so the login endpoint can verify them in API tests.
+    const ownerHash = await bcrypt.hash('test-password', 10)
+    const adminHash = await bcrypt.hash('admin-password', 10)
+
     // Insert test users
     await db('users').insert([
       {
@@ -96,7 +101,7 @@ describePermit('Permit.io Integration Tests', () => {
         email: 'test-owner@permit.test',
         first_name: 'Test',
         last_name: 'Owner',
-        password_hash: '$2a$10$test.hash.for.testing',
+        password_hash: ownerHash,
         roles: JSON.stringify(['user']),
         created_at: new Date(),
         updated_at: new Date(),
@@ -106,7 +111,7 @@ describePermit('Permit.io Integration Tests', () => {
         email: 'admin-user@permit.test',
         first_name: 'Admin',
         last_name: 'User',
-        password_hash: '$2a$10$admin.hash.for.testing',
+        password_hash: adminHash,
         roles: JSON.stringify(['admin', 'user']),
         created_at: new Date(),
         updated_at: new Date(),
@@ -116,7 +121,7 @@ describePermit('Permit.io Integration Tests', () => {
         email: 'test-member@permit.test',
         first_name: 'Test',
         last_name: 'Member',
-        password_hash: '$2a$10$test.hash.for.testing',
+        password_hash: ownerHash,
         roles: JSON.stringify(['user']),
         created_at: new Date(),
         updated_at: new Date(),
