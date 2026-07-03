@@ -110,9 +110,12 @@ jobs:
         run: |
           # bubblewrap build always prompts interactively for keystore passwords (exit 130,
           # no TTY in CI). Write key.properties directly and invoke Gradle instead.
-          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=fuzefront\nstoreFile=./keystore/fuzefront-release.keystore\n' \
+          # Use an absolute storeFile path — Gradle resolves relative paths from android/app/,
+          # not android/, so a relative path would miss the keystore.
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=fuzefront\nstoreFile=%s/keystore/fuzefront-release.keystore\n' \
             "${KEYSTORE_STORE_PASSWORD:-fuzefront2024}" \
             "${KEYSTORE_KEY_PASSWORD:-fuzefront2024}" \
+            "$(pwd)" \
             > key.properties
           ./gradlew assembleRelease
 
@@ -120,7 +123,12 @@ jobs:
         id: apk
         working-directory: android
         run: |
-          APK=$(find . -name "*.apk" | head -1)
+          # Prefer the signed APK; fall back to any APK. Strip leading "./" so
+          # upload-artifact doesn't reject the path as a relative "." component.
+          APK=$(find . -path "*/release/app-release.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find . -name "*.apk" | grep -v unsigned | head -1)
+          [ -z "$APK" ] && APK=$(find . -name "*.apk" | head -1)
+          APK="${APK#./}"
           echo "path=android/$APK" >> "$GITHUB_OUTPUT"
           echo "Found: $APK"
 
