@@ -82,11 +82,24 @@ fi
 
 ok "gcloud: $(gcloud --version | head -1)"
 
-# gcloud alpha commands are included in gcloud 370+ without needing a separate
-# component install. Verify they're accessible before proceeding.
-if ! gcloud alpha iap --help &>/dev/null 2>&1; then
-  error "gcloud alpha iap commands are not available. If your gcloud is managed by a system package manager, install the alpha component with your package manager, or install gcloud from https://cloud.google.com/sdk/docs/install"
+# Detect which gcloud track exposes "iap oauth-brands" in this installation.
+# GA was promoted from alpha→beta→gcloud over SDK releases. Windows-bundled
+# gcloud often lacks the alpha/beta components, so we try GA first.
+GCLD=""
+for try in "gcloud" "gcloud beta" "gcloud alpha"; do
+  if $try iap oauth-brands --help &>/dev/null 2>&1; then
+    GCLD="$try"
+    break
+  fi
+done
+if [[ -z "$GCLD" ]]; then
+  echo -e "${RED}[ERROR]${NC} 'gcloud iap oauth-brands' is not available." >&2
+  echo "        On Windows: open 'Google Cloud SDK Shell' as Administrator and run:" >&2
+  echo "          gcloud components install alpha" >&2
+  echo "        On Linux/macOS (apt-managed): sudo apt-get install google-cloud-sdk-iap-tunnel" >&2
+  exit 1
 fi
+ok "Using gcloud track: $GCLD"
 
 # ── step 2: authenticate ───────────────────────────────────────────────────────
 if ! gcloud auth list --format="value(account)" 2>/dev/null | grep -q '@'; then
@@ -143,7 +156,7 @@ ok "APIs enabled."
 # ── step 5: configure OAuth consent screen / brand ────────────────────────────
 # Only one brand is allowed per project. Check if one already exists.
 info "Checking for existing OAuth consent screen..."
-BRAND_NAME=$(gcloud alpha iap oauth-brands list \
+BRAND_NAME=$($GCLD iap oauth-brands list \
   --project="$GCP_PROJECT" \
   --format="value(name)" 2>/dev/null | head -1)
 
@@ -154,11 +167,11 @@ if [[ -z "$BRAND_NAME" ]]; then
     OAUTH_SUPPORT_EMAIL="${INPUT_EMAIL:-$OAUTH_SUPPORT_EMAIL}"
   fi
   info "Creating OAuth consent screen (application: FuzeFront, email: $OAUTH_SUPPORT_EMAIL)..."
-  gcloud alpha iap oauth-brands create \
+  $GCLD iap oauth-brands create \
     --application_title="FuzeFront" \
     --support_email="$OAUTH_SUPPORT_EMAIL" \
     --project="$GCP_PROJECT"
-  BRAND_NAME=$(gcloud alpha iap oauth-brands list \
+  BRAND_NAME=$($GCLD iap oauth-brands list \
     --project="$GCP_PROJECT" \
     --format="value(name)" 2>/dev/null | head -1)
 fi
@@ -167,17 +180,16 @@ fi
 ok "OAuth consent screen: $BRAND_NAME"
 
 # ── helper: create an OAuth 2.0 client ───────────────────────────────────────
-# gcloud alpha iap oauth-clients create creates a standard Web Application
-# credential (appears under APIs & Services → Credentials in the console).
-# Redirect URIs must be added via the console after creation (no CLI support).
+# Creates a standard Web Application credential visible in the Cloud Console
+# under APIs & Services → Credentials. Redirect URIs are added after creation.
 create_oauth_client() {
   local DISPLAY_NAME="$1"
   info "Creating OAuth 2.0 client: $DISPLAY_NAME"
-  gcloud alpha iap oauth-clients create "$BRAND_NAME" \
+  $GCLD iap oauth-clients create "$BRAND_NAME" \
     --display_name="$DISPLAY_NAME" \
     --project="$GCP_PROJECT" \
     --format=json 2>/dev/null \
-    || error "Failed to create OAuth client '$DISPLAY_NAME'. Try: gcloud components install alpha"
+    || error "Failed to create OAuth client '$DISPLAY_NAME'."
 }
 
 # ── step 6: create production client ─────────────────────────────────────────
