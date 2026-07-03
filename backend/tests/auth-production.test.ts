@@ -121,11 +121,12 @@ describe('Authentication - Real Postgres Integration Tests', () => {
 
     it('should handle database errors gracefully with a 500', async () => {
       // Force the user lookup (db('users').where('email', ...).first()) to
-      // reject so the route's catch block returns 500. Spying on the knex
-      // query-builder prototype's `first` reliably targets the actual call.
-      const qb = Object.getPrototypeOf(db('users'))
+      // reject so the route's catch block returns 500. Using db.client.QueryBuilder
+      // is more reliable across Node versions than Object.getPrototypeOf(db('users')),
+      // which resolves to different prototype levels on Node 18 vs 20.
+      const qbProto = (db as any).client.QueryBuilder.prototype
       const spy = jest
-        .spyOn(qb, 'first')
+        .spyOn(qbProto, 'first')
         .mockRejectedValueOnce(new Error('Database connection lost') as never)
 
       try {
