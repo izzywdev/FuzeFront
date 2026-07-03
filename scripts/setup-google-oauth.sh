@@ -130,7 +130,6 @@ info "Project number: $PROJECT_NUMBER"
 
 # ── step 4: enable required APIs ──────────────────────────────────────────────
 APIS=(
-  "oauth2.googleapis.com"
   "iap.googleapis.com"
   "cloudresourcemanager.googleapis.com"
 )
