@@ -7,6 +7,11 @@ import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
 import { isMenuSubstituted, iconGlyph, appHref } from '../platform/appManifest'
 
+interface SidePanelProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
+
 /**
  * The host shell's side menu.
  *
@@ -17,8 +22,12 @@ import { isMenuSubstituted, iconGlyph, appHref } from '../platform/appManifest'
  *    and renders the active app's `chrome.items` instead. The host ALWAYS keeps
  *    a non-removable, host-owned "Return to portal" control so the user is never
  *    trapped — this control is never app-supplied.
+ *
+ * On mobile (≤768 px) this renders as a slide-in drawer overlay. `isOpen` drives
+ * the CSS open/closed state; `onClose` is called when the user taps the close
+ * button or navigates (scrim tap is handled by Layout's scrim element).
  */
-function SidePanel() {
+function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const { user } = useCurrentUser()
   const { state } = useAppContext()
   const { t } = useT()
@@ -42,6 +51,7 @@ function SidePanel() {
       <div
         className="side-panel"
         data-substituted="true"
+        data-open={isOpen}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -66,9 +76,9 @@ function SidePanel() {
           <div
             role="button"
             tabIndex={0}
-            onClick={() => navigate('/dashboard')}
+            onClick={() => { navigate('/dashboard'); onClose?.() }}
             onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') navigate('/dashboard')
+              if (e.key === 'Enter' || e.key === ' ') { navigate('/dashboard'); onClose?.() }
             }}
             style={{
               display: 'flex',
@@ -135,11 +145,12 @@ function SidePanel() {
   }
 
   // ---- Default: host chrome (portal menu + manifest Apps section) -----------
-  const handleNavigate = (to: string) => navigate(to)
+  const handleNavigate = (to: string) => { navigate(to); onClose?.() }
 
   return (
     <div
       className="side-panel"
+      data-open={isOpen}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       {/* Apps section — activated apps from the registry (manifest-driven). */}

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import TopBar from './TopBar'
 import SidePanel from './SidePanel'
 import FuzeChatWidget from './FuzeChatWidget'
@@ -15,12 +15,20 @@ function Layout({ children }: LayoutProps) {
   // Honor the active portal app's chrome.topbar = "hidden" (the side menu is
   // still managed by SidePanel's own substitution logic).
   const hideTopBar = !!activeApp && isTopbarHidden(activeApp.manifest)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  const closeSidebar = () => setIsSidebarOpen(false)
+  const toggleSidebar = () => setIsSidebarOpen(prev => !prev)
 
   return (
     <div className="app-layout">
-      {!hideTopBar && <TopBar />}
+      {!hideTopBar && <TopBar onMenuToggle={toggleSidebar} />}
       <div className="main-content">
-        <SidePanel />
+        <SidePanel isOpen={isSidebarOpen} onClose={closeSidebar} />
+        {/* Scrim: visible only on mobile when drawer is open */}
+        {isSidebarOpen && (
+          <div className="sidebar-scrim" onClick={closeSidebar} aria-hidden="true" />
+        )}
         <div className="content-area">{children}</div>
       </div>
 

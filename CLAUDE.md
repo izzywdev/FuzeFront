@@ -60,7 +60,8 @@ If you rotate the signing keystore or change the key alias, all four files must 
 
 ### Agent ownership
 - `devops-engineer` — CI/signing pipeline (`android/**`, `build-android-apk.yml`)
-- `frontend-engineer` — PWA manifest and icons (`frontend/public/`)
+- `mobile-frontend-engineer` — responsive shell layout, drawer sidebar, touch targets, PWA/TWA viewport constraints, mobile breakpoints
+- `frontend-engineer` — PWA manifest, icons (`frontend/public/`), and design-system non-mobile primitives
 - **Never commit `android/keystore/*.keystore`** — gitignored; stored only in `ANDROID_KEYSTORE_B64`.
 
 ## Done
