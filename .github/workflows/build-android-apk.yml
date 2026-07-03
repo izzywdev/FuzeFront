@@ -104,7 +104,20 @@ jobs:
 
       - name: Build APK
         working-directory: android
-        run: bubblewrap build --skipPwaValidation
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # bubblewrap update clears signingKey passwords from twa-manifest.json; re-patch
+          # them here so bubblewrap build can sign non-interactively (no TTY in CI).
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
+            m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
+            m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
+            fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          bubblewrap build --skipPwaValidation
 
       - name: Locate signed APK
         id: apk
