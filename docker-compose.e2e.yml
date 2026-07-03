@@ -184,8 +184,8 @@ services:
   # ── Backend ───────────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - '3001:3001'
     environment:
