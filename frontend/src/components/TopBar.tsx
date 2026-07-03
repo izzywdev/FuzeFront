@@ -6,7 +6,11 @@ import UserMenu from './UserMenu'
 import { OrganizationSelector } from './OrganizationSelector'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
-function TopBar() {
+interface TopBarProps {
+  onMenuToggle?: () => void
+}
+
+function TopBar({ onMenuToggle }: TopBarProps) {
   const { user } = useCurrentUser()
   const { activeOrganizationId, setActiveOrganization } = useOrganizations()
   const { theme, toggleTheme } = useTheme()
@@ -14,6 +18,18 @@ function TopBar() {
 
   return (
     <div className="top-bar">
+      {/* Hamburger — visible only on mobile via CSS */}
+      <button
+        className="hamburger-btn"
+        onClick={onMenuToggle}
+        aria-label={t('nav.openMenu', { defaultValue: 'Open menu' })}
+        aria-haspopup="true"
+      >
+        <span className="hamburger-bar" />
+        <span className="hamburger-bar" />
+        <span className="hamburger-bar" />
+      </button>
+
       <div
         className="logo"
         style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
@@ -29,6 +45,7 @@ function TopBar() {
       </div>
       <div style={{ flex: 1 }}></div> {/* Spacer */}
       <div
+        className="top-bar-actions"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -47,7 +64,7 @@ function TopBar() {
         {/* Language Selector — design-system Select via @fuzefront/i18n.
             Selecting a language drives the shared i18next instance, persists the
             choice, and flips <html dir> through the centralized direction manager. */}
-        <div style={{ minWidth: '150px' }}>
+        <div style={{ minWidth: '150px' }} className="lang-selector-wrap">
           <LanguageSelector hideLabel />
         </div>
 
