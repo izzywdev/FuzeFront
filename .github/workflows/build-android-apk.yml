@@ -6,6 +6,7 @@ on:
     paths:
       - 'android/**'
       - 'frontend/public/.well-known/assetlinks.json'
+      - 'frontend/public/manifest.webmanifest'
       - 'frontend/public/icons/**'
       - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
@@ -87,12 +88,13 @@ jobs:
             const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
             m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
             m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
-            m.iconUrl          = 'http://localhost:8080/icons/pwa-512x512.png';
-            m.maskableIconUrl  = 'http://localhost:8080/icons/pwa-maskable-512x512.png';
+            m.iconUrl           = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.maskableIconUrl   = 'http://localhost:8080/icons/pwa-maskable-512x512.png';
             m.monochromeIconUrl = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.webManifestUrl    = 'http://localhost:8080/manifest.webmanifest';
             fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
           "
-          # Serve frontend/public so bubblewrap can fetch the icon files
+          # Serve frontend/public so bubblewrap can fetch icons and the web manifest
           python3 -m http.server 8080 --directory ../frontend/public &
           HTTP_PID=$!
           sleep 1
