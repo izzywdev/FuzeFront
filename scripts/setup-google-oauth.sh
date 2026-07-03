@@ -27,7 +27,8 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ── locate repo root ───────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Allow caller to override (e.g. when running from a temp worktree via git show | bash)
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 ENV_FILE="$REPO_ROOT/.env"
 
 # ── step 1: install gcloud if absent ──────────────────────────────────────────
