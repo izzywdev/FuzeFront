@@ -41,15 +41,32 @@ app.use('/api/auth', authRoutes)
 app.use('/api/organizations', organizationsRoutes)
 
 // Known CI placeholder values that have no Permit.io environment context.
-// Real keys are JWT-like tokens that encode org/project/env — placeholders
-// don't, so every SDK call throws PermitContextError (ORGANIZATION vs ENVIRONMENT).
 const CI_DUMMY_KEYS = new Set(['', 'ci-offline-pdp-key', 'ci-noop', 'ci-no-real-permit-calls'])
 const PERMIT_API_KEY = process.env.PERMIT_API_KEY ?? ''
-const hasRealPermitKey = !CI_DUMMY_KEYS.has(PERMIT_API_KEY)
 
-// Skip the entire suite when no real key is present instead of failing with
-// PermitContextError on every test. The workflow comment "test will skip
-// gracefully" only works if this guard is here.
+// Permit.io API keys are JWT-like tokens. Environment-scoped keys include an
+// `env_id` claim in the payload. Project- or org-level keys do not, and the
+// SDK throws PermitContextError (ORGANIZATION vs ENVIRONMENT) on every call.
+// Decode the key's second segment (base64url payload) and check for env_id so
+// we skip the suite both for placeholder keys AND for real-but-org-level keys.
+function permitKeyHasEnvContext(key: string): boolean {
+  if (!key || CI_DUMMY_KEYS.has(key)) return false
+  try {
+    const parts = key.split('.')
+    if (parts.length < 2) return false
+    const payload = JSON.parse(
+      Buffer.from(parts[1], 'base64').toString('utf-8')
+    )
+    return Boolean(payload.env_id || payload.environment_id || payload.envId)
+  } catch {
+    return false
+  }
+}
+
+const hasRealPermitKey = permitKeyHasEnvContext(PERMIT_API_KEY)
+
+// Skip the entire suite when no real env-scoped key is present instead of
+// failing with PermitContextError on every test.
 const describePermit = hasRealPermitKey ? describe : describe.skip
 
 // Test data
