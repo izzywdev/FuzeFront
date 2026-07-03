@@ -112,6 +112,10 @@ export default defineConfig({
       shared: ['react', 'react-dom'],
     }),
     VitePWA({
+      // vite-plugin-pwa internal Rollup build re-processes src/index.css without
+      // @tailwindcss/postcss, causing PostCSS to fail on Tailwind v4 directives.
+      // Service workers are irrelevant in CI (E2E tests the app, not the SW).
+      disabled: process.env.CI === 'true',
       registerType: 'autoUpdate',
       devOptions: { enabled: false },
       // Don't precache JS bundles — MFE remotes change independently and stale
