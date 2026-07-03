@@ -265,7 +265,9 @@ jobs:
         run: npm ci
 
       - name: Install email-service deps
-        run: cd services/email-service && npm ci
+        # npm ci requires a package-lock.json; email-service has none, so use
+        # npm install instead. TODO: commit a lockfile to switch back to npm ci.
+        run: cd services/email-service && npm install
 
       - name: Build email-service
         run: cd services/email-service && npm run build

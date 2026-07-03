@@ -28,4 +28,9 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testTimeout: 10000,
+  // Force Jest to exit after all tests complete even if open handles remain
+  // (e.g. lingering DB pool connections, Permit SDK sockets). The afterAll in
+  // tests/setup.ts does best-effort cleanup; forceExit is the safety net that
+  // prevents the CI job from hanging indefinitely.
+  forceExit: true,
 }
