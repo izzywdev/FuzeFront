@@ -21,6 +21,14 @@
 
 set -euo pipefail
 
+# ── guard: never run as root ───────────────────────────────────────────────────
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  echo "[ERROR] Do not run this script with sudo or as root." >&2
+  echo "        gcloud does not require elevated privileges." >&2
+  echo "        Re-run without sudo: bash /tmp/fuzefront-setup.sh" >&2
+  exit 1
+fi
+
 # ── colours ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
@@ -48,14 +56,17 @@ install_gcloud() {
     fi
   elif [[ "$OSTYPE" == linux* ]]; then
     info "Downloading gcloud installer for Linux..."
+    GCLOUD_DIR="$HOME/google-cloud-sdk"
     TMP=$(mktemp -d)
     curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" \
       -o "$TMP/gcloud.tar.gz"
     tar -xzf "$TMP/gcloud.tar.gz" -C "$TMP"
-    "$TMP/google-cloud-sdk/install.sh" --quiet --path-update=true
-    export PATH="$HOME/google-cloud-sdk/bin:$PATH"
-    export PATH="$TMP/google-cloud-sdk/bin:$PATH"
+    # Move to permanent home-dir location before deleting the temp dir
+    mv "$TMP/google-cloud-sdk" "$GCLOUD_DIR"
     rm -rf "$TMP"
+    # Install (updates shell rc files) without re-downloading
+    "$GCLOUD_DIR/install.sh" --quiet --path-update=true
+    export PATH="$GCLOUD_DIR/bin:$PATH"
   else
     error "Unsupported OS: $OSTYPE. Install gcloud manually: https://cloud.google.com/sdk/docs/install"
   fi
