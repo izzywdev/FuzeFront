@@ -155,10 +155,16 @@ ok "APIs enabled."
 
 # ── step 5: configure OAuth consent screen / brand ────────────────────────────
 # Only one brand is allowed per project. Check if one already exists.
+# We suppress the exit code because the list command returns non-zero when
+# no brand exists yet — that is expected, not an error.
+list_brand() {
+  { $GCLD iap oauth-brands list \
+      --project="$GCP_PROJECT" \
+      --format="value(name)" 2>/dev/null || true; } | head -1
+}
+
 info "Checking for existing OAuth consent screen..."
-BRAND_NAME=$($GCLD iap oauth-brands list \
-  --project="$GCP_PROJECT" \
-  --format="value(name)" 2>/dev/null | head -1)
+BRAND_NAME=$(list_brand)
 
 if [[ -z "$BRAND_NAME" ]]; then
   if [[ -z "${OAUTH_SUPPORT_EMAIL:-}" ]]; then
@@ -167,13 +173,11 @@ if [[ -z "$BRAND_NAME" ]]; then
     OAUTH_SUPPORT_EMAIL="${INPUT_EMAIL:-$OAUTH_SUPPORT_EMAIL}"
   fi
   info "Creating OAuth consent screen (application: FuzeFront, email: $OAUTH_SUPPORT_EMAIL)..."
-  $GCLD iap oauth-brands create \
-    --application_title="FuzeFront" \
-    --support_email="$OAUTH_SUPPORT_EMAIL" \
-    --project="$GCP_PROJECT"
-  BRAND_NAME=$($GCLD iap oauth-brands list \
-    --project="$GCP_PROJECT" \
-    --format="value(name)" 2>/dev/null | head -1)
+  { $GCLD iap oauth-brands create \
+      --application_title="FuzeFront" \
+      --support_email="$OAUTH_SUPPORT_EMAIL" \
+      --project="$GCP_PROJECT"; } || true
+  BRAND_NAME=$(list_brand)
 fi
 
 [[ -z "$BRAND_NAME" ]] && error "Could not create or find the OAuth consent screen."
