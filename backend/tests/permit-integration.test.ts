@@ -564,69 +564,69 @@ describePermit('Permit.io Integration Tests', () => {
       console.log('✅ Gracefully handled empty role assignments')
     })
   })
-})
 
-describe('Database Integration Tests', () => {
-  test('should verify test data exists in database', async () => {
-    const user = await db('users').where('id', testUserId).first()
-    expect(user).toBeTruthy()
-    expect(user.email).toBe('test-owner@permit.test')
+  describe('Database Integration Tests', () => {
+    test('should verify test data exists in database', async () => {
+      const user = await db('users').where('id', testUserId).first()
+      expect(user).toBeTruthy()
+      expect(user.email).toBe('test-owner@permit.test')
 
-    const org = await db('organizations').where('id', testOrgId).first()
-    expect(org).toBeTruthy()
-    expect(org.name).toBe('Test Organization')
+      const org = await db('organizations').where('id', testOrgId).first()
+      expect(org).toBeTruthy()
+      expect(org.name).toBe('Test Organization')
 
-    const membership = await db('organization_memberships')
-      .where('user_id', testUserId)
-      .where('organization_id', testOrgId)
-      .first()
-    expect(membership).toBeTruthy()
-    expect(membership.role).toBe('owner')
+      const membership = await db('organization_memberships')
+        .where('user_id', testUserId)
+        .where('organization_id', testOrgId)
+        .first()
+      expect(membership).toBeTruthy()
+      expect(membership.role).toBe('owner')
 
-    console.log('✅ All test data verified in database')
-  })
-})
-
-describe('API Endpoint Protection', () => {
-  test('should require authentication for organization endpoints', async () => {
-    const response = await request(app).get('/api/organizations')
-
-    expect(response.status).toBe(401)
+      console.log('✅ All test data verified in database')
+    })
   })
 
-  test('should allow authenticated access to organization list', async () => {
-    const response = await request(app)
-      .get('/api/organizations')
-      .set('Authorization', `Bearer ${testUserToken}`)
+  describe('API Endpoint Protection', () => {
+    test('should require authentication for organization endpoints', async () => {
+      const response = await request(app).get('/api/organizations')
 
-    expect(response.status).toBe(200)
-    expect(response.body.organizations).toBeDefined()
-  })
+      expect(response.status).toBe(401)
+    })
 
-  test('should allow organization owner to access their organization', async () => {
-    if (!testOrgId) {
-      return // Skip if no test org created
-    }
+    test('should allow authenticated access to organization list', async () => {
+      const response = await request(app)
+        .get('/api/organizations')
+        .set('Authorization', `Bearer ${testUserToken}`)
 
-    const response = await request(app)
-      .get(`/api/organizations/${testOrgId}`)
-      .set('Authorization', `Bearer ${testUserToken}`)
+      expect(response.status).toBe(200)
+      expect(response.body.organizations).toBeDefined()
+    })
 
-    expect(response.status).toBe(200)
-    expect(response.body.id).toBe(testOrgId)
-  })
+    test('should allow organization owner to access their organization', async () => {
+      if (!testOrgId) {
+        return // Skip if no test org created
+      }
 
-  test('should prevent unauthorized organization access', async () => {
-    if (!testOrgId) {
-      return // Skip if no test org created
-    }
+      const response = await request(app)
+        .get(`/api/organizations/${testOrgId}`)
+        .set('Authorization', `Bearer ${testUserToken}`)
 
-    // Try to access with different user
-    const response = await request(app)
-      .get(`/api/organizations/${testOrgId}`)
-      .set('Authorization', `Bearer ${adminUserToken}`)
+      expect(response.status).toBe(200)
+      expect(response.body.id).toBe(testOrgId)
+    })
 
-    // May be 404 or 403 depending on implementation
-    expect([403, 404]).toContain(response.status)
+    test('should prevent unauthorized organization access', async () => {
+      if (!testOrgId) {
+        return // Skip if no test org created
+      }
+
+      // Try to access with different user
+      const response = await request(app)
+        .get(`/api/organizations/${testOrgId}`)
+        .set('Authorization', `Bearer ${adminUserToken}`)
+
+      // May be 404 or 403 depending on implementation
+      expect([403, 404]).toContain(response.status)
+    })
   })
 })
