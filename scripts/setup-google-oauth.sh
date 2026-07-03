@@ -82,10 +82,10 @@ fi
 
 ok "gcloud: $(gcloud --version | head -1)"
 
-# Ensure the alpha component is installed (needed for iap oauth-brands/clients)
-if ! gcloud alpha --help &>/dev/null 2>&1; then
-  info "Installing gcloud alpha component..."
-  gcloud components install alpha --quiet
+# gcloud alpha commands are included in gcloud 370+ without needing a separate
+# component install. Verify they're accessible before proceeding.
+if ! gcloud alpha iap --help &>/dev/null 2>&1; then
+  error "gcloud alpha iap commands are not available. If your gcloud is managed by a system package manager, install the alpha component with your package manager, or install gcloud from https://cloud.google.com/sdk/docs/install"
 fi
 
 # ── step 2: authenticate ───────────────────────────────────────────────────────
