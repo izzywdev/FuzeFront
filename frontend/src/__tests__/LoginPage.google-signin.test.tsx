@@ -28,7 +28,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import React from 'react'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 
 // ── Hoisted mocks (processed before imports) ──────────────────────────────
