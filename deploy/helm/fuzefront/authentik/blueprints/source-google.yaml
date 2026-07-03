@@ -6,9 +6,24 @@
 #
 # Prerequisites: create a Google OAuth2 app at console.cloud.google.com
 # (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
-# and add ALL of the following Authorized redirect URIs:
-#   Local dev:  https://auth.fuzefront.dev.local/source/oauth/callback/google/
+# and add the following Authorized redirect URIs:
+#
 #   Production: https://auth.fuzefront.com/source/oauth/callback/google/
+#
+# NOTE: Google requires a real public TLD for redirect URIs — it rejects
+# .dev.local, .local, .internal and all other non-public suffixes. There is
+# no way to register the local-dev hostname (auth.fuzefront.dev.local) in the
+# Google Console. Local development therefore works in one of two ways:
+#
+#   Option A (recommended) — leave GOOGLE_CLIENT_ID/SECRET empty in .env.
+#     The source is inert: no Google button appears on the Authentik login page.
+#     Test OIDC locally with the standard password/email flow instead.
+#
+#   Option B — Cloudflare named tunnel for dev.
+#     Expose local Authentik at a real subdomain (e.g. auth-dev.fuzefront.com),
+#     create a SEPARATE Google OAuth client, and register:
+#       https://auth-dev.fuzefront.com/source/oauth/callback/google/
+#     Set that client's ID/secret in .env. Keep it separate from the prod client.
 #
 # Supply credentials via:
 #   Helm (k8s):        secret.googleClientId / secret.googleClientSecret in values
