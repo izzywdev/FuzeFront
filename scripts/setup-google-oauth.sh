@@ -26,8 +26,9 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ── locate repo root ───────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Allow caller to override (e.g. when running from a temp worktree via git show | bash)
+# ${BASH_SOURCE[0]} is unset when the script is piped to bash; fall back to $0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# Allow caller to override (e.g. git show ... > /tmp/s.sh && REPO_ROOT=... bash /tmp/s.sh)
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 ENV_FILE="$REPO_ROOT/.env"
 
