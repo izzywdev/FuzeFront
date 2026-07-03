@@ -431,7 +431,7 @@ kbd,
   width: 44px;
   height: 44px;
   padding: 10px 8px;
-  margin-inline-end: 4px;
+  margin-right: 4px;
   background: none;
   border: none;
   border-radius: var(--radius-md);
@@ -486,8 +486,9 @@ kbd,
   /* Sidebar becomes a fixed overlay drawer */
   .side-panel {
     position: fixed;
-    inset-block: 0;
-    inset-inline-start: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
     width: min(280px, 80vw);
     height: 100%;
     z-index: 200;
@@ -500,8 +501,8 @@ kbd,
 
   /* RTL: drawer slides in from the right */
   [dir='rtl'] .side-panel {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
+    left: auto;
+    right: 0;
     transform: translateX(100%);
   }
 
@@ -540,6 +541,7 @@ kbd,
   }
 }
 
+.menu-item {
   position: relative;
   display: flex;
   align-items: center;
