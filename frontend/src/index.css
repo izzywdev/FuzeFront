@@ -206,7 +206,7 @@ body {
 
 #root {
   width: 100%;
-  height: 100dvh;
+  height: 100vh;
   margin: 0 auto;
   text-align: center;
 }
@@ -366,7 +366,7 @@ kbd,
 .app-layout {
   display: flex;
   flex-direction: column;
-  height: 100dvh; /* dynamic viewport height — avoids iOS/Android address-bar bounce */
+  height: 100vh;
 }
 
 .top-bar {
@@ -420,126 +420,7 @@ kbd,
   transition: background-color 0.3s ease;
 }
 
-/* ============================================================
-   Hamburger button — mobile-only nav trigger
-   ============================================================ */
-.hamburger-btn {
-  display: none; /* hidden on desktop */
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 10px 8px;
-  margin-inline-end: 4px;
-  background: none;
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  color: var(--text-primary);
-  transition: background-color 0.18s ease;
-  flex-shrink: 0;
-}
-
-.hamburger-btn:hover,
-.hamburger-btn:focus-visible {
-  background-color: var(--bg-quaternary);
-}
-
-.hamburger-bar {
-  display: block;
-  width: 20px;
-  height: 2px;
-  border-radius: 2px;
-  background-color: currentColor;
-}
-
-/* ============================================================
-   Scrim — mobile overlay behind open drawer
-   ============================================================ */
-.sidebar-scrim {
-  display: none; /* rendered by React only when open; CSS shows it on mobile */
-  position: fixed;
-  inset: 0;
-  z-index: 199;
-  background: var(--scrim);
-  animation: scrim-in 0.2s ease forwards;
-}
-
-@keyframes scrim-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-/* ============================================================
-   Mobile shell — drawer sidebar, collapsed top-bar
-   ============================================================ */
-@media (max-width: 768px) {
-  .hamburger-btn {
-    display: flex;
-  }
-
-  .sidebar-scrim {
-    display: block;
-  }
-
-  /* Sidebar becomes a fixed overlay drawer */
-  .side-panel {
-    position: fixed;
-    inset-block: 0;
-    inset-inline-start: 0;
-    width: min(280px, 80vw);
-    height: 100%;
-    z-index: 200;
-    transform: translateX(-100%);
-    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow-y: auto;
-    /* Safe-area insets for notched/rounded devices */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  /* RTL: drawer slides in from the right */
-  [dir='rtl'] .side-panel {
-    inset-inline-start: auto;
-    inset-inline-end: 0;
-    transform: translateX(100%);
-  }
-
-  .side-panel[data-open='true'] {
-    transform: translateX(0);
-  }
-
-  /* Content area fills full width — sidebar no longer in document flow */
-  .main-content {
-    position: relative;
-  }
-
-  /* Collapse language selector on narrow viewports */
-  .lang-selector-wrap {
-    display: none;
-  }
-
-  /* Ensure top-bar items don't overflow */
-  .top-bar {
-    padding: 0 0.75rem;
-    gap: 4px;
-  }
-
-  .top-bar-actions {
-    gap: 6px !important;
-  }
-
-  /* Touch targets: menu items must be ≥ 44 px tall */
-  .menu-item {
-    min-height: 44px;
-  }
-
-  /* Dashboard grid — single column on mobile */
-  .app-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
+.menu-item {
   position: relative;
   display: flex;
   align-items: center;

@@ -1,0 +1,5 @@
+# Force LF for CSS files so PostCSS/Tailwind/Vite on Linux CI parse them
+# correctly — CRLF in CSS can cause PostCSS to produce an "Unexpected }"
+# parse error even when braces are balanced (Vite 6 + @tailwindcss/postcss 4).
+*.css  text eol=lf
+*.scss text eol=lf
