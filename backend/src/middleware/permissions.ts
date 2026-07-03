@@ -5,7 +5,7 @@ import {
   checkAppPermission,
   checkUserManagementPermission,
 } from '../utils/permit/permission-check'
-import db from '../database'
+import { db } from '../config/database'
 
 // Extend Express Request type to include user and organization context.
 //
