@@ -6,15 +6,18 @@
 #   • Dev tunnel:  redirect URI → https://auth-dev.fuzefront.com/source/oauth/callback/google/
 #
 # Writes all four credentials to .env at the repo root.
+# After running, follow the printed instructions to add the redirect URIs in
+# the Google Cloud Console (a 2-click step that cannot be done via CLI).
 #
 # Usage:
 #   chmod +x scripts/setup-google-oauth.sh
 #   ./scripts/setup-google-oauth.sh
 #
 # Optionally pre-set these to skip interactive prompts:
-#   GCP_PROJECT=my-project-id
-#   OAUTH_SUPPORT_EMAIL=me@example.com
-#   SKIP_INSTALL=1   # don't attempt gcloud install
+#   GCP_PROJECT=my-project-id       # project ID (not display name)
+#   GCP_PROJECT_NAME=FuzeOne        # look up project by display name
+#   OAUTH_SUPPORT_EMAIL=me@x.com
+#   SKIP_INSTALL=1                  # don't attempt gcloud install
 
 set -euo pipefail
 
@@ -51,7 +54,6 @@ install_gcloud() {
     tar -xzf "$TMP/gcloud.tar.gz" -C "$TMP"
     "$TMP/google-cloud-sdk/install.sh" --quiet --path-update=true
     export PATH="$HOME/google-cloud-sdk/bin:$PATH"
-    # Also try the extracted location
     export PATH="$TMP/google-cloud-sdk/bin:$PATH"
     rm -rf "$TMP"
   else
@@ -64,10 +66,16 @@ if [[ "${SKIP_INSTALL:-0}" != "1" ]] && ! command -v gcloud &>/dev/null; then
 fi
 
 if ! command -v gcloud &>/dev/null; then
-  error "gcloud not found in PATH even after install attempt. Open a new shell and re-run, or add the SDK to your PATH manually."
+  error "gcloud not found in PATH. Open a new shell and re-run, or add the SDK to your PATH."
 fi
 
 ok "gcloud: $(gcloud --version | head -1)"
+
+# Ensure the alpha component is installed (needed for iap oauth-brands/clients)
+if ! gcloud alpha --help &>/dev/null 2>&1; then
+  info "Installing gcloud alpha component..."
+  gcloud components install alpha --quiet
+fi
 
 # ── step 2: authenticate ───────────────────────────────────────────────────────
 if ! gcloud auth list --format="value(account)" 2>/dev/null | grep -q '@'; then
@@ -78,15 +86,8 @@ else
   info "Already authenticated as: $ACTIVE"
 fi
 
-# Also ensure application-default credentials exist (needed for REST API calls)
-if ! gcloud auth application-default print-access-token &>/dev/null 2>&1; then
-  info "Setting up application-default credentials..."
-  gcloud auth application-default login --no-launch-browser
-fi
-
 # ── step 3: select / create GCP project ────────────────────────────────────────
-# If GCP_PROJECT_NAME is set, look up the project ID by display name.
-# This lets callers do: GCP_PROJECT_NAME=FuzeOne bash setup-google-oauth.sh
+# GCP_PROJECT_NAME lets callers specify by display name; we look up the project ID.
 if [[ -n "${GCP_PROJECT_NAME:-}" && -z "${GCP_PROJECT:-}" ]]; then
   info "Looking up project by name: $GCP_PROJECT_NAME"
   GCP_PROJECT=$(gcloud projects list \
@@ -108,15 +109,13 @@ if [[ -z "${GCP_PROJECT:-}" ]]; then
 fi
 
 if [[ -z "$GCP_PROJECT" ]]; then
-  # Derive a project ID from GCP_PROJECT_NAME if provided, else prompt
   if [[ -n "${GCP_PROJECT_NAME:-}" ]]; then
-    # Convert display name to a valid project ID (lowercase, hyphens, max 30 chars)
     GCP_PROJECT=$(echo "$GCP_PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/-$//' | cut -c1-30)
     info "Derived project ID from name: $GCP_PROJECT"
   else
     read -rp "Enter a new project ID (lowercase letters, digits, hyphens, 6-30 chars): " GCP_PROJECT
   fi
-  info "Creating project: $GCP_PROJECT (name: ${GCP_PROJECT_NAME:-$GCP_PROJECT})"
+  info "Creating project: $GCP_PROJECT"
   gcloud projects create "$GCP_PROJECT" --name="${GCP_PROJECT_NAME:-$GCP_PROJECT}"
   ok "Project created: $GCP_PROJECT"
 fi
@@ -124,109 +123,83 @@ fi
 gcloud config set project "$GCP_PROJECT"
 ok "Active project: $GCP_PROJECT"
 
-# Resolve numeric project number (needed for some API calls)
-PROJECT_NUMBER=$(gcloud projects describe "$GCP_PROJECT" --format="value(projectNumber)")
-info "Project number: $PROJECT_NUMBER"
-
 # ── step 4: enable required APIs ──────────────────────────────────────────────
-APIS=(
-  "iap.googleapis.com"
-  "cloudresourcemanager.googleapis.com"
-)
-info "Enabling APIs: ${APIS[*]}"
-gcloud services enable "${APIS[@]}" --project="$GCP_PROJECT"
+info "Enabling APIs: iap.googleapis.com cloudresourcemanager.googleapis.com"
+gcloud services enable iap.googleapis.com cloudresourcemanager.googleapis.com \
+  --project="$GCP_PROJECT"
 ok "APIs enabled."
 
-# ── step 5: configure OAuth consent screen ────────────────────────────────────
-# Determine support email
-if [[ -z "${OAUTH_SUPPORT_EMAIL:-}" ]]; then
-  OAUTH_SUPPORT_EMAIL=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1)
-  read -rp "OAuth consent screen support email [$OAUTH_SUPPORT_EMAIL]: " INPUT_EMAIL
-  OAUTH_SUPPORT_EMAIL="${INPUT_EMAIL:-$OAUTH_SUPPORT_EMAIL}"
+# ── step 5: configure OAuth consent screen / brand ────────────────────────────
+# Only one brand is allowed per project. Check if one already exists.
+info "Checking for existing OAuth consent screen..."
+BRAND_NAME=$(gcloud alpha iap oauth-brands list \
+  --project="$GCP_PROJECT" \
+  --format="value(name)" 2>/dev/null | head -1)
+
+if [[ -z "$BRAND_NAME" ]]; then
+  if [[ -z "${OAUTH_SUPPORT_EMAIL:-}" ]]; then
+    OAUTH_SUPPORT_EMAIL=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1)
+    read -rp "OAuth consent screen support email [$OAUTH_SUPPORT_EMAIL]: " INPUT_EMAIL
+    OAUTH_SUPPORT_EMAIL="${INPUT_EMAIL:-$OAUTH_SUPPORT_EMAIL}"
+  fi
+  info "Creating OAuth consent screen (application: FuzeFront, email: $OAUTH_SUPPORT_EMAIL)..."
+  gcloud alpha iap oauth-brands create \
+    --application_title="FuzeFront" \
+    --support_email="$OAUTH_SUPPORT_EMAIL" \
+    --project="$GCP_PROJECT"
+  BRAND_NAME=$(gcloud alpha iap oauth-brands list \
+    --project="$GCP_PROJECT" \
+    --format="value(name)" 2>/dev/null | head -1)
 fi
 
-info "Configuring OAuth consent screen (External, testing mode)..."
-# Use gcloud CLI for the brand / consent screen
-# External type, testing mode — no need for Google verification for dev clients
-gcloud alpha iap oauth-brands create \
-  --application_title="FuzeFront" \
-  --support_email="$OAUTH_SUPPORT_EMAIL" \
-  --project="$GCP_PROJECT" 2>/dev/null \
-  || warn "OAuth consent screen may already exist — continuing."
+[[ -z "$BRAND_NAME" ]] && error "Could not create or find the OAuth consent screen."
+ok "OAuth consent screen: $BRAND_NAME"
 
-ok "OAuth consent screen configured."
-
-# ── helper: create a Web Application OAuth 2.0 client via REST API ────────────
-# gcloud does not expose a direct command for standard Web Application clients
-# (only IAP clients). We call the clientauthconfig REST API instead.
-create_web_client() {
-  local CLIENT_NAME="$1"
-  local REDIRECT_URI="$2"
-
-  info "Creating OAuth client: $CLIENT_NAME"
-  info "  Redirect URI: $REDIRECT_URI"
-
-  ACCESS_TOKEN=$(gcloud auth print-access-token)
-
-  RESPONSE=$(curl -fsS \
-    -H "Authorization: Bearer $ACCESS_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST \
-    "https://clientauthconfig.googleapis.com/v1/projects/$PROJECT_NUMBER/brands/$PROJECT_NUMBER/oauthClients" \
-    -d "{
-      \"displayName\": \"$CLIENT_NAME\",
-      \"clientType\": \"WEB\",
-      \"redirectUris\": [\"$REDIRECT_URI\"]
-    }") || error "Failed to create OAuth client: $CLIENT_NAME"
-
-  echo "$RESPONSE"
+# ── helper: create an OAuth 2.0 client ───────────────────────────────────────
+# gcloud alpha iap oauth-clients create creates a standard Web Application
+# credential (appears under APIs & Services → Credentials in the console).
+# Redirect URIs must be added via the console after creation (no CLI support).
+create_oauth_client() {
+  local DISPLAY_NAME="$1"
+  info "Creating OAuth 2.0 client: $DISPLAY_NAME"
+  gcloud alpha iap oauth-clients create "$BRAND_NAME" \
+    --display_name="$DISPLAY_NAME" \
+    --project="$GCP_PROJECT" \
+    --format=json 2>/dev/null \
+    || error "Failed to create OAuth client '$DISPLAY_NAME'. Try: gcloud components install alpha"
 }
 
 # ── step 6: create production client ─────────────────────────────────────────
 echo ""
 info "─── Creating PRODUCTION OAuth client ────────────────────────────────────"
-PROD_RESPONSE=$(create_web_client \
-  "FuzeFront Production" \
-  "https://auth.fuzefront.com/source/oauth/callback/google/")
+PROD_JSON=$(create_oauth_client "FuzeFront Production")
 
-PROD_CLIENT_ID=$(echo "$PROD_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('name','').split('/')[-1] + '.apps.googleusercontent.com')" 2>/dev/null \
-  || echo "$PROD_RESPONSE" | grep -o '"name":"[^"]*"' | grep -o '[^"]*$' | sed 's|.*/||' | head -1)
+# name field: "projects/.../brands/.../identityAwareProxyClients/CLIENT_ID.apps.googleusercontent.com"
+PROD_CLIENT_ID=$(echo "$PROD_JSON" | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print(d['name'].split('/')[-1])" 2>/dev/null || echo "")
+PROD_CLIENT_SECRET=$(echo "$PROD_JSON" | python3 -c \
+  "import sys,json; print(json.load(sys.stdin)['secret'])" 2>/dev/null || echo "")
 
-PROD_CLIENT_SECRET=$(echo "$PROD_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('secret',''))" 2>/dev/null \
-  || echo "$PROD_RESPONSE" | grep -o '"secret":"[^"]*"' | sed 's/"secret":"//;s/"//')
-
-# The API may return clientId directly instead of deriving from name
-if echo "$PROD_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('clientId',''))" 2>/dev/null | grep -q '\.apps\.'; then
-  PROD_CLIENT_ID=$(echo "$PROD_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['clientId'])")
-fi
-
-ok "Production client created."
-info "  Client ID: $PROD_CLIENT_ID"
+[[ -z "$PROD_CLIENT_ID" ]] && error "Could not parse client_id from production client response."
+ok "Production client created: $PROD_CLIENT_ID"
 
 # ── step 7: create dev tunnel client ─────────────────────────────────────────
 echo ""
 info "─── Creating DEV TUNNEL OAuth client ────────────────────────────────────"
-DEV_RESPONSE=$(create_web_client \
-  "FuzeFront Dev Tunnel" \
-  "https://auth-dev.fuzefront.com/source/oauth/callback/google/")
+DEV_JSON=$(create_oauth_client "FuzeFront Dev Tunnel")
 
-DEV_CLIENT_ID=$(echo "$DEV_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('clientId',''))" 2>/dev/null \
-  || echo "")
+DEV_CLIENT_ID=$(echo "$DEV_JSON" | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print(d['name'].split('/')[-1])" 2>/dev/null || echo "")
+DEV_CLIENT_SECRET=$(echo "$DEV_JSON" | python3 -c \
+  "import sys,json; print(json.load(sys.stdin)['secret'])" 2>/dev/null || echo "")
 
-if [[ -z "$DEV_CLIENT_ID" ]]; then
-  DEV_CLIENT_ID=$(echo "$DEV_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('name','').split('/')[-1] + '.apps.googleusercontent.com')" 2>/dev/null || echo "")
-fi
-
-DEV_CLIENT_SECRET=$(echo "$DEV_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('secret',''))" 2>/dev/null || echo "")
-
-ok "Dev tunnel client created."
-info "  Client ID: $DEV_CLIENT_ID"
+[[ -z "$DEV_CLIENT_ID" ]] && error "Could not parse client_id from dev tunnel client response."
+ok "Dev tunnel client created: $DEV_CLIENT_ID"
 
 # ── step 8: write credentials to .env ─────────────────────────────────────────
 echo ""
 info "Writing credentials to $ENV_FILE"
 
-# Create .env from example if it doesn't exist yet
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f "$REPO_ROOT/.env.example" ]]; then
     cp "$REPO_ROOT/.env.example" "$ENV_FILE"
@@ -236,12 +209,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   fi
 fi
 
-# Helper: set or replace a key in the .env file
 set_env_var() {
   local KEY="$1"
   local VALUE="$2"
   if grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
-    # Replace existing line (portable sed)
     sed -i.bak "s|^${KEY}=.*|${KEY}=${VALUE}|" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
   else
     echo "${KEY}=${VALUE}" >> "$ENV_FILE"
@@ -255,41 +226,45 @@ set_env_var "GOOGLE_DEV_CLIENT_SECRET" "$DEV_CLIENT_SECRET"
 
 ok "Credentials written to .env"
 
-# ── step 9: print summary ─────────────────────────────────────────────────────
+# ── step 9: print summary + redirect URI instructions ─────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  Google OAuth setup complete!${NC}"
+echo -e "${GREEN}  OAuth clients created — ONE MANUAL STEP REQUIRED${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  PRODUCTION client"
-echo "    Client ID:     $PROD_CLIENT_ID"
-echo "    Redirect URI:  https://auth.fuzefront.com/source/oauth/callback/google/"
+echo -e "${YELLOW}ACTION REQUIRED: Add redirect URIs in the Google Cloud Console${NC}"
+echo "  The gcloud CLI cannot set redirect URIs — you must add them manually."
+echo "  Click each link below, then click Edit (pencil icon) → add the URI shown."
 echo ""
-echo "  DEV TUNNEL client"
-echo "    Client ID:     $DEV_CLIENT_ID"
-echo "    Redirect URI:  https://auth-dev.fuzefront.com/source/oauth/callback/google/"
+echo "  1. PRODUCTION client ($PROD_CLIENT_ID)"
+echo "     Open:  https://console.cloud.google.com/apis/credentials/oauthclient/${PROD_CLIENT_ID}?project=${GCP_PROJECT}"
+echo "     Add URI:  https://auth.fuzefront.com/source/oauth/callback/google/"
+echo ""
+echo "  2. DEV TUNNEL client ($DEV_CLIENT_ID)"
+echo "     Open:  https://console.cloud.google.com/apis/credentials/oauthclient/${DEV_CLIENT_ID}?project=${GCP_PROJECT}"
+echo "     Add URI:  https://auth-dev.fuzefront.com/source/oauth/callback/google/"
+echo ""
+echo "─────────────────────────────────────────────────────────────────────────"
 echo ""
 echo "  Credentials saved to: $ENV_FILE"
+echo "    GOOGLE_CLIENT_ID     = $PROD_CLIENT_ID"
+echo "    GOOGLE_DEV_CLIENT_ID = $DEV_CLIENT_ID"
+echo "    (secrets written but not printed here)"
 echo ""
-echo -e "${YELLOW}Next steps:${NC}"
-echo "  1. For local tunnel dev:"
+echo -e "${YELLOW}Next steps after adding redirect URIs:${NC}"
+echo "  1. Add test users (consent screen is in Testing mode):"
+echo "       https://console.cloud.google.com/apis/credentials/consent?project=$GCP_PROJECT"
+echo ""
+echo "  2. For local tunnel dev:"
 echo "       docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d"
 echo ""
-echo "  2. For CI (Google OAuth E2E job), add these GitHub Actions secrets:"
-echo "       GOOGLE_DEV_CLIENT_ID     ← from .env GOOGLE_DEV_CLIENT_ID"
-echo "       GOOGLE_DEV_CLIENT_SECRET ← from .env GOOGLE_DEV_CLIENT_SECRET"
-echo "       CLOUDFLARE_TUNNEL_TOKEN  ← from cloudflared tunnel token fuzefront-dev"
-echo "       GOOGLE_TEST_EMAIL        ← test account email (no 2FA)"
-echo "       GOOGLE_TEST_PASSWORD     ← test account password"
+echo "  3. For CI, add these GitHub Actions secrets:"
+echo "       GOOGLE_DEV_CLIENT_ID     ← \$GOOGLE_DEV_CLIENT_ID from .env"
+echo "       GOOGLE_DEV_CLIENT_SECRET ← \$GOOGLE_DEV_CLIENT_SECRET from .env"
+echo "       CLOUDFLARE_TUNNEL_TOKEN  ← cloudflared tunnel token fuzefront-dev"
+echo "       GOOGLE_TEST_EMAIL        ← test Google account email (no 2FA)"
+echo "       GOOGLE_TEST_PASSWORD     ← test Google account password"
 echo ""
-echo "  3. For production (k8s), seal the production credentials:"
-echo "       cd deploy/contabo/sealed-secrets"
-echo "       ./seal-secret.sh"
-echo "       # Commit the updated fuzefront-secrets.yaml"
-echo ""
-echo -e "${YELLOW}IMPORTANT:${NC} The consent screen is in TESTING mode."
-echo "  Only users added as Test Users in the Google Console can sign in."
-echo "  To add test users:"
-echo "    https://console.cloud.google.com/apis/credentials/consent?project=$GCP_PROJECT"
-echo "  For production, submit for verification to allow all users."
+echo "  4. For production (k8s), seal the prod credentials:"
+echo "       cd deploy/contabo/sealed-secrets && ./seal-secret.sh"
 echo ""
