@@ -40,6 +40,18 @@ app.use(express.json())
 app.use('/api/auth', authRoutes)
 app.use('/api/organizations', organizationsRoutes)
 
+// Known CI placeholder values that have no Permit.io environment context.
+// Real keys are JWT-like tokens that encode org/project/env — placeholders
+// don't, so every SDK call throws PermitContextError (ORGANIZATION vs ENVIRONMENT).
+const CI_DUMMY_KEYS = new Set(['', 'ci-offline-pdp-key', 'ci-noop', 'ci-no-real-permit-calls'])
+const PERMIT_API_KEY = process.env.PERMIT_API_KEY ?? ''
+const hasRealPermitKey = !CI_DUMMY_KEYS.has(PERMIT_API_KEY)
+
+// Skip the entire suite when no real key is present instead of failing with
+// PermitContextError on every test. The workflow comment "test will skip
+// gracefully" only works if this guard is here.
+const describePermit = hasRealPermitKey ? describe : describe.skip
+
 // Test data
 let testUserId: string
 let testUserToken: string
@@ -49,7 +61,7 @@ let adminUserToken: string
 let secondUserId: string
 let testAppId: string
 
-describe('Permit.io Integration Tests', () => {
+describePermit('Permit.io Integration Tests', () => {
   beforeAll(async () => {
     // Create test users in database
     testUserId = uuidv4()
