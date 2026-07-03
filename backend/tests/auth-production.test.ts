@@ -121,13 +121,20 @@ describe('Authentication - Real Postgres Integration Tests', () => {
 
     it('should handle database errors gracefully with a 500', async () => {
       // Force the user lookup (db('users').where('email', ...).first()) to
-      // reject so the route's catch block returns 500. Using db.client.QueryBuilder
-      // is more reliable across Node versions than Object.getPrototypeOf(db('users')),
-      // which resolves to different prototype levels on Node 18 vs 20.
-      const qbProto = (db as any).client.QueryBuilder.prototype
-      const spy = jest
-        .spyOn(qbProto, 'first')
-        .mockRejectedValueOnce(new Error('Database connection lost') as never)
+      // reject so the route's catch block returns 500.
+      // Prototype-chain spying is unreliable because Knex 3 defines `first` via
+      // an extension mechanism (not plain prototype assignment), so walking
+      // Object.getPrototypeOf() never finds it as an own property.
+      // Instead, temporarily replace the module-level `db` export so the auth
+      // route's compiled CJS reference (database_1.db) picks up the stub.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const dbModule = require('../src/config/database') as { db: typeof db }
+      const origDb = dbModule.db
+      const stubQb = {
+        where: jest.fn().mockReturnThis(),
+        first: jest.fn().mockRejectedValueOnce(new Error('Database connection lost')),
+      }
+      ;(dbModule as any).db = jest.fn(() => stubQb)
 
       try {
         const response = await request(app)
@@ -137,7 +144,7 @@ describe('Authentication - Real Postgres Integration Tests', () => {
 
         expect(response.body.error).toBe('Internal server error')
       } finally {
-        spy.mockRestore()
+        ;(dbModule as any).db = origDb
       }
     })
   })
