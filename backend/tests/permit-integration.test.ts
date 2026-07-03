@@ -44,13 +44,15 @@ app.use('/api/organizations', organizationsRoutes)
 const CI_DUMMY_KEYS = new Set(['', 'ci-offline-pdp-key', 'ci-noop', 'ci-no-real-permit-calls'])
 const PERMIT_API_KEY = process.env.PERMIT_API_KEY ?? ''
 
-// Permit.io API keys are JWT-like tokens. Environment-scoped keys include an
-// `env_id` claim in the payload. Project- or org-level keys do not, and the
-// SDK throws PermitContextError (ORGANIZATION vs ENVIRONMENT) on every call.
-// Decode the key's second segment (base64url payload) and check for env_id so
-// we skip the suite both for placeholder keys AND for real-but-org-level keys.
+// Permit.io environment-level keys use the format `permit_key_<base64>` (flat,
+// not JWT). Management-API keys use JWT format. The SDK throws
+// PermitContextError (ORGANIZATION vs ENVIRONMENT) only for management keys,
+// not environment keys. Accept any non-dummy `permit_key_` key as valid.
 function permitKeyHasEnvContext(key: string): boolean {
   if (!key || CI_DUMMY_KEYS.has(key)) return false
+  // Environment keys always start with permit_key_
+  if (key.startsWith('permit_key_')) return true
+  // Legacy: JWT-format keys that carry env_id in the payload
   try {
     const parts = key.split('.')
     if (parts.length < 2) return false
