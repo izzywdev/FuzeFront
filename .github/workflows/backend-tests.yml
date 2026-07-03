@@ -17,6 +17,7 @@ jobs:
   test:
     name: Backend tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     # IMPORTANT: secrets context in a service container env combined with a
     # strategy/matrix causes GitHub Actions to produce 0 jobs (workflow broken).
@@ -95,7 +96,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running authentication tests..."
-          npm test -- --testPathPattern="tests/(auth|auth-oidc|auth-production)" --verbose --runInBand
+          npm test -- --testPathPattern="tests/(auth|auth-oidc|auth-production)" --verbose --runInBand --detectOpenHandles
 
       - name: Run apps routes tests (BOLA authz coverage)
         working-directory: ./backend
@@ -115,7 +116,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running apps routes tests (incl. apps.test.ts)..."
-          npm test -- --testPathPattern=apps --verbose --runInBand
+          npm test -- --testPathPattern=apps --verbose --runInBand --detectOpenHandles
 
       - name: Run production database tests
         working-directory: ./backend
@@ -133,7 +134,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running production-like tests..."
-          npm test -- --testPathPattern=auth-production --verbose --runInBand
+          npm test -- --testPathPattern=auth-production --verbose --runInBand --detectOpenHandles
 
       - name: Generate test coverage
         working-directory: ./backend
@@ -153,7 +154,7 @@ jobs:
         # Exclude permit-integration (needs real PDP container, separate job) and
         # billing-bola (pre-existing failures unrelated to BOLA authz for apps — tracked
         # separately; including them here only obscures the apps-authz signal).
-        run: npm run test:coverage -- --runInBand --testPathIgnorePatterns="permit-integration|billing-"
+        run: npm run test:coverage -- --runInBand --detectOpenHandles --testPathIgnorePatterns="permit-integration|billing-"
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -180,6 +181,7 @@ jobs:
   permit-integration:
     name: Permit.io integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
 
     services:
@@ -252,6 +254,15 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: npm run db:init || echo "Database initialization completed"
 
+      - name: Diagnose PDP container health
+        run: |
+          echo "=== PDP container status ==="
+          docker ps -a --filter "ancestor=permitio/pdp-v2:0.8.1" || true
+          echo "=== PDP health endpoint ==="
+          curl -v http://localhost:7766/health || true
+          echo "=== PDP container logs ==="
+          docker logs $(docker ps -a --filter "ancestor=permitio/pdp-v2:0.8.1" -q | head -1) 2>&1 | tail -60 || true
+
       - name: Run Permit.io integration tests
         working-directory: ./backend
         # NOTE: Do NOT use 'if: ${{ secrets.PERMIT_API_KEY != "" }}' here.
@@ -272,4 +283,4 @@ jobs:
           PERMIT_PDP_URL: http://localhost:7766
         run: |
           echo "Running Permit.io integration tests..."
-          npm test -- --testPathPattern=permit-integration --verbose --runInBand
+          npm test -- --testPathPattern=permit-integration --verbose --runInBand --detectOpenHandles
