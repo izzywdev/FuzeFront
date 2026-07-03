@@ -1,0 +1,216 @@
+# Self-contained E2E stack for Google OAuth integration testing.
+# No dependency on FuzeInfra — runs its own Postgres and Redis.
+#
+# Required environment variables (set in .env or pass inline):
+#   CLOUDFLARE_TUNNEL_TOKEN    — named tunnel token (routes TUNNEL_HOSTNAME → authentik-server:9000)
+#   TUNNEL_HOSTNAME            — public hostname the tunnel exposes (default: auth-dev.fuzefront.com)
+#   GOOGLE_DEV_CLIENT_ID       — Google OAuth client ID for the dev tunnel client
+#   GOOGLE_DEV_CLIENT_SECRET   — Google OAuth client secret for the dev tunnel client
+#   AUTHENTIK_OIDC_CLIENT_SECRET — secret for the FuzeFront OIDC provider in Authentik
+#
+# Usage:
+#   docker compose -f docker-compose.e2e.yml up -d --build
+#   docker compose -f docker-compose.e2e.yml down -v   # tear down + wipe volumes
+
+name: fuzefront-e2e
+
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  e2e_postgres:
+  e2e_redis:
+  e2e_authentik_media:
+  e2e_authentik_templates:
+  e2e_authentik_certs:
+
+services:
+  # ── Postgres (shared by backend + Authentik) ──────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: e2e_pass
+      # postgres image runs *.sh scripts in /docker-entrypoint-initdb.d/ at first start
+    volumes:
+      - e2e_postgres:/var/lib/postgresql/data
+      - ./deploy/e2e/init-postgres.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - e2e
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U e2e']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Redis (for Authentik) ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    networks:
+      - e2e
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Authentik worker (applies blueprints, including Google source + OIDC provider) ─
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.12.3
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: e2e
+      AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
+      AUTHENTIK_LOG_LEVEL: warning
+      AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
+      AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
+      AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
+      # Google OAuth source (inert when empty; populated by CI secrets)
+      GOOGLE_CLIENT_ID: ${GOOGLE_DEV_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_DEV_CLIENT_SECRET:-}
+      # FuzeFront OIDC provider secret (must match backend AUTHENTIK_CLIENT_SECRET)
+      AUTHENTIK_OIDC_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+    volumes:
+      - e2e_authentik_media:/media
+      - e2e_authentik_templates:/templates
+      - e2e_authentik_certs:/certs
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Authentik server ──────────────────────────────────────────────────────
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.12.3
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: e2e
+      AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
+      AUTHENTIK_LOG_LEVEL: warning
+      AUTHENTIK_DISABLE_UPDATE_CHECK: 'true'
+      AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
+      # Cookie domain must cover the tunnel hostname (e.g. auth-dev.fuzefront.com)
+      AUTHENTIK_COOKIE_DOMAIN: ${TUNNEL_HOSTNAME:-auth-dev.fuzefront.com}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
+      AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
+      GOOGLE_CLIENT_ID: ${GOOGLE_DEV_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_DEV_CLIENT_SECRET:-}
+      AUTHENTIK_OIDC_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+    volumes:
+      - e2e_authentik_media:/media
+      - e2e_authentik_templates:/templates
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    ports:
+      - '9000:9000'
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      interval: 10s
+      timeout: 15s
+      retries: 18
+      start_period: 120s
+
+  # ── Cloudflare tunnel (exposes authentik-server at TUNNEL_HOSTNAME) ───────
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    networks:
+      - e2e
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+    restart: on-failure:5
+
+  # ── Backend ───────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      USE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: fuzefront_platform
+      DB_USER: e2e
+      DB_PASSWORD: e2e_pass
+      JWT_SECRET: e2e-jwt-secret-not-for-prod
+      PORT: '3001'
+      # After the OIDC callback the backend redirects the browser here.
+      # Must be host-reachable so the browser (Playwright on the host) can follow.
+      FRONTEND_URL: http://localhost:4173
+      PERMIT_API_KEY: ci-noop
+      PERMIT_PDP_URL: http://localhost:7766
+      # Authentik OIDC client — matches provider-oidc.yaml blueprint
+      AUTHENTIK_CLIENT_ID: fuzefront-oidc-client
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+      # Issuer URL uses the public tunnel hostname so the authorization_endpoint
+      # the backend generates is browser-reachable. Server-to-server token
+      # exchange also goes through the tunnel (acceptable latency for E2E).
+      AUTHENTIK_ISSUER_URL: https://${TUNNEL_HOSTNAME:-auth-dev.fuzefront.com}/application/o/fuzefront/
+      # Authentik redirects the browser here after the Google OAuth flow completes.
+      # Must be host-reachable (localhost:3001 maps to the published port above).
+      AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authentik-server:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3001/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  # Built from repo root (Dockerfile requires workspace context for @fuzefront/* aliases).
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Same-origin API base: empty string → relative URLs. Backend and frontend
+        # are on different origins in the E2E stack (3001 vs 4173); Playwright's
+        # baseURL is http://localhost:4173 and API calls go to http://localhost:3001.
+        # Set this to http://localhost:3001 so the browser knows where the API is.
+        VITE_API_URL: http://localhost:3001
+    ports:
+      - '4173:8080'
+    networks:
+      - e2e
+    depends_on:
+      backend:
+        condition: service_healthy
