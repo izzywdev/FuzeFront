@@ -5,9 +5,14 @@ on:
     branches: [master, main]
     paths:
       - 'android/**'
-      - 'frontend/public/.well-known/assetlinks.json'
-      - 'frontend/public/manifest.webmanifest'
-      - 'frontend/public/icons/**'
+      - 'frontend/**'
+      - '.github/workflows/build-android-apk.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'android/**'
+      - 'frontend/public/**'
+      - 'frontend/src/**'
       - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
     inputs:

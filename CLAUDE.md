@@ -39,6 +39,30 @@ The family flag standard is **Unleash** (self-hosted OSS) consumed via **OpenFea
 - `backend-engineer` + `frontend-engineer` plan with flags: wrap new/risky work in a flag **default OFF**, gate **both** server logic and UI, **test both states**, retire stale flags (owner + removal criterion each). A **permission** flag is rollout convenience — real authz stays in **Permit**, never the flag.
 - See the `feature-flags` skill (`.claude/skills/feature-flags/`).
 
+## Android / TWA mobile package
+
+FuzeFront ships a signed Android APK (Trusted Web Activity) that wraps `https://app.fuzefront.com`. CI handles all building and signing — no manual steps.
+
+### CI behaviour
+- **Any `frontend/**` push to `master`** triggers `build-android-apk.yml`: builds a signed APK and creates a GitHub Release (`android-vN`).
+- **Any PR** touching `android/**`, `frontend/public/**`, or `frontend/src/**` also runs the build and uploads a `fuzefront-android-vN` artifact for pre-merge testing — but does **not** publish a Release.
+- `workflow_dispatch` is available on the workflow for manual builds with a custom version code.
+
+### Key identity files — keep in sync
+| File | Purpose |
+|------|---------|
+| `android/twa-manifest.json` | Bubblewrap TWA config (host, colors, SHA-256 fingerprint) |
+| `frontend/public/.well-known/assetlinks.json` | Digital Asset Links (same fingerprint as above) |
+| `frontend/public/manifest.webmanifest` | Static PWA manifest served during scaffold |
+| `frontend/public/icons/pwa-{192,512,maskable-*}.png` | App icons |
+
+If you rotate the signing keystore or change the key alias, all four files must be updated and `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_STORE_PASSWORD` / `ANDROID_KEYSTORE_KEY_PASSWORD` GitHub Secrets must be rotated.
+
+### Agent ownership
+- `devops-engineer` — CI/signing pipeline (`android/**`, `build-android-apk.yml`)
+- `frontend-engineer` — PWA manifest and icons (`frontend/public/`)
+- **Never commit `android/keystore/*.keystore`** — gitignored; stored only in `ANDROID_KEYSTORE_B64`.
+
 ## Done
 
 Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
