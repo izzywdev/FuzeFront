@@ -1,12 +1,30 @@
-# Self-contained E2E stack for Google OAuth integration testing.
+# Self-contained E2E stack for OIDC integration testing.
 # No dependency on FuzeInfra — runs its own Postgres and Redis.
 #
-# Required environment variables (set in .env or pass inline):
-#   CLOUDFLARE_TUNNEL_TOKEN    — named tunnel token (routes TUNNEL_HOSTNAME → authentik-server:9000)
-#   TUNNEL_HOSTNAME            — public hostname the tunnel exposes (default: auth-dev.fuzefront.com)
-#   GOOGLE_DEV_CLIENT_ID       — Google OAuth client ID for the dev tunnel client
-#   GOOGLE_DEV_CLIENT_SECRET   — Google OAuth client secret for the dev tunnel client
-#   AUTHENTIK_OIDC_CLIENT_SECRET — secret for the FuzeFront OIDC provider in Authentik
+# Two usage modes:
+#
+#   1. OIDC plumbing test (default — no secrets required)
+#      Tests the full OIDC stack with a local Authentik user.
+#      Add 127.0.0.1 authentik-server to /etc/hosts on the Playwright host.
+#      docker compose -f docker-compose.e2e.yml up -d --build
+#
+#   2. Google OAuth E2E test (requires tunnel + Google secrets)
+#      Activates cloudflared so real Google callbacks work.
+#      docker compose -f docker-compose.e2e.yml --profile tunnel up -d --build
+#
+# Environment variables:
+#   AUTHENTIK_EXTERNAL_URL     — how browsers reach Authentik
+#                                default: http://authentik-server:9000
+#                                tunnel mode: https://auth-dev.fuzefront.com
+#   AUTHENTIK_ISSUER_URL       — what the backend uses for OIDC discovery
+#                                default: http://authentik-server:9000/application/o/fuzefront/
+#                                tunnel mode: https://auth-dev.fuzefront.com/application/o/fuzefront/
+#   AUTHENTIK_COOKIE_DOMAIN    — cookie scope (default: authentik-server)
+#   CLOUDFLARE_TUNNEL_TOKEN    — tunnel profile only
+#   TUNNEL_HOSTNAME            — tunnel profile only (default: auth-dev.fuzefront.com)
+#   GOOGLE_DEV_CLIENT_ID       — tunnel profile only
+#   GOOGLE_DEV_CLIENT_SECRET   — tunnel profile only
+#   AUTHENTIK_OIDC_CLIENT_SECRET — OIDC provider shared secret (default: e2e-oidc-client-secret)
 #
 # Usage:
 #   docker compose -f docker-compose.e2e.yml up -d --build
@@ -73,7 +91,12 @@ services:
       AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
       AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
       AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
-      # Google OAuth source (inert when empty; populated by CI secrets)
+      # External URL used in Authentik's OIDC metadata (authorization_endpoint etc.)
+      # Default: internal Docker hostname so both the browser (via /etc/hosts) and
+      # backend (via Docker DNS) reach the same URL and issuer validation passes.
+      # Tunnel mode: set to https://auth-dev.fuzefront.com
+      AUTHENTIK_HOST: ${AUTHENTIK_EXTERNAL_URL:-http://authentik-server:9000}
+      # Google OAuth source (inert when empty; populated by CI secrets for tunnel mode)
       GOOGLE_CLIENT_ID: ${GOOGLE_DEV_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_DEV_CLIENT_SECRET:-}
       # FuzeFront OIDC provider secret (must match backend AUTHENTIK_CLIENT_SECRET)
@@ -106,8 +129,14 @@ services:
       AUTHENTIK_LOG_LEVEL: warning
       AUTHENTIK_DISABLE_UPDATE_CHECK: 'true'
       AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
-      # Cookie domain must cover the tunnel hostname (e.g. auth-dev.fuzefront.com)
-      AUTHENTIK_COOKIE_DOMAIN: ${TUNNEL_HOSTNAME:-auth-dev.fuzefront.com}
+      # External URL: controls the issuer + endpoint URLs in OIDC discovery metadata.
+      # Default (plumbing test, no tunnel): http://authentik-server:9000
+      #   → add 127.0.0.1 authentik-server to /etc/hosts on the Playwright host
+      # Tunnel mode: set AUTHENTIK_EXTERNAL_URL=https://auth-dev.fuzefront.com
+      AUTHENTIK_HOST: ${AUTHENTIK_EXTERNAL_URL:-http://authentik-server:9000}
+      # Cookie domain must match the hostname browsers use to reach Authentik.
+      # Default (no tunnel): authentik-server  Tunnel mode: auth-dev.fuzefront.com
+      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-authentik-server}
       AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
       AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
       AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
@@ -137,11 +166,14 @@ services:
       start_period: 120s
 
   # ── Cloudflare tunnel (exposes authentik-server at TUNNEL_HOSTNAME) ───────
+  # Only activated with --profile tunnel (Google OAuth E2E only).
+  # Plumbing tests (local user) do NOT need the tunnel.
   cloudflared:
+    profiles: [tunnel]
     image: cloudflare/cloudflared:2024.12.2
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     networks:
       - e2e
     depends_on:
@@ -174,12 +206,13 @@ services:
       # Authentik OIDC client — matches provider-oidc.yaml blueprint
       AUTHENTIK_CLIENT_ID: fuzefront-oidc-client
       AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
-      # Issuer URL uses the public tunnel hostname so the authorization_endpoint
-      # the backend generates is browser-reachable. Server-to-server token
-      # exchange also goes through the tunnel (acceptable latency for E2E).
-      AUTHENTIK_ISSUER_URL: https://${TUNNEL_HOSTNAME:-auth-dev.fuzefront.com}/application/o/fuzefront/
-      # Authentik redirects the browser here after the Google OAuth flow completes.
-      # Must be host-reachable (localhost:3001 maps to the published port above).
+      # Issuer URL for OIDC discovery + token exchange.
+      # Default (plumbing test): http://authentik-server:9000/... — reachable from
+      # inside Docker via DNS, and from the Playwright host via /etc/hosts entry.
+      # Tunnel mode: set AUTHENTIK_ISSUER_URL=https://auth-dev.fuzefront.com/application/o/fuzefront/
+      AUTHENTIK_ISSUER_URL: ${AUTHENTIK_ISSUER_URL:-http://authentik-server:9000/application/o/fuzefront/}
+      # Authentik redirects the browser here after authentication.
+      # localhost:3001 maps to the published backend port — always host-reachable.
       AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
     networks:
       - e2e

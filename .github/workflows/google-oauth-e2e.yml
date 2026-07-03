@@ -57,6 +57,10 @@ jobs:
       AUTHENTIK_OIDC_CLIENT_SECRET: ${{ secrets.AUTHENTIK_OIDC_CLIENT_SECRET || 'e2e-oidc-client-secret' }}
       GOOGLE_TEST_EMAIL: ${{ secrets.GOOGLE_TEST_EMAIL }}
       GOOGLE_TEST_PASSWORD: ${{ secrets.GOOGLE_TEST_PASSWORD }}
+      # Tunnel-mode Authentik URLs (override docker-compose.e2e.yml defaults)
+      AUTHENTIK_EXTERNAL_URL: https://${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}
+      AUTHENTIK_ISSUER_URL: https://${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}/application/o/fuzefront/
+      AUTHENTIK_COOKIE_DOMAIN: ${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -79,9 +83,9 @@ jobs:
         # login page doesn't trigger its headless-browser fingerprint checks.
         run: npx playwright install --with-deps chromium
 
-      - name: Start E2E stack (Authentik + backend + frontend + tunnel)
+      - name: Start E2E stack with tunnel (Authentik + backend + frontend + cloudflared)
         run: |
-          docker compose -f docker-compose.e2e.yml up -d --build
+          docker compose -f docker-compose.e2e.yml --profile tunnel up -d --build
         timeout-minutes: 10
 
       - name: Wait for Authentik to become healthy

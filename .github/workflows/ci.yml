@@ -136,6 +136,11 @@ jobs:
           cd backend/security
           npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
 
+      - name: security — OIDC unit tests (openid-client mocked, no Authentik required)
+        run: |
+          cd backend/security
+          npx jest tests/oidc-google-signin.test.ts tests/oidc-state.test.ts tests/oidc-code-exchange.test.ts
+
   build:
     name: Build Applications
     runs-on: ubuntu-latest

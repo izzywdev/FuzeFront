@@ -1,24 +1,25 @@
 /**
  * google-signin.spec.ts
  *
- * Playwright E2E tests for the Google Sign-In (via Authentik OIDC) flow.
+ * FRONTEND COMPONENT TESTS (mock-based) — NOT an end-to-end integration test.
  *
  * All backend/Authentik calls are intercepted with page.route() so these tests
- * do NOT require a live Authentik instance or Google OAuth credentials. They DO
- * require the frontend dev server to be running (see playwright.config.ts baseURL).
+ * do NOT require a live Authentik instance or Google OAuth credentials. They test
+ * ONLY the frontend's rendering and routing logic in isolation.
  *
- * Flow under test:
- *   1. User visits login page → frontend calls GET /api/auth/method
- *   2. If oidcConfigured:true → "Sign in with Authentik" button is shown
- *   3. Click → loginWithOIDC() → browser navigates to GET /api/auth/oidc/login
- *      (backend redirects to Authentik; here we intercept and short-circuit)
- *   4. After Authentik auth, backend redirects frontend to /?code=<hex>
- *   5. LoginPage.handleOIDCCallback() reads ?code=, POSTs /api/auth/token-exchange
- *   6. Backend returns { token, sessionId }; app fetches /api/auth/user
- *   7. App navigates to /dashboard
+ * For the real end-to-end integration test that exercises every layer —
+ * frontend → backend OIDC login → Authentik → token exchange → JWT — see:
+ *   tests/oidc-plumbing.e2e.spec.ts   (local Authentik user, runs on every PR)
+ *   tests/google-oauth-e2e.spec.ts    (real Google OAuth, requires CI secrets)
  *
- * Error path:
- *   - If Authentik returns ?error=&message=, the error is shown on the login page.
+ * What these mock tests cover:
+ *   1. Login page shows / hides the OIDC button based on /api/auth/method response
+ *   2. Click → loginWithOIDC() → browser navigates to GET /api/auth/oidc/login
+ *      (intercepted — does NOT hit the real backend or Authentik)
+ *   3. After Authentik auth, backend redirects frontend to /?code=<hex>
+ *   4. LoginPage.handleOIDCCallback() reads ?code=, POSTs /api/auth/token-exchange
+ *   5. App navigates to /dashboard on success
+ *   6. Error path: ?error= shows an error on the login page
  */
 
 import { test, expect } from '@playwright/test'
