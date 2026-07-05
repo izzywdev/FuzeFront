@@ -194,6 +194,11 @@ jobs:
             sleep 2
           done
           if [ "$clock_up" = "false" ]; then echo "clock-app NEVER became accessible"; cat /tmp/clock.log; exit 1; fi
+          # Verify remoteEntry.js is really JS, not an HTML SPA-fallback (which vite preview
+          # returns for any unrecognised path — a 200 HTML response silently fools curl -fsS).
+          content_type=$(curl -fsS -I http://localhost:4174/apps/clock/remoteEntry.js | grep -i "content-type" || echo "MISSING")
+          echo "Content-Type: ${content_type}"
+          echo "$content_type" | grep -qi "javascript" || { echo "FATAL: remoteEntry.js returned non-JS content (HTML SPA fallback?)"; cat /tmp/clock.log; exit 1; }
           # Verify CORS header present (required for cross-origin MF load)
           cors_header=$(curl -fsS -I -H "Origin: http://localhost:4173" http://localhost:4174/apps/clock/remoteEntry.js 2>&1 | grep -i "access-control-allow-origin" || true)
           echo "CORS header: ${cors_header:-MISSING}"
