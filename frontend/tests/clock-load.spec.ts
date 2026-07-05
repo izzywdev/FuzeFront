@@ -28,6 +28,11 @@ test('FuzeClock loads from the launcher at runtime', async ({ page }) => {
     timeout: 10000,
   })
 
+  // Wait for the post-login redirect to /dashboard and full page load (JS bundle
+  // + React init + WorkspaceProvisioningGate org check) before looking for the
+  // app-grid button. Without this, the click races against the gate opening.
+  await page.waitForURL('**/dashboard', { timeout: 15000 })
+
   // --- open the 9-dots launcher and click FuzeClock (the real path) ---
   await page.locator('button.app-grid-button').click()
   await page.getByText('FuzeClock', { exact: true }).first().click()

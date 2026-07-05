@@ -26,9 +26,12 @@ test.describe('Authentication - Simple', () => {
     const response = await responsePromise
     expect(response.status()).toBe(200)
 
-    // Wait for authentication to complete
-    await page.waitForLoadState('domcontentloaded')
-    await page.waitForTimeout(3000)
+    // Wait for the post-login redirect to /dashboard and for the page (JS bundle,
+    // React, AuthWrapper, WorkspaceProvisioningGate) to fully load. Using
+    // waitForURL with the default waitUntil:'load' prevents the race where
+    // waitForLoadState resolves on the *login* page's existing domcontentloaded
+    // state before window.location.href='/dashboard' fires in the browser.
+    await page.waitForURL('**/dashboard', { timeout: 15000 })
 
     // Verify authentication token is set
     const hasToken = await page.evaluate(() => !!localStorage.getItem('authToken'))
