@@ -159,18 +159,10 @@ services:
       authentik-worker:
         condition: service_started
     healthcheck:
-      # ak healthcheck verifies gunicorn is up; the second curl verifies that
-      # the authentik-worker has applied blueprints (OIDC provider exists).
-      # The backend depends on service_healthy, so it won't start until both
-      # checks pass — preventing "authentik starting" OIDC discovery errors.
-      test:
-        - 'CMD-SHELL'
-        - >-
-          ak healthcheck &&
-          curl -fs http://localhost:9000/application/o/fuzefront/.well-known/openid-configuration >/dev/null
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
       interval: 10s
       timeout: 15s
-      retries: 30
+      retries: 18
       start_period: 120s
 
   # ── Cloudflare tunnel (exposes authentik-server at TUNNEL_HOSTNAME) ───────

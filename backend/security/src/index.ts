@@ -94,6 +94,31 @@ async function startServer() {
       console.log('⚠️  Continuing with local authentication only')
     }
 
+    // If OIDC is configured but the initial discovery failed (e.g. Authentik
+    // blueprints not yet applied at startup), retry in the background every
+    // 10 seconds for up to 5 minutes. This makes the E2E stack reliable:
+    // the backend starts before OIDC is ready, but self-heals once it is.
+    if (oidcService.isConfigured() && !oidcService.isInitialized()) {
+      const oidcRetry = async () => {
+        const MAX_ATTEMPTS = 30 // 30 × 10s = 5 min
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 10_000))
+          try {
+            await oidcService.initialize()
+            console.log(`✅ OIDC service initialized on retry (attempt ${attempt})`)
+            return
+          } catch {
+            if (attempt < MAX_ATTEMPTS) {
+              console.log(`⚠️  OIDC retry ${attempt}/${MAX_ATTEMPTS} failed — will try again`)
+            } else {
+              console.error('❌ OIDC service failed to initialize after all retries')
+            }
+          }
+        }
+      }
+      oidcRetry() // fire-and-forget; server is already listening
+    }
+
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {
       console.log(`🚀 security-service running on port ${portNumber}`)
