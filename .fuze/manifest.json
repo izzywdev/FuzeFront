@@ -24,7 +24,16 @@
   ],
   "designSystem": {
     "base": "@fuzefront/design-system",
-    "extendsAs": "@fuzefront/design-system"
+    "extendsAs": "@fuzefront/design-system",
+    "propagation": {
+      "workflow": ".github/workflows/ds-propagate.yml",
+      "trigger": "push:master:design-system/**",
+      "agents": [
+        { "role": "frontend-engineer", "job": "propagate-frontend", "branch": "ds-propagate/frontend-{run}" },
+        { "role": "mobile-frontend-engineer", "job": "propagate-mobile", "branch": "ds-propagate/mobile-{run}" },
+        { "role": "frontend-test-engineer", "job": "ui-tests", "branch": "ds-propagate/e2e-{run}" }
+      ]
+    }
   },
   "hardening": {
     "ruleset": true,

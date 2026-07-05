@@ -1,0 +1,171 @@
+name: Design System Propagation
+
+# When a push to master touches design-system/**, open three GitHub Issues
+# with @claude in the body. The existing claude.yml workflow picks them up
+# and runs the appropriate agent for each propagation slice.
+#
+# Requires: GITHUB_TOKEN (automatic), ANTHROPIC_API_KEY (for claude.yml).
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'design-system/**'
+
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual DS propagation run'
+
+jobs:
+  detect-changes:
+    name: Detect DS change summary
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.summarise.outputs.summary }}
+      changed_files: ${{ steps.summarise.outputs.changed_files }}
+      new_components: ${{ steps.summarise.outputs.new_components }}
+      new_tokens: ${{ steps.summarise.outputs.new_tokens }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Summarise DS diff
+        id: summarise
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'design-system/**' | head -80 | tr '\n' ',')
+          echo "changed_files=$CHANGED" >> "$GITHUB_OUTPUT"
+          NEW_COMPONENTS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/components/**/*.jsx' | \
+            sed 's|design-system/components/||;s|\.jsx||' | tr '\n' ', ')
+          NEW_TOKENS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/tokens/**' | \
+            sed 's|design-system/tokens/||' | tr '\n' ', ')
+          COMMIT_MSG=$(git log -1 --format='%s')
+          echo "new_components=${NEW_COMPONENTS:-none}" >> "$GITHUB_OUTPUT"
+          echo "new_tokens=${NEW_TOKENS:-none}" >> "$GITHUB_OUTPUT"
+          SUMMARY="DS update — ${COMMIT_MSG}. Components: ${NEW_COMPONENTS:-none}. Token files: ${NEW_TOKENS:-none}."
+          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+
+  open-frontend-issue:
+    name: Open frontend propagation issue
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create @claude frontend issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DS propagation run #${RUN} — frontend" \
+            --label "ds-propagation,frontend" \
+            --body "$(cat <<EOF
+          @claude You are acting as **frontend-engineer**.
+
+          The \`@fuzefront/design-system\` package was just updated on master (run #${RUN}).
+
+          **Change summary:** ${SUMMARY}
+          **Changed files:** ${CHANGED}
+
+          **Your task (report SCOPE DONE when complete):**
+          1. Read the changed design-system files listed above.
+          2. Update all files under \`frontend/\` that consume the changed tokens or
+             components — import the new mobile primitives (BottomNav, BottomSheet,
+             Drawer) wherever appropriate in the shell layout, apply any new spacing
+             tokens, and remove any raw-value one-offs that now have a token.
+          3. Make sure the responsive shell uses BottomNav on xs/sm (<768px) instead
+             of or alongside the side panel.
+          4. Commit on branch \`ds-propagate/frontend-${RUN}\`, push, open a draft PR.
+          5. Report SCOPE DONE (verified) or OUT OF SCOPE — NOT DONE for each item.
+          EOF
+          )"
+
+  open-mobile-issue:
+    name: Open mobile propagation issue
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create @claude mobile issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DS propagation run #${RUN} — mobile" \
+            --label "ds-propagation,mobile" \
+            --body "$(cat <<EOF
+          @claude You are acting as **mobile-frontend-engineer**.
+
+          The \`@fuzefront/design-system\` package was just updated on master (run #${RUN}).
+
+          **Change summary:** ${SUMMARY}
+          **Changed files:** ${CHANGED}
+
+          **Your task (report SCOPE DONE when complete):**
+          1. Read the new mobile DS primitives: BottomNav, BottomSheet, Drawer
+             (\`design-system/components/mobile/\`) and the updated spacing tokens
+             (\`design-system/tokens/spacing.css\` — especially --bottom-nav-height,
+             --drawer-width, --sheet-max-h, --touch-target, safe-area vars).
+          2. Wire BottomNav into the Android TWA shell and any responsive shell
+             layouts under \`frontend/\` that target xs/sm breakpoints.
+          3. Apply the new touch-target, safe-area, and motion tokens wherever
+             touch interactions or slide animations exist.
+          4. Ensure PWA manifest / viewport meta are consistent with the new
+             --top-bar-height-mobile token (52px).
+          5. Commit on branch \`ds-propagate/mobile-${RUN}\`, push, open a draft PR.
+          6. Report SCOPE DONE (verified) or OUT OF SCOPE — NOT DONE for each item.
+          EOF
+          )"
+
+  open-e2e-issue:
+    name: Open UI-test propagation issue
+    needs: [open-frontend-issue, open-mobile-issue]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create @claude e2e issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          RUN: ${{ github.run_number }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DS propagation run #${RUN} — UI tests" \
+            --label "ds-propagation,testing" \
+            --body "$(cat <<EOF
+          @claude You are acting as **frontend-test-engineer**.
+
+          The \`@fuzefront/design-system\` has been updated (mobile components + spacing
+          tokens) and the frontend/mobile propagation issues for run #${RUN} have been opened.
+
+          **Change summary:** ${SUMMARY}
+
+          **Your task (report SCOPE DONE when complete):**
+          1. Write or update Playwright tests for the new mobile DS primitives:
+             - BottomNav renders at xs viewport (375px wide) and tab selection works.
+             - Drawer opens/closes, focus-traps, Escape closes it.
+             - BottomSheet renders, Escape closes it, backdrop tap closes it.
+          2. Verify token coverage: spot-check that --bottom-nav-height, --touch-target,
+             and --sheet-max-h are actually applied (CSS computed style assertions).
+          3. Run the existing e2e suite and confirm no regressions in TopBar, Modal,
+             SidePanel at md+ viewport.
+          4. Commit on branch \`ds-propagate/e2e-${RUN}\`, push, open a draft PR.
+          5. Report SCOPE DONE (verified) or OUT OF SCOPE — NOT DONE for each item.
+          EOF
+          )"
