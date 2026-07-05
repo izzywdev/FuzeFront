@@ -245,23 +245,10 @@ router.get('/', authenticateToken, async (req: any, res) => {
     // Build query
     let query = db('organizations')
       .select('organizations.*')
-      .leftJoin('organization_memberships', function () {
-        this.on(
-          'organizations.id',
-          '=',
-          'organization_memberships.organization_id'
-        )
-          .andOn(
-            'organization_memberships.user_id',
-            '=',
-            db.raw('?', [req.user.id])
-          )
-          .andOn(
-            'organization_memberships.status',
-            '=',
-            db.raw('?', ['active'])
-          )
-      })
+      .joinRaw(
+        'LEFT JOIN organization_memberships ON organizations.id = organization_memberships.organization_id AND organization_memberships.user_id = ? AND organization_memberships.status = ?',
+        [req.user.id, 'active']
+      )
       .where(function () {
         // User can see organizations they are members of, or public organizations
         this.whereNotNull('organization_memberships.id').orWhere(
@@ -359,23 +346,10 @@ router.get(
       // Check if user has access to this organization
       const organization = await db('organizations')
         .select('organizations.*')
-        .leftJoin('organization_memberships', function () {
-          this.on(
-            'organizations.id',
-            '=',
-            'organization_memberships.organization_id'
-          )
-            .andOn(
-              'organization_memberships.user_id',
-              '=',
-              db.raw('?', [req.user.id])
-            )
-            .andOn(
-              'organization_memberships.status',
-              '=',
-              db.raw('?', ['active'])
-            )
-        })
+        .joinRaw(
+          'LEFT JOIN organization_memberships ON organizations.id = organization_memberships.organization_id AND organization_memberships.user_id = ? AND organization_memberships.status = ?',
+          [req.user.id, 'active']
+        )
         .where('organizations.id', id)
         .where(function () {
           // User can see organizations they are members of, or public organizations
