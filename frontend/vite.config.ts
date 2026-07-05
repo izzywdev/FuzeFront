@@ -208,4 +208,22 @@ export default defineConfig({
     port: 5173,
     cors: true,
   },
+  preview: {
+    proxy: {
+      // More specific path must precede the generic /api catch-all.
+      '/api/v1/app-registry': {
+        target: 'http://localhost:3003',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        ws: true,
+        changeOrigin: true,
+      },
+    },
+  },
 })
