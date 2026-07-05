@@ -81,7 +81,7 @@ export function AppRegistryProvider({ children }: { children: React.ReactNode })
     try {
       // The application menu shows only registered AND activated apps.
       const result = await client.listApps({ status: 'activated' })
-      setApps(result.apps)
+      setApps(result.apps ?? [])
     } catch (err) {
       console.error('Failed to load registered apps:', err)
       setError(err instanceof Error ? err.message : 'Failed to load apps')
