@@ -9,6 +9,7 @@
     "backend/security",
     "backend/applications",
     "shared",
+    "services/email-service",
     "billing-client",
     "packages/billing-ui",
     "packages/chat-client",
