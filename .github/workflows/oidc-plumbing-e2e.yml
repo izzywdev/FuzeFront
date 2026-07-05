@@ -95,17 +95,38 @@ jobs:
 
       # ── Wait for Authentik ─────────────────────────────────────────────────
       # Authentik takes 2-3 minutes to start and apply blueprints on first boot.
-      - name: Wait for Authentik to become healthy
+      # We wait for BOTH the server health endpoint AND the OIDC discovery
+      # endpoint because:
+      #   - /-/health/ready/ passes once gunicorn starts (~10s)
+      #   - The OIDC provider is created by the authentik-worker via blueprints
+      #     (asynchronous, may take 60-120s after the server is healthy)
+      # Only once the OIDC discovery endpoint returns 200 are blueprints applied
+      # and the bootstrap token usable for API calls.
+      - name: Wait for Authentik to become healthy and blueprints applied
         run: |
-          echo "Waiting for Authentik (up to 3 minutes)..."
+          echo "Waiting for Authentik server health (up to 3 minutes)..."
           for i in $(seq 1 36); do
             if curl -fsS http://authentik-server:9000/-/health/ready/ >/dev/null 2>&1; then
-              echo "Authentik ready after $((i * 5))s"
+              echo "Authentik server healthy after $((i * 5))s"
               break
             fi
             if [ "$i" -eq 36 ]; then
               echo "Authentik did not become ready in 3 minutes"
               docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
+              exit 1
+            fi
+            sleep 5
+          done
+
+          echo "Waiting for OIDC discovery (blueprints applied, up to 3 more minutes)..."
+          for i in $(seq 1 36); do
+            if curl -fsS "http://authentik-server:9000/application/o/fuzefront/.well-known/openid-configuration" >/dev/null 2>&1; then
+              echo "OIDC discovery available after $((i * 5))s"
+              break
+            fi
+            if [ "$i" -eq 36 ]; then
+              echo "OIDC discovery did not become available in 3 minutes — blueprints may have failed"
+              docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -60
               exit 1
             fi
             sleep 5
@@ -117,21 +138,44 @@ jobs:
       # produces no git-committed passwords.
       - name: Create E2E test user in Authentik
         run: |
-          # Create user (internal type = password-based login)
-          RESPONSE=$(curl -s -X POST http://authentik-server:9000/api/v3/core/users/ \
-            -H "Authorization: Bearer e2e-bootstrap-token" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "username": "e2e-test",
-              "name": "E2E Test User",
-              "email": "e2e@test.local",
-              "is_active": true,
-              "type": "internal"
-            }')
-          echo "Create user response: $RESPONSE"
-          USER_PK=$(echo "$RESPONSE" | jq -r '.pk')
+          # Create user (internal type = password-based login).
+          # Retry up to 10 times with 10s backoff in case the bootstrap token
+          # is not yet active (the server applies the token during startup;
+          # rarely it's not ready immediately after OIDC discovery is up).
+          USER_PK=""
+          for attempt in $(seq 1 10); do
+            RESPONSE=$(curl -s -X POST http://authentik-server:9000/api/v3/core/users/ \
+              -H "Authorization: Bearer e2e-bootstrap-token" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "username": "e2e-test",
+                "name": "E2E Test User",
+                "email": "e2e@test.local",
+                "is_active": true,
+                "type": "internal"
+              }')
+            echo "Create user attempt $attempt: $RESPONSE"
+            USER_PK=$(echo "$RESPONSE" | jq -r '.pk // empty')
+            if [ -n "$USER_PK" ] && [ "$USER_PK" != "null" ]; then
+              break
+            fi
+            # Check for "already exists" (username conflict = already created)
+            if echo "$RESPONSE" | jq -e '.username[]?' 2>/dev/null | grep -q "already exists"; then
+              echo "User already exists — fetching pk"
+              USER_PK=$(curl -s "http://authentik-server:9000/api/v3/core/users/?search=e2e-test" \
+                -H "Authorization: Bearer e2e-bootstrap-token" | jq -r '.results[0].pk // empty')
+              break
+            fi
+            if [ "$attempt" -eq 10 ]; then
+              echo "Failed to create user after 10 attempts"
+              exit 1
+            fi
+            echo "Retrying in 10s..."
+            sleep 10
+          done
+
           if [ -z "$USER_PK" ] || [ "$USER_PK" = "null" ]; then
-            echo "Failed to create user"
+            echo "Could not obtain user pk"
             exit 1
           fi
 

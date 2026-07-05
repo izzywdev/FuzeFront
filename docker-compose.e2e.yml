@@ -159,10 +159,18 @@ services:
       authentik-worker:
         condition: service_started
     healthcheck:
-      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      # ak healthcheck verifies gunicorn is up; the second curl verifies that
+      # the authentik-worker has applied blueprints (OIDC provider exists).
+      # The backend depends on service_healthy, so it won't start until both
+      # checks pass — preventing "authentik starting" OIDC discovery errors.
+      test:
+        - 'CMD-SHELL'
+        - >-
+          ak healthcheck &&
+          curl -fs http://localhost:9000/application/o/fuzefront/.well-known/openid-configuration >/dev/null
       interval: 10s
       timeout: 15s
-      retries: 18
+      retries: 30
       start_period: 120s
 
   # ── Cloudflare tunnel (exposes authentik-server at TUNNEL_HOSTNAME) ───────
@@ -242,6 +250,13 @@ services:
         VITE_API_URL: http://localhost:3001
     ports:
       - '4173:8080'
+    # Override the baked-in nginx.conf with the E2E variant that routes all
+    # /api/* to backend:3001 instead of the K8s service names
+    # (fuzefront-security / fuzefront-applications / fuzefront-backend) that
+    # only exist in the Kubernetes deployment and cause nginx to fail to start
+    # in the docker-compose E2E stack.
+    volumes:
+      - ./deploy/e2e/nginx.e2e.conf:/etc/nginx/nginx.conf:ro
     networks:
       - e2e
     depends_on:
