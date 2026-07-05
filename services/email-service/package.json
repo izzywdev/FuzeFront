@@ -10,7 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/shared": "1.0.0",
+    "@fuzefront/shared": "file:../../shared",
     "@sendgrid/mail": "8.1.3",
     "express": "4.19.2",
     "kafkajs": "2.2.4",
