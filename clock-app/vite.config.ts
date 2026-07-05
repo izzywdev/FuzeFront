@@ -32,6 +32,9 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     cssCodeSplit: false,
+    // Output all chunks to dist/ directly (not dist/assets/) so remoteEntry.js is
+    // served at /apps/clock/remoteEntry.js (matching the seed manifest URL).
+    assetsDir: '',
   },
   server: { host: '0.0.0.0', port: 3003, cors: true, strictPort: true },
   // CORS on preview too, so the host page can cross-origin import remoteEntry.js
