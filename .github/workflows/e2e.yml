@@ -189,13 +189,13 @@ jobs:
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
           for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:4174/assets/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
+            if curl -fsS http://localhost:4174/apps/clock/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
             sleep 2
           done
           # /api/apps/register goes through requireAppPermission('create') which calls
           # the Permit.io PDP - unavailable in E2E CI (no PDP container, ci-noop key).
           # Seed the row directly into Postgres to bypass the permission middleware.
-          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('FuzeClock','http://localhost:4174','http://localhost:4174/assets','fuzeClock','./App','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
+          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('FuzeClock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
           echo 'clock-app seeded into DB'
 
       # ---- Playwright: sign-in + runtime federated load ----
