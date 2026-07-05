@@ -11,7 +11,21 @@ const permissions_1 = require("../middleware/permissions");
 const database_1 = require("../config/database");
 const organizationProvisioning_1 = require("../services/organizationProvisioning");
 const eventPublisher_1 = require("../services/eventPublisher");
+const role_assignment_1 = require("../utils/permit/role-assignment");
+const schema_1 = require("../permit/schema");
 const router = express_1.default.Router();
+// `settings`/`metadata`/`permissions` are JSONB columns. The `pg` driver already
+// parses JSONB into JS objects on read, so calling JSON.parse on them again throws
+// "Unexpected token o in JSON" (it stringifies the object to "[object Object]"
+// first). This tolerates both shapes — a string (parse it) or an already-parsed
+// object/null (pass through) — so reads never 500 regardless of driver behavior.
+function parseJsonb(value) {
+    if (value === null || value === undefined)
+        return {};
+    if (typeof value === 'string')
+        return JSON.parse(value || '{}');
+    return value;
+}
 // Input validation helpers
 function validateOrganizationInput(data) {
     const errors = [];
@@ -146,8 +160,8 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
             parent_id: newOrganization.parent_id,
             owner_id: newOrganization.owner_id,
             type: newOrganization.type,
-            settings: JSON.parse(newOrganization.settings || '{}'),
-            metadata: JSON.parse(newOrganization.metadata || '{}'),
+            settings: parseJsonb(newOrganization.settings),
+            metadata: parseJsonb(newOrganization.metadata),
             is_active: newOrganization.is_active,
             created_at: newOrganization.created_at,
             updated_at: newOrganization.updated_at,
@@ -213,7 +227,13 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
             }
         }
         if (is_active !== undefined) {
-            query = query.where('organizations.is_active', is_active === 'true');
+            // is_active arrives EITHER as the boolean default (true, when the client
+            // omits it) OR as a query-string ('true'/'false'). The old `=== 'true'`
+            // test made the boolean default `true` compare false → the query filtered
+            // for is_active=FALSE and hid every active org, so GET returned an empty
+            // list and the WorkspaceProvisioningGate spun forever. Coerce both shapes.
+            const activeBool = is_active === true || is_active === 'true' || is_active === '1';
+            query = query.where('organizations.is_active', activeBool);
         }
         if (search) {
             query = query.where(function () {
@@ -238,8 +258,8 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
             parent_id: org.parent_id,
             owner_id: org.owner_id,
             type: org.type,
-            settings: JSON.parse(org.settings || '{}'),
-            metadata: JSON.parse(org.metadata || '{}'),
+            settings: parseJsonb(org.settings),
+            metadata: parseJsonb(org.metadata),
             is_active: org.is_active,
             created_at: org.created_at,
             updated_at: org.updated_at,
@@ -291,8 +311,8 @@ router.get('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             parent_id: organization.parent_id,
             owner_id: organization.owner_id,
             type: organization.type,
-            settings: JSON.parse(organization.settings || '{}'),
-            metadata: JSON.parse(organization.metadata || '{}'),
+            settings: parseJsonb(organization.settings),
+            metadata: parseJsonb(organization.metadata),
             is_active: organization.is_active,
             created_at: organization.created_at,
             updated_at: organization.updated_at,
@@ -362,8 +382,8 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             parent_id: updatedOrganization.parent_id,
             owner_id: updatedOrganization.owner_id,
             type: updatedOrganization.type,
-            settings: JSON.parse(updatedOrganization.settings || '{}'),
-            metadata: JSON.parse(updatedOrganization.metadata || '{}'),
+            settings: parseJsonb(updatedOrganization.settings),
+            metadata: parseJsonb(updatedOrganization.metadata),
             is_active: updatedOrganization.is_active,
             created_at: updatedOrganization.created_at,
             updated_at: updatedOrganization.updated_at,
@@ -670,6 +690,383 @@ router.delete('/:id/invitations/:invitationId', auth_1.authenticateToken, async 
     catch (error) {
         console.error('Error revoking invitation:', error);
         res.status(500).json({ error: 'Failed to revoke invitation' });
+    }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// Roles catalog: /api/organizations/:id/roles
+// ─────────────────────────────────────────────────────────────────────────────
+// Org-role → permit-role mapping (see src/permit/schema.ts header). Used to
+// derive each org role's effective permission set from the permit schema.
+const ORG_ROLE_TO_PERMIT_ROLE = {
+    owner: 'admin',
+    admin: 'admin',
+    member: 'editor',
+    viewer: 'viewer',
+};
+// Display names + ordering for the org-facing role catalog. `owner` is never
+// assignable (matches the invite/role-change rule that owner cannot be granted).
+const ORG_ROLE_CATALOG = [
+    { key: 'owner', name: 'Owner', assignable: false },
+    { key: 'admin', name: 'Admin', assignable: true },
+    { key: 'member', name: 'Member', assignable: true },
+    { key: 'viewer', name: 'Viewer', assignable: true },
+];
+/**
+ * @swagger
+ * /api/organizations/{id}/roles:
+ *   get:
+ *     summary: Get the organization role + permission catalog
+ *     description: >-
+ *       Returns the read-only catalog of assignable organization roles (with
+ *       their effective permissions) and the resource/action catalog they map
+ *       to. Any active member of the organization may view it.
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Role + resource catalog
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 roles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       assignable: { type: boolean }
+ *                       permissions:
+ *                         type: array
+ *                         items: { type: string }
+ *                 resources:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       actions:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             key: { type: string }
+ *                             name: { type: string }
+ *       403:
+ *         description: Caller is not an active member of the organization
+ */
+// GET /api/organizations/:id/roles — read-only role/permission catalog
+router.get('/:id/roles', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Any active member (any role) may view the catalog
+        const callerMembership = await (0, database_1.db)('organization_memberships')
+            .where('user_id', req.user.id)
+            .where('organization_id', id)
+            .where('status', 'active')
+            .first();
+        if (!callerMembership) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        const permitRolePermissions = new Map(schema_1.permitSchema.roles.map((r) => [r.key, r.permissions]));
+        const roles = ORG_ROLE_CATALOG.map((role) => ({
+            key: role.key,
+            name: role.name,
+            assignable: role.assignable,
+            permissions: permitRolePermissions.get(ORG_ROLE_TO_PERMIT_ROLE[role.key]) ?? [],
+        }));
+        const resources = schema_1.permitSchema.resources.map((resource) => ({
+            key: resource.key,
+            name: resource.name,
+            actions: Object.entries(resource.actions).map(([key, def]) => ({
+                key,
+                name: def.name,
+            })),
+        }));
+        res.json({ roles, resources });
+    }
+    catch (error) {
+        console.error('Error listing organization roles:', error);
+        res.status(500).json({ error: 'Failed to list organization roles' });
+    }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// Members sub-routes: /api/organizations/:id/members
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/organizations/{id}/members:
+ *   get:
+ *     summary: List organization members (paginated)
+ *     description: >-
+ *       Returns a paginated list of active members of the organization. Any
+ *       active member of the organization (any role) may view the list.
+ *       Supports a case-insensitive `search` over email / first name / last name.
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *         description: Case-insensitive match against email, first name, or last name.
+ *     responses:
+ *       200:
+ *         description: Paginated members envelope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members:
+ *                   type: array
+ *                   items: { type: object }
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page: { type: integer }
+ *                     pageSize: { type: integer }
+ *                     total: { type: integer }
+ *       403:
+ *         description: Caller is not an active member of the organization
+ */
+// GET /api/organizations/:id/members — list members (any active member may view)
+router.get('/:id/members', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Any active member (any role) may list members
+        const callerMembership = await (0, database_1.db)('organization_memberships')
+            .where('user_id', req.user.id)
+            .where('organization_id', id)
+            .where('status', 'active')
+            .first();
+        if (!callerMembership) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        // Validate/clamp pagination params (clamp rather than reject; junk → defaults)
+        const parsePositiveInt = (raw, fallback) => {
+            const n = parseInt(String(raw), 10);
+            return Number.isFinite(n) && n >= 1 ? n : fallback;
+        };
+        const page = parsePositiveInt(req.query.page, 1);
+        const pageSize = Math.min(parsePositiveInt(req.query.pageSize, 20), 100);
+        const offset = (page - 1) * pageSize;
+        const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+        // Shared filter builder — applied to both the count and the page query so
+        // `total` reflects the same search predicate as the returned rows.
+        const applyFilters = (q) => {
+            q.where('organization_memberships.organization_id', id).where('organization_memberships.status', 'active');
+            if (search) {
+                const like = `%${search.toLowerCase()}%`;
+                q.whereRaw('(LOWER(users.email) LIKE ? OR LOWER(users.first_name) LIKE ? OR LOWER(users.last_name) LIKE ?)', [like, like, like]);
+            }
+            return q;
+        };
+        const countQuery = applyFilters((0, database_1.db)('organization_memberships').join('users', 'users.id', 'organization_memberships.user_id'));
+        const countRow = await countQuery
+            .count('organization_memberships.id as count')
+            .first();
+        const total = parseInt(countRow?.count || '0', 10) || 0;
+        const rows = await applyFilters((0, database_1.db)('organization_memberships')
+            .select('organization_memberships.id', 'organization_memberships.role', 'organization_memberships.status', 'organization_memberships.joined_at', 'users.id as user_id', 'users.email as user_email', 'users.first_name', 'users.last_name')
+            .join('users', 'users.id', 'organization_memberships.user_id'))
+            .orderBy('organization_memberships.joined_at', 'asc')
+            .limit(pageSize)
+            .offset(offset);
+        const members = rows.map((row) => ({
+            id: row.id,
+            role: row.role,
+            status: row.status,
+            user: {
+                id: row.user_id,
+                email: row.user_email,
+                firstName: row.first_name,
+                lastName: row.last_name,
+            },
+            joined_at: row.joined_at,
+            invited_at: null,
+        }));
+        res.json({ members, pagination: { page, pageSize, total } });
+    }
+    catch (error) {
+        console.error('Error listing members:', error);
+        res.status(500).json({ error: 'Failed to list members' });
+    }
+});
+// POST /api/organizations/:id/members — invite a single member (legacy path)
+// Creates a pending invitation row, identical to POST /:id/invitations.
+router.post('/:id/members', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { email, role = 'member' } = req.body;
+        // Validate email
+        if (!email || typeof email !== 'string' || !isValidEmail(email.trim())) {
+            return res.status(400).json({ error: 'A valid email address is required' });
+        }
+        // Validate role — owner cannot be invited
+        const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer'];
+        if (!ALLOWED_INVITE_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_INVITE_ROLES.join(', ')}` });
+        }
+        const normalizedEmail = email.toLowerCase().trim();
+        // Permission check — admin or owner only
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        // Dedupe check
+        const existing = await (0, database_1.db)('organization_invitations')
+            .where('organization_id', id)
+            .where('email', normalizedEmail)
+            .where('status', 'pending')
+            .first();
+        if (existing) {
+            return res.status(409).json({ error: 'A pending invitation already exists for this email' });
+        }
+        const token = crypto_1.default.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const invitationId = (0, uuid_1.v4)();
+        const correlationId = (0, uuid_1.v4)();
+        await (0, database_1.db)('organization_invitations').insert({
+            id: invitationId,
+            organization_id: id,
+            email: normalizedEmail,
+            role,
+            token,
+            expires_at: expiresAt,
+            status: 'pending',
+            invited_by: req.user.id,
+        });
+        // Fire email event (non-blocking)
+        try {
+            const org = await (0, database_1.db)('organizations').where('id', id).first();
+            const inviter = await (0, database_1.db)('users').where('id', req.user.id).first();
+            const inviterName = inviter
+                ? (`${inviter.first_name || ''} ${inviter.last_name || ''}`.trim() || inviter.email)
+                : req.user.email;
+            const acceptUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invitations/${token}`;
+            await eventPublisher_1.defaultEventPublisher.publishNotifyEmailRequested({
+                to: normalizedEmail,
+                template: 'org-invite',
+                vars: { orgName: org?.name ?? '', inviterName, role, acceptUrl },
+                orgId: id,
+                correlationId,
+            }, correlationId);
+        }
+        catch (emailErr) {
+            console.error('Failed to publish invite email event (non-fatal):', emailErr);
+        }
+        res.status(201).json({
+            invitation: {
+                id: invitationId,
+                organizationId: id,
+                email: normalizedEmail,
+                role,
+                expiresAt,
+                status: 'pending',
+            },
+        });
+    }
+    catch (error) {
+        console.error('Error creating member invitation:', error);
+        res.status(500).json({ error: 'Failed to create invitation' });
+    }
+});
+// PUT /api/organizations/:id/members/:memberId — change a member's role
+router.put('/:id/members/:memberId', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id, memberId } = req.params;
+        const { role } = req.body;
+        // Validate role
+        const ALLOWED_ROLES = ['admin', 'member', 'viewer'];
+        if (!role || !ALLOWED_ROLES.includes(role)) {
+            return res.status(400).json({ error: `Invalid role. Allowed values: ${ALLOWED_ROLES.join(', ')}` });
+        }
+        // Permission check
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        // Fetch target membership
+        const membership = await (0, database_1.db)('organization_memberships')
+            .where('id', memberId)
+            .where('organization_id', id)
+            .first();
+        if (!membership) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+        // Protect owner memberships
+        if (membership.role === 'owner') {
+            return res.status(403).json({ error: 'Cannot change the role of an owner' });
+        }
+        await (0, database_1.db)('organization_memberships')
+            .where('id', memberId)
+            .update({ role });
+        const updated = await (0, database_1.db)('organization_memberships')
+            .where('id', memberId)
+            .first();
+        // Assign Permit role — non-blocking
+        try {
+            await (0, role_assignment_1.assignOrganizationRole)(membership.user_id, id, role);
+        }
+        catch (permitErr) {
+            console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr);
+        }
+        res.json(updated);
+    }
+    catch (error) {
+        console.error('Error updating member role:', error);
+        res.status(500).json({ error: 'Failed to update member role' });
+    }
+});
+// DELETE /api/organizations/:id/members/:memberId — remove a member
+router.delete('/:id/members/:memberId', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { id, memberId } = req.params;
+        // Permission check
+        const isAdmin = await requireOrgAdminOrOwner(req.user.id, id);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        // Fetch target membership
+        const membership = await (0, database_1.db)('organization_memberships')
+            .where('id', memberId)
+            .where('organization_id', id)
+            .first();
+        if (!membership) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+        // Protect owner memberships
+        if (membership.role === 'owner') {
+            return res.status(403).json({ error: 'Cannot remove the organization owner' });
+        }
+        await (0, database_1.db)('organization_memberships')
+            .where('id', memberId)
+            .delete();
+        res.json({ message: 'Member removed' });
+    }
+    catch (error) {
+        console.error('Error removing member:', error);
+        res.status(500).json({ error: 'Failed to remove member' });
     }
 });
 exports.default = router;

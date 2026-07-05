@@ -6,8 +6,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncUserToPermit = syncUserToPermit;
 exports.deleteUserFromPermit = deleteUserFromPermit;
 exports.getUserFromPermit = getUserFromPermit;
+exports.syncServiceTokenToPermit = syncServiceTokenToPermit;
+exports.removeServiceTokenFromPermit = removeServiceTokenFromPermit;
 exports.updateUserInPermit = updateUserInPermit;
 const permit_1 = __importDefault(require("../../config/permit"));
+const role_assignment_1 = require("./role-assignment");
 /**
  * Syncs a user to Permit.io
  */
@@ -60,6 +63,48 @@ async function getUserFromPermit(userId) {
     catch (error) {
         console.error(`Error getting user ${userId} from Permit.io:`, error);
         return null;
+    }
+}
+/**
+ * Syncs a service/API token as a Permit principal and assigns it a role.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+async function syncServiceTokenToPermit(tokenId, orgId, permitRole) {
+    try {
+        await permit_1.default.api.users.sync({
+            key: `svc_token:${tokenId}`,
+            attributes: { is_service_token: true, org_id: orgId },
+        });
+        await (0, role_assignment_1.assignRoleInPermit)({
+            user: `svc_token:${tokenId}`,
+            role: permitRole,
+            tenant: orgId,
+        });
+        console.log(`Service token ${tokenId} synced to Permit.io with role ${permitRole} in org ${orgId}`);
+        return true;
+    }
+    catch (error) {
+        console.error(`Error syncing service token ${tokenId} to Permit.io:`, error);
+        return false;
+    }
+}
+/**
+ * Removes a service/API token role from Permit.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+async function removeServiceTokenFromPermit(tokenId, orgId, permitRole) {
+    try {
+        await (0, role_assignment_1.unassignRoleInPermit)({
+            user: `svc_token:${tokenId}`,
+            role: permitRole,
+            tenant: orgId,
+        });
+        console.log(`Service token ${tokenId} removed from Permit.io (role ${permitRole}) in org ${orgId}`);
+        return true;
+    }
+    catch (error) {
+        console.error(`Error removing service token ${tokenId} from Permit.io:`, error);
+        return false;
     }
 }
 /**

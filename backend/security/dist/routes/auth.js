@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const crypto_1 = __importDefault(require("crypto"));
 const express_1 = __importDefault(require("express"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
@@ -11,6 +12,21 @@ const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const oidc_1 = require("../services/oidc");
 const organizationProvisioning_1 = require("../services/organizationProvisioning");
+const CODE_TTL_MS = 60000;
+const pendingCodes = new Map();
+// Use the configured frontend base URL for all redirects so that exchange codes
+// ride HTTPS in production rather than a hardcoded http:// origin.
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '');
+// Periodic sweep: remove never-redeemed codes that have passed their TTL.
+// .unref() prevents this interval from keeping the process alive in tests.
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of pendingCodes) {
+        if (value.expiresAt < now) {
+            pendingCodes.delete(key);
+        }
+    }
+}, CODE_TTL_MS).unref();
 const router = express_1.default.Router();
 /**
  * Self-heal provisioning on login: ensure the user has a personal org and that
@@ -316,9 +332,16 @@ router.get('/oidc/login', async (req, res) => {
             });
         }
         const state = (0, uuid_1.v4)();
-        const authUrl = oidc_1.oidcService.generateAuthUrl(state);
-        console.log(`🔗 [${requestId}] Redirecting to Authentik:`, authUrl);
-        res.redirect(authUrl);
+        const { url, codeVerifier } = oidc_1.oidcService.generateAuthUrl(state);
+        console.log(`🔗 [${requestId}] Redirecting to Authentik:`, url);
+        // Persist BOTH the CSRF state and the PKCE code_verifier in HttpOnly cookies
+        // so the callback is replica-agnostic (the service runs >1 replica; the
+        // callback frequently lands on a different pod than /oidc/login).
+        res.setHeader('Set-Cookie', [
+            `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+            `oidc_cv=${codeVerifier}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+        ]);
+        res.redirect(url);
     }
     catch (error) {
         console.error(`❌ [${requestId}] OIDC login error:`, error);
@@ -362,25 +385,65 @@ router.get('/oidc/callback', async (req, res) => {
         hasState: !!state,
         error,
     });
+    // Helper: clear the state + code_verifier cookies and redirect to the frontend
+    // with an error. Called on every failure path so the cookies don't remain
+    // valid for their 10-min Max-Age.
+    const clearState = (res) => res.setHeader('Set-Cookie', [
+        'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+        'oidc_cv=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+    ]);
     try {
+        // CSRF guard: verify state cookie matches query param
+        const cookieHeader = req.headers.cookie || '';
+        const stateCookieMatch = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('oidc_state='));
+        const cookieState = stateCookieMatch ? stateCookieMatch.slice('oidc_state='.length) : null;
+        const queryState = req.query.state || '';
+        if (!cookieState || cookieState.length !== queryState.length) {
+            clearState(res);
+            return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`);
+        }
+        try {
+            if (!crypto_1.default.timingSafeEqual(Buffer.from(cookieState, 'utf8'), Buffer.from(queryState, 'utf8'))) {
+                clearState(res);
+                return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`);
+            }
+        }
+        catch (e) {
+            console.warn(`[${requestId}] State comparison error (fail-safe deny):`, e);
+            clearState(res);
+            return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`);
+        }
+        // Read the PKCE code_verifier from its cookie (set at /oidc/login) before we
+        // clear the cookies on the success path.
+        const cvCookieMatch = cookieHeader.split(';').map(c => c.trim()).find(c => c.startsWith('oidc_cv='));
+        const codeVerifier = cvCookieMatch ? cvCookieMatch.slice('oidc_cv='.length) : '';
+        // Clear both cookies on the success path too
+        res.setHeader('Set-Cookie', [
+            'oidc_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+            'oidc_cv=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/',
+        ]);
         if (error) {
             console.log(`❌ [${requestId}] OIDC error:`, error);
-            return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error)}`);
+            return res.redirect(`${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error)}`);
         }
         if (!code || !state) {
             console.log(`❌ [${requestId}] Missing code or state`);
-            return res.redirect(`http://fuzefront.dev.local/?error=missing_parameters`);
+            return res.redirect(`${FRONTEND_BASE}/?error=missing_parameters`);
         }
-        // Handle the callback and get user
-        const user = await oidc_1.oidcService.handleCallback(code, state);
+        if (!codeVerifier) {
+            console.log(`❌ [${requestId}] Missing oidc_cv cookie (PKCE verifier)`);
+            return res.redirect(`${FRONTEND_BASE}/?error=invalid_state`);
+        }
+        // Handle the callback and get user (PKCE verifier from the cookie)
+        const user = await oidc_1.oidcService.handleCallback(code, state, codeVerifier);
         console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email);
-        // Generate JWT token
-        const token = jsonwebtoken_1.default.sign({ userId: user.id }, process.env.JWT_SECRET, {
-            expiresIn: '24h',
-        });
-        // Create session
+        // Create session id first so it can be embedded in the token
         const sessionId = (0, uuid_1.v4)();
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        // Generate JWT token (includes sessionId so logout can target this session)
+        const token = jsonwebtoken_1.default.sign({ userId: user.id, sessionId }, process.env.JWT_SECRET, {
+            expiresIn: '24h',
+        });
         await (0, database_1.db)('sessions').insert({
             id: sessionId,
             user_id: user.id,
@@ -389,13 +452,16 @@ router.get('/oidc/callback', async (req, res) => {
         console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email);
         // Self-heal provisioning in the background (does not block the redirect).
         selfHealProvisioningOnLogin(user.id);
-        // Redirect to frontend with token
-        const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`;
-        res.redirect(frontendUrl);
+        // Issue a short-lived opaque exchange code instead of putting the bearer token in the URL
+        // (avoids token leakage via referrer headers, server logs, and browser history).
+        const exchangeCode = crypto_1.default.randomBytes(32).toString('hex');
+        pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS });
+        res.redirect(`${FRONTEND_BASE}/?code=${exchangeCode}`);
     }
     catch (error) {
         console.error(`❌ [${requestId}] OIDC callback error:`, error);
-        res.redirect(`http://fuzefront.dev.local/?error=authentication_failed`);
+        clearState(res);
+        res.redirect(`${FRONTEND_BASE}/?error=authentication_failed`);
     }
 });
 /**
@@ -436,6 +502,46 @@ router.get('/method', (req, res) => {
         defaultMethod: oidcConfigured ? 'oidc' : 'local',
         oidcLoginUrl: oidcConfigured ? '/api/auth/oidc/login' : null,
     });
+});
+/**
+ * @swagger
+ * /api/auth/token-exchange:
+ *   post:
+ *     summary: Exchange OIDC code for token
+ *     description: Single-use, 60s TTL exchange of the opaque code issued by /oidc/callback for a JWT token and sessionId
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token and sessionId returned
+ *       400:
+ *         description: code required
+ *       401:
+ *         description: invalid or expired code
+ */
+router.post('/token-exchange', async (req, res) => {
+    const { code } = req.body;
+    if (!code || typeof code !== 'string') {
+        return res.status(400).json({ error: 'code required' });
+    }
+    const pending = pendingCodes.get(code);
+    if (!pending || Date.now() > pending.expiresAt) {
+        pendingCodes.delete(code); // clean up expired entry if present
+        return res.status(401).json({ error: 'invalid or expired code' });
+    }
+    // Single-use: delete immediately
+    pendingCodes.delete(code);
+    return res.json({ token: pending.token, sessionId: pending.sessionId });
 });
 exports.default = router;
 //# sourceMappingURL=auth.js.map

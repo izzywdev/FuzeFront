@@ -41,31 +41,29 @@ class OIDCService {
         }
         const codeVerifier = openid_client_1.generators.codeVerifier();
         const codeChallenge = openid_client_1.generators.codeChallenge(codeVerifier);
-        const authUrl = this.client.authorizationUrl({
+        const url = this.client.authorizationUrl({
             scope: 'openid email profile',
             code_challenge: codeChallenge,
             code_challenge_method: 'S256',
             state: state || openid_client_1.generators.state(),
         });
-        // Store code verifier for later use (in production, use Redis or database)
-        // For now, we'll store it in memory (not suitable for production)
-        if (!global.codeVerifiers) {
-            global.codeVerifiers = new Map();
-        }
-        global.codeVerifiers.set(state || 'default', codeVerifier);
-        return authUrl;
+        // Stateless by design: the caller persists `codeVerifier` in an HttpOnly
+        // cookie alongside `state`, then hands it back to handleCallback(). The
+        // security service runs multiple replicas, so an in-memory map only works
+        // on the pod that started the flow — the callback often lands on a different
+        // replica and the token exchange then fails with "Code verifier not found"
+        // (surfaced to the user as authentication_failed). A cookie round-trips.
+        return { url, codeVerifier };
     }
-    async handleCallback(code, state) {
+    async handleCallback(code, state, codeVerifier) {
         if (!this.client) {
             throw new Error('OIDC client not initialized');
         }
+        if (!codeVerifier) {
+            throw new Error('Code verifier not found');
+        }
         try {
-            // Get the stored code verifier
-            const codeVerifier = global.codeVerifiers?.get(state || 'default');
-            if (!codeVerifier) {
-                throw new Error('Code verifier not found');
-            }
-            // Exchange code for tokens
+            // Exchange code for tokens (PKCE: code_verifier comes from the cookie)
             const tokenSet = await this.client.callback(this.config.redirectUri, { code, state }, { code_verifier: codeVerifier });
             console.log('✅ Received tokens from Authentik');
             // Get user info
@@ -73,8 +71,6 @@ class OIDCService {
             console.log('✅ Retrieved user info:', userinfo);
             // Sync user to local database
             const user = await this.syncUserToDatabase(userinfo);
-            // Clean up code verifier
-            global.codeVerifiers?.delete(state || 'default');
             return user;
         }
         catch (error) {

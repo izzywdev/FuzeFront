@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -14,11 +47,16 @@ const auth_1 = __importDefault(require("./routes/auth"));
 const apps_1 = __importDefault(require("./routes/apps"));
 const organizations_1 = __importDefault(require("./routes/organizations"));
 const internal_1 = __importDefault(require("./routes/internal"));
+const billing_1 = __importStar(require("./routes/billing"));
 const socketHandler_1 = require("./sockets/socketHandler");
 const database_1 = require("./config/database");
 const oidc_1 = require("./services/oidc");
+const metrics_1 = require("./metrics");
 // Load environment variables
 dotenv_1.default.config();
+// Prometheus metrics (Phase E). Scraped at /metrics; gracefully degrades to a
+// 503 if prom-client is not installed.
+const metrics = (0, metrics_1.setupMetrics)();
 const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
 const PORT = process.env.PORT || 3001;
@@ -45,6 +83,10 @@ app.use((0, cors_1.default)({
     ],
     credentials: true,
 }));
+// Stripe webhook passthrough MUST be mounted before the global JSON body parser
+// so the raw signed bytes survive for downstream signature verification. It uses
+// its own express.raw() parser. (See routes/billing.ts.)
+app.use('/api/v1/billing/webhooks/stripe', billing_1.billingWebhookRouter);
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Enhanced request logging middleware
@@ -79,6 +121,10 @@ app.use((req, res, next) => {
     };
     next();
 });
+// Prometheus request metrics (records method/route/status + duration).
+app.use(metrics.middleware);
+// Expose /metrics for the Prometheus scrape.
+metrics.registerEndpoint(app);
 // Setup Swagger documentation
 try {
     // Only import and setup Swagger if packages are available
@@ -210,6 +256,9 @@ catch (error) {
 app.use('/api/auth', auth_1.default);
 app.use('/api/apps', apps_1.default);
 app.use('/api/organizations', organizations_1.default);
+// Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
+// internal token). Webhook subroute is mounted separately above (raw body).
+app.use('/api/v1/billing', billing_1.default);
 // Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
 app.use('/internal', internal_1.default);
 // Serve static documentation files

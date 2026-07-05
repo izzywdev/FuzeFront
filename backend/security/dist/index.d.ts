@@ -1,3 +1,3 @@
-declare const app: import("express").Express;
+declare const app: any;
 export default app;
 //# sourceMappingURL=index.d.ts.map

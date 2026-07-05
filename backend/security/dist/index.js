@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -13,7 +46,10 @@ const core_1 = require("@fuzefront/core");
 const path_1 = __importDefault(require("path"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const organizations_1 = __importDefault(require("./routes/organizations"));
+const invitations_1 = __importDefault(require("./routes/invitations"));
 const internal_1 = __importDefault(require("./routes/internal"));
+const api_tokens_1 = __importStar(require("./routes/api-tokens"));
+const api_token_auth_1 = require("./middleware/api-token-auth");
 const oidc_1 = require("./services/oidc");
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3002;
@@ -22,7 +58,13 @@ const httpServer = (0, http_1.createServer)(app);
 const startTime = Date.now();
 // Domain routes (identical paths to the monolith).
 app.use('/api/auth', auth_1.default);
+// Org-token sub-route: GET /api/organizations/:orgId/tokens (rate-limited, mounted BEFORE
+// organizationsRoutes so the specific /:orgId/tokens path cannot be shadowed by any future wildcard)
+app.use('/api/organizations', api_token_auth_1.tokenAuthRateLimiter, api_tokens_1.orgTokensRouter);
 app.use('/api/organizations', organizations_1.default);
+app.use('/api/invitations', invitations_1.default);
+// API token CRUD — rate limiter applied to all /api/tokens/* routes
+app.use('/api/tokens', api_token_auth_1.tokenAuthRateLimiter, api_tokens_1.default);
 // Cluster-internal only — NEVER exposed through the public ingress.
 app.use('/internal', internal_1.default);
 const health = async (_req, res) => {

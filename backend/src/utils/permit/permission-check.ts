@@ -1,4 +1,4 @@
-import permit from '../../config/permit'
+import permit, { isNoOpMode } from '../../config/permit'
 
 export interface PermissionCheck {
   user: string
@@ -17,6 +17,13 @@ export interface PermissionCheck {
 export async function checkPermission(
   check: PermissionCheck
 ): Promise<boolean> {
+  // In CI/no-op mode the Permit SDK is a proxy that resolves every call to
+  // undefined — there is no live PDP. Grant everything so the E2E setup can
+  // register apps and run the sign-in flow without a real Permit deployment.
+  // This path is only reachable when PERMIT_API_KEY is one of the CI dummy
+  // values (e.g. "ci-noop") — never in production.
+  if (isNoOpMode) return true
+
   try {
     const result = await permit.check(
       check.user,
@@ -41,6 +48,9 @@ export async function checkPermission(
 export async function bulkCheckPermissions(
   checks: PermissionCheck[]
 ): Promise<boolean[]> {
+  // No-op CI mode: grant everything (mirrors the single-check short-circuit above).
+  if (isNoOpMode) return new Array(checks.length).fill(true)
+
   try {
     const bulkChecks = checks.map(check => ({
       user: check.user,

@@ -22,7 +22,7 @@ export declare function deleteUserFromPermit(userId: string): Promise<boolean>;
 /**
  * Gets user data from Permit.io
  */
-export declare function getUserFromPermit(userId: string): Promise<import("permitio").UserRead>;
+export declare function getUserFromPermit(userId: string): Promise<any>;
 /**
  * Updates user attributes in Permit.io
  */

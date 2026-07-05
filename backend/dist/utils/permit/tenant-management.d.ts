@@ -31,9 +31,9 @@ export declare function deleteTenantFromPermit(organizationId: string): Promise<
 /**
  * Gets tenant data from Permit.io
  */
-export declare function getTenantFromPermit(organizationId: string): Promise<import("permitio").TenantRead>;
+export declare function getTenantFromPermit(organizationId: string): Promise<any>;
 /**
  * Lists all tenants in Permit.io
  */
-export declare function listTenantsFromPermit(): Promise<import("permitio").TenantRead[]>;
+export declare function listTenantsFromPermit(): Promise<any>;
 //# sourceMappingURL=tenant-management.d.ts.map

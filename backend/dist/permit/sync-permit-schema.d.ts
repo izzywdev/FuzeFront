@@ -1,6 +1,9 @@
 import { PermitSchema } from './schema';
+import { ProductPolicy } from './product-policy';
 export { permitSchema } from './schema';
 export type { PermitSchema, PermitResourceDef, PermitRoleDef } from './schema';
+export { mergeProductPolicy, namespaceProductPolicy, buildEnvSchema, namespaceKey, validateProductPolicy, ProductPolicyError, PRODUCT_NS_SEP, } from './product-policy';
+export type { ProductPolicy, ProductResourceDecl, ProductRoleDecl } from './product-policy';
 export interface PermitSchemaClient {
     api: {
         resources: {
@@ -16,4 +19,5 @@ export interface PermitSchemaClient {
     };
 }
 export declare function syncPermitSchema(permit: PermitSchemaClient, schema?: PermitSchema, log?: (m: string) => void): Promise<void>;
+export declare function syncPermitSchemaWithProducts(permit: PermitSchemaClient, products: ProductPolicy[], log?: (m: string) => void): Promise<void>;
 //# sourceMappingURL=sync-permit-schema.d.ts.map

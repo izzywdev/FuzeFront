@@ -1,1 +1,1 @@
-{"version":3,"file":"invitations.d.ts","sourceRoot":"","sources":["../../src/routes/invitations.ts"],"names":[],"mappings":"AAUA,QAAA,MAAM,MAAM,4CAAmB,CAAA;AAE/B;;;;GAIG;AACH,wBAAgB,SAAS,CAAC,KAAK,EAAE,MAAM,GAAG,MAAM,CAI/C;AAgJD,eAAe,MAAM,CAAA"}
+{"version":3,"file":"invitations.d.ts","sourceRoot":"","sources":["../../src/routes/invitations.ts"],"names":[],"mappings":"AAUA,QAAA,MAAM,MAAM,KAAmB,CAAA;AAE/B;;;;GAIG;AACH,wBAAgB,SAAS,CAAC,KAAK,EAAE,MAAM,GAAG,MAAM,CAI/C;AAgJD,eAAe,MAAM,CAAA"}

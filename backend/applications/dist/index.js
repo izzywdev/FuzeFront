@@ -13,6 +13,8 @@ const http_1 = require("http");
 const path_1 = __importDefault(require("path"));
 const core_1 = require("@fuzefront/core");
 const apps_1 = __importDefault(require("./routes/apps"));
+const app_registry_1 = __importDefault(require("./routes/app-registry"));
+const builtins_1 = require("./app-registry/builtins");
 const socketHandler_1 = require("./sockets/socketHandler");
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3003;
@@ -24,6 +26,9 @@ const startTime = Date.now();
 const io = (0, socketHandler_1.initializeSocketIO)(httpServer);
 app.set('io', io);
 app.use('/api/apps', apps_1.default);
+// Frozen versioned app-registry contract surface (services/app-registry-service/
+// openapi.yaml) — mounted ALONGSIDE the legacy /api/apps for back-compat.
+app.use('/api/v1/app-registry', app_registry_1.default);
 const health = async (_req, res) => {
     const uptime = Math.floor((Date.now() - startTime) / 1000);
     const dbHealthy = await (0, core_1.checkDatabaseHealth)().catch(() => false);
@@ -76,6 +81,10 @@ async function startServer() {
         if (process.env.NODE_ENV !== 'production') {
             await (0, core_1.runSeeds)(dbOptions);
         }
+        // Built-in apps (e.g. Clock) are provisioned idempotently on EVERY boot
+        // (production included) so they appear in the menu out of the box, separate
+        // from the dev-only demo seeds above. Best-effort: never aborts startup.
+        await (0, builtins_1.ensureBuiltins)().catch(err => console.error('⚠️  [applications-service] ensureBuiltins failed:', err));
         const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
         httpServer.listen(portNumber, () => {
             console.log(`🚀 applications-service running on port ${portNumber}`);

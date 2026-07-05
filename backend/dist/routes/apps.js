@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -7,7 +40,124 @@ const express_1 = __importDefault(require("express"));
 const uuid_1 = require("uuid");
 const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = express_1.default.Router();
+const VALID_INTEGRATION_TYPES = [
+    'iframe',
+    'module-federation',
+    'web-component',
+    'spa',
+];
+const VALID_HEARTBEAT_STATUSES = ['online', 'offline', 'degraded'];
+/**
+ * Load an app plus the caller's membership role on the app's owning org.
+ * Returns the app (or undefined if it doesn't exist) and the caller's role on
+ * the owning organization (or null if the caller is not an active member).
+ */
+async function loadAppForUser(appId, userId) {
+    const app = (await (0, database_1.db)('apps').where('id', appId).first());
+    if (!app) {
+        return { app: undefined, membershipRole: null };
+    }
+    if (!app.organization_id) {
+        // Legacy / un-owned app: no org to scope to. Treat as not-entitled for
+        // mutations (fail closed); only platform-role callers may act on it.
+        return { app, membershipRole: null };
+    }
+    const membership = await (0, database_1.db)('organization_memberships')
+        .where('user_id', userId)
+        .where('organization_id', app.organization_id)
+        .where('status', 'active')
+        .first();
+    return { app, membershipRole: membership ? membership.role : null };
+}
+/**
+ * Object-level authorization middleware for app mutations.
+ *
+ * Allows the action when the caller is an owner/admin member of the app's
+ * owning organization (object-level), OR a Permit `App:<action>` check passes
+ * for the app within its org (policy layer). Falls back to a platform `admin`
+ * role only for legacy un-owned apps. Fails closed (403/404) otherwise.
+ *
+ * This replaces the bare `requireRole(['admin'])` that let ANY platform admin
+ * mutate ANY app regardless of tenant ownership (HIGH-3).
+ */
+function requireAppAction(action) {
+    return async (req, res, next) => {
+        try {
+            if (!req.user?.id) {
+                return res
+                    .status(401)
+                    .json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+            }
+            const { id } = req.params;
+            const { app, membershipRole } = await loadAppForUser(id, req.user.id);
+            if (!app) {
+                return res
+                    .status(404)
+                    .json({ error: 'App not found', code: 'APP_NOT_FOUND' });
+            }
+            // Object-level: owner/admin of the app's owning org may act on it.
+            if (membershipRole === 'owner' || membershipRole === 'admin') {
+                req.app_row = app;
+                return next();
+            }
+            // Policy layer: defer to Permit for this specific app within its org.
+            if (app.organization_id) {
+                const { checkAppPermission } = await Promise.resolve().then(() => __importStar(require('../utils/permit/permission-check')));
+                const permitted = await checkAppPermission(req.user.id, action, app.id, app.organization_id);
+                if (permitted) {
+                    req.app_row = app;
+                    return next();
+                }
+            }
+            else {
+                // Un-owned legacy app: only a platform admin may touch it.
+                const roles = req.user.roles || [];
+                if (roles.includes('admin')) {
+                    req.app_row = app;
+                    return next();
+                }
+            }
+            return res.status(403).json({
+                error: 'Insufficient permissions to modify this app',
+                code: 'APP_PERMISSION_DENIED',
+            });
+        }
+        catch (error) {
+            console.error('App authorization error:', error);
+            return res
+                .status(500)
+                .json({ error: 'Authorization check failed', code: 'AUTHZ_ERROR' });
+        }
+    };
+}
+/**
+ * Build the SET of organization IDs the caller may see apps from (their active
+ * memberships). Used to scope collection reads (HIGH-4).
+ */
+async function getMemberOrgIds(userId) {
+    const rows = await (0, database_1.db)('organization_memberships')
+        .where('user_id', userId)
+        .where('status', 'active')
+        .select('organization_id');
+    return rows.map((r) => r.organization_id).filter(Boolean);
+}
+/**
+ * Apply org/visibility scoping to an apps query for the given user.
+ * The caller may see an app when ANY of:
+ *   - it belongs to an org they're an active member of, OR
+ *   - its visibility is 'public' or 'marketplace'.
+ * Private/organization apps of orgs they don't belong to are excluded (BOLA).
+ */
+function scopeAppsQuery(query, memberOrgIds) {
+    return query.where(function () {
+        this.whereIn('apps.visibility', ['public', 'marketplace']);
+        if (memberOrgIds.length > 0) {
+            this.orWhereIn('apps.organization_id', memberOrgIds);
+        }
+    });
+}
 // Health check function for individual apps
 async function checkAppHealth(app) {
     try {
@@ -31,10 +181,13 @@ async function checkAppHealth(app) {
         return false;
     }
 }
-// GET /api/apps/health - Check health of all registered apps
+// GET /api/apps/health - Check health of apps the caller is entitled to see
 router.get('/health', auth_1.authenticateToken, async (req, res) => {
     try {
-        const apps = await (0, database_1.db)('apps').where('is_active', true).orderBy('name');
+        // HIGH-4: scope to the caller's orgs + public/marketplace visibility
+        // instead of returning every active app on the platform.
+        const memberOrgIds = await getMemberOrgIds(req.user.id);
+        const apps = await scopeAppsQuery((0, database_1.db)('apps').where('is_active', true), memberOrgIds).orderBy('name');
         const healthChecks = await Promise.all(apps.map(async (app) => {
             const isHealthy = await checkAppHealth(app);
             return {
@@ -56,8 +209,10 @@ router.get('/health', auth_1.authenticateToken, async (req, res) => {
  * @swagger
  * /api/apps:
  *   get:
- *     summary: Get all registered applications
- *     description: Retrieve a list of all registered applications with their health status
+ *     summary: Get registered applications the caller is entitled to see
+ *     description: >-
+ *       Retrieve applications scoped to the caller's organization memberships
+ *       and to public/marketplace visibility, with their health status.
  *     tags: [Applications]
  *     security:
  *       - bearerAuth: []
@@ -78,18 +233,6 @@ router.get('/health', auth_1.authenticateToken, async (req, res) => {
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/App'
- *             example:
- *               - id: "f0e9b957-5e89-456e-a768-f2166932a725"
- *                 name: "Task Manager"
- *                 url: "http://localhost:3002"
- *                 iconUrl: "http://localhost:3002/icon.svg"
- *                 isActive: true
- *                 isHealthy: true
- *                 integrationType: "module-federation"
- *                 remoteUrl: "http://localhost:3002/assets/remoteEntry.js"
- *                 scope: "taskManager"
- *                 module: "./App"
- *                 description: "Personal task management application"
  *       500:
  *         description: Failed to fetch applications
  *         content:
@@ -97,11 +240,13 @@ router.get('/health', auth_1.authenticateToken, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-// GET /api/apps - Get all registered apps with health status
+// GET /api/apps - Get apps the caller is entitled to see, with health status
 router.get('/', auth_1.authenticateToken, async (req, res) => {
     try {
         const { healthyOnly } = req.query;
-        const apps = await (0, database_1.db)('apps').where('is_active', true).orderBy('name');
+        // HIGH-4: object-level read scoping (org membership + visibility).
+        const memberOrgIds = await getMemberOrgIds(req.user.id);
+        const apps = await scopeAppsQuery((0, database_1.db)('apps').where('is_active', true), memberOrgIds).orderBy('name');
         // Get health status for all apps
         const appsWithHealth = await Promise.all(apps.map(async (app) => {
             const isHealthy = await checkAppHealth(app);
@@ -151,26 +296,6 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/CreateAppRequest'
- *           examples:
- *             module-federation:
- *               summary: Module Federation App
- *               value:
- *                 name: "My React App"
- *                 url: "https://my-app.netlify.app"
- *                 iconUrl: "https://my-app.netlify.app/icon.svg"
- *                 integrationType: "module-federation"
- *                 remoteUrl: "https://my-app.netlify.app/assets/remoteEntry.js"
- *                 scope: "myApp"
- *                 module: "./App"
- *                 description: "A React microfrontend application"
- *             iframe:
- *               summary: Iframe App
- *               value:
- *                 name: "External Dashboard"
- *                 url: "https://dashboard.example.com"
- *                 iconUrl: "https://dashboard.example.com/favicon.ico"
- *                 integrationType: "iframe"
- *                 description: "External dashboard embedded via iframe"
  *     responses:
  *       201:
  *         description: Application registered successfully
@@ -180,39 +305,12 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
  *               $ref: '#/components/schemas/App'
  *       400:
  *         description: Bad request - missing required fields or duplicate name
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *             examples:
- *               missing-fields:
- *                 summary: Missing required fields
- *                 value:
- *                   error: "Name and URL are required"
- *               duplicate-name:
- *                 summary: Duplicate application name
- *                 value:
- *                   error: "An app with this name already exists"
  *       401:
  *         description: Authentication required
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       403:
  *         description: Admin role required
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *             example:
- *               error: "Insufficient permissions"
  *       500:
  *         description: Failed to create application
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
 // POST /api/apps - Register new app (admin only)
 router.post('/', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), async (req, res) => {
@@ -278,15 +376,9 @@ router.post('/', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), a
             }
         }
         // Integration type validation
-        const validIntegrationTypes = [
-            'iframe',
-            'module-federation',
-            'web-component',
-            'spa',
-        ];
-        if (!validIntegrationTypes.includes(integrationType)) {
+        if (!VALID_INTEGRATION_TYPES.includes(integrationType)) {
             return res.status(400).json({
-                error: `Invalid integration type. Must be one of: ${validIntegrationTypes.join(', ')}`,
+                error: `Invalid integration type. Must be one of: ${VALID_INTEGRATION_TYPES.join(', ')}`,
             });
         }
         // Module federation specific validation
@@ -336,6 +428,8 @@ router.post('/', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), a
                 .json({ error: 'An app with this name already exists' });
         }
         const appId = (0, uuid_1.v4)();
+        // MEDIUM-5: only an explicit allow-list of columns is written; never the
+        // raw req.body. Unknown/extra fields in the body are silently dropped.
         await (0, database_1.db)('apps').insert({
             id: appId,
             name,
@@ -378,10 +472,19 @@ router.post('/', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), a
     }
 });
 // PUT /api/apps/:id/activate - Activate/deactivate app
-router.put('/:id/activate', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), async (req, res) => {
+//
+// HIGH-3 + MEDIUM-5: object-level authz (owner/admin of the app's org, or a
+// Permit App:update) replaces the bare global requireRole(['admin']); and only
+// the boolean `is_active` (coerced) is written from the body, never raw fields.
+router.put('/:id/activate', auth_1.authenticateToken, requireAppAction('update'), async (req, res) => {
     try {
         const { id } = req.params;
         const { isActive } = req.body;
+        if (typeof isActive !== 'boolean') {
+            return res
+                .status(400)
+                .json({ error: 'isActive is required and must be a boolean' });
+        }
         await (0, database_1.db)('apps').where('id', id).update({
             is_active: isActive,
             updated_at: database_1.db.fn.now(),
@@ -394,7 +497,9 @@ router.put('/:id/activate', auth_1.authenticateToken, (0, auth_1.requireRole)(['
     }
 });
 // DELETE /api/apps/:id - Deregister app
-router.delete('/:id', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin']), async (req, res) => {
+//
+// HIGH-3: object-level authz replaces the bare global requireRole(['admin']).
+router.delete('/:id', auth_1.authenticateToken, requireAppAction('delete'), async (req, res) => {
     try {
         const { id } = req.params;
         await (0, database_1.db)('apps').where('id', id).del();
@@ -406,33 +511,45 @@ router.delete('/:id', auth_1.authenticateToken, (0, auth_1.requireRole)(['admin'
     }
 });
 // POST /api/apps/:id/heartbeat - App reports it's alive
-router.post('/:id/heartbeat', async (req, res) => {
+//
+// CRITICAL-2: this was UNAUTHENTICATED — any anonymous caller could spoof
+// `app-status-changed` socket events for any app id and broadcast arbitrary
+// metadata. It is now authenticated and authorized object-level: the caller
+// must be an active member of the app's owning organization (or pass a Permit
+// App:update). `status` is validated against an allow-list, and only a small,
+// sanitized metadata projection is broadcast (never raw req.body.metadata).
+router.post('/:id/heartbeat', auth_1.authenticateToken, requireAppAction('update'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { status = 'online', metadata = {} } = req.body;
-        // Verify app exists
-        const app = await (0, database_1.db)('apps')
-            .where('id', id)
-            .where('is_active', true)
-            .first();
-        if (!app) {
+        let { status = 'online' } = req.body;
+        if (typeof status !== 'string')
+            status = 'online';
+        status = status.trim();
+        if (!VALID_HEARTBEAT_STATUSES.includes(status)) {
+            return res.status(400).json({
+                error: `Invalid status. Must be one of: ${VALID_HEARTBEAT_STATUSES.join(', ')}`,
+            });
+        }
+        // requireAppAction already loaded + verified the app exists & is owned.
+        const app = req.app_row;
+        if (!app || !app.is_active) {
             return res.status(404).json({ error: 'App not found or inactive' });
         }
         // Update app's last heartbeat timestamp
         await (0, database_1.db)('apps').where('id', id).update({ updated_at: database_1.db.fn.now() });
-        // Emit WebSocket event to all connected clients
+        // Emit WebSocket event to all connected clients. Never broadcast raw
+        // attacker-controlled metadata — emit only a fixed, derived projection.
         const io = req.app.get('io');
         if (io) {
             io.emit('app-status-changed', {
                 appId: id,
                 appName: app.name,
-                status: status,
+                status,
                 isHealthy: status === 'online',
                 timestamp: new Date().toISOString(),
-                metadata,
             });
         }
-        console.log(`💓 Heartbeat received from ${app.name} (${id}): ${status}`);
+        console.log(`Heartbeat received from ${app.name} (${id}): ${status}`);
         res.json({
             success: true,
             message: 'Heartbeat received',
@@ -444,22 +561,87 @@ router.post('/:id/heartbeat', async (req, res) => {
         res.status(500).json({ error: 'Failed to process heartbeat' });
     }
 });
-// POST /api/apps/register - Self-register app (no auth required for demo)
-router.post('/register', async (req, res) => {
+// POST /api/apps/register - Self-register app
+//
+// CRITICAL-1: this was UNAUTHENTICATED ("no auth required for demo"), letting
+// any anonymous caller inject module-federation apps with attacker-controlled
+// remoteUrl/scope/module — the host shell then loads those as federated remotes
+// (arbitrary remote load / stored-XSS into every shell). It is now
+// authenticated AND org-scoped via `requireAppPermission('create')`, the app is
+// owned by the caller's organization, and it shares the same validation +
+// allow-list insert as POST /api/apps.
+router.post('/register', auth_1.authenticateToken, (0, permissions_1.requireAppPermission)('create'), async (req, res) => {
     try {
-        const { name, url, iconUrl, integrationType = 'module-federation', remoteUrl, scope, module, description, } = req.body;
+        let { name, url, iconUrl, integrationType = 'module-federation', remoteUrl, scope, module, description, } = req.body;
+        // Sanitize string fields
+        if (typeof name === 'string')
+            name = name.trim();
+        if (typeof url === 'string')
+            url = url.trim();
+        if (typeof iconUrl === 'string')
+            iconUrl = iconUrl.trim();
+        if (typeof integrationType === 'string')
+            integrationType = integrationType.trim();
+        if (typeof remoteUrl === 'string')
+            remoteUrl = remoteUrl.trim();
+        if (typeof scope === 'string')
+            scope = scope.trim();
+        if (typeof module === 'string')
+            module = module.trim();
+        if (typeof description === 'string')
+            description = description.trim();
+        // The owning org comes from the verified request context set by
+        // requireAppPermission, NOT from the request body (no tenant spoofing).
+        const organizationId = req.organization?.id ||
+            req.params.organizationId ||
+            req.user.organizationId;
         if (!name || !url) {
             return res.status(400).json({ error: 'Name and URL are required' });
         }
-        // For module federation, require additional fields
+        if (name.length > 255 || url.length > 255) {
+            return res.status(400).json({ error: 'Name or URL is too long' });
+        }
+        const urlRegex = /^https?:\/\/.+/i;
+        if (!urlRegex.test(url)) {
+            return res
+                .status(400)
+                .json({ error: 'URL must be a valid HTTP or HTTPS URL' });
+        }
+        if (iconUrl && (iconUrl.length > 255 || !urlRegex.test(iconUrl))) {
+            return res
+                .status(400)
+                .json({ error: 'Icon URL must be a valid HTTP or HTTPS URL' });
+        }
+        // Integration type allow-list
+        if (!VALID_INTEGRATION_TYPES.includes(integrationType)) {
+            return res.status(400).json({
+                error: `Invalid integration type. Must be one of: ${VALID_INTEGRATION_TYPES.join(', ')}`,
+            });
+        }
+        // For module federation, require + validate the federation fields whose
+        // values drive what the host shell loads as a remote.
         if (integrationType === 'module-federation') {
             if (!remoteUrl || !scope || !module) {
                 return res.status(400).json({
                     error: 'Module Federation apps require remoteUrl, scope, and module',
                 });
             }
+            if (remoteUrl.length > 255 ||
+                scope.length > 255 ||
+                module.length > 255) {
+                return res
+                    .status(400)
+                    .json({ error: 'remoteUrl, scope, or module is too long' });
+            }
+            if (!urlRegex.test(remoteUrl)) {
+                return res
+                    .status(400)
+                    .json({ error: 'remoteUrl must be a valid HTTP or HTTPS URL' });
+            }
         }
         const appId = (0, uuid_1.v4)();
+        // MEDIUM-5: explicit allow-list of columns; org ownership is bound from
+        // the verified context, never from raw req.body.
         await (0, database_1.db)('apps').insert({
             id: appId,
             name,
@@ -470,6 +652,8 @@ router.post('/register', async (req, res) => {
             scope,
             module,
             description,
+            organization_id: organizationId || null,
+            visibility: 'private',
         });
         const newApp = {
             id: appId,
@@ -495,7 +679,7 @@ router.post('/register', async (req, res) => {
                 timestamp: new Date().toISOString(),
             });
         }
-        console.log(`🚀 App "${name}" self-registered successfully`);
+        console.log(`App "${name}" self-registered successfully`);
         res.status(201).json(newApp);
     }
     catch (error) {

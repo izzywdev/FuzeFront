@@ -1,4 +1,3 @@
-import { Permit } from 'permitio';
 interface PermitConfig {
     token: string;
     pdp: string;
@@ -6,7 +5,7 @@ interface PermitConfig {
     syncInterval?: number;
 }
 declare const config: PermitConfig;
-declare const permit: Permit;
+declare let permit: any;
 export default permit;
 export { config as permitConfig };
 //# sourceMappingURL=permit.d.ts.map

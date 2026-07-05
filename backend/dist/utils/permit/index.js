@@ -21,4 +21,5 @@ __exportStar(require("./permission-check"), exports);
 __exportStar(require("./resource-instances"), exports);
 __exportStar(require("./bulk-operations"), exports);
 __exportStar(require("./sync-existing-data"), exports);
+__exportStar(require("./product-authz"), exports);
 //# sourceMappingURL=index.js.map

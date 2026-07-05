@@ -9,6 +9,7 @@ exports.requireRole = requireRole;
 exports.requireOwnership = requireOwnership;
 exports.requireAnyPermission = requireAnyPermission;
 const permission_check_1 = require("../utils/permit/permission-check");
+const database_1 = require("../config/database");
 /**
  * Generic permission middleware factory
  */
@@ -149,21 +150,34 @@ function requireAppPermission(action) {
                     code: 'APP_ID_REQUIRED',
                 });
             }
-            if (!organizationId) {
+            let resolvedOrgId = organizationId;
+            if (!resolvedOrgId && action === 'create') {
+                // For create actions without an explicit org context, fall back to
+                // the user's personal org. This allows self-registration endpoints
+                // (/api/apps/register) to work without requiring callers to look up
+                // and pass an org ID explicitly.
+                const personalOrg = await (0, database_1.db)('organizations')
+                    .where({ owner_id: req.user.id, type: 'personal' })
+                    .first();
+                if (personalOrg) {
+                    resolvedOrgId = personalOrg.id;
+                }
+            }
+            if (!resolvedOrgId) {
                 return res.status(400).json({
                     error: 'Organization context required',
                     code: 'ORG_CONTEXT_REQUIRED',
                 });
             }
-            const hasPermission = await (0, permission_check_1.checkAppPermission)(req.user.id, action, appId, organizationId);
+            const hasPermission = await (0, permission_check_1.checkAppPermission)(req.user.id, action, appId, resolvedOrgId);
             if (!hasPermission) {
                 return res.status(403).json({
                     error: 'Insufficient app permissions',
                     code: 'APP_PERMISSION_DENIED',
-                    required: { action, appId, organizationId },
+                    required: { action, appId, organizationId: resolvedOrgId },
                 });
             }
-            req.organization = { id: organizationId, role: 'unknown' };
+            req.organization = { id: resolvedOrgId, role: 'unknown' };
             next();
         }
         catch (error) {

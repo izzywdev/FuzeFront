@@ -20,15 +20,31 @@ export declare function deleteResourceInstance(resourceKey: string): Promise<boo
 /**
  * Gets a resource instance from Permit.io
  */
-export declare function getResourceInstance(resourceKey: string): Promise<import("permitio/build/openapi").ResourceInstanceRead>;
+export declare function getResourceInstance(resourceKey: string): Promise<any>;
 /**
  * Lists resource instances for a tenant
  */
-export declare function listResourceInstances(tenant: string, resourceType?: string): Promise<import("permitio/build/openapi").ResourceInstanceRead[]>;
+export declare function listResourceInstances(tenant: string, resourceType?: string): Promise<any>;
 /**
  * Creates an organization resource instance
  */
 export declare function createOrganizationResourceInstance(organizationId: string): Promise<boolean>;
+/**
+ * Records the parent→child link for the ReBAC org hierarchy by creating the
+ * `parent` relationship tuple between two Organization instances. After this,
+ * any user holding `org-admin` on `parentOrgId` derives `org-admin` on
+ * `childOrgId` (and transitively down the tree).
+ *
+ * Idempotent: a benign "already exists" is treated as success.
+ */
+export declare function setOrganizationParent(childOrgId: string, parentOrgId: string): Promise<boolean>;
+/**
+ * Grants a user the ReBAC `org-admin` role on a specific Organization instance.
+ * Use on the FuzeOne ROOT org to make a staff member an administrator of the
+ * whole tree (children inherit via the `parent` relation), or on a specific org
+ * to scope them to that subtree.
+ */
+export declare function assignOrgAdminRebac(userId: string, organizationId: string): Promise<boolean>;
 /**
  * Grants access to a resource instance for a user
  */

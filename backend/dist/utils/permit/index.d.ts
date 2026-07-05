@@ -5,4 +5,5 @@ export * from './permission-check';
 export * from './resource-instances';
 export * from './bulk-operations';
 export * from './sync-existing-data';
+export * from './product-authz';
 //# sourceMappingURL=index.d.ts.map

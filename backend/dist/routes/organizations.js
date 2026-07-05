@@ -10,6 +10,26 @@ const permissions_1 = require("../middleware/permissions");
 const database_1 = require("../config/database");
 const organizationProvisioning_1 = require("../services/organizationProvisioning");
 const router = express_1.default.Router();
+// `settings`/`metadata` are jsonb columns. The `pg` driver already parses jsonb
+// into JS objects on read, so calling JSON.parse() on them throws
+// ("[object Object]" is not valid JSON) and 500s the route. Older code paths /
+// other drivers (e.g. sqlite) may hand back a string instead, so accept both:
+// pass objects through, parse strings, and fall back to {} on anything invalid.
+function parseJsonColumn(value) {
+    if (value == null)
+        return {};
+    if (typeof value === 'object')
+        return value;
+    if (typeof value === 'string') {
+        try {
+            return JSON.parse(value);
+        }
+        catch {
+            return {};
+        }
+    }
+    return {};
+}
 // Input validation helpers
 function validateOrganizationInput(data) {
     const errors = [];
@@ -131,8 +151,8 @@ router.post('/', auth_1.authenticateToken, async (req, res) => {
             parent_id: newOrganization.parent_id,
             owner_id: newOrganization.owner_id,
             type: newOrganization.type,
-            settings: JSON.parse(newOrganization.settings || '{}'),
-            metadata: JSON.parse(newOrganization.metadata || '{}'),
+            settings: parseJsonColumn(newOrganization.settings),
+            metadata: parseJsonColumn(newOrganization.metadata),
             is_active: newOrganization.is_active,
             created_at: newOrganization.created_at,
             updated_at: newOrganization.updated_at,
@@ -197,8 +217,15 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
                 query = query.where('organizations.parent_id', parent_id);
             }
         }
+        // `is_active` defaults to the boolean `true` (when no query param is sent),
+        // but arrives as a string when it IS sent. Comparing `true === 'true'`
+        // yields false, which previously filtered to is_active=false and hid every
+        // active org (including the user's personal org) — leaving the frontend
+        // WorkspaceProvisioningGate stuck on "Creating your workspace…". Coerce both
+        // shapes: treat boolean true and the string 'true' as active.
         if (is_active !== undefined) {
-            query = query.where('organizations.is_active', is_active === 'true');
+            const wantActive = is_active === true || is_active === 'true';
+            query = query.where('organizations.is_active', wantActive);
         }
         if (search) {
             query = query.where(function () {
@@ -223,8 +250,8 @@ router.get('/', auth_1.authenticateToken, async (req, res) => {
             parent_id: org.parent_id,
             owner_id: org.owner_id,
             type: org.type,
-            settings: JSON.parse(org.settings || '{}'),
-            metadata: JSON.parse(org.metadata || '{}'),
+            settings: parseJsonColumn(org.settings),
+            metadata: parseJsonColumn(org.metadata),
             is_active: org.is_active,
             created_at: org.created_at,
             updated_at: org.updated_at,
@@ -276,8 +303,8 @@ router.get('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             parent_id: organization.parent_id,
             owner_id: organization.owner_id,
             type: organization.type,
-            settings: JSON.parse(organization.settings || '{}'),
-            metadata: JSON.parse(organization.metadata || '{}'),
+            settings: parseJsonColumn(organization.settings),
+            metadata: parseJsonColumn(organization.metadata),
             is_active: organization.is_active,
             created_at: organization.created_at,
             updated_at: organization.updated_at,
@@ -347,8 +374,8 @@ router.put('/:id', auth_1.authenticateToken, permissions_1.PermissionMiddleware.
             parent_id: updatedOrganization.parent_id,
             owner_id: updatedOrganization.owner_id,
             type: updatedOrganization.type,
-            settings: JSON.parse(updatedOrganization.settings || '{}'),
-            metadata: JSON.parse(updatedOrganization.metadata || '{}'),
+            settings: parseJsonColumn(updatedOrganization.settings),
+            metadata: parseJsonColumn(updatedOrganization.metadata),
             is_active: updatedOrganization.is_active,
             created_at: updatedOrganization.created_at,
             updated_at: updatedOrganization.updated_at,

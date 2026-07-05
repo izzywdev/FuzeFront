@@ -1,4 +1,4 @@
-declare const router: import("express-serve-static-core").Router;
+declare const router: any;
 /**
  * Mask an email address for safe public exposure.
  * Only the first character before '@' is preserved; the rest is replaced with '***'.

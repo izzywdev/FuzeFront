@@ -15,11 +15,11 @@ export declare function unassignRoleInPermit(assignment: Omit<RoleAssignment, 'r
 /**
  * Lists all role assignments for a user
  */
-export declare function getUserRoleAssignments(userId: string, tenantId?: string): Promise<import("permitio").RoleAssignmentRead[]>;
+export declare function getUserRoleAssignments(userId: string, tenantId?: string): Promise<any>;
 /**
  * Lists all role assignments in a tenant
  */
-export declare function getTenantRoleAssignments(tenantId: string): Promise<import("permitio").RoleAssignmentRead[]>;
+export declare function getTenantRoleAssignments(tenantId: string): Promise<any>;
 /**
  * Checks if a user has a specific role in a tenant
  */

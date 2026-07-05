@@ -35,7 +35,7 @@ export declare function checkOrganizationAccess(userId: string, organizationId: 
 /**
  * Gets all permissions for a user in an organization
  */
-export declare function getUserPermissions(userId: string, organizationId: string): Promise<import("permitio/build/enforcement/interfaces").IUserPermissions>;
+export declare function getUserPermissions(userId: string, organizationId: string): Promise<any>;
 /**
  * Middleware helper to check permissions in Express routes
  */

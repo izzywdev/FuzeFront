@@ -65,6 +65,14 @@ const getDatabaseConfig = () => {
                 // files in dist/migrations and require()s them -> "Unexpected token
                 // 'export'", which broke migrations on server startup in CI.
                 loadExtensions: [isProduction ? '.js' : '.ts'],
+                // Backend, security, and applications share this `knex_migrations` table on
+                // fuzefront_platform but each image ships only its own migration chain.
+                // knex's default validateMigrationList aborts when the table records a
+                // migration absent from this image's dir (e.g. security's
+                // 010_create_api_tokens / 011_add_billing_to_entities) — which crashlooped
+                // backend replicas after security migrated. Migrations are idempotent;
+                // skip the strict check so each service tolerates the others' recorded rows.
+                disableMigrationsListValidation: true,
             },
             seeds: {
                 directory: path_1.default.join(__dirname, isProduction ? '../seeds' : '../seeds'),
@@ -89,6 +97,14 @@ const getDatabaseConfig = () => {
                 // files in dist/migrations and require()s them -> "Unexpected token
                 // 'export'", which broke migrations on server startup in CI.
                 loadExtensions: [isProduction ? '.js' : '.ts'],
+                // Backend, security, and applications share this `knex_migrations` table on
+                // fuzefront_platform but each image ships only its own migration chain.
+                // knex's default validateMigrationList aborts when the table records a
+                // migration absent from this image's dir (e.g. security's
+                // 010_create_api_tokens / 011_add_billing_to_entities) — which crashlooped
+                // backend replicas after security migrated. Migrations are idempotent;
+                // skip the strict check so each service tolerates the others' recorded rows.
+                disableMigrationsListValidation: true,
             },
             seeds: {
                 directory: path_1.default.join(__dirname, isProduction ? '../seeds' : '../seeds'),
@@ -97,9 +113,15 @@ const getDatabaseConfig = () => {
         };
     }
 };
-// Initialize database connection
+// Initialize database connection.
+// Idempotent: if a Knex instance already exists this is a no-op so that
+// multiple calls (e.g. from test files that each invoke initializeDatabase())
+// share a single pool rather than abandoning the previous one (an abandoned
+// pool holds open connections that prevent jest from exiting cleanly).
 function initializeDatabaseConnection() {
-    exports.db = (0, knex_1.knex)(getDatabaseConfig());
+    if (!exports.db) {
+        exports.db = (0, knex_1.knex)(getDatabaseConfig());
+    }
 }
 // Wait for PostgreSQL to be available
 async function waitForPostgres(maxRetries = 30, retryDelay = 2000) {
@@ -263,7 +285,36 @@ async function checkDatabaseHealth() {
     }
 }
 async function closeDatabase() {
+    if (!exports.db)
+        return;
     try {
+        // tarn.js pool.destroy() waits indefinitely for borrowed connections to be
+        // returned. In tests, fire-and-forget provisioning calls (from
+        // selfHealProvisioningOnLogin) may still hold borrowed connections when
+        // afterAll runs.  We force-end each borrowed pg client so tarn can
+        // immediately release them and pool.destroy() resolves.
+        const pool = exports.db?.client?.pool;
+        if (pool) {
+            // pool.used is an Array<{resource, promise}> in tarn.js.
+            // The resource IS the raw pg connection (decorated with __knexUid).
+            const used = Array.isArray(pool.used) ? pool.used : [];
+            if (used.length > 0) {
+                console.log(`⚡ Force-ending ${used.length} borrowed DB connection(s)...`);
+                await Promise.allSettled(used.map((slot) => {
+                    try {
+                        // Try common shapes: slot.resource (tarn Used<T>), or slot itself
+                        const conn = slot?.resource ?? slot;
+                        if (conn && typeof conn.end === 'function') {
+                            return conn.end();
+                        }
+                    }
+                    catch {
+                        // best-effort
+                    }
+                    return Promise.resolve();
+                }));
+            }
+        }
         await exports.db.destroy();
         console.log('✅ Database connection closed');
     }

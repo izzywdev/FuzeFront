@@ -42,6 +42,14 @@ function getDatabaseConfig(options = {}) {
         // dist/migrations and require()s them -> "Unexpected token 'export'".
         loadExtensions: [isProduction ? '.js' : '.ts'],
         extension: isProduction ? 'js' : 'ts',
+        // The split services share the original `knex_migrations` table but ship
+        // divergent chains (the monolith recorded `010_add_billing_to_entities`,
+        // while security renumbered to `010_create_api_tokens` + `011_add_billing`).
+        // knex's default validateMigrationList aborts boot when the table records a
+        // migration absent from this image's dir. All service migrations are written
+        // idempotently (hasTable/hasColumn guards), so it is safe to skip that strict
+        // check and let each service re-apply its own (no-op) chain.
+        disableMigrationsListValidation: true,
     };
     if (opts.migrationsDir) {
         migrationsConfig.directory = opts.migrationsDir;

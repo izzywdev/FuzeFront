@@ -22,7 +22,17 @@ export declare function deleteUserFromPermit(userId: string): Promise<boolean>;
 /**
  * Gets user data from Permit.io
  */
-export declare function getUserFromPermit(userId: string): Promise<import("permitio").UserRead>;
+export declare function getUserFromPermit(userId: string): Promise<any>;
+/**
+ * Syncs a service/API token as a Permit principal and assigns it a role.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+export declare function syncServiceTokenToPermit(tokenId: string, orgId: string, permitRole: 'viewer' | 'editor' | 'admin'): Promise<boolean>;
+/**
+ * Removes a service/API token role from Permit.
+ * The Permit principal key is "svc_token:<tokenId>".
+ */
+export declare function removeServiceTokenFromPermit(tokenId: string, orgId: string, permitRole: 'viewer' | 'editor' | 'admin'): Promise<boolean>;
 /**
  * Updates user attributes in Permit.io
  */

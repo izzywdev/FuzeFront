@@ -36,7 +36,7 @@ const CI_DUMMY_KEYS = new Set([
   'ci-offline-pdp-key',
 ])
 
-const isNoOpMode =
+export const isNoOpMode =
   CI_DUMMY_KEYS.has(config.token) ||
   (process.env.NODE_ENV === 'test' && !config.token.startsWith('permit_key_'))
 
