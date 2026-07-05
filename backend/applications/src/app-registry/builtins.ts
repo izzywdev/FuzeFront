@@ -12,6 +12,27 @@ import { appManifestSchema, AppManifest } from './manifest.schema'
 const BUILTIN_MANIFESTS: unknown[] = [
   {
     manifestVersion: '1',
+    slug: 'fuzeagent',
+    name: 'FuzeAgent',
+    menuLabel: 'Agents',
+    description:
+      'AI team orchestration platform — create and manage autonomous AI agents (Claude Code SDK + CrewAI) coordinated by a digital CEO (IzzyAI).',
+    icon: { kind: 'emoji', value: '🤖' },
+    mode: 'portal',
+    builtin: true,
+    integration: {
+      type: 'module-federation',
+      remoteEntry: 'https://fuzeagent.prod.fuzefront.com/remoteEntry.js',
+      scope: 'fuzeagentApp',
+      module: './FuzeAgentApp',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/app/fuzeagent' },
+    visibility: 'organization',
+    roles: [],
+  },
+  {
+    manifestVersion: '1',
     slug: 'clock',
     name: 'Clock',
     menuLabel: 'Clock',
