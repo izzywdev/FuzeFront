@@ -55,6 +55,15 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "ds-propagation" --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Design system propagation task" --force
+          gh label create "frontend"       --repo "$GITHUB_REPOSITORY" --color "e4e669" --description "Frontend slice" --force
+          gh label create "mobile"         --repo "$GITHUB_REPOSITORY" --color "d93f0b" --description "Mobile slice" --force
+          gh label create "testing"        --repo "$GITHUB_REPOSITORY" --color "0e8a16" --description "Testing slice" --force
+
       - name: Create @claude frontend issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,6 +104,13 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "ds-propagation" --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Design system propagation task" --force
+          gh label create "mobile"         --repo "$GITHUB_REPOSITORY" --color "d93f0b" --description "Mobile slice" --force
+
       - name: Create @claude mobile issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,11 +149,19 @@ jobs:
   open-e2e-issue:
     name: Open UI-test propagation issue
     needs: [open-frontend-issue, open-mobile-issue]
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     steps:
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "ds-propagation" --repo "$GITHUB_REPOSITORY" --color "0075ca" --description "Design system propagation task" --force
+          gh label create "testing"        --repo "$GITHUB_REPOSITORY" --color "0e8a16" --description "Testing slice" --force
+
       - name: Create @claude e2e issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
