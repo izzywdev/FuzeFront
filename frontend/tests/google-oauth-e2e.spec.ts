@@ -23,7 +23,6 @@ const GOOGLE_TEST_PASSWORD = process.env.GOOGLE_TEST_PASSWORD ?? ''
 // Skip the whole suite if credentials are not provided
 test.beforeAll(() => {
   if (!GOOGLE_TEST_EMAIL || !GOOGLE_TEST_PASSWORD) {
-    // eslint-disable-next-line no-console
     console.warn(
       'Skipping Google OAuth E2E: GOOGLE_TEST_EMAIL / GOOGLE_TEST_PASSWORD not set.'
     )

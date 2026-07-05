@@ -28,4 +28,6 @@ regexes = [
   '''test-client-secret''',
   '''mock\.jwt\.token''',
   '''e2e-test-jwt''',
+  # E2E local Authentik user password (oidc-plumbing-e2e.yml E2E_USER_PASSWORD)
+  '''E2eP@ssw0rd123''',
 ]
