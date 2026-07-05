@@ -266,8 +266,13 @@ jobs:
         run: npm ci
 
       - name: Install email-service deps
-        # npm ci requires a package-lock.json; email-service has none (uses npm install)
-        run: cd services/email-service && npm install
+        # email-service is not in the root workspace so npm install can't resolve
+        # @fuzefront/shared via workspace symlinks. Link shared directly first,
+        # then install remaining deps (no package-lock.json, so npm install not ci).
+        run: |
+          mkdir -p services/email-service/node_modules/@fuzefront
+          ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzefront/shared
+          cd services/email-service && npm install --ignore-scripts
 
       - name: Build email-service
         run: cd services/email-service && npm run build
