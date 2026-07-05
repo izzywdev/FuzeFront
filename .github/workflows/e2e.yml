@@ -182,6 +182,14 @@ jobs:
           npx playwright install --with-deps chromium
           npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts
 
+      - name: Dump backend log (always, for diagnosis)
+        if: always()
+        run: |
+          echo "=== BACKEND LOG (last 200 lines) ==="
+          tail -200 /tmp/backend.log || echo "(no backend log)"
+          echo "=== NETWORK: GET /api/organizations hits ==="
+          grep -i "organizations" /tmp/backend.log | tail -30 || echo "(none)"
+
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
