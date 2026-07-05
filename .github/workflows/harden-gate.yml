@@ -222,3 +222,72 @@ jobs:
           done
           [ "$findings" = "0" ] && echo "gate-version: OK (no unbumped package/contract changes)" || echo "gate-version: findings above (report-only — will gate once ratcheted)"
           exit 0
+
+  gate-ds-conformance:
+    # Design-system conformance (CLAUDE.baseline.md §6). ENFORCING via a CHANGED-LINES ratchet:
+    # on a pull_request it scans ONLY the lines this PR added/modified and FAILS on any raw
+    # design value (hex/rgb/hsl/px-spacing/font-family) — blocking NEW mess without failing on
+    # the ~178 pre-existing findings and needing no baseline file. On push to the default branch
+    # it runs a full scan report-only + opens idempotent ds-extraction issues (advisory).
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            GATE_BASE_REF="origin/${{ github.base_ref }}" python scripts/gate_ds_conformance.py . --changed-only
+          else
+            python scripts/gate_ds_conformance.py . --emit-issues || true
+          fi
+
+  gate-pagination:
+    # Pagination standard (CLAUDE.baseline.md §4.1). Report-only first pass; ratchet to enforcing
+    # per repo once the billing-service contract annotates/allowlists its collection GETs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Pagination gate (report-only)
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          python scripts/gate_pagination.py . || true
+
+  gate-frontend-build:
+    # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
+    # report-only and only builds the root package.json — it never fails the actual frontend build,
+    # which let an unbalanced-brace in frontend/src/index.css break the prod build for 3 releases
+    # (hotfixed in 4428db9). NO `|| true` / `exit 0` here: vite/postcss/tsc errors fail the build.
+    # Mirrors the ci.yml build job order (root npm ci -> frontend npm ci -> chat-client+chat-ui
+    # dist -> vite build). GITHUB_TOKEN satisfies frontend/.npmrc (@fuzefront/* from GH Packages).
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install root workspaces
+        run: npm ci
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+      - name: Build chat-client + chat-ui (frontend bundles their dist)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+      - name: Build frontend (vite build — MUST pass)
+        run: cd frontend && npm run build
