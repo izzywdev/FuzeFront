@@ -188,10 +188,15 @@ jobs:
           npm install --include=dev   # need vite (devDep) despite NODE_ENV=production
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 127.0.0.1 > /tmp/clock.log 2>&1 &
+          clock_up=false
           for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:4174/apps/clock/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; break; fi
+            if curl -fsS http://localhost:4174/apps/clock/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; clock_up=true; break; fi
             sleep 2
           done
+          if [ "$clock_up" = "false" ]; then echo "clock-app NEVER became accessible"; cat /tmp/clock.log; exit 1; fi
+          # Verify CORS header present (required for cross-origin MF load)
+          cors_header=$(curl -fsS -I -H "Origin: http://localhost:4173" http://localhost:4174/apps/clock/remoteEntry.js 2>&1 | grep -i "access-control-allow-origin" || true)
+          echo "CORS header: ${cors_header:-MISSING}"
           # /api/apps/register goes through requireAppPermission('create') which calls
           # the Permit.io PDP - unavailable in E2E CI (no PDP container, ci-noop key).
           # Seed the row directly into Postgres to bypass the permission middleware.
@@ -212,6 +217,8 @@ jobs:
           tail -200 /tmp/backend.log || echo "(no backend log)"
           echo "=== NETWORK: GET /api/organizations hits ==="
           grep -i "organizations" /tmp/backend.log | tail -30 || echo "(none)"
+          echo "=== CLOCK-APP LOG (last 100 lines) ==="
+          tail -100 /tmp/clock.log || echo "(no clock-app log)"
 
       - name: Upload Playwright report
         if: failure()
@@ -220,4 +227,6 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+
 
