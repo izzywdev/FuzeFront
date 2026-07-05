@@ -34,8 +34,8 @@ function rowToRegistryApp(row: any) {
     organizationId: row.organization_id ?? null,
     isHealthy: null,
     lastSeenAt: null,
-    createdAt: (row.created_at as Date).toISOString(),
-    updatedAt: (row.updated_at as Date).toISOString(),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
     manifest: {
       manifestVersion: '1',
       slug,
