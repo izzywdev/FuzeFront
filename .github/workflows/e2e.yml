@@ -145,6 +145,29 @@ jobs:
             "import sys,json; d=json.load(sys.stdin); orgs=d.get('organizations',[]); personal=[o for o in orgs if o.get('type')=='personal']; print('personal org count:',len(personal)); exit(0 if personal else 1)" \
             || (echo 'ERROR: No personal org returned by API — test will fail at WorkspaceProvisioningGate' && exit 1)
 
+      # Dump DB state so we can confirm the seed data is intact before Playwright
+      - name: Dump DB tables before Playwright
+        run: |
+          echo "=== organizations ==="
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
+            -c "SELECT id, name, type, is_active, provisioning_state, owner_id FROM organizations;"
+          echo "=== organization_memberships ==="
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
+            -c "SELECT id, user_id, organization_id, status, role FROM organization_memberships;"
+          echo "=== Raw JOIN SQL (same logic as Knex query) ==="
+          USER_ID=$(PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
+            -t -c "SELECT id FROM users LIMIT 1" | tr -d ' \n')
+          echo "User ID: $USER_ID"
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "
+            SELECT o.id, o.name, o.type, o.is_active, om.id AS membership_id, om.user_id, om.status
+            FROM organizations o
+            LEFT JOIN organization_memberships om
+              ON o.id = om.organization_id
+              AND om.user_id = '$USER_ID'
+              AND om.status = 'active'
+            WHERE (om.id IS NOT NULL OR o.type = 'platform')
+              AND o.is_active = true;"
+
       # ---- Frontend: build & preview ----
       - name: Build & preview frontend
         working-directory: frontend
