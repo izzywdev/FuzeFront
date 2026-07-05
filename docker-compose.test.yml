@@ -59,7 +59,7 @@ services:
     networks:
       - test-harness
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 2>/dev/null | grep -q 'ApiKey'"]
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 15
