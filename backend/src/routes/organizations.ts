@@ -242,32 +242,20 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const sortField = validSortFields.includes(sort) ? sort : 'name'
     const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc'
 
-    // Build query
+    // Build query — use a subquery instead of LEFT JOIN + db.raw() in ON
+    // conditions; Knex 3.x does not reliably bind parameters placed inside
+    // .andOn() via db.raw('?', [...]), which causes the join to produce no
+    // matches and the gate to spin until timeout.
     let query = db('organizations')
       .select('organizations.*')
-      .leftJoin('organization_memberships', function () {
-        this.on(
-          'organizations.id',
-          '=',
-          'organization_memberships.organization_id'
-        )
-          .andOn(
-            'organization_memberships.user_id',
-            '=',
-            db.raw('?', [req.user.id])
-          )
-          .andOn(
-            'organization_memberships.status',
-            '=',
-            db.raw('?', ['active'])
-          )
-      })
       .where(function () {
-        // User can see organizations they are members of, or public organizations
-        this.whereNotNull('organization_memberships.id').orWhere(
-          'organizations.type',
-          'platform'
-        )
+        this.whereIn(
+          'organizations.id',
+          db('organization_memberships')
+            .select('organization_id')
+            .where('user_id', req.user.id)
+            .where('status', 'active')
+        ).orWhere('organizations.type', 'platform')
       })
 
     // Apply filters
