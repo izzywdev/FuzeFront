@@ -22,7 +22,10 @@ import {
  * ingress nginx proxies `/api/` to the backend, so this works identically
  * under local TLS and prod ingress and never hard-codes an absolute API host.
  */
-export const APP_REGISTRY_BASE_URL = '/api/v1/app-registry'
+const _apiBase =
+  (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_API_URL : '') ||
+  (typeof window !== 'undefined' ? window.location.origin : '')
+export const APP_REGISTRY_BASE_URL = _apiBase + '/api/v1/app-registry'
 
 interface AppRegistryContextValue {
   /** The bound, same-origin app-registry client. */
