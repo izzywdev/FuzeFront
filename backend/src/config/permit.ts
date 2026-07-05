@@ -60,6 +60,8 @@ function makeNoOpProxy(): any {
   return new Proxy(function () {} as any, handler)
 }
 
+export { isNoOpMode }
+
 let permit: any
 
 if (isNoOpMode) {

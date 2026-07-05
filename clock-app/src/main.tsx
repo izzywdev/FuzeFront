@@ -15,9 +15,9 @@ if (!(window as any).__FRONTFUSE_PLATFORM__) {
     name: 'Clock',
     url: PUBLIC_URL,
     remoteUrl: PUBLIC_URL,
-    // Match the seed manifest + MF config: scope "clockApp", module "./ClockApp".
-    scope: 'clockApp',
-    module: './ClockApp',
+    // Match the seed manifest + MF config: scope "fuzeClock", module "./App".
+    scope: 'fuzeClock',
+    module: './App',
     iconUrl: `${PUBLIC_URL}/clock-icon.svg`,
     description:
       'Built-in reference app: a simple world clock loaded at runtime.',

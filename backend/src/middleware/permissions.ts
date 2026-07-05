@@ -6,6 +6,7 @@ import {
   checkUserManagementPermission,
 } from '../utils/permit/permission-check'
 import { db } from '../config/database'
+import { isNoOpMode } from '../config/permit'
 
 // Extend Express Request type to include user and organization context.
 //
@@ -230,12 +231,13 @@ export function requireAppPermission(
         })
       }
 
-      const hasPermission = await checkAppPermission(
-        req.user.id,
-        action,
-        appId,
-        resolvedOrgId
-      )
+      // In CI no-op mode the Permit PDP is not running. For 'create' (register),
+      // skip the Permit check so E2E tests can seed apps without a live PDP.
+      // Other actions (update/delete) still enforce the object-level check.
+      const hasPermission =
+        isNoOpMode && action === 'create'
+          ? true
+          : await checkAppPermission(req.user.id, action, appId, resolvedOrgId)
 
       if (!hasPermission) {
         return res.status(403).json({

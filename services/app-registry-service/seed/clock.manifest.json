@@ -10,8 +10,8 @@
   "integration": {
     "type": "module-federation",
     "remoteEntry": "https://app.fuzefront.com/apps/clock/assets/remoteEntry.js",
-    "scope": "clockApp",
-    "module": "./ClockApp"
+    "scope": "fuzeClock",
+    "module": "./App"
   },
   "chrome": {
     "menu": "host",
