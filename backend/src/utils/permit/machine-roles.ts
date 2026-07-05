@@ -60,7 +60,8 @@ export interface DelegateRelationship {
 export async function syncMachineIdentityToPermit(
   identity: MachineIdentity | ServiceAccountPrincipal
 ): Promise<boolean> {
-  const permitKey = toPermitKey(identity.key)
+  const rawKey = 'clientId' in identity ? identity.clientId : identity.key
+  const permitKey = toPermitKey(rawKey)
 
   try {
     await permit.api.users.sync({
@@ -69,7 +70,7 @@ export async function syncMachineIdentityToPermit(
       // distinguish service accounts from human users in policy.
       attributes: {
         identity_type: 'service_account',
-        client_id: identity.key,
+        client_id: rawKey,
         scopes: 'scopes' in identity ? identity.scopes?.join(' ') ?? '' : '',
         delegate_user_id: identity.delegateUserId ?? null,
         created_at: 'createdAt' in identity ? identity.createdAt ?? null : null,
