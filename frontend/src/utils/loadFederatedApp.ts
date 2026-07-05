@@ -85,8 +85,9 @@ async function loadRemoteModule(
     return { default: Component } as LoadedModule
   })()
 
-  // Cache the promise
+  // Cache the promise; remove on rejection so retries can make a fresh attempt
   moduleCache.set(cacheKey, loadPromise)
+  loadPromise.catch(() => moduleCache.delete(cacheKey))
 
   return loadPromise
 }
@@ -274,3 +275,5 @@ export function clearModuleCache(): void {
   moduleCache.clear()
   console.log('🗑️ Module cache cleared')
 }
+
+
