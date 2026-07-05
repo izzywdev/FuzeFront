@@ -6,8 +6,26 @@
 useDefault = true
 
 [allowlist]
-description = "@fuzefront/auth non-secret literals (AuthMode union values)"
+description = "Non-secret literals: AuthMode union values + E2E test-stack placeholders"
+# docker-compose.e2e.yml intentionally uses hard-coded placeholder values for
+# the self-contained E2E environment; they are NOT real credentials.
+# backend/security/tests/* uses mock values for unit tests.
+paths = [
+  '''docker-compose\.e2e\.yml''',
+  '''deploy/e2e/''',
+]
 regexes = [
+  # @fuzefront/auth AuthMode type-union string literals
   '''legacy-hs256''',
   '''oidc-jwks''',
+  # E2E test-stack placeholders (docker-compose.e2e.yml, backend tests)
+  '''e2e-authentik-secret-not-for-prod''',
+  '''e2e-jwt-secret-not-for-prod''',
+  '''e2e-bootstrap-token''',
+  '''e2e-oidc-client-secret''',
+  '''E2eAdmin123!''',
+  '''ci-noop''',
+  '''test-client-secret''',
+  '''mock\.jwt\.token''',
+  '''e2e-test-jwt''',
 ]
