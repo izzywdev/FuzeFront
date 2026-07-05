@@ -36,15 +36,17 @@ test('FuzeClock loads from the launcher at runtime', async ({ page }) => {
   await page.waitForTimeout(500)
   expect(dialogMessage, `unexpected dialog popup: "${dialogMessage}"`).toBe('')
 
+  // Surface any console errors collected so far before the slow assertion —
+  // if the MF load itself fails, these errors explain why.
+  await page.waitForTimeout(3000)
+  if (consoleErrors.length > 0) {
+    console.log('[DIAG] Console errors before MF render check:\n  - ' + consoleErrors.join('\n  - '))
+  }
+
   // The remote's own content (unique to clock-app) must render — proving the
   // runtime Module Federation load succeeded inside the host, not the error UI.
   await expect(
     page.getByText('No build-time knowledge of the host')
   ).toBeVisible({ timeout: 20000 })
   await expect(page.getByText('Failed to Load App')).toHaveCount(0)
-
-  // Surface any console errors for visibility (not a hard failure here).
-  if (consoleErrors.length) {
-    console.log('Console errors during load:\n - ' + consoleErrors.join('\n - '))
-  }
 })
