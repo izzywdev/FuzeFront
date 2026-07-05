@@ -129,10 +129,14 @@ jobs:
       # running Playwright. This makes DB/query failures visible in CI logs.
       - name: Verify org API returns personal org
         run: |
-          TOKEN=$(curl -fsS -X POST http://localhost:3001/api/auth/login \
+          ADMIN_EMAIL=$(PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -c "SELECT email FROM users LIMIT 1" | tr -d ' \n')
+          echo "Checking org API for seeded user (email length: ${#ADMIN_EMAIL})..."
+          LOGIN_RESP=$(curl -s -X POST http://localhost:3001/api/auth/login \
             -H 'Content-Type: application/json' \
-            -d '{"email":"admin@example.com","password":"admin123"}' | python3 -c \
-            "import sys,json; d=json.load(sys.stdin); print(d.get('token',''))")
+            -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"admin123\"}" 2>&1) || true
+          echo "Login response: $LOGIN_RESP"
+          TOKEN=$(echo "$LOGIN_RESP" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('token',''))" 2>/dev/null || echo "")
           echo "Login token acquired: ${TOKEN:0:30}..."
           ORGS=$(curl -fsS http://localhost:3001/api/organizations \
             -H "Authorization: Bearer $TOKEN")
