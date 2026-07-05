@@ -11,6 +11,7 @@ import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
+import appRegistryRoutes from './routes/appRegistry'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -272,6 +273,7 @@ app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
 // internal token). Webhook subroute is mounted separately above (raw body).
+app.use('/api/v1/app-registry', appRegistryRoutes)
 app.use('/api/v1/billing', billingRoutes)
 // Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
 app.use('/internal', internalRoutes)
