@@ -30,4 +30,8 @@ regexes = [
   '''e2e-test-jwt''',
   # E2E local Authentik user password (oidc-plumbing-e2e.yml E2E_USER_PASSWORD)
   '''E2eP@ssw0rd123''',
+  # OIDC discovery URL path — gitleaks generic-api-key matches 'auth' in
+  # 'authentik-server:' and treats '9000/application/o/fuzefront/' as a secret.
+  # It is a URL, not a credential.
+  '''application/o/fuzefront''',
 ]
