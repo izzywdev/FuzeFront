@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Send Telegram design-review notification
-        uses: appleboy/telegram-action@v0.1.1
+        uses: appleboy/telegram-action@2efd23283ae25229a0b4d315d5d33f73b346ef99  # v0.1.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
