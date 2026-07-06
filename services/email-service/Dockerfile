@@ -21,6 +21,9 @@ COPY shared/package.json ./shared/
 COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
 RUN cd services/email-service && npm ci --ignore-scripts
+# shared is part of the root workspace (no own lock file); install its devDeps
+# (typescript, etc.) so `npm run build` inside shared can find `tsc`.
+RUN cd shared && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
