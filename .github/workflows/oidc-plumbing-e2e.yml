@@ -209,6 +209,24 @@ jobs:
             sleep 5
           done
 
+      - name: Wait for backend OIDC login to be ready
+        run: |
+          echo "Waiting for backend OIDC login endpoint (up to 90s)..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -o /dev/null -w "%{http_code}" -s --max-redirs 0 http://localhost:3001/api/auth/oidc/login)
+            if [ "$STATUS" = "302" ]; then
+              echo "Backend OIDC login ready (returned 302) after $((i * 5))s"
+              break
+            fi
+            echo "Attempt $i: OIDC login returned $STATUS, waiting..."
+            if [ "$i" -eq 18 ]; then
+              echo "ERROR: Backend OIDC login not ready after 90s"
+              docker compose -f docker-compose.e2e.yml logs backend | tail -30
+              exit 1
+            fi
+            sleep 5
+          done
+
       - name: Wait for frontend health
         run: |
           for i in $(seq 1 12); do
