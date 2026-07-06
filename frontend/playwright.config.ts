@@ -36,14 +36,14 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Pre-installed browser at a fixed path — Playwright 1.53 expects revision
-        // 1228 but the environment ships 1194.  Point directly at the installed
-        // Chromium so `playwright install` is never needed at run-time.
-        launchOptions: {
-          executablePath:
-            process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
-            '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-        },
+        // Use an explicit executable path only when the env var is set to a non-empty
+        // string (e.g. the Claude Code remote environment ships Chromium 1194 at a
+        // fixed path).  When the var is absent or empty — as on GitHub Actions after
+        // `npx playwright install --with-deps chromium` — let Playwright resolve the
+        // browser from its own cache so the installed revision is used automatically.
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+          : {},
       },
     },
   ],
