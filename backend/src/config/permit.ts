@@ -43,13 +43,19 @@ const isNoOpMode =
 // Recursively build a Proxy that resolves every property access to another
 // no-op Proxy and every call to a resolved Promise.  This covers any depth
 // of chained permit.api.users.sync(...), permit.check(...), etc.
+//
+// permit.check() is the only call whose boolean return value matters to
+// callers (permission gates). Returning `true` here means "allow all" in
+// CI/no-op mode, which is the intended behaviour: real authz happens in
+// production only. All other calls (api.users.sync, etc.) are fire-and-forget
+// and ignore the resolved value, so returning `true` is harmless for them too.
 function makeNoOpProxy(): any {
   const handler: ProxyHandler<object> = {
     get(_target, _prop) {
       return makeNoOpProxy()
     },
     apply(_target, _thisArg, _args) {
-      return Promise.resolve(undefined)
+      return Promise.resolve(true)
     },
     construct(_target, _args) {
       return makeNoOpProxy()

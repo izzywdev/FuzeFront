@@ -374,9 +374,16 @@ router.get('/oidc/login', async (req, res) => {
   try {
     if (!oidcService.isConfigured()) {
       console.log(`❌ [${requestId}] OIDC not configured`)
-      return res.status(500).json({ 
-        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.' 
+      return res.status(500).json({
+        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.'
       })
+    }
+
+    // Lazy re-initialization: if the client failed to init at startup (e.g.
+    // Authentik wasn't ready yet), retry now before giving up.
+    if (!oidcService.isInitialized()) {
+      console.log(`🔄 [${requestId}] OIDC client not initialized — retrying initialization`)
+      await oidcService.initialize()
     }
 
     const state = uuidv4()

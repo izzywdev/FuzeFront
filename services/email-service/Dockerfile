@@ -37,7 +37,6 @@ WORKDIR /app
 RUN apk add --no-cache dumb-init && \
     addgroup -S emailservice && adduser -S emailservice -G emailservice -u 1001
 
-COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/email-service/node_modules ./services/email-service/node_modules
 # shared/package.json is required so the @fuzefront/shared workspace symlink
 # (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
