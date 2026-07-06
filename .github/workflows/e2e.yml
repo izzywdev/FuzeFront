@@ -205,7 +205,7 @@ jobs:
           # /api/apps/register goes through requireAppPermission('create') which calls
           # the Permit.io PDP - unavailable in E2E CI (no PDP container, ci-noop key).
           # Seed the row directly into Postgres to bypass the permission middleware.
-          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('FuzeClock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
+          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('Clock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
           echo 'clock-app seeded into DB'
 
       # ---- Playwright: sign-in + runtime federated load ----

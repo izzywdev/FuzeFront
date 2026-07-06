@@ -102,4 +102,13 @@ async function main() {
   for (const app of APPS) await registerApp(app)
 }
 
+// No-op Knex seed export so this file passes seed validation.
+// The actual work (HTTP registration) only runs when executed directly.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function seed(_knex: any): Promise<void> {}
+
+if (require.main === module) {
+  main().catch(console.error)
+}
+
 main()
