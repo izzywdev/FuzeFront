@@ -64,6 +64,25 @@ If you rotate the signing keystore or change the key alias, all four files must 
 - `frontend-engineer` — PWA manifest, icons (`frontend/public/`), and design-system non-mobile primitives
 - **Never commit `android/keystore/*.keystore`** — gitignored; stored only in `ANDROID_KEYSTORE_B64`.
 
+## Mobile design-review gate
+
+All mobile UI changes must pass a visual design-review gate **before any code is written**. This closes the SDLC gap that allows unverified CSS to ship to the Android TWA.
+
+### Flow
+1. `mobile-frontend-engineer` (or `frontend-engineer` for shell-layout touches) creates PenPot frames via **PenPot MCP** (`mcp__penpot__*`).
+2. Agent opens a GitHub Issue in this repo labeled **`design-review`** with frame thumbnails and interaction notes.
+3. **`design-review-notify.yml`** fires automatically and sends a Telegram message to the product owner with a direct link to the issue.
+4. The product owner comments **`@claude approve`** (or `@claude reject: <reason>`) on the issue. `claude.yml` spawns a new cloud session to continue implementation.
+5. `frontend-test-engineer` retrieves the approved PenPot frames and screenshot-compares the implementation before reporting done.
+
+### PenPot MCP
+- **Local config:** `~/.claude.json` under `mcpServers` → `"penpot": { "type": "sse", "url": "https://design.penpot.app/mcp/stream?userToken=<token>" }`. **Never commit the token.**
+- **GitHub Secret:** `PENPOT_MCP_URL` — the full SSE URL including token, for future CI use.
+- **Agent access:** `mobile-frontend-engineer`, `frontend-engineer`, and `frontend-test-engineer` all have `mcp__penpot__*` in their tool grants and treat PenPot as the design source of truth.
+
+### Fallback (PenPot unavailable)
+Render a static HTML mockup via the Artifact tool at 375 px width, embed a screenshot in the GitHub Issue labeled `design-review`, and follow the same approval flow.
+
 ## Done
 
 Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.

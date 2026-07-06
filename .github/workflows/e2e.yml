@@ -158,7 +158,13 @@ jobs:
         working-directory: frontend
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts
+          npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts --project=chromium
+
+      # ---- Playwright: mobile layout ----
+      - name: Run Playwright e2e (mobile layout)
+        working-directory: frontend
+        run: |
+          npx playwright test tests/mobile-layout.spec.ts --project=mobile
 
       - name: Upload Playwright report
         if: failure()

@@ -36,6 +36,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'mobile',
+      use: { ...devices['iPhone 12'] },
+    },
   ],
 
   /* Global test timeout */
