@@ -2,7 +2,16 @@ import { Knex } from 'knex'
 import bcrypt from 'bcrypt'
 
 export async function seed(knex: Knex): Promise<void> {
-  // Delete existing entries
+  // Delete dependent data in FK-safe order before removing users.
+  // organization_memberships.invited_by and organization_invitations.invited_by
+  // reference users.id without an ON DELETE rule, so a bare knex('users').del()
+  // fails with a FK violation whenever those columns are populated.  Clear the
+  // dependent tables explicitly first so the final users delete always succeeds.
+  await knex('organization_provisioning').del()
+  await knex('organization_invitations').del()
+  await knex('organization_memberships').del()
+  await knex('organizations').del()
+  await knex('sessions').del()
   await knex('users').del()
 
   // Generate password hash for admin
