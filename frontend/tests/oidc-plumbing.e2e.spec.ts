@@ -70,9 +70,9 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     page,
   }) => {
     // This test drives a full multi-step Authentik login (identification → password →
-    // consent) which takes 30-60 s in resource-constrained CI. Override the global
-    // 30 s per-test timeout so waitForURL's own timeouts can actually fire.
-    test.setTimeout(120_000)
+    // consent) which takes 30-90 s in resource-constrained CI. Override the global
+    // timeout: pwField gate (60s) + waitForURL callback (60s) + overhead (~30s) = 150s.
+    test.setTimeout(180_000)
 
     // Step 1: Open FuzeFront
     await page.goto(FRONTEND_URL)
@@ -140,14 +140,17 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   const pwField = page.locator('[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 10_000 })
   await pwField.fill(password)
-  await page.locator('[type="submit"]').first().click()
+  // Press Enter on the focused password field — more reliable than clicking
+  // [type="submit"] for Authentik's Lit web-component forms in headless CI,
+  // where the button click event may not reach the shadow-DOM event handler.
+  await pwField.press('Enter')
 
   // Wait for the password form to disappear before looking for the consent
-  // button. Without this, `consentBtn.waitFor({ state: 'visible' })` resolves
-  // immediately against the still-visible password-submit button (same selector),
-  // clicks it as a no-op, and the real consent page is never actioned.
-  await pwField.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {
-    // Field already gone (navigation happened) — that's fine.
+  // button. Without this gate, the consent check finds the still-visible
+  // password-submit button, clicks it as a no-op, and the real consent page
+  // is never actioned. Authentik can take 30-50 s under CI resource pressure.
+  await pwField.waitFor({ state: 'hidden', timeout: 60_000 }).catch(() => {
+    // Field still visible (timeout) or already detached (navigated) — proceed.
   })
 
   // ── Stage 3: Consent (explicit-consent flow — appears on first login) ──
