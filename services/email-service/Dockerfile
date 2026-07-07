@@ -39,6 +39,9 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/email-service/node_modules ./services/email-service/node_modules
+# shared/package.json is required so the @fuzefront/shared workspace symlink
+# (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
+COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/services/email-service/dist ./services/email-service/dist
 

@@ -15,8 +15,11 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
     d.dismiss().catch(() => {})
   })
   const consoleErrors: string[] = []
+  const consoleLogs: string[] = []
   page.on('console', m => {
     if (m.type() === 'error') consoleErrors.push(m.text())
+    // Capture all logs for diagnostic output on failure
+    consoleLogs.push(`[${m.type()}] ${m.text()}`)
   })
 
   // --- sign in ---
@@ -43,13 +46,44 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
     { timeout: 10000 }
   )
 
+  // Dump org API response for diagnostics — before trying to click the launcher
+  const orgsResp = await page.evaluate(async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const r = await fetch('http://localhost:3001/api/organizations', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      const text = await r.text()
+      return { status: r.status, body: text.substring(0, 500) }
+    } catch (e: any) {
+      return { status: -1, body: String(e) }
+    }
+  })
+  console.log('[DIAG] /api/organizations response:', JSON.stringify(orgsResp))
+  console.log('[DIAG] authToken in localStorage:', await page.evaluate(() => {
+    const t = localStorage.getItem('authToken')
+    return t ? t.substring(0, 30) + '...' : 'null'
+  }))
+
   // --- open the 9-dots launcher and click the Clock card (the real path) ---
   await page.locator('button.app-grid-button').click()
   await page.getByText('Clock', { exact: true }).first().click()
 
+  // Gate opened — dump recent console logs for visibility
+  const recentLogs = consoleLogs.slice(-20)
+  if (recentLogs.length > 0) {
+    console.log('[DIAG] Last 20 console messages before launcher click:\n  ' + recentLogs.join('\n  '))
+  }
+
   // The launcher must NOT have blocked it with an "unavailable" alert.
   await page.waitForTimeout(500)
   expect(dialogMessage, `unexpected dialog popup: "${dialogMessage}"`).toBe('')
+
+  // Surface any console errors collected so far — if the MF load failed, these show why.
+  await page.waitForTimeout(3000)
+  if (consoleErrors.length > 0) {
+    console.log('[DIAG] Console errors before MF render check:\n  - ' + consoleErrors.join('\n  - '))
+  }
 
   // The remote's own content (unique to clock-app) must render — proving the
   // runtime Module Federation load + shared-React singleton succeeded inside the

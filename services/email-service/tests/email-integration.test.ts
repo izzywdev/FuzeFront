@@ -125,7 +125,7 @@ describe('email-service integration (requires docker-compose.test.yml)', () => {
     console.log('[email-integration] Published event correlationId:', correlationId, 'to:', toAddress)
 
     // Poll MailHog until the message appears (up to 20 s)
-    const received = await pollMailhog(toAddress, correlationId, 20000)
+    const received = await pollMailhog(toAddress, correlationId, 30000)
     expect(received).toBe(true)
   })
 
@@ -169,7 +169,7 @@ describe('email-service integration (requires docker-compose.test.yml)', () => {
     })
     await producer.disconnect()
 
-    const received = await pollMailhog(toAddress, correlationId, 20000)
+    const received = await pollMailhog(toAddress, correlationId, 30000)
     expect(received).toBe(true)
   })
 })

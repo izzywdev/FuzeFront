@@ -6,13 +6,28 @@ import { test, expect } from '@playwright/test'
  * Verifies the shell's responsive behaviour: hamburger button visible, drawer
  * sidebar opens/closes, content area is full-width when sidebar is closed.
  *
- * These tests do NOT log in; they only need the frontend preview to be running.
- * The sign-in flow is covered by auth-simple.spec.ts.
+ * Login is required — the authenticated layout renders the hamburger/sidebar.
  */
 
 test.describe('Mobile layout', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
+    await page.waitForLoadState('domcontentloaded')
+
+    // Log in so the authenticated shell (with hamburger + sidebar) renders
+    await page.fill('input[type="email"]', 'admin@fuzefront.dev')
+    await page.fill('input[type="password"]', 'admin123')
+    await Promise.all([
+      page.waitForResponse(
+        r => r.url().includes('/api/auth/login') && r.status() === 200,
+        { timeout: 15000 }
+      ),
+      page.click('button[type="submit"]'),
+    ])
+    // Wait for the authenticated layout (incl. WorkspaceProvisioningGate) to render
+    await expect(page.locator('input[type="email"]')).not.toBeVisible({ timeout: 10000 })
+    // Allow WorkspaceProvisioningGate to resolve the personal-org poll
+    await page.waitForSelector('.hamburger-btn', { timeout: 15000 })
   })
 
   test('hamburger button is visible on mobile', async ({ page }) => {

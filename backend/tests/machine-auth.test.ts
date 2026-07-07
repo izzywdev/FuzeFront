@@ -41,7 +41,7 @@ jest.mock('../src/config/permit', () => {
     }
     return new Proxy(function () {} as any, handler)
   }
-  return { default: makeNoOpProxy(), destroyPermitClient: jest.fn() }
+  return { __esModule: true, default: makeNoOpProxy(), destroyPermitClient: jest.fn() }
 })
 
 import axios from 'axios'

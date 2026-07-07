@@ -22,7 +22,10 @@ import {
  * ingress nginx proxies `/api/` to the backend, so this works identically
  * under local TLS and prod ingress and never hard-codes an absolute API host.
  */
-export const APP_REGISTRY_BASE_URL = '/api/v1/app-registry'
+const _apiBase =
+  (typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_API_URL : '') ||
+  (typeof window !== 'undefined' ? window.location.origin : '')
+export const APP_REGISTRY_BASE_URL = _apiBase + '/api/v1/app-registry'
 
 interface AppRegistryContextValue {
   /** The bound, same-origin app-registry client. */
@@ -81,7 +84,7 @@ export function AppRegistryProvider({ children }: { children: React.ReactNode })
     try {
       // The application menu shows only registered AND activated apps.
       const result = await client.listApps({ status: 'activated' })
-      setApps(result.apps)
+      setApps(result.apps ?? [])
     } catch (err) {
       console.error('Failed to load registered apps:', err)
       setError(err instanceof Error ? err.message : 'Failed to load apps')
