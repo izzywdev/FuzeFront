@@ -104,29 +104,29 @@ jobs:
       # and the bootstrap token usable for API calls.
       - name: Wait for Authentik to become healthy and blueprints applied
         run: |
-          echo "Waiting for Authentik server health (up to 3 minutes)..."
-          for i in $(seq 1 36); do
+          echo "Waiting for Authentik server health (up to 5 minutes)..."
+          for i in $(seq 1 60); do
             if curl -fsS http://authentik-server:9000/-/health/ready/ >/dev/null 2>&1; then
               echo "Authentik server healthy after $((i * 5))s"
               break
             fi
-            if [ "$i" -eq 36 ]; then
-              echo "Authentik did not become ready in 3 minutes"
+            if [ "$i" -eq 60 ]; then
+              echo "Authentik did not become ready in 5 minutes"
               docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
               exit 1
             fi
             sleep 5
           done
 
-          echo "Waiting for OIDC discovery (blueprints applied, up to 3 more minutes)..."
-          for i in $(seq 1 36); do
+          echo "Waiting for OIDC discovery (blueprints applied, up to 6 more minutes)..."
+          for i in $(seq 1 72); do
             if curl -fsS "http://authentik-server:9000/application/o/fuzefront/.well-known/openid-configuration" >/dev/null 2>&1; then
               echo "OIDC discovery available after $((i * 5))s"
               break
             fi
-            if [ "$i" -eq 36 ]; then
-              echo "OIDC discovery did not become available in 3 minutes — blueprints may have failed"
-              docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -60
+            if [ "$i" -eq 72 ]; then
+              echo "OIDC discovery did not become available in 6 minutes — blueprints may have failed"
+              docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -80
               exit 1
             fi
             sleep 5

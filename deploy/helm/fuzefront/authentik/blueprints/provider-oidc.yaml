@@ -19,20 +19,12 @@ version: 1
 metadata:
   name: FuzeFront OIDC Provider
 entries:
-  # ── Implicit-consent stage ─────────────────────────────────────────────────────
-  # We create our own consent stage rather than relying on the system-blueprint
-  # stage, eliminating any race condition between system and custom blueprints.
-  - model: authentik_stages_consent.consentstage
-    state: present
-    identifiers:
-      name: fuzefront-implicit-consent
-    attrs:
-      name: fuzefront-implicit-consent
-      mode: implicit
-
-  # ── Authorization flow (implicit consent) ─────────────────────────────────────
-  # Explicit flow so the !Find in the provider entry always resolves, regardless
-  # of whether Authentik's system blueprints have applied their default flows yet.
+  # ── Authorization flow (implicit consent = empty flow) ───────────────────────
+  # An authorization flow with NO stages is Authentik's canonical "implicit
+  # consent" implementation: it completes immediately without showing the user
+  # any consent screen.  We create it explicitly (not via !Find on the system
+  # blueprint) to eliminate the race condition where system blueprints have not
+  # yet been applied when this blueprint runs.
   # designation=authorization is required for OAuth2 authorization flows.
   - model: authentik_flows.flow
     state: present
@@ -45,20 +37,6 @@ entries:
       title: FuzeFront Sign In
       authentication: require_authenticated
       policy_engine_mode: all
-
-  # ── Bind consent stage to the authorization flow ───────────────────────────────
-  - model: authentik_flows.flowstagebinding
-    state: present
-    identifiers:
-      target: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
-      order: 0
-    attrs:
-      target: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
-      stage: !Find [authentik_stages_consent.consentstage, [name, fuzefront-implicit-consent]]
-      order: 0
-      evaluate_on_plan: true
-      re_evaluate_policies: false
-      invalid_response_action: retry
 
   # ── Allow-all expression policy ───────────────────────────────────────────────
   # Bound to the Application below so that policy_engine_mode: all with one
