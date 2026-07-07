@@ -88,7 +88,6 @@ entries:
       include_claims_in_id_token: true
       # Reference the explicitly-created flow above (no !Find race vs system blueprints)
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application
@@ -101,8 +100,8 @@ entries:
       provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
       meta_launch_url: "https://fuzefront.dev.local/"
       meta_description: "FuzeFront runtime microfrontend platform"
-      # all + one passing policy (fuzefront-allow-all below) = access granted
-      policy_engine_mode: all
+      # any = at least one policy must pass; safer default when policy list may be empty
+      policy_engine_mode: any
       open_in_new_tab: false
 
   # ── Policy binding — allow all authenticated users to access FuzeFront ─────────
