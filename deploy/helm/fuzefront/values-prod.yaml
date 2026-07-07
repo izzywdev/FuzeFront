@@ -1,293 +1,582 @@
-# =============================================================================
-# Production overlay (Contabo k3s), consumed by the Argo CD `fuzefront` Application.
-# Differs from local by: GHCR images, public host + TLS, sealed secret, prod
-# Authentik OIDC, Prometheus metrics, pre-created Kafka topics, and node-2
-# placement for heavy stateless services.
-#
-# Node topology (see docs/deployment/CONTABO_DEPLOYMENT.md):
-#   node-1 (kubernetes.io/hostname=fuzefront-node-1): control-plane + stateful
-#           (FuzeInfra Postgres/Redis/Kafka/Chroma live here on local-path).
-#   node-2 (kubernetes.io/hostname=fuzefront-node-2): heavy stateless compute
-#           (litellm/chat/billing). Relabel/rename to match the real join.
-# All secrets come from the SealedSecret `fuzefront-secrets` — never inline here.
-# =============================================================================
-global:
-  imagePullPolicy: IfNotPresent
-  # Default placement: none (let the scheduler spread app pods across both nodes).
-  # Heavy stateless services pin to node-2 via their own affinity blocks below.
-  scheduling:
-    nodeSelector: {}
-    affinity: {}
-    tolerations: []
-
-# Prometheus scrape annotations on FuzeFront pods. The FuzeInfra Prometheus
-# auto-discovers pods carrying prometheus.io/scrape=true (see Phase E). The
-# backend exposes /metrics via prom-client; other pods are annotated for when
-# their /metrics lands.
-observability:
-  metrics:
-    enabled: true
-    path: /metrics
-
-backend:
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: d821e8da390d
-  replicas: 2
-
-frontend:
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: d821e8da390d
-  replicas: 2
-
-# Backend 3-way split. Images built by release.yml; `enabled` flips to true in
-# the Phase 3 cutover. tag "" is rewritten by CI's release sed.
-securityService:
-  enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: d821e8da390d
-  replicas: 2
-
-applicationsService:
-  enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: d821e8da390d
-  replicas: 2
-  # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
-  kafka:
-    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Family Unleash hosted by FuzeFront. The scoped client token is in the
-  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
-  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
-  # the sealed token land, leave unleashUrl empty so the client stays inert and
-  # the app-registry flags fall back to their safe in-code defaults.
-  featureFlags:
-    unleashUrl: ""   # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
-    appName: "applications-service"
-    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
-
-# Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
-# (matches the seeded built-in manifest remoteEntry). Image built by release.yml
-# (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
-# by CI's release sed to the built SHA.
-clockApp:
-  enabled: true
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: d821e8da390d  # CI's release sed writes the real image SHA here
-
-emailService:
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 1fbd206c5b2a
-
-smsService:
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: ""  # CI's release sed writes the real image SHA here
-
-# IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
-# the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
-# Without it the provisioning-service pod will fail to start (missing env var).
-provisioningService:
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: ""  # CI's release sed writes the real image SHA here
-
-# Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
-# (gated by billingService.enabled), NOT a separate Application: billing's
-# templates live in this umbrella chart, so a second Argo app on the same chart
-# path would DOUBLE-CLAIM the billing Deployment (that is exactly why the prior
-# deploy/argocd/applications/billing.yaml was removed). A dedicated Argo app is
-# only correct once billing is extracted into its own chart (tracked follow-up).
-# Isolation that the hybrid model wants is still satisfied: billing has its OWN
-# per-service `billing-secrets` SealedSecret + its own billing_svc DB role, so a
-# pending/crashing billing pod CANNOT take down other services or read their
-# secrets. Billing serves only once `billing-secrets` holds STRIPE_SECRET_KEY,
-# STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN, BILLING_DB_PASSWORD (seal real
-# values with deploy/scripts/seal-secret.sh; placeholders are committed in
-# deploy/contabo/sealed/billing-secrets.yaml). The billing_svc role + `billing`
-# schema are provisioned by the pre-install billing-db-bootstrap Job. NEVER
-# hand-deploy — flip via GitOps.
-billingService:
-  # First-light: DISABLED. While false, NEITHER the billing Deployment NOR the
-  # pre-install billing-db-bootstrap hook render — so billing has ZERO freeze
-  # surface on the umbrella sync (no InvalidImageName, no PreSync-hook gate).
-  # Billing is a backend microservice, not part of the MF platform shell, and the
-  # host backend's billing proxy degrades gracefully without it — so it must not
-  # gate go-live. GO-LIVE = flip this to true (the image tag below is already
-  # auto-bumped to the built SHA by release.yml) AND seal the real STRIPE_* keys.
-  enabled: true
-  image:
-    repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 6135e6b5ed77
-  # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
-
-permit:
-  enabled: true
-
-# Private GHCR pull secret (sealed; see deploy/contabo/README.md).
-imagePullSecrets:
-  - name: ghcr-pull
-
-fuzeinfra:
-  namespace: fuzeinfra
-  # Consume the AUTHORITATIVE shared platform services (fuzeinfra-prod, the
-  # terraform-provisioned FuzeInfra). Names are fuzeinfra-<component> per the
-  # chart's databases.yaml. FuzeFront no longer deploys its own postgres/redis
-  # (see deploy/argocd/applications/fuzeinfra.yaml) — that caused a split-brain.
-  postgres:
-    host: fuzeinfra-postgres.fuzeinfra.svc.cluster.local
-    port: 5432
-  redis:
-    host: fuzeinfra-redis.fuzeinfra.svc.cluster.local
-    port: 6379
-
-database:
-  name: fuzefront_platform
-  # Least-privilege runtime role created by the bootstrap Job (connects with
-  # DB_PASSWORD from the SealedSecret).
-  user: fuzefront_user
-  bootstrap:
-    enabled: true
-    superuser:
-      # FuzeInfra Postgres superuser.
-      username: fuzeinfra
-      # Reads DB_SUPERUSER_PASSWORD from the existing (Sealed) Secret below.
-      secretName: ""
-      secretKey: DB_SUPERUSER_PASSWORD
-
-# Secrets come from a SealedSecret. With the bootstrap/runtime split it MUST now
-# include both DB_PASSWORD (the fuzefront_user runtime password) and
-# DB_SUPERUSER_PASSWORD (the FuzeInfra Postgres superuser password used only by
-# the bootstrap Job), alongside JWT_SECRET, SESSION_SECRET, PERMIT_API_KEY.
-secret:
-  existingSecret: fuzefront-secrets
-
-# Exposure model (verified against the LIVE cluster, 2026-06-23): prod is reached
-# via the Cloudflare tunnel "FuzeInfra" -> k3s Traefik (default ingress, NOT
-# disabled) -> standard Ingress host-routing. Cloudflare terminates TLS at the
-# edge; the cluster is HTTP-only. So: ingressClassName traefik, NO cert-manager /
-# Let's Encrypt, NO in-cluster TLS.
-# PUBLIC host = app.fuzefront.com (and auth.fuzefront.com). It is deliberately
-# OUTSIDE the *.prod.fuzefront.com zone, because *.prod is gated by the Cloudflare
-# Access app "FuzeInfra Admin Services" (admin Zero-Trust) — the public platform
-# must not sit behind that. The CF tunnel ingress rule app.fuzefront.com ->
-# traefik.kube-system:80 + a proxied CNAME are FuzeInfra-owned (Terraform); see
-# izzywdev/FuzeInfra#43. Traefik host-matches on app.fuzefront.com, so this Ingress
-# host must equal it.
-ingress:
-  enabled: true
-  className: traefik
-  host: app.fuzefront.com
-  annotations: {}
-  tls:
-    enabled: false
-    secretName: fuzefront-app-tls
-
-# Authentik IdP — production. Public host with Let's Encrypt TLS via the same
-# ingress annotation as the app. OIDC SSO enabled with the prod issuer/redirect.
-# Cookie domain is the apex so the session is shared across *.fuzefront.com.
-# Secrets (AUTHENTIK_SECRET_KEY/BOOTSTRAP_*/CLIENT_SECRET) come from the
-# SealedSecret `fuzefront-secrets` — none are set here.
-authentik:
-  enabled: true
-  host: auth.fuzefront.com
-  cookieDomain: fuzefront.com
-  bootstrapEmail: admin@fuzefront.com
-  oidc:
-    enabled: true
-    issuerUrl: "https://auth.fuzefront.com/application/o/fuzefront/"
-    redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
-    # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
-    # backend reaches Authentik over the internet without a hostAlias or a custom
-    # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
-    backendHostAliasIP: ""
-    caConfigMap: ""
-
-# Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
-# overlay). Avoids relying on broker auto-create for the prefixed topics.
-# Re-enabled once the image was switched bitnami/kafka -> apache/kafka (the
-# bitnami tag was unpullable and froze the sync hook) and the broker
-# (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
-kafkaTopics:
-  enabled: true
-
-# --- Heavy stateless services → node-2 -------------------------------------
-# These are forward-looking placeholders (enabled flipped by Phase F). The
-# affinity steers them onto node-2 so the LLM/chat/billing load stays off the
-# DB-heavy node-1. nodeSelector uses the standard hostname label; adjust the
-# value to the real node name after the 2nd-node join.
-litellm:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
-
-chatService:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
-
-# Unleash (self-hosted OSS feature flags). Synced by the UMBRELLA `fuzefront` Argo
-# Application (gated by unleash.enabled), NOT a separate Application: Unleash's
-# templates live in this umbrella chart, so a second Argo app on the same chart
-# path would DOUBLE-CLAIM the Unleash Deployment (same hybrid-Argo rule that keeps
-# billing in the umbrella). Isolation the hybrid model wants is still satisfied:
-# Unleash has its OWN per-service `unleash-secrets` SealedSecret + its own
-# `unleash_svc` DB role + a DEDICATED `unleash` database, so a pending/crashing
-# Unleash pod CANNOT take down other services or read their secrets.
-#
-# EXTERNAL image (unleashorg/unleash-server) — NOT built by release.yml, so its tag
-# is NOT auto-bumped by CI; bump it deliberately here in a deploy window.
-#
-# Unleash serves only once `unleash-secrets` holds UNLEASH_DB_PASSWORD,
-# INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN (seal real values with
-# deploy/scripts/seal-secret.sh --scope fuzefront/unleash-secrets; placeholders are
-# committed in deploy/contabo/sealed/unleash-secrets.yaml). The unleash_svc role +
-# the `unleash` database are provisioned by the pre-install unleash-db-bootstrap
-# Job. Admin UI is NOT public (port-forward or a CF-Access-gated host only).
-# NEVER hand-deploy — a human flips `enabled` to true via GitOps in a deploy window.
-unleash:
-  # First-light: DISABLED. While false, NEITHER the Unleash Deployment NOR the
-  # pre-install unleash-db-bootstrap hook render — so Unleash adds ZERO freeze
-  # surface to the umbrella sync. GO-LIVE = flip this to true AND seal the real
-  # unleash-secrets keys.
-  enabled: false
-  image:
-    repository: unleashorg/unleash-server
-    tag: "5.12.0"
-  # Steer onto node-2 (keep flag-server load off the DB-heavy node-1).
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
-
+# =============================================================================
+
+# Production overlay (Contabo k3s), consumed by the Argo CD `fuzefront` Application.
+
+# Differs from local by: GHCR images, public host + TLS, sealed secret, prod
+
+# Authentik OIDC, Prometheus metrics, pre-created Kafka topics, and node-2
+
+# placement for heavy stateless services.
+
+#
+
+# Node topology (see docs/deployment/CONTABO_DEPLOYMENT.md):
+
+#   node-1 (kubernetes.io/hostname=fuzefront-node-1): control-plane + stateful
+
+#           (FuzeInfra Postgres/Redis/Kafka/Chroma live here on local-path).
+
+#   node-2 (kubernetes.io/hostname=fuzefront-node-2): heavy stateless compute
+
+#           (litellm/chat/billing). Relabel/rename to match the real join.
+
+# All secrets come from the SealedSecret `fuzefront-secrets` — never inline here.
+
+# =============================================================================
+
+global:
+
+  imagePullPolicy: IfNotPresent
+
+  # Default placement: none (let the scheduler spread app pods across both nodes).
+
+  # Heavy stateless services pin to node-2 via their own affinity blocks below.
+
+  scheduling:
+
+    nodeSelector: {}
+
+    affinity: {}
+
+    tolerations: []
+
+
+
+# Prometheus scrape annotations on FuzeFront pods. The FuzeInfra Prometheus
+
+# auto-discovers pods carrying prometheus.io/scrape=true (see Phase E). The
+
+# backend exposes /metrics via prom-client; other pods are annotated for when
+
+# their /metrics lands.
+
+observability:
+
+  metrics:
+
+    enabled: true
+
+    path: /metrics
+
+
+
+backend:
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-backend
+
+    tag: cd6a3831f417
+  replicas: 2
+
+
+
+frontend:
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-frontend
+
+    tag: cd6a3831f417
+  replicas: 2
+
+
+
+# Backend 3-way split. Images built by release.yml; `enabled` flips to true in
+
+# the Phase 3 cutover. tag "" is rewritten by CI's release sed.
+
+securityService:
+
+  enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-security-service
+
+    tag: cd6a3831f417
+  replicas: 2
+
+
+
+applicationsService:
+
+  enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-applications-service
+
+    tag: cd6a3831f417
+  replicas: 2
+
+  # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
+
+  kafka:
+
+    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+
+  # Family Unleash hosted by FuzeFront. The scoped client token is in the
+
+  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
+
+  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
+
+  # the sealed token land, leave unleashUrl empty so the client stays inert and
+
+  # the app-registry flags fall back to their safe in-code defaults.
+
+  featureFlags:
+
+    unleashUrl: ""   # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+
+    appName: "applications-service"
+
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+
+
+
+# Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
+
+# (matches the seeded built-in manifest remoteEntry). Image built by release.yml
+
+# (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
+
+# by CI's release sed to the built SHA.
+
+clockApp:
+
+  enabled: true
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-clock-app
+
+    tag: cd6a3831f417  # CI's release sed writes the real image SHA here
+
+
+
+emailService:
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-email-service
+
+    tag: 1fbd206c5b2a
+
+
+
+smsService:
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-sms-service
+
+    tag: ""  # CI's release sed writes the real image SHA here
+
+
+
+# IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
+
+# the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
+
+# Without it the provisioning-service pod will fail to start (missing env var).
+
+provisioningService:
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-provisioning-service
+
+    tag: ""  # CI's release sed writes the real image SHA here
+
+
+
+# Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
+
+# (gated by billingService.enabled), NOT a separate Application: billing's
+
+# templates live in this umbrella chart, so a second Argo app on the same chart
+
+# path would DOUBLE-CLAIM the billing Deployment (that is exactly why the prior
+
+# deploy/argocd/applications/billing.yaml was removed). A dedicated Argo app is
+
+# only correct once billing is extracted into its own chart (tracked follow-up).
+
+# Isolation that the hybrid model wants is still satisfied: billing has its OWN
+
+# per-service `billing-secrets` SealedSecret + its own billing_svc DB role, so a
+
+# pending/crashing billing pod CANNOT take down other services or read their
+
+# secrets. Billing serves only once `billing-secrets` holds STRIPE_SECRET_KEY,
+
+# STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN, BILLING_DB_PASSWORD (seal real
+
+# values with deploy/scripts/seal-secret.sh; placeholders are committed in
+
+# deploy/contabo/sealed/billing-secrets.yaml). The billing_svc role + `billing`
+
+# schema are provisioned by the pre-install billing-db-bootstrap Job. NEVER
+
+# hand-deploy — flip via GitOps.
+
+billingService:
+
+  # First-light: DISABLED. While false, NEITHER the billing Deployment NOR the
+
+  # pre-install billing-db-bootstrap hook render — so billing has ZERO freeze
+
+  # surface on the umbrella sync (no InvalidImageName, no PreSync-hook gate).
+
+  # Billing is a backend microservice, not part of the MF platform shell, and the
+
+  # host backend's billing proxy degrades gracefully without it — so it must not
+
+  # gate go-live. GO-LIVE = flip this to true (the image tag below is already
+
+  # auto-bumped to the built SHA by release.yml) AND seal the real STRIPE_* keys.
+
+  enabled: true
+
+  image:
+
+    repository: ghcr.io/izzywdev/fuzefront-billing-service
+
+    tag: 6135e6b5ed77
+
+  # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
+
+  affinity:
+
+    nodeAffinity:
+
+      preferredDuringSchedulingIgnoredDuringExecution:
+
+        - weight: 100
+
+          preference:
+
+            matchExpressions:
+
+              - key: kubernetes.io/hostname
+
+                operator: In
+
+                values: ["fuzefront-node-2"]
+
+
+
+permit:
+
+  enabled: true
+
+
+
+# Private GHCR pull secret (sealed; see deploy/contabo/README.md).
+
+imagePullSecrets:
+
+  - name: ghcr-pull
+
+
+
+fuzeinfra:
+
+  namespace: fuzeinfra
+
+  # Consume the AUTHORITATIVE shared platform services (fuzeinfra-prod, the
+
+  # terraform-provisioned FuzeInfra). Names are fuzeinfra-<component> per the
+
+  # chart's databases.yaml. FuzeFront no longer deploys its own postgres/redis
+
+  # (see deploy/argocd/applications/fuzeinfra.yaml) — that caused a split-brain.
+
+  postgres:
+
+    host: fuzeinfra-postgres.fuzeinfra.svc.cluster.local
+
+    port: 5432
+
+  redis:
+
+    host: fuzeinfra-redis.fuzeinfra.svc.cluster.local
+
+    port: 6379
+
+
+
+database:
+
+  name: fuzefront_platform
+
+  # Least-privilege runtime role created by the bootstrap Job (connects with
+
+  # DB_PASSWORD from the SealedSecret).
+
+  user: fuzefront_user
+
+  bootstrap:
+
+    enabled: true
+
+    superuser:
+
+      # FuzeInfra Postgres superuser.
+
+      username: fuzeinfra
+
+      # Reads DB_SUPERUSER_PASSWORD from the existing (Sealed) Secret below.
+
+      secretName: ""
+
+      secretKey: DB_SUPERUSER_PASSWORD
+
+
+
+# Secrets come from a SealedSecret. With the bootstrap/runtime split it MUST now
+
+# include both DB_PASSWORD (the fuzefront_user runtime password) and
+
+# DB_SUPERUSER_PASSWORD (the FuzeInfra Postgres superuser password used only by
+
+# the bootstrap Job), alongside JWT_SECRET, SESSION_SECRET, PERMIT_API_KEY.
+
+secret:
+
+  existingSecret: fuzefront-secrets
+
+
+
+# Exposure model (verified against the LIVE cluster, 2026-06-23): prod is reached
+
+# via the Cloudflare tunnel "FuzeInfra" -> k3s Traefik (default ingress, NOT
+
+# disabled) -> standard Ingress host-routing. Cloudflare terminates TLS at the
+
+# edge; the cluster is HTTP-only. So: ingressClassName traefik, NO cert-manager /
+
+# Let's Encrypt, NO in-cluster TLS.
+
+# PUBLIC host = app.fuzefront.com (and auth.fuzefront.com). It is deliberately
+
+# OUTSIDE the *.prod.fuzefront.com zone, because *.prod is gated by the Cloudflare
+
+# Access app "FuzeInfra Admin Services" (admin Zero-Trust) — the public platform
+
+# must not sit behind that. The CF tunnel ingress rule app.fuzefront.com ->
+
+# traefik.kube-system:80 + a proxied CNAME are FuzeInfra-owned (Terraform); see
+
+# izzywdev/FuzeInfra#43. Traefik host-matches on app.fuzefront.com, so this Ingress
+
+# host must equal it.
+
+ingress:
+
+  enabled: true
+
+  className: traefik
+
+  host: app.fuzefront.com
+
+  annotations: {}
+
+  tls:
+
+    enabled: false
+
+    secretName: fuzefront-app-tls
+
+
+
+# Authentik IdP — production. Public host with Let's Encrypt TLS via the same
+
+# ingress annotation as the app. OIDC SSO enabled with the prod issuer/redirect.
+
+# Cookie domain is the apex so the session is shared across *.fuzefront.com.
+
+# Secrets (AUTHENTIK_SECRET_KEY/BOOTSTRAP_*/CLIENT_SECRET) come from the
+
+# SealedSecret `fuzefront-secrets` — none are set here.
+
+authentik:
+
+  enabled: true
+
+  host: auth.fuzefront.com
+
+  cookieDomain: fuzefront.com
+
+  bootstrapEmail: admin@fuzefront.com
+
+  oidc:
+
+    enabled: true
+
+    issuerUrl: "https://auth.fuzefront.com/application/o/fuzefront/"
+
+    redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
+
+    # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
+
+    # backend reaches Authentik over the internet without a hostAlias or a custom
+
+    # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
+
+    backendHostAliasIP: ""
+
+    caConfigMap: ""
+
+
+
+# Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
+
+# overlay). Avoids relying on broker auto-create for the prefixed topics.
+
+# Re-enabled once the image was switched bitnami/kafka -> apache/kafka (the
+
+# bitnami tag was unpullable and froze the sync hook) and the broker
+
+# (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
+
+kafkaTopics:
+
+  enabled: true
+
+
+
+# --- Heavy stateless services → node-2 -------------------------------------
+
+# These are forward-looking placeholders (enabled flipped by Phase F). The
+
+# affinity steers them onto node-2 so the LLM/chat/billing load stays off the
+
+# DB-heavy node-1. nodeSelector uses the standard hostname label; adjust the
+
+# value to the real node name after the 2nd-node join.
+
+litellm:
+
+  affinity:
+
+    nodeAffinity:
+
+      preferredDuringSchedulingIgnoredDuringExecution:
+
+        - weight: 100
+
+          preference:
+
+            matchExpressions:
+
+              - key: kubernetes.io/hostname
+
+                operator: In
+
+                values: ["fuzefront-node-2"]
+
+
+
+chatService:
+
+  affinity:
+
+    nodeAffinity:
+
+      preferredDuringSchedulingIgnoredDuringExecution:
+
+        - weight: 100
+
+          preference:
+
+            matchExpressions:
+
+              - key: kubernetes.io/hostname
+
+                operator: In
+
+                values: ["fuzefront-node-2"]
+
+
+
+# Unleash (self-hosted OSS feature flags). Synced by the UMBRELLA `fuzefront` Argo
+
+# Application (gated by unleash.enabled), NOT a separate Application: Unleash's
+
+# templates live in this umbrella chart, so a second Argo app on the same chart
+
+# path would DOUBLE-CLAIM the Unleash Deployment (same hybrid-Argo rule that keeps
+
+# billing in the umbrella). Isolation the hybrid model wants is still satisfied:
+
+# Unleash has its OWN per-service `unleash-secrets` SealedSecret + its own
+
+# `unleash_svc` DB role + a DEDICATED `unleash` database, so a pending/crashing
+
+# Unleash pod CANNOT take down other services or read their secrets.
+
+#
+
+# EXTERNAL image (unleashorg/unleash-server) — NOT built by release.yml, so its tag
+
+# is NOT auto-bumped by CI; bump it deliberately here in a deploy window.
+
+#
+
+# Unleash serves only once `unleash-secrets` holds UNLEASH_DB_PASSWORD,
+
+# INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN (seal real values with
+
+# deploy/scripts/seal-secret.sh --scope fuzefront/unleash-secrets; placeholders are
+
+# committed in deploy/contabo/sealed/unleash-secrets.yaml). The unleash_svc role +
+
+# the `unleash` database are provisioned by the pre-install unleash-db-bootstrap
+
+# Job. Admin UI is NOT public (port-forward or a CF-Access-gated host only).
+
+# NEVER hand-deploy — a human flips `enabled` to true via GitOps in a deploy window.
+
+unleash:
+
+  # First-light: DISABLED. While false, NEITHER the Unleash Deployment NOR the
+
+  # pre-install unleash-db-bootstrap hook render — so Unleash adds ZERO freeze
+
+  # surface to the umbrella sync. GO-LIVE = flip this to true AND seal the real
+
+  # unleash-secrets keys.
+
+  enabled: false
+
+  image:
+
+    repository: unleashorg/unleash-server
+
+    tag: "5.12.0"
+
+  # Steer onto node-2 (keep flag-server load off the DB-heavy node-1).
+
+  affinity:
+
+    nodeAffinity:
+
+      preferredDuringSchedulingIgnoredDuringExecution:
+
+        - weight: 100
+
+          preference:
+
+            matchExpressions:
+
+              - key: kubernetes.io/hostname
+
+                operator: In
+
+                values: ["fuzefront-node-2"]
+
+
+
