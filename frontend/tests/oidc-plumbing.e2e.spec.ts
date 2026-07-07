@@ -156,12 +156,15 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   // ── Stage 3: Consent (explicit-consent flow — appears on first login) ──
   // Only reached after password stage completes. In CI the Docker stack is
   // resource-constrained, so the transition can take 10-20 s.
+  // Use focus + Enter for the same reason as the password stage: Authentik's
+  // Lit web-component forms drop button .click() events in headless CI.
   try {
     const consentBtn = page.locator('[type="submit"]').first()
     await consentBtn.waitFor({ timeout: 30_000, state: 'visible' })
-    // Only click if we haven't already navigated away (i.e. we're still on Authentik)
+    // Only act if we haven't already navigated away (i.e. we're still on Authentik)
     if (page.url().includes(new URL(AUTHENTIK_URL).hostname)) {
-      await consentBtn.click()
+      await consentBtn.focus()
+      await consentBtn.press('Enter')
     }
   } catch {
     // No consent step — redirect already happened
