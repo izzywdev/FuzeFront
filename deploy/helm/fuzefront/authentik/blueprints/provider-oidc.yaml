@@ -73,5 +73,5 @@ entries:
       provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
       meta_launch_url: "https://fuzefront.dev.local/"
       meta_description: "FuzeFront runtime microfrontend platform"
-      policy_engine_mode: any
+      policy_engine_mode: all
       open_in_new_tab: false
