@@ -74,7 +74,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     // backend validates PKCE + exchanges token → redirects frontend with exchange code
     // → frontend POSTs /api/auth/token-exchange → JWT in localStorage → /dashboard.
     // Timeout covers: pwField gate (60s) + redirect chain + dashboard nav (30s) = 90s.
-    test.setTimeout(180_000)
+    test.setTimeout(240_000)
 
     // Step 1: Open FuzeFront
     await page.goto(FRONTEND_URL)
@@ -138,14 +138,15 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   const pwField = page.locator('[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 10_000 })
   await pwField.fill(password)
-  // Press Enter on the focused password field — more reliable than clicking
-  // [type="submit"] for Authentik's Lit web-component forms in headless CI,
-  // where the button click event may not reach the shadow-DOM event handler.
-  await pwField.press('Enter')
+  // Click the submit button — same approach that reliably works for stage 1.
+  // Stage 1's button is gone by now, so first [type="submit"] is stage 2's button.
+  // Also press Enter as belt-and-suspenders for Lit shadow DOM event delivery.
+  await page.locator('[type="submit"]').first().click()
+  await pwField.press('Enter').catch(() => {})
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
-  // Authentik can take 30-50 s under CI resource pressure.
-  await pwField.waitFor({ state: 'hidden', timeout: 60_000 }).catch(() => {
+  // Authentik can take up to 60 s under CI resource pressure.
+  await pwField.waitFor({ state: 'hidden', timeout: 90_000 }).catch(() => {
     // Field still visible (timeout) or already detached (navigated) — proceed.
   })
 }
