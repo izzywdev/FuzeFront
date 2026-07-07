@@ -279,7 +279,10 @@ jobs:
 
       - name: Start MailHog + Kafka + email-service
         run: |
-          docker compose -f docker-compose.test.yml up -d mailhog kafka-test email-service-test
+          # Start Kafka + MailHog first, then create the topic, then start email-service.
+          # email-service crashes with KafkaJSProtocolError if the topic doesn't exist
+          # when it calls consumer.subscribe() — auto-create can race with service startup.
+          docker compose -f docker-compose.test.yml up -d mailhog kafka-test
           echo "Waiting for MailHog API..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8025/api/v2/messages >/dev/null 2>&1; then echo "MailHog up"; break; fi
@@ -291,6 +294,14 @@ jobs:
             if [ "$i" -eq 40 ]; then echo "ERROR: Kafka did not become reachable" >&2; exit 1; fi
             sleep 2
           done
+          echo "Pre-creating Kafka topic notify.email.requested..."
+          docker exec test-kafka kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --create --topic notify.email.requested \
+            --partitions 1 --replication-factor 1 --if-not-exists
+          echo "Topic created."
+          echo "Starting email-service..."
+          docker compose -f docker-compose.test.yml up -d email-service-test
           echo "Waiting for email-service health..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
@@ -298,7 +309,6 @@ jobs:
           done
           # Give the Kafka consumer inside email-service time to join its group
           # and establish partition assignment before the test produces messages.
-          # The HTTP health endpoint is up before Kafka consumer group is ready.
           echo "Waiting 10s for Kafka consumer group to stabilise..."
           sleep 10
 
