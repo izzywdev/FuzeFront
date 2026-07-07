@@ -142,15 +142,20 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   await pwField.fill(password)
   await page.locator('[type="submit"]').first().click()
 
+  // Wait for the password form to disappear before looking for the consent
+  // button. Without this, `consentBtn.waitFor({ state: 'visible' })` resolves
+  // immediately against the still-visible password-submit button (same selector),
+  // clicks it as a no-op, and the real consent page is never actioned.
+  await pwField.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {
+    // Field already gone (navigation happened) — that's fine.
+  })
+
   // ── Stage 3: Consent (explicit-consent flow — appears on first login) ──
-  // After the password stage, Authentik validates the credential and then
-  // renders a consent page (explicit-consent authorization flow). In CI the
-  // Docker stack is resource-constrained, so this transition can take 10-15 s.
-  // Use a 20 s window so we don't silently skip the consent click and leave
-  // the browser stuck on the consent page for the rest of the test.
+  // Only reached after password stage completes. In CI the Docker stack is
+  // resource-constrained, so the transition can take 10-20 s.
   try {
     const consentBtn = page.locator('[type="submit"]').first()
-    await consentBtn.waitFor({ timeout: 20_000, state: 'visible' })
+    await consentBtn.waitFor({ timeout: 30_000, state: 'visible' })
     // Only click if we haven't already navigated away (i.e. we're still on Authentik)
     if (page.url().includes(new URL(AUTHENTIK_URL).hostname)) {
       await consentBtn.click()
