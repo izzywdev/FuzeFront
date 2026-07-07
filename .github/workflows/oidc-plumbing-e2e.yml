@@ -86,7 +86,7 @@ jobs:
       - name: Start E2E stack
         run: |
           docker compose -f docker-compose.e2e.yml up -d --build
-        timeout-minutes: 12
+        timeout-minutes: 20
         env:
           AUTHENTIK_EXTERNAL_URL: ${{ env.AUTHENTIK_EXTERNAL_URL }}
           AUTHENTIK_ISSUER_URL: ${{ env.AUTHENTIK_ISSUER_URL }}

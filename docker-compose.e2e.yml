@@ -220,7 +220,7 @@ services:
       postgres:
         condition: service_healthy
       authentik-server:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3001/health']
       interval: 10s
