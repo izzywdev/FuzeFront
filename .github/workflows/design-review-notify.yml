@@ -1,0 +1,33 @@
+name: Design Review — Notify via Telegram
+
+# Fires when any issue is labeled `design-review`.
+# Sends a Telegram message with an inline link to the issue so the product
+# owner can review design frames and comment `@claude approve` or
+# `@claude reject: <reason>` to trigger the next Claude Code cloud session.
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  notify:
+    if: github.event.label.name == 'design-review'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Telegram design-review notification
+        uses: appleboy/telegram-action@2efd23283ae25229a0b4d315d5d33f73b346ef99  # v0.1.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🎨 *Design Review Required*
+
+            *Issue:* [${{ github.event.issue.title }}](${{ github.event.issue.html_url }})
+            *Repo:* `${{ github.repository }}`
+            *Opened by:* ${{ github.event.issue.user.login }}
+
+            Review the design frames in the issue, then comment on the issue:
+            • `@claude approve` — continue implementation
+            • `@claude reject: <reason>` — send back for revision

@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 4428db9f4425
+    tag: d821e8da390d
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 4428db9f4425
+    tag: d821e8da390d
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -47,14 +47,14 @@ securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 4428db9f4425
+    tag: d821e8da390d
   replicas: 2
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 4428db9f4425
+    tag: d821e8da390d
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -77,7 +77,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 4428db9f4425  # CI's release sed writes the real image SHA here
+    tag: d821e8da390d  # CI's release sed writes the real image SHA here
 
 emailService:
   image:

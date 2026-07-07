@@ -21,6 +21,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'mobile',
+      use: { ...devices['iPhone 12'] },
+    },
   ],
   // 60 s to allow login (full-page reload) + MF federation load on slow CI runners
   timeout: 60000,
