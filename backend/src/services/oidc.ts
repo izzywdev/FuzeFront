@@ -140,7 +140,7 @@ class OIDCService {
       } else {
         // Create new user
         const newUser = {
-          id: userinfo.sub || require('uuid').v4(),
+          id: require('uuid').v4(),
           email: email,
           first_name: firstName,
           last_name: lastName,
