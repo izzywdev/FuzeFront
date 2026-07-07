@@ -95,7 +95,7 @@ class OIDCService {
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
-        { code_verifier: codeVerifier }
+        { code_verifier: codeVerifier, state }
       );
 
       console.log('✅ Received tokens from Authentik');

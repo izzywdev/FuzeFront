@@ -267,7 +267,7 @@ jobs:
           echo "=== authentik-worker ==="
           docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -40
           echo "=== backend ==="
-          docker compose -f docker-compose.e2e.yml logs backend | tail -40
+          docker compose -f docker-compose.e2e.yml logs backend | tail -200
           echo "=== frontend ==="
           docker compose -f docker-compose.e2e.yml logs frontend | tail -20
 
