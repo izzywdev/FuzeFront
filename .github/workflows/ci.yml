@@ -296,6 +296,11 @@ jobs:
             if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
             sleep 2
           done
+          # Give the Kafka consumer inside email-service time to join its group
+          # and establish partition assignment before the test produces messages.
+          # The HTTP health endpoint is up before Kafka consumer group is ready.
+          echo "Waiting 10s for Kafka consumer group to stabilise..."
+          sleep 10
 
       - name: Run email integration tests
         env:
