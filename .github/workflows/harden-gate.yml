@@ -277,14 +277,12 @@ jobs:
           git fetch origin "$BASE_REF" --depth=1
           DIFF=$(git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' | head -c 80000)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
-          claude --print --output-format text \
-            "You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)\n\n\`\`\`diff\n${DIFF}\n\`\`\`" \
-            > /tmp/review.txt 2>&1 || true
+          PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
+          claude --print --output-format text "$PROMPT" > /tmp/review.txt 2>/tmp/review-err.txt || true
           cat /tmp/review.txt
-          # Post as a PR comment if findings exist
-          if grep -qv '(none)' /tmp/review.txt 2>/dev/null && [ -s /tmp/review.txt ]; then
-            BODY="## Automated code review (gate-code-review)\n\n$(cat /tmp/review.txt)\n\n*Report-only — this check never blocks merge.*"
-            gh pr comment "$PR_NUMBER" --body "$BODY" --repo "$GITHUB_REPOSITORY" || true
+          # Post comment only when claude succeeded and returned real findings (not just "(none)")
+          if [ -s /tmp/review.txt ] && ! grep -q '(none)' /tmp/review.txt && ! grep -q 'error' /tmp/review-err.txt; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$(printf '## Automated code review (gate-code-review)\n\n%s\n\n*Report-only — this check never blocks merge.*' "$(cat /tmp/review.txt)")" || true
           fi
           exit 0
 

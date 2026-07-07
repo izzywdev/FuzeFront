@@ -64,7 +64,7 @@ export function Pagination({ page = 1, total = 10, onChange, style, ...rest }) {
       {pageList(page, total).map((p, i) =>
         p === "…"
           ? <span key={"e" + i} style={{ color: "var(--text-tertiary)", padding: "0 4px", fontSize: "var(--text-sm)" }}>…</span>
-          : pageCell(p, { key: p, active: p === page, onClick: () => onChange && onChange(p) })
+          : <React.Fragment key={p}>{pageCell(p, { active: p === page, onClick: () => onChange && onChange(p) })}</React.Fragment>
       )}
       {pageCell(<ChevronIcon dir="right" />, {
         disabled: page >= total,
