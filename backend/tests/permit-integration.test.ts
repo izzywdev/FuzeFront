@@ -121,18 +121,13 @@ describe('Permit.io Integration Tests', () => {
       updated_at: new Date(),
     })
 
-    // Insert test app
+    // Insert test app (apps table schema: id, name, url, icon_url, is_active, integration_type, remote_url, scope, module, description, metadata, timestamps)
     await db('apps').insert({
       id: testAppId,
       name: 'Test App',
-      slug: 'test-app',
-      organization_id: testOrgId,
-      visibility: 'private',
       url: 'http://localhost:3000',
       is_active: true,
-      integration_type: 'web_component',
-      marketplace_metadata: JSON.stringify({}),
-      configuration: JSON.stringify({}),
+      integration_type: 'web-component',
       created_at: new Date(),
       updated_at: new Date(),
     })
