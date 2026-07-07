@@ -251,6 +251,43 @@ jobs:
             python scripts/gate_ds_conformance.py . --emit-issues || true
           fi
 
+  gate-code-review:
+    # Automated code review via Claude (claude-sonnet-4-6). REPORT-ONLY: posts inline PR review
+    # comments for correctness bugs found in the diff; never blocks merge. Only runs on PRs.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run automated code review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          git fetch origin "$BASE_REF" --depth=1
+          DIFF=$(git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' | head -c 80000)
+          if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
+          claude --print --no-markdown \
+            "You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)\n\n\`\`\`diff\n${DIFF}\n\`\`\`" \
+            > /tmp/review.txt 2>&1 || true
+          cat /tmp/review.txt
+          # Post as a PR comment if findings exist
+          if grep -qv '(none)' /tmp/review.txt 2>/dev/null && [ -s /tmp/review.txt ]; then
+            BODY="## Automated code review (gate-code-review)\n\n$(cat /tmp/review.txt)\n\n*Report-only — this check never blocks merge.*"
+            gh pr comment "$PR_NUMBER" --body "$BODY" --repo "$GITHUB_REPOSITORY" || true
+          fi
+          exit 0
+
   gate-pagination:
     # Pagination standard (CLAUDE.baseline.md §4.1). Report-only first pass; ratchet to enforcing
     # per repo once the billing-service contract annotates/allowlists its collection GETs.
