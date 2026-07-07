@@ -9,7 +9,7 @@
  *     → backend GET /api/auth/oidc/login  (PKCE code_challenge, state cookie)
  *     → Authentik authorization endpoint  (real HTTP redirect)
  *     → Playwright fills Authentik native login UI (local user, no bot-detection risk)
- *     → Authentik issues authorization code
+ *     → Authentik issues authorization code (implicit-consent — no manual consent step)
  *     → backend GET /api/auth/oidc/callback  (real PKCE verifier check)
  *     → backend POST Authentik /application/o/token/  (real token exchange)
  *     → Authentik returns signed ID token (real JWT)
@@ -69,9 +69,11 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   test('full OIDC sign-in flow with local user lands on dashboard with a real JWT', async ({
     page,
   }) => {
-    // This test drives a full multi-step Authentik login (identification → password →
-    // consent) which takes 30-90 s in resource-constrained CI. Override the global
-    // timeout: pwField gate (60s) + waitForURL callback (60s) + overhead (~30s) = 150s.
+    // The provider uses implicit-consent (first-party app — no manual consent step).
+    // Flow: identification → password → Authentik redirects to backend callback →
+    // backend validates PKCE + exchanges token → redirects frontend with exchange code
+    // → frontend POSTs /api/auth/token-exchange → JWT in localStorage → /dashboard.
+    // Timeout covers: pwField gate (60s) + redirect chain + dashboard nav (30s) = 90s.
     test.setTimeout(180_000)
 
     // Step 1: Open FuzeFront
@@ -89,17 +91,12 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     // Step 4: Fill in local Authentik credentials (no Google, no bot detection)
     await fillAuthentikLogin(page, E2E_USER_EMAIL, E2E_USER_PASSWORD)
 
-    // Step 5: Authentik issues code → backend callback
-    // Generous timeout: consent page + Authentik's redirect can take 20+ s in CI
-    await page.waitForURL(`${BACKEND_URL}/api/auth/oidc/callback**`, { timeout: 60_000 })
-
-    // Step 6: Backend validates code+PKCE, creates session, redirects to frontend
-    await page.waitForURL(`${FRONTEND_URL}/**`, { timeout: 15_000 })
-    // The URL carries a short-lived exchange code the frontend uses to get a JWT
-    await expect(page).toHaveURL(/[?&]code=/)
-
-    // Step 7: Frontend exchanges code → JWT in localStorage → dashboard
-    await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 15_000 })
+    // Step 5: Wait for the complete OIDC redirect chain to land on the dashboard.
+    // With implicit-consent the backend callback + frontend exchange happen fast;
+    // waiting for intermediate URLs risks a race if the chain completes before
+    // waitForURL is called. Waiting directly for /dashboard is reliable — the
+    // frontend navigates there only after localStorage.setItem('authToken', ...).
+    await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 90_000 })
 
     // Assert a real, well-formed JWT was stored (three base64url parts)
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'))
@@ -126,6 +123,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
 // ── Helper: drive through Authentik's multi-stage login UI ────────────────────
 // Authentik renders stages as custom elements (Lit) with shadow DOM.
 // Playwright automatically pierces open shadow roots for attribute selectors.
+// The provider uses implicit-consent so only identification + password are needed.
 
 async function fillAuthentikLogin(page: Page, email: string, password: string): Promise<void> {
   // ── Stage 1: Identification (username / email) ─────────────────────────
@@ -145,28 +143,9 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   // where the button click event may not reach the shadow-DOM event handler.
   await pwField.press('Enter')
 
-  // Wait for the password form to disappear before looking for the consent
-  // button. Without this gate, the consent check finds the still-visible
-  // password-submit button, clicks it as a no-op, and the real consent page
-  // is never actioned. Authentik can take 30-50 s under CI resource pressure.
+  // Wait for the password form to disappear (Authentik navigates away after auth).
+  // Authentik can take 30-50 s under CI resource pressure.
   await pwField.waitFor({ state: 'hidden', timeout: 60_000 }).catch(() => {
     // Field still visible (timeout) or already detached (navigated) — proceed.
   })
-
-  // ── Stage 3: Consent (explicit-consent flow — appears on first login) ──
-  // Only reached after password stage completes. In CI the Docker stack is
-  // resource-constrained, so the transition can take 10-20 s.
-  // Use focus + Enter for the same reason as the password stage: Authentik's
-  // Lit web-component forms drop button .click() events in headless CI.
-  try {
-    const consentBtn = page.locator('[type="submit"]').first()
-    await consentBtn.waitFor({ timeout: 30_000, state: 'visible' })
-    // Only act if we haven't already navigated away (i.e. we're still on Authentik)
-    if (page.url().includes(new URL(AUTHENTIK_URL).hostname)) {
-      await consentBtn.focus()
-      await consentBtn.press('Enter')
-    }
-  } catch {
-    // No consent step — redirect already happened
-  }
 }
