@@ -252,7 +252,7 @@ jobs:
           fi
 
   gate-code-review:
-    # Automated code review via Claude (claude-sonnet-4-6). REPORT-ONLY: posts inline PR review
+    # Automated code review via Claude. REPORT-ONLY: posts inline PR review
     # comments for correctness bugs found in the diff; never blocks merge. Only runs on PRs.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -260,9 +260,9 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with: { fetch-depth: 0 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with: { node-version: '20' }
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
@@ -277,7 +277,7 @@ jobs:
           git fetch origin "$BASE_REF" --depth=1
           DIFF=$(git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' | head -c 80000)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
-          claude --print --no-markdown \
+          claude --print --output-format text \
             "You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)\n\n\`\`\`diff\n${DIFF}\n\`\`\`" \
             > /tmp/review.txt 2>&1 || true
           cat /tmp/review.txt
