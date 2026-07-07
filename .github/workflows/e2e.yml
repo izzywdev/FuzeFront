@@ -219,6 +219,7 @@ jobs:
       - name: Run Playwright e2e (mobile layout)
         working-directory: frontend
         run: |
+          npx playwright install --with-deps webkit
           npx playwright test tests/mobile-layout.spec.ts --project=mobile
 
       - name: Dump backend log (always, for diagnosis)
