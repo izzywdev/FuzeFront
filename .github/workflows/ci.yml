@@ -349,6 +349,11 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          # Don't fail CI for vulnerabilities without a fix yet; this scan
+          # is informational (results upload to Security tab). Mirrors the
+          # configuration in .github/workflows/security.yml.
+          ignore-unfixed: true
+          exit-code: '0'
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
