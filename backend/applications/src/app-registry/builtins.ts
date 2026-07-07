@@ -26,7 +26,11 @@ const BUILTIN_MANIFESTS: unknown[] = [
       scope: 'fuzeagentApp',
       module: './FuzeAgentApp',
     },
-    chrome: { menu: 'host', topbar: 'host' },
+    // FuzeAgent owns its own full navigation, so it SUBSTITUTES the portal side
+    // menu while active (the host keeps its non-removable return-to-portal
+    // affordance). See migration 005 — an already-provisioned prod row is patched
+    // to this value because upsertBuiltin() never updates an existing row.
+    chrome: { menu: 'substitute', topbar: 'host' },
     routing: { path: '/app/fuzeagent' },
     visibility: 'organization',
     roles: [],
