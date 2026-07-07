@@ -52,6 +52,12 @@ RUN find ./services/email-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/email-service
 
+# shared/dist/kafka/* (loaded via the @fuzefront/shared symlink) requires kafkajs
+# and zod. Node.js resolves requires from the real file path (/app/shared/dist/…),
+# which walks up through /app/shared/ — but shared has no node_modules in this
+# image. NODE_PATH adds email-service/node_modules as a fallback search path so
+# those packages are found without duplicating them.
+ENV NODE_PATH=/app/services/email-service/node_modules
 ENV PORT=3003
 ENV NODE_ENV=production
 
