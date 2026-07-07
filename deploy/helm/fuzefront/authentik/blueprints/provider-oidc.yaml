@@ -19,6 +19,59 @@ version: 1
 metadata:
   name: FuzeFront OIDC Provider
 entries:
+  # ── Implicit-consent stage ─────────────────────────────────────────────────────
+  # We create our own consent stage rather than relying on the system-blueprint
+  # stage, eliminating any race condition between system and custom blueprints.
+  - model: authentik_stages_consent.consentstage
+    state: present
+    identifiers:
+      name: fuzefront-implicit-consent
+    attrs:
+      name: fuzefront-implicit-consent
+      mode: implicit
+
+  # ── Authorization flow (implicit consent) ─────────────────────────────────────
+  # Explicit flow so the !Find in the provider entry always resolves, regardless
+  # of whether Authentik's system blueprints have applied their default flows yet.
+  # designation=authorization is required for OAuth2 authorization flows.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-authorization-implicit-consent
+    attrs:
+      name: FuzeFront Authorization (Implicit Consent)
+      slug: fuzefront-authorization-implicit-consent
+      designation: authorization
+      title: FuzeFront Sign In
+      authentication: require_authenticated
+      policy_engine_mode: all
+
+  # ── Bind consent stage to the authorization flow ───────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
+      order: 0
+    attrs:
+      target: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
+      stage: !Find [authentik_stages_consent.consentstage, [name, fuzefront-implicit-consent]]
+      order: 0
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+      invalid_response_action: retry
+
+  # ── Allow-all expression policy ───────────────────────────────────────────────
+  # Bound to the Application below so that policy_engine_mode: all with one
+  # passing policy = access granted, independent of empty-binding edge cases.
+  - model: authentik_policies_expression.expressionpolicy
+    state: present
+    identifiers:
+      name: fuzefront-allow-all
+    attrs:
+      name: fuzefront-allow-all
+      expression: "return True"
+      execution_logging: false
+
   # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
   - model: authentik_providers_oauth2.oauth2provider
     state: present
@@ -55,11 +108,8 @@ entries:
       # Use email as the `sub` claim — consistent with the seeder behaviour
       sub_mode: user_email
       include_claims_in_id_token: true
-      # Wire to implicit-consent authorization flow — FuzeFront is a first-party
-      # application (users log into the app itself), so no manual consent step is
-      # needed. Implicit consent eliminates the consent page that was blocking the
-      # OIDC E2E test and is the correct choice for first-party SSO.
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      # Reference the explicitly-created flow above (no !Find race vs system blueprints)
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   # ── Application ───────────────────────────────────────────────────────────────
@@ -73,5 +123,20 @@ entries:
       provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
       meta_launch_url: "https://fuzefront.dev.local/"
       meta_description: "FuzeFront runtime microfrontend platform"
+      # all + one passing policy (fuzefront-allow-all below) = access granted
       policy_engine_mode: all
       open_in_new_tab: false
+
+  # ── Policy binding — allow all authenticated users to access FuzeFront ─────────
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, fuzefront]]
+      order: 0
+    attrs:
+      target: !Find [authentik_core.application, [slug, fuzefront]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzefront-allow-all]]
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30

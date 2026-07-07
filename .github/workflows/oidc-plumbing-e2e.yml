@@ -262,12 +262,15 @@ jobs:
       - name: Dump compose logs on failure
         if: failure()
         run: |
-          echo "=== authentik-server ==="
-          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -80
-          echo "=== authentik-worker ==="
-          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -40
-          echo "=== backend (OIDC-related) ==="
-          docker compose -f docker-compose.e2e.yml logs backend | grep -iE 'oidc|callback|token|auth|error|❌|✅|initialize|discover|redirect|state|verif' | tail -100
+          echo "=== authentik-server (last 120 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -120
+          echo "=== authentik-worker (last 60 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -60
+          echo "=== backend (OIDC/auth-related, excluding health noise) ==="
+          docker compose -f docker-compose.e2e.yml logs backend \
+            | grep -iE 'oidc|callback|❌|✅|initialize|discover|redirect|state|verif|code_verif|access_denied|error_desc' \
+            | grep -v 'auth/method' \
+            | tail -150
           echo "=== backend (last 80 lines) ==="
           docker compose -f docker-compose.e2e.yml logs backend | tail -80
           echo "=== frontend ==="

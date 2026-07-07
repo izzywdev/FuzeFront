@@ -450,8 +450,11 @@ router.get('/oidc/callback', async (req, res) => {
 
   try {
     if (error) {
-      console.log(`❌ [${requestId}] OIDC error:`, error)
-      return res.redirect(`${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+      const errorDesc = (req.query.error_description as string) || ''
+      console.log(`❌ [${requestId}] OIDC error:`, error, errorDesc || '(no description)')
+      return res.redirect(
+        `${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error as string)}${errorDesc ? `&desc=${encodeURIComponent(errorDesc)}` : ''}`
+      )
     }
 
     if (!code || !state) {
