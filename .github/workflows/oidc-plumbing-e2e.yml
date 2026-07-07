@@ -126,11 +126,29 @@ jobs:
             fi
             if [ "$i" -eq 120 ]; then
               echo "OIDC discovery did not become available in 10 minutes — blueprints may have failed"
-              docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -80
+              docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -200
               exit 1
             fi
             sleep 5
           done
+
+      # ── Verify blueprint status ────────────────────────────────────────────
+      # Confirm all custom blueprints applied successfully before proceeding.
+      # Helps distinguish "OIDC discovery up but blueprint failed" scenarios.
+      - name: Check Authentik blueprint status
+        run: |
+          echo "=== Blueprint instances ==="
+          curl -s "http://authentik-server:9000/api/v3/blueprints/instances/" \
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, status: .status, last_applied: .last_applied}'
+          echo "=== FuzeFront OIDC provider check ==="
+          curl -s "http://authentik-server:9000/api/v3/providers/oauth2/?search=FuzeFront" \
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, client_id: .client_id, authorization_flow: .authorization_flow}'
+          echo "=== FuzeFront application check ==="
+          curl -s "http://authentik-server:9000/api/v3/core/applications/?search=fuzefront" \
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, slug: .slug, policy_engine_mode: .policy_engine_mode}'
+          echo "=== default-provider-authorization-implicit-consent flow check ==="
+          curl -s "http://authentik-server:9000/api/v3/flows/instances/?search=implicit-consent" \
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {slug: .slug, designation: .designation}'
 
       # ── Create the E2E test user via Authentik REST API ───────────────────
       # Uses the bootstrap token (AUTHENTIK_BOOTSTRAP_TOKEN=e2e-bootstrap-token).
@@ -264,8 +282,8 @@ jobs:
         run: |
           echo "=== authentik-server (last 120 lines) ==="
           docker compose -f docker-compose.e2e.yml logs authentik-server | tail -120
-          echo "=== authentik-worker (last 60 lines) ==="
-          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -60
+          echo "=== authentik-worker (last 200 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -200
           echo "=== backend (last 200 lines — full, unfiltered) ==="
           docker compose -f docker-compose.e2e.yml logs backend | tail -200
           echo "=== frontend ==="
