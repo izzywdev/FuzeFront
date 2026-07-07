@@ -69,6 +69,11 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   test('full OIDC sign-in flow with local user lands on dashboard with a real JWT', async ({
     page,
   }) => {
+    // This test drives a full multi-step Authentik login (identification → password →
+    // consent) which takes 30-60 s in resource-constrained CI. Override the global
+    // 30 s per-test timeout so waitForURL's own timeouts can actually fire.
+    test.setTimeout(120_000)
+
     // Step 1: Open FuzeFront
     await page.goto(FRONTEND_URL)
     await expect(page).toHaveTitle(/FuzeFront|Sign in/i, { timeout: 15_000 })
