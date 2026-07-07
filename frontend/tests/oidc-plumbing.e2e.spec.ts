@@ -138,11 +138,16 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   const pwField = page.locator('[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 10_000 })
   await pwField.fill(password)
-  // Click the submit button — same approach that reliably works for stage 1.
-  // Stage 1's button is gone by now, so first [type="submit"] is stage 2's button.
-  // Also press Enter as belt-and-suspenders for Lit shadow DOM event delivery.
-  await page.locator('[type="submit"]').first().click()
-  await pwField.press('Enter').catch(() => {})
+  // Submit via requestSubmit() on the enclosing form.  Authentik's password stage
+  // uses <ak-spinner-button type="submit"> (a Lit form-associated custom element)
+  // whose click handler calls form.requestSubmit() internally — but in headless CI
+  // the synthetic click event does not reliably reach that handler through the
+  // shadow DOM boundary.  Calling requestSubmit() directly on the <form> fires the
+  // Lit @submit handler synchronously and works regardless of button implementation.
+  await pwField.evaluate((el) => {
+    const form = (el as HTMLInputElement).closest('form')
+    if (form) (form as HTMLFormElement).requestSubmit()
+  })
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
