@@ -85,7 +85,8 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     await fillAuthentikLogin(page, E2E_USER_EMAIL, E2E_USER_PASSWORD)
 
     // Step 5: Authentik issues code → backend callback
-    await page.waitForURL(`${BACKEND_URL}/api/auth/oidc/callback**`, { timeout: 30_000 })
+    // Generous timeout: consent page + Authentik's redirect can take 20+ s in CI
+    await page.waitForURL(`${BACKEND_URL}/api/auth/oidc/callback**`, { timeout: 60_000 })
 
     // Step 6: Backend validates code+PKCE, creates session, redirects to frontend
     await page.waitForURL(`${FRONTEND_URL}/**`, { timeout: 15_000 })
@@ -137,11 +138,14 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   await page.locator('[type="submit"]').first().click()
 
   // ── Stage 3: Consent (explicit-consent flow — appears on first login) ──
-  // Click "Allow" / "Continue" if a consent page is shown.
-  // If absent (e.g. implicit consent configured), the redirect happens immediately.
+  // After the password stage, Authentik validates the credential and then
+  // renders a consent page (explicit-consent authorization flow). In CI the
+  // Docker stack is resource-constrained, so this transition can take 10-15 s.
+  // Use a 20 s window so we don't silently skip the consent click and leave
+  // the browser stuck on the consent page for the rest of the test.
   try {
     const consentBtn = page.locator('[type="submit"]').first()
-    await consentBtn.waitFor({ timeout: 5_000, state: 'visible' })
+    await consentBtn.waitFor({ timeout: 20_000, state: 'visible' })
     // Only click if we haven't already navigated away (i.e. we're still on Authentik)
     if (page.url().includes(new URL(AUTHENTIK_URL).hostname)) {
       await consentBtn.click()

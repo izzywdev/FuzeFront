@@ -249,7 +249,7 @@ jobs:
           # The plumbing test doesn't need Google-specific env vars.
           # Run headless (Authentik login page has no bot detection).
           PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ''
-        run: npx playwright test tests/oidc-plumbing.e2e.spec.ts --reporter=list,html
+        run: npx playwright test tests/oidc-plumbing.e2e.spec.ts --project=chromium --reporter=list,html
 
       - name: Upload Playwright report
         if: always()
