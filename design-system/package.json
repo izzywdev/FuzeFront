@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/design-system",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
   "type": "module",
   "main": "index.js",

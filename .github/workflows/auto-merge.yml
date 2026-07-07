@@ -11,6 +11,9 @@ jobs:
     name: Auto Merge PR
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout code
