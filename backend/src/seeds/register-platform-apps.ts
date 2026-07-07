@@ -110,5 +110,3 @@ export async function seed(_knex: any): Promise<void> {}
 if (require.main === module) {
   main().catch(console.error)
 }
-
-main()
