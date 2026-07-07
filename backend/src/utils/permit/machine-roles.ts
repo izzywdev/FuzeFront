@@ -184,7 +184,7 @@ export async function checkMachinePermission(
     console.log(
       `[machine-roles] Permission check — subject: ${subjectKey}, action: ${action}, resource: ${resource.type}, result: ${result}`
     )
-    return result
+    return !!result
   } catch (error) {
     console.error('[machine-roles] Error checking machine permission:', error)
     return false // Fail safe — deny on error
