@@ -94,40 +94,33 @@ jobs:
           AUTHENTIK_OIDC_CLIENT_SECRET: ${{ env.AUTHENTIK_OIDC_CLIENT_SECRET }}
 
       # ── Wait for Authentik ─────────────────────────────────────────────────
-      # Authentik takes 2-3 minutes to start and apply blueprints on first boot.
-      # We wait for BOTH the server health endpoint AND the OIDC discovery
-      # endpoint because:
-      #   - /-/health/ready/ passes once gunicorn starts (~10s)
-      #   - The OIDC provider is created by the authentik-worker via blueprints
-      #     (asynchronous, may take 60-120s after the server is healthy)
-      # Only once the OIDC discovery endpoint returns 200 are blueprints applied
-      # and the bootstrap token usable for API calls.
+      # Authentik on a fresh DB runs 100+ Django migrations before it can serve
+      # any requests.  On slower GitHub Actions runners this can take 15-20 min.
+      #
+      # Strategy: poll the OIDC discovery endpoint directly for up to 20 minutes.
+      # When that endpoint returns 200, migrations are done, system blueprints
+      # have applied, and our custom blueprint has created the FuzeFront provider.
+      # Checking the discovery endpoint subsumes the server health check — if
+      # OIDC metadata is served, gunicorn is definitely healthy.
       - name: Wait for Authentik to become healthy and blueprints applied
         run: |
-          echo "Waiting for Authentik server health (up to 5 minutes)..."
-          for i in $(seq 1 60); do
-            if curl -fsS http://authentik-server:9000/-/health/ready/ >/dev/null 2>&1; then
-              echo "Authentik server healthy after $((i * 5))s"
-              break
-            fi
-            if [ "$i" -eq 60 ]; then
-              echo "Authentik did not become ready in 5 minutes"
-              docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
-              exit 1
-            fi
-            sleep 5
-          done
-
-          echo "Waiting for OIDC discovery (blueprints applied, up to 10 more minutes)..."
-          for i in $(seq 1 120); do
+          echo "Waiting for OIDC discovery endpoint (migrations + blueprints, up to 20 minutes)..."
+          for i in $(seq 1 240); do
             if curl -fsS "http://authentik-server:9000/application/o/fuzefront/.well-known/openid-configuration" >/dev/null 2>&1; then
               echo "OIDC discovery available after $((i * 5))s"
               break
             fi
-            if [ "$i" -eq 120 ]; then
-              echo "OIDC discovery did not become available in 10 minutes — blueprints may have failed"
+            if [ "$i" -eq 240 ]; then
+              echo "OIDC discovery did not become available in 20 minutes — migrations or blueprints failed"
+              echo "=== authentik-server (last 60 lines) ==="
+              docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
+              echo "=== authentik-worker (last 200 lines) ==="
               docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -200
               exit 1
+            fi
+            # Log progress every minute so the log isn't silent
+            if [ $((i % 12)) -eq 0 ]; then
+              echo "Still waiting... $((i * 5))s elapsed"
             fi
             sleep 5
           done
