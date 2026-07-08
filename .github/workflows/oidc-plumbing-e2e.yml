@@ -177,20 +177,23 @@ jobs:
           fi
 
           # ── Find or create the three scope mappings ─────────────────────
-          # Use jq to build JSON safely (avoids quoting issues with expressions)
+          # Pass Python expressions as shell --arg vars so jq handles JSON
+          # encoding automatically (no embedding multi-line strings in jq programs).
           get_or_create_scope() {
-            local NAME="$1" SCOPE="$2" VAR="$3"
-            local BODY_FILE="$4"
+            local NAME="$1" SCOPE="$2" EXPR="$3" VAR="$4"
             local PK
             PK=$(curl -s -H "$AUTH" \
               "$BASE/propertymappings/scope/?scope_name=$SCOPE" \
               | jq -r --arg n "$NAME" '.results[] | select(.name==$n) | .pk' | head -1)
             if [ -z "$PK" ]; then
               echo "Creating scope mapping '$NAME'..."
-              local RESP
+              local BODY RESP
+              BODY=$(jq -n \
+                --arg name "$NAME" --arg scope "$SCOPE" --arg expr "$EXPR" \
+                '{"name": $name, "scope_name": $scope, "expression": $expr}')
               RESP=$(curl -s -X POST "$BASE/propertymappings/scope/" \
                 -H "$AUTH" -H "$CT" \
-                -d "@$BODY_FILE")
+                -d "$BODY")
               echo "Scope mapping response: $RESP"
               PK=$(echo "$RESP" | jq -r '.pk // empty')
               if [ -z "$PK" ] || [ "$PK" = "null" ]; then
@@ -204,18 +207,27 @@ jobs:
             eval "$VAR=\"$PK\""
           }
 
-          # Write scope mapping JSON bodies to temp files (avoids quoting Python exprs)
-          TMPDIR_SCOPES=$(mktemp -d)
-          jq -n '{"name":"FuzeFront OIDC scope - openid","scope_name":"openid","expression":"return {}"}' \
-            > "$TMPDIR_SCOPES/openid.json"
-          jq -n '{"name":"FuzeFront OIDC scope - email","scope_name":"email","expression":"return {\n    \"email\": request.user.email,\n    \"email_verified\": True,\n}"}' \
-            > "$TMPDIR_SCOPES/email.json"
-          jq -n '{"name":"FuzeFront OIDC scope - profile","scope_name":"profile","expression":"return {\n    \"name\": request.user.name,\n    \"given_name\": request.user.name,\n    \"preferred_username\": request.user.username,\n    \"nickname\": request.user.username,\n    \"groups\": [g.name for g in request.user.ak_groups.all()],\n}"}' \
-            > "$TMPDIR_SCOPES/profile.json"
-
-          get_or_create_scope "FuzeFront OIDC scope - openid" "openid" SCOPE_OPENID "$TMPDIR_SCOPES/openid.json"
-          get_or_create_scope "FuzeFront OIDC scope - email" "email" SCOPE_EMAIL "$TMPDIR_SCOPES/email.json"
-          get_or_create_scope "FuzeFront OIDC scope - profile" "profile" SCOPE_PROFILE "$TMPDIR_SCOPES/profile.json"
+          get_or_create_scope \
+            "FuzeFront OIDC scope - openid" "openid" \
+            "return {}" \
+            SCOPE_OPENID
+          get_or_create_scope \
+            "FuzeFront OIDC scope - email" "email" \
+            'return {
+    "email": request.user.email,
+    "email_verified": True,
+}' \
+            SCOPE_EMAIL
+          get_or_create_scope \
+            "FuzeFront OIDC scope - profile" "profile" \
+            'return {
+    "name": request.user.name,
+    "given_name": request.user.name,
+    "preferred_username": request.user.username,
+    "nickname": request.user.username,
+    "groups": [g.name for g in request.user.ak_groups.all()],
+}' \
+            SCOPE_PROFILE
 
           echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
