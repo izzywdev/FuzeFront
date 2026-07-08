@@ -140,24 +140,45 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   await uidField.press('Enter')
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
-  // 'input[type="password"]' targets the actual <input> inside ak-stage-password's
-  // shadow root. After filling:
-  //   • press('Enter') generates zero executor POSTs: the input is inside
-  //     ak-form-element-horizontal's shadow root, a different shadow tree from the
-  //     <form> in ak-stage-password's shadow root, so native form submission never fires.
-  //   • clicking the submit button (ak-stage-password button[type="submit"]) also fails:
-  //     3 levels of shadow DOM mean the synthetic click doesn't reliably reach the Lit
-  //     @click handler on ak-spinner-button, or callAction is the empty default.
-  // Solution: call form.requestSubmit() directly on the form in ak-stage-password's
-  // shadow root. requestSubmit() fires the @submit event that ak-stage-password's Lit
-  // handler is bound to, bypassing the button and callAction entirely.
+  // Authentik's password stage is a Lit custom element (<ak-stage-password>) rendered
+  // inside <ak-flow-executor>'s shadow root.  Several approaches all fail:
+  //   • pwField.press('Enter'): the <input> is in a different shadow tree from the
+  //     <form>, so native form-submission across shadow boundaries never fires.
+  //   • ak-stage-password button[type="submit"] .click(): Playwright's synthetic CDP
+  //     click doesn't reliably reach Lit's @click handler through 3 shadow layers.
+  //   • form.requestSubmit(): may silently skip submission if HTML5 constraint
+  //     validation doesn't see the cross-shadow-root input as form-associated.
+  // Most reliable: call submitForm() directly on the ak-stage-password element.
+  // It is a Lit custom element so its class methods are live on the DOM node.
+  // submitForm() calls this.host.submit(data) which POSTs to the flow executor.
+  // Deep-shadow search handles the case where ak-stage-password is not in the
+  // light DOM (it's always inside ak-flow-executor's shadow root).
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await page.locator('ak-stage-password').evaluate(el => {
-    const form = el.shadowRoot?.querySelector('form') as HTMLFormElement | null
-    if (!form) throw new Error('ak-stage-password form not found in shadow root')
-    form.requestSubmit()
+  await page.evaluate(() => {
+    function deepFind(root: ParentNode, selector: string): Element | null {
+      const el = root.querySelector(selector)
+      if (el) return el
+      for (const child of Array.from(root.querySelectorAll('*'))) {
+        const sr = (child as HTMLElement).shadowRoot
+        if (sr) {
+          const found = deepFind(sr, selector)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const stage = deepFind(document, 'ak-stage-password') as any
+    if (!stage) throw new Error('ak-stage-password not found')
+    if (typeof stage.submitForm === 'function') {
+      stage.submitForm(new Event('submit', { cancelable: true }))
+    } else {
+      // Fallback: trigger callAction on the spinner button
+      const btn = stage.shadowRoot?.querySelector('ak-spinner-button') as any
+      if (btn?.callAction) btn.callAction()
+      else throw new Error('no submitForm and no callAction on ak-stage-password')
+    }
   })
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
