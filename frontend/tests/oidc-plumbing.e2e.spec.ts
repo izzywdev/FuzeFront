@@ -156,30 +156,45 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await page.evaluate(() => {
-    function deepFind(root: ParentNode, selector: string): Element | null {
-      const el = root.querySelector(selector)
-      if (el) return el
-      for (const child of Array.from(root.querySelectorAll('*'))) {
-        const sr = (child as HTMLElement).shadowRoot
-        if (sr) {
-          const found = deepFind(sr, selector)
-          if (found) return found
+
+  // page.locator() uses Playwright's selector engine which pierces shadow roots —
+  // it can find ak-stage-password even inside ak-flow-executor's shadow root.
+  // Native document.querySelector() in page.evaluate() cannot pierce shadow roots,
+  // so we must use locator().evaluate() to get a handle on the DOM element.
+  // We call submitForm() directly on the Lit component instance: it reads
+  // this.passwordInput.value and calls this.host.submit(data) → executor POST.
+  const stageResult = await page.locator('ak-stage-password').evaluate((el: any) => {
+    const info = {
+      hasSubmitForm: typeof el.submitForm === 'function',
+      hostTag: el.host?.tagName ?? 'null',
+      hostHasSubmit: typeof el.host?.submit === 'function',
+      hasShadowRoot: !!el.shadowRoot,
+      hasForm: !!(el.shadowRoot?.querySelector('form')),
+      hasSpinnerBtn: !!(el.shadowRoot?.querySelector('ak-spinner-button')),
+      method: 'none' as string,
+    }
+    if (typeof el.submitForm === 'function') {
+      el.submitForm(new Event('submit', { cancelable: true }))
+      info.method = 'submitForm'
+    } else {
+      // Fallback: call callAction on the spinner button
+      const spinnerBtn = el.shadowRoot?.querySelector('ak-spinner-button') as any
+      if (typeof spinnerBtn?.callAction === 'function') {
+        spinnerBtn.callAction()
+        info.method = 'callAction'
+      } else {
+        // Final fallback: JS-click the native button inside ak-spinner-button
+        const btn = spinnerBtn?.shadowRoot?.querySelector('button') as HTMLButtonElement | null
+        if (btn) {
+          btn.click()
+          info.method = 'button-js-click'
         }
       }
-      return null
     }
-    const stage = deepFind(document, 'ak-stage-password') as any
-    if (!stage) throw new Error('ak-stage-password not found')
-    if (typeof stage.submitForm === 'function') {
-      stage.submitForm(new Event('submit', { cancelable: true }))
-    } else {
-      // Fallback: trigger callAction on the spinner button
-      const btn = stage.shadowRoot?.querySelector('ak-spinner-button') as any
-      if (btn?.callAction) btn.callAction()
-      else throw new Error('no submitForm and no callAction on ak-stage-password')
-    }
+    return info
   })
+  // Logged here so CI output shows stage state if the test still fails
+  console.log('[fillAuthentikLogin] password stage submit:', JSON.stringify(stageResult))
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
