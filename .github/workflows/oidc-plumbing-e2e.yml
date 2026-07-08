@@ -534,14 +534,18 @@ jobs:
       - name: Dump compose logs on failure
         if: failure()
         run: |
-          echo "=== authentik-server (last 500 lines) ==="
-          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -500
-          echo "=== authentik-worker (last 200 lines) ==="
-          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -200
-          echo "=== backend (last 2000 lines — full, unfiltered) ==="
-          docker compose -f docker-compose.e2e.yml logs backend | tail -2000
-          echo "=== frontend ==="
-          docker compose -f docker-compose.e2e.yml logs frontend | tail -20
+          echo "=== authentik-server (last 200 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -200
+          echo "=== authentik-worker (last 50 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -50
+          echo "=== frontend (last 50 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs frontend | tail -50
+          echo "=== backend: full log last 100 lines ==="
+          docker compose -f docker-compose.e2e.yml logs backend | tail -100
+          echo "=== backend: OIDC/auth/error lines only (all time) ==="
+          docker compose -f docker-compose.e2e.yml logs backend 2>/dev/null \
+            | grep -aE "(❌|⚠️|\[oidc\]|oidc/callback|token-exchange|authentication_failed|codeVerif|outbox|syncUser|Error:|exception|Initialized OIDC|Created new user|Updated existing user)" \
+            | head -300 || true
 
       - name: Tear down E2E stack
         if: always()

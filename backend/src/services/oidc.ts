@@ -85,34 +85,39 @@ class OIDCService {
     }
 
     try {
-      // Get the stored code verifier
-      const codeVerifier = global.codeVerifiers?.get(state || 'default');
+      // Step 1: look up PKCE code verifier stored at login time
+      const stateKey = state || 'default';
+      const codeVerifier = global.codeVerifiers?.get(stateKey);
+      console.log(`🔄 [oidc] code verifier lookup: state=${stateKey?.substring(0,8)}… found=${!!codeVerifier} mapSize=${global.codeVerifiers?.size ?? 0}`);
       if (!codeVerifier) {
-        throw new Error('Code verifier not found');
+        throw new Error(`Code verifier not found for state=${stateKey}`);
       }
 
-      // Exchange code for tokens
+      // Step 2: exchange authorisation code → tokens (real HTTP POST /token/)
+      console.log('🔄 [oidc] exchanging code for tokens...');
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
         { code_verifier: codeVerifier, state }
       );
+      console.log('✅ [oidc] token exchange OK — access_token present:', !!tokenSet.access_token, 'id_token present:', !!tokenSet.id_token);
 
-      console.log('✅ Received tokens from Authentik');
-
-      // Get user info
+      // Step 3: fetch user profile from userinfo endpoint
+      console.log('🔄 [oidc] fetching userinfo...');
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log('✅ Retrieved user info:', userinfo);
+      console.log('✅ [oidc] userinfo OK — email:', userinfo.email, 'sub:', userinfo.sub);
 
-      // Sync user to local database
+      // Step 4: upsert into local database
+      console.log('🔄 [oidc] syncing user to database...');
       const user = await this.syncUserToDatabase(userinfo);
+      console.log('✅ [oidc] db sync OK — userId:', user.id);
 
       // Clean up code verifier
-      global.codeVerifiers?.delete(state || 'default');
+      global.codeVerifiers?.delete(stateKey);
 
       return user;
     } catch (error) {
-      console.error('❌ OIDC callback error:', error);
+      console.error('❌ [oidc] handleCallback FAILED:', (error as Error).message, (error as any).error_description ?? '');
       throw error;
     }
   }
