@@ -591,3 +591,8 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+
+cloudflare:
+  cachePurge:
+    enabled: false
+    sealedToken: ""
