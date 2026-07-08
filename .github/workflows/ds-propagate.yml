@@ -117,7 +117,7 @@ Your task:
 
   dispatch-e2e-agent:
     name: Dispatch frontend-test-engineer agent
-    needs: [dispatch-frontend-agent, dispatch-mobile-agent]
+    needs: [detect-changes, dispatch-frontend-agent, dispatch-mobile-agent]
     if: always()
     runs-on: ubuntu-latest
     permissions:
