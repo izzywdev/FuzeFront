@@ -179,66 +179,40 @@ jobs:
             echo "Authorization flow already exists pk=$FLOW_PK"
           fi
 
-          # ── Find or create a scope mapping; resolve to pk in VAR ─────────
-          # Uses create-first: POST, then GET on non-201. All jq calls use
-          # 2>/dev/null so a bad API response never causes a parse-error abort.
-          get_or_create_scope() {
-            local NAME="$1" SCOPE="$2" EXPR="$3" VAR="$4"
-            local PK BODY HTTP RAW
-
-            BODY=$(jq -n --arg name "$NAME" --arg scope "$SCOPE" --arg expr "$EXPR" \
-              '{"name":$name,"scope_name":$scope,"expression":$expr}')
-            HTTP=$(curl -s -X POST "$BASE/propertymappings/scope/" \
-              -H "$AUTH" -H "$CT" \
-              -o /tmp/scope_resp.json -w "%{http_code}" \
-              -d "$BODY")
-            RAW=$(cat /tmp/scope_resp.json 2>/dev/null || echo "")
-            echo "Scope '$NAME' create HTTP $HTTP: $RAW"
-
-            if [ "$HTTP" = "201" ]; then
-              PK=$(echo "$RAW" | jq -r '.pk // empty' 2>/dev/null || true)
-              echo "Created scope mapping '$NAME' pk=$PK"
-            else
-              echo "POST returned $HTTP; searching for existing scope mapping '$NAME'..."
-              HTTP=$(curl -s -H "$AUTH" \
-                -o /tmp/scope_lookup.json -w "%{http_code}" \
-                "$BASE/propertymappings/scope/?scope_name=$SCOPE")
-              RAW=$(cat /tmp/scope_lookup.json 2>/dev/null || echo "")
-              echo "Scope lookup '$SCOPE' HTTP $HTTP: ${RAW:0:400}"
-              PK=$(echo "$RAW" | jq -r --arg n "$NAME" '.results[]? | select(.name==$n) | .pk' 2>/dev/null | head -1 || true)
-              if [ -z "$PK" ] || [ "$PK" = "null" ]; then
-                echo "Broad search — listing all scope mappings..."
-                HTTP=$(curl -s -H "$AUTH" \
-                  -o /tmp/scope_all.json -w "%{http_code}" \
-                  "$BASE/propertymappings/scope/?page_size=200")
-                RAW=$(cat /tmp/scope_all.json 2>/dev/null || echo "")
-                echo "All scopes HTTP $HTTP count=$(echo "$RAW" | jq '.count // 0' 2>/dev/null || echo '?')"
-                PK=$(echo "$RAW" | jq -r --arg n "$NAME" '.results[]? | select(.name==$n) | .pk' 2>/dev/null | head -1 || true)
-                echo "Broad search result for '$NAME': pk=${PK:-<not found>}"
-              else
-                echo "Found existing scope mapping '$NAME' pk=$PK"
-              fi
-            fi
-
-            if [ -z "$PK" ] || [ "$PK" = "null" ]; then
-              echo "ERROR: could not create or find scope mapping '$NAME'"
-              exit 1
-            fi
-            eval "$VAR=\"$PK\""
-          }
-
-          get_or_create_scope \
-            "FuzeFront OIDC scope - openid" "openid" \
-            "return {}" \
-            SCOPE_OPENID
-          get_or_create_scope \
-            "FuzeFront OIDC scope - email" "email" \
-            'return {"email": request.user.email, "email_verified": True}' \
-            SCOPE_EMAIL
-          get_or_create_scope \
-            "FuzeFront OIDC scope - profile" "profile" \
-            'return {"name": request.user.name, "given_name": request.user.name, "preferred_username": request.user.username, "nickname": request.user.username, "groups": [g.name for g in request.user.ak_groups.all()]}' \
-            SCOPE_PROFILE
+          # ── Get or create scope mappings via Python ORM ────────────────────
+          # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET
+          # in this Authentik 2024.12.3 setup — the URL pattern is not registered
+          # at the Django routing layer (auth_via:unauthenticated on 404 confirms
+          # the request never reaches auth middleware). Bypass REST entirely: use
+          # docker exec to run Python inside the authentik-worker container with
+          # direct ORM access to the shared Postgres database.
+          echo "Getting scope mapping PKs via Python ORM (docker exec authentik-worker)..."
+          SCOPE_OUTPUT=$(docker compose -f docker-compose.e2e.yml exec -T \
+            authentik-worker python - << 'PYEOF'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+          import django
+          django.setup()
+          from authentik.providers.oauth2.models import ScopeMapping
+          def ensure_scope(name, scope_name, expr):
+              sm, _ = ScopeMapping.objects.get_or_create(name=name, defaults={"scope_name": scope_name, "expression": expr})
+              print("SCOPE_" + scope_name.upper() + "=" + str(sm.pk))
+          ensure_scope("FuzeFront OIDC scope - openid", "openid", "return {}")
+          ensure_scope("FuzeFront OIDC scope - email", "email", 'return {"email": request.user.email, "email_verified": True}')
+          ensure_scope("FuzeFront OIDC scope - profile", "profile", 'return {"name": request.user.name, "given_name": request.user.name, "preferred_username": request.user.username}')
+          PYEOF
+          )
+          echo "Scope output: $SCOPE_OUTPUT"
+          SCOPE_OPENID=$(echo "$SCOPE_OUTPUT" | grep "^SCOPE_OPENID=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
+          SCOPE_EMAIL=$(echo "$SCOPE_OUTPUT" | grep "^SCOPE_EMAIL=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
+          SCOPE_PROFILE=$(echo "$SCOPE_OUTPUT" | grep "^SCOPE_PROFILE=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
+          if [ -z "$SCOPE_OPENID" ] || [ -z "$SCOPE_EMAIL" ] || [ -z "$SCOPE_PROFILE" ]; then
+            echo "ERROR: Could not get scope mapping PKs from Python ORM"
+            echo "  openid:  ${SCOPE_OPENID:-MISSING}"
+            echo "  email:   ${SCOPE_EMAIL:-MISSING}"
+            echo "  profile: ${SCOPE_PROFILE:-MISSING}"
+            exit 1
+          fi
 
           echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
@@ -327,9 +301,16 @@ jobs:
           echo "=== implicit-consent flow check ==="
           curl -s "http://authentik-server:9000/api/v3/flows/instances/?search=implicit-consent" \
             -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {slug: .slug, designation: .designation}' || true
-          echo "=== Scope mappings (FuzeFront custom) ==="
-          curl -s "http://authentik-server:9000/api/v3/propertymappings/scope/?search=FuzeFront" \
-            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, scope_name: .scope_name}' || true
+          echo "=== Scope mappings (FuzeFront custom, via Python ORM) ==="
+          docker compose -f docker-compose.e2e.yml exec -T authentik-worker python - << 'PYEOF' || true
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+          import django
+          django.setup()
+          from authentik.providers.oauth2.models import ScopeMapping
+          for sm in ScopeMapping.objects.filter(name__startswith="FuzeFront"):
+              print({"name": sm.name, "scope_name": sm.scope_name, "pk": str(sm.pk)})
+          PYEOF
 
       # ── Create the E2E test user via Authentik REST API ───────────────────
       # Uses the bootstrap token (AUTHENTIK_BOOTSTRAP_TOKEN=e2e-bootstrap-token).
