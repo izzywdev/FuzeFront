@@ -141,16 +141,24 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
   // 'input[type="password"]' targets the actual <input> inside ak-stage-password's
-  // shadow root. After filling, click the submit button scoped to <ak-stage-password>
-  // rather than press('Enter'): press('Enter') on the password field generates zero
-  // executor POSTs (the Lit component's reactive state isn't synced by keyboard events).
-  // 'ak-stage-password button[type="submit"]' pierces nested shadow DOM to reach the
-  // native <button> inside <ak-spinner-button>, and avoids the stale identification-
-  // stage button that Lit leaves in the shadow tree (which .first() mistakenly picks).
+  // shadow root. After filling:
+  //   • press('Enter') generates zero executor POSTs: the input is inside
+  //     ak-form-element-horizontal's shadow root, a different shadow tree from the
+  //     <form> in ak-stage-password's shadow root, so native form submission never fires.
+  //   • clicking the submit button (ak-stage-password button[type="submit"]) also fails:
+  //     3 levels of shadow DOM mean the synthetic click doesn't reliably reach the Lit
+  //     @click handler on ak-spinner-button, or callAction is the empty default.
+  // Solution: call form.requestSubmit() directly on the form in ak-stage-password's
+  // shadow root. requestSubmit() fires the @submit event that ak-stage-password's Lit
+  // handler is bound to, bypassing the button and callAction entirely.
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await page.locator('ak-stage-password button[type="submit"]').click({ timeout: 30_000 })
+  await page.locator('ak-stage-password').evaluate(el => {
+    const form = el.shadowRoot?.querySelector('form') as HTMLFormElement | null
+    if (!form) throw new Error('ak-stage-password form not found in shadow root')
+    form.requestSubmit()
+  })
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
