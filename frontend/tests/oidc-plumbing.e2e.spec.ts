@@ -127,23 +127,24 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
 
 async function fillAuthentikLogin(page: Page, email: string, password: string): Promise<void> {
   // ── Stage 1: Identification (username / email) ─────────────────────────
-  // Use 'input[name="uidField"]' — the outer <ak-form-element-horizontal name="uidField">
-  // container also carries this attribute, so '[name="uidField"]' resolves to the
-  // container first. Pressing Enter on the container does not fire the shadow-DOM
-  // form's submit. Targeting 'input[name="uidField"]' reaches the actual <input>.
+  // 'input[name="uidField"]' pierces shadow DOM to the actual <input> (not the
+  // outer <ak-form-element-horizontal name="uidField"> host, which also carries
+  // the attribute). press('Enter') on the actual <input> fires the shadow-DOM
+  // form's @submit, which Authentik's Lit handler intercepts for a fetch POST.
+  // Using 'button[type="submit"]' is unreliable at the password stage because
+  // Lit may leave the identification stage's button in the shadow tree; .first()
+  // then clicks the stale/wrong button and no POST is sent to the executor.
   const uidField = page.locator('input[name="uidField"]')
   await expect(uidField).toBeVisible({ timeout: 15_000 })
   await uidField.fill(email)
-  // Click the actual <button type="submit"> (not the outer <ak-spinner-button> host).
-  // 'button[type="submit"]' excludes the <ak-spinner-button> custom element and
-  // directly targets the shadow-DOM <button>, which triggers Lit's callAction / @click.
-  await page.locator('button[type="submit"]').first().click()
+  await uidField.press('Enter')
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
+  // Same pattern: 'input[type="password"]' targets the actual <input>.
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await page.locator('button[type="submit"]').first().click()
+  await pwField.press('Enter')
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
