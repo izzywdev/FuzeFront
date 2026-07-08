@@ -11,3 +11,9 @@ regexes = [
   '''legacy-hs256''',
   '''oidc-jwks''',
 ]
+
+[[allowlists]]
+description = "SealedSecret encrypted values are ciphertext, not plaintext secrets"
+paths = [
+  '''deploy/helm/.*/sealed-secret.*\.yaml''',
+]
