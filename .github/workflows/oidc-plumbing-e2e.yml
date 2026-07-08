@@ -149,35 +149,23 @@ jobs:
           fi
           echo "FuzeFront application not found — provisioning via REST API"
 
-          # ── Find or create the authorization flow ───────────────────────
-          FLOW_HTTP=$(curl -s -H "$AUTH" \
-            -o /tmp/flow_lookup.json -w "%{http_code}" \
-            "$BASE/flows/instances/?slug=fuzefront-authorization-implicit-consent")
-          FLOW_RAW=$(cat /tmp/flow_lookup.json)
-          echo "Flow lookup HTTP $FLOW_HTTP: ${FLOW_RAW:0:300}"
-          FLOW_PK=$(echo "$FLOW_RAW" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
-
+          # ── Find the authorization flow ──────────────────────────────────
+          # Use Authentik's default implicit-consent flow which already has the
+          # implicit-consent stage bound. Creating a new empty flow causes
+          # access_denied because a flow with no stages can't complete authorization.
+          FLOW_ALL=$(curl -s -H "$AUTH" "$BASE/flows/instances/?designation=authorization&ordering=slug")
+          echo "Authorization flows available: $(echo "$FLOW_ALL" | jq '[.results[].slug]' 2>/dev/null)"
+          # Prefer default-provider-authorization-implicit-consent (Authentik bootstrap default)
+          FLOW_PK=$(echo "$FLOW_ALL" | jq -r '.results[] | select(.slug=="default-provider-authorization-implicit-consent") | .pk' 2>/dev/null | head -1 || true)
+          # Fall back to any authorization flow if the default slug is absent
           if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
-            echo "Creating authorization flow..."
-            FLOW_HTTP=$(curl -s -X POST "$BASE/flows/instances/" \
-              -H "$AUTH" -H "$CT" \
-              -o /tmp/flow_create.json -w "%{http_code}" \
-              -d '{"name":"FuzeFront Authorization (Implicit Consent)","slug":"fuzefront-authorization-implicit-consent","designation":"authorization","title":"FuzeFront Sign In","authentication":"require_authenticated","policy_engine_mode":"all"}')
-            FLOW_RAW=$(cat /tmp/flow_create.json)
-            echo "Flow create HTTP $FLOW_HTTP: $FLOW_RAW"
-            if [ "$FLOW_HTTP" != "201" ]; then
-              echo "ERROR: failed to create authorization flow (HTTP $FLOW_HTTP)"
-              exit 1
-            fi
-            FLOW_PK=$(echo "$FLOW_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
-            if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
-              echo "ERROR: no pk in flow create response"
-              exit 1
-            fi
-            echo "Created authorization flow pk=$FLOW_PK"
-          else
-            echo "Authorization flow already exists pk=$FLOW_PK"
+            FLOW_PK=$(echo "$FLOW_ALL" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
           fi
+          if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
+            echo "ERROR: no authorization flow found in Authentik — bootstrap may have failed"
+            exit 1
+          fi
+          echo "Using authorization flow pk=$FLOW_PK"
 
           # ── Get or create scope mappings via Python ORM ────────────────────
           # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET
@@ -440,6 +428,10 @@ jobs:
             if curl -fsS http://localhost:4173 >/dev/null 2>&1; then
               echo "Frontend ready"
               break
+            fi
+            if [ "$i" -eq 12 ]; then
+              echo "Frontend did not become ready in 60s"
+              exit 1
             fi
             sleep 5
           done

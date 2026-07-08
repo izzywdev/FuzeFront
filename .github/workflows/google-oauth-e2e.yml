@@ -50,7 +50,7 @@ jobs:
     steps:
       - id: check
         run: |
-          if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$GOOGLE_DEV_CLIENT_ID" ] && [ -n "$GOOGLE_TEST_EMAIL" ]; then
+          if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$GOOGLE_DEV_CLIENT_ID" ] && [ -n "$GOOGLE_DEV_CLIENT_SECRET" ] && [ -n "$GOOGLE_TEST_EMAIL" ] && [ -n "$GOOGLE_TEST_PASSWORD" ]; then
             echo "has_secrets=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_secrets=false" >> "$GITHUB_OUTPUT"
@@ -58,7 +58,9 @@ jobs:
         env:
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           GOOGLE_DEV_CLIENT_ID: ${{ secrets.GOOGLE_DEV_CLIENT_ID }}
+          GOOGLE_DEV_CLIENT_SECRET: ${{ secrets.GOOGLE_DEV_CLIENT_SECRET }}
           GOOGLE_TEST_EMAIL: ${{ secrets.GOOGLE_TEST_EMAIL }}
+          GOOGLE_TEST_PASSWORD: ${{ secrets.GOOGLE_TEST_PASSWORD }}
 
   google-oauth-e2e:
     name: Google OAuth full flow
@@ -132,6 +134,10 @@ jobs:
               echo "Backend ready"
               break
             fi
+            if [ "$i" -eq 18 ]; then
+              echo "Backend did not become ready in 90s"
+              exit 1
+            fi
             sleep 5
           done
 
@@ -141,6 +147,10 @@ jobs:
             if curl -fsS http://localhost:4173 >/dev/null 2>&1; then
               echo "Frontend ready"
               break
+            fi
+            if [ "$i" -eq 12 ]; then
+              echo "Frontend did not become ready in 60s"
+              exit 1
             fi
             sleep 5
           done
