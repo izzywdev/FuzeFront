@@ -1,1 +1,153 @@
-bmFtZTogRGVzaWduIFN5c3RlbSBQcm9wYWdhdGlvbgoKIyBPbiBwdXNoIHRvIG1hc3RlciB0b3VjaGluZyBkZXNpZ24tc3lzdGVtLyoqLCBkaXNwYXRjaCBkcy1jbGF1ZGUtYWdlbnQueW1sCiMgdGhyZWUgdGltZXMgLS0gb25jZSBwZXIgYWdlbnQgc2xpY2UuIEdJVEhVQl9UT0tFTiBDQU4gdHJpZ2dlciB3b3JrZmxvd19kaXNwYXRjaAojIG9uIG90aGVyIHdvcmtmbG93cyAodW5saWtlIGlzc3VlL3B1c2ggZXZlbnRzKSwgc28gbm8gUEFUIGlzIG5lZWRlZC4KIyBFYWNoIGRpc3BhdGNoZWQgcnVuIGNhbGxzIGNsYXVkZS1jb2RlLWFjdGlvbkB2MSB3aXRoIGEgZnVsbCBwcm9tcHQuCiMKIyBSZXF1aXJlczogQU5USFJPUElDX0FQSV9LRVkgcmVwbyBzZWNyZXQgKHVzZWQgYnkgZHMtY2xhdWRlLWFnZW50LnltbCkuCm9uOgogIHB1c2g6CiAgICBicmFuY2hlczogW21hc3Rlcl0KICAgIHBhdGhzOgogICAgICAtICdkZXNpZ24tc3lzdGVtLyoqJwoKICB3b3JrZmxvd19kaXNwYXRjaDoKICAgIGlucHV0czoKICAgICAgcmVhc29uOgogICAgICAgIGRlc2NyaXB0aW9uOiAnUmVhc29uIGZvciBtYW51YWwgdHJpZ2dlcicKICAgICAgICByZXF1aXJlZDogZmFsc2UKICAgICAgICBkZWZhdWx0OiAnTWFudWFsIERTIHByb3BhZ2F0aW9uIHJ1bicKCmpvYnM6CiAgZGV0ZWN0LWNoYW5nZXM6CiAgICBuYW1lOiBEZXRlY3QgRFMgY2hhbmdlIHN1bW1hcnkKICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIG91dHB1dHM6CiAgICAgIHN1bW1hcnk6ICR7eyBzdGVwcy5zdW1tYXJpc2Uub3V0cHV0cy5zdW1tYXJ5IH19CiAgICAgIGNoYW5nZWRfZmlsZXM6ICR7eyBzdGVwcy5zdW1tYXJpc2Uub3V0cHV0cy5jaGFuZ2VkX2ZpbGVzIH19CiAgICBzdGVwczoKICAgICAgLSB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QHY0CiAgICAgICAgd2l0aDoKICAgICAgICAgIGZldGNoLWRlcHRoOiAyCgogICAgICAtIG5hbWU6IFN1bW1hcmlzZSBEUyBkaWZmCiAgICAgICAgaWQ6IHN1bW1hcmlzZQogICAgICAgIHJ1bjogfAogICAgICAgICAgIyBPbiB3b3JrZmxvd19kaXNwYXRjaCBIRUFEfjEgbWF5IG5vdCBleGlzdCAtLSBndWFyZCB3aXRoIHx8IHRydWUKICAgICAgICAgIENIQU5HRUQ9JChnaXQgZGlmZiAtLW5hbWUtb25seSBIRUFEfjEgSEVBRCAtLSAnZGVzaWduLXN5c3RlbS8qKicgMj4vZGV2L251bGwgfCBoZWFkIC04MCB8IHRyICdcbicgJywnIHx8IGVjaG8gIiIpCiAgICAgICAgICBORVdfQ09NUE9ORU5UUz0kKGdpdCBkaWZmIC0tbmFtZS1vbmx5IEhFQUR+MSBIRUFEIC0tICdkZXNpZ24tc3lzdGVtL2NvbXBvbmVudHMvKiovKi5qc3gnIDI+L2Rldi9udWxsIHwgXAogICAgICAgICAgICBzZWQgJ3N8ZGVzaWduLXN5c3RlbS9jb21wb25lbnRzL3x8O3N8XC5qc3h8fCcgfCB0ciAnXG4nICcsICcgfHwgZWNobyAiIikKICAgICAgICAgIE5FV19UT0tFTlM9JChnaXQgZGlmZiAtLW5hbWUtb25seSBIRUFEfjEgSEVBRCAtLSAnZGVzaWduLXN5c3RlbS90b2tlbnMvKionIDI+L2Rldi9udWxsIHwgXAogICAgICAgICAgICBzZWQgJ3N8ZGVzaWduLXN5c3RlbS90b2tlbnMvfHwnIHwgdHIgJ1xuJyAnLCAnIHx8IGVjaG8gIiIpCiAgICAgICAgICBDT01NSVRfTVNHPSQoZ2l0IGxvZyAtMSAtLWZvcm1hdD0nJXMnKQogICAgICAgICAgZWNobyAiY2hhbmdlZF9maWxlcz0ke0NIQU5HRUR9IiA+PiAiJEdJVEhVQl9PVVRQVVQiCiAgICAgICAgICBlY2hvICJzdW1tYXJ5PURTIHVwZGF0ZSAtLSAke0NPTU1JVF9NU0d9LiBDb21wb25lbnRzOiAke05FV19DT01QT05FTlRTOi1ub25lfS4gVG9rZW4gZmlsZXM6ICR7TkVXX1RPS0VOUzotbm9uZX0uIiA+PiAiJEdJVEhVQl9PVVRQVVQiCgogIGRpc3BhdGNoLWZyb250ZW5kLWFnZW50OgogICAgbmFtZTogRGlzcGF0Y2ggZnJvbnRlbmQtZW5naW5lZXIgYWdlbnQKICAgIG5lZWRzOiBkZXRlY3QtY2hhbmdlcwogICAgcnVucy1vbjogdWJ1bnR1LWxhdGVzdAogICAgcGVybWlzc2lvbnM6CiAgICAgIGFjdGlvbnM6IHdyaXRlCiAgICAgIGNvbnRlbnRzOiByZWFkCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBEaXNwYXRjaCBkcy1jbGF1ZGUtYWdlbnQgZm9yIGZyb250ZW5kCiAgICAgICAgZW52OgogICAgICAgICAgR0hfVE9LRU46ICR7eyBzZWNyZXRzLkdJVEhVQl9UT0tFTiB9fQogICAgICAgICAgU1VNTUFSWTogJHt7IG5lZWRzLmRldGVjdC1jaGFuZ2VzLm91dHB1dHMuc3VtbWFyeSB9fQogICAgICAgICAgQ0hBTkdFRDogJHt7IG5lZWRzLmRldGVjdC1jaGFuZ2VzLm91dHB1dHMuY2hhbmdlZF9maWxlcyB9fQogICAgICAgICAgUlVOOiAke3sgZ2l0aHViLnJ1bl9udW1iZXIgfX0KICAgICAgICBydW46IHwKICAgICAgICAgIFBST01QVD0kKHByaW50ZiAnJXNcbicgXAogICAgICAgICAgICAiWW91IGFyZSBhY3RpbmcgYXMgZnJvbnRlbmQtZW5naW5lZXIgZm9yIEZ1emVGcm9udC4iIFwKICAgICAgICAgICAgIiIgXAogICAgICAgICAgICAiVGhlIEBmdXplZnJvbnQvZGVzaWduLXN5c3RlbSB3YXMganVzdCB1cGRhdGVkIG9uIG1hc3RlciAoZHMtcHJvcGFnYXRlIHJ1biAjJHtSVU59KS4iIFwKICAgICAgICAgICAgIiIgXAogICAgICAgICAgICAiQ2hhbmdlIHN1bW1hcnk6ICR7U1VNTUFSWX0iIFwKICAgICAgICAgICAgIkNoYW5nZWQgZmlsZXM6ICR7Q0hBTkdFRH0iIFwKICAgICAgICAgICAgIiIgXAogICAgICAgICAgICAiWW91ciB0YXNrOiIgXAogICAgICAgICAgICAiMS4gUmVhZCB0aGUgY2hhbmdlZCBkZXNpZ24tc3lzdGVtIGZpbGVzOiBkZXNpZ24tc3lzdGVtL2NvbXBvbmVudHMvbW9iaWxlLyAoQm90dG9tTmF2LCBCb3R0b21TaGVldCwgRHJhd2VyKSBhbmQgZGVzaWduLXN5c3RlbS90b2tlbnMvc3BhY2luZy5jc3MuIiBcCiAgICAgICAgICAgICIyLiBVcGRhdGUgZnJvbnRlbmQvIHRvIGltcG9ydCBhbmQgdXNlIHRoZSBuZXcgbW9iaWxlIHByaW1pdGl2ZXMgaW4gdGhlIHNoZWxsIGxheW91dCBhdCB4cy9zbSBicmVha3BvaW50cyAoPDc2OHB4KS4gVGhlIHJlc3BvbnNpdmUgc2hlbGwgc2hvdWxkIHJlbmRlciBCb3R0b21OYXYgaW5zdGVhZCBvZiB0aGUgc2lkZSBwYW5lbCBvbiB4cy9zbS4iIFwKICAgICAgICAgICAgIjMuIFJlcGxhY2UgYW55IHJhdyBzcGFjaW5nL21vdGlvbiB2YWx1ZXMgaW4gZnJvbnRlbmQvIHRoYXQgbm93IGhhdmUgYSBEUyB0b2tlbiB3aXRoIHRoZSB0b2tlbiB2YXJpYWJsZS4iIFwKICAgICAgICAgICAgIjQuIENvbW1pdCB5b3VyIGNoYW5nZXMgb24gYnJhbmNoIGRzLXByb3BhZ2F0ZS9mcm9udGVuZC0ke1JVTn0sIHB1c2ggaXQsIGFuZCBvcGVuIGEgZHJhZnQgUFIgdGl0bGVkICdmZWF0KGZyb250ZW5kKTogYXBwbHkgRFMgbW9iaWxlIHByaW1pdGl2ZXMgKHJ1biAjJHtSVU59KScuIiBcCiAgICAgICAgICAgICI1LiBSZXBvcnQgU0NPUEUgRE9ORSAodmVyaWZpZWQpIHdoZW4gY29tcGxldGUuIikKICAgICAgICAgIGdoIHdvcmtmbG93IHJ1biBkcy1jbGF1ZGUtYWdlbnQueW1sIFwKICAgICAgICAgICAgLS1yZXBvICIkR0lUSFVCX1JFUE9TSVRPUlkiIFwKICAgICAgICAgICAgLS1yZWYgbWFzdGVyIFwKICAgICAgICAgICAgLS1maWVsZCAicHJvbXB0PSR7UFJPTVBUfSIgXAogICAgICAgICAgICAtLWZpZWxkICJicmFuY2hfaGludD1kcy1wcm9wYWdhdGUvZnJvbnRlbmQtJHtSVU59IgoKICBkaXNwYXRjaC1tb2JpbGUtYWdlbnQ6CiAgICBuYW1lOiBEaXNwYXRjaCBtb2JpbGUtZnJvbnRlbmQtZW5naW5lZXIgYWdlbnQKICAgIG5lZWRzOiBkZXRlY3QtY2hhbmdlcwogICAgcnVucy1vbjogdWJ1bnR1LWxhdGVzdAogICAgcGVybWlzc2lvbnM6CiAgICAgIGFjdGlvbnM6IHdyaXRlCiAgICAgIGNvbnRlbnRzOiByZWFkCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBEaXNwYXRjaCBkcy1jbGF1ZGUtYWdlbnQgZm9yIG1vYmlsZQogICAgICAgIGVudjoKICAgICAgICAgIEdIX1RPS0VOOiAke3sgc2VjcmV0cy5HSVRIVUJfVE9LRU4gfX0KICAgICAgICAgIFNVTU1BUlk6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLnN1bW1hcnkgfX0KICAgICAgICAgIENIQU5HRUQ6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLmNoYW5nZWRfZmlsZXMgfX0KICAgICAgICAgIFJVTjogJHt7IGdpdGh1Yi5ydW5fbnVtYmVyIH19CiAgICAgICAgcnVuOiB8CiAgICAgICAgICBQUk9NUFQ9JChwcmludGYgJyVzXG4nIFwKICAgICAgICAgICAgIllvdSBhcmUgYWN0aW5nIGFzIG1vYmlsZS1mcm9udGVuZC1lbmdpbmVlciBmb3IgRnV6ZUZyb250LiIgXAogICAgICAgICAgICAiIiBcCiAgICAgICAgICAgICJUaGUgQGZ1emVmcm9udC9kZXNpZ24tc3lzdGVtIHdhcyBqdXN0IHVwZGF0ZWQgb24gbWFzdGVyIChkcy1wcm9wYWdhdGUgcnVuICMke1JVTn0pLiIgXAogICAgICAgICAgICAiIiBcCiAgICAgICAgICAgICJDaGFuZ2Ugc3VtbWFyeTogJHtTVU1NQVJZfSIgXAogICAgICAgICAgICAiQ2hhbmdlZCBmaWxlczogJHtDSEFOR0VEfSIgXAogICAgICAgICAgICAiIiBcCiAgICAgICAgICAgICJZb3VyIHRhc2s6IiBcCiAgICAgICAgICAgICIxLiBSZWFkIGRlc2lnbi1zeXN0ZW0vY29tcG9uZW50cy9tb2JpbGUvIChCb3R0b21OYXYsIEJvdHRvbVNoZWV0LCBEcmF3ZXIpIGFuZCBkZXNpZ24tc3lzdGVtL3Rva2Vucy9zcGFjaW5nLmNzcyAoLS1ib3R0b20tbmF2LWhlaWdodCwgLS1kcmF3ZXItd2lkdGgsIC0tc2hlZXQtbWF4LWgsIC0tdG91Y2gtdGFyZ2V0LCBzYWZlLWFyZWEgdmFycywgbW90aW9uIHRva2VucykuIiBcCiAgICAgICAgICAgICIyLiBXaXJlIEJvdHRvbU5hdiBpbnRvIHRoZSBBbmRyb2lkIFRXQSBzaGVsbCBhbmQgYW55IHJlc3BvbnNpdmUgc2hlbGwgbGF5b3V0cyB1bmRlciBmcm9udGVuZC8gdGFyZ2V0aW5nIHhzL3NtIGJyZWFrcG9pbnRzLiIgXAogICAgICAgICAgICAiMy4gQXBwbHkgdG91Y2gtdGFyZ2V0LCBzYWZlLWFyZWEsIGFuZCBtb3Rpb24gdG9rZW5zIHdoZXJldmVyIHRvdWNoIGludGVyYWN0aW9ucyBvciBzbGlkZSBhbmltYXRpb25zIGV4aXN0LiIgXAogICAgICAgICAgICAiNC4gVmVyaWZ5IGZyb250ZW5kL3B1YmxpYy9tYW5pZmVzdC53ZWJtYW5pZmVzdCB2aWV3cG9ydCBpcyBjb25zaXN0ZW50IHdpdGggLS10b3AtYmFyLWhlaWdodC1tb2JpbGUgKDUycHgpLiIgXAogICAgICAgICAgICAiNS4gQ29tbWl0IG9uIGJyYW5jaCBkcy1wcm9wYWdhdGUvbW9iaWxlLSR7UlVOfSwgcHVzaCwgb3BlbiBhIGRyYWZ0IFBSIHRpdGxlZCAnZmVhdChtb2JpbGUpOiBhcHBseSBEUyBtb2JpbGUgdG9rZW5zICsgcHJpbWl0aXZlcyAocnVuICMke1JVTn0pJy4iIFwKICAgICAgICAgICAgIjYuIFJlcG9ydCBTQ09QRSBET05FICh2ZXJpZmllZCkgd2hlbiBjb21wbGV0ZS4iKQogICAgICAgICAgZ2ggd29ya2Zsb3cgcnVuIGRzLWNsYXVkZS1hZ2VudC55bWwgXAogICAgICAgICAgICAtLXJlcG8gIiRHSVRIVUJfUkVQT1NJVE9SWSIgXAogICAgICAgICAgICAtLXJlZiBtYXN0ZXIgXAogICAgICAgICAgICAtLWZpZWxkICJwcm9tcHQ9JHtQUk9NUFR9IiBcCiAgICAgICAgICAgIC0tZmllbGQgImJyYW5jaF9oaW50PWRzLXByb3BhZ2F0ZS9tb2JpbGUtJHtSVU59IgoKICBkaXNwYXRjaC1lMmUtYWdlbnQ6CiAgICBuYW1lOiBEaXNwYXRjaCBmcm9udGVuZC10ZXN0LWVuZ2luZWVyIGFnZW50CiAgICBuZWVkczogW2Rpc3BhdGNoLWZyb250ZW5kLWFnZW50LCBkaXNwYXRjaC1tb2JpbGUtYWdlbnRdCiAgICBpZjogYWx3YXlzKCkKICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIHBlcm1pc3Npb25zOgogICAgICBhY3Rpb25zOiB3cml0ZQogICAgICBjb250ZW50czogcmVhZAogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogRGlzcGF0Y2ggZHMtY2xhdWRlLWFnZW50IGZvciBlMmUgdGVzdHMKICAgICAgICBlbnY6CiAgICAgICAgICBHSF9UT0tFTjogJHt7IHNlY3JldHMuR0lUSFVCX1RPS0VOIH19CiAgICAgICAgICBTVU1NQVJZOiAke3sgbmVlZHMuZGV0ZWN0LWNoYW5nZXMub3V0cHV0cy5zdW1tYXJ5IH19CiAgICAgICAgICBSVU46ICR7eyBnaXRodWIucnVuX251bWJlciB9fQogICAgICAgIHJ1bjogfAogICAgICAgICAgUFJPTVBUPSQocHJpbnRmICclc1xuJyBcCiAgICAgICAgICAgICJZb3UgYXJlIGFjdGluZyBhcyBmcm9udGVuZC10ZXN0LWVuZ2luZWVyIGZvciBGdXplRnJvbnQuIiBcCiAgICAgICAgICAgICIiIFwKICAgICAgICAgICAgIlRoZSBAZnV6ZWZyb250L2Rlc2lnbi1zeXN0ZW0gaGFzIGJlZW4gdXBkYXRlZCB3aXRoIG1vYmlsZSBwcmltaXRpdmVzIChCb3R0b21OYXYsIEJvdHRvbVNoZWV0LCBEcmF3ZXIpIGFuZCB0aGUgZnJvbnRlbmQvbW9iaWxlIHByb3BhZ2F0aW9uIGFnZW50cyBmb3IgcnVuICMke1JVTn0gaGF2ZSBiZWVuIGRpc3BhdGNoZWQuIiBcCiAgICAgICAgICAgICIiIFwKICAgICAgICAgICAgIkNoYW5nZSBzdW1tYXJ5OiAke1NVTU1BUll9IiBcCiAgICAgICAgICAgICIiIFwKICAgICAgICAgICAgIllvdXIgdGFzazoiIFwKICAgICAgICAgICAgIjEuIFdyaXRlIG9yIHVwZGF0ZSBQbGF5d3JpZ2h0IGUyZSB0ZXN0cyBjb3ZlcmluZzoiIFwKICAgICAgICAgICAgIiAgIC0gQm90dG9tTmF2IHJlbmRlcnMgYXQgMzc1cHggdmlld3BvcnQgd2lkdGggYW5kIHRhYiBzZWxlY3Rpb24gd29ya3MuIiBcCiAgICAgICAgICAgICIgICAtIERyYXdlciBvcGVucy9jbG9zZXMgdmlhIGhhbWJ1cmdlciBidXR0b24sIEVzY2FwZSBjbG9zZXMgaXQsIGJhY2tkcm9wIHRhcCBjbG9zZXMgaXQsIGZvY3VzIGlzIHRyYXBwZWQgaW5zaWRlLiIgXAogICAgICAgICAgICAiICAgLSBCb3R0b21TaGVldCBvcGVucywgRXNjYXBlIGNsb3NlcyBpdCwgYmFja2Ryb3AgdGFwIGNsb3NlcyBpdCwgZm9jdXMgaXMgdHJhcHBlZC4iIFwKICAgICAgICAgICAgIjIuIEFkZCBDU1MgY29tcHV0ZWQtc3R5bGUgYXNzZXJ0aW9ucyB0aGF0IC0tYm90dG9tLW5hdi1oZWlnaHQsIC0tdG91Y2gtdGFyZ2V0LCBhbmQgLS1zaGVldC1tYXgtaCBhcmUgYWN0dWFsbHkgYXBwbGllZC4iIFwKICAgICAgICAgICAgIjMuIFJ1biB0aGUgZXhpc3RpbmcgZTJlIHN1aXRlIGFuZCBjb25maXJtIG5vIHJlZ3Jlc3Npb25zIGluIFRvcEJhciwgTW9kYWwsIFNpZGVQYW5lbCBhdCAxMDI0cHgrIHZpZXdwb3J0LiIgXAogICAgICAgICAgICAiNC4gQ29tbWl0IG9uIGJyYW5jaCBkcy1wcm9wYWdhdGUvZTJlLSR7UlVOfSwgcHVzaCwgb3BlbiBhIGRyYWZ0IFBSIHRpdGxlZCAndGVzdChlMmUpOiBtb2JpbGUgRFMgcHJpbWl0aXZlcyBQbGF5d3JpZ2h0IGNvdmVyYWdlIChydW4gIyR7UlVOfSknLiIgXAogICAgICAgICAgICAiNS4gUmVwb3J0IFNDT1BFIERPTkUgKHZlcmlmaWVkKSB3aGVuIGNvbXBsZXRlLiIpCiAgICAgICAgICBnaCB3b3JrZmxvdyBydW4gZHMtY2xhdWRlLWFnZW50LnltbCBcCiAgICAgICAgICAgIC0tcmVwbyAiJEdJVEhVQl9SRVBPU0lUT1JZIiBcCiAgICAgICAgICAgIC0tcmVmIG1hc3RlciBcCiAgICAgICAgICAgIC0tZmllbGQgInByb21wdD0ke1BST01QVH0iIFwKICAgICAgICAgICAgLS1maWVsZCAiYnJhbmNoX2hpbnQ9ZHMtcHJvcGFnYXRlL2UyZS0ke1JVTn0iCg==
+name: Design System Propagation
+
+# On push to master touching design-system/**, dispatch ds-claude-agent.yml
+# three times -- once per agent slice. GITHUB_TOKEN CAN trigger workflow_dispatch
+# on other workflows (unlike issue/push events), so no PAT is needed.
+# Each dispatched run calls claude-code-action@v1 with a full prompt.
+#
+# Requires: ANTHROPIC_API_KEY repo secret (used by ds-claude-agent.yml).
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'design-system/**'
+
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual DS propagation run'
+
+jobs:
+  detect-changes:
+    name: Detect DS change summary
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.summarise.outputs.summary }}
+      changed_files: ${{ steps.summarise.outputs.changed_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Summarise DS diff
+        id: summarise
+        run: |
+          # On workflow_dispatch HEAD~1 may not exist -- guard with || true
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'design-system/**' 2>/dev/null | head -80 | tr '\n' ',' || echo "")
+          NEW_COMPONENTS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/components/**/*.jsx' 2>/dev/null | \
+            sed 's|design-system/components/||;s|\.jsx||' | tr '\n' ', ' || echo "")
+          NEW_TOKENS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/tokens/**' 2>/dev/null | \
+            sed 's|design-system/tokens/||' | tr '\n' ', ' || echo "")
+          COMMIT_MSG=$(git log -1 --format='%s')
+          echo "changed_files=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "summary=DS update -- ${COMMIT_MSG}. Components: ${NEW_COMPONENTS:-none}. Token files: ${NEW_TOKENS:-none}." >> "$GITHUB_OUTPUT"
+
+  dispatch-frontend-agent:
+    name: Dispatch frontend-engineer agent
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for frontend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as frontend-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "Changed files: ${CHANGED}" \
+            "" \
+            "Your task:" \
+            "1. Read the changed design-system files: design-system/components/mobile/ (BottomNav, BottomSheet, Drawer) and design-system/tokens/spacing.css." \
+            "2. Update frontend/ to import and use the new mobile primitives in the shell layout at xs/sm breakpoints (<768px). The responsive shell should render BottomNav instead of the side panel on xs/sm." \
+            "3. Replace any raw spacing/motion values in frontend/ that now have a DS token with the token variable." \
+            "4. Commit your changes on branch ds-propagate/frontend-${RUN}, push it, and open a draft PR titled 'feat(frontend): apply DS mobile primitives (run #${RUN})'." \
+            "5. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/frontend-${RUN}"
+
+  dispatch-mobile-agent:
+    name: Dispatch mobile-frontend-engineer agent
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for mobile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as mobile-frontend-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "Changed files: ${CHANGED}" \
+            "" \
+            "Your task:" \
+            "1. Read design-system/components/mobile/ (BottomNav, BottomSheet, Drawer) and design-system/tokens/spacing.css (--bottom-nav-height, --drawer-width, --sheet-max-h, --touch-target, safe-area vars, motion tokens)." \
+            "2. Wire BottomNav into the Android TWA shell and any responsive shell layouts under frontend/ targeting xs/sm breakpoints." \
+            "3. Apply touch-target, safe-area, and motion tokens wherever touch interactions or slide animations exist." \
+            "4. Verify frontend/public/manifest.webmanifest viewport is consistent with --top-bar-height-mobile (52px)." \
+            "5. Commit on branch ds-propagate/mobile-${RUN}, push, open a draft PR titled 'feat(mobile): apply DS mobile tokens + primitives (run #${RUN})'." \
+            "6. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/mobile-${RUN}"
+
+  dispatch-e2e-agent:
+    name: Dispatch frontend-test-engineer agent
+    needs: [detect-changes, dispatch-frontend-agent, dispatch-mobile-agent]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for e2e tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as frontend-test-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system has been updated with mobile primitives (BottomNav, BottomSheet, Drawer) and the frontend/mobile propagation agents for run #${RUN} have been dispatched." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "" \
+            "Your task:" \
+            "1. Write or update Playwright e2e tests covering:" \
+            "   - BottomNav renders at 375px viewport width and tab selection works." \
+            "   - Drawer opens/closes via hamburger button, Escape closes it, backdrop tap closes it, focus is trapped inside." \
+            "   - BottomSheet opens, Escape closes it, backdrop tap closes it, focus is trapped." \
+            "2. Add CSS computed-style assertions that --bottom-nav-height, --touch-target, and --sheet-max-h are actually applied." \
+            "3. Run the existing e2e suite and confirm no regressions in TopBar, Modal, SidePanel at 1024px+ viewport." \
+            "4. Commit on branch ds-propagate/e2e-${RUN}, push, open a draft PR titled 'test(e2e): mobile DS primitives Playwright coverage (run #${RUN})'." \
+            "5. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/e2e-${RUN}"
