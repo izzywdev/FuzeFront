@@ -213,20 +213,11 @@ jobs:
             SCOPE_OPENID
           get_or_create_scope \
             "FuzeFront OIDC scope - email" "email" \
-            'return {
-    "email": request.user.email,
-    "email_verified": True,
-}' \
+            'return {"email": request.user.email, "email_verified": True}' \
             SCOPE_EMAIL
           get_or_create_scope \
             "FuzeFront OIDC scope - profile" "profile" \
-            'return {
-    "name": request.user.name,
-    "given_name": request.user.name,
-    "preferred_username": request.user.username,
-    "nickname": request.user.username,
-    "groups": [g.name for g in request.user.ak_groups.all()],
-}' \
+            'return {"name": request.user.name, "given_name": request.user.name, "preferred_username": request.user.username, "nickname": request.user.username, "groups": [g.name for g in request.user.ak_groups.all()]}' \
             SCOPE_PROFILE
 
           echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
