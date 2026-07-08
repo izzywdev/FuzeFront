@@ -75,7 +75,8 @@ jobs:
             -kubernetes-version 1.29.0 \
             -schema-location default \
             -skip CustomResourceDefinition \
-            -skip Middleware \
+            -skip Middleware \\
+            -skip SealedSecret \
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/
