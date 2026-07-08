@@ -1,0 +1,25 @@
+{
+  "manifestVersion": "1",
+  "slug": "fuzemarket",
+  "name": "FuzeMarket",
+  "menuLabel": "FuzeMarket",
+  "description": "Marketing & SEO control dashboard for Velogear Premium (Shopify store velogearpremium.com). Keyword strategy, content pipeline, analytics, competitor tracking, and AI-powered SEO recommendations.",
+  "icon": { "kind": "emoji", "value": "🛍️" },
+  "mode": "portal",
+  "builtin": false,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "https://fuzemarket.fuze.internal/dist/remoteEntry.js",
+    "scope": "fuzemarket",
+    "module": "./App"
+  },
+  "chrome": {
+    "menu": "host",
+    "topbar": "host"
+  },
+  "routing": {
+    "path": "/fuzemarket"
+  },
+  "visibility": "private",
+  "roles": ["admin", "owner"]
+}
