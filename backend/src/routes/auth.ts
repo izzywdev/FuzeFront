@@ -470,10 +470,13 @@ router.get('/oidc/callback', async (req, res) => {
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user.id, sessionId }, process.env.JWT_SECRET!, {
-      expiresIn: '24h',
-    })
+    // Generate JWT token — include standard OIDC claims (sub, email) alongside
+    // the internal userId/sessionId so consumers can inspect identity claims.
+    const token = jwt.sign(
+      { userId: user.id, sessionId, sub: user.id, email: user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
 
     await db('sessions').insert({
       id: sessionId,
