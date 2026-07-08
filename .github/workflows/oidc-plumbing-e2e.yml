@@ -149,23 +149,46 @@ jobs:
           fi
           echo "FuzeFront application not found — provisioning via REST API"
 
-          # ── Find the authorization flow ──────────────────────────────────
-          # Use Authentik's default implicit-consent flow which already has the
-          # implicit-consent stage bound. Creating a new empty flow causes
-          # access_denied because a flow with no stages can't complete authorization.
-          FLOW_ALL=$(curl -s -H "$AUTH" "$BASE/flows/instances/?designation=authorization&ordering=slug")
-          echo "Authorization flows available: $(echo "$FLOW_ALL" | jq '[.results[].slug]' 2>/dev/null)"
-          # Prefer default-provider-authorization-implicit-consent (Authentik bootstrap default)
-          FLOW_PK=$(echo "$FLOW_ALL" | jq -r '.results[] | select(.slug=="default-provider-authorization-implicit-consent") | .pk' 2>/dev/null | head -1 || true)
-          # Fall back to any authorization flow if the default slug is absent
+          # ── Create implicit-consent authorization flow via Python ORM ────
+          # Authentik 2024.12.3 only bootstraps default-provider-authorization-
+          # explicit-consent. We need an implicit-consent flow so no UI consent
+          # stage appears during the E2E test (FuzeFront is a first-party app).
+          echo "Creating implicit-consent authorization flow via Python ORM..."
+          FLOW_OUTPUT=$(docker compose -f docker-compose.e2e.yml exec -T \
+            authentik-worker python - << 'PYEOF'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+          import django
+          django.setup()
+          from authentik.flows.models import Flow, FlowStageBinding
+          from authentik.stages.consent.models import ConsentStage
+
+          # never_require = implicit consent (no UI prompt needed)
+          stage, _ = ConsentStage.objects.get_or_create(
+              name="FuzeFront Implicit Consent Stage",
+              defaults={"mode": "never_require"}
+          )
+          flow, _ = Flow.objects.get_or_create(
+              slug="fuzefront-authorization-implicit-consent",
+              defaults={
+                  "name": "FuzeFront Authorization (Implicit Consent)",
+                  "designation": "authorization",
+                  "title": "FuzeFront Authorization",
+                  "authentication": "none",
+                  "policy_engine_mode": "all"
+              }
+          )
+          FlowStageBinding.objects.get_or_create(target=flow, stage=stage, defaults={"order": 0})
+          print("FLOW_PK=" + str(flow.pk))
+          PYEOF
+          )
+          echo "Flow output: $FLOW_OUTPUT"
+          FLOW_PK=$(echo "$FLOW_OUTPUT" | grep "^FLOW_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
           if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
-            FLOW_PK=$(echo "$FLOW_ALL" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
-          fi
-          if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
-            echo "ERROR: no authorization flow found in Authentik — bootstrap may have failed"
+            echo "ERROR: Could not create implicit-consent authorization flow"
             exit 1
           fi
-          echo "Using authorization flow pk=$FLOW_PK"
+          echo "Using implicit-consent authorization flow pk=$FLOW_PK"
 
           # ── Get or create scope mappings via Python ORM ────────────────────
           # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET
