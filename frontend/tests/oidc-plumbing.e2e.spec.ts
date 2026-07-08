@@ -127,21 +127,23 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
 
 async function fillAuthentikLogin(page: Page, email: string, password: string): Promise<void> {
   // ── Stage 1: Identification (username / email) ─────────────────────────
-  // The field has name="uidField" inside <ak-stage-identification>'s shadow root
-  const uidField = page.locator('[name="uidField"]')
+  // Use 'input[name="uidField"]' — the outer <ak-form-element-horizontal name="uidField">
+  // container also carries this attribute, so '[name="uidField"]' resolves to the
+  // container first. Pressing Enter on the container does not fire the shadow-DOM
+  // form's submit. Targeting 'input[name="uidField"]' reaches the actual <input>.
+  const uidField = page.locator('input[name="uidField"]')
   await expect(uidField).toBeVisible({ timeout: 15_000 })
   await uidField.fill(email)
-  // Press Enter on the input to fire the shadow-DOM form's submit event.
-  // Authentik's Lit @submit handler intercepts this and makes a fetch POST.
-  // Clicking '[type="submit"]' with .first() matches the outer <ak-spinner-button>
-  // custom element before the inner <button> and does NOT trigger the Lit handler.
-  await uidField.press('Enter')
+  // Click the actual <button type="submit"> (not the outer <ak-spinner-button> host).
+  // 'button[type="submit"]' excludes the <ak-spinner-button> custom element and
+  // directly targets the shadow-DOM <button>, which triggers Lit's callAction / @click.
+  await page.locator('button[type="submit"]').first().click()
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
-  const pwField = page.locator('[type="password"]')
-  await expect(pwField).toBeVisible({ timeout: 10_000 })
+  const pwField = page.locator('input[type="password"]')
+  await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await pwField.press('Enter')
+  await page.locator('button[type="submit"]').first().click()
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
