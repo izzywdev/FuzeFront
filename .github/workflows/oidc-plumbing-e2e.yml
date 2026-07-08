@@ -216,6 +216,32 @@ jobs:
 
           echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
+          # ── Find or create the invalidation flow ─────────────────────────
+          # Authentik 2024.12.3 requires invalidation_flow on the OAuth2 provider.
+          INV_FLOW_RAW=$(curl -s -H "$AUTH" "$BASE/flows/instances/?designation=invalidation")
+          INV_FLOW_PK=$(echo "$INV_FLOW_RAW" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
+          echo "Invalidation flow lookup: pk=${INV_FLOW_PK:-NOT_FOUND}"
+
+          if [ -z "$INV_FLOW_PK" ] || [ "$INV_FLOW_PK" = "null" ]; then
+            echo "Creating invalidation flow..."
+            INV_HTTP=$(curl -s -X POST "$BASE/flows/instances/" \
+              -H "$AUTH" -H "$CT" \
+              -o /tmp/inv_flow_create.json -w "%{http_code}" \
+              -d '{"name":"FuzeFront Invalidation Flow","slug":"fuzefront-invalidation-flow","designation":"invalidation","title":"Signed Out","authentication":"none","policy_engine_mode":"all"}')
+            INV_RAW=$(cat /tmp/inv_flow_create.json)
+            echo "Invalidation flow create HTTP $INV_HTTP: $INV_RAW"
+            if [ "$INV_HTTP" != "201" ]; then
+              echo "ERROR: failed to create invalidation flow (HTTP $INV_HTTP)"
+              exit 1
+            fi
+            INV_FLOW_PK=$(echo "$INV_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
+            if [ -z "$INV_FLOW_PK" ] || [ "$INV_FLOW_PK" = "null" ]; then
+              echo "ERROR: no pk in invalidation flow create response"
+              exit 1
+            fi
+            echo "Created invalidation flow pk=$INV_FLOW_PK"
+          fi
+
           # ── Find or create the OAuth2 provider ──────────────────────────
           PROVIDER_HTTP=$(curl -s -H "$AUTH" \
             -o /tmp/provider_lookup.json -w "%{http_code}" \
@@ -229,8 +255,9 @@ jobs:
             PROVIDER_BODY=$(jq -n \
               --arg secret "$AUTHENTIK_OIDC_CLIENT_SECRET" \
               --arg flow "$FLOW_PK" \
+              --arg inv_flow "$INV_FLOW_PK" \
               --arg m1 "$SCOPE_OPENID" --arg m2 "$SCOPE_EMAIL" --arg m3 "$SCOPE_PROFILE" \
-              '{name:"FuzeFront",client_type:"confidential",client_id:"fuzefront-oidc-client",client_secret:$secret,redirect_uris:[{matching_mode:"strict",url:"http://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://app.fuzefront.com/api/auth/oidc/callback"},{matching_mode:"strict",url:"http://localhost:3001/api/auth/oidc/callback"}],property_mappings:[$m1,$m2,$m3],sub_mode:"user_email",include_claims_in_id_token:true,authorization_flow:$flow}')
+              '{name:"FuzeFront",client_type:"confidential",client_id:"fuzefront-oidc-client",client_secret:$secret,redirect_uris:[{matching_mode:"strict",url:"http://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://app.fuzefront.com/api/auth/oidc/callback"},{matching_mode:"strict",url:"http://localhost:3001/api/auth/oidc/callback"}],property_mappings:[$m1,$m2,$m3],sub_mode:"user_email",include_claims_in_id_token:true,authorization_flow:$flow,invalidation_flow:$inv_flow}')
             PROVIDER_HTTP=$(curl -s -X POST "$BASE/providers/oauth2/" \
               -H "$AUTH" -H "$CT" \
               -o /tmp/provider_create.json -w "%{http_code}" \
