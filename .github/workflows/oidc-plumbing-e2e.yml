@@ -436,6 +436,13 @@ jobs:
             sleep 5
           done
 
+      # ── Allow browser to resolve authentik-server hostname ───────────────────
+      # docker-compose.e2e.yml documents this requirement: the browser runs on
+      # the host but Authentik's external URL uses the docker service name.
+      # Port 9000 is published to the host so 127.0.0.1 works.
+      - name: Add authentik-server to /etc/hosts
+        run: echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
+
       # ── Run OIDC plumbing E2E tests ────────────────────────────────────────
       - name: Run OIDC plumbing E2E tests
         working-directory: frontend
