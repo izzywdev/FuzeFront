@@ -15,6 +15,13 @@
 # fields are not updated (Authentik generates a new secret on provider creation
 # if client_secret is absent from attrs). Rotation requires deleting the
 # provider entry and re-applying.
+#
+# DESIGN: All objects this blueprint needs are defined inline (flow, scope
+# mappings) — no !Find references to system-blueprint objects. Authentik's
+# Celery blueprint runner applies system and custom blueprints concurrently;
+# a !Find that references a system object (e.g. the built-in scope-openid
+# scopemapping) will silently abort the entry if that object isn't yet
+# committed to the DB. Defining everything inline eliminates that race.
 version: 1
 metadata:
   name: FuzeFront OIDC Provider
@@ -23,11 +30,6 @@ entries:
   # An empty authorization flow = implicit consent in Authentik. The blueprint
   # runner appends OAuthFulfillmentStage automatically; with no ConsentStage in
   # the flow, consent is bypassed and the code is issued immediately.
-  #
-  # We define the flow inline (not via !Find on a system blueprint slug) so
-  # there is no ordering dependency on system blueprints. If !Find can't resolve
-  # an object, Authentik aborts the blueprint entry, which would prevent the
-  # provider (and thus the application) from being created.
   - model: authentik_flows.flow
     state: present
     identifiers:
@@ -41,6 +43,47 @@ entries:
       # all + 0 policy bindings = vacuous truth → flow is always accessible.
       authentication: require_authenticated
       policy_engine_mode: all
+
+  # ── Scope mappings (inline — no system-blueprint dependency) ─────────────────
+  # Defined before the provider so they exist in DB when the provider entry's
+  # !Find tags execute (blueprint entries are applied in order).
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeFront OIDC scope - openid"
+    attrs:
+      name: "FuzeFront OIDC scope - openid"
+      scope_name: openid
+      expression: "return {}"
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeFront OIDC scope - email"
+    attrs:
+      name: "FuzeFront OIDC scope - email"
+      scope_name: email
+      expression: |
+        return {
+            "email": request.user.email,
+            "email_verified": True,
+        }
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeFront OIDC scope - profile"
+    attrs:
+      name: "FuzeFront OIDC scope - profile"
+      scope_name: profile
+      expression: |
+        return {
+            "name": request.user.name,
+            "given_name": request.user.name,
+            "preferred_username": request.user.username,
+            "nickname": request.user.username,
+            "groups": [g.name for g in request.user.ak_groups.all()],
+        }
 
   # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
   - model: authentik_providers_oauth2.oauth2provider
@@ -70,11 +113,12 @@ entries:
           url: "https://app.fuzefront.com/api/auth/oidc/callback"
         - matching_mode: strict
           url: "http://localhost:3001/api/auth/oidc/callback"
-      # Standard OIDC scopes (openid, email, profile)
+      # Scope mappings defined inline above — !Find resolves within this same
+      # blueprint run since those entries are applied before this one.
       property_mappings:
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeFront OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeFront OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeFront OIDC scope - profile"]]
       # Use email as the `sub` claim — consistent with the seeder behaviour
       sub_mode: user_email
       include_claims_in_id_token: true

@@ -126,22 +126,26 @@ jobs:
           done
 
       # ── Verify blueprint status ────────────────────────────────────────────
-      # Confirm all custom blueprints applied successfully before proceeding.
-      # Helps distinguish "OIDC discovery up but blueprint failed" scenarios.
+      # Runs with if: always() so it captures state even when OIDC discovery
+      # times out — this is the primary diagnostic for blueprint failures.
       - name: Check Authentik blueprint status
+        if: always()
         run: |
           echo "=== Blueprint instances ==="
           curl -s "http://authentik-server:9000/api/v3/blueprints/instances/" \
-            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, status: .status, last_applied: .last_applied}'
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, status: .status, last_applied: .last_applied}' || true
           echo "=== FuzeFront OIDC provider check ==="
           curl -s "http://authentik-server:9000/api/v3/providers/oauth2/?search=FuzeFront" \
-            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, client_id: .client_id, authorization_flow: .authorization_flow}'
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, client_id: .client_id, authorization_flow: .authorization_flow}' || true
           echo "=== FuzeFront application check ==="
           curl -s "http://authentik-server:9000/api/v3/core/applications/?search=fuzefront" \
-            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, slug: .slug, policy_engine_mode: .policy_engine_mode}'
-          echo "=== default-provider-authorization-implicit-consent flow check ==="
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, slug: .slug, policy_engine_mode: .policy_engine_mode}' || true
+          echo "=== implicit-consent flow check ==="
           curl -s "http://authentik-server:9000/api/v3/flows/instances/?search=implicit-consent" \
-            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {slug: .slug, designation: .designation}'
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {slug: .slug, designation: .designation}' || true
+          echo "=== Scope mappings (FuzeFront custom) ==="
+          curl -s "http://authentik-server:9000/api/v3/propertymappings/scope/?search=FuzeFront" \
+            -H "Authorization: Bearer e2e-bootstrap-token" | jq '.results[] | {name: .name, scope_name: .scope_name}' || true
 
       # ── Create the E2E test user via Authentik REST API ───────────────────
       # Uses the bootstrap token (AUTHENTIK_BOOTSTRAP_TOKEN=e2e-bootstrap-token).
