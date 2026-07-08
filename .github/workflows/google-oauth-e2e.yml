@@ -40,14 +40,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Secret availability check ─────────────────────────────────────────────
+  # Secrets context is not available in job-level if: conditions.
+  # Export availability as a step output so the main job can use needs.*.outputs.
+  check-secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      has_secrets: ${{ steps.check.outputs.has_secrets }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$GOOGLE_DEV_CLIENT_ID" ] && [ -n "$GOOGLE_TEST_EMAIL" ]; then
+            echo "has_secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secrets=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          GOOGLE_DEV_CLIENT_ID: ${{ secrets.GOOGLE_DEV_CLIENT_ID }}
+          GOOGLE_TEST_EMAIL: ${{ secrets.GOOGLE_TEST_EMAIL }}
+
   google-oauth-e2e:
     name: Google OAuth full flow
+    needs: check-secrets
+    # Skip when tunnel/Google secrets are absent (forks, dependabot, etc.).
+    # Checked via a prior job because secrets context is unavailable in job if:.
+    if: needs.check-secrets.outputs.has_secrets == 'true'
     runs-on: ubuntu-latest
-    # Skip entirely when the tunnel/Google secrets are absent (forks, dependabot, etc.)
-    if: >-
-      ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN != '' &&
-          secrets.GOOGLE_DEV_CLIENT_ID != '' &&
-          secrets.GOOGLE_TEST_EMAIL != '' }}
 
     env:
       TUNNEL_HOSTNAME: ${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}

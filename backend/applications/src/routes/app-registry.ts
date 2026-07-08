@@ -35,10 +35,11 @@ function forbidden(res: express.Response, message = 'Insufficient permissions fo
  * gated. Fails safe (OFF) if the flag store is unreachable.
  */
 async function v1WriteGate(
-  caller: { userId: string; organizationIds: string[] },
+  caller: { userId: string; organizationIds: string[]; isPlatformAdmin: boolean },
   organizationId: string | null,
   res: express.Response
 ): Promise<boolean> {
+  if (caller.isPlatformAdmin) return true
   const enabled = await isV1WriteEnabled({
     organizationId: organizationId ?? caller.organizationIds[0],
     userId: caller.userId,
