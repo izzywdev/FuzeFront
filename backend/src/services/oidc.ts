@@ -45,6 +45,10 @@ class OIDCService {
         redirect_uris: [this.config.redirectUri],
         response_types: ['code'],
         grant_types: ['authorization_code'],
+        // Authentik signs ID tokens with HS256 when no signing_key is set in the
+        // provider blueprint; openid-client defaults to RS256 and throws RPError
+        // "unexpected JWT alg received" without this override.
+        id_token_signed_response_alg: 'HS256',
       });
 
       console.log('✅ OIDC client initialized successfully');
