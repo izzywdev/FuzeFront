@@ -131,18 +131,17 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   const uidField = page.locator('[name="uidField"]')
   await expect(uidField).toBeVisible({ timeout: 15_000 })
   await uidField.fill(email)
-  // Submit the stage — first visible submit button on the page
-  await page.locator('[type="submit"]').first().click()
+  // Press Enter on the input to fire the shadow-DOM form's submit event.
+  // Authentik's Lit @submit handler intercepts this and makes a fetch POST.
+  // Clicking '[type="submit"]' with .first() matches the outer <ak-spinner-button>
+  // custom element before the inner <button> and does NOT trigger the Lit handler.
+  await uidField.press('Enter')
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
   const pwField = page.locator('[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 10_000 })
   await pwField.fill(password)
-  // Click the submit button — same pattern as the identification stage above.
-  // pressing Enter (or requestSubmit()) triggers the browser's native form GET because
-  // the Authentik Lit form has no method="post" attribute; only a click event on the
-  // submit button is intercepted by the Lit component's @click handler for its fetch POST.
-  await page.locator('[type="submit"]').first().click()
+  await pwField.press('Enter')
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.

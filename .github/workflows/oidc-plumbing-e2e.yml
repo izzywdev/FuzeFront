@@ -143,11 +143,13 @@ jobs:
           # Check if the FuzeFront application already exists (blueprint may have worked)
           APP_RAW=$(curl -s -H "$AUTH" "$BASE/core/applications/?search=fuzefront")
           APP_COUNT=$(echo "$APP_RAW" | jq '.results | length' 2>/dev/null || echo "0")
+          APP_EXISTS=false
           if [ "$APP_COUNT" -gt "0" ]; then
-            echo "FuzeFront application already exists (blueprint succeeded) — skipping REST provisioning"
-            exit 0
+            echo "FuzeFront application already exists (blueprint succeeded)"
+            APP_EXISTS=true
+          else
+            echo "FuzeFront application not found — provisioning via REST API"
           fi
-          echo "FuzeFront application not found — provisioning via REST API"
 
           # ── Resolve implicit-consent authorization flow via Python ORM ─────
           # Prefer the built-in 'default-provider-authorization-implicit-consent'
@@ -200,6 +202,36 @@ jobs:
             exit 1
           fi
           echo "Using implicit-consent authorization flow pk=$FLOW_PK"
+
+          # If the app already exists from the blueprint, just ensure the provider uses
+          # the built-in implicit-consent flow (PATCH it) then exit — no full reprovision.
+          if [ "$APP_EXISTS" = "true" ]; then
+            echo "App exists — updating provider authorization_flow to implicit-consent flow pk=$FLOW_PK..."
+            PROVIDER_RAW=$(curl -s -H "$AUTH" "$BASE/providers/oauth2/?search=FuzeFront")
+            PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.results[]? | select(.name=="FuzeFront") | .pk' 2>/dev/null | head -1 || true)
+            if [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ]; then
+              PATCH_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X PATCH "$BASE/providers/oauth2/${PROVIDER_PK}/" \
+                -H "$AUTH" -H "$CT" \
+                -d "{\"authorization_flow\": \"$FLOW_PK\"}")
+              echo "Provider PATCH HTTP $PATCH_HTTP (pk=$PROVIDER_PK → flow=$FLOW_PK)"
+            else
+              echo "No existing FuzeFront provider found — falling through to full provisioning"
+              APP_EXISTS=false
+            fi
+            if [ "$APP_EXISTS" = "true" ]; then
+              echo "Waiting for OIDC discovery to be available (up to 3 minutes)..."
+              for i in $(seq 1 36); do
+                if curl -fsS "http://authentik-server:9000/application/o/fuzefront/.well-known/openid-configuration" >/dev/null 2>&1; then
+                  echo "OIDC discovery available after $((i * 5))s"
+                  exit 0
+                fi
+                sleep 5
+              done
+              echo "WARNING: OIDC discovery not available after 3 minutes — continuing anyway"
+              exit 0
+            fi
+          fi
 
           # ── Get or create scope mappings via Python ORM ────────────────────
           # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET
