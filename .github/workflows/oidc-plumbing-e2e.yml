@@ -141,7 +141,8 @@ jobs:
           CT="Content-Type: application/json"
 
           # Check if the FuzeFront application already exists (blueprint may have worked)
-          APP_COUNT=$(curl -s -H "$AUTH" "$BASE/core/applications/?search=fuzefront" | jq '.results | length')
+          APP_RAW=$(curl -s -H "$AUTH" "$BASE/core/applications/?search=fuzefront")
+          APP_COUNT=$(echo "$APP_RAW" | jq '.results | length' 2>/dev/null || echo "0")
           if [ "$APP_COUNT" -gt "0" ]; then
             echo "FuzeFront application already exists (blueprint succeeded) — skipping REST provisioning"
             exit 0
@@ -149,26 +150,28 @@ jobs:
           echo "FuzeFront application not found — provisioning via REST API"
 
           # ── Find or create the authorization flow ───────────────────────
-          FLOW_PK=$(curl -s -H "$AUTH" \
-            "$BASE/flows/instances/?slug=fuzefront-authorization-implicit-consent" \
-            | jq -r '.results[0].pk // empty')
+          FLOW_HTTP=$(curl -s -H "$AUTH" \
+            -o /tmp/flow_lookup.json -w "%{http_code}" \
+            "$BASE/flows/instances/?slug=fuzefront-authorization-implicit-consent")
+          FLOW_RAW=$(cat /tmp/flow_lookup.json)
+          echo "Flow lookup HTTP $FLOW_HTTP: ${FLOW_RAW:0:300}"
+          FLOW_PK=$(echo "$FLOW_RAW" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
 
-          if [ -z "$FLOW_PK" ]; then
+          if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
             echo "Creating authorization flow..."
-            FLOW_RESP=$(curl -s -X POST "$BASE/flows/instances/" \
+            FLOW_HTTP=$(curl -s -X POST "$BASE/flows/instances/" \
               -H "$AUTH" -H "$CT" \
-              -d '{
-                "name": "FuzeFront Authorization (Implicit Consent)",
-                "slug": "fuzefront-authorization-implicit-consent",
-                "designation": "authorization",
-                "title": "FuzeFront Sign In",
-                "authentication": "require_authenticated",
-                "policy_engine_mode": "all"
-              }')
-            echo "Flow response: $FLOW_RESP"
-            FLOW_PK=$(echo "$FLOW_RESP" | jq -r '.pk // empty')
+              -o /tmp/flow_create.json -w "%{http_code}" \
+              -d '{"name":"FuzeFront Authorization (Implicit Consent)","slug":"fuzefront-authorization-implicit-consent","designation":"authorization","title":"FuzeFront Sign In","authentication":"require_authenticated","policy_engine_mode":"all"}')
+            FLOW_RAW=$(cat /tmp/flow_create.json)
+            echo "Flow create HTTP $FLOW_HTTP: $FLOW_RAW"
+            if [ "$FLOW_HTTP" != "201" ]; then
+              echo "ERROR: failed to create authorization flow (HTTP $FLOW_HTTP)"
+              exit 1
+            fi
+            FLOW_PK=$(echo "$FLOW_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
             if [ -z "$FLOW_PK" ] || [ "$FLOW_PK" = "null" ]; then
-              echo "ERROR: failed to create authorization flow"
+              echo "ERROR: no pk in flow create response"
               exit 1
             fi
             echo "Created authorization flow pk=$FLOW_PK"
@@ -176,33 +179,50 @@ jobs:
             echo "Authorization flow already exists pk=$FLOW_PK"
           fi
 
-          # ── Find or create the three scope mappings ─────────────────────
-          # Pass Python expressions as shell --arg vars so jq handles JSON
-          # encoding automatically (no embedding multi-line strings in jq programs).
+          # ── Find or create a scope mapping; resolve to pk in VAR ─────────
+          # Uses create-first: POST, then GET on non-201. All jq calls use
+          # 2>/dev/null so a bad API response never causes a parse-error abort.
           get_or_create_scope() {
             local NAME="$1" SCOPE="$2" EXPR="$3" VAR="$4"
-            local PK
-            PK=$(curl -s -H "$AUTH" \
-              "$BASE/propertymappings/scope/?scope_name=$SCOPE" \
-              | jq -r --arg n "$NAME" '.results[] | select(.name==$n) | .pk' | head -1)
-            if [ -z "$PK" ]; then
-              echo "Creating scope mapping '$NAME'..."
-              local BODY RESP
-              BODY=$(jq -n \
-                --arg name "$NAME" --arg scope "$SCOPE" --arg expr "$EXPR" \
-                '{"name": $name, "scope_name": $scope, "expression": $expr}')
-              RESP=$(curl -s -X POST "$BASE/propertymappings/scope/" \
-                -H "$AUTH" -H "$CT" \
-                -d "$BODY")
-              echo "Scope mapping response: $RESP"
-              PK=$(echo "$RESP" | jq -r '.pk // empty')
-              if [ -z "$PK" ] || [ "$PK" = "null" ]; then
-                echo "ERROR: failed to create scope mapping '$NAME'"
-                exit 1
-              fi
+            local PK BODY HTTP RAW
+
+            BODY=$(jq -n --arg name "$NAME" --arg scope "$SCOPE" --arg expr "$EXPR" \
+              '{"name":$name,"scope_name":$scope,"expression":$expr}')
+            HTTP=$(curl -s -X POST "$BASE/propertymappings/scope/" \
+              -H "$AUTH" -H "$CT" \
+              -o /tmp/scope_resp.json -w "%{http_code}" \
+              -d "$BODY")
+            RAW=$(cat /tmp/scope_resp.json 2>/dev/null || echo "")
+            echo "Scope '$NAME' create HTTP $HTTP: $RAW"
+
+            if [ "$HTTP" = "201" ]; then
+              PK=$(echo "$RAW" | jq -r '.pk // empty' 2>/dev/null || true)
               echo "Created scope mapping '$NAME' pk=$PK"
             else
-              echo "Scope mapping '$NAME' already exists pk=$PK"
+              echo "POST returned $HTTP; searching for existing scope mapping '$NAME'..."
+              HTTP=$(curl -s -H "$AUTH" \
+                -o /tmp/scope_lookup.json -w "%{http_code}" \
+                "$BASE/propertymappings/scope/?scope_name=$SCOPE")
+              RAW=$(cat /tmp/scope_lookup.json 2>/dev/null || echo "")
+              echo "Scope lookup '$SCOPE' HTTP $HTTP: ${RAW:0:400}"
+              PK=$(echo "$RAW" | jq -r --arg n "$NAME" '.results[]? | select(.name==$n) | .pk' 2>/dev/null | head -1 || true)
+              if [ -z "$PK" ] || [ "$PK" = "null" ]; then
+                echo "Broad search — listing all scope mappings..."
+                HTTP=$(curl -s -H "$AUTH" \
+                  -o /tmp/scope_all.json -w "%{http_code}" \
+                  "$BASE/propertymappings/scope/?page_size=200")
+                RAW=$(cat /tmp/scope_all.json 2>/dev/null || echo "")
+                echo "All scopes HTTP $HTTP count=$(echo "$RAW" | jq '.count // 0' 2>/dev/null || echo '?')"
+                PK=$(echo "$RAW" | jq -r --arg n "$NAME" '.results[]? | select(.name==$n) | .pk' 2>/dev/null | head -1 || true)
+                echo "Broad search result for '$NAME': pk=${PK:-<not found>}"
+              else
+                echo "Found existing scope mapping '$NAME' pk=$PK"
+              fi
+            fi
+
+            if [ -z "$PK" ] || [ "$PK" = "null" ]; then
+              echo "ERROR: could not create or find scope mapping '$NAME'"
+              exit 1
             fi
             eval "$VAR=\"$PK\""
           }
@@ -223,39 +243,33 @@ jobs:
           echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
           # ── Find or create the OAuth2 provider ──────────────────────────
-          PROVIDER_PK=$(curl -s -H "$AUTH" \
-            "$BASE/providers/oauth2/?search=FuzeFront" \
-            | jq -r '.results[] | select(.name=="FuzeFront") | .pk' | head -1)
+          PROVIDER_HTTP=$(curl -s -H "$AUTH" \
+            -o /tmp/provider_lookup.json -w "%{http_code}" \
+            "$BASE/providers/oauth2/?search=FuzeFront")
+          PROVIDER_RAW=$(cat /tmp/provider_lookup.json)
+          echo "Provider lookup HTTP $PROVIDER_HTTP: ${PROVIDER_RAW:0:300}"
+          PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.results[]? | select(.name=="FuzeFront") | .pk' 2>/dev/null | head -1 || true)
 
-          if [ -z "$PROVIDER_PK" ]; then
+          if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
             echo "Creating FuzeFront OAuth2 provider..."
             PROVIDER_BODY=$(jq -n \
               --arg secret "$AUTHENTIK_OIDC_CLIENT_SECRET" \
               --arg flow "$FLOW_PK" \
               --arg m1 "$SCOPE_OPENID" --arg m2 "$SCOPE_EMAIL" --arg m3 "$SCOPE_PROFILE" \
-              '{
-                name: "FuzeFront",
-                client_type: "confidential",
-                client_id: "fuzefront-oidc-client",
-                client_secret: $secret,
-                redirect_uris: [
-                  {matching_mode: "strict", url: "http://fuzefront.dev.local/api/auth/oidc/callback"},
-                  {matching_mode: "strict", url: "https://fuzefront.dev.local/api/auth/oidc/callback"},
-                  {matching_mode: "strict", url: "https://app.fuzefront.com/api/auth/oidc/callback"},
-                  {matching_mode: "strict", url: "http://localhost:3001/api/auth/oidc/callback"}
-                ],
-                property_mappings: [$m1, $m2, $m3],
-                sub_mode: "user_email",
-                include_claims_in_id_token: true,
-                authorization_flow: $flow
-              }')
-            PROVIDER_RESP=$(curl -s -X POST "$BASE/providers/oauth2/" \
+              '{name:"FuzeFront",client_type:"confidential",client_id:"fuzefront-oidc-client",client_secret:$secret,redirect_uris:[{matching_mode:"strict",url:"http://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://app.fuzefront.com/api/auth/oidc/callback"},{matching_mode:"strict",url:"http://localhost:3001/api/auth/oidc/callback"}],property_mappings:[$m1,$m2,$m3],sub_mode:"user_email",include_claims_in_id_token:true,authorization_flow:$flow}')
+            PROVIDER_HTTP=$(curl -s -X POST "$BASE/providers/oauth2/" \
               -H "$AUTH" -H "$CT" \
+              -o /tmp/provider_create.json -w "%{http_code}" \
               -d "$PROVIDER_BODY")
-            echo "Provider response: $PROVIDER_RESP"
-            PROVIDER_PK=$(echo "$PROVIDER_RESP" | jq -r '.pk // empty')
+            PROVIDER_RAW=$(cat /tmp/provider_create.json)
+            echo "Provider create HTTP $PROVIDER_HTTP: $PROVIDER_RAW"
+            if [ "$PROVIDER_HTTP" != "201" ]; then
+              echo "ERROR: failed to create OAuth2 provider (HTTP $PROVIDER_HTTP)"
+              exit 1
+            fi
+            PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
             if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
-              echo "ERROR: failed to create OAuth2 provider"
+              echo "ERROR: no pk in provider create response"
               exit 1
             fi
             echo "Created OAuth2 provider pk=$PROVIDER_PK"
@@ -265,22 +279,21 @@ jobs:
 
           # ── Create the application ──────────────────────────────────────
           echo "Creating FuzeFront application..."
-          APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" '{
-            name: "FuzeFront",
-            slug: "fuzefront",
-            provider: $provider,
-            meta_launch_url: "https://fuzefront.dev.local/",
-            meta_description: "FuzeFront runtime microfrontend platform",
-            policy_engine_mode: "all",
-            open_in_new_tab: false
-          }')
-          APP_RESP=$(curl -s -X POST "$BASE/core/applications/" \
+          APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" \
+            '{name:"FuzeFront",slug:"fuzefront",provider:$provider,meta_launch_url:"https://fuzefront.dev.local/",meta_description:"FuzeFront runtime microfrontend platform",policy_engine_mode:"all",open_in_new_tab:false}')
+          APP_HTTP=$(curl -s -X POST "$BASE/core/applications/" \
             -H "$AUTH" -H "$CT" \
+            -o /tmp/app_create.json -w "%{http_code}" \
             -d "$APP_BODY")
-          echo "Application response: $APP_RESP"
-          APP_SLUG=$(echo "$APP_RESP" | jq -r '.slug // empty')
+          APP_RAW=$(cat /tmp/app_create.json)
+          echo "Application create HTTP $APP_HTTP: $APP_RAW"
+          if [ "$APP_HTTP" != "201" ]; then
+            echo "ERROR: failed to create application (HTTP $APP_HTTP)"
+            exit 1
+          fi
+          APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
           if [ -z "$APP_SLUG" ] || [ "$APP_SLUG" = "null" ]; then
-            echo "ERROR: failed to create application"
+            echo "ERROR: no slug in application create response"
             exit 1
           fi
           echo "Created application slug=$APP_SLUG"
