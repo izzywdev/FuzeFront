@@ -109,7 +109,8 @@ jobs:
           for i in $(seq 1 240); do
             STATUS=$(curl -o /dev/null -w "%{http_code}" -s \
               -H "Authorization: Bearer e2e-bootstrap-token" \
-              "http://authentik-server:9000/api/v3/core/users/")
+              "http://authentik-server:9000/api/v3/core/users/" \
+              2>/dev/null || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Authentik API ready after $((i * 5))s"
               break
