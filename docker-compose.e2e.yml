@@ -86,7 +86,7 @@ services:
       AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
-      AUTHENTIK_LOG_LEVEL: warning
+      AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
       AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
       AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
@@ -126,7 +126,7 @@ services:
       AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
-      AUTHENTIK_LOG_LEVEL: warning
+      AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_DISABLE_UPDATE_CHECK: 'true'
       AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
       # External URL: controls the issuer + endpoint URLs in OIDC discovery metadata.

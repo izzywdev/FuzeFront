@@ -19,6 +19,29 @@ version: 1
 metadata:
   name: FuzeFront OIDC Provider
 entries:
+  # ── Authorization flow (implicit consent) ────────────────────────────────────
+  # An empty authorization flow = implicit consent in Authentik. The blueprint
+  # runner appends OAuthFulfillmentStage automatically; with no ConsentStage in
+  # the flow, consent is bypassed and the code is issued immediately.
+  #
+  # We define the flow inline (not via !Find on a system blueprint slug) so
+  # there is no ordering dependency on system blueprints. If !Find can't resolve
+  # an object, Authentik aborts the blueprint entry, which would prevent the
+  # provider (and thus the application) from being created.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-authorization-implicit-consent
+    attrs:
+      name: FuzeFront Authorization (Implicit Consent)
+      slug: fuzefront-authorization-implicit-consent
+      designation: authorization
+      title: FuzeFront Sign In
+      # require_authenticated: user must already be logged in to run this flow.
+      # all + 0 policy bindings = vacuous truth → flow is always accessible.
+      authentication: require_authenticated
+      policy_engine_mode: all
+
   # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
   - model: authentik_providers_oauth2.oauth2provider
     state: present
@@ -55,12 +78,9 @@ entries:
       # Use email as the `sub` claim — consistent with the seeder behaviour
       sub_mode: user_email
       include_claims_in_id_token: true
-      # Use the system-managed implicit-consent authorization flow.
-      # System blueprints always run before custom blueprints, so this
-      # flow is guaranteed to exist when this entry is applied.
-      # This is the correct way to get "no consent screen" in Authentik 2024.x —
-      # an empty custom flow does NOT implicitly grant consent.
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      # Reference the flow defined above. !Find resolves within the same
+      # blueprint run — the flow entry is applied before this provider entry.
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application
@@ -73,7 +93,7 @@ entries:
       provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
       meta_launch_url: "https://fuzefront.dev.local/"
       meta_description: "FuzeFront runtime microfrontend platform"
-      # all + no policy bindings = vacuous truth → all authenticated users granted access.
-      # This is the correct Authentik idiom for "allow everyone authenticated".
+      # all + 0 policy bindings = vacuous truth → all authenticated users are
+      # granted access. No policy binding entries needed.
       policy_engine_mode: all
       open_in_new_tab: false
