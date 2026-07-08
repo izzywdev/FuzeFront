@@ -149,11 +149,12 @@ jobs:
           fi
           echo "FuzeFront application not found — provisioning via REST API"
 
-          # ── Create implicit-consent authorization flow via Python ORM ────
-          # Authentik 2024.12.3 only bootstraps default-provider-authorization-
-          # explicit-consent. We need an implicit-consent flow so no UI consent
-          # stage appears during the E2E test (FuzeFront is a first-party app).
-          echo "Creating implicit-consent authorization flow via Python ORM..."
+          # ── Resolve implicit-consent authorization flow via Python ORM ─────
+          # Prefer the built-in 'default-provider-authorization-implicit-consent'
+          # flow that Authentik 2024.12.3 bootstraps at startup — it is correctly
+          # configured with ConsentStage(mode="permanent") by Authentik itself.
+          # Fall back to creating a custom flow only if the built-in is absent.
+          echo "Resolving implicit-consent authorization flow via Python ORM..."
           FLOW_OUTPUT=$(docker compose -f docker-compose.e2e.yml exec -T \
             authentik-worker python - << 'PYEOF'
           import os
@@ -163,22 +164,32 @@ jobs:
           from authentik.flows.models import Flow, FlowStageBinding
           from authentik.stages.consent.models import ConsentStage
 
-          # never_require = implicit consent (no UI prompt needed)
-          stage, _ = ConsentStage.objects.get_or_create(
-              name="FuzeFront Implicit Consent Stage",
-              defaults={"mode": "never_require"}
-          )
-          flow, _ = Flow.objects.get_or_create(
-              slug="fuzefront-authorization-implicit-consent",
-              defaults={
-                  "name": "FuzeFront Authorization (Implicit Consent)",
-                  "designation": "authorization",
-                  "title": "FuzeFront Authorization",
-                  "authentication": "none",
-                  "policy_engine_mode": "all"
-              }
-          )
-          FlowStageBinding.objects.get_or_create(target=flow, stage=stage, defaults={"order": 0})
+          # Use the built-in implicit-consent flow when available (Authentik 2024.12.3
+          # bootstraps it under 'default-provider-authorization-implicit-consent').
+          # This is more reliable than a custom flow because Authentik configures the
+          # stage correctly — the valid mode value is 'permanent', not 'never_require'.
+          try:
+              flow = Flow.objects.get(slug="default-provider-authorization-implicit-consent")
+              print("FLOW_SOURCE=builtin")
+          except Flow.DoesNotExist:
+              # Fallback: create a custom implicit-consent flow.
+              # 'permanent' = never require consent (the correct mode value in Authentik 2024.x).
+              stage, _ = ConsentStage.objects.get_or_create(
+                  name="FuzeFront Implicit Consent Stage",
+                  defaults={"mode": "permanent"}
+              )
+              flow, _ = Flow.objects.get_or_create(
+                  slug="fuzefront-authorization-implicit-consent",
+                  defaults={
+                      "name": "FuzeFront Authorization (Implicit Consent)",
+                      "designation": "authorization",
+                      "title": "FuzeFront Authorization",
+                      "authentication": "none",
+                      "policy_engine_mode": "all"
+                  }
+              )
+              FlowStageBinding.objects.get_or_create(target=flow, stage=stage, defaults={"order": 0})
+              print("FLOW_SOURCE=custom")
           print("FLOW_PK=" + str(flow.pk))
           PYEOF
           )
