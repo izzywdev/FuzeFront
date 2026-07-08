@@ -140,11 +140,17 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   await uidField.press('Enter')
 
   // ── Stage 2: Password ──────────────────────────────────────────────────
-  // Same pattern: 'input[type="password"]' targets the actual <input>.
+  // 'input[type="password"]' targets the actual <input> inside ak-stage-password's
+  // shadow root. After filling, click the submit button scoped to <ak-stage-password>
+  // rather than press('Enter'): press('Enter') on the password field generates zero
+  // executor POSTs (the Lit component's reactive state isn't synced by keyboard events).
+  // 'ak-stage-password button[type="submit"]' pierces nested shadow DOM to reach the
+  // native <button> inside <ak-spinner-button>, and avoids the stale identification-
+  // stage button that Lit leaves in the shadow tree (which .first() mistakenly picks).
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
-  await pwField.press('Enter')
+  await page.locator('ak-stage-password button[type="submit"]').click({ timeout: 30_000 })
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
   // Authentik can take up to 60 s under CI resource pressure.
