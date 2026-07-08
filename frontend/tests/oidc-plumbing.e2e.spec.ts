@@ -151,49 +151,81 @@ async function fillAuthentikLogin(page: Page, email: string, password: string): 
   // Most reliable: call submitForm() directly on the ak-stage-password element.
   // It is a Lit custom element so its class methods are live on the DOM node.
   // submitForm() calls this.host.submit(data) which POSTs to the flow executor.
-  // Deep-shadow search handles the case where ak-stage-password is not in the
-  // light DOM (it's always inside ak-flow-executor's shadow root).
+  //
+  // Critical: submitForm() reads this.passwordInput which uses @query() —
+  // that calls this.shadowRoot.querySelector('input[type="password"]').
+  // If the <input> lives inside ak-form-element-horizontal's OWN shadow root
+  // (not as a slotted child), this.passwordInput is null → empty password sent
+  // → Authentik returns 200 with the password stage again (auth rejected).
+  // Fix: deep-search all nested shadow roots to find the input, then force-set
+  // its value via the native HTMLInputElement setter before calling submitForm().
   const pwField = page.locator('input[type="password"]')
   await expect(pwField).toBeVisible({ timeout: 60_000 })
   await pwField.fill(password)
 
-  // page.locator() uses Playwright's selector engine which pierces shadow roots —
-  // it can find ak-stage-password even inside ak-flow-executor's shadow root.
-  // Native document.querySelector() in page.evaluate() cannot pierce shadow roots,
-  // so we must use locator().evaluate() to get a handle on the DOM element.
-  // We call submitForm() directly on the Lit component instance: it reads
-  // this.passwordInput.value and calls this.host.submit(data) → executor POST.
-  const stageResult = await page.locator('ak-stage-password').evaluate((el: any) => {
+  // page.locator() pierces shadow roots (Playwright's selector engine).
+  // Native DOM APIs inside evaluate() do NOT pierce shadow roots, so we pass
+  // the password as a parameter and do a recursive shadow-root search to find
+  // and force-set the input before submitting.
+  const stageResult = await page.locator('ak-stage-password').evaluate((el: any, pw: string) => {
+    // Recursively search all shadow roots for a matching element.
+    function deepQuery(root: any, sel: string): Element | null {
+      const direct = root.querySelector?.(sel) as Element | null
+      if (direct) return direct
+      for (const child of Array.from<Element>(root.querySelectorAll?.('*') ?? [])) {
+        const sr = (child as any).shadowRoot
+        if (sr) {
+          const found = deepQuery(sr, sel)
+          if (found) return found
+        }
+      }
+      return null
+    }
+
+    const pwInput = deepQuery(el.shadowRoot ?? el, 'input[type="password"]') as HTMLInputElement | null
+
     const info = {
       hasSubmitForm: typeof el.submitForm === 'function',
       hostTag: el.host?.tagName ?? 'null',
       hostHasSubmit: typeof el.host?.submit === 'function',
       hasShadowRoot: !!el.shadowRoot,
       hasForm: !!(el.shadowRoot?.querySelector('form')),
-      hasSpinnerBtn: !!(el.shadowRoot?.querySelector('ak-spinner-button')),
+      pwInputFound: !!pwInput,
+      pwValueBefore: pwInput?.value?.length ?? -1,
+      pwValueAfter: -1,
       method: 'none' as string,
     }
+
+    // Force-set the password via the native setter so no Lit/custom-element
+    // override can intercept it, then fire input+change for reactive updates.
+    if (pwInput) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      nativeSetter?.call(pwInput, pw)
+      pwInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+      pwInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+      info.pwValueAfter = pwInput.value.length
+    }
+
     if (typeof el.submitForm === 'function') {
       el.submitForm(new Event('submit', { cancelable: true }))
       info.method = 'submitForm'
     } else {
-      // Fallback: call callAction on the spinner button
-      const spinnerBtn = el.shadowRoot?.querySelector('ak-spinner-button') as any
+      // Fallback: call callAction on the spinner button (found via deep search)
+      const spinnerBtn = deepQuery(el.shadowRoot ?? el, 'ak-spinner-button') as any
       if (typeof spinnerBtn?.callAction === 'function') {
         spinnerBtn.callAction()
         info.method = 'callAction'
       } else {
-        // Final fallback: JS-click the native button inside ak-spinner-button
-        const btn = spinnerBtn?.shadowRoot?.querySelector('button') as HTMLButtonElement | null
+        const btn = deepQuery(el.shadowRoot ?? el, 'button[type="submit"]') as HTMLButtonElement | null
         if (btn) {
           btn.click()
-          info.method = 'button-js-click'
+          info.method = 'button-click'
         }
       }
     }
     return info
-  })
-  // Logged here so CI output shows stage state if the test still fails
+  }, password)
+  // Logged here so CI output shows pwValueBefore/After and method used
   console.log('[fillAuthentikLogin] password stage submit:', JSON.stringify(stageResult))
 
   // Wait for the password form to disappear (Authentik navigates away after auth).
