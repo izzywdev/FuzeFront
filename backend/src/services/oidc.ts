@@ -149,30 +149,34 @@ class OIDCService {
           updated_at: new Date(),
         };
 
-        // Atomically insert the user AND an outbox row for identity.user.created.
-        // The outbox guarantees the event is durably recorded even if the Kafka
-        // publish below fails; reconcile-on-login is the ultimate safety net.
+        // Insert the user; reconcile-on-login is the ultimate safety net.
         const correlationId = `identity-${newUser.id}`;
-        await db.transaction(async trx => {
-          await trx('users').insert(newUser);
-          await trx('event_outbox').insert({
+        await db('users').insert(newUser);
+        userRow = newUser;
+
+        console.log(`✅ Created new user: ${email}`);
+
+        // Best-effort outbox insert — failure must NOT block authentication.
+        // jsonb payload requires an explicit ::jsonb cast because Postgres rejects
+        // implicit text→jsonb coercion in parameterized queries.
+        try {
+          await db('event_outbox').insert({
             id: require('uuid').v4(),
             topic: 'identity.user.created',
-            payload: JSON.stringify({
+            payload: db.raw('?::jsonb', [JSON.stringify({
               userId: newUser.id,
               email,
               firstName,
               lastName,
               intent: 'signup',
-            }),
+            })]),
             correlation_id: correlationId,
             status: 'pending',
             attempts: 0,
           });
-        });
-        userRow = newUser;
-
-        console.log(`✅ Created new user: ${email}`);
+        } catch (outboxErr) {
+          console.warn('⚠️ event_outbox insert skipped (non-fatal, reconcile-on-login applies):', (outboxErr as Error).message);
+        }
 
         // Best-effort publish; failure leaves the outbox row 'pending' for replay.
         try {
