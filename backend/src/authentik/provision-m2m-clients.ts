@@ -27,6 +27,8 @@
 
 import axios from 'axios'
 
+const AUTHENTIK_TIMEOUT_MS = 10_000
+
 // ---------------------------------------------------------------------------
 // Config helpers (mirrors machine-identity.ts conventions)
 // ---------------------------------------------------------------------------
@@ -67,7 +69,7 @@ async function ensureScopeMapping(
   // Check existence
   const listRes = await axios.get(
     `${baseUrl}/api/v3/propertymappings/scope/`,
-    { headers, params: { scope_name: scopeName } }
+    { headers, params: { scope_name: scopeName }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   const existing: Array<{ pk: number; name: string }> = listRes.data.results || []
   if (existing.length > 0) {
@@ -83,7 +85,7 @@ async function ensureScopeMapping(
       scope_name: scopeName,
       expression: 'return {}',
     },
-    { headers }
+    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   console.log(`[provision-m2m] Created scope mapping "${scopeName}" (pk=${createRes.data.pk})`)
   return createRes.data.pk as number
@@ -101,6 +103,7 @@ async function resolveAuthorizationFlow(
     const res = await axios.get(`${baseUrl}/api/v3/flows/instances/`, {
       headers,
       params: { designation: 'authorization' },
+      timeout: AUTHENTIK_TIMEOUT_MS,
     })
     const flows: Array<{ slug: string; pk: string }> = res.data.results || []
     const defaultFlow = flows.find(
@@ -126,7 +129,7 @@ async function ensureOAuth2Provider(
   // Check existence
   const listRes = await axios.get(
     `${baseUrl}/api/v3/providers/oauth2/`,
-    { headers, params: { name: providerName } }
+    { headers, params: { name: providerName }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   const existing: Array<{ pk: number; name: string }> = listRes.data.results || []
   if (existing.length > 0) {
@@ -149,7 +152,7 @@ async function ensureOAuth2Provider(
       access_code_validity: 'minutes=1',
       token_validity: 'hours=1',
     },
-    { headers }
+    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   console.log(`[provision-m2m] Created OAuth2 provider "${providerName}" (pk=${createRes.data.pk})`)
   return createRes.data.pk as number
@@ -169,7 +172,7 @@ async function ensureApplication(
   // Check existence
   const listRes = await axios.get(
     `${baseUrl}/api/v3/core/applications/`,
-    { headers, params: { slug } }
+    { headers, params: { slug }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   const existing: Array<{ slug: string; name: string }> = listRes.data.results || []
   if (existing.length > 0) {
@@ -187,7 +190,7 @@ async function ensureApplication(
       meta_description: 'Machine-identity application for FuzeSocial client_credentials registration',
       policy_engine_mode: 'any',
     },
-    { headers }
+    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   console.log(`[provision-m2m] Created application "${appName}" (slug=${slug})`)
 }
@@ -203,7 +206,7 @@ async function logCredentials(
 ): Promise<void> {
   const res = await axios.get(
     `${baseUrl}/api/v3/providers/oauth2/${providerPk}/`,
-    { headers }
+    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
   )
   const clientId: string = res.data.client_id || '(not set)'
   const clientSecret: string = res.data.client_secret || ''
