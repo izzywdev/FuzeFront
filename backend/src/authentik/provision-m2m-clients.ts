@@ -73,7 +73,8 @@ async function findAcrossPages<T>(
   // Authentik paginates via { pagination: { next: <page_number|0> }, results: [] }
   // `pagination.next` is the next page number, or 0/falsy when on the last page.
   let page = 1
-  while (true) {
+  let hasMore = true
+  while (hasMore) {
     const res = await axios.get(url, {
       headers,
       params: { ...params, page },
@@ -83,9 +84,13 @@ async function findAcrossPages<T>(
     const match = items.find(predicate)
     if (match) return match
     const nextPage: number = res.data.pagination?.next ?? 0
-    if (!nextPage) return undefined
-    page = nextPage
+    if (!nextPage) {
+      hasMore = false
+    } else {
+      page = nextPage
+    }
   }
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
