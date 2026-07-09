@@ -66,12 +66,15 @@ async function ensureScopeMapping(
 ): Promise<number> {
   const scopeName = 'fuzefront:apps'
 
-  // Check existence
+  // Check existence — filter client-side; scope_name is not a guaranteed server filter
   const listRes = await axios.get(
     `${baseUrl}/api/v3/propertymappings/scope/`,
     { headers, params: { scope_name: scopeName }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
-  const existing: Array<{ pk: number; name: string }> = listRes.data.results || []
+  const existing: Array<{ pk: number; name: string; scope_name: string }> =
+    (listRes.data.results || []).filter(
+      (m: { scope_name: string }) => m.scope_name === scopeName
+    )
   if (existing.length > 0) {
     console.log(`[provision-m2m] Scope mapping "${scopeName}" already exists (pk=${existing[0].pk})`)
     return existing[0].pk
@@ -126,19 +129,29 @@ async function ensureOAuth2Provider(
 ): Promise<number> {
   const providerName = 'FuzeSocial Registration'
 
-  // Check existence
+  // Check existence — filter client-side; `name` is not a guaranteed server-side filter
   const listRes = await axios.get(
     `${baseUrl}/api/v3/providers/oauth2/`,
     { headers, params: { name: providerName }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
-  const existing: Array<{ pk: number; name: string }> = listRes.data.results || []
+  const existing: Array<{ pk: number; name: string }> =
+    (listRes.data.results || []).filter(
+      (p: { name: string }) => p.name === providerName
+    )
   if (existing.length > 0) {
     console.log(`[provision-m2m] OAuth2 provider "${providerName}" already exists (pk=${existing[0].pk})`)
     return existing[0].pk
   }
 
-  // Create
+  // Require a valid authorization flow before attempting creation
   const authorizationFlow = await resolveAuthorizationFlow(baseUrl, headers)
+  if (!authorizationFlow) {
+    throw new Error(
+      '[provision-m2m] No authorization flow found in Authentik — cannot create OAuth2 provider. ' +
+      'Ensure at least one flow with designation "authorization" exists.'
+    )
+  }
+
   const createRes = await axios.post(
     `${baseUrl}/api/v3/providers/oauth2/`,
     {
