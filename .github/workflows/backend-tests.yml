@@ -283,4 +283,4 @@ jobs:
           PERMIT_PDP_URL: https://cloudpdp.api.permit.io
         run: |
           echo "Running Permit.io integration tests..."
-          npm test -- --testPathPattern=permit-integration --verbose --runInBand
+          npm test -- --testPathPattern=permit-integration --verbose --runInBand --forceExit
