@@ -3,7 +3,7 @@ import express from 'express'
 import bcrypt from 'bcrypt'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../src/config/database'
-import { isPermitNoOpMode } from '../src/config/permit'
+import { isPermitNoOpMode, destroyPermitClient } from '../src/config/permit'
 import authRoutes, { drainProvisioningQueue } from '../src/routes/auth'
 import organizationsRoutes from '../src/routes/organizations'
 import {
@@ -624,21 +624,30 @@ afterAll(async () => {
   } catch {
     // best-effort; no-op under the CI no-op proxy
   }
-  if (testOrgId) {
-    await db('organization_memberships')
-      .where('organization_id', testOrgId)
+  // Wrap all DB cleanup in try-catch: --forceExit can destroy the Knex pool
+  // before afterAll completes, causing "Unable to acquire a connection" which
+  // surfaces as "Test suite failed to run" even when all 26 tests pass.
+  try {
+    if (testOrgId) {
+      await db('organization_memberships')
+        .where('organization_id', testOrgId)
+        .del()
+      await db('organizations').where('id', testOrgId).del()
+    }
+    // Remove any personal org the login self-heal provisioned for the test users.
+    await db('organizations')
+      .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
       .del()
-    await db('organizations').where('id', testOrgId).del()
+    await db('organization_memberships')
+      .whereIn('user_id', [testUserId, adminUserId, secondUserId])
+      .del()
+    await db('apps').where('id', testAppId).del()
+    await db('users')
+      .whereIn('id', [testUserId, adminUserId, secondUserId])
+      .del()
+  } catch {
+    // Non-fatal: pool already torn down by --forceExit or test finished early.
   }
-  // Remove any personal org the login self-heal provisioned for the test users.
-  await db('organizations')
-    .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('organization_memberships')
-    .whereIn('user_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('apps').where('id', testAppId).del()
-  await db('users')
-    .whereIn('id', [testUserId, adminUserId, secondUserId])
-    .del()
+  // Release the real Permit SDK's keep-alive sockets so Jest can exit cleanly.
+  destroyPermitClient()
 })
