@@ -122,37 +122,6 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
-      - name: Detect open PR (associate SARIF with PR comparison when dispatched)
-        id: detect-pr
-        if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.ref_name }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
-            PR_NUM=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
-              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0].number" 2>/dev/null || echo "")
-            if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
-              echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
-            else
-              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
-        if: always()
-        with:
-          sarif_file: trivy.sarif
-          category: trivy
-          ref: ${{ steps.detect-pr.outputs.upload_ref }}
-          sha: ${{ github.sha }}
 
   gate-authz:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
