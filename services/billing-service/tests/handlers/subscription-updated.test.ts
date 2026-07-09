@@ -11,7 +11,6 @@ function makeCtx() {
     plans: { findByPriceId: jest.fn().mockResolvedValue({ tierName: 'pro' }) },
     permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
     emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
-    writePlanCache: jest.fn().mockResolvedValue(undefined),
   } as any;
 }
 
@@ -32,7 +31,7 @@ function subEvent(type: string, overrides: any = {}) {
 }
 
 describe('handleSubscriptionUpdated', () => {
-  it('on updated: upserts mirror, syncs Permit, writes cache, emits event', async () => {
+  it('on updated: upserts mirror, syncs Permit, emits event (no public-table write)', async () => {
     const ctx = makeCtx();
     await handleSubscriptionUpdated(subEvent('customer.subscription.updated'), ctx);
 
@@ -40,9 +39,9 @@ describe('handleSubscriptionUpdated', () => {
     expect(ctx.permit.syncPlanToPermit).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'organization', entityId: 'org-1', planTier: 'pro', status: 'active', seatQuantity: 3 }),
     );
-    expect(ctx.writePlanCache).toHaveBeenCalledWith(
-      expect.objectContaining({ planTier: 'pro', status: 'active' }),
-    );
+    // The handler must NOT carry any writePlanCache dependency — plan-state for
+    // public.users/organizations is projected by the backend from the event.
+    expect((ctx as Record<string, unknown>).writePlanCache).toBeUndefined();
     expect(ctx.emitter.subscriptionChanged).toHaveBeenCalledWith(
       expect.objectContaining({ planTier: 'pro', status: 'active', stripeSubscriptionId: 'sub_1' }),
     );

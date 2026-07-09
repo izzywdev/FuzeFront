@@ -1,0 +1,75 @@
+{{- /*
+  Kafka topic pre-creation (Phase D).
+
+  A Helm post-install/post-upgrade hook Job that idempotently creates the
+  fuzefront.* / identity.* / notify.* / billing.* topics on the FuzeInfra Kafka
+  broker, with explicit partitions + retention, so prod does not rely on broker
+  auto-create. `kafka-topics.sh --create --if-not-exists` is a no-op for topics
+  that already exist, so re-running on every upgrade is safe. Partition counts
+  and retention can only grow safely with --alter; this Job does NOT shrink them.
+
+  Gated behind .Values.kafkaTopics.enabled (off locally; on in values-prod.yaml).
+  The topic set is reconciled from the shared @fuzefront/shared TOPICS constant
+  plus the planned billing/chat events — keep .Values.kafkaTopics.topics in sync
+  when that constant changes.
+*/}}
+{{- if .Values.kafkaTopics.enabled }}
+{{- $kt := .Values.kafkaTopics }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-kafka-topics
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-topics
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    # After db-bootstrap (-5) / before permit-schema-sync (5); topics only need
+    # the broker, which is external (FuzeInfra), so ordering is loose.
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: kafka-topics
+    spec:
+      restartPolicy: Never
+      {{- include "fuzefront.scheduling" (dict "svc" $kt "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kafka-topics
+          image: "{{ $kt.image.repository }}:{{ $kt.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              BOOTSTRAP="{{ $kt.bootstrapServer }}"
+              echo "Reconciling FuzeFront Kafka topics against ${BOOTSTRAP}"
+              # Wait for the broker to accept connections (FuzeInfra Kafka may
+              # still be coming up on first install).
+              for i in $(seq 1 30); do
+                if kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; then
+                  echo "broker reachable"; break
+                fi
+                echo "waiting for broker ($i/30)..."; sleep 5
+              done
+              {{- range $kt.topics }}
+              echo "ensure topic {{ .name }} (partitions={{ .partitions }}, rf={{ .replicationFactor }})"
+              kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" \
+                --create --if-not-exists \
+                --topic {{ .name | quote }} \
+                --partitions {{ .partitions }} \
+                --replication-factor {{ .replicationFactor }} \
+                --config retention.ms={{ .retentionMs | default $kt.defaultRetentionMs | int64 }}
+              {{- end }}
+              echo "Topic reconciliation complete."
+          resources:
+            {{- toYaml $kt.resources | nindent 12 }}
+{{- end }}

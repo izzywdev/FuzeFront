@@ -1,4 +1,5 @@
 export const TOPICS = {
+  BILLING_LLM_USAGE: 'billing.llm.usage',
   IDENTITY_USER_CREATED: 'identity.user.created',
   NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
   NOTIFY_EMAIL_STATUS: 'notify.email.status',

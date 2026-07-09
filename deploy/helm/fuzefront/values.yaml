@@ -11,6 +11,29 @@ global:
   # Applied to every workload. IfNotPresent so kind uses images loaded via
   # `kind load docker-image` rather than trying to pull from a registry.
   imagePullPolicy: IfNotPresent
+  # Default pod placement for ALL workloads (per-service blocks override these).
+  # Empty = no-op (the scheduler decides). In prod, set per-service nodeSelector/
+  # affinity to steer heavy stateless services (litellm/chat/billing) onto node-2
+  # and keep app pods spread; see values-prod.yaml.
+  scheduling:
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
+
+# Observability (Phase E). Disabled by default → metrics annotations and the
+# backend /metrics scrape are a no-op locally. Enabled in values-prod.yaml so the
+# FuzeInfra Prometheus auto-discovers FuzeFront pods via prometheus.io/* annots.
+observability:
+  metrics:
+    enabled: false
+    path: /metrics
+  # Ship FuzeFront Grafana dashboards / Prometheus alert rules as labeled
+  # ConfigMaps (consumed by FuzeInfra discovery hooks). Only rendered when
+  # metrics.enabled is also true (no point shipping dashboards with no metrics).
+  dashboards:
+    enabled: true
+  alerts:
+    enabled: true
 
 # Image pull secrets for private registries (e.g. private GHCR). Sealed in prod.
 imagePullSecrets: []
@@ -111,6 +134,17 @@ secret:
   # Internal Bearer token the backend/billing-client present to billing-service.
   # DEV-ONLY default — override with a long random value (or SealedSecret) in real deployments.
   billingInternalToken: "dev-billing-internal-token-change-me"
+  # Password for the least-privilege billing_svc Postgres role. When set, the
+  # db-bootstrap Job creates/syncs the role + provisions the `billing` schema
+  # owned by it (no public.* grants), and billing-service connects as billing_svc.
+  # Leave empty to fall back to the shared runtime role (database.user). DEV-ONLY
+  # default below — override/seal in real deployments.
+  billingDbPassword: "dev-billing-svc-change-me"
+  # AI provider keys for the chat-service and LiteLLM gateway.
+  # Leave empty to disable; supply via --set or a gitignored values file. NEVER commit real keys.
+  anthropicApiKey: ""
+  openaiApiKey: ""
+  litellmMasterKey: ""
 
 backend:
   image:
@@ -123,6 +157,10 @@ backend:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  # Per-service placement overrides (empty → falls back to global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
@@ -139,6 +177,11 @@ securityService:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # security-service owns auth; keep it co-located with the DB-heavy node-1 by
+  # default (no-op here, set in values-prod if desired).
 
 applicationsService:
   enabled: false
@@ -150,6 +193,9 @@ applicationsService:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
@@ -165,6 +211,9 @@ permit:
     resources:
       requests: { cpu: 100m, memory: 256Mi }
       limits:   { cpu: 500m, memory: 512Mi }
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
 
 frontend:
   image:
@@ -175,6 +224,9 @@ frontend:
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 emailService:
   enabled: false
@@ -190,7 +242,13 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
-  resources: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  # Per-service placement overrides (default empty → falls back to global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 smsService:
   enabled: false
@@ -199,7 +257,49 @@ smsService:
   image:
     repository: fuzefront/sms-service
     tag: local
-  resources: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+chatService:
+  enabled: false
+  replicas: 1
+  # Port 3006: 3001=backend, 3002=security, 3003=apps/email, 3004=sms, 3005=provisioning
+  port: 3006
+  image:
+    repository: fuzefront/chat-service
+    tag: local
+  # LiteLLM gateway in fuzeinfra namespace (its own Argo App).
+  litellmUrl: "http://litellm.fuzeinfra.svc.cluster.local:4000"
+  # ChromaDB vector store in fuzeinfra namespace (enabled via fuzeinfra Argo values).
+  chromaUrl: "http://chromadb.fuzeinfra.svc.cluster.local:8000"
+  # FuzeFront backend for user/org lookups.
+  backendUrl: "http://fuzefront-backend:3001"
+  # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs
+  # at fuzefront-permit-pdp:7000; otherwise falls back to the offline stub port.
+  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
+  embeddingModel: "text-embedding-3-small"
+  # Resource requests/limits. Local/dev single replica; prod overrides upward.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
+  # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
+  # LiteLLM + ChromaDB are reachable in fuzeinfra.
+  docIndexer:
+    enabled: false
+    # Directory inside the chat-service image that holds the docs to index.
+    docsDir: "/app/services/chat-service/docs"
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
@@ -219,23 +319,28 @@ provisioningService:
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Billing & payments microservice (Stripe). Independently-lifecycled — has its
 # OWN Argo Application (deploy/argocd/applications/billing.yaml). Disabled by
 # default; enable in values-local (test-mode Stripe keys) / values-prod.
-# Connects to Postgres with the least-privilege billing_svc role (schema
-# `billing` + read on public.users/organizations). Secrets (STRIPE_SECRET_KEY,
-# STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN) come from the chart Secret.
+# Connects to Postgres with the least-privilege billing_svc role, granted ONLY
+# on the `billing` schema — never on public.users/organizations. The backend
+# owns the public plan-state projection (consumes billing.subscription.changed).
+# Secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN,
+# BILLING_DB_PASSWORD) come from the chart Secret.
 billingService:
   enabled: false
-  replicas: 1
-  port: 3006
   image:
     repository: fuzefront/billing-service
     tag: local
-  # Least-privilege DB role for billing-service (see db-bootstrap-job; role
-  # creation is a follow-up task — uses fuzefront_user until then).
-  dbUser: fuzefront_user
+  # Least-privilege DB role for billing-service, created by the db-bootstrap Job
+  # when secret.billingDbPassword is set (granted only on the `billing` schema).
+  dbUser: billing_svc
+  port: 3006
+  replicas: 1
   meterFlushIntervalSec: 60
   permitPdpUrl: "http://fuzefront-permit-pdp:7766"
   kafka:
@@ -243,8 +348,45 @@ billingService:
     clientId: "billing-service"
     groupId: "billing-service-group"
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits:   { cpu: 500m, memory: 256Mi }
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+chatService:
+  enabled: false
+  image:
+    repository: fuzefront/chat-service
+    tag: local
+  port: 3007
+  replicas: 1
+  kafka:
+    brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+    clientId: "chat-service"
+    groupId: "chat-service-group"
+  chromadb:
+    url: "http://chromadb.fuzeinfra.svc.cluster.local:8000"
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: "1Gi" }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+litellm:
+  enabled: false
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: "main-stable"
+  port: 4000
+  replicas: 1
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: "1Gi" }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 authentik:
   enabled: true
@@ -280,6 +422,10 @@ authentik:
     useTls: false
     useSSL: false
     timeout: 10
+  # Placement for the Authentik server + worker (empty → global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 ingress:
   enabled: true
@@ -291,3 +437,66 @@ ingress:
     enabled: false
     # Defaults to "<host>-tls" when empty.
     secretName: ''
+
+# ---------------------------------------------------------------------------
+# Kafka topic pre-creation (Phase D). A Helm post-install/post-upgrade Job runs
+# `kafka-topics.sh --create --if-not-exists` for each topic below so prod does
+# not rely on broker auto-create. Disabled by default (local kind has no Kafka);
+# enabled in values-prod.yaml. `topics[]` is the reconciled set from the shared
+# Kafka constants (@fuzefront/shared TOPICS: identity.user.created,
+# notify.email.requested, notify.email.status) plus the planned billing/chat
+# events. Edit this list when the shared TOPICS constant changes.
+kafkaTopics:
+  enabled: false
+  # Bitnami Kafka image ships kafka-topics.sh; pin a concrete tag (no :latest).
+  image:
+    repository: bitnami/kafka
+    tag: "3.7.0"
+  # Bootstrap server the Job talks to (FuzeInfra Kafka, cross-namespace DNS).
+  bootstrapServer: "kafka.fuzeinfra.svc.cluster.local:9092"
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # retentionMs default applied when a topic omits its own. 7 days.
+  defaultRetentionMs: 604800000
+  # Each topic: name (required), partitions, replicationFactor, retentionMs.
+  # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
+  topics:
+    # --- identity (security-service → provisioning-service) ---
+    - name: identity.user.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    # --- notifications (backend/security → email-service) ---
+    - name: notify.email.requested
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: notify.email.requested.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000 # 14d — keep failures longer for triage
+    - name: notify.email.status
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    # --- billing (planned: billing-service / chat-service emitters) ---
+    - name: billing.subscription.changed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 2592000000 # 30d — billing audit trail
+    - name: billing.usage.recorded
+      partitions: 6
+      replicationFactor: 1
+      retentionMs: 2592000000
+    - name: billing.usage.recorded.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 2592000000
+    - name: billing.llm.usage
+      partitions: 6
+      replicationFactor: 1
+      retentionMs: 2592000000

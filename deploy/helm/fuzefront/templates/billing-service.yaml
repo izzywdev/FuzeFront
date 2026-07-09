@@ -36,16 +36,29 @@ spec:
               value: {{ .Values.billingService.kafka.groupId | quote }}
             - name: BILLING_METER_FLUSH_INTERVAL_SEC
               value: {{ .Values.billingService.meterFlushIntervalSec | quote }}
-            # DB connection: billing-service connects with the least-privilege
-            # billing_svc role (granted on schema `billing` + read on public).
-            # DB_PASSWORD comes from the chart Secret; assembled into DATABASE_URL.
+            # DB connection. When secret.billingDbPassword is set, connect with
+            # the least-privilege billing_svc role (granted ONLY on schema
+            # `billing` — never on public.users/organizations; the backend owns
+            # the public plan-state projection). Otherwise fall back to the
+            # shared runtime role so existing installs keep working. The password
+            # is assembled into DATABASE_URL at runtime.
+            {{- if .Values.secret.billingDbPassword }}
+            - name: BILLING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: BILLING_DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.billingService.dbUser }}:$(BILLING_DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+            {{- else }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: DB_PASSWORD
             - name: DATABASE_URL
-              value: "postgresql://{{ .Values.billingService.dbUser }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+              value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+            {{- end }}
             {{- if .Values.secret.stripeSecretKey }}
             - name: STRIPE_SECRET_KEY
               valueFrom:

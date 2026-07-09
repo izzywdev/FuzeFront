@@ -1,8 +1,23 @@
 import { defineConfig } from 'vitest/config'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
+
+// Mirror vite.config.ts: resolve the @fuzefront/* workspace UI packages from source.
+const identityUiSrc = fileURLToPath(
+  new URL('../packages/identity-ui/src/index.ts', import.meta.url)
+)
+const designSystemSrc = fileURLToPath(
+  new URL('../design-system/index.js', import.meta.url)
+)
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/design-system': designSystemSrc,
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

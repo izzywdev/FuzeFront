@@ -87,23 +87,15 @@ async function main() {
   flushTimer.unref?.();
 
   // --- Handler context ---
-  const writePlanCache: HandlerContext['writePlanCache'] = async (args) => {
-    const table = args.entityType === 'user' ? 'users' : 'organizations';
-    await pool!.query(
-      `UPDATE public.${table}
-          SET billing_plan_tier = $2, billing_plan_status = $3, trial_ends_at = $4
-        WHERE id = $1`,
-      [args.entityId, args.planTier, args.status, args.trialEnd],
-    );
-  };
-
+  // billing-service owns only the `billing` schema. It never writes
+  // public.users / public.organizations — the backend maintains that
+  // projection by consuming billing.subscription.changed.
   const ctx: HandlerContext = {
     customers: customerRepo,
     subscriptions: subscriptionRepo,
     plans: planRepo,
     permit,
     emitter,
-    writePlanCache,
   };
 
   // --- HTTP ---

@@ -1,18 +1,17 @@
 import { Knex } from 'knex'
 
-// ⚠️ MIGRATION NUMBER COLLISION (must resolve before merging both tracks):
-// The identity track (feature/api-tokens) also adds a `010_*` migration
-// (`010_api_tokens`). Knex applies migrations by filename order, so two `010_*`
-// files in the same dir will collide / double-apply ordering. Final integration
-// MUST renumber ONE of the two `010` migrations (this one or `010_api_tokens`)
-// to a unique sequence number. Tracked in PR #66.
+// MIGRATION NUMBER COLLISION RESOLVED:
+// The identity track owns `010_create_api_tokens_table`. This billing migration
+// was renumbered 010 -> 011 so both tracks have a unique, ordered sequence
+// number once merged. Do not renumber back to 010.
 
 /**
- * Migration 010 — billing columns on public-schema entities.
+ * Migration 011 — billing columns on public-schema entities.
  *
  * Adds the four billing hot-path cache columns to both `users` and
- * `organizations`.  These are written back by the billing-service and read
- * by the backend for plan-gated UI hints.
+ * `organizations`. These are maintained by the BACKEND's plan-state projection
+ * (which consumes billing.subscription.changed) and read for plan-gated UI
+ * hints. billing-service never writes these columns directly.
  *
  * Columns:
  *   stripe_customer_id   TEXT, nullable

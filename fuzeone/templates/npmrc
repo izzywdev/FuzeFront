@@ -1,0 +1,6 @@
+; Managed by fuzeone — {{SCOPE}} packages resolve from GitHub Packages (private, restricted).
+; CI/consumers authenticate with a scoped token: set GITHUB_TOKEN (or a PAT with read:packages)
+; in the environment; do not commit the token.
+{{SCOPE}}:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+always-auth=true

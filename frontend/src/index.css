@@ -93,6 +93,8 @@
   --warning-color: #f5a623;
   --error-color: #f26b7a;
   --shadow: rgba(0, 0, 0, 0.45);
+  /* modal / dialog scrim — dims the shell behind overlays */
+  --scrim: rgba(0, 0, 0, 0.55);
   /* signature: the seam where modules fuse at runtime */
   --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
 
@@ -149,6 +151,7 @@
   --warning-color: #d98313;
   --error-color: #e0556b;
   --shadow: rgba(15, 23, 42, 0.12);
+  --scrim: rgba(15, 23, 42, 0.32);
   --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
 
   --background: #f6f8fc;
