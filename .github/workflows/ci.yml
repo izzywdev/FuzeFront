@@ -349,7 +349,7 @@ jobs:
           output: 'trivy-results.sarif'
           ignore-unfixed: true
           exit-code: '0'
-          trivyignore: '.trivyignore'
+          trivyignores: '.trivyignore'
 
       - name: Detect open PR (associate SARIF with PR comparison when dispatched)
         id: detect-pr
