@@ -70,19 +70,22 @@ async function findAcrossPages<T>(
   headers: Record<string, string>,
   predicate: (item: T) => boolean
 ): Promise<T | undefined> {
-  let nextUrl: string | null = url
-  while (nextUrl) {
-    const res = await axios.get(nextUrl, {
+  // Authentik paginates via { pagination: { next: <page_number|0> }, results: [] }
+  // `pagination.next` is the next page number, or 0/falsy when on the last page.
+  let page = 1
+  while (true) {
+    const res = await axios.get(url, {
       headers,
-      params: nextUrl === url ? params : undefined,
+      params: { ...params, page },
       timeout: AUTHENTIK_TIMEOUT_MS,
     })
     const items: T[] = res.data.results || []
     const match = items.find(predicate)
     if (match) return match
-    nextUrl = res.data.next || null
+    const nextPage: number = res.data.pagination?.next ?? 0
+    if (!nextPage) return undefined
+    page = nextPage
   }
-  return undefined
 }
 
 // ---------------------------------------------------------------------------
