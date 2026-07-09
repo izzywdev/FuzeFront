@@ -21,9 +21,14 @@ import {
   startBillingProjection,
   stopBillingProjection,
 } from './services/billingProjection'
+import { setupMetrics } from './metrics'
 
 // Load environment variables
 dotenv.config()
+
+// Prometheus metrics (Phase E). Scraped at /metrics; gracefully degrades to a
+// 503 if prom-client is not installed.
+const metrics = setupMetrics()
 
 // Extend Express Request interface to include requestId
 declare global {
@@ -111,6 +116,11 @@ app.use((req, res, next) => {
 
   next()
 })
+
+// Prometheus request metrics (records method/route/status + duration).
+app.use(metrics.middleware)
+// Expose /metrics for the Prometheus scrape.
+metrics.registerEndpoint(app)
 
 // Setup Swagger documentation
 try {

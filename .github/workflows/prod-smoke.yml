@@ -1,0 +1,53 @@
+name: Prod smoke
+
+# After release.yml bumps image tags in values-prod.yaml (commit message starts
+# with "release:"), Argo CD syncs the new images onto Contabo. This job waits for
+# the rollout, then polls https://app.fuzefront.com/api/health until it returns
+# 200 (or fails after the timeout). Pure black-box check over the public ingress —
+# no cluster credentials needed.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/helm/fuzefront/values-prod.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Poll /api/health
+    runs-on: ubuntu-latest
+    # Only run for release tag-bump commits (skip unrelated values-prod edits).
+    if: startsWith(github.event.head_commit.message, 'release:')
+    steps:
+      - name: Wait for Argo to roll out, then poll health
+        env:
+          URL: https://app.fuzefront.com/api/health
+        run: |
+          echo "Smoke target: $URL"
+          # Give Argo CD time to detect the git change and roll the Deployments.
+          echo "Waiting 90s for Argo CD sync + rollout..."
+          sleep 90
+
+          # Poll for up to ~5 min (30 attempts × 10s).
+          attempts=30
+          for i in $(seq 1 "$attempts"); do
+            code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 10 "$URL" || echo 000)"
+            if [ "$code" = "200" ]; then
+              echo "✅ $URL returned 200 on attempt $i"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "attempt $i/$attempts: HTTP $code (retrying in 10s)"
+            sleep 10
+          done
+
+          echo "::error::$URL did not return 200 within the timeout"
+          echo "Last response body:"
+          cat /tmp/health.json 2>/dev/null || true
+          exit 1

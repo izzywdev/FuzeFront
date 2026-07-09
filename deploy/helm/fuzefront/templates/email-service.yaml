@@ -17,6 +17,11 @@ spec:
         app: fuzefront-email-service
         {{- include "fuzefront.labels" . | nindent 8 }}
     spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.emailService "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: email-service
           image: "{{ .Values.emailService.image.repository }}:{{ .Values.emailService.image.tag }}"

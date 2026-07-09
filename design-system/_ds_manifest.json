@@ -30,6 +30,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "DataTable",
+      "sourcePath": "components/data/DataTable.jsx"
+    },
+    {
       "name": "StatusPill",
       "sourcePath": "components/feedback/StatusPill.jsx"
     },
@@ -38,12 +42,20 @@
       "sourcePath": "components/feedback/Toast.jsx"
     },
     {
+      "name": "FileDropZone",
+      "sourcePath": "components/forms/FileDropZone.jsx"
+    },
+    {
       "name": "Input",
       "sourcePath": "components/forms/Input.jsx"
     },
     {
       "name": "Select",
       "sourcePath": "components/forms/Select.jsx"
+    },
+    {
+      "name": "Textarea",
+      "sourcePath": "components/forms/Textarea.jsx"
     },
     {
       "name": "AppCard",
@@ -56,6 +68,10 @@
     {
       "name": "IntegrationBadge",
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
+    },
+    {
+      "name": "Modal",
+      "sourcePath": "components/overlay/Modal.jsx"
     },
     {
       "name": "MenuItem",
@@ -471,6 +487,12 @@
     {
       "name": "--accent-2",
       "value": "var(--cyan-400)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--drop-active",
+      "value": "rgba(110, 92, 255, 0.18)",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },
@@ -1030,6 +1052,18 @@
       "name": "--container-max",
       "value": "1440px",
       "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--modal-max-w",
+      "value": "560px",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--modal-max-w-lg",
+      "value": "720px",
+      "kind": "other",
       "definedIn": "tokens/spacing.css"
     },
     {

@@ -23,6 +23,11 @@ export function Input({
 }) {
   const hasError = Boolean(error);
   const baseBorder = hasError ? "var(--error-color)" : "var(--border-color)";
+  // Always associate the label with the control: fall back to a generated id
+  // when the consumer doesn't pass one, so the field is reachable by its label
+  // (accessibility + testing-library getByLabelText).
+  const reactId = React.useId();
+  const fieldId = id ?? reactId;
 
   return (
     <div
@@ -35,7 +40,7 @@ export function Input({
     >
       {label && (
         <label
-          htmlFor={id}
+          htmlFor={fieldId}
           style={{
             fontFamily: "var(--font-sans)",
             fontSize: "var(--text-sm)",
@@ -48,7 +53,7 @@ export function Input({
         </label>
       )}
       <input
-        id={id}
+        id={fieldId}
         disabled={disabled}
         aria-invalid={hasError || undefined}
         style={{
