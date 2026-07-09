@@ -326,6 +326,64 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
+  # ── Tier 4: Contract ─────────────────────────────────────────────────────
+  contract-tests:
+    name: Contract Tests (OpenAPI)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Discover OpenAPI specs
+        id: discover
+        run: |
+          specs=$(find services -maxdepth 2 -type f \( -name 'openapi.yaml' -o -name 'openapi.yml' \) 2>/dev/null || true)
+          if [ -z "$specs" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Specs found:"; echo "$specs"
+          fi
+          {
+            echo 'specs<<EOF'
+            echo "$specs"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Lint specs (Spectral) + smoke the Prism mock
+        if: steps.discover.outputs.found == 'true'
+        run: |
+          npm install -g @stoplight/spectral-cli @stoplight/prism-cli
+          echo "${{ steps.discover.outputs.specs }}" | while read -r spec; do
+            [ -z "$spec" ] && continue
+            echo "=== $spec ==="
+            spectral lint "$spec" || exit 1
+            # Stand the contract up as a mock and confirm it boots.
+            prism mock "$spec" --port 4010 >/tmp/prism.log 2>&1 &
+            prism_pid=$!
+            for _ in $(seq 1 15); do
+              if curl -fsS http://localhost:4010 >/dev/null 2>&1; then echo "prism mock up for $spec"; break; fi
+              sleep 1
+            done
+            kill "$prism_pid" 2>/dev/null || true
+          done
+
+      - name: No contracts yet (stub)
+        if: steps.discover.outputs.found != 'true'
+        run: |
+          echo "::notice title=Contract tier::No services/*/openapi.yaml found yet."
+          echo "TODO (contract-first, see CLAUDE.md): freeze + PR an OpenAPI spec per"
+          echo "service, generate the @fuzefront/<svc>-client from it, and this tier"
+          echo "will Spectral-lint each spec and boot a Prism mock automatically —"
+          echo "no workflow edits required (discovery is already wired above)."
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
