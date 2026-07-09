@@ -334,6 +334,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      pull-requests: read
 
     steps:
       - name: Checkout code
@@ -350,6 +351,30 @@ jobs:
           exit-code: '0'
           trivyignore: '.trivyignore'
 
+      - name: Detect open PR (associate SARIF with PR comparison when dispatched)
+        id: detect-pr
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            PR_NUM=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
+              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0].number" 2>/dev/null || echo "")
+            if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
+              echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+            else
+              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -360,6 +385,8 @@ jobs:
           # map to one Code Scanning slot. Whichever job finishes first satisfies
           # the comparison check; no race between the two workflows.
           category: trivy
+          ref: ${{ steps.detect-pr.outputs.upload_ref }}
+          sha: ${{ github.sha }}
 
   deploy-docs:
     name: Deploy Documentation
