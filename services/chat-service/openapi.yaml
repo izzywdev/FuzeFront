@@ -1,0 +1,403 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Chat Service API
+  version: 1.0.0
+  description: >-
+    HTTP + SSE API for the FuzeFront **chat-service** — an org/tenant-scoped AI
+    chat microservice that wraps Anthropic (via the platform LiteLLM gateway),
+    retrieval-augments every turn from ChromaDB (RAG), persists a continuous
+    conversation history in Postgres, and streams responses over SSE.
+
+    This contract is **derived from the real route handlers** in
+    `services/chat-service/src/routes/chat.ts` and `src/app.ts`, and is the
+    single source of truth for `@fuzefront/chat-client`. Changing the API means
+    amending this file first (see the `api-contract-first` skill).
+
+    The `ANTHROPIC_API_KEY` (and any LiteLLM master key) live only in the
+    chat-service (SealedSecret) and are **never** exposed to the browser — the
+    browser talks to this service on a same-origin API base.
+
+    ### Auth & isolation
+    Every `/chat/*` route requires a valid Authentik-issued JWT (`Authorization:
+    Bearer <token>`). `userId`/`orgId` are derived from the JWT, never from the
+    request body, and every read/write is scoped to the caller (BOLA-safe):
+    fetching another user's conversation by id returns `404`.
+
+    ### Streaming surface (SSE)
+    `POST /chat/stream` returns `text/event-stream`; each `data:` line is one
+    JSON `ChatStreamEvent` (the discriminated union in `ChatStreamEvent`). The
+    event shape is intentionally AG-UI-compatible so the `@fuzefront/chat-ui`
+    renderer can consume it without translation.
+
+    ### Async surface (events)
+    The service emits a Kafka usage event after each turn for metered billing:
+      * `billing.llm.usage` — prompt/completion/total tokens per turn, scoped by
+        `userId`/`orgId`/`conversationId`.
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: '{baseUrl}'
+    description: chat-service (routes mounted at the root; same-origin in the browser).
+    variables:
+      baseUrl:
+        default: http://fuzefront-chat-service:3006
+        description: Cluster-internal base URL of the chat-service.
+
+tags:
+  - name: chat
+    description: Streaming chat completion (RAG-augmented, tool-call-aware).
+  - name: history
+    description: Continuous, org-scoped conversation history (paginated).
+  - name: feedback
+    description: Per-message thumbs up/down.
+  - name: confirmations
+    description: Human-in-the-loop release of pending mutating tool calls.
+  - name: health
+    description: Liveness / readiness (unauthenticated; used by Helm probes).
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness
+      description: Unauthenticated. Mirrors `app.ts` -> `GET /health`.
+      security: []
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status: { type: string, const: ok }
+                  service: { type: string, const: chat-service }
+
+  /chat/stream:
+    post:
+      operationId: streamChat
+      tags: [chat]
+      summary: RAG-augmented streaming chat turn
+      description: >-
+        Runs one agent turn and streams the result as SSE. The latest user
+        message is persisted, RAG context is retrieved from ChromaDB and injected
+        into the Anthropic call, and the assistant message + token usage are
+        persisted when the turn completes. Rate-limited (default 20/min/user).
+
+        If `conversationId` is omitted a conversation is resolved for the caller.
+        Mirrors `routes/chat.ts` -> `POST /chat/stream`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatStreamRequest'
+      responses:
+        '200':
+          description: >-
+            SSE stream. Each `data:` line is one JSON `ChatStreamEvent`. The
+            terminal event is `{ "type": "done" }`; transport/agent errors are
+            delivered as `{ "type": "error", "message": ... }` followed by
+            `done` rather than as a non-2xx status.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatStreamEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /chat/conversations:
+    get:
+      operationId: listConversations
+      tags: [history]
+      summary: List the caller's conversations
+      description: >-
+        Conversations owned by the authenticated user, most-recently-updated
+        first. Mirrors `routes/chat.ts` -> `GET /chat/conversations`.
+      responses:
+        '200':
+          description: The caller's conversations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Conversation' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /chat/conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [history]
+      summary: One conversation with its message history
+      description: >-
+        Owner-scoped: a conversation belonging to another user returns `404`,
+        not `403`, so ids are not enumerable. Mirrors `routes/chat.ts` ->
+        `GET /chat/conversations/:id`.
+
+        **Planned (issue #120, `gate-pagination`):** the `before`/`limit` query
+        params below page the message history newest-first for the continuous
+        single-thread model. Marked `x-status: planned` until the backend +
+        independent contract tests land.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: before
+          in: query
+          required: false
+          description: 'Planned: return messages created before this message id (cursor).'
+          schema: { type: string, format: uuid }
+          x-status: planned
+        - name: limit
+          in: query
+          required: false
+          description: 'Planned: max messages to return (default 50, max 200).'
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+          x-status: planned
+      responses:
+        '200':
+          description: The conversation and its messages.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversationWithMessages' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /chat/feedback:
+    post:
+      operationId: submitFeedback
+      tags: [feedback]
+      summary: Thumbs up/down a message
+      description: Mirrors `routes/chat.ts` -> `POST /chat/feedback`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messageId, rating]
+              properties:
+                messageId: { type: string, format: uuid }
+                rating: { type: string, enum: [positive, negative] }
+      responses:
+        '200':
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /chat/confirm/{id}:
+    post:
+      operationId: confirmTool
+      tags: [confirmations]
+      summary: Release a pending mutating tool call
+      description: >-
+        Owner-scoped. Releases a tool call that was held pending human
+        confirmation. Rate-limited (default 60/min/user). Mirrors
+        `routes/chat.ts` -> `POST /chat/confirm/:id`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Confirmation released.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: true }
+                  toolName: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Authentik-issued JWT. `userId`/`orgId` are read from the token.
+
+  responses:
+    BadRequest:
+      description: Invalid request body.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing or invalid JWT.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found, or not owned by the caller.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Per-route rate limit exceeded.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+
+    ChatStreamRequest:
+      type: object
+      required: [messages, orgId]
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+        orgId:
+          type: string
+          description: Tenant scope. Cross-checked against the JWT org claim.
+        conversationId:
+          type: string
+          format: uuid
+          description: >-
+            Optional. Omit to use the caller's continuous thread (issue #120
+            target model). Currently a new conversation is created when omitted.
+
+    RagSource:
+      type: object
+      description: A source document surfaced by the RAG retrieval step.
+      required: [title, url, excerpt]
+      properties:
+        title: { type: string }
+        url: { type: string }
+        excerpt: { type: string }
+
+    ChatStreamEvent:
+      oneOf:
+        - $ref: '#/components/schemas/EventTextDelta'
+        - $ref: '#/components/schemas/EventToolPending'
+        - $ref: '#/components/schemas/EventToolResult'
+        - $ref: '#/components/schemas/EventToolDenied'
+        - $ref: '#/components/schemas/EventRagSources'
+        - $ref: '#/components/schemas/EventDone'
+        - $ref: '#/components/schemas/EventError'
+      discriminator:
+        propertyName: type
+
+    EventTextDelta:
+      type: object
+      required: [type, delta]
+      properties:
+        type: { type: string, const: text_delta }
+        delta: { type: string }
+    EventToolPending:
+      type: object
+      required: [type, confirmationId, toolName, args, description]
+      properties:
+        type: { type: string, const: tool_pending }
+        confirmationId: { type: string }
+        toolName: { type: string }
+        args: { type: object, additionalProperties: true }
+        description: { type: string }
+    EventToolResult:
+      type: object
+      required: [type, confirmationId, success, summary]
+      properties:
+        type: { type: string, const: tool_result }
+        confirmationId: { type: string }
+        success: { type: boolean }
+        summary: { type: string }
+    EventToolDenied:
+      type: object
+      required: [type, toolName, reason]
+      properties:
+        type: { type: string, const: tool_denied }
+        toolName: { type: string }
+        reason: { type: string }
+    EventRagSources:
+      type: object
+      required: [type, sources]
+      properties:
+        type: { type: string, const: rag_sources }
+        sources:
+          type: array
+          items: { $ref: '#/components/schemas/RagSource' }
+    EventDone:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, const: done }
+    EventError:
+      type: object
+      required: [type, message]
+      properties:
+        type: { type: string, const: error }
+        message: { type: string }
+
+    Conversation:
+      type: object
+      required: [id, title, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ConversationMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant, tool] }
+        content:
+          description: >-
+            JSON message content (e.g. `{ "type": "text", "text": "..." }`).
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: string
+        createdAt: { type: string, format: date-time }
+
+    ConversationWithMessages:
+      allOf:
+        - $ref: '#/components/schemas/Conversation'
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/ConversationMessage' }
+
+security:
+  - bearerAuth: []

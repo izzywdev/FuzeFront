@@ -17,6 +17,7 @@ jobs:
   test:
     name: Backend tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     # IMPORTANT: secrets context in a service container env combined with a
     # strategy/matrix causes GitHub Actions to produce 0 jobs (workflow broken).
@@ -180,6 +181,7 @@ jobs:
   permit-integration:
     name: Permit.io integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
 
     # NOTE: there is deliberately NO permit-pdp service container here.
@@ -248,6 +250,15 @@ jobs:
           # this URL is never dialed.
           PERMIT_PDP_URL: https://cloudpdp.api.permit.io
         run: npm run db:init || echo "Database initialization completed"
+
+      - name: Diagnose PDP container health
+        run: |
+          echo "=== PDP container status ==="
+          docker ps -a --filter "ancestor=permitio/pdp-v2:0.8.1" || true
+          echo "=== PDP health endpoint ==="
+          curl -v http://localhost:7766/health || true
+          echo "=== PDP container logs ==="
+          docker logs $(docker ps -a --filter "ancestor=permitio/pdp-v2:0.8.1" -q | head -1) 2>&1 | tail -60 || true
 
       - name: Run Permit.io integration tests
         working-directory: ./backend

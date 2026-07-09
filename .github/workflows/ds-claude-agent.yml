@@ -1,0 +1,48 @@
+name: DS Agent Runner
+
+# Reusable agent runner — called by ds-propagate.yml via workflow_dispatch.
+# GITHUB_TOKEN dispatching workflow_dispatch DOES fire the target workflow,
+# unlike issue/push events. This is the fully-automated, no-PAT path.
+#
+# Requires repo secret: ANTHROPIC_API_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Full prompt for the Claude agent'
+        required: true
+      branch_hint:
+        description: 'Suggested branch name for the agent to use'
+        required: false
+        default: ''
+
+jobs:
+  run-claude-agent:
+    name: Run Claude agent
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check API key presence
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is present (${#ANTHROPIC_API_KEY} chars)"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Run Claude Code Action
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: ${{ inputs.prompt }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true

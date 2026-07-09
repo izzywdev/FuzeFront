@@ -105,55 +105,157 @@ describe('Organization Members', () => {
 
   // ─── GET /:id/members ─────────────────────────────────────────────────────
 
-  describe('GET /api/organizations/:id/members', () => {
-    it('returns 200 with bare array of members including nested user object', async () => {
-      const callerMembershipChain = makeDbQuery({
-        id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'owner', status: 'active',
-      })
-      const memberRow = {
-        id: TARGET_MEMBER_ID,
-        role: 'member',
-        status: 'active',
-        joined_at: new Date('2024-01-15').toISOString(),
-        user_id: 'other-user-id',
-        user_email: 'alice@example.com',
-        first_name: 'Alice',
-        last_name: 'Smith',
-      }
-      const membersListChain: any = {
-        select: jest.fn().mockReturnThis(),
-        join: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockResolvedValue([memberRow]),
-      }
+  // Builds a chainable mock for the paginated members list query. It captures
+  // limit/offset and whereRaw so tests can assert clamping + search behavior.
+  function makePaginatedMembersChain(rows: any[]) {
+    const captured: any = { limit: undefined, offset: undefined, whereRawArgs: undefined }
+    const chain: any = {
+      select: jest.fn().mockReturnThis(),
+      join: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      whereRaw: jest.fn(function (this: any, _sql: string, bindings: any) {
+        captured.whereRawArgs = bindings
+        return this
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn(function (this: any, n: number) {
+        captured.limit = n
+        return this
+      }),
+      offset: jest.fn(function (this: any, n: number) {
+        captured.offset = n
+        // offset terminates the awaited chain → resolve rows
+        return Promise.resolve(rows)
+      }),
+    }
+    return { chain, captured }
+  }
 
-      let membershipCallCount = 0
+  // Builds a chainable mock for the COUNT query.
+  function makeCountChain(total: number) {
+    const captured: any = { whereRawArgs: undefined }
+    const chain: any = {
+      join: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      whereRaw: jest.fn(function (this: any, _sql: string, bindings: any) {
+        captured.whereRawArgs = bindings
+        return this
+      }),
+      count: jest.fn().mockReturnThis(),
+      first: jest.fn().mockResolvedValue({ count: String(total) }),
+    }
+    return { chain, captured }
+  }
+
+  describe('GET /api/organizations/:id/members', () => {
+    const memberRow = {
+      id: TARGET_MEMBER_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date('2024-01-15').toISOString(),
+      user_id: 'other-user-id',
+      user_email: 'alice@example.com',
+      first_name: 'Alice',
+      last_name: 'Smith',
+    }
+
+    // Wires the dbMock so that for `organization_memberships`:
+    //   call 1 = caller membership check
+    //   call 2 = COUNT query
+    //   call 3 = paginated list query
+    function wireMembersQueries(opts: {
+      callerActive?: boolean
+      total: number
+      rows: any[]
+    }) {
+      const callerChain = makeDbQuery(
+        opts.callerActive === false
+          ? null
+          : { id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'owner', status: 'active' }
+      )
+      const count = makeCountChain(opts.total)
+      const list = makePaginatedMembersChain(opts.rows)
+
+      let n = 0
       dbMock.mockImplementation((table: string) => {
         if (table === 'organization_memberships') {
-          membershipCallCount++
-          // First call: caller's membership check; second call: list all members
-          return membershipCallCount === 1 ? callerMembershipChain : membersListChain
+          n++
+          if (n === 1) return callerChain
+          if (n === 2) return count.chain
+          return list.chain
         }
         return makeDbQuery(null)
       })
+      return { count, list }
+    }
+
+    it('returns the paginated envelope with members + pagination block', async () => {
+      wireMembersQueries({ total: 42, rows: [memberRow] })
 
       const res = await request(app).get(`/api/organizations/${ORG_ID}/members`)
 
       expect(res.status).toBe(200)
-      expect(Array.isArray(res.body)).toBe(true)
-      expect(res.body).toHaveLength(1)
+      expect(Array.isArray(res.body.members)).toBe(true)
+      expect(res.body.members).toHaveLength(1)
+      expect(res.body.pagination).toEqual({ page: 1, pageSize: 20, total: 42 })
 
-      const member = res.body[0]
+      const member = res.body.members[0]
       expect(member.id).toBe(TARGET_MEMBER_ID)
       expect(member.role).toBe('member')
       expect(member.status).toBe('active')
-      expect(member).toHaveProperty('user')
-      expect(member.user.id).toBe('other-user-id')
-      expect(member.user.email).toBe('alice@example.com')
-      expect(member.user.firstName).toBe('Alice')
-      expect(member.user.lastName).toBe('Smith')
+      expect(member.user).toEqual({
+        id: 'other-user-id',
+        email: 'alice@example.com',
+        firstName: 'Alice',
+        lastName: 'Smith',
+      })
       expect(member).toHaveProperty('joined_at')
       expect(member.invited_at).toBeNull()
+    })
+
+    it('honors page/pageSize and computes correct limit/offset', async () => {
+      const { list } = wireMembersQueries({ total: 100, rows: [memberRow] })
+
+      const res = await request(app)
+        .get(`/api/organizations/${ORG_ID}/members?page=3&pageSize=10`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.pagination).toEqual({ page: 3, pageSize: 10, total: 100 })
+      expect(list.captured.limit).toBe(10)
+      expect(list.captured.offset).toBe(20) // (3-1)*10
+    })
+
+    it('clamps pageSize to 100 and floors page/pageSize at 1; junk falls back to defaults', async () => {
+      // pageSize way over max, page below min, then junk values
+      const { list: a } = wireMembersQueries({ total: 5, rows: [memberRow] })
+      const resClamp = await request(app)
+        .get(`/api/organizations/${ORG_ID}/members?page=0&pageSize=500`)
+      expect(resClamp.status).toBe(200)
+      expect(resClamp.body.pagination.page).toBe(1)
+      expect(resClamp.body.pagination.pageSize).toBe(100)
+      expect(a.captured.limit).toBe(100)
+      expect(a.captured.offset).toBe(0)
+
+      const { list: b } = wireMembersQueries({ total: 5, rows: [memberRow] })
+      const resJunk = await request(app)
+        .get(`/api/organizations/${ORG_ID}/members?page=abc&pageSize=xyz`)
+      expect(resJunk.status).toBe(200)
+      expect(resJunk.body.pagination.page).toBe(1)
+      expect(resJunk.body.pagination.pageSize).toBe(20)
+      expect(b.captured.limit).toBe(20)
+    })
+
+    it('applies a case-insensitive search filter to both list and count queries', async () => {
+      const { count, list } = wireMembersQueries({ total: 1, rows: [memberRow] })
+
+      const res = await request(app)
+        .get(`/api/organizations/${ORG_ID}/members?search=ALICE`)
+
+      expect(res.status).toBe(200)
+      // search lowercased + wrapped in % for LIKE, bound 3x (email/first/last)
+      const expectedBindings = ['%alice%', '%alice%', '%alice%']
+      expect(list.captured.whereRawArgs).toEqual(expectedBindings)
+      expect(count.captured.whereRawArgs).toEqual(expectedBindings)
     })
 
     it('returns 403 when caller is not an active member', async () => {
@@ -161,6 +263,62 @@ describe('Organization Members', () => {
       dbMock.mockImplementation((_table: string) => makeDbQuery(null))
 
       const res = await request(app).get(`/api/organizations/${ORG_ID}/members`)
+      expect(res.status).toBe(403)
+    })
+  })
+
+  // ─── GET /:id/roles ───────────────────────────────────────────────────────
+
+  describe('GET /api/organizations/:id/roles', () => {
+    it('returns the 4 org roles with mapped permissions and the resource catalog', async () => {
+      const callerChain = makeDbQuery({
+        id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'viewer', status: 'active',
+      })
+      dbMock.mockImplementation((table: string) =>
+        table === 'organization_memberships' ? callerChain : makeDbQuery(null)
+      )
+
+      const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.roles.map((r: any) => r.key)).toEqual([
+        'owner', 'admin', 'member', 'viewer',
+      ])
+
+      const byKey = Object.fromEntries(res.body.roles.map((r: any) => [r.key, r]))
+      // assignable: only owner is false
+      expect(byKey.owner.assignable).toBe(false)
+      expect(byKey.admin.assignable).toBe(true)
+      expect(byKey.member.assignable).toBe(true)
+      expect(byKey.viewer.assignable).toBe(true)
+
+      // owner + admin map to permit "admin" (full set incl. manage/delete)
+      expect(byKey.owner.permissions).toEqual(byKey.admin.permissions)
+      expect(byKey.admin.permissions).toEqual(
+        expect.arrayContaining(['Organization:manage', 'UserManagement:update_role'])
+      )
+      // member → editor: can create apps but cannot manage org or update roles
+      expect(byKey.member.permissions).toContain('App:create')
+      expect(byKey.member.permissions).not.toContain('Organization:manage')
+      expect(byKey.member.permissions).not.toContain('UserManagement:update_role')
+      // viewer → viewer: read-only, cannot create apps
+      expect(byKey.viewer.permissions).toContain('Organization:read')
+      expect(byKey.viewer.permissions).not.toContain('App:create')
+
+      // resources flattened: actions is an array of {key,name}
+      const org = res.body.resources.find((r: any) => r.key === 'Organization')
+      expect(org.name).toBe('Organization')
+      expect(org.actions).toEqual(
+        expect.arrayContaining([{ key: 'manage', name: 'Manage' }])
+      )
+      expect(res.body.resources.map((r: any) => r.key)).toEqual(
+        expect.arrayContaining(['Organization', 'App', 'UserManagement', 'Docs', 'Chat'])
+      )
+    })
+
+    it('returns 403 when caller is not an active member', async () => {
+      dbMock.mockImplementation((_table: string) => makeDbQuery(null))
+      const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
       expect(res.status).toBe(403)
     })
   })

@@ -1,0 +1,3 @@
+# secrets: inherit is required for the AITools reusable workflow to receive
+# ANTHROPIC_API_KEY and GITHUB_TOKEN. Pre-existing pattern (since commit 43fa05c).
+.github/workflows/claude-ci-autofix.yml

@@ -130,6 +130,12 @@ secret:
   anthropicApiKey: ""
   openaiApiKey: ""
   litellmMasterKey: ""
+  # Scoped @fuzefront/feature-flags (Unleash) client token, consumed by services
+  # that evaluate family flags (applications-service / app-registry). Leave empty
+  # to run with safe in-code flag defaults (no flag platform wired). Supply via
+  # --set or a gitignored values file locally; in prod it comes from the
+  # fuzefront-secrets SealedSecret. NEVER commit a real token here.
+  featureFlagsClientToken: ""
 
 backend:
   image:
@@ -175,9 +181,48 @@ applicationsService:
     tag: local
   port: 3003
   replicas: 1
+  # Kafka brokers for the app.* registry events (events.ts fail-soft: empty →
+  # events are skipped, the service still runs). Set in values-prod (FuzeInfra
+  # Kafka, cross-namespace DNS).
+  kafka:
+    brokers: ""
+  # Permit PDP for the app-registry authz checks (permit.ts). When permit.enabled
+  # the in-cluster PDP runs at fuzefront-permit-pdp:7000; PERMIT_API_KEY comes
+  # from the shared fuzefront-secrets SealedSecret.
+  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client for the app-registry
+  # flags (flags.ts). FuzeFront HOSTS the family Unleash; this points the client
+  # at it. The scoped CLIENT TOKEN is a SECRET (sealed) — its key in the chart
+  # Secret / SealedSecret is below; absence → flags fall back to safe defaults.
+  featureFlags:
+    unleashUrl: ""           # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    appName: "applications-service"
+    # Key in fuzefront-secrets holding the scoped Unleash client token.
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
+# static nginx image serving remoteEntry.js. Deployed as its own Deployment+
+# Service and exposed SAME-ORIGIN under the app host at /apps/clock/ (see
+# templates/clock-app.yaml + the clock ingress in templates/ingress.yaml).
+# Disabled by default; enabled in values-local + values-prod once the image is
+# built (release matrix — see deploy/PENDING-WORKFLOW-CHANGES.md).
+clockApp:
+  enabled: false
+  image:
+    repository: fuzefront/clock-app
+    tag: local
+  # The clock-app nginx (clock-app/nginx.conf) listens on 8080.
+  port: 8080
+  replicas: 1
+  resources:
+    requests: { cpu: 10m,  memory: 16Mi }
+    limits:   { cpu: 100m, memory: 64Mi }
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -294,43 +339,6 @@ chatService:
     # Directory inside the chat-service image that holds the docs to index.
     docsDir: "/app/services/chat-service/docs"
 
-chatService:
-  enabled: false
-  replicas: 1
-  # Port 3006: 3001=backend, 3002=security, 3003=apps/email, 3004=sms, 3005=provisioning
-  port: 3006
-  image:
-    repository: fuzefront/chat-service
-    tag: local
-  # LiteLLM gateway in fuzeinfra namespace (its own Argo App).
-  litellmUrl: "http://litellm.fuzeinfra.svc.cluster.local:4000"
-  # ChromaDB vector store in fuzeinfra namespace (enabled via fuzeinfra Argo values).
-  chromaUrl: "http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000"
-  # FuzeFront backend for user/org lookups.
-  backendUrl: "http://fuzefront-backend:3001"
-  # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs
-  # at fuzefront-permit-pdp:7000; otherwise falls back to the offline stub port.
-  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
-  kafka:
-    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
-  embeddingModel: "text-embedding-3-small"
-  # Resource requests/limits. Local/dev single replica; prod overrides upward.
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-  # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
-  # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
-  # LiteLLM + ChromaDB are reachable in fuzeinfra.
-  docIndexer:
-    enabled: false
-    # Directory inside the chat-service image that holds the docs to index.
-    docsDir: "/app/services/chat-service/docs"
-
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
 # SECURITY_SERVICE_URL is derived in the Helm template from securityService.port
@@ -391,26 +399,6 @@ billingService:
   affinity: {}
   tolerations: []
 
-chatService:
-  enabled: false
-  image:
-    repository: fuzefront/chat-service
-    tag: local
-  port: 3007
-  replicas: 1
-  kafka:
-    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-    clientId: "chat-service"
-    groupId: "chat-service-group"
-  chromadb:
-    url: "http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000"
-  resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits:   { cpu: "1",  memory: "1Gi" }
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-
 litellm:
   enabled: false
   image:
@@ -421,6 +409,69 @@ litellm:
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits:   { cpu: "1",  memory: "1Gi" }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# ---------------------------------------------------------------------------
+# Unleash — self-hosted OSS feature-flag server (issue #116, Deliverable 1).
+#
+# EXTERNAL upstream image (unleashorg/unleash-server) — NOT built by release.yml
+# and NOT in its build matrix. Pin a concrete tag below (never :latest).
+#
+# Gated by `unleash.enabled` (default false). When enabled, the umbrella chart
+# renders, in order:
+#   1. a pre-install/pre-upgrade bootstrap Job (unleash-db-bootstrap) that creates
+#      the least-privilege `unleash_svc` role + a DEDICATED `unleash` database it
+#      OWNS on the shared FuzeInfra Postgres (Unleash self-migrates its schema on
+#      boot as unleash_svc — that's why it must own the db).
+#   2. the Unleash Deployment + a cluster-internal Service `fuzefront-unleash`.
+#
+# Admin UI is NOT public: the Service is cluster-internal. Reach the admin UI via
+# `kubectl port-forward svc/fuzefront-unleash 4242:4242`, or (optionally) an
+# admin-gated host under the *.prod.fuzefront.com Cloudflare-Access zone — see
+# `unleash.ingress` below (default off; requires FuzeInfra to wire the CF host).
+#
+# Secrets live in the per-service `unleash-secrets` SealedSecret (keys:
+# UNLEASH_DB_PASSWORD, INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN). Seal real
+# values with:  deploy/scripts/seal-secret.sh <KEY> --scope fuzefront/unleash-secrets
+# Placeholders are committed in deploy/contabo/sealed/unleash-secrets.yaml.
+#
+# Client connection (the @fuzefront/feature-flags package): the unleash API is at
+#   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+# authenticated with the UNLEASH_CLIENT_TOKEN.
+# ---------------------------------------------------------------------------
+unleash:
+  enabled: false
+  image:
+    repository: unleashorg/unleash-server
+    # Concrete, widely-published OSS tag (verified-available fallback per #116).
+    # Bump deliberately in a deploy window (external image — not auto-bumped by CI).
+    tag: "5.12.0"
+  port: 4242
+  replicas: 1
+  # Least-privilege DB role created by the unleash-db-bootstrap Job (NOT the shared
+  # fuzefront_user). Its password is UNLEASH_DB_PASSWORD in unleash-secrets.
+  dbUser: unleash_svc
+  # Dedicated database OWNED by unleash_svc (Unleash self-migrates into it).
+  dbName: unleash
+  # Per-service secret (unleash-only keys). Shared creds stay in fuzefront-secrets.
+  secretName: unleash-secrets
+  # Pre-install Job that creates the unleash_svc role + `unleash` database.
+  dbBootstrap:
+    enabled: true
+  # Unleash needs headroom for its Node runtime + in-memory flag cache.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  # OPTIONAL admin-gated ingress for the admin UI (default OFF). Requires the host
+  # to sit under the *.prod.fuzefront.com Cloudflare-Access zone; the CF tunnel
+  # rule + CNAME are FuzeInfra-owned (delegated). See the chart README.
+  ingress:
+    enabled: false
+    className: ""        # defaults to ingress.className when empty
+    host: ""             # e.g. unleash.prod.fuzefront.com (CF-Access gated)
+    annotations: {}
   nodeSelector: {}
   affinity: {}
   tolerations: []

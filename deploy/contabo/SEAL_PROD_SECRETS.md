@@ -62,6 +62,33 @@ git commit -m "secrets(prod): seal fuzefront-secrets + ghcr-pull for app.fuzefro
 git push
 ```
 
+## Adding `FEATURE_FLAGS_CLIENT_TOKEN` (app-registry / family flags)
+
+The `applications-service` (app-registry) evaluates family feature flags via the
+`@fuzefront/feature-flags` (Unleash) client. The scoped client token is a SECRET,
+sealed into the SAME `fuzefront-secrets` SealedSecret under the key
+`FEATURE_FLAGS_CLIENT_TOKEN` (matches `applicationsService.featureFlags.tokenSecretKey`
+in `values-prod.yaml`). It is **optional**: while `applicationsService.featureFlags.unleashUrl`
+is empty the env var is NOT mounted and the in-code flag defaults (safe) apply — so
+the key can be sealed AFTER the Unleash deploy lands, without blocking go-live.
+
+Seal it in place (does not disturb the other keys) once feature-flags-engineer
+provisions the scoped token:
+
+```bash
+printf '%s' 'REPLACE_UNLEASH_CLIENT_TOKEN' | tr -d '[:space:]' > /tmp/ff-token.txt
+deploy/scripts/seal-secret.sh FEATURE_FLAGS_CLIENT_TOKEN \
+  --in /tmp/ff-token.txt \
+  --scope fuzefront/fuzefront-secrets \
+  --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+rm -f /tmp/ff-token.txt
+git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
+```
+
+> Token PROVISIONING (creating the scoped Unleash client token + the flag taxonomy)
+> is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
+> This recipe only SEALS the token feature-flags-engineer hands over.
+
 ## ⚠️ Resealing a single value (e.g. `AUTHENTIK_BOOTSTRAP_TOKEN`)
 
 To rotate or repair ONE key without retyping the rest, use the offline merge helper —

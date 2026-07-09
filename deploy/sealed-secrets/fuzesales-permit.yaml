@@ -1,0 +1,20 @@
+# Seal with: kubeseal --controller-namespace kube-system < fuzesales-permit-plain.yaml > fuzesales-permit.yaml
+# Plain secret (DO NOT COMMIT):
+#   kubectl create secret generic fuzesales-permit \
+#     --namespace fuzesales \
+#     --from-literal=PERMIT_API_KEY=<your-key> \
+#     --from-literal=PERMIT_PDP_URL=http://permit-pdp.fuzefront.svc.cluster.local:7766 \
+#     --dry-run=client -o yaml > fuzesales-permit-plain.yaml
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: fuzesales-permit
+  namespace: fuzesales
+spec:
+  encryptedData:
+    PERMIT_API_KEY: PLACEHOLDER_SEAL_ME
+    PERMIT_PDP_URL: PLACEHOLDER_SEAL_ME
+  template:
+    metadata:
+      name: fuzesales-permit
+      namespace: fuzesales

@@ -64,6 +64,7 @@ jobs:
 
           # Strict: reject unknown fields. Skip CRDs cert-manager/sealed-secrets
           # owns (not in upstream k8s schemas). Helm hooks render as plain Jobs.
+          # Middleware is a Traefik CRD instance — no upstream k8s schema exists.
           #
           # Exclude authentik-blueprints.yaml: that ConfigMap's `data` keys embed
           # multi-document Authentik blueprint YAML with custom tags (!Env/!Find)
@@ -74,6 +75,7 @@ jobs:
             -kubernetes-version 1.29.0 \
             -schema-location default \
             -skip CustomResourceDefinition \
+            -skip Middleware \
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/

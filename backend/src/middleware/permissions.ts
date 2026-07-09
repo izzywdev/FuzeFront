@@ -244,7 +244,8 @@ export function requireAppPermission(
       // in it (object-level grant, mirroring requireAppAction for update/delete
       // in routes/apps.ts); other members fall through to the Permit policy
       // check. Ambiguous (multi-membership) or org-less callers fail closed.
-      if (action === 'create' && !organizationId) {
+      let resolvedOrgId = organizationId
+      if (action === 'create' && !resolvedOrgId) {
         const membership = await resolveCallerOrgMembership(req.user.id)
         if (!membership) {
           return res.status(400).json({
@@ -252,18 +253,18 @@ export function requireAppPermission(
             code: 'ORG_CONTEXT_REQUIRED',
           })
         }
-        organizationId = membership.organizationId
+        resolvedOrgId = membership.organizationId
 
         if (membership.role === 'owner' || membership.role === 'admin') {
           // Bind the VERIFIED org context; the route inserts under this org,
           // never from req.body (no tenant spoofing).
-          req.organization = { id: organizationId, role: membership.role }
+          req.organization = { id: resolvedOrgId, role: membership.role }
           return next()
         }
         // Non-owner/admin member: defer to Permit below.
       }
 
-      if (!organizationId) {
+      if (!resolvedOrgId) {
         return res.status(400).json({
           error: 'Organization context required',
           code: 'ORG_CONTEXT_REQUIRED',
@@ -274,18 +275,18 @@ export function requireAppPermission(
         req.user.id,
         action,
         appId,
-        organizationId
+        resolvedOrgId
       )
 
       if (!hasPermission) {
         return res.status(403).json({
           error: 'Insufficient app permissions',
           code: 'APP_PERMISSION_DENIED',
-          required: { action, appId, organizationId },
+          required: { action, appId, organizationId: resolvedOrgId },
         })
       }
 
-      req.organization = { id: organizationId, role: 'unknown' }
+      req.organization = { id: resolvedOrgId, role: 'unknown' }
       next()
     } catch (error) {
       console.error('App permission error:', error)

@@ -6,5 +6,7 @@ export * from './billing.llm.usage';
 export * from './billing.subscription.changed';
 export * from './billing.usage.recorded';
 export * from './identity.user.created';
+export * from './identity.session.issued';
+export * from './identity.session.revoked';
 export * from './notify.email.requested';
 export * from './notify.email.status';

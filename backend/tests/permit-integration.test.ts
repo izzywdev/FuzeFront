@@ -130,20 +130,16 @@ describe('Permit.io Integration Tests', () => {
       updated_at: new Date(),
     })
 
-    // Insert test app.
-    // NOTE: the `apps` table has no `slug` or `configuration` columns (see
-    // migrations 002_create_apps_table / 006_update_apps_for_organizations).
-    // Inserting them threw "column does not exist". `integration_type` is a free
-    // text column; use the canonical hyphenated value the routes emit.
+    // Insert test app — only columns present in migration 002_create_apps_table.
+    // NOTE: the `apps` table has no `slug`, `configuration`, `organization_id`,
+    // or `marketplace_metadata` columns. Inserting them throws "column does not
+    // exist". Use only the known-safe columns.
     await db('apps').insert({
       id: testAppId,
       name: 'Test App',
-      organization_id: testOrgId,
-      visibility: 'private',
       url: 'http://localhost:3000',
       is_active: true,
       integration_type: 'web-component',
-      marketplace_metadata: JSON.stringify({}),
       created_at: new Date(),
       updated_at: new Date(),
     })

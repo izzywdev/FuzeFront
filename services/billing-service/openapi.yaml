@@ -44,6 +44,10 @@ tags:
     description: Hosted Stripe Checkout Session creation (subscription mode).
   - name: credits
     description: Admin-only manual customer balance adjustments.
+  - name: invoices
+    description: Read-only invoice history for the authorized entity (Stripe-backed).
+  - name: portal
+    description: Stripe Customer Portal session creation (manage subscription / payment methods).
   - name: webhooks
     description: Stripe webhook receiver (public, Stripe-signature verified).
   - name: health
@@ -341,6 +345,122 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List the authorized entity's invoices
+      description: >-
+        Returns the Stripe invoice history for the proxy-authorized entity
+        (user or organization), most-recent first, as a stable contract subset
+        of the Stripe Invoice. Read-only. Mirrors `GET /invoices`.
+
+
+        Authorization: behind the internal-token guard; the entity is the
+        SERVER-DERIVED actor context the proxy injects
+        (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`).
+        Identity is never taken from the query string. An entity that has never
+        had billing returns `{ invoices: [], nextCursor: null }` (200, not an
+        error).
+
+
+        Pagination is opaque-cursor based: pass the previous response's
+        `nextCursor` (a Stripe invoice id) as `cursor` to fetch the next page.
+        `nextCursor` is null on the last page.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+        - name: limit
+          in: query
+          required: false
+          description: Page size, clamped server-side to 1..100. Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque pagination cursor (a Stripe invoice id) passed to Stripe's
+            `starting_after`. Use the previous response's `nextCursor`.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of invoices for the entity (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /portal:
+    post:
+      operationId: createPortalSession
+      tags: [portal]
+      summary: Create a Stripe Customer Portal session
+      description: >-
+        Creates a Stripe Customer Portal session for the proxy-authorized
+        entity and returns the Stripe-hosted `url` to redirect the customer to,
+        where they can manage their subscription and payment methods. Mirrors
+        `POST /portal`.
+
+
+        Authorization: behind the internal-token guard; the entity is the
+        SERVER-DERIVED actor context the proxy injects (the entity is NEVER
+        taken from the request body). An entity that has never had a billing
+        customer cannot open a portal -> 409.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalSessionRequest'
+      responses:
+        '200':
+          description: Portal session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSessionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The entity has no billing customer to manage.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    examples: ['no billing customer']
+                  message:
+                    type: string
         '502':
           $ref: '#/components/responses/StripeError'
 
@@ -772,6 +892,87 @@ components:
         sessionId:
           type: string
           description: The Stripe Checkout Session id (`cs_...`).
+
+    BillingInvoice:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - number
+        - created
+        - amountDue
+        - amountPaid
+        - currency
+        - status
+        - hostedInvoiceUrl
+        - invoicePdf
+      properties:
+        id:
+          type: string
+          description: Stripe invoice id (`in_...`).
+        number:
+          type: [string, 'null']
+          description: Human-facing invoice number; null for drafts without one.
+        created:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp derived from the Stripe `created` unix seconds.
+        amountDue:
+          type: integer
+          description: Amount due in the currency's minor unit (cents).
+          minimum: 0
+        amountPaid:
+          type: integer
+          description: Amount paid in the currency's minor unit (cents).
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 currency code, lowercased.
+          examples: [usd]
+        status:
+          type: string
+          description: Stripe invoice status.
+          examples: [paid, open, void, draft, uncollectible]
+        hostedInvoiceUrl:
+          type: [string, 'null']
+          description: Stripe-hosted invoice page url (null when unavailable).
+        invoicePdf:
+          type: [string, 'null']
+          description: Url to the invoice PDF (null when unavailable).
+
+    InvoiceListResponse:
+      type: object
+      additionalProperties: false
+      required: [invoices, nextCursor]
+      properties:
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingInvoice'
+        nextCursor:
+          type: [string, 'null']
+          description: >-
+            Opaque cursor (Stripe invoice id) for the next page; null when there
+            are no further pages.
+
+    PortalSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [returnUrl]
+      properties:
+        returnUrl:
+          type: string
+          format: uri
+          description: Where Stripe returns the customer after they leave the portal.
+
+    PortalSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Stripe-hosted Customer Portal url to redirect the customer to.
 
     Error:
       type: object

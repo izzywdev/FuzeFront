@@ -101,6 +101,26 @@ export interface IdentityMessages {
     createError: string
     expiresSoon: string
   }
+  permissions: {
+    title: string
+    intro: string
+    permissionColumn: string
+    legendGranted: string
+    legendNotGranted: string
+    assignable: string
+    notAssignable: string
+    grantedFor: string
+    notGrantedFor: string
+    emptyTitle: string
+    emptyBody: string
+    errorTitle: string
+  }
+  pagination: {
+    previous: string
+    next: string
+    pageInfo: string
+    summary: string
+  }
   scopeGroups: {
     apps: string
     organization: string

@@ -1,0 +1,48 @@
+{
+  "packageId": "com.fuzefront.app",
+  "host": "app.fuzefront.com",
+  "name": "FuzeFront",
+  "launcherName": "FuzeFront",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#6e5cff",
+  "navigationColor": "#6e5cff",
+  "navigationColorDark": "#6e5cff",
+  "navigationDividerColor": "#6e5cff",
+  "navigationDividerColorDark": "#6e5cff",
+  "backgroundColor": "#0b0e15",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://app.fuzefront.com/icons/pwa-512x512.png",
+  "maskableIconUrl": "https://app.fuzefront.com/icons/pwa-maskable-512x512.png",
+  "monochromeIconUrl": "https://app.fuzefront.com/icons/pwa-512x512.png",
+  "appVersion": "1",
+  "appVersionCode": 1,
+  "signingKey": {
+    "path": "./keystore/fuzefront-release.keystore",
+    "alias": "fuzefront",
+    "keyPassword": "fuzefront2024",
+    "storePassword": "fuzefront2024"
+  },
+  "splashScreenFadeOutDuration": 300,
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://app.fuzefront.com/",
+  "minSdkVersion": 21,
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://app.fuzefront.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": { "enabled": false },
+    "playBilling": { "enabled": false }
+  },
+  "alphaDependencies": { "enabled": false },
+  "enableSidecar": false,
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "CF:79:24:8E:4A:89:77:1E:C8:B6:69:83:4B:D4:AF:0C:8E:2C:B8:A4:5B:D6:FA:57:D0:06:9C:34:33:6F:68:AA"
+    }
+  ]
+}

@@ -15,6 +15,8 @@ export interface AppCardProps
   integrationType?: "module-federation" | "iframe" | "web-component" | string;
   /** App icon image URL; falls back to a per-type emoji glyph on error or when absent. */
   iconUrl?: string;
+  /** Emoji glyph (e.g. from a manifest `Icon.kind = "emoji"`); overrides the per-type fallback emoji when no `iconUrl`. */
+  iconGlyph?: string;
   /** When false, the card is grayscaled, dimmed, inert and tagged "(Offline)". */
   isHealthy?: boolean;
   /** Fired on click / Enter / Space — only when the app is healthy. */

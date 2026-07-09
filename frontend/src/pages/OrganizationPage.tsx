@@ -55,27 +55,27 @@ function OrganizationPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Mock data for now - will be replaced with API calls
-    setTimeout(() => {
-      setOrganizations([
-        {
-          id: '1',
-          name: 'My Organization',
-          slug: 'my-org',
-          type: 'team',
-          description: 'A sample organization',
-          owner_id: user?.id || '',
-          is_active: true,
-          settings: {},
-          metadata: {},
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          member_count: 5,
-          user_role: 'owner',
-        },
-      ])
-      setLoading(false)
-    }, 1000)
+    // Load the user's real organizations from the security service.
+    let cancelled = false
+    ;(async () => {
+      try {
+        setLoading(true)
+        const orgs = await getOrganizations()
+        if (cancelled) return
+        setOrganizations(orgs || [])
+        setCurrentOrg(prev => prev ?? (orgs && orgs.length > 0 ? orgs[0] : null))
+      } catch (err) {
+        if (!cancelled) {
+          setError('Failed to load organizations')
+          console.error('Error loading organizations:', err)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [user])
 
   // Load members when organization changes

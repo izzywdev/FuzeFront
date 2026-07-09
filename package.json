@@ -16,7 +16,9 @@
     "packages/identity-ui",
     "packages/i18n",
     "packages/i18n-translate",
-    "design-system"
+    "packages/feature-flags",
+    "design-system",
+    "services/email-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
@@ -39,7 +41,8 @@
   },
   "overrides": {
     "@types/express": "^4.17.21",
-    "@types/express-serve-static-core": "^4.19.6"
+    "@types/express-serve-static-core": "^4.19.6",
+    "tar": ">=7.5.16"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

@@ -1,11 +1,26 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAppContext, App } from '../lib/shared'
+import { useNavigate } from 'react-router-dom'
+import type { App } from '@fuzefront/app-registry-client'
+import { AppCard } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
-import { fetchApps } from '../services/api'
+import { useRegisteredApps } from '../platform/appRegistry'
+import {
+  iconImageUrl,
+  iconGlyph,
+  integrationTypeOf,
+  appHref,
+} from '../platform/appManifest'
 
+/**
+ * The top-bar app launcher. Renders activated apps from the app-registry
+ * (manifest icon + menuLabel) using the design-system <AppCard>, matching
+ * frame 01-app-menu. Clicking an app navigates to its surface (portal mount or
+ * standalone surface), per the manifest.
+ */
 function AppSelector() {
-  const { state, dispatch } = useAppContext()
   const { t } = useLanguage()
+  const navigate = useNavigate()
+  const { apps } = useRegisteredApps()
   const [isOpen, setIsOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [dropdownPosition, setDropdownPosition] = useState({
@@ -15,86 +30,46 @@ function AppSelector() {
   })
 
   useEffect(() => {
-    const loadApps = async () => {
-      try {
-        const allApps = await fetchApps() // Now returns apps with health status
-        dispatch({ type: 'SET_APPS', payload: allApps })
-
-        // Set default app if user has one and it's active and healthy
-        const defaultApp = allApps.find(
-          (app: App) =>
-            app.id === state.user?.defaultAppId && app.isActive && app.isHealthy
-        )
-        if (defaultApp && !state.activeApp) {
-          dispatch({ type: 'SET_ACTIVE_APP', payload: defaultApp })
-        }
-      } catch (error) {
-        console.error('Failed to load apps:', error)
-      }
-    }
-    loadApps()
-  }, [dispatch, state.user?.defaultAppId, state.activeApp])
-
-  useEffect(() => {
     if (isOpen && buttonRef.current) {
       const calculatePosition = () => {
         const button = buttonRef.current!
         const buttonRect = button.getBoundingClientRect()
-        const viewport = {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        }
-
-        const dropdownWidth = 350 // Approximate dropdown width
-        const dropdownHeight = 400 // Approximate dropdown height (with max height)
+        const viewport = { width: window.innerWidth, height: window.innerHeight }
+        const dropdownWidth = 360
+        const dropdownHeight = 420
 
         let top = buttonRect.bottom + 8
         let left = buttonRect.right - dropdownWidth
         let placement = 'bottom'
 
-        // Check if dropdown would go below viewport
         if (top + dropdownHeight > viewport.height) {
-          // Position above the button instead
           top = buttonRect.top - dropdownHeight - 8
           placement = 'top'
-
-          // If still not enough space above, center it vertically
           if (top < 0) {
             top = Math.max(20, (viewport.height - dropdownHeight) / 2)
             placement = 'center'
           }
         }
-
-        // Check horizontal positioning
         if (left < 20) {
-          // If too far left, position from left edge of button
           left = buttonRect.left
         } else if (left + dropdownWidth > viewport.width - 20) {
-          // If too far right, position from right edge of viewport
           left = viewport.width - dropdownWidth - 20
         }
-
         setDropdownPosition({ top, left, placement })
       }
 
       calculatePosition()
-
-      // Recalculate on window resize
       const handleResize = () => calculatePosition()
       window.addEventListener('resize', handleResize)
-
       return () => window.removeEventListener('resize', handleResize)
     }
   }, [isOpen])
 
   const handleAppSelect = (app: App) => {
-    if (!app.isHealthy) {
-      alert(`${app.name} ${t('appUnavailable')}`)
-      return
-    }
-    dispatch({ type: 'SET_ACTIVE_APP', payload: app })
     setIsOpen(false)
-    window.location.href = `/app/${app.id}`
+    const href = appHref(app)
+    if (href.startsWith('http')) window.location.href = href
+    else navigate(href)
   }
 
   return (
@@ -108,9 +83,9 @@ function AppSelector() {
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          padding: '8px',
-          borderRadius: '8px',
-          transition: 'background-color 0.2s ease',
+          padding: 'var(--space-2)',
+          borderRadius: 'var(--radius-md)',
+          transition: 'background-color var(--duration-base) ease',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -143,10 +118,7 @@ function AppSelector() {
           <div
             style={{
               position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+              inset: 0,
               background: 'transparent',
               zIndex: 999,
             }}
@@ -161,189 +133,57 @@ function AppSelector() {
               left: `${dropdownPosition.left}px`,
               background: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
-              borderRadius: '12px',
-              padding: '16px',
-              width: '350px',
-              maxHeight: '400px',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-4)',
+              width: '360px',
+              maxHeight: '420px',
               zIndex: 1000,
-              boxShadow: '0 8px 32px var(--shadow)',
+              boxShadow: 'var(--shadow-lg)',
               overflow: 'hidden',
-              ...(dropdownPosition.placement === 'top' && {
-                transform: 'translateY(0)',
-              }),
-              ...(dropdownPosition.placement === 'center' && {
-                transform: 'translateY(0)',
-              }),
             }}
           >
             <div
               style={{
-                marginBottom: '12px',
-                padding: '0 4px',
+                marginBottom: 'var(--space-3)',
+                padding: '0 var(--space-1)',
                 color: 'var(--text-tertiary)',
-                fontSize: '14px',
-                fontWeight: '500',
+                fontSize: 'var(--text-md)',
+                fontWeight: 'var(--weight-medium)',
               }}
             >
               {t('applications')}
             </div>
 
-            {state.apps && state.apps.length > 0 ? (
+            {apps.length > 0 ? (
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '12px',
-                  maxHeight: '300px',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 'var(--space-3)',
+                  maxHeight: '320px',
                   overflowY: 'auto',
                 }}
               >
-                {state.apps
-                  .filter(app => app.isActive)
-                  .map(app => (
-                    <div
-                      key={app.id}
-                      onClick={() => handleAppSelect(app)}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        padding: '16px 8px',
-                        borderRadius: '8px',
-                        cursor: app.isHealthy ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.2s ease',
-                        backgroundColor: 'transparent',
-                        opacity: app.isHealthy ? 1 : 0.5,
-                        filter: app.isHealthy ? 'none' : 'grayscale(1)',
-                        border: '1px solid transparent',
-                      }}
-                      onMouseEnter={e => {
-                        if (app.isHealthy) {
-                          e.currentTarget.style.backgroundColor =
-                            'var(--bg-quaternary)'
-                          e.currentTarget.style.borderColor =
-                            'var(--accent-color)'
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.backgroundColor = 'transparent'
-                        e.currentTarget.style.borderColor = 'transparent'
-                      }}
-                    >
-                      {/* App Icon */}
-                      <div
-                        style={{
-                          width: '48px',
-                          height: '48px',
-                          marginBottom: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: '12px',
-                          backgroundColor: 'var(--bg-tertiary)',
-                          position: 'relative',
-                        }}
-                      >
-                        {app.iconUrl ? (
-                          <img
-                            src={app.iconUrl}
-                            alt=""
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '8px',
-                            }}
-                            onError={e => {
-                              (e.target as HTMLImageElement).style.display =
-                                'none'
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '8px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '18px',
-                              background:
-                                app.integrationType === 'module-federation'
-                                  ? 'linear-gradient(135deg, #1f4f5f, #5fb3d4)'
-                                  : app.integrationType === 'iframe'
-                                    ? 'linear-gradient(135deg, #4f3f1f, #d4b35f)'
-                                    : 'linear-gradient(135deg, #3f1f4f, #b35fd4)',
-                            }}
-                          >
-                            {app.integrationType === 'module-federation'
-                              ? '🔗'
-                              : app.integrationType === 'iframe'
-                                ? '🖼️'
-                                : app.integrationType === 'web-component'
-                                  ? '🧩'
-                                  : '📱'}
-                          </div>
-                        )}
-
-                        {/* Health Status Indicator */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: '-2px',
-                            right: '-2px',
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            backgroundColor: app.isHealthy
-                              ? 'var(--success-color)'
-                              : 'var(--error-color)',
-                            border: '2px solid var(--bg-secondary)',
-                          }}
-                        />
-                      </div>
-
-                      {/* App Name */}
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          fontWeight: '500',
-                          color: app.isHealthy
-                            ? 'var(--text-primary)'
-                            : 'var(--text-tertiary)',
-                          textAlign: 'center',
-                          lineHeight: '1.2',
-                          maxWidth: '100%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {app.name}
-                      </div>
-
-                      {/* Status Text */}
-                      {!app.isHealthy && (
-                        <div
-                          style={{
-                            fontSize: '10px',
-                            color: 'var(--error-color)',
-                            marginTop: '2px',
-                          }}
-                        >
-                          {t('offline')}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                {apps.map(app => (
+                  <AppCard
+                    key={app.slug}
+                    name={app.manifest.menuLabel}
+                    description={app.manifest.description}
+                    integrationType={integrationTypeOf(app)}
+                    iconUrl={iconImageUrl(app.manifest.icon)}
+                    iconGlyph={iconGlyph(app.manifest.icon) ?? undefined}
+                    isHealthy={app.isHealthy !== false}
+                    onClick={() => handleAppSelect(app)}
+                  />
+                ))}
               </div>
             ) : (
               <div
                 style={{
-                  padding: '24px',
+                  padding: 'var(--space-6)',
                   textAlign: 'center',
                   color: 'var(--text-tertiary)',
-                  fontSize: '14px',
+                  fontSize: 'var(--text-md)',
                 }}
               >
                 {t('noAppsAvailable')}

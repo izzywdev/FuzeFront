@@ -57,4 +57,32 @@ describe('MembersTable', () => {
     fireEvent.change(selects[selects.length - 1], { target: { value: 'viewer' } })
     await waitFor(() => expect(onRoleChange).toHaveBeenCalledWith('m2', 'viewer'))
   })
+
+  it('does not render a pager when no pagination is provided', () => {
+    renderTable()
+    expect(screen.queryByRole('button', { name: /previous/i })).not.toBeInTheDocument()
+  })
+
+  it('disables Previous on the first page and advances on Next', () => {
+    const onPageChange = vi.fn()
+    renderTable({ pagination: { page: 1, pageSize: 20, total: 41 }, onPageChange })
+    const prev = screen.getByRole('button', { name: /previous/i })
+    const next = screen.getByRole('button', { name: /next/i })
+    expect(prev).toBeDisabled()
+    expect(next).not.toBeDisabled()
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument()
+    fireEvent.click(next)
+    expect(onPageChange).toHaveBeenCalledWith(2)
+  })
+
+  it('disables Next on the last page and goes back on Previous', () => {
+    const onPageChange = vi.fn()
+    renderTable({ pagination: { page: 3, pageSize: 20, total: 41 }, onPageChange })
+    const prev = screen.getByRole('button', { name: /previous/i })
+    const next = screen.getByRole('button', { name: /next/i })
+    expect(next).toBeDisabled()
+    expect(prev).not.toBeDisabled()
+    fireEvent.click(prev)
+    expect(onPageChange).toHaveBeenCalledWith(2)
+  })
 })

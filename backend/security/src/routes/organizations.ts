@@ -11,6 +11,7 @@ import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
+import { permitSchema } from '../permit/schema'
 
 const router = express.Router()
 
@@ -868,9 +869,176 @@ router.delete('/:id/invitations/:invitationId', authenticateToken, async (req: a
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Roles catalog: /api/organizations/:id/roles
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Org-role → permit-role mapping (see src/permit/schema.ts header). Used to
+// derive each org role's effective permission set from the permit schema.
+const ORG_ROLE_TO_PERMIT_ROLE: Record<string, string> = {
+  owner: 'admin',
+  admin: 'admin',
+  member: 'editor',
+  viewer: 'viewer',
+}
+
+// Display names + ordering for the org-facing role catalog. `owner` is never
+// assignable (matches the invite/role-change rule that owner cannot be granted).
+const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
+  { key: 'owner', name: 'Owner', assignable: false },
+  { key: 'admin', name: 'Admin', assignable: true },
+  { key: 'member', name: 'Member', assignable: true },
+  { key: 'viewer', name: 'Viewer', assignable: true },
+]
+
+/**
+ * @swagger
+ * /api/organizations/{id}/roles:
+ *   get:
+ *     summary: Get the organization role + permission catalog
+ *     description: >-
+ *       Returns the read-only catalog of assignable organization roles (with
+ *       their effective permissions) and the resource/action catalog they map
+ *       to. Any active member of the organization may view it.
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Role + resource catalog
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 roles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       assignable: { type: boolean }
+ *                       permissions:
+ *                         type: array
+ *                         items: { type: string }
+ *                 resources:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       actions:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             key: { type: string }
+ *                             name: { type: string }
+ *       403:
+ *         description: Caller is not an active member of the organization
+ */
+// GET /api/organizations/:id/roles — read-only role/permission catalog
+router.get('/:id/roles', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = req.params
+
+    // Any active member (any role) may view the catalog
+    const callerMembership = await db('organization_memberships')
+      .where('user_id', req.user.id)
+      .where('organization_id', id)
+      .where('status', 'active')
+      .first()
+
+    if (!callerMembership) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    const permitRolePermissions = new Map(
+      permitSchema.roles.map((r) => [r.key, r.permissions])
+    )
+
+    const roles = ORG_ROLE_CATALOG.map((role) => ({
+      key: role.key,
+      name: role.name,
+      assignable: role.assignable,
+      permissions: permitRolePermissions.get(
+        ORG_ROLE_TO_PERMIT_ROLE[role.key]
+      ) ?? [],
+    }))
+
+    const resources = permitSchema.resources.map((resource) => ({
+      key: resource.key,
+      name: resource.name,
+      actions: Object.entries(resource.actions).map(([key, def]) => ({
+        key,
+        name: def.name,
+      })),
+    }))
+
+    res.json({ roles, resources })
+  } catch (error: any) {
+    console.error('Error listing organization roles:', error)
+    res.status(500).json({ error: 'Failed to list organization roles' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Members sub-routes: /api/organizations/:id/members
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /api/organizations/{id}/members:
+ *   get:
+ *     summary: List organization members (paginated)
+ *     description: >-
+ *       Returns a paginated list of active members of the organization. Any
+ *       active member of the organization (any role) may view the list.
+ *       Supports a case-insensitive `search` over email / first name / last name.
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: pageSize
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *         description: Case-insensitive match against email, first name, or last name.
+ *     responses:
+ *       200:
+ *         description: Paginated members envelope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members:
+ *                   type: array
+ *                   items: { type: object }
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page: { type: integer }
+ *                     pageSize: { type: integer }
+ *                     total: { type: integer }
+ *       403:
+ *         description: Caller is not an active member of the organization
+ */
 // GET /api/organizations/:id/members — list members (any active member may view)
 router.get('/:id/members', authenticateToken, async (req: any, res) => {
   try {
@@ -887,21 +1055,64 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
-    const rows = await db('organization_memberships')
-      .select(
-        'organization_memberships.id',
-        'organization_memberships.role',
+    // Validate/clamp pagination params (clamp rather than reject; junk → defaults)
+    const parsePositiveInt = (raw: any, fallback: number) => {
+      const n = parseInt(String(raw), 10)
+      return Number.isFinite(n) && n >= 1 ? n : fallback
+    }
+    const page = parsePositiveInt(req.query.page, 1)
+    const pageSize = Math.min(parsePositiveInt(req.query.pageSize, 20), 100)
+    const offset = (page - 1) * pageSize
+
+    const search =
+      typeof req.query.search === 'string' ? req.query.search.trim() : ''
+
+    // Shared filter builder — applied to both the count and the page query so
+    // `total` reflects the same search predicate as the returned rows.
+    const applyFilters = (q: any) => {
+      q.where('organization_memberships.organization_id', id).where(
         'organization_memberships.status',
-        'organization_memberships.joined_at',
-        'users.id as user_id',
-        'users.email as user_email',
-        'users.first_name',
-        'users.last_name'
+        'active'
       )
-      .join('users', 'users.id', 'organization_memberships.user_id')
-      .where('organization_memberships.organization_id', id)
-      .where('organization_memberships.status', 'active')
+      if (search) {
+        const like = `%${search.toLowerCase()}%`
+        q.whereRaw(
+          '(LOWER(users.email) LIKE ? OR LOWER(users.first_name) LIKE ? OR LOWER(users.last_name) LIKE ?)',
+          [like, like, like]
+        )
+      }
+      return q
+    }
+
+    const countQuery = applyFilters(
+      db('organization_memberships').join(
+        'users',
+        'users.id',
+        'organization_memberships.user_id'
+      )
+    )
+    const countRow = await countQuery
+      .count('organization_memberships.id as count')
+      .first()
+    const total = parseInt((countRow?.count as string) || '0', 10) || 0
+
+    const rows = await applyFilters(
+      db('organization_memberships')
+        .select(
+          'organization_memberships.id',
+          'organization_memberships.role',
+          'organization_memberships.status',
+          'organization_memberships.joined_at',
+          'users.id as user_id',
+          'users.email as user_email',
+          'users.first_name',
+          'users.last_name'
+        )
+        .join('users', 'users.id', 'organization_memberships.user_id')
+    )
       .orderBy('organization_memberships.joined_at', 'asc')
+      .limit(pageSize)
+      .offset(offset)
 
     const members = rows.map((row: any) => ({
       id: row.id,
@@ -917,7 +1128,7 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       invited_at: null,
     }))
 
-    res.json(members)
+    res.json({ members, pagination: { page, pageSize, total } })
   } catch (error: any) {
     console.error('Error listing members:', error)
     res.status(500).json({ error: 'Failed to list members' })

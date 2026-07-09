@@ -91,4 +91,62 @@ spec:
                 name: fuzefront-frontend
                 port:
                   number: {{ .Values.frontend.port }}
+{{- if .Values.clockApp.enabled }}
+---
+# Clock-app remote, same-origin under the app host at /apps/clock/. A SEPARATE
+# Ingress (not a path on the main one) so its prefix-strip rewrite is scoped to
+# clock-app only and does not touch the host shell / API routes. The browser
+# fetches https://<host>/apps/clock/remoteEntry.js → stripped to /remoteEntry.js
+# at the clock nginx (matches the seeded built-in manifest remoteEntry).
+#   - nginx-ingress: rewrite-target + a capture-group path.
+#   - traefik:       the clock-app-stripprefix Middleware (templates/clock-app.yaml).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-clock-app
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clock-app
+  annotations:
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-clock-app-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq .Values.ingress.className "nginx" }}
+          # Capture group 2 ($2) is everything after /apps/clock, fed to
+          # rewrite-target so /apps/clock/remoteEntry.js → /remoteEntry.js.
+          - path: /apps/clock(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: clock-app
+                port:
+                  number: {{ .Values.clockApp.port }}
+          {{- else }}
+          # traefik strips /apps/clock via the Middleware; route the prefix.
+          - path: /apps/clock
+            pathType: Prefix
+            backend:
+              service:
+                name: clock-app
+                port:
+                  number: {{ .Values.clockApp.port }}
+          {{- end }}
+{{- end }}
 {{- end }}
