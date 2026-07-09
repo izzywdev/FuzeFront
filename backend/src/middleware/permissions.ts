@@ -226,7 +226,7 @@ export function requireAppPermission(
       }
 
       const appId = req.params.appId || req.params.id
-      let organizationId = req.params.organizationId || req.user.organizationId
+      const organizationId = req.params.organizationId || req.user.organizationId
 
       // 'create' has no app yet, so an appId is legitimately absent there.
       // Every other action operates on an existing app and requires one.
