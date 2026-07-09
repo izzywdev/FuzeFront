@@ -73,6 +73,28 @@ const BUILTIN_MANIFESTS: unknown[] = [
     visibility: 'public',
     roles: [],
   },
+  {
+    manifestVersion: '1',
+    slug: 'fuzekeys',
+    name: 'FuzeKeys',
+    menuLabel: 'Keys',
+    description:
+      'Keys, secrets, and PII tokenization — AI-powered credential management.',
+    icon: { kind: 'emoji', value: '🔑' },
+    mode: 'portal',
+    builtin: false,
+    integration: {
+      type: 'module-federation',
+      remoteEntry:
+        'https://keys.prod.fuzefront.com/apps/fuzekeys/assets/remoteEntry.js',
+      scope: 'fuzeKeysApp',
+      module: './FuzeKeysApp',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/keys' },
+    visibility: 'organization',
+    roles: [],
+  },
 ]
 
 /**
