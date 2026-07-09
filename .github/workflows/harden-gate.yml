@@ -119,6 +119,8 @@ jobs:
           output: trivy.sarif
           severity: CRITICAL,HIGH
           exit-code: '0'
+          ignore-unfixed: true
+          trivyignore: '.trivyignore'
       - uses: github/codeql-action/upload-sarif@v3
         continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()

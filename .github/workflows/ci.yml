@@ -348,6 +348,7 @@ jobs:
           output: 'trivy-results.sarif'
           ignore-unfixed: true
           exit-code: '0'
+          trivyignore: '.trivyignore'
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
