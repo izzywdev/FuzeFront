@@ -615,6 +615,8 @@ describe('API Endpoint Protection', () => {
 
 // Single destructive cleanup, after EVERY describe above has run, so the
 // shared seed survives the trailing DB/API-protection suites.
+// Timeout: 30 s — mirrors setup.ts's afterAll so drainProvisioningQueue (up to
+// 10 s) + Permit.io cleanup (~1.5 s) + DB cleanup fits comfortably.
 afterAll(async () => {
   await drainProvisioningQueue().catch(() => undefined)
   try {
@@ -624,21 +626,30 @@ afterAll(async () => {
   } catch {
     // best-effort; no-op under the CI no-op proxy
   }
-  if (testOrgId) {
-    await db('organization_memberships')
-      .where('organization_id', testOrgId)
+  // DB cleanup is best-effort: CI gets a fresh DB per run, so missing cleanup
+  // only affects local re-runs. Wrapping in try-catch prevents an "Unable to
+  // acquire a connection" error (pool destroyed by the global setup.ts afterAll
+  // racing this one) from marking the entire suite as "failed to run" even
+  // though all 26 tests passed.
+  try {
+    if (testOrgId) {
+      await db('organization_memberships')
+        .where('organization_id', testOrgId)
+        .del()
+      await db('organizations').where('id', testOrgId).del()
+    }
+    // Remove any personal org the login self-heal provisioned for the test users.
+    await db('organizations')
+      .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
       .del()
-    await db('organizations').where('id', testOrgId).del()
+    await db('organization_memberships')
+      .whereIn('user_id', [testUserId, adminUserId, secondUserId])
+      .del()
+    await db('apps').where('id', testAppId).del()
+    await db('users')
+      .whereIn('id', [testUserId, adminUserId, secondUserId])
+      .del()
+  } catch {
+    // best-effort DB cleanup — pool may already be destroyed by global teardown
   }
-  // Remove any personal org the login self-heal provisioned for the test users.
-  await db('organizations')
-    .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('organization_memberships')
-    .whereIn('user_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('apps').where('id', testAppId).del()
-  await db('users')
-    .whereIn('id', [testUserId, adminUserId, secondUserId])
-    .del()
-})
+}, 30_000)
