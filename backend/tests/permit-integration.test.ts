@@ -615,8 +615,18 @@ describe('API Endpoint Protection', () => {
 
 // Single destructive cleanup, after EVERY describe above has run, so the
 // shared seed survives the trailing DB/API-protection suites.
+//
+// Timeout: 30s — mirrors the global setup.ts afterAll timeout so Jest does
+// not preempt this hook before the drain + DB cleanup finish. Without an
+// explicit timeout the hook inherits jest.setTimeout(10000), which is the
+// SAME as the drainProvisioningQueue internal timeout. When provisioning
+// takes the full 10s to settle, Jest fires its afterAll timeout at the same
+// moment and races the global teardown (closeDatabase()) against the cleanup
+// queries here — causing "Unable to acquire a connection".
 afterAll(async () => {
-  await drainProvisioningQueue().catch(() => undefined)
+  // Use a shorter drain window (8s) so there is budget remaining for the DB
+  // cleanup queries before the 30s afterAll timeout fires.
+  await drainProvisioningQueue(8_000).catch(() => undefined)
   try {
     await deleteUserFromPermit(testUserId)
     await deleteUserFromPermit(secondUserId)
@@ -624,21 +634,28 @@ afterAll(async () => {
   } catch {
     // best-effort; no-op under the CI no-op proxy
   }
-  if (testOrgId) {
-    await db('organization_memberships')
-      .where('organization_id', testOrgId)
+  // Wrap DB cleanup in try-catch so a transient connection error (e.g. pool
+  // not yet fully available) does not fail the whole suite when the data was
+  // already removed by CASCADE or a concurrent cleanup.
+  try {
+    if (testOrgId) {
+      await db('organization_memberships')
+        .where('organization_id', testOrgId)
+        .del()
+      await db('organizations').where('id', testOrgId).del()
+    }
+    // Remove any personal org the login self-heal provisioned for the test users.
+    await db('organizations')
+      .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
       .del()
-    await db('organizations').where('id', testOrgId).del()
+    await db('organization_memberships')
+      .whereIn('user_id', [testUserId, adminUserId, secondUserId])
+      .del()
+    await db('apps').where('id', testAppId).del()
+    await db('users')
+      .whereIn('id', [testUserId, adminUserId, secondUserId])
+      .del()
+  } catch (e) {
+    console.warn('⚠️ Cleanup error (best-effort):', e)
   }
-  // Remove any personal org the login self-heal provisioned for the test users.
-  await db('organizations')
-    .whereIn('owner_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('organization_memberships')
-    .whereIn('user_id', [testUserId, adminUserId, secondUserId])
-    .del()
-  await db('apps').where('id', testAppId).del()
-  await db('users')
-    .whereIn('id', [testUserId, adminUserId, secondUserId])
-    .del()
-})
+}, 30_000)
