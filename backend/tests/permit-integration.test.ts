@@ -63,8 +63,8 @@ describe('Permit.io Integration Tests', () => {
     // Real bcrypt hashes so POST /api/auth/login actually verifies (the prior
     // placeholder hashes never matched, so every token was empty and the
     // "API Endpoint Protection" suite below got 401s / undefined tokens).
-    const testPwHash = await bcrypt.hash('test-password', 10)
-    const adminPwHash = await bcrypt.hash('admin-password', 10)
+    const testPwHash = await bcrypt.hash('test-password', 10) // nosemgrep: fuze-auth-local-password-store
+    const adminPwHash = await bcrypt.hash('admin-password', 10) // nosemgrep: fuze-auth-local-password-store
 
     // Insert test users.
     // NOTE: the `users` table (migration 001_create_users_table) has no

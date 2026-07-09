@@ -852,7 +852,7 @@ describe('Apps Registration Routes', () => {
       await db('users').insert({
         id,
         email,
-        password_hash: await bcrypt.hash('pw123456', 10),
+        password_hash: await bcrypt.hash('pw123456', 10), // nosemgrep: fuze-auth-local-password-store
         first_name: 'Reg',
         last_name: 'Test',
         roles: JSON.stringify(['user']),
