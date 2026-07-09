@@ -17,4 +17,30 @@ module.exports = {
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
   },
   testTimeout: 60000,
+  // Coverage scoped to the unit-testable logic (services, handlers, routes,
+  // mappers). Excluded: index.ts (process bootstrap), the Kafka/db/stripe glue,
+  // type-only modules, and the Pg* repositories (DB-bound — exercised by the
+  // DATABASE_URL-gated integration suite, not the unit run). Thresholds are set
+  // conservatively so the build is green; CI is the source of truth and the
+  // numbers can be ratcheted up as coverage grows.
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/index.ts',
+    '!src/kafka/**',
+    '!src/db.ts',
+    '!src/config.ts',
+    '!src/stripe-client.ts',
+    '!src/types.ts',
+    '!src/handlers/types.ts',
+    '!src/repositories/**',
+    '!src/middleware/**',
+  ],
+  coverageThreshold: {
+    global: {
+      statements: 60,
+      lines: 60,
+      functions: 55,
+      branches: 45,
+    },
+  },
 };
