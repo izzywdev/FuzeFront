@@ -66,8 +66,9 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
   }))
 
   // --- open the 9-dots launcher and click the Clock card (the real path) ---
+  // The CI workflow registers the app as "FuzeClock" (name → manifest.menuLabel).
   await page.locator('button.app-grid-button').click()
-  await page.getByText('Clock', { exact: true }).first().click()
+  await page.getByText('FuzeClock', { exact: true }).first().click()
 
   // Gate opened — dump recent console logs for visibility
   const recentLogs = consoleLogs.slice(-20)
