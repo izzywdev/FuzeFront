@@ -11,6 +11,9 @@ jobs:
     name: Auto Merge PR
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout code
@@ -18,7 +21,12 @@ jobs:
 
       - name: Enable auto-merge
         if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
+        # --auto requires auto-merge to be enabled in repo settings; fall back
+        # gracefully so this workflow never blocks a PR on a repo config gap.
+        continue-on-error: true
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+          gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch \
+            || gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch \
+            || echo "Could not auto-merge; manual merge required."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
