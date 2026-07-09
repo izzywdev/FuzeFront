@@ -11,7 +11,22 @@ function mockFetch(status: number, body: unknown) {
 }
 
 describe('identity client — members', () => {
-  it('listMembers GETs /api/organizations/:id/members (array response)', async () => {
+  it('listMembers GETs the paginated envelope and passes page/pageSize/search', async () => {
+    const body = {
+      members: [{ id: 'm1', role: 'admin', status: 'active', user: { id: 'u1', email: 'a@b.c' } }],
+      pagination: { page: 2, pageSize: 20, total: 41 },
+    }
+    const fetchImpl = mockFetch(200, body)
+    const client = createIdentityClient({ fetchImpl })
+    const result = await client.listMembers('org-1', { page: 2, pageSize: 20, search: 'ann' })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      '/api/organizations/org-1/members?page=2&pageSize=20&search=ann',
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result).toEqual(body)
+  })
+
+  it('listMembers tolerates a legacy bare-array response', async () => {
     const members = [{ id: 'm1', role: 'admin', status: 'active', user: { id: 'u1', email: 'a@b.c' } }]
     const fetchImpl = mockFetch(200, members)
     const client = createIdentityClient({ fetchImpl })
@@ -20,7 +35,23 @@ describe('identity client — members', () => {
       '/api/organizations/org-1/members',
       expect.objectContaining({ method: 'GET' })
     )
-    expect(result).toEqual(members)
+    expect(result.members).toEqual(members)
+    expect(result.pagination).toEqual({ page: 1, pageSize: 1, total: 1 })
+  })
+
+  it('listRoles GETs /api/organizations/:id/roles', async () => {
+    const catalog = {
+      roles: [{ key: 'admin', name: 'Admin', assignable: true, permissions: ['Organization:manage'] }],
+      resources: [{ key: 'Organization', name: 'Organization', actions: [{ key: 'manage', name: 'Manage' }] }],
+    }
+    const fetchImpl = mockFetch(200, catalog)
+    const client = createIdentityClient({ fetchImpl })
+    const result = await client.listRoles('org-1')
+    expect(fetchImpl).toHaveBeenCalledWith(
+      '/api/organizations/org-1/roles',
+      expect.objectContaining({ method: 'GET' })
+    )
+    expect(result).toEqual(catalog)
   })
 
   it('updateMemberRole PUTs the role', async () => {

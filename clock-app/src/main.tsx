@@ -12,14 +12,15 @@ const PUBLIC_URL = import.meta.env.VITE_PUBLIC_URL || 'http://clock.dev.local'
 if (!(window as any).__FRONTFUSE_PLATFORM__) {
   void registerWithHub({
     hubApiUrl: HUB_API_URL,
-    name: 'FuzeClock',
+    name: 'Clock',
     url: PUBLIC_URL,
     remoteUrl: PUBLIC_URL,
-    scope: 'fuzeClock',
-    module: './App',
+    // Match the seed manifest + MF config: scope "clockApp", module "./ClockApp".
+    scope: 'clockApp',
+    module: './ClockApp',
     iconUrl: `${PUBLIC_URL}/clock-icon.svg`,
     description:
-      'Example on-the-fly microfrontend: a live clock loaded at runtime.',
+      'Built-in reference app: a simple world clock loaded at runtime.',
   })
 }
 

@@ -29,7 +29,7 @@ export default function App() {
         title: 'FuzeClock',
         message: 'Loaded at runtime and connected to the host bridge 👋',
         level: 'success',
-        appId: 'fuzeClock',
+        appId: 'clock',
       })
     }
   }, [ctx.isPlatformMode])
@@ -69,7 +69,7 @@ export default function App() {
             title: 'FuzeClock',
             message: `Hello from the clock at ${new Date().toLocaleTimeString()}`,
             level: 'info',
-            appId: 'fuzeClock',
+            appId: 'clock',
           })
         }
       >

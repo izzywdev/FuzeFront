@@ -567,6 +567,59 @@ router.post(
   }
 )
 
+// GET /invoices?organizationId=<uuid> — the invoice history for the authorized
+// entity (the shell Billing page lists these). Reading billing history is a
+// READ operation, so the object-level gate is 'read' (org-scope -> Permit.io
+// 'read' check; user-scope -> self) — the same gate as GET /subscriptions.
+//
+// The authorized entity is SERVER-DERIVED and forwarded ONLY via the trusted
+// X-Billing-*/X-FF-* headers (GET has no body and identity NEVER travels via
+// query — organizationId stays server-derived, it is not in the query
+// allow-list). The `limit`/`cursor` pagination params ARE in
+// FORWARDED_QUERY_ALLOWLIST so forward() relays them upstream automatically.
+// The billing-service returns { invoices: [...], nextCursor }, relayed verbatim.
+router.get(
+  '/invoices',
+  authenticateToken,
+  async (req: BillingRequest, res) => {
+    const entity = await authorizeBillingEntity(req, res, 'read')
+    if (!entity) return
+    return forward(req, res, {
+      path: '/invoices',
+      internalAuth: true,
+      authorizedEntity: entity,
+      actorUserId: req.user!.id,
+    })
+  }
+)
+
+// POST /portal — open a Stripe Billing Portal session for the authorized
+// entity. Opening the portal lets the user change payment method / cancel /
+// view invoices, i.e. it can MUTATE billing state, so the object-level gate is
+// 'manage' (org-scope -> Permit.io 'manage' check; user-scope -> self) — the
+// same gate as the subscription mutations.
+//
+// The upstream /portal schema accepts ONLY { returnUrl }; the entity travels
+// via the trusted X-Billing-*/X-FF-* headers, NOT in the body. So we do NOT set
+// injectEntityToBody/injectOrgIdToBody — forward() still STRIPS any client
+// -supplied entityType/entityId/organizationId from the body (so an attacker
+// cannot retarget another org), leaving returnUrl intact. The billing-service
+// re-verifies ownership against the trusted headers and returns { url }.
+router.post(
+  '/portal',
+  authenticateToken,
+  async (req: BillingRequest, res) => {
+    const entity = await authorizeBillingEntity(req, res, 'manage')
+    if (!entity) return
+    return forward(req, res, {
+      path: '/portal',
+      internalAuth: true,
+      authorizedEntity: entity,
+      actorUserId: req.user!.id,
+    })
+  }
+)
+
 export default router
 
 // ---------------------------------------------------------------------------

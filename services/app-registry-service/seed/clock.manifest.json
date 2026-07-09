@@ -1,0 +1,25 @@
+{
+  "manifestVersion": "1",
+  "slug": "clock",
+  "name": "Clock",
+  "menuLabel": "Clock",
+  "description": "Built-in reference app: a simple world clock. The canonical example of a federated, portal-mode FuzeFront app, shipped with the platform.",
+  "icon": { "kind": "emoji", "value": "🕐" },
+  "mode": "portal",
+  "builtin": true,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "https://app.fuzefront.com/apps/clock/assets/remoteEntry.js",
+    "scope": "clockApp",
+    "module": "./ClockApp"
+  },
+  "chrome": {
+    "menu": "host",
+    "topbar": "host"
+  },
+  "routing": {
+    "path": "/clock"
+  },
+  "visibility": "public",
+  "roles": []
+}

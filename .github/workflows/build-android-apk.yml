@@ -1,0 +1,176 @@
+name: Build Android APK (TWA)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'android/**'
+      - 'frontend/**'
+      - '.github/workflows/build-android-apk.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'android/**'
+      - 'frontend/public/**'
+      - 'frontend/src/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Android version code (integer, e.g. 2)'
+        required: false
+        default: '1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & sign TWA APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Pre-configure Bubblewrap to skip interactive JDK/SDK prompts
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" \
+            > ~/.bubblewrap/config.json
+
+      - name: Restore keystore from secret
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          mkdir -p android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > android/keystore/fuzefront-release.keystore
+
+      - name: Set version code from input or run number
+        id: version
+        env:
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          CODE="${INPUT_VERSION_CODE:-$RUN_NUMBER}"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          # Patch appVersionCode in the manifest — pass code via env so the
+          # node script never interpolates untrusted data directly in the script.
+          VERSION_CODE="$CODE" node -e "
+            const fs = require('fs');
+            const code = process.env.VERSION_CODE;
+            const m = JSON.parse(fs.readFileSync('android/twa-manifest.json','utf8'));
+            m.appVersionCode = parseInt(code, 10);
+            m.appVersion = code;
+            fs.writeFileSync('android/twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+
+      - name: Scaffold Android project from TWA manifest
+        working-directory: android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # Patch passwords from secrets and redirect icon URLs to a local HTTP server.
+          # bubblewrap downloads icons during project generation; the prod URL may not be
+          # live yet, so we serve the committed icons from frontend/public locally instead.
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
+            m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
+            m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
+            m.iconUrl           = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.maskableIconUrl   = 'http://localhost:8080/icons/pwa-maskable-512x512.png';
+            m.monochromeIconUrl = 'http://localhost:8080/icons/pwa-512x512.png';
+            m.webManifestUrl    = 'http://localhost:8080/manifest.webmanifest';
+            fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          # Serve frontend/public so bubblewrap can fetch icons and the web manifest
+          python3 -m http.server 8080 --directory ../frontend/public &
+          HTTP_PID=$!
+          sleep 1
+          # bubblewrap update reads twa-manifest.json and scaffolds the Android Gradle project
+          bubblewrap update --skipPwaValidation
+          kill $HTTP_PID || true
+
+      - name: Build APK
+        working-directory: android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # Gradle signing via key.properties doesn't apply (bubblewrap template quirk).
+          # Build the unsigned APK then sign it explicitly with apksigner.
+          ./gradlew assembleRelease
+
+          UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED="app/build/outputs/apk/release/app-release.apk"
+          BUILD_TOOLS=$(ls "$ANDROID_HOME/build-tools/" | sort -V | tail -1)
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
+
+          "$APKSIGNER" sign \
+            --ks ./keystore/fuzefront-release.keystore \
+            --ks-pass "pass:${KEYSTORE_STORE_PASSWORD:-fuzefront2024}" \
+            --key-pass "pass:${KEYSTORE_KEY_PASSWORD:-fuzefront2024}" \
+            --ks-key-alias fuzefront \
+            --out "$SIGNED" \
+            "$UNSIGNED"
+
+          "$APKSIGNER" verify --verbose "$SIGNED"
+
+      - name: Locate signed APK
+        id: apk
+        working-directory: android
+        run: |
+          APK=$(find . -path "*/release/app-release.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find . -name "*.apk" | grep -v unsigned | head -1)
+          APK="${APK#./}"
+          echo "path=android/$APK" >> "$GITHUB_OUTPUT"
+          echo "Found: $APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzefront-android-v${{ steps.version.outputs.code }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 90
+
+      - name: Create GitHub Release with APK
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.version.outputs.code }}
+          name: FuzeFront Android v${{ steps.version.outputs.code }}
+          body: |
+            ## FuzeFront Android APK (TWA)
+
+            Trusted Web Activity wrapping **https://app.fuzefront.com** — connects to the production cluster.
+
+            ### Install
+            1. Download `fuzefront.apk` below
+            2. On your Android phone: **Settings → Apps → Install unknown apps** → allow your browser/Files app
+            3. Open the downloaded APK and tap **Install**
+            4. Launch **FuzeFront** from your home screen
+
+            The app opens Chrome in standalone mode (no browser chrome) — backed by your live prod cluster.
+
+            ### Requirements
+            - Android 5.0+ (API 21+)
+            - Chrome 72+ installed on device
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: false

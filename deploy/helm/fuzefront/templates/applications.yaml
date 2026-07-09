@@ -59,6 +59,41 @@ spec:
                   key: JWT_SECRET
             - name: FRONTEND_URL
               value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}"
+            # --- app-registry (new /api/v1/app-registry surface) env -----------
+            # Kafka brokers for the app.* registry events. Fail-soft in code: an
+            # empty value disables emission and the service still runs.
+            - name: KAFKA_BROKERS
+              value: {{ .Values.applicationsService.kafka.brokers | quote }}
+            # Permit.io authorization for the registry write paths. PERMIT_API_KEY
+            # is the shared key from fuzefront-secrets (created/sealed for the
+            # whole chart); PERMIT_PDP_URL points at the in-cluster PDP.
+            - name: PERMIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: PERMIT_API_KEY
+            - name: PERMIT_PDP_URL
+              value: {{ .Values.applicationsService.permitPdpUrl | quote }}
+            # @fuzefront/feature-flags (OpenFeature + Unleash) client for the
+            # app-registry release / kill-switch flags. FLAG_ENV picks the Unleash
+            # environment; absence of the client/token → safe in-code defaults.
+            - name: FLAG_ENV
+              value: {{ ternary "prod" "local" (eq .Values.ingress.className "traefik") | quote }}
+            {{- if .Values.applicationsService.featureFlags.unleashUrl }}
+            - name: UNLEASH_URL
+              value: {{ .Values.applicationsService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.applicationsService.featureFlags.appName | quote }}
+            # Scoped Unleash client token (sealed). The chart Secret / SealedSecret
+            # carries it under this key; rendered only when a URL is configured so
+            # local/dev with no flag platform stays inert (safe defaults).
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: {{ .Values.applicationsService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health

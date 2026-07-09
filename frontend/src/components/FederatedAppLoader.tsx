@@ -1,9 +1,15 @@
 import React, { useState, useEffect, Suspense } from 'react'
-import { useAppContext, useCurrentUser } from '../lib/shared'
-import { loadApp, clearModuleCache } from '../utils/loadFederatedApp'
+import type { App } from '@fuzefront/app-registry-client'
+import { useCurrentUser } from '../lib/shared'
+import { useAppRegistry } from '../platform/appRegistry'
+import {
+  loadFederatedAppFromManifest,
+  clearModuleCache,
+} from '../utils/loadFederatedApp'
 import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'
 
 interface FederatedAppLoaderProps {
+  /** App slug (the manifest's immutable id, used in /app/:slug). */
   appId: string
 }
 
@@ -27,7 +33,9 @@ const LoadingSpinner = () => (
         animation: 'spin 1s linear infinite',
       }}
     ></div>
-    <p style={{ marginTop: '1rem', color: 'var(--text-tertiary)' }}>Loading application...</p>
+    <p style={{ marginTop: 'var(--space-4)', color: 'var(--text-tertiary)' }}>
+      Loading application...
+    </p>
     <style>{`
       @keyframes spin {
         0% { transform: rotate(0deg); }
@@ -37,8 +45,15 @@ const LoadingSpinner = () => (
   </div>
 )
 
+/**
+ * Mounts a portal-mode app described by the FROZEN app-registry manifest.
+ * Supports every manifest `integration.type`:
+ *   - module-federation → runtime MF remote (full remoteEntry URL)
+ *   - iframe / spa      → navigable URL embedded in an iframe surface
+ *   - web-component     → custom element loaded from a script URL
+ */
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
-  const { state } = useAppContext()
+  const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType | null>(null)
@@ -46,68 +61,41 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
 
-  const app = state.apps.find(a => a.id === appId)
+  const app: App | undefined = getBySlug(appId)
 
-  // Set up platform context for federated apps
+  // Set up the platform context that runtime-loaded apps read off `window`.
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Mark that we're running in FrontFuse platform
-      (window as any).__FRONTFUSE_PLATFORM__ = true
-
-      // Provide platform context for federated apps
-      ;(window as any).__FRONTFUSE_CONTEXT__ = {
-        user: user,
+      (window as any).__FRONTFUSE_PLATFORM__ = true;
+      (window as any).__FRONTFUSE_CONTEXT__ = {
+        user,
         session: user
           ? {
               id: 'current-session',
               userId: user.id,
               tenantId: 'default-tenant',
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             }
           : null,
-        apps: state.apps,
+        apps,
         activeApp: app,
-        menuItems: state.menuItems,
-        isLoading: state.isLoading,
         isPlatformMode: true,
       }
-
-      console.log('🔗 Platform context injected for federated app:', {
-        user: user?.email,
-        appId: app?.id,
-        appName: app?.name,
-      })
     }
-  }, [user, app, state.apps, state.menuItems, state.isLoading])
-
-  // Clean up app-specific menu items when app changes or unmounts
-  useEffect(() => {
-    return () => {
-      // Clean up app-specific menu items when component unmounts
-      if (app?.id && typeof window !== 'undefined') {
-        // Notify that app menu should be cleaned up
-        const cleanupEvent = new CustomEvent('app-menu-cleanup', {
-          detail: { appId: app.id },
-        })
-        window.dispatchEvent(cleanupEvent)
-      }
-    }
-  }, [app?.id])
+  }, [user, app, apps])
 
   useEffect(() => {
     let mounted = true
 
-    const loadFederatedApp = async () => {
+    const load = async () => {
       if (!app) {
-        // The app list may not be fetched yet (deep-link / page refresh). Don't
-        // flash a "not found" failure before it loads — stay on the spinner and
-        // let this effect re-run once apps arrive. Only error once the list is
-        // loaded and the app genuinely isn't there.
-        if (state.isLoading || state.apps.length === 0) {
+        // Deep-link / refresh: the registry list may not have arrived yet.
+        // Stay on the spinner until it loads, then error only if truly absent.
+        if (appsLoading || apps.length === 0) {
           setLoading(true)
           return
         }
-        setError(`App with ID "${appId}" not found`)
+        setError(`App "${appId}" not found or not activated`)
         setLoading(false)
         return
       }
@@ -115,210 +103,103 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
       try {
         setLoading(true)
         setError(null)
+        const { integration, name } = app.manifest
 
-        if (app.integrationType === 'module-federation') {
-          console.log(`Loading federated app: ${app.name}`)
-          const module = await loadApp(appId)
-
-          if (mounted) {
-            setFederatedComponent(() => module.default)
+        if (integration.type === 'module-federation') {
+          const module = await loadFederatedAppFromManifest(app)
+          if (mounted) setFederatedComponent(() => module.default)
+        } else if (integration.type === 'iframe' || integration.type === 'spa') {
+          // `spa` previously had NO loader branch — fill that gap. A standalone
+          // single-page app is embedded by its navigable URL, same as an iframe
+          // app, when mounted inside the portal.
+          const url = integration.url
+          if (!url) {
+            throw new Error(`App '${name}' (${integration.type}) is missing integration.url`)
           }
-        } else if (app.integrationType === 'iframe') {
-          // For iframe apps, we'll render an iframe component
-          const IframeComponent = () => (
+          const FrameComponent = () => (
             <iframe
-              src={app.url}
+              src={url}
               style={{
                 width: '100%',
-                height: 'calc(100vh - 200px)',
+                height: 'calc(100vh - var(--top-bar-height) - var(--space-8))',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-md)',
               }}
-              title={app.name}
+              title={name}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             />
           )
-
-          if (mounted) {
-            setFederatedComponent(() => IframeComponent)
-          }
-        } else if (app.integrationType === 'web-component') {
-          // For web components, we'll create a wrapper
+          if (mounted) setFederatedComponent(() => FrameComponent)
+        } else if (integration.type === 'web-component') {
           const WebComponentWrapper = () => {
-            const [webComponentLoaded, setWebComponentLoaded] = useState(false)
-            const [webComponentError, setWebComponentError] = useState<
-              string | null
-            >(null)
-
-            useEffect(() => {
-              const loadWebComponent = async () => {
-                try {
-                  console.log(`Loading web component: ${app.name}`)
-
-                  // Extract component name from URL or use app name as fallback
-                  const componentName =
-                    app.scope ||
-                    `app-${app.name.toLowerCase().replace(/\s+/g, '-')}`
-
-                  // Check if component is already registered
-                  if (customElements.get(componentName)) {
-                    setWebComponentLoaded(true)
-                    return
-                  }
-
-                  // Load the web component script if remoteUrl is provided
-                  if (app.remoteUrl) {
-                    await new Promise<void>((resolve, reject) => {
-                      const script = document.createElement('script')
-                      script.src = app.remoteUrl!
-                      script.type = 'text/javascript'
-                      script.async = true
-                      script.onload = () => resolve()
-                      script.onerror = () =>
-                        reject(
-                          new Error(
-                            `Failed to load web component script: ${app.remoteUrl}`
-                          )
-                        )
-                      document.head.appendChild(script)
-                    })
-
-                    // Wait a bit for the component to register
-                    await new Promise(resolve => setTimeout(resolve, 100))
-                  }
-
-                  // Check if component is now available
-                  if (customElements.get(componentName)) {
-                    setWebComponentLoaded(true)
-                  } else {
-                    throw new Error(
-                      `Web component "${componentName}" not found after loading script`
-                    )
-                  }
-                } catch (error) {
-                  console.error('Error loading web component:', error)
-                  setWebComponentError(
-                    error instanceof Error ? error.message : 'Unknown error'
-                  )
-                }
+            const ref = (el: HTMLDivElement | null) => {
+              if (!el || el.hasChildNodes()) return
+              const tag =
+                integration.scope ||
+                `app-${name.toLowerCase().replace(/\s+/g, '-')}`
+              const mount = () => {
+                const node = document.createElement(tag)
+                node.setAttribute('data-app-slug', app.slug)
+                node.setAttribute('data-app-name', name)
+                el.appendChild(node)
               }
-
-              loadWebComponent()
-            }, [])
-
-            if (webComponentError) {
-              return (
-                <div
-                  style={{
-                    padding: '2rem',
-                    textAlign: 'center',
-                    color: 'var(--error-color)',
-                    border: '1px dashed var(--error-color)',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <h3>⚠️ Web Component Error</h3>
-                  <p>{webComponentError}</p>
-                  <p style={{ fontSize: '0.8rem', marginTop: '1rem' }}>
-                    App: {app.name}
-                  </p>
-                  <p style={{ fontSize: '0.8rem' }}>URL: {app.url}</p>
-                </div>
-              )
+              if (customElements.get(tag)) {
+                mount()
+              } else if (integration.url) {
+                const script = document.createElement('script')
+                script.src = integration.url
+                script.async = true
+                script.onload = () =>
+                  customElements.whenDefined(tag).then(mount)
+                document.head.appendChild(script)
+              }
             }
-
-            if (!webComponentLoaded) {
-              return (
-                <div
-                  style={{
-                    padding: '2rem',
-                    textAlign: 'center',
-                    color: 'var(--text-tertiary)',
-                  }}
-                >
-                  <LoadingSpinner />
-                  <p>Loading web component: {app.name}</p>
-                </div>
-              )
-            }
-
-            const componentName =
-              app.scope || `app-${app.name.toLowerCase().replace(/\s+/g, '-')}`
-
             return (
               <div
+                ref={ref}
                 style={{
                   width: '100%',
-                  height: 'calc(100vh - 200px)',
+                  height: 'calc(100vh - var(--top-bar-height) - var(--space-8))',
                   overflow: 'auto',
                 }}
-              >
-                {/* Create the web component dynamically */}
-                <div
-                  ref={el => {
-                    if (el && !el.hasChildNodes()) {
-                      const webComponent = document.createElement(componentName)
-                      // Pass context data as attributes if needed
-                      webComponent.setAttribute('data-app-id', app.id)
-                      webComponent.setAttribute('data-app-name', app.name)
-                      el.appendChild(webComponent)
-                    }
-                  }}
-                  style={{ width: '100%', height: '100%' }}
-                />
-              </div>
+              />
             )
           }
-
-          if (mounted) {
-            setFederatedComponent(() => WebComponentWrapper)
-          }
+          if (mounted) setFederatedComponent(() => WebComponentWrapper)
         } else {
-          throw new Error(
-            `Unsupported integration type: ${app.integrationType}`
-          )
+          throw new Error(`Unsupported integration type: ${integration.type}`)
         }
       } catch (err) {
-        console.error(`Failed to load app "${app?.name}":`, err)
+        console.error(`Failed to load app "${app?.manifest.name}":`, err)
         if (mounted) {
-          setError(
-            err instanceof Error ? err.message : 'Unknown error occurred'
-          )
+          setError(err instanceof Error ? err.message : 'Unknown error occurred')
         }
       } finally {
-        if (mounted) {
-          setLoading(false)
-        }
+        if (mounted) setLoading(false)
       }
     }
 
-    loadFederatedApp()
-
+    void load()
     return () => {
       mounted = false
     }
-    // Re-run when the app resolves or the app-list finishes loading, so a
-    // deep-link doesn't get stuck on the spinner or flash a premature error.
-  }, [appId, app, retryKey, state.isLoading, state.apps.length])
+  }, [appId, app, retryKey, appsLoading, apps.length])
 
   const handleRetry = () => {
-    // Clear module cache and retry
     clearModuleCache()
     setRetryKey(prev => prev + 1)
   }
 
-  if (loading) {
-    return <LoadingSpinner />
-  }
+  if (loading) return <LoadingSpinner />
 
   if (error) {
     return (
       <div
         style={{
-          padding: '2rem',
+          padding: 'var(--space-8)',
           border: '1px solid var(--error-color)',
-          borderRadius: '8px',
-          backgroundColor: '#2a1f1f',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'var(--bg-tertiary)',
           textAlign: 'center',
           color: 'var(--error-color)',
         }}
@@ -328,7 +209,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         <button
           className="btn btn-primary"
           onClick={handleRetry}
-          style={{ marginTop: '1rem' }}
+          style={{ marginTop: 'var(--space-4)' }}
         >
           🔄 Retry
         </button>
@@ -340,7 +221,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
     return (
       <div
         style={{
-          padding: '2rem',
+          padding: 'var(--space-8)',
           textAlign: 'center',
           color: 'var(--text-tertiary)',
         }}
@@ -351,7 +232,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   }
 
   return (
-    <FederatedAppErrorBoundary appName={app?.name} onRetry={handleRetry}>
+    <FederatedAppErrorBoundary appName={app?.manifest.name} onRetry={handleRetry}>
       <Suspense fallback={<LoadingSpinner />}>
         <FederatedComponent />
       </Suspense>

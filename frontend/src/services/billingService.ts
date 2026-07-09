@@ -58,6 +58,33 @@ export interface CheckoutSessionResponse {
 }
 
 /**
+ * A Stripe invoice as surfaced by the host proxy (`GET /invoices`). Amounts are
+ * in the currency's minor unit (cents); `created` is ISO-8601.
+ */
+export interface BillingInvoice {
+  id: string
+  number: string | null
+  created: string
+  amountDue: number
+  amountPaid: number
+  currency: string
+  status: 'paid' | 'open' | 'void' | 'draft' | 'uncollectible' | string
+  hostedInvoiceUrl: string | null
+  invoicePdf: string | null
+}
+
+export interface InvoiceListResponse {
+  invoices: BillingInvoice[]
+  /** Opaque cursor for the next page (a Stripe invoice id), or null if last. */
+  nextCursor: string | null
+}
+
+export interface PortalSessionResponse {
+  /** Stripe Billing Customer Portal URL to redirect the browser to. */
+  url: string
+}
+
+/**
  * Normalize a raw plan payload into a shape the UI can rely on.
  *
  * The `/plans` payload exposes the Stripe price id as `stripePriceId` and the
@@ -120,4 +147,72 @@ export function formatPlanPrice(plan: BillingPlan): string {
   })
   const per = plan.interval || plan.billingInterval
   return per ? `${amount} / ${per}` : amount
+}
+
+/** Just the formatted price ("$9.00"), no interval — for the PricingCard. */
+export function formatPlanAmount(plan: BillingPlan): string {
+  const cents = plan.priceCents ?? plan.unitAmount
+  if (cents == null) return '—'
+  return (cents / 100).toLocaleString(undefined, {
+    style: 'currency',
+    currency: (plan.currency || 'usd').toUpperCase(),
+  })
+}
+
+/** The plan's billing interval, e.g. "month" — for the PricingCard. */
+export function planInterval(plan: BillingPlan): string | undefined {
+  return plan.interval || plan.billingInterval || undefined
+}
+
+/** Minor-unit (cents) amount → localized currency string ("$9.00"). */
+export function formatInvoiceAmount(cents: number, currency?: string): string {
+  return (cents / 100).toLocaleString(undefined, {
+    style: 'currency',
+    currency: (currency || 'usd').toUpperCase(),
+  })
+}
+
+/**
+ * List the org's (or user's) Stripe invoices via the same-origin host proxy.
+ * Cursor pagination: pass the previous `nextCursor` to fetch the next page.
+ * Defensive — a 404 / missing body is treated as an empty page, not an error.
+ */
+export async function listInvoices(
+  organizationId?: string,
+  opts?: { limit?: number; cursor?: string }
+): Promise<InvoiceListResponse> {
+  const params: Record<string, string | number> = {}
+  if (organizationId) params.organizationId = organizationId
+  if (opts?.limit) params.limit = opts.limit
+  if (opts?.cursor) params.cursor = opts.cursor
+  try {
+    const { data } = await api.get<Partial<InvoiceListResponse>>(`${P}/invoices`, {
+      params,
+    })
+    return {
+      invoices: data?.invoices ?? [],
+      nextCursor: data?.nextCursor ?? null,
+    }
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    if (status === 404) return { invoices: [], nextCursor: null }
+    throw err
+  }
+}
+
+/**
+ * Create a Stripe Billing Customer Portal session and return its URL. The
+ * portal is the industry-standard surface for managing payment methods +
+ * invoice history without our app ever handling PCI data. Redirect the browser
+ * to the returned `url`; Stripe returns the customer to `returnUrl`.
+ */
+export async function createBillingPortalSession(
+  organizationId: string | undefined,
+  returnUrl: string
+): Promise<PortalSessionResponse> {
+  const { data } = await api.post<PortalSessionResponse>(`${P}/portal`, {
+    ...(organizationId ? { organizationId } : {}),
+    returnUrl,
+  })
+  return data
 }

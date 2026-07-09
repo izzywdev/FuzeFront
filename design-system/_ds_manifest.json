@@ -6,6 +6,10 @@
       "sourcePath": "components/access/RoleBadge.jsx"
     },
     {
+      "name": "PricingCard",
+      "sourcePath": "components/billing/PricingCard.jsx"
+    },
+    {
       "name": "BrandMark",
       "sourcePath": "components/brand/BrandMark.jsx"
     },
@@ -32,6 +36,10 @@
     {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
+    },
+    {
+      "name": "Skeleton",
+      "sourcePath": "components/feedback/Skeleton.jsx"
     },
     {
       "name": "StatusPill",
@@ -70,12 +78,28 @@
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
     },
     {
+      "name": "BottomNav",
+      "sourcePath": "components/mobile/BottomNav.jsx"
+    },
+    {
+      "name": "BottomSheet",
+      "sourcePath": "components/mobile/BottomSheet.jsx"
+    },
+    {
+      "name": "Drawer",
+      "sourcePath": "components/mobile/Drawer.jsx"
+    },
+    {
       "name": "Modal",
       "sourcePath": "components/overlay/Modal.jsx"
     },
     {
       "name": "MenuItem",
       "sourcePath": "components/shell/MenuItem.jsx"
+    },
+    {
+      "name": "Tabs",
+      "sourcePath": "components/shell/Tabs.jsx"
     },
     {
       "name": "ThemeToggle",
@@ -167,6 +191,20 @@
       "viewport": "720x180",
       "name": "Text — Primary / Secondary / Tertiary",
       "subtitle": "The three text levels on the dark shell"
+    },
+    {
+      "path": "guidelines/mobile-layout.card.html",
+      "group": "Mobile",
+      "viewport": "480x520",
+      "name": "Mobile Layout — BottomNav, Drawer, BottomSheet",
+      "subtitle": "xs/sm layout primitives: bottom nav, slide-in drawer, bottom sheet"
+    },
+    {
+      "path": "guidelines/motion.card.html",
+      "group": "Motion",
+      "viewport": "720x300",
+      "name": "Motion — Easing & Duration",
+      "subtitle": "Standard, springy-seam, enter/exit timing"
     },
     {
       "path": "guidelines/radii-shadows.card.html",
@@ -1094,6 +1132,72 @@
       "name": "--duration-slow",
       "value": "320ms",
       "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--duration-enter",
+      "value": "260ms",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--duration-exit",
+      "value": "180ms",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--duration-seam",
+      "value": "400ms",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--ease-seam",
+      "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-7",
+      "value": "1.75rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--top-bar-height-mobile",
+      "value": "52px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--bottom-nav-height",
+      "value": "56px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--drawer-width",
+      "value": "280px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--sheet-max-h",
+      "value": "80dvh",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--touch-target",
+      "value": "44px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--shadow-pop",
+      "value": "0 12px 32px -12px var(--shadow), 0 2px 8px -4px var(--shadow)",
+      "kind": "shadow",
       "definedIn": "tokens/spacing.css"
     }
   ],

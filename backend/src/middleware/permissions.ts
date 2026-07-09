@@ -5,6 +5,7 @@ import {
   checkAppPermission,
   checkUserManagementPermission,
 } from '../utils/permit/permission-check'
+import { db } from '../config/database'
 
 // Extend Express Request type to include user and organization context.
 //
@@ -208,7 +209,21 @@ export function requireAppPermission(
         })
       }
 
-      if (!organizationId) {
+      let resolvedOrgId = organizationId
+      if (!resolvedOrgId && action === 'create') {
+        // For create actions without an explicit org context, fall back to
+        // the user's personal org. This allows self-registration endpoints
+        // (/api/apps/register) to work without requiring callers to look up
+        // and pass an org ID explicitly.
+        const personalOrg = await db('organizations')
+          .where({ owner_id: req.user.id, type: 'personal' })
+          .first()
+        if (personalOrg) {
+          resolvedOrgId = personalOrg.id
+        }
+      }
+
+      if (!resolvedOrgId) {
         return res.status(400).json({
           error: 'Organization context required',
           code: 'ORG_CONTEXT_REQUIRED',
@@ -219,18 +234,18 @@ export function requireAppPermission(
         req.user.id,
         action,
         appId,
-        organizationId
+        resolvedOrgId
       )
 
       if (!hasPermission) {
         return res.status(403).json({
           error: 'Insufficient app permissions',
           code: 'APP_PERMISSION_DENIED',
-          required: { action, appId, organizationId },
+          required: { action, appId, organizationId: resolvedOrgId },
         })
       }
 
-      req.organization = { id: organizationId, role: 'unknown' }
+      req.organization = { id: resolvedOrgId, role: 'unknown' }
       next()
     } catch (error) {
       console.error('App permission error:', error)

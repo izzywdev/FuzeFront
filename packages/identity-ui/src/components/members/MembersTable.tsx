@@ -7,12 +7,12 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import { DataTable, Avatar, RoleBadge, StatusPill, IconButton } from '@fuzefront/design-system'
+import { DataTable, Avatar, RoleBadge, StatusPill, IconButton, Button } from '@fuzefront/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { EmptyState } from '../common/EmptyState'
 import { RoleSelect } from './RoleSelect'
 import { formatDate } from '../common/dates'
-import type { Member, OrgRole } from '../../types'
+import type { Member, OrgRole, PaginationMeta } from '../../types'
 
 export interface MembersTableProps {
   organizationId: string
@@ -24,6 +24,10 @@ export interface MembersTableProps {
   onRemove: (memberId: string) => Promise<void>
   onInvite?: () => void
   onRetry?: () => void
+  /** Server-side pagination metadata; when present, a pager is rendered. */
+  pagination?: PaginationMeta
+  /** Requests a different (1-based) page from the host. */
+  onPageChange?: (page: number) => void
 }
 
 const columnHelper = createColumnHelper<Member>()
@@ -59,6 +63,8 @@ export function MembersTable({
   onRemove,
   onInvite,
   onRetry,
+  pagination,
+  onPageChange,
 }: MembersTableProps) {
   const { messages, locale } = useIdentityI18n()
   const m = messages.members
@@ -165,39 +171,93 @@ export function MembersTable({
   }
 
   return (
-    <DataTable
-      columns={dsColumns}
-      loading={loading}
-      sortBy={sortState?.id}
-      sortDir={sortState?.desc ? 'desc' : 'asc'}
-      onSort={(key) => {
-        const col = table.getColumn(key)
-        col?.toggleSorting()
-      }}
-      emptyState={
-        <EmptyState
-          variant="empty-members"
-          title={m.emptyTitle}
-          message={m.emptyBody}
-          actionLabel={canManage ? m.invite : undefined}
-          onAction={canManage ? onInvite : undefined}
-        />
-      }
-    >
-      {members.length > 0 && (
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} style={{ ...cellStyle, textAlign: cell.column.id === 'actions' ? 'right' : 'left' }}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+      <DataTable
+        columns={dsColumns}
+        loading={loading}
+        sortBy={sortState?.id}
+        sortDir={sortState?.desc ? 'desc' : 'asc'}
+        onSort={(key) => {
+          const col = table.getColumn(key)
+          col?.toggleSorting()
+        }}
+        emptyState={
+          <EmptyState
+            variant="empty-members"
+            title={m.emptyTitle}
+            message={m.emptyBody}
+            actionLabel={canManage ? m.invite : undefined}
+            onAction={canManage ? onInvite : undefined}
+          />
+        }
+      >
+        {members.length > 0 && (
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} style={{ ...cellStyle, textAlign: cell.column.id === 'actions' ? 'right' : 'left' }}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        )}
+      </DataTable>
+
+      {pagination && pagination.total > 0 && (
+        <MembersPager pagination={pagination} onPageChange={onPageChange} />
       )}
-    </DataTable>
+    </div>
+  )
+}
+
+function MembersPager({
+  pagination,
+  onPageChange,
+}: {
+  pagination: PaginationMeta
+  onPageChange?: (page: number) => void
+}) {
+  const { messages, t } = useIdentityI18n()
+  const pg = messages.pagination
+  const { page, pageSize, total } = pagination
+  const totalPages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)))
+  const shown = Math.min(total, page * pageSize)
+
+  return (
+    <nav
+      aria-label={messages.members.title}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}
+    >
+      <span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+        {t(pg.summary, { shown, total })}
+      </span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={page <= 1}
+          aria-label={pg.previous}
+          onClick={() => onPageChange?.(page - 1)}
+        >
+          {pg.previous}
+        </Button>
+        <span aria-live="polite" style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+          {t(pg.pageInfo, { page, pages: totalPages })}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={page >= totalPages}
+          aria-label={pg.next}
+          onClick={() => onPageChange?.(page + 1)}
+        >
+          {pg.next}
+        </Button>
+      </span>
+    </nav>
   )
 }
 

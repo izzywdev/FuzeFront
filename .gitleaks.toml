@@ -1,0 +1,13 @@
+# Gitleaks config for FuzeFront. Extends the default ruleset.
+# Allowlists the @fuzefront/auth `AuthMode` type-union literals, which the
+# generic-api-key rule mis-flags as secrets (they are TypeScript string
+# literals identifying the verifier mode, not credentials).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "@fuzefront/auth non-secret literals (AuthMode union values)"
+regexes = [
+  '''legacy-hs256''',
+  '''oidc-jwks''',
+]

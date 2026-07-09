@@ -7,7 +7,10 @@ import { PendingInvitesList } from '../invites/PendingInvitesList'
 import { InviteModal } from '../invites/InviteModal'
 import { TokenList } from '../tokens/TokenList'
 import { TokenCreateModal } from '../tokens/TokenCreateModal'
-import type { ApiTokenSummary, IdentityApiClient, Invitation, Member, OrgRole } from '../../types'
+import { RolesPermissionsPanel } from '../permissions/RolesPermissionsPanel'
+import type { ApiTokenSummary, IdentityApiClient, Invitation, Member, OrgRole, PaginationMeta, RolesCatalog } from '../../types'
+
+const MEMBERS_PAGE_SIZE = 20
 
 export interface IdentityPageProps {
   organizationId: string
@@ -23,7 +26,7 @@ export interface IdentityPageProps {
   onMembersChange?: () => void
 }
 
-type TabKey = 'members' | 'pending' | 'tokens'
+type TabKey = 'members' | 'permissions' | 'pending' | 'tokens'
 
 /**
  * Top-level tabbed identity page (Members / Pending Invitations / API Tokens).
@@ -54,6 +57,11 @@ function IdentityPageInner({
   const [members, setMembers] = useState<Member[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
   const [membersError, setMembersError] = useState<string | null>(null)
+  const [membersPage, setMembersPage] = useState(1)
+  const [membersPagination, setMembersPagination] = useState<PaginationMeta | undefined>(undefined)
+  const [rolesCatalog, setRolesCatalog] = useState<RolesCatalog | null>(null)
+  const [rolesLoading, setRolesLoading] = useState(true)
+  const [rolesError, setRolesError] = useState<string | null>(null)
   const [invites, setInvites] = useState<Invitation[]>([])
   const [invitesLoading, setInvitesLoading] = useState(true)
   const [invitesError, setInvitesError] = useState<string | null>(null)
@@ -67,11 +75,25 @@ function IdentityPageInner({
     setMembersLoading(true)
     setMembersError(null)
     try {
-      setMembers(await client.listMembers(organizationId))
+      const res = await client.listMembers(organizationId, { page: membersPage, pageSize: MEMBERS_PAGE_SIZE })
+      setMembers(res.members)
+      setMembersPagination(res.pagination)
     } catch (err) {
       setMembersError(err instanceof Error ? err.message : 'Error')
     } finally {
       setMembersLoading(false)
+    }
+  }, [client, organizationId, membersPage])
+
+  const loadRoles = useCallback(async () => {
+    setRolesLoading(true)
+    setRolesError(null)
+    try {
+      setRolesCatalog(await client.listRoles(organizationId))
+    } catch (err) {
+      setRolesError(err instanceof Error ? err.message : 'Error')
+    } finally {
+      setRolesLoading(false)
     }
   }, [client, organizationId])
 
@@ -104,7 +126,8 @@ function IdentityPageInner({
     loadMembers()
     loadInvites()
     loadTokens()
-  }, [loadMembers, loadInvites, loadTokens])
+    loadRoles()
+  }, [loadMembers, loadInvites, loadTokens, loadRoles])
 
   const tabButton = (key: TabKey, label: string) => (
     <button
@@ -143,6 +166,7 @@ function IdentityPageInner({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
         <div role="tablist" style={{ display: 'flex', gap: 'var(--space-2)', borderBottom: '1px solid var(--border-color)', flex: 1 }}>
           {tabButton('members', messages.members.title)}
+          {tabButton('permissions', messages.permissions.title)}
           {tabButton('pending', messages.invitations.title)}
           {tabButton('tokens', messages.tokens.title)}
         </div>
@@ -173,7 +197,13 @@ function IdentityPageInner({
             await loadMembers()
             onMembersChange?.()
           }}
+          pagination={membersPagination}
+          onPageChange={setMembersPage}
         />
+      )}
+
+      {tab === 'permissions' && (
+        <RolesPermissionsPanel catalog={rolesCatalog} loading={rolesLoading} error={rolesError} onRetry={loadRoles} />
       )}
 
       {tab === 'pending' && (

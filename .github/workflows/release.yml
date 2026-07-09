@@ -14,6 +14,7 @@ on:
       - 'services/sms-service/**'
       - 'services/provisioning-service/**'
       - 'services/billing-service/**'
+      - 'clock-app/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
 
@@ -157,6 +158,24 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-applications-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-applications-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push clock-app (built-in MF remote)
+        # Built-in reference Module-Federation remote, served same-origin at
+        # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
+        continue-on-error: true
+        uses: docker/build-push-action@v5
+        with:
+          context: clock-app
+          file: clock-app/Dockerfile
+          push: true
+          build-args: |
+            VITE_HUB_API_URL=https://app.fuzefront.com
+            VITE_PUBLIC_URL=https://app.fuzefront.com
+          tags: |
+            ghcr.io/izzywdev/fuzefront-clock-app:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-clock-app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

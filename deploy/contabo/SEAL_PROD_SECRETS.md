@@ -62,6 +62,61 @@ git commit -m "secrets(prod): seal fuzefront-secrets + ghcr-pull for app.fuzefro
 git push
 ```
 
+## Adding `FEATURE_FLAGS_CLIENT_TOKEN` (app-registry / family flags)
+
+The `applications-service` (app-registry) evaluates family feature flags via the
+`@fuzefront/feature-flags` (Unleash) client. The scoped client token is a SECRET,
+sealed into the SAME `fuzefront-secrets` SealedSecret under the key
+`FEATURE_FLAGS_CLIENT_TOKEN` (matches `applicationsService.featureFlags.tokenSecretKey`
+in `values-prod.yaml`). It is **optional**: while `applicationsService.featureFlags.unleashUrl`
+is empty the env var is NOT mounted and the in-code flag defaults (safe) apply — so
+the key can be sealed AFTER the Unleash deploy lands, without blocking go-live.
+
+Seal it in place (does not disturb the other keys) once feature-flags-engineer
+provisions the scoped token:
+
+```bash
+printf '%s' 'REPLACE_UNLEASH_CLIENT_TOKEN' | tr -d '[:space:]' > /tmp/ff-token.txt
+deploy/scripts/seal-secret.sh FEATURE_FLAGS_CLIENT_TOKEN \
+  --in /tmp/ff-token.txt \
+  --scope fuzefront/fuzefront-secrets \
+  --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+rm -f /tmp/ff-token.txt
+git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
+```
+
+> Token PROVISIONING (creating the scoped Unleash client token + the flag taxonomy)
+> is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
+> This recipe only SEALS the token feature-flags-engineer hands over.
+
+## ⚠️ Resealing a single value (e.g. `AUTHENTIK_BOOTSTRAP_TOKEN`)
+
+To rotate or repair ONE key without retyping the rest, use the offline merge helper —
+it scrubs **all** whitespace from the value before sealing, so a stray trailing
+newline can never reach the cluster:
+
+```bash
+# regenerate a clean, newline-free token and seal it into fuzefront-secrets in place
+openssl rand -hex 32 | tr -d '[:space:]' > /tmp/ak-token.txt
+deploy/scripts/seal-secret.sh AUTHENTIK_BOOTSTRAP_TOKEN \
+  --in /tmp/ak-token.txt \
+  --scope fuzefront/fuzefront-secrets \
+  --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+rm -f /tmp/ak-token.txt
+git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
+```
+
+> **Why this matters (incident FuzeInfra#103 / FuzeFront#104):** the embedded authentik
+> outpost authenticates to the API with this token. If the sealed value carries a
+> trailing newline/whitespace, authentik stores it on the Token object and the outpost
+> emits it in the `Authorization` header — Go's HTTP client then rejects it with
+> `net/http: invalid header field value for "Authorization"` and loops
+> "Failed to fetch outpost configuration, retrying in 3 seconds" forever. **Never**
+> seal a token with `echo "$TOK" | kubeseal` (echo appends `\n`); always go through
+> `seal-secret.sh` (or `printf '%s'` + `tr -d '[:space:]'`). After resealing, authentik
+> must be **redeployed** so the bootstrap blueprint rewrites the Token object with the
+> clean value. This is GitOps prod — Argo syncs on push; do not hand-apply.
+
 Then tell the agent **"sealed"** — it applies `deploy/contabo/sealed/` to the cluster via
 FuzeInfra's `argocd-register.yml` (which holds the kubeconfig), the controller decrypts
 them, Argo retries the `fuzefront` app (pre-sync hook passes, pods pull), the Ingress is

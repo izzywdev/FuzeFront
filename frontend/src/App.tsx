@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { useCurrentUser, useAppContext, MenuItem } from './lib/shared'
 import { installBridge, bridge } from './platform/bridge'
+import { AppRegistryProvider } from './platform/appRegistry'
+import StandaloneAppSurface from './components/StandaloneAppSurface'
+import ApplicationsPage from './pages/ApplicationsPage'
+import AddApplicationPage from './pages/AddApplicationPage'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -169,7 +173,11 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthWrapper>
-      <AppContent />
+      {/* Bind the app-registry client (same-origin /api/v1/app-registry) once,
+          above all routes that read or mutate the registry. */}
+      <AppRegistryProvider>
+        <AppContent />
+      </AppRegistryProvider>
     </AuthWrapper>
   )
 }
@@ -194,16 +202,33 @@ function AppContent() {
   }
 
   console.log('User authenticated, showing main app')
+
+  // Standalone apps (mode = "standalone") render WITHOUT any portal chrome —
+  // no side menu, no topbar — on their own surface (frame 04). Short-circuit
+  // before the portal Layout so the standalone canvas is edge-to-edge.
+  if (currentPath.startsWith('/standalone/')) {
+    const slug = decodeURIComponent(currentPath.replace('/standalone/', '').split('/')[0])
+    return (
+      <WorkspaceProvisioningGate>
+        <StandaloneAppSurface slug={slug} />
+      </WorkspaceProvisioningGate>
+    )
+  }
+
   return (
     <WorkspaceProvisioningGate>
       <Layout>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
+          <Route path="/applications/new" element={<AddApplicationPage />} />
           <Route path="/organizations" element={<OrganizationPage />} />
           <Route path="/organizations/new" element={<CreateOrganizationPage />} />
           <Route path="/profile" element={<UserProfileManagement />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/billing/invoices" element={<BillingPage />} />
+          <Route path="/billing/payments" element={<BillingPage />} />
           <Route path="/app/:appId" element={<AppRoute />} />
           <Route path="/admin" element={<AdminRoute />} />
           <Route path="/help" element={<HelpPage />} />
@@ -216,9 +241,9 @@ function AppContent() {
   )
 }
 
-// Component for loading federated apps
+// Portal-mode federated app mount (/app/:appId), keyed by the manifest slug.
 function AppRoute() {
-  const appId = window.location.pathname.split('/app/')[1]
+  const { appId } = useParams<{ appId: string }>()
 
   if (!appId) {
     return <Navigate to="/dashboard" replace />

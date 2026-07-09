@@ -11,6 +11,8 @@ import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
+import appRegistryRoutes from './routes/appRegistry'
+import appRegistryProxyRoutes from './routes/app-registry'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -273,6 +275,17 @@ app.use('/api/organizations', organizationsRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
 // internal token). Webhook subroute is mounted separately above (raw body).
 app.use('/api/v1/billing', billingRoutes)
+// App-registry: CI/local uses a direct DB adapter (routes/appRegistry); prod uses a
+// proxy to the applications-service (routes/app-registry). Mount adapter first so CI
+// env (no applications-service) is served from the local DB, then the proxy handles
+// any requests the adapter passes through via next().
+app.use('/api/v1/app-registry', appRegistryRoutes)
+// App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
+// ingress `/api` catch-all + frontend nginx both route the manifest-shaped
+// `/api/v1/app-registry/*` here, so without this the registry client 404s and no
+// federated app (e.g. the built-in Clock) can mount. Forwards the platform JWT
+// verbatim; the applications-service does its own authn/authz.
+app.use('/api/v1/app-registry', appRegistryProxyRoutes)
 // Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
 app.use('/internal', internalRoutes)
 

@@ -31,6 +31,7 @@ describe('WorkspaceProvisioningGate', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.useRealTimers()
+    sessionStorage.clear()
   })
 
   it('renders children immediately when a personal org is present', async () => {

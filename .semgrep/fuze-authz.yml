@@ -1,0 +1,43 @@
+# Fuze appsec/authz seed rules for gate-authz. High-signal BOLA/IDOR heuristics;
+# appsec-reviewer adjudicates, security ratchets to ERROR/required per repo once tuned.
+# The gate-authz job also runs registry packs (p/owasp-top-ten, p/secrets).
+rules:
+  - id: fuze-bola-object-by-id-no-ownership
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Resource loaded by client-supplied id. Confirm an ownership/permission check (permit.check / requireOwnership) gates this BEFORE it is returned or mutated (BOLA/IDOR - governance/architecture-guidelines.md section 2)."
+    pattern-either:
+      - pattern: "$M.findById(req.params.$X)"
+      - pattern: "$M.findByPk(req.params.$X)"
+      - pattern: "$M.findOne({ _id: req.params.$X })"
+      - pattern: "$M.findOne({ id: req.params.$X })"
+
+  - id: fuze-mass-assignment-req-body
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Update/create from the raw request body (mass-assignment / BOPLA risk). Set only an explicit allow-list of permitted fields, never req.body wholesale (governance/architecture-guidelines.md section 2)."
+    pattern-either:
+      - pattern: "$M.update(req.body)"
+      - pattern: "$M.findByIdAndUpdate($I, req.body)"
+      - pattern: "Object.assign($OBJ, req.body)"
+
+  - id: fuze-auth-self-minted-user-token
+    languages: [javascript, typescript, python]
+    severity: WARNING
+    message: "Minting an auth/session token locally? AuthN is provided by FuzeFront (Authentik OIDC SSO) — products VERIFY FuzeFront-issued tokens, they do not issue their own user tokens. If this signs a user/session JWT, replace it with FuzeFront token verification (@fuzefront/auth). Service-to-service tokens are exempt. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
+    pattern-either:
+      - pattern: "jwt.sign(...)"
+      - pattern: "jsonwebtoken.sign(...)"
+      - pattern: "new SignJWT(...)"
+      - pattern: "jwt.encode(...)"
+
+  - id: fuze-auth-local-password-store
+    languages: [javascript, typescript, python]
+    severity: WARNING
+    message: "Local password authentication detected. AuthN is FuzeFront's (Authentik OIDC) — products do not store or verify user passwords. Remove local login/password handling and verify FuzeFront-issued identity tokens instead. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
+    pattern-either:
+      - pattern: "bcrypt.compare(...)"
+      - pattern: "bcrypt.hash(...)"
+      - pattern: "bcrypt.hashpw(...)"
+      - pattern: "bcrypt.checkpw(...)"
+      - pattern: "argon2.verify(...)"

@@ -1,0 +1,95 @@
+<!-- @dsCard group="Federated Apps" viewport="1180x720" name="(a) Application menu" subtitle="Portal shell with built-in Clock + newly-registered Market in the app menu & launcher" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Federated Apps — (a) Application menu</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .launcher {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-5); max-width: 760px;
+  }
+  .app-card {
+    position: relative; overflow: hidden;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6);
+    cursor: pointer; transition: transform var(--duration-base) var(--ease-standard);
+  }
+  .app-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .app-card .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0.9; }
+  .app-card .icon {
+    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+    font-size: var(--text-2xl); margin-bottom: var(--space-4);
+    background: linear-gradient(135deg, #15414f, var(--accent-2));
+  }
+  .app-card.builtin .icon { background: linear-gradient(135deg, #2f1f4f, var(--accent-color)); }
+  .app-card h3 { margin: 0 0 var(--space-1); font-size: var(--text-lg); }
+  .app-card p { margin: 0 0 var(--space-3); color: var(--text-tertiary); font-size: var(--text-sm); }
+  .app-card .meta { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body data-frame="01-app-menu">
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark">Fuze<span class="fuse">Front</span></div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher">▦</div>
+    <div class="avatar">IZ</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Apps</div>
+      <a class="nav-item active" data-app="clock"><span class="ico">🕐</span> Clock</a>
+      <a class="nav-item" data-app="market"><span class="ico">🛒</span> Market</a>
+      <div class="section-label">Portal</div>
+      <a class="nav-item"><span class="ico">🏢</span> Organizations</a>
+      <a class="nav-item"><span class="ico">💳</span> Billing</a>
+      <a class="nav-item"><span class="ico">👤</span> Profile</a>
+      <a class="nav-item"><span class="ico">🛡️</span> Admin</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Applications</h1>
+      <p class="page-sub">Federated apps registered to your workspace. The <b>menu label</b> and <b>icon</b> come from each app's manifest.</p>
+      <div class="launcher">
+        <div class="app-card builtin" data-app="clock">
+          <div class="seam"></div>
+          <div class="icon">🕐</div>
+          <h3>Clock</h3>
+          <p>Built-in world clock — the reference federated app.</p>
+          <div class="meta">
+            <span class="badge builtin">built-in</span>
+            <span class="badge mf">module-federation</span>
+            <span class="badge activated"><span class="dot healthy"></span> activated</span>
+          </div>
+        </div>
+        <div class="app-card" data-app="market">
+          <div class="seam"></div>
+          <div class="icon">🛒</div>
+          <h3>Market</h3>
+          <p>Newly-registered marketplace app, just activated.</p>
+          <div class="meta">
+            <span class="badge mf">module-federation</span>
+            <span class="badge activated"><span class="dot healthy"></span> activated</span>
+          </div>
+        </div>
+        <a class="app-card" href="02-register-activate.html" style="display:grid;place-items:center;text-align:center;border-style:dashed;">
+          <div>
+            <div class="icon" style="background:var(--bg-quaternary);margin:0 auto var(--space-3);">＋</div>
+            <h3 style="text-align:center;">Add application</h3>
+            <p style="text-align:center;">Register a federated or standalone app.</p>
+          </div>
+        </a>
+      </div>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav">
+  <span class="caption">Frame <b>(a)</b> of 4 · Application menu — built-in <b>Clock</b> + registered <b>Market</b></span>
+  <span>
+    <a href="index.html" class="btn btn-ghost">Index</a>
+    <a href="02-register-activate.html" class="btn btn-primary">Next: Register →</a>
+  </span>
+</nav>
+</body>
+</html>

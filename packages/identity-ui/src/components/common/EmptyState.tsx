@@ -5,6 +5,7 @@ export type EmptyStateVariant =
   | 'empty-members'
   | 'no-pending'
   | 'no-tokens'
+  | 'empty-permissions'
   | 'error'
   | 'loading'
   | 'no-orgs'

@@ -20,6 +20,14 @@ securityService:
 applicationsService:
   enabled: true
 
+# Clock-app built-in MF remote, served same-origin at
+# https://fuzefront.dev.local/apps/clock/remoteEntry.js. Build + load the image
+# into kind first:
+#   docker build -t fuzefront/clock-app:local clock-app
+#   kind load docker-image fuzefront/clock-app:local --name fuzeinfra
+clockApp:
+  enabled: true
+
 # Billing-service (Stripe). Enabled locally but runs in DEGRADED mode (/health
 # only) until you supply Stripe TEST-mode keys + a webhook secret — e.g. a
 # gitignored values-local.secret.yaml or:

@@ -5,8 +5,11 @@ import type {
   CreatedApiToken,
   IdentityApiClient,
   Invitation,
+  ListMembersOptions,
   Member,
+  MembersPage,
   OrgRole,
+  RolesCatalog,
 } from '../types'
 
 /** Backend bulk-invite per-email result row. */
@@ -28,8 +31,21 @@ export function createIdentityClient(opts: HttpClientOptions = {}): IdentityApiC
   const org = (id: string) => `/api/organizations/${encodeURIComponent(id)}`
 
   return {
-    listMembers(orgId: string): Promise<Member[]> {
-      return http.get<Member[]>(`${org(orgId)}/members`)
+    async listMembers(orgId: string, opts: ListMembersOptions = {}): Promise<MembersPage> {
+      const params = new URLSearchParams()
+      if (opts.page != null) params.set('page', String(opts.page))
+      if (opts.pageSize != null) params.set('pageSize', String(opts.pageSize))
+      if (opts.search) params.set('search', opts.search)
+      const qs = params.toString()
+      const res = await http.get<MembersPage | Member[]>(`${org(orgId)}/members${qs ? `?${qs}` : ''}`)
+      // Tolerate a legacy bare-array response (pre-pagination backends).
+      if (Array.isArray(res)) {
+        return { members: res, pagination: { page: 1, pageSize: res.length, total: res.length } }
+      }
+      return res
+    },
+    listRoles(orgId: string): Promise<RolesCatalog> {
+      return http.get<RolesCatalog>(`${org(orgId)}/roles`)
     },
     async updateMemberRole(orgId: string, memberId: string, role: OrgRole): Promise<void> {
       await http.put(`${org(orgId)}/members/${encodeURIComponent(memberId)}`, { role })

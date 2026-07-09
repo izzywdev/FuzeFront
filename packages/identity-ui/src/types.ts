@@ -37,8 +37,56 @@ export interface CreatedApiToken extends ApiTokenSummary {
   token: string
 } // one-time raw token
 
+/** A single resource action, e.g. `{ key: 'manage', name: 'Manage' }`. */
+export interface ResourceActionDef {
+  key: string
+  name: string
+}
+
+/** A permission resource and its available actions (from the Permit schema). */
+export interface ResourceDef {
+  key: string
+  name: string
+  actions: ResourceActionDef[]
+}
+
+/** An organization role and the permissions it grants. */
+export interface OrgRoleDefinition {
+  key: string
+  name: string
+  /** Whether this role can be assigned to a member (owner is never assignable). */
+  assignable: boolean
+  /** Effective permission strings, each `"<ResourceKey>:<action>"`. */
+  permissions: string[]
+}
+
+/** Read-only role + resource catalog for an organization. */
+export interface RolesCatalog {
+  roles: OrgRoleDefinition[]
+  resources: ResourceDef[]
+}
+
+export interface PaginationMeta {
+  page: number
+  pageSize: number
+  total: number
+}
+
+/** Paginated members envelope returned by the members list endpoint. */
+export interface MembersPage {
+  members: Member[]
+  pagination: PaginationMeta
+}
+
+export interface ListMembersOptions {
+  page?: number
+  pageSize?: number
+  search?: string
+}
+
 export interface IdentityApiClient {
-  listMembers(orgId: string): Promise<Member[]>
+  listMembers(orgId: string, opts?: ListMembersOptions): Promise<MembersPage>
+  listRoles(orgId: string): Promise<RolesCatalog>
   updateMemberRole(orgId: string, memberId: string, role: OrgRole): Promise<void>
   removeMember(orgId: string, memberId: string): Promise<void>
   listInvitations(orgId: string, status?: 'pending' | 'all'): Promise<Invitation[]>

@@ -12,10 +12,13 @@ HTTP API + services + business logic + DB schema/migrations + event producers/co
 
 **Pagination is mandatory on every unbounded collection endpoint** (baseline §4.1 / `governance/pagination-standard.md`, enforced by `gate-pagination`). Any LIST/collection GET you implement MUST: accept `limit` (apply the contract's default + **enforce the max server-side**, clamping over-max requests) and `cursor` (preferred — opaque, server-issued, encoding sort-key + tiebreaker) or `offset`; return the envelope `{ items, page: { nextCursor|null, hasMore, total? } }`; and walk the full set deterministically (no gaps/dupes under concurrent writes). **Your unit tests assert** the limit clamp, the envelope shape, and that the cursor pages through correctly. An endpoint is exempt only if inherently bounded/singleton and so annotated in the contract (`x-pagination: exempt`).
 
+**Plan with feature flags (`feature-flags` skill).** Wrap **new or risky** server logic in a flag, **default OFF** (a release flag) — merge dark, release deliberately, and keep a kill-switch (**default ON**) on expensive/risky paths. Read flags via the `@fuzefront/feature-flags` client (OpenFeature API), passing the standard evaluation context (environment + org/tenant + user + app); never hand-wire Unleash/OpenFeature. **Test BOTH states** (off-path and on-path) in your unit/integration tests. A **permission** flag is rollout convenience only — it never replaces a `permit.check` (real authz stays in Permit). Record each flag's owner + removal criterion and **retire stale flags** in a cleanup PR. To create or change a flag's type/targeting/lifecycle, that's `feature-flags-engineer` — you consume the flag and wrap your code; you don't administer the flag platform.
+
 ## NOT your scope — never implement these (name them for the orchestrator)
 - **UI / frontend** (incl. any change to `design-system/` — `frontend-engineer` is its sole owner) → that's the `frontend-engineer`.
 - The **independent acceptance/contract test suite** → that's the `test-engineer` (API/contract) or `frontend-test-engineer` (UI e2e). You write your own unit tests, but you do NOT grade your own feature.
 - **Helm / Argo / CI/CD / infra** → `devops-engineer`.
+- **Feature-flag administration** (creating/naming/typing flags, Unleash config, flag taxonomy/lifecycle, the `@fuzefront/feature-flags` client *conventions*) → `feature-flags-engineer`. You *consume* flags and wrap your logic; building the client *package* itself is yours, but the flag platform/conventions are not.
 - **Consumer docs / runbooks** → `docs-maintainer`.
 
 ## How

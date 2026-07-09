@@ -15,6 +15,7 @@
     { "src": ".claude/agents/backend-engineer.md",         "dest": ".claude/agents/backend-engineer.md",         "mode": "copy" },
     { "src": ".claude/agents/database-engineer.md",        "dest": ".claude/agents/database-engineer.md",        "mode": "copy" },
     { "src": ".claude/agents/frontend-engineer.md",        "dest": ".claude/agents/frontend-engineer.md",        "mode": "copy" },
+    { "src": ".claude/agents/mobile-frontend-engineer.md", "dest": ".claude/agents/mobile-frontend-engineer.md", "mode": "copy" },
     { "src": ".claude/agents/frontend-test-engineer.md",   "dest": ".claude/agents/frontend-test-engineer.md",   "mode": "copy" },
     { "src": ".claude/agents/test-engineer.md",            "dest": ".claude/agents/test-engineer.md",            "mode": "copy" },
     { "src": ".claude/agents/devops-engineer.md",          "dest": ".claude/agents/devops-engineer.md",          "mode": "copy" },

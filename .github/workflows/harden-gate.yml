@@ -14,6 +14,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  pull-requests: read
 
 concurrency:
   group: harden-gate-${{ github.ref }}
@@ -89,6 +90,7 @@ jobs:
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
       - uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -100,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -109,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (report-only, SARIF)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -118,59 +120,209 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
       - uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
           sarif_file: trivy.sarif
           category: trivy
 
-  gate-pagination:
-    # Pagination standard (FuzeSDLC baseline §4.1 / governance/pagination-standard.md). Inspects
-    # OpenAPI/Swagger contracts and FAILS unbounded collection GETs lacking limit + cursor|offset +
-    # the {items,page} envelope, unless `x-pagination: exempt` or allowlisted. Report-only first pass.
+  gate-authz:
+    # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
+    # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - name: Pagination gate
+        with: { fetch-depth: 0 }
+      - name: Semgrep authz/appsec scan (report-only, SARIF)
         shell: bash
         run: |
-          pip install -q pyyaml
-          SCRIPT=""
-          for c in scripts/gate_pagination.py .fuze/gate_pagination.py .github/scripts/gate_pagination.py; do
-            [ -f "$c" ] && SCRIPT="$c" && break
-          done
-          if [ -z "$SCRIPT" ]; then
-            echo "::warning title=gate-pagination::no gate_pagination.py found in repo — skipping"; exit 0
+          pip install -q semgrep
+          CFG=""
+          [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
+          semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
+          test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: authz.sarif
+          category: authz
+
+  gate-localup:
+    # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
+    # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
+    # to enforcing per-repo (see local-environment.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Consumer-test bounded up + smoke
+        shell: bash
+        run: |
+          CT=$(git ls-files '**/docker-compose.consumer-test.yml' 'docker-compose.consumer-test.yml' 2>/dev/null | head -1)
+          if [ -z "$CT" ]; then
+            echo "::warning title=local-up::No bounded local-up (FuzeInfra consumer-test) wired yet — tracked by local-env-verifier"; exit 0
           fi
-          python "$SCRIPT" . || true   # report-only first pass; remove "|| true" to enforce
+          dir=$(dirname "$CT"); env=""; [ -f "$dir/versions.env" ] && env="--env-file $dir/versions.env"
+          echo "::group::consumer-test up"
+          docker compose $env -f "$CT" up -d --wait || { echo "consumer-test infra failed to come up"; docker compose -f "$CT" logs | tail -50; exit 1; }
+          echo "::endgroup::"
+          docker compose -f "$CT" down -v || true
+          echo "bounded local-up smoke OK"
+      - name: Validate Helm chart (helm lint, if present)
+        shell: bash
+        run: |
+          chart=$(git ls-files '**/Chart.yaml' 'Chart.yaml' 2>/dev/null | head -1)
+          if [ -z "$chart" ]; then echo "no Helm chart — skipping chart validation"; exit 0; fi
+          cdir=$(dirname "$chart")
+          curl -sSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp >/dev/null 2>&1 && sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm || true
+          helm lint "$cdir" || echo "::warning title=helm-lint::chart findings (report)"
+
+  gate-version:
+    # SemVer discipline (governance/versioning.md): a changed npm package or API contract
+    # must bump its version. Report-only first pass; ratchet to enforcing per repo.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: SemVer bump check (packages + API contracts, report-only)
+        shell: bash
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set +e
+          git fetch origin "$BASE" --depth=1 >/dev/null 2>&1
+          base="origin/$BASE"
+          SEMVER='^[0-9]+\.[0-9]+\.[0-9]+([-+.0-9A-Za-z]*)?$'
+          findings=0
+          # --- npm packages: source changed => version must change ---
+          for pj in $(git ls-files '**/package.json' 'package.json'); do
+            d=$(dirname "$pj"); case "$d" in *node_modules*) continue;; esac
+            git diff --name-only "$base"...HEAD -- "$d" | grep -v 'package-lock.json' | grep -q . || continue
+            new=$(jq -r '.version // empty' "$pj" 2>/dev/null); [ -z "$new" ] && continue
+            name=$(jq -r '.name // "(unnamed)"' "$pj" 2>/dev/null)
+            old=$(git show "$base:$pj" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)
+            if ! echo "$new" | grep -Eq "$SEMVER"; then
+              echo "::warning title=gate-version::$name version '$new' is not valid SemVer"; findings=1
+            elif [ -n "$old" ] && [ "$old" = "$new" ]; then
+              echo "::warning title=gate-version::package '$name' ($d) changed but version not bumped (still $old) — bump per SemVer (governance/versioning.md)"; findings=1
+            fi
+          done
+          # --- API contracts (OpenAPI/Swagger): spec changed => the info `version:` must change ---
+          # (heredoc-free: match the indented version: under info, not the top-level openapi:/swagger:)
+          verline() { grep -aE '(^[[:space:]]+version:)|("version"[[:space:]]*:)' 2>/dev/null | head -1 | tr -d " \"',"; }
+          for spec in $(git ls-files '**/openapi*.y*ml' '**/openapi*.json' '**/swagger*.y*ml' 'contracts/**/*.y*ml' 'contracts/**/*.json' 2>/dev/null); do
+            git diff --name-only "$base"...HEAD -- "$spec" | grep -q . || continue
+            newv=$(verline < "$spec")
+            oldv=$(git show "$base:$spec" 2>/dev/null | verline)
+            if [ -n "$oldv" ] && [ "$oldv" = "$newv" ]; then
+              echo "::warning title=gate-version::API contract '$spec' changed but info version not bumped (still $oldv) — bump per SemVer; breaking changes require a MAJOR bump (governance/versioning.md)"; findings=1
+            fi
+          done
+          [ "$findings" = "0" ] && echo "gate-version: OK (no unbumped package/contract changes)" || echo "gate-version: findings above (report-only — will gate once ratcheted)"
+          exit 0
 
   gate-ds-conformance:
-    # Design-system conformance (FuzeSDLC baseline §6). HARD-FAILS raw design values in feature code
-    # (hex/rgb/hsl/px/font outside tokens, excludes the DS package). SEPARATELY, on push to the
-    # default branch, opens one idempotent `ds-extraction` GitHub issue per recurring UI pattern that
-    # should become a DS primitive. Report-only first pass.
+    # Design-system conformance (CLAUDE.baseline.md §6). ENFORCING via a CHANGED-LINES ratchet:
+    # on a pull_request it scans ONLY the lines this PR added/modified and FAILS on any raw
+    # design value (hex/rgb/hsl/px-spacing/font-family) — blocking NEW mess without failing on
+    # the ~178 pre-existing findings and needing no baseline file. On push to the default branch
+    # it runs a full scan report-only + opens idempotent ds-extraction issues (advisory).
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            GATE_BASE_REF="origin/${{ github.base_ref }}" python scripts/gate_ds_conformance.py . --changed-only
+          else
+            python scripts/gate_ds_conformance.py . --emit-issues || true
+          fi
+
+  gate-code-review:
+    # Automated code review via Claude. REPORT-ONLY: posts inline PR review
+    # comments for correctness bugs found in the diff; never blocks merge. Only runs on PRs.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with: { node-version: '20' }
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run automated code review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          git fetch origin "$BASE_REF" --depth=1
+          DIFF=$(git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' | head -c 80000)
+          if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
+          PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
+          claude --print --output-format text "$PROMPT" > /tmp/review.txt 2>/tmp/review-err.txt || true
+          cat /tmp/review.txt
+          # Post comment only when claude succeeded and returned real findings (not just "(none)")
+          if [ -s /tmp/review.txt ] && ! grep -q '(none)' /tmp/review.txt && ! grep -q 'error' /tmp/review-err.txt; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$(printf '## Automated code review (gate-code-review)\n\n%s\n\n*Report-only — this check never blocks merge.*' "$(cat /tmp/review.txt)")" || true
+          fi
+          exit 0
+
+  gate-pagination:
+    # Pagination standard (CLAUDE.baseline.md §4.1). Report-only first pass; ratchet to enforcing
+    # per repo once the billing-service contract annotates/allowlists its collection GETs.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: DS conformance gate (+ extraction issues on push to default branch)
+      - name: Pagination gate (report-only)
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          SCRIPT=""
-          for c in scripts/gate_ds_conformance.py .fuze/gate_ds_conformance.py .github/scripts/gate_ds_conformance.py; do
-            [ -f "$c" ] && SCRIPT="$c" && break
-          done
-          if [ -z "$SCRIPT" ]; then
-            echo "::warning title=gate-ds-conformance::no gate_ds_conformance.py found in repo — skipping"; exit 0
-          fi
-          EMIT=""
-          if [ "${{ github.event_name }}" = "push" ]; then EMIT="--emit-issues"; fi
-          python "$SCRIPT" . $EMIT || true   # report-only first pass; remove "|| true" to enforce
+          pip install -q pyyaml
+          python scripts/gate_pagination.py . || true
+
+  gate-frontend-build:
+    # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
+    # report-only and only builds the root package.json — it never fails the actual frontend build,
+    # which let an unbalanced-brace in frontend/src/index.css break the prod build for 3 releases
+    # (hotfixed in 4428db9). NO `|| true` / `exit 0` here: vite/postcss/tsc errors fail the build.
+    # Mirrors the ci.yml build job order (root npm ci -> frontend npm ci -> chat-client+chat-ui
+    # dist -> vite build). GITHUB_TOKEN satisfies frontend/.npmrc (@fuzefront/* from GH Packages).
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install root workspaces
+        run: npm ci
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+      - name: Build chat-client + chat-ui (frontend bundles their dist)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+      - name: Build frontend (vite build — MUST pass)
+        run: cd frontend && npm run build

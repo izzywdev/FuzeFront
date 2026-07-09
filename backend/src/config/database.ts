@@ -116,9 +116,15 @@ const getDatabaseConfig = (): Knex.Config => {
 // Create database instance
 export let db: Knex
 
-// Initialize database connection
+// Initialize database connection.
+// Idempotent: if a Knex instance already exists this is a no-op so that
+// multiple calls (e.g. from test files that each invoke initializeDatabase())
+// share a single pool rather than abandoning the previous one (an abandoned
+// pool holds open connections that prevent jest from exiting cleanly).
 export function initializeDatabaseConnection(): void {
-  db = knex(getDatabaseConfig())
+  if (!db) {
+    db = knex(getDatabaseConfig())
+  }
 }
 
 // Wait for PostgreSQL to be available
@@ -315,10 +321,41 @@ export async function checkDatabaseHealth(): Promise<boolean> {
 }
 
 export async function closeDatabase(): Promise<void> {
+  if (!db) return
+
   try {
+    // tarn.js pool.destroy() waits indefinitely for borrowed connections to be
+    // returned. In tests, fire-and-forget provisioning calls (from
+    // selfHealProvisioningOnLogin) may still hold borrowed connections when
+    // afterAll runs.  We force-end each borrowed pg client so tarn can
+    // immediately release them and pool.destroy() resolves.
+    const pool: any = (db as any)?.client?.pool
+    if (pool) {
+      // pool.used is an Array<{resource, promise}> in tarn.js.
+      // The resource IS the raw pg connection (decorated with __knexUid).
+      const used: any[] = Array.isArray(pool.used) ? pool.used : []
+      if (used.length > 0) {
+        console.log(`⚡ Force-ending ${used.length} borrowed DB connection(s)...`)
+        await Promise.allSettled(
+          used.map((slot: any) => {
+            try {
+              // Try common shapes: slot.resource (tarn Used<T>), or slot itself
+              const conn = slot?.resource ?? slot
+              if (conn && typeof conn.end === 'function') {
+                return conn.end()
+              }
+            } catch {
+              // best-effort
+            }
+            return Promise.resolve()
+          })
+        )
+      }
+    }
+
     await db.destroy()
     console.log('✅ Database connection closed')
   } catch (error) {
     console.error('❌ Error closing database:', error)
   }
-} 
+}

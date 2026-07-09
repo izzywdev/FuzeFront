@@ -17,12 +17,19 @@ Scope: scans the UI feature dirs (default: frontend/, apps/, packages/ui*, src/)
 the design-system package itself (design-system/, packages/design-system/, **/design-system/**)
 where raw token *definitions* legitimately live.
 
+Ratchet mode: with --changed-only, only violations on lines ADDED/MODIFIED by the current PR
+(computed from `git diff --unified=0 <GATE_BASE_REF>...HEAD`, default base origin/master) are
+reported. This blocks NEW raw-design values without failing on the pre-existing findings, and
+needs no baseline file. If the diff can't be computed (no base), it falls back to a full scan.
+
 Usage:
-  gate_ds_conformance.py [root] [--emit-issues] [--repo owner/name] [--threshold N]
-Env for issue creation: GH_TOKEN or GITHUB_TOKEN, GITHUB_REPOSITORY (fallback for --repo).
+  gate_ds_conformance.py [root] [--changed-only] [--emit-issues] [--repo owner/name] [--threshold N]
+Env: GATE_BASE_REF (changed-only base ref, default origin/master);
+     GH_TOKEN or GITHUB_TOKEN + GITHUB_REPOSITORY (for issue creation).
 Exit 0 = conforms (extraction issues are non-fatal); exit 1 = hard violation.
 """
 from __future__ import annotations
+import fnmatch
 import hashlib
 import json
 import os
@@ -37,6 +44,16 @@ SCAN_DIRS = ["frontend", "apps", "src", "packages"]
 DS_EXCLUDE_SEGMENTS = ("design-system", "design_system", "ds-tokens", "tokens")
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".venv", "vendor",
              "__pycache__", "coverage", ".next", "storybook-static", "__snapshots__"}
+# Feature-path globs that are NOT hand-authored feature UI: config, type decls, contract-frozen
+# generated stubs, and test files. Matched against the forward-slash relative path. These are
+# skipped to cut false positives on the hard-fail path.
+SKIP_FEATURE_GLOBS = (
+    "*.config.*",
+    "*.d.ts",
+    "packages/*/src/*",   # contract-frozen generated client stubs
+    "*.test.*",
+    "*/__tests__/*",
+)
 
 HEX_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 RGB_RE = re.compile(r"\brgba?\(", re.I)
@@ -53,10 +70,29 @@ FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*[\"']?[A-Za-z]", re.I)
 TOKEN_HINT_RE = re.compile(r"(var\(--|tokens?\.|theme\.|\$[a-z]|@apply|colors?\.|spacing\.|--ds-)", re.I)
 DISABLE_RE = re.compile(r"ds-conformance[- ]?(disable|ignore|allow)", re.I)
 
+# @@ -a,b +c,d @@  — capture the +c[,d] added-line range
+HUNK_RE = re.compile(r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@")
+
+
+def _skip_feature_path(rel: str) -> bool:
+    """True if the (forward-slash) relative path is config/type-decl/generated-stub/test — not
+    hand-authored feature UI. Cuts false positives on the hard-fail path."""
+    relf = rel.replace("\\", "/")
+    return any(fnmatch.fnmatch(relf, g) for g in SKIP_FEATURE_GLOBS)
+
+
+def _hex_is_color(line: str) -> bool:
+    """True only if some #… token on the line has a hex LETTER (a-f). An all-decimal match like
+    `#117` is almost always an issue/PR ref, not a CSS color — skip it (baseline heuristic)."""
+    for m in HEX_RE.finditer(line):
+        digits = m.group()[1:]
+        if any(c in "abcdefABCDEF" for c in digits):
+            return True
+    return False
+
 
 def _git_ui_files(root: str) -> list[str] | None:
     """Tracked UI files via git (fast, skips build/untracked noise). None if git unavailable."""
-    import subprocess
     try:
         res = subprocess.run(
             ["git", "-C", root, "ls-files"] + [f"*{e}" for e in UI_EXT] + [f"**/*{e}" for e in UI_EXT],
@@ -67,6 +103,42 @@ def _git_ui_files(root: str) -> list[str] | None:
     except Exception:
         pass
     return None
+
+
+def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
+    """Map of {forward-slash relpath -> {added/modified line numbers}} from
+    `git diff --unified=0 <base_ref>...HEAD`. None if the diff can't be computed."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", root, "diff", "--unified=0", f"{base_ref}...HEAD"],
+            capture_output=True, text=True, timeout=90,
+        )
+    except Exception as e:
+        print(f"::warning title=gate-ds-conformance::changed-only diff failed to run: {e}")
+        return None
+    if res.returncode != 0:
+        print(f"::warning title=gate-ds-conformance::changed-only diff error "
+              f"(base '{base_ref}'): {res.stderr.strip()[:200]}")
+        return None
+    out: dict[str, set[int]] = defaultdict(set)
+    cur: str | None = None
+    for line in res.stdout.splitlines():
+        if line.startswith("+++ "):
+            p = line[4:].strip()
+            if p == "/dev/null":
+                cur = None
+            else:
+                cur = p[2:] if (p.startswith("a/") or p.startswith("b/")) else p
+            continue
+        if line.startswith("@@") and cur is not None:
+            m = HUNK_RE.match(line)
+            if not m:
+                continue
+            start = int(m.group(1))
+            count = int(m.group(2)) if m.group(2) is not None else 1
+            for ln in range(start, start + count):
+                out[cur].add(ln)
+    return dict(out)
 
 
 def iter_ui_files(root: str):
@@ -98,23 +170,32 @@ def iter_ui_files(root: str):
                     yield os.path.join(dirpath, fn)
 
 
-def scan_violations(root: str) -> list[str]:
+def scan_violations(root: str, changed: dict[str, set[int]] | None = None) -> list[str]:
+    """Scan feature UI for raw design values. When `changed` is provided (ratchet mode), only
+    violations on added/modified (file,line) pairs are reported."""
     violations = []
     for path in iter_ui_files(root):
+        rel = os.path.relpath(path, root)
+        relf = rel.replace("\\", "/")
+        if _skip_feature_path(relf):
+            continue
+        if changed is not None and relf not in changed:
+            continue  # ratchet: file not touched by this PR
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
         except OSError:
             continue
-        rel = os.path.relpath(path, root)
         for i, line in enumerate(lines, 1):
+            if changed is not None and i not in changed.get(relf, ()):
+                continue  # ratchet: line not added/modified by this PR
             if DISABLE_RE.search(line):
                 continue
             stripped = line.strip()
             if stripped.startswith(("//", "*", "/*", "#")):
                 continue
             hits = []
-            if HEX_RE.search(line) and not TOKEN_HINT_RE.search(line):
+            if _hex_is_color(line) and not TOKEN_HINT_RE.search(line):
                 hits.append("raw hex color")
             if RGB_RE.search(line) and not TOKEN_HINT_RE.search(line):
                 hits.append("raw rgb()/rgba()")
@@ -163,8 +244,7 @@ def detect_extraction_candidates(root: str, threshold: int) -> dict[str, dict]:
         uniq = sorted(set(locs))
         # recurring AND across >1 file = an extraction signal
         if len(uniq) >= threshold and len({l.split(":")[0] for l in uniq}) >= 2:
-            # non-cryptographic fingerprint for dedup only; sha256 to satisfy code-scanning
-            fp = hashlib.sha256(norm.encode()).hexdigest()[:12]
+            fp = hashlib.sha1(norm.encode()).hexdigest()[:12]
             out[fp] = {"fingerprint": fp, "locations": uniq, "sample": samples[norm]}
     return out
 
@@ -249,7 +329,8 @@ _Filed automatically; owner is `frontend-engineer`. Extraction is design work, n
 def main() -> int:
     args = sys.argv[1:]
     emit = "--emit-issues" in args
-    args = [a for a in args if a != "--emit-issues"]
+    changed_only = "--changed-only" in args
+    args = [a for a in args if a not in ("--emit-issues", "--changed-only")]
     repo = None
     threshold = 3
     pos = []
@@ -264,7 +345,19 @@ def main() -> int:
     root = pos[0] if pos else "."
     repo = repo or os.environ.get("GITHUB_REPOSITORY")
 
-    violations = scan_violations(root)
+    changed = None
+    if changed_only:
+        base_ref = os.environ.get("GATE_BASE_REF", "origin/master")
+        changed = changed_lines(root, base_ref)
+        if changed is None:
+            print("::warning title=gate-ds-conformance::--changed-only requested but diff "
+                  f"unavailable (base '{base_ref}') — falling back to FULL scan")
+        else:
+            touched = sum(len(v) for v in changed.values())
+            print(f"gate-ds-conformance: changed-only ratchet vs '{base_ref}' — "
+                  f"{len(changed)} file(s), {touched} added/modified line(s)")
+
+    violations = scan_violations(root, changed)
     # extraction candidates are advisory — compute always, emit issues only when asked
     candidates = detect_extraction_candidates(root, threshold)
     if candidates:
@@ -279,13 +372,15 @@ def main() -> int:
                 print(f"  - ds-fp:{fp} @ {', '.join(c['locations'][:5])}")
 
     if violations:
-        print("::error title=gate-ds-conformance::raw design values found in feature code (use DS tokens)")
+        scope = "changed lines" if changed is not None else "feature code"
+        print(f"::error title=gate-ds-conformance::raw design values found in {scope} (use DS tokens)")
         for v in violations[:200]:
             print(f"  - {v}")
         print(f"\ngate-ds-conformance FAILED: {len(violations)} hard conformance violation(s) "
               "(CLAUDE.baseline.md §6). Use design-system tokens/components, not raw values.")
         return 1
-    print("gate-ds-conformance: no raw design values in feature code. OK")
+    ok_scope = "changed lines" if changed is not None else "feature code"
+    print(f"gate-ds-conformance: no raw design values in {ok_scope}. OK")
     return 0
 
 

@@ -115,3 +115,73 @@ runtime — no rebuild of the host.
 - **Auth/AuthZ:** Authentik + Permit PDP are intentionally out of this first cut.
 - Validate the chart before deploying: `helm lint deploy/helm/fuzefront` and
   `helm template fuzefront deploy/helm/fuzefront -f deploy/helm/fuzefront/values-local.yaml`.
+
+## Unleash (feature flags)
+
+Self-hosted **Unleash** (OSS feature-flag server) runs inside this umbrella chart,
+gated by `unleash.enabled` (default **false**). It is an **external upstream image**
+(`unleashorg/unleash-server`, pinned to `5.12.0`) — it is NOT built by `release.yml`
+and NOT in the CI build matrix, so its tag is bumped deliberately in a deploy window,
+never auto-bumped by CI. There is **no separate Argo Application**: like billing, the
+templates live in this umbrella chart and a second Argo app on the same chart path
+would double-claim the Deployment.
+
+When `unleash.enabled=true` the chart renders, in order:
+
+1. **`unleash-db-bootstrap` Job** (`pre-install,pre-upgrade`, hook-weight `-4`):
+   connects as the FuzeInfra Postgres **superuser** and idempotently creates a
+   least-privilege `unleash_svc` LOGIN role and a **dedicated `unleash` database that
+   `unleash_svc` OWNS**. Unleash self-migrates its own schema on boot as `unleash_svc`
+   (that is why the role must own the database). `CREATE DATABASE` is guarded with the
+   `SELECT … WHERE NOT EXISTS … \gexec` idiom (it can't run in a DO block / txn), and
+   the role password is round-tripped through a session GUC (psql `:var` doesn't
+   interpolate inside dollar-quoted blocks) — same pattern as billing.
+2. **`fuzefront-unleash` Deployment + Service** (`unleashorg/unleash-server`, port
+   `4242`, `/health` probes). The Service is **cluster-internal only**.
+
+### `unleash-secrets` (per-service SealedSecret)
+
+Unleash reads three keys from the `unleash-secrets` SealedSecret (placeholders in
+`deploy/contabo/sealed/unleash-secrets.yaml` — they will NOT decrypt; seal the real
+values before enabling):
+
+| Key | Used for |
+| --- | --- |
+| `UNLEASH_DB_PASSWORD` | password for the `unleash_svc` role (set by the bootstrap Job; used in `DATABASE_URL`) |
+| `INIT_ADMIN_API_TOKENS` | admin/bootstrap API token, format `*:*.<hex>` |
+| `UNLEASH_CLIENT_TOKEN` | client/SDK token (format `[project]:[env].<hex>`), fed to the server as `INIT_CLIENT_API_TOKENS` — this is the token the `@fuzefront/feature-flags` package authenticates with |
+
+Seal each (offline, credential-free — FuzeInfra holds the decrypt key):
+
+```
+deploy/scripts/seal-secret.sh UNLEASH_DB_PASSWORD   --scope fuzefront/unleash-secrets
+deploy/scripts/seal-secret.sh INIT_ADMIN_API_TOKENS --scope fuzefront/unleash-secrets
+deploy/scripts/seal-secret.sh UNLEASH_CLIENT_TOKEN  --scope fuzefront/unleash-secrets
+```
+
+### Client connection endpoint
+
+The `@fuzefront/feature-flags` package (owned by another agent) connects in-cluster to:
+
+```
+http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+```
+
+authenticated with the **`UNLEASH_CLIENT_TOKEN`** (the `INIT_CLIENT_API_TOKENS` value).
+
+### Admin UI access (NOT public)
+
+The Unleash admin UI is **not** exposed via the public app ingress. Two admin-gated
+options:
+
+- **(a) Port-forward (default, no infra needed):**
+  `kubectl port-forward svc/fuzefront-unleash 4242:4242`, then open
+  `http://localhost:4242` and log in with the `INIT_ADMIN_API_TOKENS` admin token.
+- **(b) Optional admin-gated host:** set `unleash.ingress.enabled=true` +
+  `unleash.ingress.host=<host>` to render an Ingress for the admin UI. This is **off
+  by default** and does **not** make Unleash public on its own: the host MUST sit under
+  the `*.prod.fuzefront.com` **Cloudflare-Access** zone (admin Zero-Trust). The CF
+  tunnel ingress rule (`<host> → traefik.kube-system:80`) and the proxied CNAME are
+  **FuzeInfra-owned (Terraform) — delegated to FuzeInfra** (see the values-prod ingress
+  comment / `izzywdev/FuzeInfra#43`). The Ingress here only host-matches once FuzeInfra
+  has wired that CF-Access host.

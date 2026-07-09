@@ -68,12 +68,16 @@ export function AppCard({
   description,
   integrationType = "other",
   iconUrl,
+  iconGlyph,
   isHealthy = true,
   onClick,
   style,
   ...rest
 }) {
   const type = TYPES[integrationType] || TYPES.other;
+  // A manifest may declare an emoji glyph (Icon.kind = "emoji"); it takes
+  // precedence over the per-integration-type fallback emoji.
+  const glyph = iconGlyph || type.emoji;
 
   const lift = (e) => {
     if (!isHealthy) return;
@@ -179,7 +183,7 @@ export function AppCard({
                 background: type.gradient,
               }}
             >
-              {type.emoji}
+              {glyph}
             </div>
           )}
           <HealthDot isHealthy={isHealthy} />

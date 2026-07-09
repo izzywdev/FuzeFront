@@ -190,9 +190,14 @@ services:
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin123}
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-bootstrap-token-change-me}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@fuzefront.local}
+      # Google OAuth2 source — leave empty to disable (source blueprint is inert when empty)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - authentik_media:/media
       - authentik_custom_templates:/templates
+      # Mount blueprints so Authentik auto-discovers and applies them on startup
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
     ports:
       - '${AUTHENTIK_PORT:-9000}:9000'
       - '${AUTHENTIK_SSL_PORT:-9443}:9443'
@@ -231,10 +236,15 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
       AUTHENTIK_LOG_LEVEL: info
       AUTHENTIK_ERROR_REPORTING__ENABLED: false
+      # Google OAuth2 source — leave empty to disable (source blueprint is inert when empty)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - authentik_media:/media
       - authentik_custom_templates:/templates
       - authentik_certs:/certs
+      # Mount blueprints so Authentik auto-discovers and applies them on startup
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
     networks:
       - FuzeInfra # Connect to shared infrastructure
       - fuzefront
