@@ -41,6 +41,8 @@ export async function checkPermission(
 export async function bulkCheckPermissions(
   checks: PermissionCheck[]
 ): Promise<boolean[]> {
+  if (checks.length === 0) return []
+
   try {
     const bulkChecks = checks.map(check => ({
       user: check.user,
@@ -50,13 +52,23 @@ export async function bulkCheckPermissions(
     }))
 
     const results = await permit.bulkCheck(bulkChecks)
-    console.log(`Bulk permission check completed for ${checks.length} checks`)
-    return results
+
+    // Permit SDK may return fewer results than inputs when the PDP is not fully
+    // ready (e.g. OPA returning 502). Fall back to individual checks so the
+    // caller always receives exactly one boolean per input.
+    if (results.length === checks.length) {
+      console.log(`Bulk permission check completed for ${checks.length} checks`)
+      return results
+    }
+
+    console.warn(
+      `Bulk check returned ${results.length}/${checks.length} results, falling back to individual checks`
+    )
   } catch (error) {
-    console.error('Error in bulk permission check:', error)
-    // Return all false for safety
-    return new Array(checks.length).fill(false)
+    console.error('Error in bulk permission check, falling back to individual checks:', error)
   }
+
+  return Promise.all(checks.map(check => checkPermission(check)))
 }
 
 /**
