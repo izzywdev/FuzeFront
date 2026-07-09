@@ -40,12 +40,5 @@ jobs:
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          settings: |
-            {
-              "mcpServers": {
-                "penpot": {
-                  "type": "sse",
-                  "url": "${{ secrets.PENPOT_MCP_URL }}"
-                }
-              }
-            }
+          show_full_output: true
+          settings: ${{ secrets.PENPOT_MCP_URL != '' && format('{{"mcpServers":{{"penpot":{{"type":"sse","url":"{0}"}}}}}}', secrets.PENPOT_MCP_URL) || '{}' }}
