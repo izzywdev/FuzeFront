@@ -53,6 +53,39 @@ function buildHeaders(token: string): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
+// Pagination helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches all items from a paginated Authentik list endpoint, following
+ * `data.next` links until exhausted, then returns the first item matching
+ * the predicate — or undefined if none is found.
+ *
+ * Server-side filter params are passed as hints (Authentik may ignore them),
+ * so client-side matching via `predicate` is the authoritative filter.
+ */
+async function findAcrossPages<T>(
+  url: string,
+  params: Record<string, string>,
+  headers: Record<string, string>,
+  predicate: (item: T) => boolean
+): Promise<T | undefined> {
+  let nextUrl: string | null = url
+  while (nextUrl) {
+    const res = await axios.get(nextUrl, {
+      headers,
+      params: nextUrl === url ? params : undefined,
+      timeout: AUTHENTIK_TIMEOUT_MS,
+    })
+    const items: T[] = res.data.results || []
+    const match = items.find(predicate)
+    if (match) return match
+    nextUrl = res.data.next || null
+  }
+  return undefined
+}
+
+// ---------------------------------------------------------------------------
 // Step helpers
 // ---------------------------------------------------------------------------
 
@@ -66,18 +99,16 @@ async function ensureScopeMapping(
 ): Promise<number> {
   const scopeName = 'fuzefront:apps'
 
-  // Check existence — filter client-side; scope_name is not a guaranteed server filter
-  const listRes = await axios.get(
+  // Check existence across all pages; scope_name param is a hint only
+  const found = await findAcrossPages<{ pk: number; scope_name: string }>(
     `${baseUrl}/api/v3/propertymappings/scope/`,
-    { headers, params: { scope_name: scopeName }, timeout: AUTHENTIK_TIMEOUT_MS }
+    { scope_name: scopeName },
+    headers,
+    m => m.scope_name === scopeName
   )
-  const existing: Array<{ pk: number; name: string; scope_name: string }> =
-    (listRes.data.results || []).filter(
-      (m: { scope_name: string }) => m.scope_name === scopeName
-    )
-  if (existing.length > 0) {
-    console.log(`[provision-m2m] Scope mapping "${scopeName}" already exists (pk=${existing[0].pk})`)
-    return existing[0].pk
+  if (found) {
+    console.log(`[provision-m2m] Scope mapping "${scopeName}" already exists (pk=${found.pk})`)
+    return found.pk
   }
 
   // Create
@@ -129,18 +160,16 @@ async function ensureOAuth2Provider(
 ): Promise<number> {
   const providerName = 'FuzeSocial Registration'
 
-  // Check existence — filter client-side; `name` is not a guaranteed server-side filter
-  const listRes = await axios.get(
+  // Check existence across all pages; name param is a hint only
+  const found = await findAcrossPages<{ pk: number; name: string }>(
     `${baseUrl}/api/v3/providers/oauth2/`,
-    { headers, params: { name: providerName }, timeout: AUTHENTIK_TIMEOUT_MS }
+    { name: providerName },
+    headers,
+    p => p.name === providerName
   )
-  const existing: Array<{ pk: number; name: string }> =
-    (listRes.data.results || []).filter(
-      (p: { name: string }) => p.name === providerName
-    )
-  if (existing.length > 0) {
-    console.log(`[provision-m2m] OAuth2 provider "${providerName}" already exists (pk=${existing[0].pk})`)
-    return existing[0].pk
+  if (found) {
+    console.log(`[provision-m2m] OAuth2 provider "${providerName}" already exists (pk=${found.pk})`)
+    return found.pk
   }
 
   // Require a valid authorization flow before attempting creation
@@ -182,15 +211,15 @@ async function ensureApplication(
   const slug = 'fuzesocial-registration'
   const appName = 'FuzeSocial Registration'
 
-  // Check existence
-  const listRes = await axios.get(
+  // Check existence across all pages; slug param is a hint only
+  const found = await findAcrossPages<{ slug: string; name: string }>(
     `${baseUrl}/api/v3/core/applications/`,
-    { headers, params: { slug }, timeout: AUTHENTIK_TIMEOUT_MS }
+    { slug },
+    headers,
+    a => a.slug === slug
   )
-  const existing: Array<{ slug: string; name: string }> =
-    (listRes.data.results || []).filter((a: { slug: string }) => a.slug === slug)
-  if (existing.length > 0) {
-    console.log(`[provision-m2m] Application "${appName}" already exists (slug=${existing[0].slug})`)
+  if (found) {
+    console.log(`[provision-m2m] Application "${appName}" already exists (slug=${found.slug})`)
     return
   }
 
