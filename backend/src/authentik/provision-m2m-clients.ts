@@ -187,7 +187,8 @@ async function ensureApplication(
     `${baseUrl}/api/v3/core/applications/`,
     { headers, params: { slug }, timeout: AUTHENTIK_TIMEOUT_MS }
   )
-  const existing: Array<{ slug: string; name: string }> = listRes.data.results || []
+  const existing: Array<{ slug: string; name: string }> =
+    (listRes.data.results || []).filter((a: { slug: string }) => a.slug === slug)
   if (existing.length > 0) {
     console.log(`[provision-m2m] Application "${appName}" already exists (slug=${existing[0].slug})`)
     return
