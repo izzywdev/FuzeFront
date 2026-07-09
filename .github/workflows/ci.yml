@@ -360,19 +360,31 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           if [ "$EVENT" = "pull_request" ]; then
             echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT" = "workflow_dispatch" ]; then
-            PR_NUM=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
-              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0].number" 2>/dev/null || echo "")
-            if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
-              echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
+              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
+            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
+              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
+              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha')
+              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
+                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+              else
+                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              fi
             else
               echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
             fi
           else
             echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload Trivy scan results to GitHub Security tab
@@ -386,7 +398,7 @@ jobs:
           # the comparison check; no race between the two workflows.
           category: trivy
           ref: ${{ steps.detect-pr.outputs.upload_ref }}
-          sha: ${{ github.sha }}
+          sha: ${{ steps.detect-pr.outputs.upload_sha }}
 
   deploy-docs:
     name: Deploy Documentation
