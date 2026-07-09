@@ -2,10 +2,13 @@ import { Knex } from 'knex'
 
 /**
  * Migration 011 — billing columns on public-schema entities.
+ * (Renumbered 010 -> 011 to avoid colliding with the identity track's
+ * 010_create_api_tokens_table once both merge.)
  *
  * Adds the four billing hot-path cache columns to both `users` and
- * `organizations`.  These are written back by the billing-service and read
- * by the backend for plan-gated UI hints.
+ * `organizations`. These are maintained by the BACKEND's plan-state projection
+ * (which consumes billing.subscription.changed) and read for plan-gated UI
+ * hints. billing-service never writes these columns directly.
  *
  * Columns:
  *   stripe_customer_id   TEXT, nullable

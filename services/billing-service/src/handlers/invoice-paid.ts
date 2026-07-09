@@ -3,7 +3,9 @@ import { HandlerContext } from './types';
 
 /**
  * Handles `invoice.payment_succeeded`: a successful charge moves the entity
- * back to `active` (e.g. recovering from past_due) and refreshes Permit + cache.
+ * back to `active` (e.g. recovering from past_due), refreshes Permit, and emits
+ * billing.subscription.changed so the backend projects `active` onto its
+ * public plan-state tables. billing-service never writes public.* directly.
  */
 export async function handleInvoicePaid(
   event: Stripe.Event,
@@ -28,14 +30,6 @@ export async function handleInvoicePaid(
     entityId: entity.entityId,
     planTier,
     status: 'active',
-  });
-
-  await ctx.writePlanCache({
-    entityType: entity.entityType,
-    entityId: entity.entityId,
-    planTier,
-    status: 'active',
-    trialEnd: existing?.trialEnd ?? null,
   });
 
   await ctx.emitter.subscriptionChanged({

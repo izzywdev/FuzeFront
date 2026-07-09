@@ -8,9 +8,10 @@ import { EntityType } from '../types';
  *
  *  1. Resolve the local customer + entity from the Stripe customer id.
  *  2. Map status: a `deleted` event downgrades the entity to the free tier.
- *  3. Upsert the local subscription mirror.
- *  4. Sync the plan to Permit + write the public hot-path cache.
- *  5. Emit billing.subscription.changed.
+ *  3. Upsert the local subscription mirror (billing schema only).
+ *  4. Sync the plan to Permit.
+ *  5. Emit billing.subscription.changed (the backend projects this onto
+ *     public.users/organizations — billing-service never writes those tables).
  */
 export async function handleSubscriptionUpdated(
   event: Stripe.Event,
@@ -48,14 +49,9 @@ export async function handleSubscriptionUpdated(
     seatQuantity,
   });
 
-  await ctx.writePlanCache({
-    entityType: entity.entityType,
-    entityId: entity.entityId,
-    planTier,
-    status,
-    trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-  });
-
+  // NOTE: we deliberately do NOT write public.users/organizations here.
+  // billing-service owns only the `billing` schema; the backend maintains the
+  // public plan-state projection by consuming the event emitted below.
   await ctx.emitter.subscriptionChanged({
     entityId: entity.entityId,
     entityType: entity.entityType,

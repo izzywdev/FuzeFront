@@ -52,8 +52,16 @@ async function bootstrap(): Promise<void> {
   const superUser = req('DB_SUPERUSER')
   const superPassword = req('DB_SUPERUSER_PASSWORD')
 
+  // Optional least-privilege role for the billing-service. Gated on
+  // BILLING_DB_PASSWORD being present so existing installs (no billing) are a
+  // no-op. The role is granted ONLY on the `billing` schema — never on
+  // public.users / public.organizations (per-service-DB boundary).
+  const billingUser = process.env.BILLING_DB_USER || 'billing_svc'
+  const billingPassword = process.env.BILLING_DB_PASSWORD
+
   console.log(
-    `🔧 DB bootstrap: host=${host}:${port} db=${dbName} appUser=${appUser} superUser=${superUser}`
+    `🔧 DB bootstrap: host=${host}:${port} db=${dbName} appUser=${appUser} superUser=${superUser}` +
+      (billingPassword ? ` billingUser=${billingUser}` : '')
   )
 
   // --- Step 1 & 2: connect to the default DB to create DATABASE + ROLE. ---
@@ -115,6 +123,32 @@ async function bootstrap(): Promise<void> {
     await admin.query(
       `GRANT CONNECT ON DATABASE ${ident(dbName)} TO ${ident(appUser)}`
     )
+
+    // --- Optional billing_svc role (least-privilege, billing schema only) ---
+    if (billingPassword) {
+      const billingRoleExists = await admin.query(
+        'SELECT 1 FROM pg_roles WHERE rolname = $1',
+        [billingUser]
+      )
+      if (billingRoleExists.rows.length === 0) {
+        console.log(`📝 Creating least-privilege billing role ${billingUser}...`)
+        await admin.query(
+          `CREATE ROLE ${ident(billingUser)} WITH LOGIN PASSWORD ${literal(
+            billingPassword
+          )} NOSUPERUSER NOCREATEDB NOCREATEROLE`
+        )
+      } else {
+        console.log(`✅ Role ${billingUser} exists — syncing password/attributes`)
+        await admin.query(
+          `ALTER ROLE ${ident(billingUser)} WITH LOGIN PASSWORD ${literal(
+            billingPassword
+          )} NOSUPERUSER NOCREATEDB NOCREATEROLE`
+        )
+      }
+      await admin.query(
+        `GRANT CONNECT ON DATABASE ${ident(dbName)} TO ${ident(billingUser)}`
+      )
+    }
   } finally {
     await admin.end()
   }
@@ -139,6 +173,52 @@ async function bootstrap(): Promise<void> {
     // sequences, etc.) without any cluster-level privilege.
     await dbAdmin.query(`ALTER SCHEMA public OWNER TO ${ident(appUser)}`)
     await dbAdmin.query(`GRANT ALL ON SCHEMA public TO ${ident(appUser)}`)
+
+    // --- billing_svc: own the `billing` schema; NOTHING on public ---
+    if (billingPassword) {
+      console.log(
+        `🔑 Provisioning schema billing owned by ${billingUser} (no public.* grants)...`
+      )
+      // The billing-service runs its own 001 migration (CREATE SCHEMA / tables).
+      // Owning the dedicated schema lets it do that with zero privileges on the
+      // platform's public tables. Create the schema up front and hand ownership
+      // to billing_svc; if billing-service already created it (e.g. on a prior
+      // boot), just re-assign ownership. Idempotent.
+      await dbAdmin.query(`GRANT ${ident(billingUser)} TO CURRENT_USER`)
+      await dbAdmin.query(
+        `CREATE SCHEMA IF NOT EXISTS billing AUTHORIZATION ${ident(billingUser)}`
+      )
+      await dbAdmin.query(`ALTER SCHEMA billing OWNER TO ${ident(billingUser)}`)
+      await dbAdmin.query(
+        `GRANT USAGE, CREATE ON SCHEMA billing TO ${ident(billingUser)}`
+      )
+      // DML on any existing + future billing objects (the service owns them, but
+      // be explicit so a re-grant after an ownership change stays consistent).
+      await dbAdmin.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA billing TO ${ident(
+          billingUser
+        )}`
+      )
+      await dbAdmin.query(
+        `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA billing TO ${ident(
+          billingUser
+        )}`
+      )
+      await dbAdmin.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA billing GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${ident(
+          billingUser
+        )}`
+      )
+      await dbAdmin.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA billing GRANT USAGE, SELECT ON SEQUENCES TO ${ident(
+          billingUser
+        )}`
+      )
+      // Defensive: billing_svc must NOT be able to touch the platform's public
+      // tables. It was never granted public, but revoke any inherited PUBLIC
+      // grant on the public schema to be explicit about the boundary.
+      await dbAdmin.query(`REVOKE ALL ON SCHEMA public FROM ${ident(billingUser)}`)
+    }
   } finally {
     await dbAdmin.end()
   }

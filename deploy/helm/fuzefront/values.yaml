@@ -125,6 +125,21 @@ secret:
   googleClientSecret: ""
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
+  # Stripe billing secrets. Leave empty for inert/degraded mode (billing-service
+  # serves /health only). Supply Stripe TEST-mode keys locally via --set or a
+  # gitignored values file; SealedSecret in prod. NEVER commit real keys.
+  stripeSecretKey: ""
+  stripeWebhookSecret: ""
+  stripePublishableKey: ""
+  # Internal Bearer token the backend/billing-client present to billing-service.
+  # DEV-ONLY default — override with a long random value (or SealedSecret) in real deployments.
+  billingInternalToken: "dev-billing-internal-token-change-me"
+  # Password for the least-privilege billing_svc Postgres role. When set, the
+  # db-bootstrap Job creates/syncs the role + provisions the `billing` schema
+  # owned by it (no public.* grants), and billing-service connects as billing_svc.
+  # Leave empty to fall back to the shared runtime role (database.user). DEV-ONLY
+  # default below — override/seal in real deployments.
+  billingDbPassword: "dev-billing-svc-change-me"
   # AI provider keys for the chat-service and LiteLLM gateway.
   # Leave empty to disable; supply via --set or a gitignored values file. NEVER commit real keys.
   anthropicApiKey: ""
@@ -308,21 +323,26 @@ provisioningService:
   affinity: {}
   tolerations: []
 
-# ---------------------------------------------------------------------------
-# Forward-looking service placeholders (disabled by default). These are wired
-# into deploy/CD ahead of the feature merges (billing #65, chat #66, litellm).
-# The chart does NOT yet ship Deployment templates for them; these blocks exist
-# so values-prod can size/place them and so the release pipeline (Phase F, owned
-# by the orchestrator) can flip `enabled` + bump tags without a schema change.
-# When enabled with no matching template, Helm simply ignores the extra values.
-# ---------------------------------------------------------------------------
+# Billing & payments microservice (Stripe). Independently-lifecycled — has its
+# OWN Argo Application (deploy/argocd/applications/billing.yaml). Disabled by
+# default; enable in values-local (test-mode Stripe keys) / values-prod.
+# Connects to Postgres with the least-privilege billing_svc role, granted ONLY
+# on the `billing` schema — never on public.users/organizations. The backend
+# owns the public plan-state projection (consumes billing.subscription.changed).
+# Secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BILLING_INTERNAL_TOKEN,
+# BILLING_DB_PASSWORD) come from the chart Secret.
 billingService:
   enabled: false
   image:
     repository: fuzefront/billing-service
     tag: local
+  # Least-privilege DB role for billing-service, created by the db-bootstrap Job
+  # when secret.billingDbPassword is set (granted only on the `billing` schema).
+  dbUser: billing_svc
   port: 3006
   replicas: 1
+  meterFlushIntervalSec: 60
+  permitPdpUrl: "http://fuzefront-permit-pdp:7766"
   kafka:
     brokers: "kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "billing-service"

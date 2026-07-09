@@ -64,6 +64,18 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
                   key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+            {{- if .Values.secret.billingDbPassword }}
+            # Optional least-privilege billing_svc role. When BILLING_DB_PASSWORD
+            # is set, the bootstrap creates/syncs the role and provisions the
+            # `billing` schema owned by it (no public.* grants). No-op otherwise.
+            - name: BILLING_DB_USER
+              value: {{ .Values.billingService.dbUser | quote }}
+            - name: BILLING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: BILLING_DB_PASSWORD
+            {{- end }}
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits:   { cpu: 250m, memory: 256Mi }

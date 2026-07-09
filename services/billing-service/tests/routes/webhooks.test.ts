@@ -24,7 +24,6 @@ const baseCtx: any = {
   plans: {},
   permit: {},
   emitter: {},
-  writePlanCache: jest.fn(),
 };
 
 describe('POST /api/v1/billing/webhooks/stripe', () => {
