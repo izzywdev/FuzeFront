@@ -7,6 +7,35 @@ import {
 } from '../utils/permit/permission-check'
 import { db } from '../config/database'
 
+/**
+ * Resolve the organization an authenticated caller is acting in when no
+ * explicit organization id is supplied (no :organizationId path param and the
+ * token carries none). Used for object-level 'create' authorization on apps.
+ *
+ * Returns the caller's SINGLE active membership. If the caller has zero or
+ * MULTIPLE active memberships we return null and the caller must pass an
+ * explicit org — we never auto-pick among several, which would let an app land
+ * in an org the caller didn't intend (tenant spoofing / IDOR). Fail closed.
+ */
+async function resolveCallerOrgMembership(
+  userId: string
+): Promise<{ organizationId: string; role: string } | null> {
+  const memberships = await db('organization_memberships')
+    .where('user_id', userId)
+    .where('status', 'active')
+    .select('organization_id', 'role')
+
+  if (memberships.length !== 1) {
+    // Zero (no org) or multiple (ambiguous) → fail closed.
+    return null
+  }
+
+  return {
+    organizationId: memberships[0].organization_id,
+    role: memberships[0].role,
+  }
+}
+
 // Extend Express Request type to include user and organization context.
 //
 // params/body/query are re-declared explicitly (assignable overrides of the
@@ -197,8 +226,7 @@ export function requireAppPermission(
       }
 
       const appId = req.params.appId || req.params.id
-      const organizationId =
-        req.params.organizationId || req.user.organizationId
+      const organizationId = req.params.organizationId || req.user.organizationId
 
       // 'create' has no app yet, so an appId is legitimately absent there.
       // Every other action operates on an existing app and requires one.
@@ -209,18 +237,31 @@ export function requireAppPermission(
         })
       }
 
+      // Object-level resolution for 'create': there is no explicit org param on
+      // the self-register / create routes and authenticateToken does not put an
+      // org on req.user, so resolve the caller's OWN org from their single
+      // active membership. An active owner/admin of that org may create an app
+      // in it (object-level grant, mirroring requireAppAction for update/delete
+      // in routes/apps.ts); other members fall through to the Permit policy
+      // check. Ambiguous (multi-membership) or org-less callers fail closed.
       let resolvedOrgId = organizationId
-      if (!resolvedOrgId && action === 'create') {
-        // For create actions without an explicit org context, fall back to
-        // the user's personal org. This allows self-registration endpoints
-        // (/api/apps/register) to work without requiring callers to look up
-        // and pass an org ID explicitly.
-        const personalOrg = await db('organizations')
-          .where({ owner_id: req.user.id, type: 'personal' })
-          .first()
-        if (personalOrg) {
-          resolvedOrgId = personalOrg.id
+      if (action === 'create' && !resolvedOrgId) {
+        const membership = await resolveCallerOrgMembership(req.user.id)
+        if (!membership) {
+          return res.status(400).json({
+            error: 'Organization context required',
+            code: 'ORG_CONTEXT_REQUIRED',
+          })
         }
+        resolvedOrgId = membership.organizationId
+
+        if (membership.role === 'owner' || membership.role === 'admin') {
+          // Bind the VERIFIED org context; the route inserts under this org,
+          // never from req.body (no tenant spoofing).
+          req.organization = { id: resolvedOrgId, role: membership.role }
+          return next()
+        }
+        // Non-owner/admin member: defer to Permit below.
       }
 
       if (!resolvedOrgId) {

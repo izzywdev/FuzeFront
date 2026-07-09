@@ -202,14 +202,25 @@ jobs:
           # Verify CORS header present (required for cross-origin MF load)
           cors_header=$(curl -fsS -I -H "Origin: http://localhost:4173" http://localhost:4174/apps/clock/remoteEntry.js 2>&1 | grep -i "access-control-allow-origin" || true)
           echo "CORS header: ${cors_header:-MISSING}"
-          # /api/apps/register goes through requireAppPermission('create') which calls
-          # the Permit.io PDP - unavailable in E2E CI (no PDP container, ci-noop key).
-          # Seed the row directly into Postgres to bypass the permission middleware.
-          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('Clock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
-          echo 'clock-app seeded into DB'
+          # POST /api/apps/register is now AUTHENTICATED + org-scoped (the BOLA
+          # fix in #101: an anonymous caller can no longer inject a federated
+          # remote into the host shell). Log in as the seeded admin to get a
+          # JWT, then register as that user. The admin is an active OWNER of a
+          # single personal org, so requireAppPermission('create') resolves that
+          # org from the caller's membership and grants the create object-level.
+          TOKEN=$(curl -fsS -X POST http://localhost:3001/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@fuzefront.dev","password":"admin123"}' \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{process.stdout.write(JSON.parse(s).token||"")})')
+          if [ -z "$TOKEN" ]; then echo "login failed — no token"; cat /tmp/backend.log; exit 1; fi
+          # url = backend-reachable (drives the health check); remoteUrl = browser-reachable.
+          curl -fsS -X POST http://localhost:3001/api/apps/register \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"name":"Clock","url":"http://localhost:4174","integrationType":"module-federation","remoteUrl":"http://localhost:4174/apps/clock","scope":"clockApp","module":"./ClockApp","description":"on-the-fly clock"}'
 
       # ---- Playwright: sign-in + runtime federated load ----
-      - name: Run Playwright e2e (sign-in + FuzeClock load)
+      - name: Run Playwright e2e (sign-in + Clock load)
         working-directory: frontend
         run: |
           npx playwright install --with-deps chromium
