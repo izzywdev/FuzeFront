@@ -393,10 +393,8 @@ jobs:
         continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
-          # Same category as harden-gate.yml:gate-dependency-scan so both uploads
-          # map to one Code Scanning slot. Whichever job finishes first satisfies
-          # the comparison check; no race between the two workflows.
-          category: trivy
+          # No explicit category — matches master's baseline analysis key so the
+          # PR comparison check can find this upload as ci.yml:security-scan.
           ref: ${{ steps.detect-pr.outputs.upload_ref }}
           sha: ${{ steps.detect-pr.outputs.upload_sha }}
 
