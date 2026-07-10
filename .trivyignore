@@ -4,6 +4,25 @@
 # Scanning check from blocking unrelated PRs.
 #
 # Last audited: 2026-07-09 (npm audit)
+#
+# NOTE: Trivy matches .trivyignore entries against the VulnerabilityID it
+# reports, which for npm packages is the CVE ID (the GHSA IDs below are kept
+# for traceability with `npm audit`).  The CVE list below mirrors the alerts
+# Trivy actually emits for these same pre-existing vulnerabilities
+# (services/email-service: express@4.19.2 transitive deps + nodemailer@6.9.14,
+# identical versions on master).
+CVE-2024-45590
+CVE-2025-14874
+CVE-2024-45296
+CVE-2024-52798
+CVE-2026-4867
+CVE-2024-43796
+CVE-2025-13033
+CVE-2024-43799
+CVE-2024-43800
+CVE-2024-47764
+CVE-2025-15284
+CVE-2026-2391
 GHSA-23c5-xmqv-rm74
 GHSA-268h-hp4c-crq3
 GHSA-37ch-88jc-xwx2
