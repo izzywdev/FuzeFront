@@ -43,6 +43,18 @@ export function isAlreadyExistsError(error: any): boolean {
 export async function createTenantInPermit(
   organization: Organization
 ): Promise<boolean> {
+  // Defensive input validation: a Permit tenant MUST have a non-empty key (the
+  // org id) and a name. Reject malformed input locally so the contract
+  // ("invalid org → false") holds whether a real PDP or the CI no-op client is
+  // in use, instead of depending on the remote API to reject it.
+  if (
+    !organization ||
+    !organization.id ||
+    !String(organization.name || '').trim()
+  ) {
+    console.error('createTenantInPermit: missing required organization id/name')
+    return false
+  }
   const tenant: PermitTenant = {
     key: organization.id,
     name: organization.name,

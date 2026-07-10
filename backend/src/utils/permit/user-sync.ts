@@ -20,6 +20,14 @@ export interface BackendUser extends User {
  * Syncs a user to Permit.io
  */
 export async function syncUserToPermit(user: BackendUser): Promise<boolean> {
+  // Defensive input validation: a Permit subject MUST have a key (the user id)
+  // and an email. Reject malformed input locally rather than relying on the
+  // remote PDP to reject it — so the contract ("invalid user → false") holds
+  // regardless of whether a real PDP or the CI no-op client is in use.
+  if (!user || !user.id || !user.email) {
+    console.error('syncUserToPermit: missing required user id/email')
+    return false
+  }
   try {
     const permitUser: PermitUser = {
       key: user.id,
