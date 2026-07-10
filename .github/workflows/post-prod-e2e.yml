@@ -1,0 +1,62 @@
+name: Post-prod E2E (live smoke)
+
+# Runs the READ-ONLY post-production Playwright smoke
+# (frontend/e2e/post-prod/live-smoke.spec.ts) against the LIVE platform.
+# Black-box over the public ingress — no cluster credentials needed.
+#
+# Triggered manually (workflow_dispatch), typically right after a release
+# rollout, to verify: shell serves, /login is Authentik+Google-only (no local
+# form), OIDC handoff works, and Module-Federation apps load for an
+# authenticated session.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Target base URL'
+        required: false
+        default: 'https://app.fuzefront.com'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-prod-e2e
+  cancel-in-progress: true
+
+jobs:
+  live-smoke:
+    name: Playwright live smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+
+      - name: Install Playwright chromium
+        run: cd frontend && npx playwright install --with-deps chromium
+
+      - name: Run post-prod smoke
+        env:
+          POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+          # Synthetic account for the authenticated journey (API login path).
+          # Falls back to the seeded admin creds inside the spec when unset.
+          POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
+          POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --reporter=list,html
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: post-prod-playwright-report
+          path: |
+            frontend/playwright-report-post-prod/
+            frontend/test-results-post-prod/
+          retention-days: 14

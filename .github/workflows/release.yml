@@ -180,11 +180,33 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Bump image tags in values-prod.yaml (GitOps)
+        # master enables required_signatures, so a plain `git push` of a bot
+        # commit is REJECTED (this step failed on every release since the
+        # hardening landed — prod stopped rolling). Committing via the GitHub
+        # contents API instead produces a server-side commit signed by GitHub's
+        # web-flow key, which satisfies the ruleset
+        # (governance/hardening-convention.md §3 / repo CLAUDE.md hardening).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
           SHA="${{ steps.tag.outputs.sha }}"
-          sed -i -E "s/^(\s*tag:).*/\1 ${SHA}/" deploy/helm/fuzefront/values-prod.yaml
-          git config user.email "action@github.com"
-          git config user.name "GitHub Action"
-          git add deploy/helm/fuzefront/values-prod.yaml
-          git commit -m "release: fuzefront images ${SHA} [skip ci]" || exit 0
-          git push
+          # Read-modify-write against CURRENT master, not this job's (stale)
+          # checkout: the builds above take minutes, and pairing fresh blob-SHA
+          # with stale content would silently overwrite any intervening edit to
+          # the file. If master's file changes between this GET and the PUT the
+          # blob-SHA no longer matches and the PUT 409s (rerun the job).
+          RESP=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}?ref=master")
+          CUR_SHA=$(jq -r .sha <<<"$RESP")
+          jq -r .content <<<"$RESP" | base64 -d > /tmp/vp-current.yaml
+          sed -E "s/^(\s*tag:).*/\1 ${SHA}/" /tmp/vp-current.yaml > /tmp/vp-new.yaml
+          if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
+            echo "values-prod.yaml already at ${SHA} — nothing to bump"
+            exit 0
+          fi
+          gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
+            -f message="release: fuzefront images ${SHA} [skip ci]" \
+            -f branch=master \
+            -f sha="${CUR_SHA}" \
+            -f content="$(base64 -w0 /tmp/vp-new.yaml)" \
+            --jq '.commit.sha' | xargs -I{} echo "Bumped via API commit {} (server-signed)"
