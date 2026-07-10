@@ -86,7 +86,7 @@ mkdir -p "$(dirname "$MANIFEST")"
 mkseal() { kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml | kubeseal --cert "$CERT" -o yaml; }
 if [ -f "$MANIFEST" ]; then
   kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml \
-    | kubeseal --cert "$CERT" --merge-into "$MANIFEST"
+    | kubeseal --cert "$CERT" -o yaml --merge-into "$MANIFEST"
 else
   mkseal > "$MANIFEST"
 fi
