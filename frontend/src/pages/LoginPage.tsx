@@ -297,9 +297,12 @@ function LoginPage() {
         </div>
       )}
 
-      {/* OIDC Authentication Option */}
+      {/* OIDC Authentication Options — the ONLY sign-in paths when Authentik is
+          configured. Google auth is federated through Authentik (the platform
+          never contacts Google directly), so both buttons start the same OIDC
+          flow; Authentik presents Google as an identity provider. */}
       {authMethods?.oidcConfigured && (
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '1rem' }}>
           <button
             type="button"
             onClick={handleOIDCLogin}
@@ -319,67 +322,76 @@ function LoginPage() {
           >
             {loading ? '🔄 Redirecting...' : '🔐 Sign in with Authentik'}
           </button>
+          <button
+            type="button"
+            onClick={handleOIDCLogin}
+            disabled={loading}
+            aria-label="Sign in with Google"
+            style={{
+              width: '100%',
+              padding: '12px',
+              backgroundColor: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+            }}
+          >
+            {/* Official Google "G" mark — brand colors are mandated by Google's
+                identity guidelines (logo asset, exempt from token rules). */}
+            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+            </svg>
+            {loading ? 'Redirecting...' : 'Sign in with Google'}
+          </button>
           <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '14px' }}>
             Single Sign-On via Authentik
           </p>
-          
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            margin: '20px 0',
-            color: 'var(--text-tertiary)'
-          }}>
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
-            <span style={{ padding: '0 15px', fontSize: '14px' }}>or</span>
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
-          </div>
         </div>
       )}
 
-      {/* Local Authentication Form */}
-      <form onSubmit={handleLocalLogin}>
-        <div className="form-group">
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-          />
-        </div>
+      {/* Local (email/password) authentication is ONLY offered as a fallback
+          when Authentik/OIDC is not configured (local dev, CI ephemeral
+          stacks). In production Authentik is the sole identity authority, so
+          this form is intentionally hidden there. */}
+      {authMethods && !authMethods.oidcConfigured && (
+        <form onSubmit={handleLocalLogin}>
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
+          </div>
 
-        <div className="form-group">
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
-        </div>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+          </div>
 
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Signing in...' : authMethods?.oidcConfigured ? 'Sign in with Email' : 'Sign In'}
-        </button>
-      </form>
-
-      {/* Authentication Methods Info */}
-      {authMethods && (
-        <div style={{ 
-          marginTop: '1rem', 
-          padding: '10px',
-          backgroundColor: 'var(--bg-tertiary)',
-          borderRadius: '4px',
-          fontSize: '12px',
-          color: 'var(--text-tertiary)'
-        }}>
-          <strong>Available Methods:</strong> {authMethods.methods.join(', ')}
-          {authMethods.oidcConfigured && (
-            <div>✅ OIDC configured with Authentik</div>
-          )}
-        </div>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+        </form>
       )}
 
       <div style={{ marginTop: '1rem' }}>
@@ -439,12 +451,6 @@ function LoginPage() {
         >
           {loading ? 'Redirecting…' : t('signUp')}
         </button>
-      </div>
-
-      <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-        <p>Demo credentials:</p>
-        <p>Email: admin@fuzefront.dev</p>
-        <p>Password: admin123</p>
       </div>
     </div>
   )
