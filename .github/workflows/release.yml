@@ -191,16 +191,22 @@ jobs:
           FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
           SHA="${{ steps.tag.outputs.sha }}"
-          sed -i -E "s/^(\s*tag:).*/\1 ${SHA}/" "$FILE"
-          if git diff --quiet -- "$FILE"; then
+          # Read-modify-write against CURRENT master, not this job's (stale)
+          # checkout: the builds above take minutes, and pairing fresh blob-SHA
+          # with stale content would silently overwrite any intervening edit to
+          # the file. If master's file changes between this GET and the PUT the
+          # blob-SHA no longer matches and the PUT 409s (rerun the job).
+          RESP=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}?ref=master")
+          CUR_SHA=$(jq -r .sha <<<"$RESP")
+          jq -r .content <<<"$RESP" | base64 -d > /tmp/vp-current.yaml
+          sed -E "s/^(\s*tag:).*/\1 ${SHA}/" /tmp/vp-current.yaml > /tmp/vp-new.yaml
+          if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
             echo "values-prod.yaml already at ${SHA} — nothing to bump"
             exit 0
           fi
-          # Current blob SHA of the file on master (required by the contents API).
-          CUR_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}?ref=master" --jq .sha)
           gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
             -f message="release: fuzefront images ${SHA} [skip ci]" \
             -f branch=master \
             -f sha="${CUR_SHA}" \
-            -f content="$(base64 -w0 "$FILE")" \
+            -f content="$(base64 -w0 /tmp/vp-new.yaml)" \
             --jq '.commit.sha' | xargs -I{} echo "Bumped via API commit {} (server-signed)"
