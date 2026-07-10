@@ -190,6 +190,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
+          set -euo pipefail
           SHA="${{ steps.tag.outputs.sha }}"
           # Read-modify-write against CURRENT master, not this job's (stale)
           # checkout: the builds above take minutes, and pairing fresh blob-SHA
@@ -199,14 +200,29 @@ jobs:
           RESP=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}?ref=master")
           CUR_SHA=$(jq -r .sha <<<"$RESP")
           jq -r .content <<<"$RESP" | base64 -d > /tmp/vp-current.yaml
-          sed -E "s/^(\s*tag:).*/\1 ${SHA}/" /tmp/vp-current.yaml > /tmp/vp-new.yaml
+          # Bump ONLY the core-app image tags built by this workflow. A blanket
+          # `tag:` sed would also stomp deliberately-pinned services and the
+          # EXTERNAL images (authentik, unleash) whose tags are managed by hand.
+          awk -v sha="$SHA" '
+            /repository: ghcr\.io\/izzywdev\/fuzefront-(backend|frontend|security-service|applications-service|clock-app)$/ { hot=1 }
+            hot && /^[[:space:]]*tag:/ {
+              match($0, /^[[:space:]]*/)
+              print substr($0, 1, RLENGTH) "tag: " sha
+              hot=0
+              next
+            }
+            { print }
+          ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
           if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
             echo "values-prod.yaml already at ${SHA} — nothing to bump"
             exit 0
           fi
-          gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
+          # No pipe here: a rejected PUT (e.g. ruleset denies the actor) must
+          # FAIL this step, not vanish into a downstream consumer's exit code.
+          NEW_COMMIT=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
             -f message="release: fuzefront images ${SHA} [skip ci]" \
             -f branch=master \
             -f sha="${CUR_SHA}" \
             -f content="$(base64 -w0 /tmp/vp-new.yaml)" \
-            --jq '.commit.sha' | xargs -I{} echo "Bumped via API commit {} (server-signed)"
+            --jq '.commit.sha')
+          echo "Bumped via API commit ${NEW_COMMIT}"
