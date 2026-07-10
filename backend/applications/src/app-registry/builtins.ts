@@ -33,27 +33,6 @@ const BUILTIN_MANIFESTS: unknown[] = [
   },
   {
     manifestVersion: '1',
-    slug: 'mendys',
-    name: 'MendysRobotics',
-    menuLabel: 'Robotics',
-    description:
-      'MendysRobotics management platform — monitor robot fleets, scraper jobs, and operational status in real time.',
-    icon: { kind: 'emoji', value: '🤖' },
-    mode: 'portal',
-    builtin: true,
-    integration: {
-      type: 'module-federation',
-      remoteEntry: 'https://mendys.prod.fuzefront.com/remoteEntry.js',
-      scope: 'mendysApp',
-      module: './MendysApp',
-    },
-    chrome: { menu: 'host', topbar: 'host' },
-    routing: { path: '/app/mendys' },
-    visibility: 'organization',
-    roles: [],
-  },
-  {
-    manifestVersion: '1',
     slug: 'clock',
     name: 'Clock',
     menuLabel: 'Clock',

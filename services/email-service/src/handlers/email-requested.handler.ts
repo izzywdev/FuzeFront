@@ -5,7 +5,7 @@ import {
   notifyEmailStatusSchemaV1,
   TOPICS,
   TypedProducer,
-} from '@fuzefront/shared';
+} from '@fuzefront/shared/kafka';
 import { EmailProvider } from '../providers';
 import { renderTemplate } from '../templates';
 import { maskEmail } from '../utils/mask';

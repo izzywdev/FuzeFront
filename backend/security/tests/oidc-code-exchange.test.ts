@@ -9,7 +9,7 @@ import request from 'supertest'
 jest.mock('../src/services/oidc', () => ({
   oidcService: {
     isConfigured: () => true,
-    generateAuthUrl: jest.fn().mockReturnValue('http://auth.example.com/auth?state=test-state'),
+    generateAuthUrl: jest.fn().mockReturnValue({ url: 'http://auth.example.com/auth?state=test-state', codeVerifier: 'mock-code-verifier' }),
     handleCallback: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', firstName: 'U', lastName: 'E', roles: ['user'] })
   }
 }))
@@ -43,7 +43,7 @@ describe('OIDC code-exchange endpoint', () => {
     const STATE = 'test-state'
     const res = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${STATE}`)
-      .set('Cookie', `oidc_state=${STATE}`)
+      .set('Cookie', `oidc_state=${STATE}; oidc_cv=mock-code-verifier`)
     expect(res.status).toBe(302)
     expect(res.headers.location).toMatch(/[?&]code=/)
     expect(res.headers.location).not.toMatch(/[?&]token=/)
@@ -54,7 +54,7 @@ describe('OIDC code-exchange endpoint', () => {
     const STATE = 'test-state'
     const cbRes = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${STATE}`)
-      .set('Cookie', `oidc_state=${STATE}`)
+      .set('Cookie', `oidc_state=${STATE}; oidc_cv=mock-code-verifier`)
     const location = cbRes.headers.location
     const code = new URL(location).searchParams.get('code')
 
@@ -68,7 +68,7 @@ describe('OIDC code-exchange endpoint', () => {
     const STATE = 'test-state'
     const cbRes = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${STATE}`)
-      .set('Cookie', `oidc_state=${STATE}`)
+      .set('Cookie', `oidc_state=${STATE}; oidc_cv=mock-code-verifier`)
     const code = new URL(cbRes.headers.location).searchParams.get('code')
 
     await request(app).post('/api/auth/token-exchange').send({ code })
@@ -81,7 +81,7 @@ describe('OIDC code-exchange endpoint', () => {
     const STATE = 'test-state'
     const cbRes = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${STATE}`)
-      .set('Cookie', `oidc_state=${STATE}`)
+      .set('Cookie', `oidc_state=${STATE}; oidc_cv=mock-code-verifier`)
     const code = new URL(cbRes.headers.location).searchParams.get('code')
 
     // Advance time past 60s TTL

@@ -24,7 +24,7 @@ jobs:
           # (the bootstrap/runtime split removed CREATE DATABASE from startup).
           POSTGRES_DB: fuzefront_platform
         options: >-
-          --health-cmd "pg_isready -U fuzeinfra"
+          --health-cmd "pg_isready -U fuzeinfra -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -57,6 +57,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+
+      # Postgres creates the `fuzefront_platform` database (POSTGRES_DB) but NOT
+      # a database named after the user (`fuzeinfra`). Some pg clients default to
+      # connecting to a database matching the username when no database is given.
+      # Pre-create `fuzeinfra` so any such implicit connection succeeds.
+      - name: Create fuzeinfra default database
+        run: |
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER \
+            -d $DB_NAME \
+            -c "CREATE DATABASE fuzeinfra OWNER fuzeinfra;" \
+            || true  # idempotent: ignore "already exists" error
 
       # ---- Backend: build, start, migrate, wait ----
       # Install from the workspace ROOT so the root package.json `overrides`

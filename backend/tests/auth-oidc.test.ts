@@ -18,14 +18,16 @@ function buildApp(): express.Application {
   return app
 }
 
+// Single DB init + app build for the whole file to avoid multiple seed runs
+// and leftover DB connections that prevent Jest from exiting cleanly.
+let app: express.Application
+
+beforeAll(async () => {
+  await initializeDatabase()
+  app = buildApp()
+})
+
 describe('GET /api/auth/method', () => {
-  let app: express.Application
-
-  beforeAll(async () => {
-    await initializeDatabase()
-    app = buildApp()
-  })
-
   it('returns 200 with a methods array that always includes "local"', async () => {
     const res = await request(app).get('/api/auth/method').expect(200)
 
@@ -62,13 +64,6 @@ describe('GET /api/auth/method', () => {
 })
 
 describe('GET /api/auth/oidc/login (OIDC not configured)', () => {
-  let app: express.Application
-
-  beforeAll(async () => {
-    await initializeDatabase()
-    app = buildApp()
-  })
-
   it('returns 500 with a descriptive error when OIDC is not configured', async () => {
     const res = await request(app).get('/api/auth/oidc/login')
 
@@ -81,13 +76,6 @@ describe('GET /api/auth/oidc/login (OIDC not configured)', () => {
 })
 
 describe('GET /api/auth/oidc/callback error cases', () => {
-  let app: express.Application
-
-  beforeAll(async () => {
-    await initializeDatabase()
-    app = buildApp()
-  })
-
   it('redirects with error=oidc_error when error query param is present', async () => {
     const res = await request(app)
       .get('/api/auth/oidc/callback?error=access_denied&state=abc')

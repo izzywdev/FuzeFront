@@ -23,6 +23,11 @@
 # FuzeFront sealing.
 set -euo pipefail
 
+# Always run relative to the repo root so paths like deploy/contabo/sealed/...
+# resolve correctly regardless of the caller's CWD.
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
 # ---- per-repo defaults (this is the FuzeFront repo) ----------------------------
 NS="fuzefront"
 NAME="billing-secrets"

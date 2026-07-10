@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -8,6 +9,17 @@ import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
+
+const CODE_TTL_MS = 60_000
+interface PendingCode { token: string; sessionId: string; expiresAt: number }
+const pendingCodes = new Map<string, PendingCode>()
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of pendingCodes) {
+    if (value.expiresAt < now) pendingCodes.delete(key)
+  }
+}, CODE_TTL_MS).unref()
 
 const router = express.Router()
 
@@ -374,9 +386,16 @@ router.get('/oidc/login', async (req, res) => {
   try {
     if (!oidcService.isConfigured()) {
       console.log(`❌ [${requestId}] OIDC not configured`)
-      return res.status(500).json({ 
-        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.' 
+      return res.status(500).json({
+        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.'
       })
+    }
+
+    // Lazy re-initialization: if the client failed to init at startup (e.g.
+    // Authentik wasn't ready yet), retry now before giving up.
+    if (!oidcService.isInitialized()) {
+      console.log(`🔄 [${requestId}] OIDC client not initialized — retrying initialization`)
+      await oidcService.initialize()
     }
 
     const state = uuidv4()
@@ -431,27 +450,33 @@ router.get('/oidc/callback', async (req, res) => {
 
   try {
     if (error) {
-      console.log(`❌ [${requestId}] OIDC error:`, error)
-      return res.redirect(`http://fuzefront.dev.local/?error=oidc_error&message=${encodeURIComponent(error as string)}`)
+      const errorDesc = (req.query.error_description as string) || ''
+      console.log(`❌ [${requestId}] OIDC error:`, error, errorDesc || '(no description)')
+      return res.redirect(
+        `${FRONTEND_BASE}/?error=oidc_error&message=${encodeURIComponent(error as string)}${errorDesc ? `&desc=${encodeURIComponent(errorDesc)}` : ''}`
+      )
     }
 
     if (!code || !state) {
       console.log(`❌ [${requestId}] Missing code or state`)
-      return res.redirect(`http://fuzefront.dev.local/?error=missing_parameters`)
+      return res.redirect(`${FRONTEND_BASE}/?error=missing_parameters`)
     }
 
     // Handle the callback and get user
     const user = await oidcService.handleCallback(code as string, state as string)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
-      expiresIn: '24h',
-    })
-
-    // Create session
+    // Create session id first so it can be embedded in the token
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+    // Generate JWT token — include standard OIDC claims (sub, email) alongside
+    // the internal userId/sessionId so consumers can inspect identity claims.
+    const token = jwt.sign(
+      { userId: user.id, sessionId, sub: user.id, email: user.email },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
 
     await db('sessions').insert({
       id: sessionId,
@@ -464,14 +489,31 @@ router.get('/oidc/callback', async (req, res) => {
     // Self-heal provisioning in the background (does not block the redirect).
     selfHealProvisioningOnLogin(user.id)
 
-    // Redirect to frontend with token
-    const frontendUrl = `http://fuzefront.dev.local/?token=${token}&sessionId=${sessionId}`
-    res.redirect(frontendUrl)
+    // Issue a short-lived opaque exchange code instead of putting the bearer token
+    // in the URL (avoids token leakage via referrer headers, server logs, and history).
+    const exchangeCode = crypto.randomBytes(32).toString('hex')
+    pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS })
+    res.redirect(`${FRONTEND_BASE}/?code=${exchangeCode}`)
 
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC callback error:`, error)
-    res.redirect(`http://fuzefront.dev.local/?error=authentication_failed`)
+    res.redirect(`${FRONTEND_BASE}/?error=authentication_failed`)
   }
+})
+
+// POST /auth/token-exchange — redeem the single-use exchange code issued by /oidc/callback
+router.post('/token-exchange', async (req, res) => {
+  const { code } = req.body
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'code required' })
+  }
+  const pending = pendingCodes.get(code)
+  if (!pending || Date.now() > pending.expiresAt) {
+    pendingCodes.delete(code)
+    return res.status(401).json({ error: 'invalid or expired code' })
+  }
+  pendingCodes.delete(code)
+  return res.json({ token: pending.token, sessionId: pending.sessionId })
 })
 
 /**

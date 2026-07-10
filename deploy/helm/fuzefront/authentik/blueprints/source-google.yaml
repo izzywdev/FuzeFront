@@ -6,9 +6,21 @@
 #
 # Prerequisites: create a Google OAuth2 app at console.cloud.google.com
 # (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
-# and add ALL of the following Authorized redirect URIs:
-#   Local dev:  https://auth.fuzefront.dev.local/source/oauth/callback/google/
-#   Production: https://auth.fuzefront.com/source/oauth/callback/google/
+# and add the following Authorized redirect URIs to the matching Google OAuth client:
+#
+#   Production client:  https://auth.fuzefront.com/source/oauth/callback/google/
+#   Dev tunnel client:  https://auth-dev.fuzefront.com/source/oauth/callback/google/
+#
+# Use TWO SEPARATE Google OAuth clients — one for production, one for the dev
+# tunnel. Never share credentials between them. The dev client is used by
+# docker-compose.e2e.yml (CI) and docker-compose.tunnel.yml (local tunnel dev).
+#
+# NOTE: Google requires a real public TLD for redirect URIs — it rejects
+# .dev.local, .local, .internal and all other non-public suffixes.
+# auth.fuzefront.dev.local cannot be registered. Use the Cloudflare tunnel
+# (auth-dev.fuzefront.com) for any environment that needs real Google OAuth.
+#
+# See docker-compose.tunnel.yml and .env.example for tunnel setup instructions.
 #
 # Supply credentials via:
 #   Helm (k8s):        secret.googleClientId / secret.googleClientSecret in values

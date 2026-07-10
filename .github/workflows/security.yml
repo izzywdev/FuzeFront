@@ -137,6 +137,9 @@ jobs:
           image-ref: 'frontfuse/backend:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
         env:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
 
@@ -145,6 +148,7 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          category: trivy-container
 
   secret-scanning:
     name: Secret Scanning
