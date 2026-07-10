@@ -49,7 +49,7 @@ jobs:
           # Falls back to the seeded admin creds inside the spec when unset.
           POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
           POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --reporter=list,html
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --reporter=github,list,html
 
       - name: Upload report
         if: always()
