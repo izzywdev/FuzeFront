@@ -126,9 +126,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker images for scanning
+        # backend + frontend images build from the REPO ROOT context (they
+        # consume @fuzefront/* workspaces outside their own dir) — match
+        # release.yml's `context: .` + `file:`. task-manager-app is
+        # self-contained and builds from its own dir.
         run: |
-          docker build -t frontfuse/backend:latest ./backend
-          docker build -t frontfuse/frontend:latest ./frontend
+          docker build -t frontfuse/backend:latest -f backend/Dockerfile .
+          docker build -t frontfuse/frontend:latest -f frontend/Dockerfile .
           docker build -t frontfuse/task-manager:latest ./task-manager-app
 
       - name: Run Trivy vulnerability scanner
