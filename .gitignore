@@ -60,3 +60,4 @@ android/local.properties
 
 # Vite build output (generated; not committed)
 frontend/dist/
+.claude/worktrees/
