@@ -212,18 +212,38 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
+      # Snyk requires a SNYK_TOKEN org secret. When it is not provisioned the
+      # scan cannot authenticate (SNYK-0005 / 401), so skip the scan steps
+      # cleanly instead of hard-failing every PR. secrets.* is not available
+      # in job-level `if`, so gate at step level.
+      - name: Check for SNYK_TOKEN
+        id: snyk-token
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SNYK_TOKEN secret not configured — skipping Snyk scan"
+          fi
+
       - name: Checkout code
+        if: steps.snyk-token.outputs.present == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.snyk-token.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        if: steps.snyk-token.outputs.present == 'true'
         run: npm install
 
       - name: Run Snyk to check for vulnerabilities
+        if: steps.snyk-token.outputs.present == 'true'
         uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -232,7 +252,7 @@ jobs:
 
       - name: Upload Snyk results to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && steps.snyk-token.outputs.present == 'true'
         with:
           sarif_file: snyk.sarif
 
