@@ -107,9 +107,11 @@ async function ensureScopeMapping(
 ): Promise<number> {
   const scopeName = 'fuzefront:apps'
 
-  // Check existence across all pages; scope_name param is a hint only
+  // Check existence across all pages; scope_name param is a hint only.
+  // NB: scope property mappings live under /propertymappings/provider/scope/ on
+  // Authentik 2024.x (the older /propertymappings/scope/ path 404s).
   const found = await findAcrossPages<{ pk: number; scope_name: string }>(
-    `${baseUrl}/api/v3/propertymappings/scope/`,
+    `${baseUrl}/api/v3/propertymappings/provider/scope/`,
     { scope_name: scopeName },
     headers,
     m => m.scope_name === scopeName
@@ -121,7 +123,7 @@ async function ensureScopeMapping(
 
   // Create
   const createRes = await axios.post(
-    `${baseUrl}/api/v3/propertymappings/scope/`,
+    `${baseUrl}/api/v3/propertymappings/provider/scope/`,
     {
       name: scopeName,
       scope_name: scopeName,
@@ -152,6 +154,29 @@ async function resolveAuthorizationFlow(
       f => f.slug.includes('implicit-consent') || f.slug.includes('authorization')
     )
     return defaultFlow?.pk || flows[0]?.pk || ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Resolves the pk of an invalidation flow. Authentik 2024.x requires
+ * `invalidation_flow` on OAuth2 provider creation; prefer the built-in
+ * default-provider-invalidation-flow, else any invalidation-designated flow.
+ */
+async function resolveInvalidationFlow(
+  baseUrl: string,
+  headers: Record<string, string>
+): Promise<string> {
+  try {
+    const res = await axios.get(`${baseUrl}/api/v3/flows/instances/`, {
+      headers,
+      params: { designation: 'invalidation' },
+      timeout: AUTHENTIK_TIMEOUT_MS,
+    })
+    const flows: Array<{ slug: string; pk: string }> = res.data.results || []
+    const preferred = flows.find(f => f.slug === 'default-provider-invalidation-flow')
+    return preferred?.pk || flows[0]?.pk || ''
   } catch {
     return ''
   }
@@ -189,14 +214,26 @@ async function ensureOAuth2Provider(
     )
   }
 
+  // Authentik 2024.x makes invalidation_flow required on OAuth2 providers.
+  const invalidationFlow = await resolveInvalidationFlow(baseUrl, headers)
+  if (!invalidationFlow) {
+    throw new Error(
+      '[provision-m2m] No invalidation flow found in Authentik — cannot create OAuth2 provider. ' +
+      'Ensure at least one flow with designation "invalidation" exists.'
+    )
+  }
+
   const createRes = await axios.post(
     `${baseUrl}/api/v3/providers/oauth2/`,
     {
       name: providerName,
       authorization_flow: authorizationFlow,
+      invalidation_flow: invalidationFlow,
       client_type: 'confidential',
       allowed_grant_types: ['client_credentials'],
       property_mappings: [scopeMappingPk],
+      // Required field on 2024.x; client_credentials has no redirect leg.
+      redirect_uris: [],
       sub_mode: 'hashed_user_id',
       issuer_mode: 'global',
       access_code_validity: 'minutes=1',

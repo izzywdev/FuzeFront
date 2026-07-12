@@ -43,40 +43,12 @@ const isNoOpMode =
 // Recursively build a Proxy that resolves every property access to another
 // no-op Proxy and every call to a resolved Promise.  This covers any depth
 // of chained permit.api.users.sync(...), permit.check(...), etc.
-//
-// The proxy is also CONTRACT-SHAPED and FAIL-CLOSED for the decision methods:
-//   - permit.check(...)       resolves to `false` (a real boolean, deny)
-//   - permit.bulkCheck(arr)   resolves to `arr.map(() => false)` (boolean[])
-// so callers that consume the result as a boolean / boolean[] (the
-// authorization decision surface) get the correct, deny-by-default value and
-// shape with zero network calls — instead of `undefined`, which is merely
-// falsy and breaks any `=== false` / `Array.isArray()` / `.length` contract.
-// Every other (side-effecting sync) method resolves to `undefined`, matching
-// the real SDK's void-ish returns.
-//
-// `name` is the property name through which this proxy node was reached, so
-// `apply` can branch on which SDK method is being invoked.
-function makeNoOpProxy(name?: string): any {
+function makeNoOpProxy(): any {
   const handler: ProxyHandler<object> = {
-    get(_target, prop) {
-      return makeNoOpProxy(typeof prop === 'string' ? prop : undefined)
+    get(_target, _prop) {
+      return makeNoOpProxy()
     },
-    apply(_target, _thisArg, args) {
-      if (name === 'check') {
-        // Authorization decision: fail closed with a real boolean.
-        return Promise.resolve(false)
-      }
-      if (name === 'bulkCheck') {
-        // Mirror the real SDK shape: one boolean (deny) per requested check.
-        const checks = Array.isArray(args?.[0]) ? args[0] : []
-        return Promise.resolve(checks.map(() => false))
-      }
-      if (name === 'list') {
-        // List/read endpoints (e.g. permit.api.roleAssignments.list) return a
-        // collection in the real SDK; return an empty array so callers that
-        // treat the result as an array keep their contract.
-        return Promise.resolve([])
-      }
+    apply(_target, _thisArg, _args) {
       return Promise.resolve(undefined)
     },
     construct(_target, _args) {
@@ -110,14 +82,6 @@ export default permit
 
 // Export configuration for other modules
 export { config as permitConfig }
-
-// Whether the zero-network no-op client is active (CI dummy key / test without a
-// real permit_key_). Consumers (e.g. integration tests) can branch on this to
-// assert the correct behavior for the environment: with a real PDP the policy
-// grants/denies for real; under the no-op the client is deterministically
-// fail-closed (check()->false). This is NOT a test skip — it lets a test assert
-// the right outcome per environment without weakening either path.
-export const isPermitNoOpMode = isNoOpMode
 
 /**
  * Destroy the Permit SDK's underlying axios instance so its HTTP keep-alive

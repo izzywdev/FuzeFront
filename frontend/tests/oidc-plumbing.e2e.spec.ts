@@ -65,6 +65,37 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     expect(body.methods).toContain('oidc')
   })
 
+  // ── 2b. Server-side password sign-in (flow-executor, no redirect) ───────
+  // The native login form posts credentials to /api/auth/oidc/password; the
+  // backend drives Authentik's flow-executor with them and completes the OIDC
+  // code exchange server-side. This exercises that path against REAL Authentik.
+  test('password sign-in against Authentik (no redirect) returns a platform JWT', async ({
+    request,
+  }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/auth/oidc/password`, {
+      data: { email: E2E_USER_EMAIL, password: E2E_USER_PASSWORD },
+    })
+    expect(
+      resp.status(),
+      `POST /api/auth/oidc/password -> ${resp.status()}: ${await resp.text().catch(() => '')}`
+    ).toBe(200)
+    const body = await resp.json()
+    expect(body.token, 'platform JWT returned').toBeTruthy()
+    expect(body.token.split('.')).toHaveLength(3)
+    expect(body.sessionId).toBeTruthy()
+    expect(body.user?.email?.toLowerCase()).toBe(E2E_USER_EMAIL.toLowerCase())
+  })
+
+  test('password sign-in rejects a wrong password with 401', async ({ request }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/auth/oidc/password`, {
+      data: { email: E2E_USER_EMAIL, password: 'definitely-wrong-password' },
+    })
+    expect(
+      resp.status(),
+      `expected 401, got ${resp.status()}: ${await resp.text().catch(() => '')}`
+    ).toBe(401)
+  })
+
   // ── 3. Full OIDC sign-in flow ───────────────────────────────────────────
   test('full OIDC sign-in flow with local user lands on dashboard with a real JWT', async ({
     page,
@@ -80,8 +111,11 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     await page.goto(FRONTEND_URL)
     await expect(page).toHaveTitle(/FuzeFront|Sign in/i, { timeout: 15_000 })
 
-    // Step 2: OIDC button visible (backend is configured with Authentik)
-    const oidcButton = page.getByRole('button', { name: /sign in with authentik/i })
+    // Step 2: the redirect entry point is now the Google button (the dedicated
+    // "Sign in with Authentik" button was replaced by the native credentials
+    // form). This e2e Authentik has no Google source, so the button lands on
+    // Authentik's own identification flow — exactly what we want to drive.
+    const oidcButton = page.getByRole('button', { name: /sign in with google/i })
     await expect(oidcButton).toBeVisible({ timeout: 15_000 })
     await oidcButton.click()
 
@@ -107,6 +141,37 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     const payload = JSON.parse(Buffer.from(authToken!.split('.')[1], 'base64url').toString())
     expect(payload.sub).toBeTruthy()
     expect(payload.email).toBeTruthy()
+  })
+
+  // ── 3b. Native credentials form drives the Authentik-backed login ──────
+  test('native email/password form signs in via Authentik (no redirect) and lands on dashboard', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+
+    await page.goto(FRONTEND_URL)
+    const emailField = page.locator('input[type="email"]')
+    await expect(emailField).toBeVisible({ timeout: 15_000 })
+
+    await emailField.fill(E2E_USER_EMAIL)
+    await page.locator('input[type="password"]').fill(E2E_USER_PASSWORD)
+
+    const loginResp = page.waitForResponse(
+      r => r.url().includes('/api/auth/oidc/password'),
+      { timeout: 30_000 }
+    )
+    await page.getByRole('button', { name: /^sign in$/i }).click()
+    const resp = await loginResp
+    expect(
+      resp.status(),
+      `POST /api/auth/oidc/password -> ${resp.status()}`
+    ).toBe(200)
+
+    // The page never navigated to Authentik — the whole exchange was server-side.
+    await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 30_000 })
+    const authToken = await page.evaluate(() => localStorage.getItem('authToken'))
+    expect(authToken).toBeTruthy()
+    expect(authToken!.split('.').length).toBe(3)
   })
 
   // ── 4. Error path: OIDC error redirected to frontend ───────────────────

@@ -9,10 +9,10 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  *   2. Core API health is up.
  *   3. The backend advertises OIDC as configured (/api/auth/method) — this is
  *      the flag that hides the local form, so it is asserted explicitly.
- *   4. /login offers ONLY SSO sign-in: "Sign in with Authentik" and
- *      "Sign in with Google" are visible, and the internal (local
- *      email/password) form is NOT rendered. Google auth is federated through
- *      Authentik, so both buttons start the same OIDC flow.
+ *   4. /login shows the NATIVE credentials form (email/password verified
+ *      against Authentik server-side — no redirect) plus a "Sign in with
+ *      Google" button (federated through Authentik). The old "Sign in with
+ *      Authentik" redirect button is gone.
  *   5. Clicking "Sign in with Google" hands off into the OIDC flow.
  *   6. The auth backend is routable.
  *   7. The dashboard renders for an authenticated user and Module-Federation
@@ -80,20 +80,22 @@ test.describe('FuzeFront live post-prod smoke', () => {
     expect(body.defaultMethod).toBe('oidc')
   })
 
-  test('4. /login offers ONLY Authentik + Google sign-in (no local form)', async ({ page }) => {
+  test('4. /login offers the native credentials form + Google (no Authentik redirect button)', async ({ page }) => {
     await page.goto('/login')
 
-    // SSO buttons are the only sign-in affordances.
-    await expect(
-      page.getByRole('button', { name: /sign in with authentik/i })
-    ).toBeVisible({ timeout: 20_000 })
+    // Native credentials form — the default UI. With oidcConfigured=true these
+    // fields are verified AGAINST AUTHENTIK server-side (no redirect).
+    await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('input[type="password"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible()
+
+    // Google is federated through Authentik and offered as a button.
     await expect(
       page.getByRole('button', { name: /sign in with google/i })
     ).toBeVisible()
 
-    // The internal (local email/password) sign-in must NOT be rendered.
-    await expect(page.locator('input[type="email"]')).toHaveCount(0)
-    await expect(page.locator('input[type="password"]')).toHaveCount(0)
+    // The old "Sign in with Authentik" redirect button is gone.
+    await expect(page.getByText(/sign in with authentik/i)).toHaveCount(0)
 
     // The demo-credentials disclosure is gone.
     await expect(page.getByText(/demo credentials/i)).toHaveCount(0)
