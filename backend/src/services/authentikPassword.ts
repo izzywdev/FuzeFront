@@ -131,8 +131,11 @@ async function flowRequest(
   }
   jar.absorb(res)
   if (!res.ok) {
+    // Surface Authentik's own error payload — a bare status is undebuggable
+    // from CI logs (e.g. 403 CSRF vs 404 unknown flow slug).
+    const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
     throw new AuthentikUnavailableError(
-      `Authentik flow executor unexpected HTTP ${res.status}`
+      `Authentik flow executor HTTP ${res.status} at ${url}: ${bodySnippet}`
     )
   }
   return (await res.json()) as FlowChallenge

@@ -77,7 +77,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     })
     expect(
       resp.status(),
-      `POST /api/auth/oidc/password -> ${resp.status()} (401 = Authentik rejected creds; 503 = flow-executor/authorize plumbing broken)`
+      `POST /api/auth/oidc/password -> ${resp.status()}: ${await resp.text().catch(() => '')}`
     ).toBe(200)
     const body = await resp.json()
     expect(body.token, 'platform JWT returned').toBeTruthy()
@@ -90,7 +90,10 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     const resp = await request.post(`${BACKEND_URL}/api/auth/oidc/password`, {
       data: { email: E2E_USER_EMAIL, password: 'definitely-wrong-password' },
     })
-    expect(resp.status()).toBe(401)
+    expect(
+      resp.status(),
+      `expected 401, got ${resp.status()}: ${await resp.text().catch(() => '')}`
+    ).toBe(401)
   })
 
   // ── 3. Full OIDC sign-in flow ───────────────────────────────────────────

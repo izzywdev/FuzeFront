@@ -505,14 +505,14 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' })
     }
     if (error instanceof UnsupportedFlowStageError) {
-      console.warn('⚠️ Unsupported Authentik flow stage', { requestId, message: error.message.replace(/[\r\n]+/g, ' ') })
+      console.warn('⚠️ Unsupported Authentik flow stage', JSON.stringify({ requestId, message: error.message.replace(/[\r\n]+/g, ' ') }))
       return res.status(503).json({
         error:
           'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
       })
     }
     if (error instanceof AuthentikUnavailableError) {
-      console.error('❌ Authentik unavailable', { requestId, message: error.message.replace(/[\r\n]+/g, ' ') })
+      console.error('❌ Authentik unavailable', JSON.stringify({ requestId, message: error.message.replace(/[\r\n]+/g, ' ') }))
       return res
         .status(503)
         .json({ error: 'Authentication service unavailable. Try again shortly.' })
