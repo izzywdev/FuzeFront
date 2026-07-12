@@ -62,7 +62,6 @@ function LoginPage() {
     // + auth-method fetch). Depending on setUser here previously re-fired the
     // effect on every render and flooded /api/auth/method; setUser is now a
     // stable ref, but a mount-only effect is the correct shape regardless.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadAuthMethods = async () => {
