@@ -170,7 +170,16 @@ jobs:
             -keypass "${KEYSTORE_KEY_PASSWORD}" \
             -sigalg SHA256withRSA -digestalg SHA-256 \
             "$AAB" shopifynav
-          jarsigner -verify "$AAB"
+
+          # `jarsigner -verify` WITHOUT -strict exits 0 even for an UNSIGNED jar
+          # (it just prints "jar is unsigned"), which would let an unsigned .aab
+          # reach the GitHub Release. Require -strict AND an explicit "jar verified"
+          # line, so a silently-failed signing step aborts the build.
+          if ! jarsigner -verify -strict "$AAB" | grep -q "jar verified"; then
+            echo "::error::AAB signature verification failed — refusing to publish an unsigned bundle."
+            jarsigner -verify -strict "$AAB" || true
+            exit 1
+          fi
 
       - name: Locate signed APK + AAB
         if: steps.secrets.outputs.have == 'true'
