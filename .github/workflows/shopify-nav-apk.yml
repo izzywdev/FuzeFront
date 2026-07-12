@@ -152,7 +152,27 @@ jobs:
 
           "$APKSIGNER" verify --verbose "$SIGNED"
 
-      - name: Locate signed APK
+      - name: Build AAB (Android App Bundle for Google Play)
+        if: steps.secrets.outputs.have == 'true'
+        working-directory: shopify-nav/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # Google Play requires an AAB, not an APK. The bubblewrap gradle template
+          # doesn't wire key.properties (same quirk as the APK path), so bundleRelease
+          # emits an unsigned .aab which we sign with jarsigner (AABs are jar-signed,
+          # not apksigner-signed). This keystore is the Play "upload key".
+          ./gradlew bundleRelease
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          jarsigner -keystore ./keystore/shopify-nav-release.keystore \
+            -storepass "${KEYSTORE_STORE_PASSWORD}" \
+            -keypass "${KEYSTORE_KEY_PASSWORD}" \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            "$AAB" shopifynav
+          jarsigner -verify "$AAB"
+
+      - name: Locate signed APK + AAB
         if: steps.secrets.outputs.have == 'true'
         id: apk
         working-directory: shopify-nav/android
@@ -164,15 +184,21 @@ jobs:
             APK=$(find . -name "*.apk" ! -name "*unsigned*" -print -quit)
           fi
           APK="${APK#./}"
+          AAB=$(find . -path "*/bundle/release/app-release.aab" -print -quit)
+          AAB="${AAB#./}"
           echo "path=shopify-nav/android/$APK" >> "$GITHUB_OUTPUT"
-          echo "Found: $APK"
+          echo "aab_path=shopify-nav/android/$AAB" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK"
+          echo "Found AAB: $AAB"
 
-      - name: Upload APK artifact
+      - name: Upload APK + AAB artifact
         if: steps.secrets.outputs.have == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: shopify-nav-android-v${{ steps.version.outputs.code }}
-          path: ${{ steps.apk.outputs.path }}
+          path: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.aab_path }}
           retention-days: 90
 
       - name: Create GitHub Release with APK
@@ -182,22 +208,34 @@ jobs:
           tag_name: shopify-nav-android-v${{ steps.version.outputs.code }}
           name: Shopify Navigator Android v${{ steps.version.outputs.code }}
           body: |
-            ## Shopify Navigator Android APK (TWA)
+            ## Shopify Navigator Android (TWA)
 
             Trusted Web Activity wrapping **https://nav.velogearpremium.com** — the self-hosted Shopify Navigator server.
 
-            ### Install
-            1. Download the APK below
+            Two files are attached:
+            - **`app-release.apk`** — install directly on a phone (sideload / file distribution).
+            - **`app-release.aab`** — upload this one to **Google Play Console** (Play requires the App Bundle).
+
+            ### Install the APK directly
+            1. Download `app-release.apk` below
             2. On your Android phone: **Settings → Apps → Install unknown apps** → allow your browser/Files app
             3. Open the downloaded APK and tap **Install**
             4. Launch **Shopify Nav** from your home screen
 
             No API key needed — the app talks to the self-hosted server.
 
+            ### Publishing to Google Play
+            Upload the `.aab`. After the first upload, copy the **App signing key SHA-256**
+            from Play Console → *Setup → App signing* and add it to
+            `frontend`… (this repo: `shopify-nav/.well-known/assetlinks.json`), then redeploy
+            the server — otherwise the TWA shows a browser URL bar.
+
             ### Requirements
             - Android 5.0+ (API 21+)
             - Chrome 72+ installed on device
             - https://nav.velogearpremium.com must be live (serves the app + /.well-known/assetlinks.json)
-          files: ${{ steps.apk.outputs.path }}
+          files: |
+            ${{ steps.apk.outputs.path }}
+            ${{ steps.apk.outputs.aab_path }}
           draft: false
           prerelease: false
