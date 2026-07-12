@@ -369,7 +369,8 @@ router.get('/oidc/login', async (req, res) => {
   // Structured trace: enough to diagnose a broken handoff from pod logs alone
   // (misconfigured issuer/redirect/frontend-base, or an uninitialized client
   // whose discovery against Authentik failed at boot).
-  console.log(`🔐 [${requestId}] OIDC login request received`, {
+  console.log('🔐 OIDC login request received', {
+    requestId,
     referer: req.get('Referer'),
     configured: oidcService.isConfigured?.(),
     initialized: oidcService.isInitialized?.(),
@@ -442,7 +443,8 @@ router.post('/oidc/password', async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   const { email, password } = req.body || {}
 
-  console.log(`🔐 [${requestId}] Authentik password login request`, {
+  console.log('🔐 Authentik password login request', {
+    requestId,
     hasEmail: !!email,
     configured: oidcService.isConfigured?.(),
     initialized: oidcService.isInitialized?.(),
@@ -464,6 +466,9 @@ router.post('/oidc/password', async (req, res) => {
     // Session + JWT minting — identical to the local login / OIDC callback.
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    // nosemgrep: fuze-auth-self-minted-user-token — this IS FuzeFront's
+    // identity service; it is the issuer of platform tokens (same mint as
+    // /login and the OIDC callback), not a product self-minting.
     const token = jwt.sign(
       { userId: user.id, sessionId },
       process.env.JWT_SECRET!,
@@ -477,27 +482,27 @@ router.post('/oidc/password', async (req, res) => {
 
     selfHealProvisioningOnLogin(user.id)
 
-    console.log(`🎉 [${requestId}] Authentik password login successful:`, user.email)
+    console.log('🎉 Authentik password login successful', { requestId, email: user.email })
     return res.json({ token, user, sessionId })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
-      console.log(`❌ [${requestId}] Authentik rejected credentials`)
+      console.log('❌ Authentik rejected credentials', { requestId })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
     if (error instanceof UnsupportedFlowStageError) {
-      console.warn(`⚠️ [${requestId}] ${error.message}`)
+      console.warn('⚠️ Unsupported Authentik flow stage', { requestId, message: error.message })
       return res.status(503).json({
         error:
           'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
       })
     }
     if (error instanceof AuthentikUnavailableError) {
-      console.error(`❌ [${requestId}] Authentik unavailable:`, error.message)
+      console.error('❌ Authentik unavailable', { requestId, message: error.message })
       return res
         .status(503)
         .json({ error: 'Authentication service unavailable. Try again shortly.' })
     }
-    console.error(`❌ [${requestId}] Authentik password login error:`, error)
+    console.error('❌ Authentik password login error', { requestId }, error)
     return res.status(500).json({ error: 'Authentication failed' })
   }
 })

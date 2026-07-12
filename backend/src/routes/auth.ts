@@ -7,6 +7,12 @@ import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
+import {
+  authentikPasswordLogin,
+  InvalidCredentialsError,
+  AuthentikUnavailableError,
+  UnsupportedFlowStageError,
+} from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
@@ -406,6 +412,95 @@ router.get('/oidc/login', async (req, res) => {
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
     res.status(500).json({ error: 'Failed to initiate OIDC login' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/password:
+ *   post:
+ *     summary: Password sign-in against Authentik (no redirect)
+ *     description: >
+ *       Authenticates email+password by driving Authentik's flow-executor API
+ *       server-side, then completes the OIDC code exchange with the resulting
+ *       Authentik session. Response shape matches /api/auth/login.
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       200: { description: Authenticated }
+ *       400: { description: Missing email or password }
+ *       401: { description: Invalid credentials }
+ *       503: { description: OIDC unavailable or browser flow required }
+ */
+router.post('/oidc/password', async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  const { email, password } = req.body || {}
+
+  console.log('🔐 Authentik password login request', {
+    requestId,
+    hasEmail: !!email,
+    configured: oidcService.isConfigured?.(),
+    initialized: oidcService.isInitialized?.(),
+  })
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' })
+  }
+  if (!oidcService.isConfigured()) {
+    return res.status(503).json({
+      error:
+        'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
+    })
+  }
+
+  try {
+    // Lazy re-init mirrors /oidc/login: Authentik may not have been ready at boot.
+    if (!oidcService.isInitialized()) {
+      await oidcService.initialize()
+    }
+
+    const user = await authentikPasswordLogin(email, password)
+
+    const sessionId = uuidv4()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    // nosemgrep: fuze-auth-self-minted-user-token — this IS FuzeFront's identity
+    // service; it is the issuer of platform tokens (same mint as /login and the
+    // OIDC callback above), not a product self-minting.
+    const token = jwt.sign(
+      { userId: user.id, sessionId },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
+    await db('sessions').insert({
+      id: sessionId,
+      user_id: user.id,
+      expires_at: expiresAt,
+    })
+
+    selfHealProvisioningOnLogin(user.id)
+
+    console.log('🎉 Authentik password login successful', { requestId, email: user.email })
+    return res.json({ token, user, sessionId })
+  } catch (error) {
+    if (error instanceof InvalidCredentialsError) {
+      console.log('❌ Authentik rejected credentials', { requestId })
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+    if (error instanceof UnsupportedFlowStageError) {
+      console.warn('⚠️ Unsupported Authentik flow stage', { requestId, message: error.message })
+      return res.status(503).json({
+        error:
+          'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
+      })
+    }
+    if (error instanceof AuthentikUnavailableError) {
+      console.error('❌ Authentik unavailable', { requestId, message: error.message })
+      return res
+        .status(503)
+        .json({ error: 'Authentication service unavailable. Try again shortly.' })
+    }
+    console.error('❌ Authentik password login error', { requestId }, error)
+    return res.status(500).json({ error: 'Authentication failed' })
   }
 })
 
