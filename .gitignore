@@ -51,6 +51,14 @@ android/keystore/*.jks
 # Bubblewrap-generated Android project (reproducible via `bubblewrap init`)
 android/app/
 android/gradle/
+
+# Shopify Navigator (standalone unit) — same rules, SHOPIFY_NAV_* GitHub Secrets
+shopify-nav/android/keystore/
+shopify-nav/android/app/
+shopify-nav/android/gradle/
+shopify-nav/android/*.keystore
+shopify-nav/deploy/.env
+shopify-nav/server/data/
 android/gradlew
 android/gradlew.bat
 android/build.gradle
