@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
@@ -416,29 +417,18 @@ router.get('/oidc/login', async (req, res) => {
 })
 
 
-// Fixed-window rate limit for the password endpoint (per replica): the
-// flow-executor login is a credential-stuffing surface, so cap attempts per
-// client-IP+account before we ever contact Authentik.
-const PW_WINDOW_MS = 5 * 60_000
-const PW_MAX_ATTEMPTS = 10
-const pwAttempts = new Map<string, { count: number; resetAt: number }>()
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of pwAttempts) {
-    if (v.resetAt < now) pwAttempts.delete(k)
-  }
-}, 60_000).unref()
-
-function passwordRateLimited(key: string): boolean {
-  const now = Date.now()
-  const cur = pwAttempts.get(key)
-  if (!cur || cur.resetAt < now) {
-    pwAttempts.set(key, { count: 1, resetAt: now + PW_WINDOW_MS })
-    return false
-  }
-  cur.count++
-  return cur.count > PW_MAX_ATTEMPTS
-}
+// Rate limit for the password endpoint: the flow-executor login is a
+// credential-stuffing surface, so cap FAILED attempts per client before we
+// ever contact Authentik (same express-rate-limit convention as
+// tokenAuthRateLimiter). Successful sign-ins are never throttled.
+const passwordLoginRateLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-in attempts. Try again later.' },
+})
 
 /**
  * @swagger
@@ -457,7 +447,7 @@ function passwordRateLimited(key: string): boolean {
  *       401: { description: Invalid credentials }
  *       503: { description: OIDC unavailable or browser flow required }
  */
-router.post('/oidc/password', async (req, res) => {
+router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   const { email, password } = req.body || {}
 
@@ -470,12 +460,6 @@ router.post('/oidc/password', async (req, res) => {
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' })
-  }
-  const rlKey = `${req.ip}|${String(email).toLowerCase()}`
-  if (passwordRateLimited(rlKey)) {
-    return res
-      .status(429)
-      .json({ error: 'Too many sign-in attempts. Try again later.' })
   }
   if (!oidcService.isConfigured()) {
     return res.status(503).json({
