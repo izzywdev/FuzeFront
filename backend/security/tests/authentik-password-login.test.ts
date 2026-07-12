@@ -258,6 +258,22 @@ describe('authentikPasswordLogin()', () => {
     ).rejects.toBeInstanceOf(UnsupportedFlowStageError)
   })
 
+  it('refuses to follow an off-origin redirect with session cookies', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mkRes({
+        status: 302,
+        location: 'http://evil.example.net/steal',
+        setCookies: ['authentik_session=sess; Path=/'],
+      })
+    )
+
+    await expect(
+      authentikPasswordLogin('e2e@test.local', 'pw')
+    ).rejects.toBeInstanceOf(AuthentikUnavailableError)
+    // No request was made to the off-origin host.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('throws AuthentikUnavailableError when Authentik is unreachable', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'))
 

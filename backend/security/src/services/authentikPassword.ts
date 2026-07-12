@@ -156,7 +156,15 @@ async function flowRequest(
 
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
-      url = new URL(loc, url).toString()
+      const nextUrl = new URL(loc, url)
+      // The jar carries authentik_session/authentik_csrf — never present those
+      // cookies to any host other than Authentik itself.
+      if (nextUrl.origin !== new URL(base).origin) {
+        throw new AuthentikUnavailableError(
+          `Flow executor redirected off-origin to ${nextUrl.origin} — refusing to follow with session cookies`
+        )
+      }
+      url = nextUrl.toString()
       // 301/302/303 rewrite the retry as GET (Django semantics); 307/308
       // preserve the original method and body per HTTP spec.
       if (res.status !== 307 && res.status !== 308) {
@@ -288,7 +296,8 @@ export async function authentikPasswordLogin(
         `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
     }
-    const resolved = new URL(next, location).toString()
+    const resolvedUrl = new URL(next, location)
+    const resolved = resolvedUrl.toString()
     if (resolved.startsWith(target)) {
       const u = new URL(resolved)
       code = u.searchParams.get('code')
@@ -298,6 +307,13 @@ export async function authentikPasswordLogin(
         throw new AuthentikUnavailableError(`Authorize error: ${err}`)
       }
       break
+    }
+    // Continue only within Authentik's own origin — the jar must not follow
+    // an arbitrary redirect elsewhere.
+    if (resolvedUrl.origin !== new URL(base).origin) {
+      throw new AuthentikUnavailableError(
+        `Authorize flow redirected off-origin to ${resolvedUrl.origin} — refusing to follow with session cookies`
+      )
     }
     location = resolved
   }
