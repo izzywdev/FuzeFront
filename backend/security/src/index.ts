@@ -25,6 +25,10 @@ dotenv.config()
 
 const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service' })
+// Behind the k8s ingress every request otherwise carries the ingress IP —
+// trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
+// the real client from X-Forwarded-For.
+app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const startTime = Date.now()
 

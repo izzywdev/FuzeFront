@@ -122,6 +122,8 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     vi.spyOn(authAPI, 'handleOIDCCallback').mockResolvedValue({})
     vi.spyOn(authAPI, 'getAuthMethods')
     vi.spyOn(authAPI, 'loginWithOIDC').mockResolvedValue(undefined)
+    vi.spyOn(authAPI, 'loginWithAuthentikPassword')
+    vi.spyOn(authAPI, 'login')
     vi.spyOn(authAPI, 'getCurrentUser')
 
     // Suppress api.ts / component console noise so test output stays clean.
@@ -136,14 +138,14 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     vi.restoreAllMocks()
   })
 
-  // ── 1: OIDC buttons hidden / local form shown when oidcConfigured is false
+  // ── 1: No Google button, local-auth form fallback when oidcConfigured=false
 
-  it('does NOT render OIDC buttons but DOES render the local fallback form when oidcConfigured is false', async () => {
+  it('renders the credentials form but no Google button when oidcConfigured is false', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(LOCAL_ONLY_METHODS)
 
     render(<LoginPage />)
 
-    // Wait for auth methods to have loaded (the local fallback form is the
+    // Wait for auth methods to have loaded (the credentials form is the
     // sentinel — it only renders once authMethods state is set).
     await waitFor(() => {
       expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
@@ -154,42 +156,100 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     expect(screen.queryByText(/sign in with google/i)).not.toBeInTheDocument()
   })
 
-  // ── 2: OIDC buttons shown / local form hidden when oidcConfigured is true
+  // ── 2: Native credentials form + Google button when oidcConfigured is true
 
-  it('renders "Sign in with Authentik" and "Sign in with Google" buttons when oidcConfigured is true', async () => {
+  it('renders the credentials form AND "Sign in with Google" (no Authentik redirect button) when oidcConfigured is true', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
 
     render(<LoginPage />)
 
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /sign in with authentik/i })
+        screen.getByRole('button', { name: /sign in with google/i })
       ).toBeInTheDocument()
     })
-    expect(
-      screen.getByRole('button', { name: /sign in with google/i })
-    ).toBeInTheDocument()
+    // Default UI components for credentials — always present.
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    // The redirect button is gone — Authentik is driven server-side instead.
+    expect(screen.queryByText(/sign in with authentik/i)).not.toBeInTheDocument()
   })
 
-  it('does NOT render the local email/password form when oidcConfigured is true (Authentik-only sign-in)', async () => {
+  // ── 2a: Form submit verifies credentials AGAINST AUTHENTIK when configured
+
+  it('submitting the form calls loginWithAuthentikPassword (not local login) when oidcConfigured is true', async () => {
+    const mockUser = {
+      id: 'user-1',
+      email: 'someone@example.com',
+      firstName: 'Some',
+      lastName: 'One',
+      roles: ['user'],
+    }
+    const setUser = vi.fn()
+    ;(sharedMock.useCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeUserCtx({ setUser })
+    )
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
+    vi.mocked(authAPI.loginWithAuthentikPassword).mockResolvedValue({
+      token: 'jwt-authentik',
+      sessionId: 'sess-ak',
+      user: mockUser,
+    } as any)
 
     render(<LoginPage />)
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /sign in with authentik/i })
-      ).toBeInTheDocument()
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
     })
 
-    // The internal (local) sign-in capability must be hidden: no email or
-    // password inputs, no local submit button.
-    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: 'someone@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'hunter22' },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }))
+    })
+
+    expect(authAPI.loginWithAuthentikPassword).toHaveBeenCalledWith({
+      email: 'someone@example.com',
+      password: 'hunter22',
+    })
+    expect(authAPI.login).not.toHaveBeenCalled()
+    expect(setUser).toHaveBeenCalledWith(mockUser)
+    expect(locationStub.href).toBe('/dashboard')
   })
 
-  // ── 2b: Clicking the Google button starts the same Authentik OIDC flow ───
+  it('submitting the form calls the LOCAL login when oidcConfigured is false', async () => {
+    vi.mocked(authAPI.getAuthMethods).mockResolvedValue(LOCAL_ONLY_METHODS)
+    vi.mocked(authAPI.login).mockResolvedValue({
+      token: 'jwt-local',
+      sessionId: 'sess-local',
+      user: { id: 'u2', email: 'dev@local', firstName: 'D', lastName: 'V', roles: ['user'] },
+    } as any)
+
+    render(<LoginPage />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: 'dev@local' },
+    })
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'pw' },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }))
+    })
+
+    expect(authAPI.login).toHaveBeenCalledTimes(1)
+    expect(authAPI.loginWithAuthentikPassword).not.toHaveBeenCalled()
+  })
+
+  // ── 2b: Clicking the Google button starts the Authentik OIDC redirect ────
 
   it('clicking "Sign in with Google" calls authAPI.loginWithOIDC (Google is federated via Authentik)', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
@@ -204,26 +264,6 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /sign in with google/i }))
-    })
-
-    expect(authAPI.loginWithOIDC).toHaveBeenCalledTimes(1)
-  })
-
-  // ── 3: Clicking the OIDC button calls loginWithOIDC ─────────────────────
-
-  it('clicking "Sign in with Authentik" calls authAPI.loginWithOIDC', async () => {
-    vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
-
-    render(<LoginPage />)
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /sign in with authentik/i })
-      ).toBeInTheDocument()
-    })
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /sign in with authentik/i }))
     })
 
     expect(authAPI.loginWithOIDC).toHaveBeenCalledTimes(1)
@@ -302,7 +342,7 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     // Wait for auth methods so the page is fully settled.
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /sign in with authentik/i })
+        screen.getByRole('button', { name: /sign in with google/i })
       ).toBeInTheDocument()
     })
 

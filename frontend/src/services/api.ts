@@ -10,32 +10,40 @@ const API_BASE_URL =
   (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001')
 const API_URL = `${API_BASE_URL}/api`
 
-console.log('🔧 API Configuration:', {
-  API_BASE_URL,
-  VITE_API_URL: import.meta.env.VITE_API_URL,
-  NODE_ENV: import.meta.env.NODE_ENV,
-  MODE: import.meta.env.MODE,
-  timestamp: new Date().toISOString(),
-})
+// Verbose API diagnostics (config dump, per-request console groups, module-load
+// health probe) are DEV-ONLY: in production they flooded the console with a
+// multi-line group for every API call and fired an extra /api/health request
+// on each page load.
+const API_DEBUG = import.meta.env.DEV
 
-// Test API connectivity on module load
-console.log('🌐 Testing API connectivity...')
-fetch('/api/health')
-  .then(response => {
-    console.log('✅ API Health Check Success:', {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url,
-      headers: Object.fromEntries(response.headers.entries()),
-    })
+if (API_DEBUG) {
+  console.log('🔧 API Configuration:', {
+    API_BASE_URL,
+    VITE_API_URL: import.meta.env.VITE_API_URL,
+    NODE_ENV: import.meta.env.NODE_ENV,
+    MODE: import.meta.env.MODE,
+    timestamp: new Date().toISOString(),
   })
-  .catch(error => {
-    console.error('❌ API Health Check Failed:', {
-      error: error.message,
-      type: error.constructor.name,
-      stack: error.stack,
+
+  // Test API connectivity on module load
+  console.log('🌐 Testing API connectivity...')
+  fetch('/api/health')
+    .then(response => {
+      console.log('✅ API Health Check Success:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url,
+        headers: Object.fromEntries(response.headers.entries()),
+      })
     })
-  })
+    .catch(error => {
+      console.error('❌ API Health Check Failed:', {
+        error: error.message,
+        type: error.constructor.name,
+        stack: error.stack,
+      })
+    })
+}
 
 const api = axios.create({
   baseURL: API_URL,
@@ -52,31 +60,22 @@ api.interceptors.request.use(
     const requestId = Math.random().toString(36).substr(2, 9)
     ;(config as any).metadata = { startTime: Date.now(), requestId }
 
-    console.group(`🚀 API Request [${requestId}]`)
-    console.log('Request Details:', {
-      method: config.method?.toUpperCase(),
-      url: config.url,
-      baseURL: config.baseURL,
-      fullURL: `${config.baseURL}${config.url}`,
-      timeout: config.timeout,
-      hasToken: !!token,
-      tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
-      headers: config.headers,
-      data: config.data,
-      timestamp: new Date().toISOString(),
-    })
-    console.log('Browser Info:', {
-      userAgent: navigator.userAgent,
-      onLine: navigator.onLine,
-      connection: (navigator as any).connection
-        ? {
-            effectiveType: (navigator as any).connection.effectiveType,
-            downlink: (navigator as any).connection.downlink,
-            rtt: (navigator as any).connection.rtt,
-          }
-        : 'not available',
-    })
-    console.groupEnd()
+    if (API_DEBUG) {
+      console.group(`🚀 API Request [${requestId}]`)
+      console.log('Request Details:', {
+        method: config.method?.toUpperCase(),
+        url: config.url,
+        baseURL: config.baseURL,
+        fullURL: `${config.baseURL}${config.url}`,
+        timeout: config.timeout,
+        hasToken: !!token,
+        tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
+        headers: config.headers,
+        data: config.data,
+        timestamp: new Date().toISOString(),
+      })
+      console.groupEnd()
+    }
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -96,25 +95,27 @@ api.interceptors.request.use(
 // Enhanced response logging with timing
 api.interceptors.response.use(
   response => {
-    const duration = (response.config as any).metadata
-      ? Date.now() - (response.config as any).metadata.startTime
-      : 0
-    const requestId = (response.config as any).metadata?.requestId || 'unknown'
+    if (API_DEBUG) {
+      const duration = (response.config as any).metadata
+        ? Date.now() - (response.config as any).metadata.startTime
+        : 0
+      const requestId = (response.config as any).metadata?.requestId || 'unknown'
 
-    console.group(`✅ API Response [${requestId}] - ${duration}ms`)
-    console.log('Response Details:', {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.config.url,
-      method: response.config.method?.toUpperCase(),
-      duration: `${duration}ms`,
-      headers: response.headers,
-      dataKeys: response.data ? Object.keys(response.data) : 'no data',
-      dataSize: JSON.stringify(response.data || {}).length + ' bytes',
-      timestamp: new Date().toISOString(),
-    })
-    console.log('Response Data:', response.data)
-    console.groupEnd()
+      console.group(`✅ API Response [${requestId}] - ${duration}ms`)
+      console.log('Response Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: response.config.url,
+        method: response.config.method?.toUpperCase(),
+        duration: `${duration}ms`,
+        headers: response.headers,
+        dataKeys: response.data ? Object.keys(response.data) : 'no data',
+        dataSize: JSON.stringify(response.data || {}).length + ' bytes',
+        timestamp: new Date().toISOString(),
+      })
+      console.log('Response Data:', response.data)
+      console.groupEnd()
+    }
 
     return response
   },
@@ -217,10 +218,30 @@ export const authAPI = {
     return response.data
   },
 
-  // OIDC authentication (redirects to Authentik)
+  // OIDC authentication (redirects to Authentik — used for Google/SSO and
+  // the sign-up/enrollment affordance)
   async loginWithOIDC(): Promise<void> {
     // This will redirect the browser to Authentik
     window.location.href = `${API_URL}/auth/oidc/login`
+  },
+
+  // Password sign-in against Authentik WITHOUT a redirect: the backend drives
+  // Authentik's flow-executor with these credentials and returns the same
+  // { token, user, sessionId } shape as local login.
+  async loginWithAuthentikPassword(
+    credentials: LoginCredentials
+  ): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>(
+      '/auth/oidc/password',
+      credentials
+    )
+    if (response.data?.token) {
+      localStorage.setItem('authToken', response.data.token)
+    }
+    if (response.data?.sessionId) {
+      localStorage.setItem('sessionId', response.data.sessionId)
+    }
+    return response.data
   },
 
   // Get current user (the backend wraps the payload as { user })
