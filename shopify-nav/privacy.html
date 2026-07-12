@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — Shopify Navigator</title>
+<style>
+  :root { --green:#008060; --green-dark:#004c3f; --ink:#111827; --muted:#6b7280; --border:#e5e7eb; --bg:#f3f4f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
+  .header { background:linear-gradient(135deg,var(--green-dark),var(--green)); color:#fff; padding:36px 20px; }
+  .wrap { max-width:760px; margin:0 auto; padding:0 20px; }
+  .header h1 { margin:0; font-size:26px; }
+  .header p { margin:6px 0 0; opacity:.85; font-size:14px; }
+  main { max-width:760px; margin:0 auto; padding:28px 20px 60px; }
+  h2 { font-size:19px; margin:28px 0 8px; color:var(--green-dark); }
+  h3 { font-size:15px; margin:18px 0 4px; }
+  p, li { font-size:15px; color:#1f2937; }
+  ul { padding-inline-start:22px; }
+  a { color:var(--green); }
+  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:20px 22px; margin-top:18px; }
+  .muted { color:var(--muted); font-size:13px; }
+  code { background:#eef2f7; padding:1px 6px; border-radius:6px; font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="wrap">
+      <h1>Privacy Policy</h1>
+      <p>Shopify Navigator — last updated: 12 July 2026</p>
+    </div>
+  </div>
+  <main>
+    <div class="card">
+      <p><strong>Shopify Navigator</strong> ("the app") is an AI assistant that guides you through the
+      Shopify Admin interface and helps you plan new products for your store. This policy explains what
+      information the app handles and how. We keep it simple because the app collects very little.</p>
+      <p class="muted">We do not sell your data, show ads, or run third-party analytics or trackers.</p>
+    </div>
+
+    <h2>1. Information the app handles</h2>
+    <p>You choose what to send. Depending on how you use the app, this may include:</p>
+    <ul>
+      <li><strong>Text you type</strong> — the tasks and questions you enter, and feedback you give the assistant.</li>
+      <li><strong>Images you attach</strong> — optional screenshots (for "I'm stuck" help) or product photos you add to the product assistant.</li>
+      <li><strong>Your store's public address</strong> — an optional store URL you enter in Settings so the app can learn your store's style.</li>
+      <li><strong>An optional personal API key</strong> — if you choose to use your own Anthropic API key instead of the app's server.</li>
+      <li><strong>App preferences</strong> — your chosen language, model, and recent searches (cached so they work offline).</li>
+    </ul>
+    <p>The app does <strong>not</strong> require an account, and does not collect your name, contacts, location, or advertising identifiers.</p>
+
+    <h2>2. How the information is used</h2>
+    <ul>
+      <li>The text and images you send are transmitted to <strong>Anthropic</strong> (the "Claude" AI service) to generate the guidance, product suggestions, and results you asked for.</li>
+      <li>When you provide a store URL, the app (or its server) fetches your store's <strong>publicly available</strong> pages to build a short "style profile" (niche, colours, tone) used to tailor product ideas.</li>
+      <li>To find matching products, the assistant may perform web searches and fetch public web pages (for example a supplier product page you paste or that it locates).</li>
+    </ul>
+
+    <h2>3. Where information is stored</h2>
+    <h3>On your device</h3>
+    <p>Your settings, chosen language, cached searches, optional API key, store URL, and last store profile are stored locally in your browser/app storage (<code>localStorage</code>). They stay on your device and are removed when you clear the app's data or uninstall it.</p>
+    <h3>On the app's server (if used)</h3>
+    <p>If you use the hosted version, the server stores a <strong>store style profile</strong> derived from your store's public pages, keyed by the store URL, so it can refresh it periodically. This contains publicly-derived information about the store only. The server does <strong>not</strong> create user accounts and does not store personal identifiers. It applies rate limits and does not log the contents of your searches beyond what is needed to operate.</p>
+
+    <h2>4. Third-party services</h2>
+    <ul>
+      <li><strong>Anthropic (Claude API)</strong> — processes the text/images you send to produce results. See Anthropic's privacy policy at <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">anthropic.com/legal/privacy</a>.</li>
+      <li><strong>Public web pages</strong> — your store and any product/supplier pages you reference are public sites operated by their respective owners.</li>
+    </ul>
+
+    <h2>5. Data retention & deletion</h2>
+    <ul>
+      <li><strong>Device data:</strong> clear the app's storage or uninstall the app to remove everything stored locally.</li>
+      <li><strong>Server store profile:</strong> profiles for stores that are not used are automatically stopped from refreshing and age out. To have a store profile removed immediately, contact us (below).</li>
+    </ul>
+
+    <h2>6. Children</h2>
+    <p>The app is a business tool for store owners and is not directed to children under 13.</p>
+
+    <h2>7. Security</h2>
+    <p>Connections use HTTPS. Any personal API key you enter is stored only on your device and sent only to the AI service to fulfil your requests.</p>
+
+    <h2>8. Changes to this policy</h2>
+    <p>We may update this policy; the "last updated" date above will change accordingly.</p>
+
+    <h2>9. Contact</h2>
+    <p>Questions or deletion requests: <a href="mailto:support@velogearpremium.com">support@velogearpremium.com</a></p>
+
+    <p class="muted" style="margin-top:28px">This app is an independent tool and is not affiliated with, endorsed by, or sponsored by Shopify Inc., AliExpress, or Anthropic.</p>
+  </main>
+</body>
+</html>

@@ -565,6 +565,8 @@ const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(req.url, "http://localhost");
     const p = u.pathname;
+    // Clean URL for the privacy policy (Play Console / store listing).
+    if (p === "/privacy") return await handleStatic(req, res, "/privacy.html");
     if (p.startsWith("/api/")) {
       if (req.method === "OPTIONS") {
         res.writeHead(204, CORS_HEADERS);

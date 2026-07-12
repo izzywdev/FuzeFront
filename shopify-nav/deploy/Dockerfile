@@ -7,7 +7,7 @@ WORKDIR /app
 COPY server/server.js /app/server/server.js
 
 # PWA static files
-COPY index.html sw.js manifest.webmanifest \
+COPY index.html sw.js manifest.webmanifest privacy.html \
      favicon.png apple-touch-icon.png icon-192.png icon-512.png icon-maskable.png \
      /app/public/
 COPY .well-known/ /app/public/.well-known/
