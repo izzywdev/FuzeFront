@@ -184,7 +184,7 @@ jobs:
           body: |
             ## Shopify Navigator Android APK (TWA)
 
-            Trusted Web Activity wrapping **https://shopify-nav.fuzefront.com** — the self-hosted Shopify Navigator server.
+            Trusted Web Activity wrapping **https://nav.velogearpremium.com** — the self-hosted Shopify Navigator server.
 
             ### Install
             1. Download the APK below
@@ -197,7 +197,7 @@ jobs:
             ### Requirements
             - Android 5.0+ (API 21+)
             - Chrome 72+ installed on device
-            - https://shopify-nav.fuzefront.com must be live (serves the app + /.well-known/assetlinks.json)
+            - https://nav.velogearpremium.com must be live (serves the app + /.well-known/assetlinks.json)
           files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false

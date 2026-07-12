@@ -1,6 +1,6 @@
 {
   "packageId": "com.fuzefront.shopifynav",
-  "host": "shopify-nav.fuzefront.com",
+  "host": "nav.velogearpremium.com",
   "name": "Shopify Navigator",
   "launcherName": "Shopify Nav",
   "display": "standalone",
@@ -13,9 +13,9 @@
   "backgroundColor": "#004c3f",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "https://shopify-nav.fuzefront.com/icon-512.png",
-  "maskableIconUrl": "https://shopify-nav.fuzefront.com/icon-maskable.png",
-  "monochromeIconUrl": "https://shopify-nav.fuzefront.com/icon-512.png",
+  "iconUrl": "https://nav.velogearpremium.com/icon-512.png",
+  "maskableIconUrl": "https://nav.velogearpremium.com/icon-maskable.png",
+  "monochromeIconUrl": "https://nav.velogearpremium.com/icon-512.png",
   "appVersion": "1",
   "appVersionCode": 1,
   "signingKey": {
@@ -28,10 +28,10 @@
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://shopify-nav.fuzefront.com/",
+  "fullScopeUrl": "https://nav.velogearpremium.com/",
   "minSdkVersion": 21,
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://shopify-nav.fuzefront.com/manifest.webmanifest",
+  "webManifestUrl": "https://nav.velogearpremium.com/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {
     "locationDelegation": { "enabled": false },

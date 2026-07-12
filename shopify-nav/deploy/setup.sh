@@ -53,8 +53,8 @@ if [ ! -f .env ]; then
   KEY_VAL="${ANTHROPIC_API_KEY:-}"
   if [ -z "$DOMAIN_VAL" ] || [ -z "$KEY_VAL" ]; then
     if [ -t 0 ]; then
-      [ -z "$DOMAIN_VAL" ] && { read -rp "Domain pointing at this server [shopify-nav.fuzefront.com]: " DOMAIN_VAL; }
-      DOMAIN_VAL="${DOMAIN_VAL:-shopify-nav.fuzefront.com}"
+      [ -z "$DOMAIN_VAL" ] && { read -rp "Domain pointing at this server [nav.velogearpremium.com]: " DOMAIN_VAL; }
+      DOMAIN_VAL="${DOMAIN_VAL:-nav.velogearpremium.com}"
       [ -z "$KEY_VAL" ] && { read -rp "Anthropic API key (sk-ant-...): " KEY_VAL; }
     else
       echo "ERROR: no .env and no TTY. Export DOMAIN and ANTHROPIC_API_KEY, or create .env from .env.example." >&2

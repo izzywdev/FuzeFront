@@ -34,7 +34,7 @@ Deploy on a fresh Ubuntu VPS (e.g. Contabo):
 git clone <this repo> && cd FuzeFront/shopify-nav/deploy
 sudo bash setup.sh          # installs Docker, asks for domain + API key, starts app+Caddy
 ```
-DNS prerequisite: an A record pointing your domain (e.g. `shopify-nav.fuzefront.com`)
+DNS prerequisite: an A record pointing your domain (e.g. `nav.velogearpremium.com`)
 at the server's IP. Caddy then obtains the Let's Encrypt certificate automatically.
 
 ## Android APK (TWA)
