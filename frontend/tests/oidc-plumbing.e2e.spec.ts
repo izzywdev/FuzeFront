@@ -65,6 +65,34 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     expect(body.methods).toContain('oidc')
   })
 
+  // ── 2b. Server-side password sign-in (flow-executor, no redirect) ───────
+  // The native login form posts credentials to /api/auth/oidc/password; the
+  // backend drives Authentik's flow-executor with them and completes the OIDC
+  // code exchange server-side. This exercises that path against REAL Authentik.
+  test('password sign-in against Authentik (no redirect) returns a platform JWT', async ({
+    request,
+  }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/auth/oidc/password`, {
+      data: { email: E2E_USER_EMAIL, password: E2E_USER_PASSWORD },
+    })
+    expect(
+      resp.status(),
+      `POST /api/auth/oidc/password -> ${resp.status()} (401 = Authentik rejected creds; 503 = flow-executor/authorize plumbing broken)`
+    ).toBe(200)
+    const body = await resp.json()
+    expect(body.token, 'platform JWT returned').toBeTruthy()
+    expect(body.token.split('.')).toHaveLength(3)
+    expect(body.sessionId).toBeTruthy()
+    expect(body.user?.email?.toLowerCase()).toBe(E2E_USER_EMAIL.toLowerCase())
+  })
+
+  test('password sign-in rejects a wrong password with 401', async ({ request }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/auth/oidc/password`, {
+      data: { email: E2E_USER_EMAIL, password: 'definitely-wrong-password' },
+    })
+    expect(resp.status()).toBe(401)
+  })
+
   // ── 3. Full OIDC sign-in flow ───────────────────────────────────────────
   test('full OIDC sign-in flow with local user lands on dashboard with a real JWT', async ({
     page,

@@ -7,6 +7,12 @@ import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
+import {
+  authentikPasswordLogin,
+  InvalidCredentialsError,
+  AuthentikUnavailableError,
+  UnsupportedFlowStageError,
+} from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
 
@@ -360,7 +366,17 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
  */
 router.get('/oidc/login', async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
-  console.log(`🔐 [${requestId}] OIDC login request received`)
+  // Structured trace: enough to diagnose a broken handoff from pod logs alone
+  // (misconfigured issuer/redirect/frontend-base, or an uninitialized client
+  // whose discovery against Authentik failed at boot).
+  console.log(`🔐 [${requestId}] OIDC login request received`, {
+    referer: req.get('Referer'),
+    configured: oidcService.isConfigured?.(),
+    initialized: oidcService.isInitialized?.(),
+    issuerUrl: process.env.AUTHENTIK_ISSUER_URL,
+    redirectUri: process.env.AUTHENTIK_REDIRECT_URI,
+    frontendBase: FRONTEND_BASE,
+  })
 
   try {
     if (!oidcService.isConfigured()) {
@@ -385,6 +401,104 @@ router.get('/oidc/login', async (req, res) => {
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
     res.status(500).json({ error: 'Failed to initiate OIDC login' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/password:
+ *   post:
+ *     summary: Password sign-in against Authentik (no redirect)
+ *     description: >
+ *       Authenticates email+password by driving Authentik's flow-executor API
+ *       server-side, then completes the OIDC code exchange with the resulting
+ *       Authentik session. Authentik remains the sole identity authority; the
+ *       response shape matches /api/auth/login so the frontend treats both
+ *       identically.
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Authenticated — platform JWT + user
+ *       400:
+ *         description: Missing email or password
+ *       401:
+ *         description: Invalid credentials
+ *       503:
+ *         description: OIDC not configured, Authentik unreachable, or the
+ *           account requires a browser flow (MFA/consent)
+ */
+router.post('/oidc/password', async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  const { email, password } = req.body || {}
+
+  console.log(`🔐 [${requestId}] Authentik password login request`, {
+    hasEmail: !!email,
+    configured: oidcService.isConfigured?.(),
+    initialized: oidcService.isInitialized?.(),
+  })
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' })
+  }
+  if (!oidcService.isConfigured()) {
+    return res.status(503).json({
+      error:
+        'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
+    })
+  }
+
+  try {
+    const user = await authentikPasswordLogin(email, password)
+
+    // Session + JWT minting — identical to the local login / OIDC callback.
+    const sessionId = uuidv4()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    const token = jwt.sign(
+      { userId: user.id, sessionId },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
+    await db('sessions').insert({
+      id: sessionId,
+      user_id: user.id,
+      expires_at: expiresAt,
+    })
+
+    selfHealProvisioningOnLogin(user.id)
+
+    console.log(`🎉 [${requestId}] Authentik password login successful:`, user.email)
+    return res.json({ token, user, sessionId })
+  } catch (error) {
+    if (error instanceof InvalidCredentialsError) {
+      console.log(`❌ [${requestId}] Authentik rejected credentials`)
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+    if (error instanceof UnsupportedFlowStageError) {
+      console.warn(`⚠️ [${requestId}] ${error.message}`)
+      return res.status(503).json({
+        error:
+          'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
+      })
+    }
+    if (error instanceof AuthentikUnavailableError) {
+      console.error(`❌ [${requestId}] Authentik unavailable:`, error.message)
+      return res
+        .status(503)
+        .json({ error: 'Authentication service unavailable. Try again shortly.' })
+    }
+    console.error(`❌ [${requestId}] Authentik password login error:`, error)
+    return res.status(500).json({ error: 'Authentication failed' })
   }
 })
 
