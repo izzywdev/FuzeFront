@@ -196,9 +196,7 @@ export async function authentikPasswordLogin(
 
   if (!authenticated) {
     const last = challenge.component || challenge.type || 'unknown'
-    if (last === 'xak-flow-redirect') {
-      authenticated = true
-    } else {
+    if (last !== 'xak-flow-redirect') {
       throw new UnsupportedFlowStageError(last)
     }
   }

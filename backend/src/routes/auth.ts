@@ -415,6 +415,31 @@ router.get('/oidc/login', async (req, res) => {
   }
 })
 
+
+// Fixed-window rate limit for the password endpoint (per replica): the
+// flow-executor login is a credential-stuffing surface, so cap attempts per
+// client-IP+account before we ever contact Authentik.
+const PW_WINDOW_MS = 5 * 60_000
+const PW_MAX_ATTEMPTS = 10
+const pwAttempts = new Map<string, { count: number; resetAt: number }>()
+setInterval(() => {
+  const now = Date.now()
+  for (const [k, v] of pwAttempts) {
+    if (v.resetAt < now) pwAttempts.delete(k)
+  }
+}, 60_000).unref()
+
+function passwordRateLimited(key: string): boolean {
+  const now = Date.now()
+  const cur = pwAttempts.get(key)
+  if (!cur || cur.resetAt < now) {
+    pwAttempts.set(key, { count: 1, resetAt: now + PW_WINDOW_MS })
+    return false
+  }
+  cur.count++
+  return cur.count > PW_MAX_ATTEMPTS
+}
+
 /**
  * @swagger
  * /api/auth/oidc/password:
@@ -446,6 +471,12 @@ router.post('/oidc/password', async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' })
   }
+  const rlKey = `${req.ip}|${String(email).toLowerCase()}`
+  if (passwordRateLimited(rlKey)) {
+    return res
+      .status(429)
+      .json({ error: 'Too many sign-in attempts. Try again later.' })
+  }
   if (!oidcService.isConfigured()) {
     return res.status(503).json({
       error:
@@ -463,9 +494,9 @@ router.post('/oidc/password', async (req, res) => {
 
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-    // nosemgrep: fuze-auth-self-minted-user-token — this IS FuzeFront's identity
-    // service; it is the issuer of platform tokens (same mint as /login and the
-    // OIDC callback above), not a product self-minting.
+    // This IS FuzeFront's identity service — the issuer of platform tokens
+    // (same mint as /login and the OIDC callback), not a product self-minting.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const token = jwt.sign(
       { userId: user.id, sessionId },
       process.env.JWT_SECRET!,
@@ -479,7 +510,7 @@ router.post('/oidc/password', async (req, res) => {
 
     selfHealProvisioningOnLogin(user.id)
 
-    console.log('🎉 Authentik password login successful', { requestId, email: user.email })
+    console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
     return res.json({ token, user, sessionId })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
@@ -487,14 +518,14 @@ router.post('/oidc/password', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' })
     }
     if (error instanceof UnsupportedFlowStageError) {
-      console.warn('⚠️ Unsupported Authentik flow stage', { requestId, message: error.message })
+      console.warn('⚠️ Unsupported Authentik flow stage', { requestId, message: error.message.replace(/[\r\n]+/g, ' ') })
       return res.status(503).json({
         error:
           'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
       })
     }
     if (error instanceof AuthentikUnavailableError) {
-      console.error('❌ Authentik unavailable', { requestId, message: error.message })
+      console.error('❌ Authentik unavailable', { requestId, message: error.message.replace(/[\r\n]+/g, ' ') })
       return res
         .status(503)
         .json({ error: 'Authentication service unavailable. Try again shortly.' })
