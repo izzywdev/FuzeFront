@@ -210,6 +210,30 @@ describe('authentikPasswordLogin()', () => {
     expect(oidcService.handleCallback).not.toHaveBeenCalled()
   })
 
+  it('maps a 4xx JSON flow response carrying response_errors to InvalidCredentialsError', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      // Authentik rejects the credentials with an HTTP 400 + JSON errors body
+      .mockResolvedValueOnce(
+        mkRes({
+          status: 400,
+          json: {
+            component: 'ak-stage-password',
+            response_errors: {
+              password: [{ string: 'Invalid password', code: 'invalid' }],
+            },
+          },
+        })
+      )
+
+    await expect(
+      authentikPasswordLogin('e2e@test.local', 'wrong')
+    ).rejects.toBeInstanceOf(InvalidCredentialsError)
+  })
+
   it('throws InvalidCredentialsError on an access-denied stage', async () => {
     fetchMock.mockResolvedValueOnce(
       mkRes({ json: { component: 'ak-stage-access-denied' } })

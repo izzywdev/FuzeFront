@@ -414,7 +414,10 @@ router.get('/oidc/login', async (req, res) => {
 const passwordLoginRateLimiter = rateLimit({
   windowMs: 5 * 60_000,
   limit: 10,
+  // Count ONLY rejected credentials (401) against the budget: 503s from an
+  // Authentik outage or an MFA-required account must not lock users out.
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode !== 401,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many sign-in attempts. Try again later.' },
@@ -476,6 +479,20 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
   }
 
   try {
+    // Lazy re-init mirrors the monolith and /oidc/login: Authentik may not
+    // have been ready when this replica booted — self-heal here instead of
+    // 503ing until an SSO request happens to re-initialize the client.
+    if (!oidcService.isInitialized()) {
+      try {
+        await oidcService.initialize()
+      } catch (initErr) {
+        console.error('❌ OIDC lazy init failed', JSON.stringify({ requestId, message: (initErr as Error).message?.replace(/[\r\n]+/g, ' ') }))
+        return res
+          .status(503)
+          .json({ error: 'Authentication service unavailable. Try again shortly.' })
+      }
+    }
+
     const user = await authentikPasswordLogin(email, password)
 
     // Session + JWT minting — identical to the local login / OIDC callback.

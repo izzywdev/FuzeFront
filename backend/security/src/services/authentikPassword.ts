@@ -161,7 +161,14 @@ async function flowRequest(
       payload = undefined
       continue
     }
+    const contentTypeEarly = res.headers.get('content-type') || ''
     if (!res.ok) {
+      // A 4xx with a JSON body is a FLOW response (e.g. 400 carrying
+      // response_errors for rejected credentials) — return it so the caller
+      // maps it to 401, instead of mislabeling it a 503 outage.
+      if (res.status < 500 && contentTypeEarly.includes('json')) {
+        return (await res.json()) as FlowChallenge
+      }
       // Surface Authentik's own error payload — a bare status is undebuggable
       // from CI logs (e.g. 403 CSRF vs 404 unknown flow slug).
       const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
@@ -169,11 +176,10 @@ async function flowRequest(
         `Authentik flow executor HTTP ${res.status} at ${url}: ${bodySnippet}`
       )
     }
-    const contentType = res.headers.get('content-type') || ''
-    if (!contentType.includes('json')) {
+    if (!contentTypeEarly.includes('json')) {
       const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
       throw new AuthentikUnavailableError(
-        `Authentik flow executor returned non-JSON (${contentType}) at ${url}: ${bodySnippet}`
+        `Authentik flow executor returned non-JSON (${contentTypeEarly}) at ${url}: ${bodySnippet}`
       )
     }
     return (await res.json()) as FlowChallenge
