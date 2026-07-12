@@ -111,7 +111,7 @@ async function flowRequest(
   let method: 'GET' | 'POST' = body ? 'POST' : 'GET'
   let payload: string | undefined = body ? JSON.stringify(body) : undefined
 
-  for (let hop = 0; hop < 4; hop++) {
+  for (let hop = 0; hop < 10; hop++) {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       // Django CSRF validates Referer on secure requests.
@@ -251,7 +251,7 @@ export async function authentikPasswordLogin(
   let code: string | null = null
   let returnedState: string | null = null
 
-  for (let hop = 0; hop < 5; hop++) {
+  for (let hop = 0; hop < 10; hop++) {
     let res: Response
     try {
       res = await fetch(location, {
