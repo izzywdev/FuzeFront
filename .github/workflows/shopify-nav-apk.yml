@@ -91,6 +91,13 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           CODE="${INPUT_VERSION_CODE:-$RUN_NUMBER}"
+          # A non-numeric manual version_code would make parseInt() -> NaN and write
+          # "appVersionCode": null into the manifest, breaking the Gradle build.
+          case "$CODE" in
+            ''|*[!0-9]*)
+              echo "::error::version_code must be a positive integer, got '$CODE'."
+              exit 1 ;;
+          esac
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           VERSION_CODE="$CODE" node -e "
             const fs = require('fs');
@@ -171,15 +178,17 @@ jobs:
             -sigalg SHA256withRSA -digestalg SHA-256 \
             "$AAB" shopifynav
 
-          # `jarsigner -verify` WITHOUT -strict exits 0 even for an UNSIGNED jar
-          # (it just prints "jar is unsigned"), which would let an unsigned .aab
-          # reach the GitHub Release. Require -strict AND an explicit "jar verified"
-          # line, so a silently-failed signing step aborts the build.
-          if ! jarsigner -verify -strict "$AAB" | grep -q "jar verified"; then
+          # `jarsigner -verify` exits 0 even for an UNSIGNED jar (it just prints
+          # "jar is unsigned"), so we must assert the "jar verified." line to catch
+          # a silently-failed signing step. We do NOT use -strict: the upload key is
+          # self-signed, and -strict returns a non-zero "chainNotValidated" exit (4)
+          # for a perfectly valid self-signed signature, which would fail every build.
+          VERIFY_OUT="$(jarsigner -verify "$AAB" 2>&1 || true)"
+          echo "$VERIFY_OUT"
+          echo "$VERIFY_OUT" | grep -q "jar verified" || {
             echo "::error::AAB signature verification failed — refusing to publish an unsigned bundle."
-            jarsigner -verify -strict "$AAB" || true
             exit 1
-          fi
+          }
 
       - name: Locate signed APK + AAB
         if: steps.secrets.outputs.have == 'true'
