@@ -103,42 +103,68 @@ async function flowRequest(
   jar: CookieJar,
   body?: Record<string, unknown>
 ): Promise<FlowChallenge> {
-  const url = `${base}/api/v3/flows/executor/${slug}/?query=`
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    Referer: `${base}/`,
-  }
-  const cookie = jar.header()
-  if (cookie) headers['Cookie'] = cookie
-  if (body) {
-    headers['Content-Type'] = 'application/json'
-    const csrf = jar.get('authentik_csrf')
-    if (csrf) headers['X-CSRFToken'] = csrf
-  }
+  // Authentik commonly answers the first executor request with a 302 that
+  // establishes the session cookie (Location points back into the flow), so
+  // follow same-origin redirects manually, carrying the jar. Per Django 302
+  // semantics a redirected POST is retried as GET.
+  let url = `${base}/api/v3/flows/executor/${slug}/?query=`
+  let method: 'GET' | 'POST' = body ? 'POST' : 'GET'
+  let payload: string | undefined = body ? JSON.stringify(body) : undefined
 
-  let res: Response
-  try {
-    res = await fetch(url, {
-      method: body ? 'POST' : 'GET',
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      redirect: 'manual',
-    })
-  } catch (err) {
-    throw new AuthentikUnavailableError(
-      `Authentik unreachable at ${base}: ${(err as Error).message}`
-    )
+  for (let hop = 0; hop < 4; hop++) {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      // Django CSRF validates Referer on secure requests.
+      Referer: `${base}/`,
+    }
+    const cookie = jar.header()
+    if (cookie) headers['Cookie'] = cookie
+    if (method === 'POST') {
+      headers['Content-Type'] = 'application/json'
+      const csrf = jar.get('authentik_csrf')
+      if (csrf) headers['X-CSRFToken'] = csrf
+    }
+
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: payload,
+        redirect: 'manual',
+      })
+    } catch (err) {
+      throw new AuthentikUnavailableError(
+        `Authentik unreachable at ${base}: ${(err as Error).message}`
+      )
+    }
+    jar.absorb(res)
+
+    const loc = res.headers.get('location')
+    if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
+      url = new URL(loc, url).toString()
+      method = 'GET'
+      payload = undefined
+      continue
+    }
+    if (!res.ok) {
+      // Surface Authentik's own error payload — a bare status is undebuggable
+      // from CI logs (e.g. 403 CSRF vs 404 unknown flow slug).
+      const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
+      throw new AuthentikUnavailableError(
+        `Authentik flow executor HTTP ${res.status} at ${url}: ${bodySnippet}`
+      )
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (!contentType.includes('json')) {
+      const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
+      throw new AuthentikUnavailableError(
+        `Authentik flow executor returned non-JSON (${contentType}) at ${url}: ${bodySnippet}`
+      )
+    }
+    return (await res.json()) as FlowChallenge
   }
-  jar.absorb(res)
-  if (!res.ok) {
-    // Surface Authentik's own error payload — a bare status is undebuggable
-    // from CI logs (e.g. 403 CSRF vs 404 unknown flow slug).
-    const bodySnippet = (await res.text().catch(() => '')).slice(0, 300)
-    throw new AuthentikUnavailableError(
-      `Authentik flow executor HTTP ${res.status} at ${url}: ${bodySnippet}`
-    )
-  }
-  return (await res.json()) as FlowChallenge
+  throw new AuthentikUnavailableError('Authentik flow executor redirect loop')
 }
 
 function challengeHasCredentialErrors(challenge: FlowChallenge): boolean {

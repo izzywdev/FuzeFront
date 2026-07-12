@@ -45,6 +45,7 @@ function mkRes(opts: {
 }) {
   const headerMap = new Map<string, string>()
   if (opts.location) headerMap.set('location', opts.location)
+  if (opts.json !== undefined) headerMap.set('content-type', 'application/json')
   return {
     ok: (opts.status ?? 200) >= 200 && (opts.status ?? 200) < 300,
     status: opts.status ?? 200,
@@ -53,6 +54,7 @@ function mkRes(opts: {
       getSetCookie: () => opts.setCookies ?? [],
     },
     json: async () => opts.json ?? {},
+    text: async () => JSON.stringify(opts.json ?? ''),
   } as unknown as Response
 }
 
@@ -124,6 +126,42 @@ describe('authentikPasswordLogin()', () => {
     const [authorizeUrl, authorizeInit] = fetchMock.mock.calls[3]
     expect(authorizeUrl).toContain('/application/o/authorize/')
     expect(authorizeInit.headers.Cookie).toContain('authentik_session=sess-1')
+  })
+
+  it('follows the session-establishing 302 before the first challenge', async () => {
+    fetchMock
+      // initial GET -> 302 back into the flow, setting session + csrf cookies
+      .mockResolvedValueOnce(
+        mkRes({
+          status: 302,
+          location:
+            'http://auth.example.test/api/v3/flows/executor/default-authentication-flow/?query=',
+          setCookies: [
+            'authentik_session=pre-sess; Path=/',
+            'authentik_csrf=csrf-tok; Path=/',
+          ],
+        })
+      )
+      // redirected GET -> identification challenge
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      .mockResolvedValueOnce(
+        mkRes({ status: 302, location: `${REDIRECT_URI}?code=c3&state=st` })
+      )
+
+    const user = await authentikPasswordLogin('e2e@test.local', 'pw123')
+    expect(user.email).toBe('e2e@test.local')
+
+    // The identification POST happened AFTER the redirect hop, with cookies.
+    const [identUrl, identInit] = fetchMock.mock.calls[2]
+    expect(identUrl).toContain('/flows/executor/')
+    expect(identInit.headers.Cookie).toContain('authentik_session=pre-sess')
+    expect(identInit.headers['X-CSRFToken']).toBe('csrf-tok')
   })
 
   it('supports a combined identification+password stage (password_fields: true)', async () => {
