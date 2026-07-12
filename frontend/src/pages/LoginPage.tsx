@@ -58,7 +58,12 @@ function LoginPage() {
       setError('Authentication encountered an unexpected error. Please try again.')
       loadAuthMethods()
     })
-  }, [setUser])
+    // Runs ONCE on mount — this is a page-load handler (OIDC-callback exchange
+    // + auth-method fetch). Depending on setUser here previously re-fired the
+    // effect on every render and flooded /api/auth/method; setUser is now a
+    // stable ref, but a mount-only effect is the correct shape regardless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const loadAuthMethods = async () => {
     try {

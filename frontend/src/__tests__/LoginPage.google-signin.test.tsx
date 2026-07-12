@@ -156,6 +156,26 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     expect(screen.queryByText(/sign in with google/i)).not.toBeInTheDocument()
   })
 
+  // ── 1b: Regression — auth methods fetched ONCE, not in a render loop ─────
+
+  it('fetches auth methods exactly once (no re-render loop)', async () => {
+    vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
+
+    render(<LoginPage />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    })
+    // Give any runaway effect a chance to re-fire before asserting.
+    await new Promise(r => setTimeout(r, 100))
+
+    // A single mount must produce a single /api/auth/method fetch. Before the
+    // useCurrentUser stabilization, an unstable setUser ref re-fired the
+    // page-load effect every render and flooded this endpoint (~2-3 req/s).
+    expect(authAPI.getAuthMethods).toHaveBeenCalledTimes(1)
+    expect(authAPI.handleOIDCCallback).toHaveBeenCalledTimes(1)
+  })
+
   // ── 2: Native credentials form + Google button when oidcConfigured is true
 
   it('renders the credentials form AND "Sign in with Google" (no Authentik redirect button) when oidcConfigured is true', async () => {
