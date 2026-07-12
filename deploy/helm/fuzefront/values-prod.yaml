@@ -45,6 +45,10 @@ frontend:
 # the Phase 3 cutover. tag "" is rewritten by CI's release sed.
 securityService:
   enabled: true   # serves /api/auth (local auth + seeded users); OIDC falls back to local
+  # Synthetic account for post-prod e2e smoke (POST_PROD_EMAIL/POST_PROD_PASSWORD).
+  # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
+  # insert with the sealed FUZEFRONT_ADMIN_PASSWORD. See PR #213 (password reseal).
+  adminEmail: admin@fuzefront.com
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
     tag: 965dd6464a7a
