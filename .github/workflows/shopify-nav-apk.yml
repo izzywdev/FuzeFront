@@ -1,0 +1,199 @@
+name: Shopify Nav — Build Android APK (TWA)
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'shopify-nav/**'
+      - '.github/workflows/shopify-nav-apk.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'shopify-nav/android/**'
+      - 'shopify-nav/.well-known/**'
+      - 'shopify-nav/manifest.webmanifest'
+      - 'shopify-nav/icon-*.png'   # icons are embedded into the APK at scaffold time
+      - '.github/workflows/shopify-nav-apk.yml'
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Android version code (integer). Leave blank to use the run number.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & sign Shopify Nav TWA APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check signing secrets
+        id: secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.SHOPIFY_NAV_KEYSTORE_B64 }}
+          STORE_PW: ${{ secrets.SHOPIFY_NAV_KEYSTORE_STORE_PASSWORD }}
+          KEY_PW: ${{ secrets.SHOPIFY_NAV_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # All three are required — building with the keystore but without the
+          # passwords would produce an UNSIGNED APK and (on master) publish it as
+          # a Release. Only proceed when the full signing triple is present.
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$STORE_PW" ] || [ -z "$KEY_PW" ]; then
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets incomplete (need SHOPIFY_NAV_KEYSTORE_B64 + STORE_PASSWORD + KEY_PASSWORD) — skipping APK build."
+          else
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.secrets.outputs.have == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.have == 'true'
+        with:
+          node-version: '20'
+
+      - name: Set up Android SDK
+        if: steps.secrets.outputs.have == 'true'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install Bubblewrap CLI
+        if: steps.secrets.outputs.have == 'true'
+        run: npm install -g @bubblewrap/cli
+
+      - name: Pre-configure Bubblewrap to skip interactive JDK/SDK prompts
+        if: steps.secrets.outputs.have == 'true'
+        run: |
+          mkdir -p ~/.bubblewrap
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}\n' "$JAVA_HOME" "$ANDROID_HOME" \
+            > ~/.bubblewrap/config.json
+
+      - name: Restore keystore from secret
+        if: steps.secrets.outputs.have == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.SHOPIFY_NAV_KEYSTORE_B64 }}
+        run: |
+          mkdir -p shopify-nav/android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > shopify-nav/android/keystore/shopify-nav-release.keystore
+
+      - name: Set version code from input or run number
+        if: steps.secrets.outputs.have == 'true'
+        id: version
+        env:
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          CODE="${INPUT_VERSION_CODE:-$RUN_NUMBER}"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          VERSION_CODE="$CODE" node -e "
+            const fs = require('fs');
+            const code = process.env.VERSION_CODE;
+            const m = JSON.parse(fs.readFileSync('shopify-nav/android/twa-manifest.json','utf8'));
+            m.appVersionCode = parseInt(code, 10);
+            m.appVersion = code;
+            fs.writeFileSync('shopify-nav/android/twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+
+      - name: Scaffold Android project from TWA manifest
+        if: steps.secrets.outputs.have == 'true'
+        working-directory: shopify-nav/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          # Patch passwords from secrets and redirect icon/manifest URLs to a local
+          # HTTP server — the production domain may not be live yet, so bubblewrap
+          # fetches the committed files from shopify-nav/ instead.
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('twa-manifest.json','utf8'));
+            m.signingKey.storePassword = process.env.KEYSTORE_STORE_PASSWORD || m.signingKey.storePassword;
+            m.signingKey.keyPassword   = process.env.KEYSTORE_KEY_PASSWORD   || m.signingKey.keyPassword;
+            m.iconUrl           = 'http://localhost:8080/icon-512.png';
+            m.maskableIconUrl   = 'http://localhost:8080/icon-maskable.png';
+            m.monochromeIconUrl = 'http://localhost:8080/icon-512.png';
+            m.webManifestUrl    = 'http://localhost:8080/manifest.webmanifest';
+            fs.writeFileSync('twa-manifest.json', JSON.stringify(m, null, 2));
+          "
+          python3 -m http.server 8080 --directory .. &
+          HTTP_PID=$!
+          sleep 1
+          bubblewrap update --skipPwaValidation
+          kill $HTTP_PID || true
+
+      - name: Build APK
+        if: steps.secrets.outputs.have == 'true'
+        working-directory: shopify-nav/android
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.SHOPIFY_NAV_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease
+
+          UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED="app/build/outputs/apk/release/app-release.apk"
+          BUILD_TOOLS=$(ls "$ANDROID_HOME/build-tools/" | sort -V | tail -1)
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
+
+          "$APKSIGNER" sign \
+            --ks ./keystore/shopify-nav-release.keystore \
+            --ks-pass "pass:${KEYSTORE_STORE_PASSWORD}" \
+            --key-pass "pass:${KEYSTORE_KEY_PASSWORD}" \
+            --ks-key-alias shopifynav \
+            --out "$SIGNED" \
+            "$UNSIGNED"
+
+          "$APKSIGNER" verify --verbose "$SIGNED"
+
+      - name: Locate signed APK
+        if: steps.secrets.outputs.have == 'true'
+        id: apk
+        working-directory: shopify-nav/android
+        run: |
+          APK=$(find . -path "*/release/app-release.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find . -name "*.apk" | grep -v unsigned | head -1)
+          APK="${APK#./}"
+          echo "path=shopify-nav/android/$APK" >> "$GITHUB_OUTPUT"
+          echo "Found: $APK"
+
+      - name: Upload APK artifact
+        if: steps.secrets.outputs.have == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopify-nav-android-v${{ steps.version.outputs.code }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 90
+
+      - name: Create GitHub Release with APK
+        if: steps.secrets.outputs.have == 'true' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: shopify-nav-android-v${{ steps.version.outputs.code }}
+          name: Shopify Navigator Android v${{ steps.version.outputs.code }}
+          body: |
+            ## Shopify Navigator Android APK (TWA)
+
+            Trusted Web Activity wrapping **https://shopify-nav.fuzefront.com** — the self-hosted Shopify Navigator server.
+
+            ### Install
+            1. Download the APK below
+            2. On your Android phone: **Settings → Apps → Install unknown apps** → allow your browser/Files app
+            3. Open the downloaded APK and tap **Install**
+            4. Launch **Shopify Nav** from your home screen
+
+            No API key needed — the app talks to the self-hosted server.
+
+            ### Requirements
+            - Android 5.0+ (API 21+)
+            - Chrome 72+ installed on device
+            - https://shopify-nav.fuzefront.com must be live (serves the app + /.well-known/assetlinks.json)
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: false

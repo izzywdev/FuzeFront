@@ -9,6 +9,43 @@ click‑by‑click directions. Available in **10 languages**.
 - `manifest.webmanifest` — PWA config
 - `sw.js` — service worker (offline + installable)
 - `icon-*.png`, `apple-touch-icon.png`, `favicon.png` — app icons
+- `server/` — optional self-hosted server (zero-dependency Node ≥18): serves the app,
+  proxies Claude with a **server-held API key** (end users need no key), and runs
+  **real background store scans** every 10 minutes even when the app is closed
+- `deploy/` — Docker + Caddy (auto-HTTPS) stack + `setup.sh` for a fresh Ubuntu VPS
+- `android/` + `.well-known/assetlinks.json` — Android TWA app config; the signed APK
+  is built by `.github/workflows/shopify-nav-apk.yml`
+
+## Self-hosted server (recommended)
+
+Running `server/server.js` behind the provided Caddy stack gives you:
+- **No API keys for users** — the server holds one `ANTHROPIC_API_KEY` and proxies
+  `/api/message`. The app auto-detects the server via `/api/health` and switches to
+  keyless mode. The server key is only honored for same-origin requests (the app it
+  serves + the Android TWA); foreign origins must send their own `x-user-api-key`.
+  Per-IP + global rate limits, a model allowlist, `max_tokens` clamping and a
+  web-tools-only allowlist bound abuse.
+- **True background store scans** — registered stores are rescanned every 10 min
+  server-side (`SCAN_INTERVAL_MS`); the app just pulls the fresh profile.
+- **Android APK hosting** — serves `/.well-known/assetlinks.json` for TWA validation.
+
+Deploy on a fresh Ubuntu VPS (e.g. Contabo):
+```bash
+git clone <this repo> && cd FuzeFront/shopify-nav/deploy
+sudo bash setup.sh          # installs Docker, asks for domain + API key, starts app+Caddy
+```
+DNS prerequisite: an A record pointing your domain (e.g. `shopify-nav.fuzefront.com`)
+at the server's IP. Caddy then obtains the Let's Encrypt certificate automatically.
+
+## Android APK (TWA)
+
+`.github/workflows/shopify-nav-apk.yml` builds and signs the APK with Bubblewrap.
+Requires GitHub secrets `SHOPIFY_NAV_KEYSTORE_B64`, `SHOPIFY_NAV_KEYSTORE_STORE_PASSWORD`,
+`SHOPIFY_NAV_KEYSTORE_KEY_PASSWORD` (the build is skipped with a warning when unset).
+Pushes to `master` touching `shopify-nav/**` publish a `shopify-nav-android-vN` Release;
+PRs upload the APK as an artifact. The keystore fingerprint is pinned in both
+`android/twa-manifest.json` and `.well-known/assetlinks.json` — rotate all three
+together (see `android/generate-keystore.sh`). Never commit `*.keystore` (gitignored).
 
 ## Features
 - **Navigation guide** — describe any task and get an exact, click‑by‑click guide to the Shopify Admin UI. "Stuck on a step?" lets you send a screenshot and get remedial help.

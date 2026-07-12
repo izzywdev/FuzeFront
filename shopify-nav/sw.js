@@ -1,4 +1,4 @@
-const CACHE = "shopify-nav-v5";
+const CACHE = "shopify-nav-v6";
 const SHELL = [
   "./",
   "./index.html",
@@ -24,9 +24,12 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Never cache API calls — always go to network
-  if (url.hostname.includes("anthropic.com")) return;
   if (e.request.method !== "GET") return;
+  // Only ever cache same-origin app-shell GETs. Anything cross-origin (a manually
+  // configured server URL on another host, Anthropic, etc.) always goes to network.
+  if (url.origin !== self.location.origin) return;
+  // Never cache API calls, even under a path prefix (e.g. /nav/api/store/profile).
+  if (url.pathname.includes("/api/")) return;
 
   // Cache-first for the app shell
   e.respondWith(
