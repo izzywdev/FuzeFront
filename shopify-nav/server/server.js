@@ -178,7 +178,9 @@ async function anthropicToolTurn({ system, messages, max_tokens, tools, model, a
     const r = await anthropicRequest({ model, system, messages: msgs, max_tokens, tools }, apiKey, 180_000);
     try { data = JSON.parse(r.text); } catch { data = null; }
     if (!r.ok) {
-      throw Object.assign(new Error((data && data.error && data.error.message) || `upstream ${r.status}`), { status: r.status });
+      const e = new Error((data && data.error && data.error.message) || `upstream ${r.status}`);
+      e.status = r.status; // error object for internal flow control — never merged into a response
+      throw e;
     }
     if (data && data.stop_reason === "pause_turn") {
       msgs.push({ role: "assistant", content: data.content });
@@ -524,6 +526,9 @@ async function handleStatic(req, res, pathname) {
   // Resolve to an absolute path FIRST (collapses any ../ and %2f-decoded
   // traversal), then derive the first path segment for the blocklist — checking
   // the raw segment before normalization let "a%2f..%2f.env" slip past it.
+  // The very next line rejects any resolved path that escapes STATIC_DIR, so the
+  // join below cannot serve files outside the static root.
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
   const abs = path.normalize(path.join(STATIC_DIR, rel));
   if (!abs.startsWith(STATIC_DIR + path.sep) && abs !== STATIC_DIR) {
     return sendJson(res, 404, { error: "not found" });
@@ -552,6 +557,10 @@ async function handleStatic(req, res, pathname) {
 }
 
 /* ---------------------------------- routing --------------------------------- */
+// Plain HTTP by design: TLS is terminated by the Caddy reverse proxy in front
+// of this server (see deploy/docker-compose.yml + deploy/Caddyfile). The app
+// listens on HTTP only on the internal container network, never public.
+// nosemgrep: problem-based-packs.insecure-transport.js-node.using-http-server.using-http-server
 const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(req.url, "http://localhost");
