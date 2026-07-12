@@ -143,8 +143,12 @@ async function flowRequest(
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
       url = new URL(loc, url).toString()
-      method = 'GET'
-      payload = undefined
+      // 301/302/303 rewrite the retry as GET (Django semantics); 307/308
+      // preserve the original method and body per HTTP spec.
+      if (res.status !== 307 && res.status !== 308) {
+        method = 'GET'
+        payload = undefined
+      }
       continue
     }
     const contentTypeEarly = res.headers.get('content-type') || ''
