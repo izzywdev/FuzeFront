@@ -51,7 +51,7 @@ securityService:
   adminEmail: admin@fuzefront.com
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 2751f62ba010
+    tag: 39ac1db5d7f0
   replicas: 2
 
 applicationsService:
