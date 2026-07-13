@@ -11,6 +11,8 @@
 version: 1
 metadata:
   name: FuzeFront Brand — fuse-seam
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # Retire the earlier dev-scoped brand row (superseded by the apex-domain
   # brand below) so two `default: true` brands never coexist.

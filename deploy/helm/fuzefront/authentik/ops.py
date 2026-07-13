@@ -1,11 +1,12 @@
 """Authentik ops helper — diagnose/apply FuzeFront blueprints via the admin API.
 
-Two callers, same script:
-  - .github/workflows/prod-authentik-ops.yml (from a runner, AK_URL=public host,
-    AK_TOKEN=AUTHENTIK_PROD_TOKEN repo secret)
-  - the in-cluster authentik-config-apply Job (templates/authentik-config-apply.yaml,
-    AK_URL=http://authentik-server:9000, AK_TOKEN=AUTHENTIK_BOOTSTRAP_TOKEN from
-    the fuzefront-secrets Secret, BLUEPRINT_DIR=/blueprints)
+Called by .github/workflows/prod-authentik-ops.yml (AK_URL=public host,
+AK_TOKEN=AUTHENTIK_PROD_TOKEN repo secret). This is the manual DIAGNOSE /
+break-glass APPLY path; the primary apply mechanism is Authentik's native
+file-based discovery — blueprint files carry the
+`blueprints.goauthentik.io/instantiate: "true"` label and are applied by the
+worker on startup (the deployments roll on blueprint changes via a checksum
+annotation).
 """
 import json, os, sys, time, urllib.request, urllib.error
 

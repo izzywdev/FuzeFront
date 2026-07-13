@@ -26,6 +26,8 @@
 version: 1
 metadata:
   name: MendysRobotics Datasets OIDC Provider
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── Authorization flow (implicit consent) ────────────────────────────────────
   # An empty authorization flow = implicit consent in Authentik. The blueprint
