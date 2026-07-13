@@ -295,7 +295,7 @@ function LoginPage() {
             padding: '10px',
             border: '1px solid var(--error-color)',
             borderRadius: '4px',
-            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+            backgroundColor: 'var(--error-soft)',
           }}
         >
           <strong>Authentication Error:</strong>
