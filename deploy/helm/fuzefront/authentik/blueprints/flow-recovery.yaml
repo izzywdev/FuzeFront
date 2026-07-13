@@ -119,6 +119,8 @@ entries:
       stage: !Find [authentik_stages_identification.identificationstage, [name, fuzefront-recovery-identification]]
     attrs:
       order: 10
+      evaluate_on_plan: true
+      re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
     state: present
@@ -127,6 +129,8 @@ entries:
       stage: !Find [authentik_stages_email.emailstage, [name, fuzefront-recovery-email]]
     attrs:
       order: 20
+      evaluate_on_plan: true
+      re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
     state: present
@@ -135,6 +139,8 @@ entries:
       stage: !Find [authentik_stages_prompt.promptstage, [name, fuzefront-recovery-prompt]]
     attrs:
       order: 30
+      evaluate_on_plan: true
+      re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
     state: present
@@ -143,6 +149,8 @@ entries:
       stage: !Find [authentik_stages_user_write.userwritestage, [name, fuzefront-recovery-write]]
     attrs:
       order: 40
+      evaluate_on_plan: true
+      re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
     state: present
@@ -151,3 +159,5 @@ entries:
       stage: !Find [authentik_stages_user_login.userloginstage, [name, fuzefront-recovery-login]]
     attrs:
       order: 50
+      evaluate_on_plan: true
+      re_evaluate_policies: false

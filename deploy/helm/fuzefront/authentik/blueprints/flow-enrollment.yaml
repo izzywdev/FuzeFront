@@ -168,6 +168,7 @@ entries:
       stage: !Find [authentik_stages_prompt.promptstage, [name, fuzefront-enroll-prompt]]
     attrs:
       order: 10
+      evaluate_on_plan: true
       re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
@@ -177,6 +178,7 @@ entries:
       stage: !Find [authentik_stages_user_write.userwritestage, [name, fuzefront-enroll-write]]
     attrs:
       order: 20
+      evaluate_on_plan: true
       re_evaluate_policies: false
 
   - model: authentik_flows.flowstagebinding
@@ -186,4 +188,5 @@ entries:
       stage: !Find [authentik_stages_user_login.userloginstage, [name, fuzefront-enroll-login]]
     attrs:
       order: 30
+      evaluate_on_plan: true
       re_evaluate_policies: false
