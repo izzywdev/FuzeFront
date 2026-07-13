@@ -5,22 +5,25 @@ FROM node:18-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
-# Copy workspace root manifests (needed so npm ci can resolve workspace links)
-COPY package.json package-lock.json ./
+# Copy manifests for services/email-service and its file: dep on shared.
+# We use the email-service's own package-lock.json (not root workspace mode)
+# because services/email-service is not in the root workspaces array.
 COPY shared/package.json ./shared/
-COPY services/email-service/package.json ./services/email-service/
+COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
 # Install only production deps for email-service
-RUN npm ci --workspace=services/email-service --omit=dev --ignore-scripts
+RUN cd services/email-service && npm ci --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:18-alpine AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
-COPY services/email-service/package.json ./services/email-service/
+COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
 
-RUN npm ci --workspace=services/email-service --ignore-scripts
+RUN cd services/email-service && npm ci --ignore-scripts
+# shared is part of the root workspace (no own lock file); install its devDeps
+# (typescript, etc.) so `npm run build` inside shared can find `tsc`.
+RUN cd shared && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
@@ -37,7 +40,6 @@ WORKDIR /app
 RUN apk add --no-cache dumb-init && \
     addgroup -S emailservice && adduser -S emailservice -G emailservice -u 1001
 
-COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/email-service/node_modules ./services/email-service/node_modules
 # shared/package.json is required so the @fuzefront/shared workspace symlink
 # (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
@@ -50,6 +52,12 @@ RUN find ./services/email-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/email-service
 
+# shared/dist/kafka/* (loaded via the @fuzefront/shared symlink) requires kafkajs
+# and zod. Node.js resolves requires from the real file path (/app/shared/dist/…),
+# which walks up through /app/shared/ — but shared has no node_modules in this
+# image. NODE_PATH adds email-service/node_modules as a fallback search path so
+# those packages are found without duplicating them.
+ENV NODE_PATH=/app/services/email-service/node_modules
 ENV PORT=3003
 ENV NODE_ENV=production
 

@@ -4,7 +4,7 @@ import {
   TypedConsumer,
   TOPICS,
   notifyEmailRequestedSchemaV1,
-} from '@fuzefront/shared';
+} from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
 import { createProvider } from './providers';
 import { handleEmailRequested } from './handlers/email-requested.handler';

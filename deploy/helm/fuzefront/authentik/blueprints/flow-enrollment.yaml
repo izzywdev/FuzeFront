@@ -18,6 +18,8 @@
 version: 1
 metadata:
   name: FuzeFront Enrollment Flow
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── Password policy ─────────────────────────────────────────────────────────
   - model: authentik_policies_password.passwordpolicy

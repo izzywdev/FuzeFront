@@ -7,6 +7,7 @@ import { createSubscriptionsRouter } from './routes/subscriptions';
 import { createSetupIntentRouter } from './routes/setup-intent';
 import { createCreditsRouter } from './routes/credits';
 import { createCheckoutRouter } from './routes/checkout';
+import { createPaymentsRouter } from './routes/payments';
 import { createInvoicesRouter } from './routes/invoices';
 import { createPortalRouter } from './routes/portal';
 import { PlanService } from './services/plan.service';
@@ -14,6 +15,8 @@ import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
 import { SubscriptionRepository } from './repositories/subscription.repository';
 import { CustomerRepository } from './repositories/customer.repository';
+import { PaymentRepository } from './repositories/payment.repository';
+import { PaymentsConfig } from './config';
 
 export interface AppDeps {
   stripe: Stripe;
@@ -24,6 +27,10 @@ export interface AppDeps {
   /** Read-only entity->customer resolver for GET /subscriptions (list by org). */
   customerRepo: CustomerRepository;
   customers: CustomerService;
+  /** One-time payment-mode Checkout mirror (billing.payments). */
+  payments: PaymentRepository;
+  /** Allowlists/bounds for POST /payments/checkout (config.payments). */
+  paymentsConfig: PaymentsConfig;
   webhook: WebhookDeps;
 }
 
@@ -86,6 +93,21 @@ export function createApp(deps?: AppDeps): Application {
     API_BASE,
     guard,
     createCheckoutRouter({ stripe: deps.stripe, customers: deps.customers, plans: deps.plans }),
+  );
+  // Hosted Checkout — ONE-TIME payment mode for allowlisted consumer products
+  // (e.g. mendys-datasets). Same money-path gating as /checkout: the payments
+  // router applies requireActorContext on its routes and re-verifies the
+  // body/row entity against the proxy-authorized one.
+  app.use(
+    API_BASE,
+    guard,
+    createPaymentsRouter({
+      stripe: deps.stripe,
+      customers: deps.customers,
+      customerRepo: deps.customerRepo,
+      payments: deps.payments,
+      config: deps.paymentsConfig,
+    }),
   );
   app.use(API_BASE, guard, createSetupIntentRouter(deps.stripe, deps.customers));
   app.use(

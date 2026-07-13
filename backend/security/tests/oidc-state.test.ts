@@ -9,7 +9,7 @@ import request from 'supertest'
 jest.mock('../src/services/oidc', () => ({
   oidcService: {
     isConfigured: () => true,
-    generateAuthUrl: jest.fn().mockReturnValue('http://auth.example.com/auth?state=test-state'),
+    generateAuthUrl: jest.fn().mockReturnValue({ url: 'http://auth.example.com/auth?state=test-state', codeVerifier: 'mock-code-verifier' }),
     handleCallback: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', roles: ['user'] }),
   },
 }))
@@ -106,16 +106,18 @@ describe('OIDC state cookie CSRF protection', () => {
   it('accepts callback when oidc_state cookie matches state param', async () => {
     // First get the state from a login redirect
     const loginRes = await request(app).get('/api/auth/oidc/login')
-    // The mock generates URL with state=test-state — extract oidc_state cookie
-    const setCookie = loginRes.headers['set-cookie']
-    const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie
-    // cookieHeader looks like: oidc_state=test-state; HttpOnly; ...
-    const stateValue = cookieHeader.split(';')[0].split('=')[1]
+    // Extract both oidc_state and oidc_cv from set-cookie headers
+    const setCookieRaw = loginRes.headers['set-cookie']
+    const setCookie = Array.isArray(setCookieRaw) ? setCookieRaw : [setCookieRaw as string]
+    const stateCookieStr = setCookie.find(c => c.startsWith('oidc_state='))!
+    const cvCookieStr = setCookie.find(c => c.startsWith('oidc_cv='))!
+    const stateValue = stateCookieStr.split(';')[0].split('=')[1]
+    const cvValue = cvCookieStr.split(';')[0].split('=')[1]
 
     const { oidcService } = require('../src/services/oidc')
     const callbackRes = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${stateValue}`)
-      .set('Cookie', `oidc_state=${stateValue}`)
+      .set('Cookie', `oidc_state=${stateValue}; oidc_cv=${cvValue}`)
     // Should NOT redirect to invalid_state
     expect(callbackRes.headers.location).not.toMatch(/error=invalid_state/)
     expect(oidcService.handleCallback).toHaveBeenCalled()

@@ -6,9 +6,21 @@
 #
 # Prerequisites: create a Google OAuth2 app at console.cloud.google.com
 # (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
-# and add ALL of the following Authorized redirect URIs:
-#   Local dev:  https://auth.fuzefront.dev.local/source/oauth/callback/google/
-#   Production: https://auth.fuzefront.com/source/oauth/callback/google/
+# and add the following Authorized redirect URIs to the matching Google OAuth client:
+#
+#   Production client:  https://auth.fuzefront.com/source/oauth/callback/google/
+#   Dev tunnel client:  https://auth-dev.fuzefront.com/source/oauth/callback/google/
+#
+# Use TWO SEPARATE Google OAuth clients — one for production, one for the dev
+# tunnel. Never share credentials between them. The dev client is used by
+# docker-compose.e2e.yml (CI) and docker-compose.tunnel.yml (local tunnel dev).
+#
+# NOTE: Google requires a real public TLD for redirect URIs — it rejects
+# .dev.local, .local, .internal and all other non-public suffixes.
+# auth.fuzefront.dev.local cannot be registered. Use the Cloudflare tunnel
+# (auth-dev.fuzefront.com) for any environment that needs real Google OAuth.
+#
+# See docker-compose.tunnel.yml and .env.example for tunnel setup instructions.
 #
 # Supply credentials via:
 #   Helm (k8s):        secret.googleClientId / secret.googleClientSecret in values
@@ -20,6 +32,8 @@
 version: 1
 metadata:
   name: FuzeFront Google OAuth Source
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── User-matching / de-dupe policy ───────────────────────────────────────────
   # Link on verified email prevents duplicate accounts when the same address
@@ -45,3 +59,32 @@ entries:
       # Show a "Sign in with Google" button on the login page
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
+  # ── Login surface wiring ─────────────────────────────────────────────────────
+  # Creating flows/sources does NOT surface them on the login page — the
+  # identification stage of the default authentication flow controls what
+  # renders. Patch it here, in the SAME file and AFTER the source entry, so the
+  # !Find lookups resolve in one pass (fuzefront-enrollment / fuzefront-recovery
+  # come from their own blueprints, which sort earlier alphabetically).
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      user_fields:
+        - username
+        - email
+      show_source_labels: true
+      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      recovery_flow: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      sources:
+        - !Find [authentik_core.source, [slug, authentik-built-in]]
+        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+
+  # Title shown on the hosted login card (default is "Welcome to authentik!").
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: default-authentication-flow
+    attrs:
+      title: "Sign in to FuzeFront"

@@ -111,6 +111,12 @@ secret:
   # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
+  # OIDC client secret for the mendys-datasets consumer product (blueprint
+  # provider-oidc-mendys-datasets.yaml, client_id mendys-datasets-oidc-client).
+  # OPTIONAL: leave empty to apply the blueprint with a placeholder secret;
+  # supply via --set / a gitignored values file / the prod SealedSecret.
+  # NEVER commit a real secret.
+  mendysDatasetsClientSecret: ""
   sendgridApiKey: ""
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.

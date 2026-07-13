@@ -21,6 +21,7 @@ import {
 } from './config/database'
 import { oidcService } from './services/oidc'
 import { setupMetrics } from './metrics'
+import { provisionM2MClients } from './authentik/provision-m2m-clients'
 
 // Load environment variables
 dotenv.config()
@@ -39,6 +40,10 @@ declare global {
 }
 
 const app = express()
+// Behind the k8s ingress every request otherwise carries the ingress IP —
+// trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
+// the real client from X-Forwarded-For.
+app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const PORT = process.env.PORT || 3001
 
@@ -515,6 +520,9 @@ async function startServer() {
       console.error('❌ Failed to initialize OIDC service:', error)
       console.log('⚠️  Continuing with local authentication only')
     }
+
+    // Provision Authentik M2M clients (idempotent; errors are non-fatal)
+    await provisionM2MClients()
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

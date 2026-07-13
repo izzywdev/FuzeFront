@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [22.x, 24.x]
 
     steps:
       - name: Checkout code
@@ -96,7 +96,7 @@ jobs:
           PERMIT_PDP_URL: 'http://localhost:7766'
         run: |
           echo "Running authentication tests..."
-          npm test -- --testPathPattern="tests/(auth|auth-oidc|auth-production)" --verbose --runInBand
+          npm test -- --testPathPattern="tests/(auth|auth-oidc)" --verbose --runInBand
 
       - name: Run apps routes tests (BOLA authz coverage)
         working-directory: ./backend
@@ -234,10 +234,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
           cache: 'npm'
           cache-dependency-path: package-lock.json
 

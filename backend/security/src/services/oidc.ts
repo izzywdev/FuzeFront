@@ -203,6 +203,10 @@ class OIDCService {
   isConfigured(): boolean {
     return !!(this.config.clientId && this.config.clientSecret);
   }
+
+  isInitialized(): boolean {
+    return this.client !== null;
+  }
 }
 
 export const oidcService = new OIDCService(); 

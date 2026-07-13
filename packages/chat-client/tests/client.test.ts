@@ -175,6 +175,40 @@ describe('ChatServiceClient.streamChat', () => {
     expect((init.headers as Record<string, string>)['Authorization']).toBeUndefined();
   });
 
+  it('includes appId in the request body when provided', async () => {
+    const sseText = sseEvent({ type: 'done' });
+    mockFetch.mockResolvedValueOnce(makeSseResponse(sseText));
+
+    const client = new ChatServiceClient({
+      baseUrl: 'http://localhost:3000',
+      getToken: () => 'token',
+    });
+
+    for await (const _ of client.streamChat({ messages: [], orgId: 'org1', appId: 'mendys' })) {
+      // drain
+    }
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).appId).toBe('mendys');
+  });
+
+  it('yields the conversation announcement event', async () => {
+    const sseText =
+      sseEvent({ type: 'conversation', conversationId: 'conv-1' }) + sseEvent({ type: 'done' });
+    mockFetch.mockResolvedValueOnce(makeSseResponse(sseText));
+
+    const client = new ChatServiceClient({
+      baseUrl: 'http://localhost:3000',
+      getToken: () => 'token',
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const evt of client.streamChat({ messages: [], orgId: 'org1' })) {
+      events.push(evt);
+    }
+    expect(events[0]).toEqual({ type: 'conversation', conversationId: 'conv-1' });
+  });
+
   it('includes conversationId in the request body when provided', async () => {
     const sseText = sseEvent({ type: 'done' });
     mockFetch.mockResolvedValueOnce(makeSseResponse(sseText));
@@ -255,6 +289,20 @@ describe('ChatServiceClient.listConversations', () => {
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer tok');
   });
 
+  it('narrows by appId/orgId query params when a filter is given', async () => {
+    mockFetch.mockResolvedValueOnce(makeJsonResponse([]));
+
+    const client = new ChatServiceClient({
+      baseUrl: 'http://localhost:3000',
+      getToken: () => 'tok',
+    });
+
+    await client.listConversations({ appId: 'mendys', orgId: 'org-9' });
+
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3000/chat/conversations?appId=mendys&orgId=org-9');
+  });
+
   it('throws on 401', async () => {
     mockFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }));
 
@@ -292,6 +340,25 @@ describe('ChatServiceClient.getConversation', () => {
     expect(result).toEqual(mockData);
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('http://localhost:3000/chat/conversations/conv1');
+  });
+
+  it('forwards before/after/limit cursors as query params', async () => {
+    mockFetch.mockImplementation(async () =>
+      makeJsonResponse({ id: 'conv1', messages: [], hasMoreBefore: false, hasMoreAfter: false }),
+    );
+
+    const client = new ChatServiceClient({
+      baseUrl: 'http://localhost:3000',
+      getToken: () => 'tok',
+    });
+
+    await client.getConversation('conv1', { before: 'm10', limit: 25 });
+    let [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3000/chat/conversations/conv1?before=m10&limit=25');
+
+    await client.getConversation('conv1', { after: 'm20' });
+    [url] = mockFetch.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3000/chat/conversations/conv1?after=m20');
   });
 
   it('throws on 401', async () => {

@@ -136,6 +136,18 @@ spec:
               value: {{ .Values.authentik.oidc.issuerUrl | quote }}
             - name: AUTHENTIK_REDIRECT_URI
               value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            # M2M provisioning (backend/src/authentik/provision-m2m-clients.ts)
+            # authenticates to the Authentik Admin API with the akadmin bootstrap
+            # token — which Authentik issues as a full API token — so we reuse the
+            # already-sealed AUTHENTIK_BOOTSTRAP_TOKEN key rather than minting a
+            # second admin token. optional:true keeps provisioning gracefully
+            # skipped (provisionM2MClients returns early) if the key is absent.
+            - name: AUTHENTIK_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_BOOTSTRAP_TOKEN
+                  optional: true
             {{- if .Values.authentik.oidc.caConfigMap }}
             - name: NODE_EXTRA_CA_CERTS
               value: /etc/fuzefront-ca/ca.crt

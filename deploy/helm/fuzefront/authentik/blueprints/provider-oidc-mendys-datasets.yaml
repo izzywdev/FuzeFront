@@ -1,0 +1,141 @@
+# Authentik Blueprint — MendysRobotics Datasets OIDC provider + Application
+#
+# Creates the OIDC provider and Application for the `mendys-datasets`
+# consumer product (the MendysRobotics datasets marketplace). Modeled on
+# provider-oidc.yaml — read that file's header for the full rationale.
+#
+# client_id is public/non-sensitive and kept as a literal.
+# client_secret is injected at blueprint-apply time via Authentik's !Env
+# YAML tag — it reads AUTHENTIK_MENDYS_DATASETS_CLIENT_SECRET from the
+# worker pod's environment (sourced from the chart Secret via an OPTIONAL
+# secretKeyRef; key MENDYS_DATASETS_CLIENT_SECRET). No secret value is
+# stored in this file or in the ConfigMap.
+#
+# NOTE: attrs.client_id / attrs.client_secret are respected at *creation time*
+# by Authentik 2024.x blueprint runner. If the provider already exists, these
+# fields are not updated. Rotation requires deleting the provider entry and
+# re-applying.
+#
+# DESIGN: All objects this blueprint needs are defined inline (flow, scope
+# mappings) — no !Find references to system-blueprint objects NOR to another
+# custom blueprint's objects. Authentik's Celery blueprint runner applies
+# blueprints concurrently; a !Find that references an object committed by a
+# DIFFERENT blueprint (e.g. provider-oidc.yaml's scope mappings) would
+# silently abort the entry if that object isn't yet in the DB. Defining
+# everything inline eliminates that race.
+version: 1
+metadata:
+  name: MendysRobotics Datasets OIDC Provider
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  # ── Authorization flow (implicit consent) ────────────────────────────────────
+  # An empty authorization flow = implicit consent in Authentik. The blueprint
+  # runner appends OAuthFulfillmentStage automatically; with no ConsentStage in
+  # the flow, consent is bypassed and the code is issued immediately.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: mendys-datasets-authorization-implicit-consent
+    attrs:
+      name: MendysRobotics Datasets Authorization (Implicit Consent)
+      slug: mendys-datasets-authorization-implicit-consent
+      designation: authorization
+      title: MendysRobotics Sign In
+      # require_authenticated: user must already be logged in to run this flow.
+      # all + 0 policy bindings = vacuous truth → flow is always accessible.
+      authentication: require_authenticated
+      policy_engine_mode: all
+
+  # ── Scope mappings (inline — no cross-blueprint dependency) ──────────────────
+  # Defined before the provider so they exist in DB when the provider entry's
+  # !Find tags execute (blueprint entries are applied in order).
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "Mendys Datasets OIDC scope - openid"
+    attrs:
+      name: "Mendys Datasets OIDC scope - openid"
+      scope_name: openid
+      expression: "return {}"
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "Mendys Datasets OIDC scope - email"
+    attrs:
+      name: "Mendys Datasets OIDC scope - email"
+      scope_name: email
+      expression: |
+        return {
+            "email": request.user.email,
+            "email_verified": True,
+        }
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "Mendys Datasets OIDC scope - profile"
+    attrs:
+      name: "Mendys Datasets OIDC scope - profile"
+      scope_name: profile
+      expression: |
+        return {
+            "name": request.user.name,
+            "given_name": request.user.name,
+            "preferred_username": request.user.username,
+            "nickname": request.user.username,
+            "groups": [g.name for g in request.user.ak_groups.all()],
+        }
+
+  # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: MendysRobotics Datasets
+    attrs:
+      name: MendysRobotics Datasets
+      client_type: confidential
+      # client_id is public/non-sensitive — kept as a deterministic literal.
+      # client_secret is resolved at apply time from the worker pod env var
+      # AUTHENTIK_MENDYS_DATASETS_CLIENT_SECRET (sourced from the chart
+      # Secret). No secret value is committed to git or stored in the
+      # ConfigMap.
+      client_id: "mendys-datasets-oidc-client"
+      client_secret: !Env [AUTHENTIK_MENDYS_DATASETS_CLIENT_SECRET, ""]
+      # Redirect URIs — the two MendysRobotics apps' backend OIDC callbacks.
+      # Listed statically (the blueprint ConfigMap is a raw file, not
+      # Helm-templated), so the same blueprint works in all envs.
+      redirect_uris:
+        - matching_mode: strict
+          url: "https://marketplace.mendysrobotics.com/api/dsm/auth/oidc/callback"
+        - matching_mode: strict
+          url: "https://live.mendysrobotics.com/api/dsm/auth/oidc/callback"
+      # Scope mappings defined inline above — !Find resolves within this same
+      # blueprint run since those entries are applied before this one.
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "Mendys Datasets OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "Mendys Datasets OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "Mendys Datasets OIDC scope - profile"]]
+      # Use email as the `sub` claim — consistent with the FuzeFront provider
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      # Reference the flow defined above. !Find resolves within the same
+      # blueprint run — the flow entry is applied before this provider entry.
+      authorization_flow: !Find [authentik_flows.flow, [slug, mendys-datasets-authorization-implicit-consent]]
+
+  # ── Application ───────────────────────────────────────────────────────────────
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: mendys-datasets
+    attrs:
+      name: MendysRobotics Datasets
+      slug: mendys-datasets
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, MendysRobotics Datasets]]
+      meta_launch_url: "https://marketplace.mendysrobotics.com/"
+      meta_description: "MendysRobotics datasets marketplace"
+      # all + 0 policy bindings = vacuous truth → all authenticated users are
+      # granted access. No policy binding entries needed.
+      policy_engine_mode: all
+      open_in_new_tab: false
