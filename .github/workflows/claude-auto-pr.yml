@@ -1,20 +1,35 @@
-name: Auto-PR from claude branches
+name: Auto-PR from agent branches
 
-# Closes the issue->PR autonomy gap: `anthropics/claude-code-action` (in claude.yml)
-# pushes a `claude/**` branch and only posts a "Create PR" link — it does not open
-# the PR itself. This workflow opens a DRAFT PR from any pushed `claude/**` branch
-# when one doesn't already exist (draft = a human still reviews before merge).
+# Closes the autonomy gap for ALL agent-created branch prefixes:
+#
+#   claude/**          — anthropics/claude-code-action (claude.yml, cloud sessions)
+#   claude-auto-fix-ci-* — claude-ci-autofix.yml → izzywdev/AITools
+#   ds-propagate/**    — ds-propagate.yml multi-agent runs (3 per DS push)
+#   nightly-autofix-*  — nightly-integration.yml autofix job
+#
+# Gap 1 (draft PR never auto-merges): fixed by opening as ready-for-review + auto-merge label.
+# Gap 2 (no PR at all when session errors/times-out): fixed by watching all four prefixes.
+#
+# Flow: push → this workflow → non-draft PR + auto-merge label
+#       → auto-merge.yml enables gh pr merge --auto --squash --delete-branch
+#       → CI passes → GitHub merges + deletes branch automatically.
 on:
   push:
     branches:
       - 'claude/**'
+      - 'claude-auto-fix-ci-*'
+      - 'claude-auto-fix-ci-*/**'
+      - 'ds-propagate/**'
+      - 'nightly-autofix-*'
+      - 'nightly-autofix-*/**'
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write   # required for gh label create (repo-level labels API)
 
 jobs:
-  open-draft-pr:
+  open-pr:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,7 +37,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Open draft PR if none exists
+      - name: Ensure auto-merge label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "auto-merge" --color "#0052cc" --description "Enable squash auto-merge once CI passes" --force 2>/dev/null || true
+
+      - name: Open PR if none exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
@@ -35,7 +56,7 @@ jobs:
           fi
           # Only open a PR if the branch actually diverges from base.
           if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
-            gh pr create --draft --base "$BASE" --head "$BRANCH" --fill \
+            gh pr create --base "$BASE" --head "$BRANCH" --fill --label "auto-merge" \
               || echo "gh pr create failed (no diff or transient) — skipping."
           else
             echo "No commits on $BRANCH ahead of $BASE — no PR opened."
