@@ -1,0 +1,41 @@
+name: Prod Authentik probe (tokenless, read-only)
+
+# Black-box inspection of the PUBLIC Authentik login surface — no secrets.
+# Prints the identification challenge JSON (sources / enroll_url /
+# recovery_url / flow_info) plus existence checks for the FuzeFront flows,
+# so a failed in-cluster config-apply can be diagnosed from runner logs
+# without cluster access.
+on:
+  workflow_dispatch:
+    inputs:
+      auth_origin:
+        description: 'Authentik origin'
+        required: false
+        default: 'https://auth.fuzefront.com'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe login surface
+        env:
+          AK: ${{ inputs.auth_origin || 'https://auth.fuzefront.com' }}
+        run: |
+          set -uo pipefail
+          jar=$(mktemp)
+          echo '=== identification challenge (default-authentication-flow) ==='
+          curl -sSL -c "$jar" -b "$jar" -H 'Accept: application/json' \
+            "$AK/api/v3/flows/executor/default-authentication-flow/?query=" | python3 -m json.tool || true
+          echo
+          echo '=== flow existence (HTTP codes; 404 = flow not created) ==='
+          for slug in fuzefront-enrollment fuzefront-recovery default-authentication-flow; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -L "$AK/if/flow/$slug/")
+            echo "  /if/flow/$slug/ -> $code"
+          done
+          echo
+          echo '=== root page <title> (brand check) ==='
+          curl -sSL "$AK/" | grep -o '<title>[^<]*</title>' | head -1 || true
