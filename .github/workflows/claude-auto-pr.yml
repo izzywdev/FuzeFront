@@ -57,7 +57,7 @@ jobs:
           # Only open a PR if the branch actually diverges from base.
           if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
             gh pr create --base "$BASE" --head "$BRANCH" --fill --label "auto-merge" \
-              || echo "gh pr create failed (no diff or transient) — skipping."
+              || { echo "::error::gh pr create failed for $BRANCH — branch will persist with no PR until governance-nightly retries"; exit 1; }
           else
             echo "No commits on $BRANCH ahead of $BASE — no PR opened."
           fi
