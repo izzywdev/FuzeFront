@@ -105,11 +105,16 @@ export function useChat(options: UseChatOptions): UseChatResult {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  // Hydrate persisted history on mount / scope change.
+  // Hydrate persisted history on mount / scope change. A scope change
+  // (client/org/app/conversation) always starts from a clean slate — the
+  // previous scope's messages must neither stay rendered nor leak into the
+  // next streamChat payload via historyRef.
   useEffect(() => {
     conversationIdRef.current = conversationId;
     oldestLoadedIdRef.current = undefined;
     newestLoadedIdRef.current = undefined;
+    historyRef.current = [];
+    dispatch({ kind: 'reset' });
     if (!resume && !conversationId) return;
 
     let cancelled = false;

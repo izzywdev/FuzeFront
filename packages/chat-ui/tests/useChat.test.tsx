@@ -214,6 +214,36 @@ describe('useChat', () => {
     expect(getCalls[2]).toEqual({ id: 'conv-1', options: { before: 'm1', limit: 2 } });
   });
 
+  it('re-hydrating on a scope change replaces the previous scope entirely', async () => {
+    const { client, streamRequests } = makeFakeClient(
+      [{ type: 'text_delta', delta: 'ok' }, { type: 'done' }],
+      {
+        conversations: [CONV],
+        pages: [page(['m1', 'm2']), page(['m3', 'm4'])],
+      },
+    );
+    const { result, rerender } = renderHook(
+      ({ orgId }) => useChat({ client, orgId, appId: 'mendys', pageSize: 2 }),
+      { initialProps: { orgId: 'org1' } },
+    );
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+
+    rerender({ orgId: 'org2' });
+    await waitFor(() =>
+      expect(result.current.messages.map((m) => m.id)).toEqual(['m3', 'm4']),
+    );
+
+    // The old scope's history must not leak into the next request payload.
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(streamRequests[0].messages.map((m) => m.content)).toEqual([
+      'text-m3',
+      'text-m4',
+      'hello',
+    ]);
+  });
+
   it('loadNewer pages forwards with an after-cursor and appends', async () => {
     const { client, getCalls } = makeFakeClient([{ type: 'done' }], {
       conversations: [CONV],
