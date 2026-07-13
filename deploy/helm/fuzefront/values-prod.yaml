@@ -128,6 +128,13 @@ billingService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
     tag: 6135e6b5ed77
+  # Enable the checkout payment path for the Mendys datasets marketplace:
+  # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
+  # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
+  payment:
+    productKeys: "mendys-datasets"
+    currencies: "usd,eur"
+    maxTotalCents: "5000000"
   # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
   affinity:
     nodeAffinity:
