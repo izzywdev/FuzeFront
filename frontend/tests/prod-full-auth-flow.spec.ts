@@ -230,9 +230,10 @@ test.describe('T3 · Sign-in with Google (full OAuth flow)', () => {
     await page.waitForURL(url => url.href.includes('accounts.google.com'), { timeout: 20_000 })
     await page.screenshot({ path: 'test-results-prod/T3-03-google-accounts.png', fullPage: true })
 
-    const emailInput = page.locator('input[type="email"]')
-    await expect(emailInput, 'Google email input must appear').toBeVisible({ timeout: 15_000 })
-    await emailInput.fill(GOOGLE_EMAIL)
+    // Google's identifier field is name="identifier" / id="identifierId", not type="email"
+    const emailInput = page.locator('#identifierId, input[name="identifier"], input[type="email"]')
+    await expect(emailInput.first(), 'Google email input must appear').toBeVisible({ timeout: 15_000 })
+    await emailInput.first().fill(GOOGLE_EMAIL)
     await page.keyboard.press('Enter')
 
     await page.screenshot({ path: 'test-results-prod/T3-04-google-email-filled.png', fullPage: true })

@@ -42,6 +42,17 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      // T3 is excluded here — Google blocks Playwright Chromium's fingerprint.
+      // Run T3 with --project chrome (real Chrome with saved sessions).
+      grep: /T1|T2/,
+    },
+    {
+      // T3 only: use real Chrome so Google accepts the login
+      // Run: GOOGLE_TEST_EMAIL=izzy.weinberg@gmail.com npx playwright test
+      //        --config playwright.prod.config.ts --project chrome --headed --grep T3
+      name: 'chrome',
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', headless: false },
+      grep: /T3/,
     },
   ],
 
