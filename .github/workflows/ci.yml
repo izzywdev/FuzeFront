@@ -371,7 +371,9 @@ jobs:
             prism mock "$spec" --port 4010 >/tmp/prism.log 2>&1 &
             prism_pid=$!
             for _ in $(seq 1 15); do
-              if curl -fsS http://localhost:4010 >/dev/null 2>&1; then echo "prism mock up for $spec"; break; fi
+              # No -f: the spec defines no GET / so Prism answers 404, which still
+              # proves the mock is up; -f would treat that as not-ready forever.
+              if curl -s -o /dev/null http://localhost:4010 2>/dev/null; then echo "prism mock up for $spec"; break; fi
               sleep 1
             done
             kill "$prism_pid" 2>/dev/null || true

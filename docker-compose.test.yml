@@ -95,13 +95,10 @@ services:
       - "8002:8000"
     networks:
       - test-harness
-    healthcheck:
-      # /api/v1/heartbeat is the stable Chroma liveness endpoint.
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 20s
+    # No healthcheck: the pinned chroma image ships no curl/shell tooling and the
+    # v1 heartbeat route is gone (v2 only), so any in-container probe would leave
+    # the service perpetually "unhealthy". Nothing depends_on chroma health;
+    # consumers should probe http://localhost:8002/api/v2/heartbeat themselves.
 
   # ── Kafka (FuzeInfra: confluentinc/cp-kafka:7.6.1, KRaft — no ZooKeeper) ─────
   kafka-test:
