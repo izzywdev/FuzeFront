@@ -54,11 +54,15 @@ RUN find ./services/provisioning-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/provisioning-service
 
-# shared/dist/kafka/* (loaded via the @fuzefront/shared link) requires kafkajs
-# and zod. Node.js resolves requires from the real file path (/app/shared/dist/…),
-# which walks up through /app/shared/ — but shared has no node_modules in this
-# image. NODE_PATH adds provisioning-service/node_modules as a fallback search
-# path so those packages are found without duplicating them.
+# This service imports ONLY from '@fuzefront/shared/kafka' (the subpath export
+# → shared/dist/kafka/index.js), never from the '@fuzefront/shared' root export.
+# The root export re-exports React hooks and socket.io-client; the kafka subpath
+# is compiled CJS and requires only kafkajs + zod — both present in
+# provisioning-service/node_modules. NODE_PATH makes Node.js fall back to those
+# modules when resolving requires whose real on-disk path is under /app/shared/dist/
+# (which has no node_modules of its own in this image).
+# IMPORTANT: if future changes add a root-shared import here, also copy
+# socket.io-client and react into the image or switch to a workspace install.
 ENV NODE_PATH=/app/services/provisioning-service/node_modules
 ENV PORT=3005
 ENV NODE_ENV=production
