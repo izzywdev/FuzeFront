@@ -11,11 +11,18 @@ export function createPool(connectionString: string): Pool {
 
 /**
  * Run the billing schema migration SQL.
- * Reads 001_billing_schema.sql and executes it as a single statement batch.
- * The SQL is fully idempotent (IF NOT EXISTS everywhere) so re-running is safe.
+ * Executes every migrations/*.sql file in lexicographic (numbered) order, each
+ * as a single statement batch. Every migration is fully idempotent
+ * (IF NOT EXISTS everywhere) so re-running the whole set is safe.
  */
 export async function runMigrations(pool: Pool): Promise<void> {
-  const sqlPath = path.join(__dirname, 'migrations', '001_billing_schema.sql');
-  const sql = fs.readFileSync(sqlPath, 'utf8');
-  await pool.query(sql);
+  const dir = path.join(__dirname, 'migrations');
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+    await pool.query(sql);
+  }
 }

@@ -20,9 +20,14 @@ info:
     `shared/src/kafka/schemas/`:
       * `billing.subscription.changed` — `billingSubscriptionChangedSchemaV1`
       * `billing.usage.recorded`       — `billingUsageRecordedSchemaV1`
+      * `billing.payment.completed`    — `billingPaymentCompletedSchemaV1`
+        (one-time payment-mode checkout outcome: paid / failed / expired)
       * `billing.trial.ending`  / `billing.payment.failed` (raw notify envelopes)
     Consumers (e.g. the backend plan-state projection) read
     `billing.subscription.changed` rather than reading the billing DB directly.
+    Consumer products fulfilling one-time orders (e.g. `mendys-datasets`) read
+    `billing.payment.completed` and reconcile via
+    `GET /payments/sessions/{sessionId}`.
   license:
     name: UNLICENSED
 servers:
@@ -42,6 +47,11 @@ tags:
     description: SetupIntent creation for collecting a payment method without an immediate charge.
   - name: checkout
     description: Hosted Stripe Checkout Session creation (subscription mode).
+  - name: payments
+    description: >-
+      Hosted Stripe Checkout Session creation in ONE-TIME `payment` mode for
+      consumer products (allowlisted `productKey`s), plus the local payment
+      mirror used for reconciliation polling.
   - name: credits
     description: Admin-only manual customer balance adjustments.
   - name: invoices
@@ -287,6 +297,128 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /payments/checkout:
+    post:
+      operationId: createPaymentCheckoutSession
+      tags: [payments]
+      summary: Create a hosted Stripe Checkout Session (one-time payment mode)
+      description: >-
+        Creates a hosted Stripe Checkout Session in `payment` mode for an
+        allowlisted consumer product (e.g. `mendys-datasets`) and returns the
+        Stripe-hosted `url` to redirect the buyer to. The caller supplies the
+        priced line items (name + unit amount in cents + quantity); the service
+        builds Stripe `price_data` from them — no Stripe price catalogue entry
+        is required. On completion Stripe fires `checkout.session.completed`
+        (mode `payment`), which upserts the local `billing.payments` mirror and
+        emits `billing.payment.completed` on Kafka. Failure/expiry are mirrored
+        via `payment_intent.payment_failed` / `checkout.session.expired`.
+        Mirrors `POST /payments/checkout`.
+
+
+        Authorization (money path): identical to `/checkout` — the host proxy
+        authenticates the platform JWT, authorizes the caller against the
+        target entity, and forwards the SERVER-DERIVED actor + entity as
+        trusted headers (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). The
+        service RE-VERIFIES that the body's `entityType`/`entityId` match the
+        authorized entity before creating any Stripe object (mismatch → 403).
+        `productKey` must be in the server-side allowlist
+        (`BILLING_PRODUCT_KEYS`), `currency` in the configured allowlist
+        (default `usd`, `eur`), and each line amount plus the order total are
+        bounded server-side (`BILLING_PAYMENT_MAX_TOTAL_CENTS`, default
+        5,000,000 cents) — violations → 400.
+
+
+        Idempotency: retries with IDENTICAL parameters dedupe to one Stripe
+        session (param-fingerprint idempotency key, same scheme as
+        `/checkout`); any changed parameter yields a fresh session.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCheckoutRequest'
+      responses:
+        '200':
+          description: Payment-mode Checkout Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCheckoutResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Idempotency-key conflict (same key, different params).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StripeErrorBody'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /payments/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        description: The Stripe Checkout Session id (`cs_...`).
+        schema:
+          type: string
+    get:
+      operationId: getPaymentSession
+      tags: [payments]
+      summary: Get the local payment mirror for a Checkout Session
+      x-pagination: exempt
+      description: >-
+        Returns the `billing.payments` mirror row for a payment-mode Checkout
+        Session — the reconciliation-polling surface for consumer services
+        that missed (or cannot receive) the `billing.payment.completed` event.
+        `status` is `pending` until a webhook lands, then `paid` / `failed` /
+        `expired`. 404 when the session is unknown. When the local row is
+        missing but the session exists in Stripe AND its `productKey` metadata
+        is allowlisted, the service falls back to live Stripe, re-mirrors the
+        row, and returns it (singleton resource — pagination exempt).
+
+
+        Authorization: same model as `/payments/checkout`; the proxy-authorized
+        entity must OWN the session (mismatch → 403).
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      responses:
+        '200':
+          description: The payment mirror row.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [payment]
+                properties:
+                  payment:
+                    $ref: '#/components/schemas/BillingPayment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '502':
           $ref: '#/components/responses/StripeError'
 
@@ -892,6 +1024,168 @@ components:
         sessionId:
           type: string
           description: The Stripe Checkout Session id (`cs_...`).
+
+    PaymentStatus:
+      type: string
+      enum: [pending, paid, failed, expired]
+      description: >-
+        Lifecycle of a payment-mode Checkout Session mirror: `pending` from
+        session creation until a webhook lands; then `paid`
+        (checkout.session.completed, paid), `failed`
+        (payment_intent.payment_failed) or `expired`
+        (checkout.session.expired). `paid` is terminal and never downgraded.
+
+    PaymentLineItem:
+      type: object
+      additionalProperties: false
+      required: [name, unitAmountCents, quantity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 250
+          description: Line-item display name shown on the Stripe-hosted page.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Optional line-item description shown under the name.
+        unitAmountCents:
+          type: integer
+          minimum: 1
+          description: >-
+            Unit price in the currency's minor unit (cents). Bounded
+            server-side together with the order total
+            (`BILLING_PAYMENT_MAX_TOTAL_CENTS`).
+        quantity:
+          type: integer
+          minimum: 1
+          description: Units of this line item.
+
+    PaymentCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - productKey
+        - externalOrderId
+        - entityType
+        - entityId
+        - currency
+        - lineItems
+        - successUrl
+        - cancelUrl
+      properties:
+        productKey:
+          type: string
+          minLength: 1
+          description: >-
+            Consumer product key (e.g. `mendys-datasets`). MUST be in the
+            server-side allowlist (`BILLING_PRODUCT_KEYS`); unknown keys → 400.
+        externalOrderId:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >-
+            The consumer product's own order id. Stamped on the session as
+            `client_reference_id` + metadata and echoed on
+            `billing.payment.completed` so the product can correlate.
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+          description: >-
+            Paying entity. MUST match the proxy-authorized entity (re-verified
+            server-side; mismatch → 403).
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: >-
+            ISO 4217 currency code (case-insensitive; lowercased server-side).
+            Must be in the configured allowlist (default `usd`, `eur`).
+          examples: [usd, eur]
+        lineItems:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PaymentLineItem'
+        successUrl:
+          type: string
+          format: uri
+          description: Where Stripe redirects after a completed payment.
+        cancelUrl:
+          type: string
+          format: uri
+          description: Where Stripe redirects if the buyer cancels.
+
+    PaymentCheckoutResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, url]
+      properties:
+        sessionId:
+          type: string
+          description: The Stripe Checkout Session id (`cs_...`).
+        url:
+          type: [string, 'null']
+          description: Stripe-hosted Checkout URL to redirect the buyer to.
+
+    BillingPayment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - stripeSessionId
+        - stripePaymentIntentId
+        - productKey
+        - externalOrderId
+        - entityType
+        - entityId
+        - amountTotalCents
+        - currency
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Local billing.payments primary key.
+        stripeSessionId:
+          type: string
+          description: Stripe Checkout Session id (`cs_...`).
+        stripePaymentIntentId:
+          type: [string, 'null']
+          description: >-
+            Stripe PaymentIntent id (`pi_...`); null until Stripe creates the
+            intent (typically when the buyer reaches the payment page).
+        productKey:
+          type: string
+        externalOrderId:
+          type: string
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        amountTotalCents:
+          type: integer
+          minimum: 0
+          description: Order total in the currency's minor unit (cents).
+        currency:
+          type: string
+          description: ISO 4217 currency code, lowercased.
+          examples: [usd]
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     BillingInvoice:
       type: object
