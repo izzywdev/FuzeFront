@@ -217,7 +217,11 @@ jobs:
                 next
               }
             }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-(backend|frontend|security-service|applications-service|clock-app)$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-backend$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-frontend$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-security-service$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
