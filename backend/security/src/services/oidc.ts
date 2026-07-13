@@ -38,6 +38,9 @@ class OIDCService {
         redirect_uris: [this.config.redirectUri],
         response_types: ['code'],
         grant_types: ['authorization_code'],
+        // Authentik signs ID tokens with HS256 (client-secret-based); without
+        // this override openid-client rejects them as "unexpected JWT alg".
+        id_token_signed_response_alg: 'HS256',
       });
 
       console.log('✅ OIDC client initialized successfully');
