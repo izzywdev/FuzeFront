@@ -21,12 +21,20 @@ entries:
     identifiers:
       domain: "fuzefront.dev.local"
 
+  # Clear the built-in brand's default flag so our brand can claim it.
+  - model: authentik_brands.brand
+    state: present
+    identifiers:
+      domain: "authentik-default"
+    attrs:
+      default: false
+
   - model: authentik_brands.brand
     state: present
     identifiers:
       # Apex-suffix match covers auth.fuzefront.com (prod) and any other
-      # *.fuzefront.com host; default:true additionally covers dev hosts
-      # (fuzefront.dev.local) that don't suffix-match.
+      # *.fuzefront.com host; default:true is set after clearing the built-in
+      # brand above so only one brand is default at a time.
       domain: "fuzefront.com"
     attrs:
       name: "FuzeFront"
