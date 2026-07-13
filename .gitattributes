@@ -1,3 +1,16 @@
+# Force LF for all text-based source files so CI on Linux always sees LF
+# regardless of the OS used to edit (Windows writes CRLF in Python text mode,
+# which breaks awk patterns and shell heredocs in GitHub Actions run: blocks).
+* text=auto
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.sh   text eol=lf
+*.md   text eol=lf
 # Force LF for CSS files so PostCSS/Tailwind/Vite on Linux CI parse them
 # correctly — CRLF in CSS can cause PostCSS to produce an "Unexpected }"
 # parse error even when braces are balanced (Vite 6 + @tailwindcss/postcss 4).
