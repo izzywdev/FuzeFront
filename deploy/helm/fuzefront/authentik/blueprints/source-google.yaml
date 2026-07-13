@@ -54,7 +54,7 @@ entries:
       consumer_key: !Env [GOOGLE_CLIENT_ID, ""]
       consumer_secret: !Env [GOOGLE_CLIENT_SECRET, ""]
       # Link on verified email — merges accounts instead of creating duplicates
-      user_matching_mode: link_by_email
+      user_matching_mode: email_link
       user_path_template: "goauthentik.io/sources/%(slug)s"
       # Show a "Sign in with Google" button on the login page
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
