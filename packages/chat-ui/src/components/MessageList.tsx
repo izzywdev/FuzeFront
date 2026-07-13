@@ -47,9 +47,14 @@ export function MessageList({
 
   // Whether the user is pinned to the bottom (auto-scroll allowed).
   const nearBottomRef = useRef(true);
-  // Prepend anchoring: remember the scroll height when an older page was
-  // requested so the viewport can be offset by exactly the prepended height.
+  // Prepend anchoring: when an older page is requested, remember the current
+  // first message ELEMENT and its offsetTop. After the prepend, that same node
+  // has moved down by exactly the prepended height — immune to content being
+  // appended at the bottom (e.g. a streaming delta) while the page is in
+  // flight, which would corrupt a scrollHeight-based delta.
   const awaitingPrependRef = useRef(false);
+  const anchorElRef = useRef<HTMLElement | null>(null);
+  const anchorOffsetRef = useRef(0);
   const prependScrollHeightRef = useRef(0);
   const prevFirstIdRef = useRef<string | undefined>(undefined);
 
@@ -66,6 +71,9 @@ export function MessageList({
       !awaitingPrependRef.current
     ) {
       awaitingPrependRef.current = true;
+      const anchor = el.querySelector<HTMLElement>('.ffc-msg');
+      anchorElRef.current = anchor;
+      anchorOffsetRef.current = anchor?.offsetTop ?? 0;
       prependScrollHeightRef.current = el.scrollHeight;
       onLoadOlder();
     }
@@ -76,13 +84,20 @@ export function MessageList({
   };
 
   // Keep the viewport anchored when an older page is prepended: offset the
-  // scroll position by however much taller the list just became.
+  // scroll position by how far the previously-first message moved down.
   useLayoutEffect(() => {
     const el = listRef.current;
     const firstId = messages[0]?.id;
     if (el && awaitingPrependRef.current && firstId !== prevFirstIdRef.current) {
-      el.scrollTop += el.scrollHeight - prependScrollHeightRef.current;
+      const anchor = anchorElRef.current;
+      if (anchor && el.contains(anchor)) {
+        el.scrollTop += anchor.offsetTop - anchorOffsetRef.current;
+      } else {
+        // Anchor node gone (remount) — fall back to the total-height delta.
+        el.scrollTop += el.scrollHeight - prependScrollHeightRef.current;
+      }
       awaitingPrependRef.current = false;
+      anchorElRef.current = null;
     }
     prevFirstIdRef.current = firstId;
   }, [messages]);

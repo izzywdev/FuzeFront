@@ -129,7 +129,11 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
         {
           emit: (event) => {
             if (event.type === 'text_delta') assistantText += event.delta;
-            write(event);
+            // Hold back the agent's terminal `done`: persistence/billing below
+            // may still fail, and the stream must end with exactly one terminal
+            // event (`done`, or `error`+`done` from the catch) — never an error
+            // AFTER a `done` the client already treated as success.
+            if (event.type !== 'done') write(event);
           },
           onUsage: (u) => {
             usage = u;
@@ -157,6 +161,8 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
           totalTokens: usage.totalTokens,
         });
       }
+
+      write({ type: 'done' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'stream failed';
       write({ type: 'error', message });
