@@ -81,9 +81,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-root
 
       - name: Build and push email-service
-        # Ancillary services are disabled in prod (only billing is enabled) and some
-        # have unbuilt workspace wiring. They must NEVER block the core backend+frontend
-        # deploy — a failed build here is non-fatal; the bump+deploy still proceeds.
+        # Ancillary services are disabled in prod (only billing is enabled). They
+        # must NEVER block the core backend+frontend deploy — a failed build here
+        # is non-fatal; the bump+deploy still proceeds.
         continue-on-error: true
         uses: docker/build-push-action@v5
         with:
@@ -180,26 +180,41 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Bump image tags in values-prod.yaml (GitOps)
-        # master enables required_signatures, so a plain `git push` of a bot
-        # commit is REJECTED (this step failed on every release since the
-        # hardening landed — prod stopped rolling). Committing via the GitHub
-        # contents API instead produces a server-side commit signed by GitHub's
-        # web-flow key, which satisfies the ruleset
-        # (governance/hardening-convention.md §3 / repo CLAUDE.md hardening).
+        # The "Protect Master" ruleset has a pull_request rule, so neither a
+        # plain `git push` with GITHUB_TOKEN nor a contents-API commit can land
+        # on master (the API PUT 409s with "Changes must be made through a pull
+        # request" — that killed every release once the rule appeared; GitHub
+        # also refuses to add the github-actions app as a ruleset bypass actor
+        # on a user-owned repo). The write path is therefore a DEPLOY KEY:
+        # "Protect Master" has a DeployKey bypass_actor, and the private half
+        # lives in the RELEASE_BUMP_SSH_KEY secret (public half: deploy key
+        # "release-bump"). If this step starts failing with a rule violation,
+        # the DeployKey bypass entry or the deploy key was removed — restore
+        # them rather than weakening the ruleset's PR rule for humans.
+        # NOTE: deploy-key pushes are unsigned; if required_signatures is ever
+        # (re-)enabled on master this needs a signing setup or a bot identity.
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_KEY: ${{ secrets.RELEASE_BUMP_SSH_KEY }}
           FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
           set -euo pipefail
           SHA="${{ steps.tag.outputs.sha }}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
+          chmod 600 ~/.ssh/release_bump
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_bump -o IdentitiesOnly=yes"
+          git config user.name  "fuzefront-release"
+          git config user.email "release-bump@users.noreply.github.com"
+          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
           # Read-modify-write against CURRENT master, not this job's (stale)
-          # checkout: the builds above take minutes, and pairing fresh blob-SHA
-          # with stale content would silently overwrite any intervening edit to
-          # the file. If master's file changes between this GET and the PUT the
-          # blob-SHA no longer matches and the PUT 409s (rerun the job).
-          RESP=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}?ref=master")
-          CUR_SHA=$(jq -r .sha <<<"$RESP")
-          jq -r .content <<<"$RESP" | base64 -d > /tmp/vp-current.yaml
+          # checkout: the builds above take minutes and other commits land
+          # meanwhile. A non-fast-forward race (someone pushes between our
+          # fetch and push) just retries with a fresh fetch.
+          for attempt in 1 2 3; do
+          git fetch origin master
+          git checkout --detach --force FETCH_HEAD
+          cp "$FILE" /tmp/vp-current.yaml
           # Bump ONLY the core-app image tags built by this workflow. A blanket
           # `tag:` sed would also stomp deliberately-pinned services and the
           # EXTERNAL images (authentik, unleash) whose tags are managed by hand.
@@ -207,21 +222,27 @@ jobs:
           # line (true for every block in values-prod.yaml). Scoping `hot` to a
           # single following line means a block that drops its tag: can never
           # leak the bump onto a later, unrelated tag: (review finding).
+          # The \r? in the repository anchor tolerates CRLF line endings: a bot
+          # commit once rewrote the whole file as CRLF, the $-anchored match got
+          # 0 hits, and the count guard below killed every release until a human
+          # manually restored LF. Rewritten tag lines preserve the line's
+          # original ending so a CRLF file round-trips without a spurious
+          # whole-file diff.
           awk -v sha="$SHA" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
                 match($0, /^[[:space:]]*/)
-                print substr($0, 1, RLENGTH) "tag: " sha
+                print substr($0, 1, RLENGTH) "tag: " sha ($0 ~ /\r$/ ? "\r" : "")
                 n++
                 next
               }
             }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-backend$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-frontend$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-security-service$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-backend\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-frontend\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-security-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
@@ -238,12 +259,13 @@ jobs:
             echo "values-prod.yaml already at ${SHA} — nothing to bump"
             exit 0
           fi
-          # No pipe here: a rejected PUT (e.g. ruleset denies the actor) must
-          # FAIL this step, not vanish into a downstream consumer's exit code.
-          NEW_COMMIT=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
-            -f message="release: fuzefront images ${SHA} [skip ci]" \
-            -f branch=master \
-            -f sha="${CUR_SHA}" \
-            -f content="$(base64 -w0 /tmp/vp-new.yaml)" \
-            --jq '.commit.sha')
-          echo "Bumped via API commit ${NEW_COMMIT}"
+          cp /tmp/vp-new.yaml "$FILE"
+          git commit -m "release: fuzefront images ${SHA} [skip ci]" -- "$FILE"
+          if git push origin HEAD:master; then
+            echo "Bumped via commit $(git rev-parse HEAD)"
+            exit 0
+          fi
+          echo "push rejected (attempt ${attempt}) — refetching master and retrying"
+          done
+          echo "::error::could not push the tag bump after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
+          exit 1
