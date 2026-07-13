@@ -62,6 +62,69 @@ describe('BillingClient', () => {
     expect(verbs.delete).toHaveBeenCalledWith('/subscriptions/sub_1');
   });
 
+  it('createPaymentCheckout POSTs the request body (no actor headers when omitted)', async () => {
+    verbs.post.mockResolvedValue({ data: { sessionId: 'cs_1', url: 'https://stripe/x' } });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    const req = {
+      productKey: 'mendys-datasets',
+      externalOrderId: 'order-42',
+      entityType: 'organization' as const,
+      entityId: 'org-1',
+      currency: 'usd',
+      lineItems: [{ name: 'Recording hours', unitAmountCents: 15000, quantity: 4 }],
+      successUrl: 'https://a/s',
+      cancelUrl: 'https://a/c',
+    };
+    const out = await c.createPaymentCheckout(req);
+    expect(verbs.post).toHaveBeenCalledWith('/payments/checkout', req, { headers: {} });
+    expect(out).toEqual({ sessionId: 'cs_1', url: 'https://stripe/x' });
+  });
+
+  it('createPaymentCheckout maps the actor context to the X-Billing-* headers', async () => {
+    verbs.post.mockResolvedValue({ data: { sessionId: 'cs_1', url: null } });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    await c.createPaymentCheckout(
+      {
+        productKey: 'mendys-datasets',
+        externalOrderId: 'order-42',
+        entityType: 'user',
+        entityId: 'u1',
+        currency: 'eur',
+        lineItems: [{ name: 'X', unitAmountCents: 100, quantity: 1 }],
+        successUrl: 'https://a/s',
+        cancelUrl: 'https://a/c',
+      },
+      { actorUserId: 'u1', entityType: 'user', entityId: 'u1' },
+    );
+    expect(verbs.post.mock.calls[0][2]).toEqual({
+      headers: {
+        'X-Billing-Actor-User-Id': 'u1',
+        'X-Billing-Entity-Type': 'user',
+        'X-Billing-Entity-Id': 'u1',
+      },
+    });
+  });
+
+  it('getPaymentSession GETs the encoded id with actor headers and unwraps {payment}', async () => {
+    verbs.get.mockResolvedValue({
+      data: { payment: { stripeSessionId: 'cs 1', status: 'paid' } },
+    });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    const out = await c.getPaymentSession('cs 1', {
+      actorUserId: 'u1',
+      entityType: 'organization',
+      entityId: 'org-1',
+    });
+    expect(verbs.get).toHaveBeenCalledWith('/payments/sessions/cs%201', {
+      headers: {
+        'X-Billing-Actor-User-Id': 'u1',
+        'X-Billing-Entity-Type': 'organization',
+        'X-Billing-Entity-Id': 'org-1',
+      },
+    });
+    expect(out).toEqual({ stripeSessionId: 'cs 1', status: 'paid' });
+  });
+
   it('createSetupIntent POSTs entity + returns clientSecret', async () => {
     verbs.post.mockResolvedValue({ data: { clientSecret: 'seti_secret' } });
     const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });

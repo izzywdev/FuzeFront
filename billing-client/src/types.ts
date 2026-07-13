@@ -64,6 +64,77 @@ export interface UpdateSubscriptionRequest {
   seatQuantity?: number;
 }
 
+/**
+ * Lifecycle of a payment-mode Checkout mirror row: `pending` from session
+ * creation until a webhook lands, then `paid` / `failed` / `expired`
+ * (`paid` is terminal — never downgraded).
+ */
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
+
+export interface PaymentLineItem {
+  /** Line-item display name shown on the Stripe-hosted page. */
+  name: string;
+  /** Optional line-item description shown under the name. */
+  description?: string;
+  /** Unit price in the currency's minor unit (cents); bounded server-side. */
+  unitAmountCents: number;
+  /** Units of this line item. */
+  quantity: number;
+}
+
+export interface PaymentCheckoutRequest {
+  /** Allowlisted consumer product key (BILLING_PRODUCT_KEYS), e.g. 'mendys-datasets'. */
+  productKey: string;
+  /** The consumer product's own order id (stamped as client_reference_id + metadata). */
+  externalOrderId: string;
+  /** Paying entity — must match the proxy-authorized entity (403 otherwise). */
+  entityType: EntityType;
+  entityId: string;
+  /** ISO 4217 code (case-insensitive; allowlisted server-side, default usd/eur). */
+  currency: string;
+  lineItems: PaymentLineItem[];
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export interface PaymentCheckoutResponse {
+  /** The Stripe Checkout Session id (`cs_...`). */
+  sessionId: string;
+  /** Stripe-hosted Checkout URL to redirect the buyer to. */
+  url: string | null;
+}
+
+/** Local billing.payments mirror of a one-time payment-mode Checkout Session. */
+export interface BillingPayment {
+  id: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  productKey: string;
+  externalOrderId: string;
+  entityType: EntityType;
+  entityId: string;
+  amountTotalCents: number;
+  currency: string;
+  status: PaymentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The SERVER-DERIVED actor/entity context the billing-service's money routes
+ * require. When calls go through the host-backend billing proxy these headers
+ * are injected there; an internal service calling billing-service directly
+ * (with its own BILLING_INTERNAL_TOKEN) must supply them itself.
+ */
+export interface BillingActorContext {
+  /** Authenticated platform user id -> X-Billing-Actor-User-Id. */
+  actorUserId: string;
+  /** Authorized entity type -> X-Billing-Entity-Type. */
+  entityType: EntityType;
+  /** Authorized entity id -> X-Billing-Entity-Id. */
+  entityId: string;
+}
+
 export interface BillingClientConfig {
   /** Base URL of billing-service, e.g. http://fuzefront-billing-service:3006 */
   baseUrl: string;

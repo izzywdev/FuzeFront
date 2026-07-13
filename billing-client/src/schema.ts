@@ -95,6 +95,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a hosted Stripe Checkout Session (subscription mode)
+         * @description Creates a hosted Stripe Checkout Session in `subscription` mode for the given organization and plan, and returns the Stripe-hosted `url` to redirect the customer to. Stripe collects the card on its hosted page; on completion Stripe fires `checkout.session.completed`, which activates the local subscription mirror. We use HOSTED Checkout (not in-app Elements) so no raw card data touches our surface. Mirrors `POST /checkout`.
+         *
+         *     Authorization (money path): the host proxy authenticates the platform JWT, authorizes the caller against the target organization, and forwards the SERVER-DERIVED actor + entity as trusted headers (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`, `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). The service RE-VERIFIES that `organizationId` matches the authorized entity before creating any Stripe object (rejects with 403 otherwise), and validates `planId` against the active plan catalogue (rejects unknown/inactive plans with 400). `planId: "basic"` resolves to the live $9/mo price.
+         */
+        post: operations["createCheckoutSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a hosted Stripe Checkout Session (one-time payment mode)
+         * @description Creates a hosted Stripe Checkout Session in `payment` mode for an allowlisted consumer product (e.g. `mendys-datasets`) and returns the Stripe-hosted `url` to redirect the buyer to. The caller supplies the priced line items (name + unit amount in cents + quantity); the service builds Stripe `price_data` from them — no Stripe price catalogue entry is required. On completion Stripe fires `checkout.session.completed` (mode `payment`), which upserts the local `billing.payments` mirror and emits `billing.payment.completed` on Kafka. Failure/expiry are mirrored via `payment_intent.payment_failed` / `checkout.session.expired`. Mirrors `POST /payments/checkout`.
+         *
+         *     Authorization (money path): identical to `/checkout` — the host proxy authenticates the platform JWT, authorizes the caller against the target entity, and forwards the SERVER-DERIVED actor + entity as trusted headers (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`, `X-Billing-Entity-Id`; aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). The service RE-VERIFIES that the body's `entityType`/`entityId` match the authorized entity before creating any Stripe object (mismatch → 403). `productKey` must be in the server-side allowlist (`BILLING_PRODUCT_KEYS`), `currency` in the configured allowlist (default `usd`, `eur`), and each line amount plus the order total are bounded server-side (`BILLING_PAYMENT_MAX_TOTAL_CENTS`, default 5,000,000 cents) — violations → 400.
+         *
+         *     Idempotency: retries with IDENTICAL parameters dedupe to one Stripe session (param-fingerprint idempotency key, same scheme as `/checkout`); any changed parameter yields a fresh session.
+         */
+        post: operations["createPaymentCheckoutSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Stripe Checkout Session id (`cs_...`). */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the local payment mirror for a Checkout Session
+         * @description Returns the `billing.payments` mirror row for a payment-mode Checkout Session — the reconciliation-polling surface for consumer services that missed (or cannot receive) the `billing.payment.completed` event. `status` is `pending` until a webhook lands, then `paid` / `failed` / `expired`. 404 when the session is unknown. When the local row is missing but the session exists in Stripe AND its `productKey` metadata is allowlisted, the service falls back to live Stripe, re-mirrors the row, and returns it (singleton resource — pagination exempt).
+         *
+         *     Authorization: same model as `/payments/checkout`; the proxy-authorized entity must OWN the session (mismatch → 403).
+         */
+        get: operations["getPaymentSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/credits": {
         parameters: {
             query?: never;
@@ -106,9 +177,57 @@ export interface paths {
         put?: never;
         /**
          * Add a one-time customer balance adjustment (admin only)
-         * @description Adds a one-time customer balance adjustment (credit) via a Stripe customer balance transaction. A positive `amount` (in cents) credits the customer (reduces what they owe). Mirrors `POST /credits`.
+         * @description Adds a one-time customer balance adjustment (credit) via a Stripe customer balance transaction. A positive `amount` (in cents, bounded) credits the customer (reduces what they owe). Mirrors `POST /credits`.
+         *
+         *     ADMIN-ONLY: in addition to the internal token, the host proxy must supply `X-Billing-Actor-Is-Admin: true` (it sets this only for callers it has authorized as platform admins). Without it the service responds 403. `amount` must be a positive integer and is capped server-side.
          */
         post: operations["addCredits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the authorized entity's invoices
+         * @description Returns the Stripe invoice history for the proxy-authorized entity (user or organization), most-recent first, as a stable contract subset of the Stripe Invoice. Read-only. Mirrors `GET /invoices`.
+         *
+         *     Authorization: behind the internal-token guard; the entity is the SERVER-DERIVED actor context the proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`, `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). Identity is never taken from the query string. An entity that has never had billing returns `{ invoices: [], nextCursor: null }` (200, not an error).
+         *
+         *     Pagination is opaque-cursor based: pass the previous response's `nextCursor` (a Stripe invoice id) as `cursor` to fetch the next page. `nextCursor` is null on the last page.
+         */
+        get: operations["listInvoices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Stripe Customer Portal session
+         * @description Creates a Stripe Customer Portal session for the proxy-authorized entity and returns the Stripe-hosted `url` to redirect the customer to, where they can manage their subscription and payment methods. Mirrors `POST /portal`.
+         *
+         *     Authorization: behind the internal-token guard; the entity is the SERVER-DERIVED actor context the proxy injects (the entity is NEVER taken from the request body). An entity that has never had a billing customer cannot open a portal -> 409.
+         */
+        post: operations["createPortalSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -273,9 +392,161 @@ export interface components {
             entityType: components["schemas"]["EntityType"];
             /** Format: uuid */
             entityId: string;
-            /** @description Amount in cents; a positive value credits the customer. */
+            /** @description Amount in cents; a positive value credits the customer. Bounded server-side (1..10_000_000 cents) — MEDIUM-1. */
             amount: number;
             note?: string;
+        };
+        CheckoutSessionRequest: {
+            /** @description Logical plan id (e.g. `basic`), a tier name, or a Stripe price id present in the active catalogue. Validated against active plans; `basic` resolves to the live $9/mo price. */
+            planId: string;
+            /**
+             * Format: uuid
+             * @description Target organization. MUST match the proxy-authorized entity (re-verified server-side; mismatch → 403).
+             */
+            organizationId: string;
+            /**
+             * Format: uri
+             * @description Where Stripe redirects after a completed checkout.
+             */
+            successUrl: string;
+            /**
+             * Format: uri
+             * @description Where Stripe redirects if the customer cancels.
+             */
+            cancelUrl: string;
+        };
+        CheckoutSessionResponse: {
+            /** @description Stripe-hosted Checkout URL to redirect the customer to. */
+            url: string | null;
+            /** @description The Stripe Checkout Session id (`cs_...`). */
+            sessionId: string;
+        };
+        /**
+         * @description Lifecycle of a payment-mode Checkout Session mirror: `pending` from session creation until a webhook lands; then `paid` (checkout.session.completed, paid), `failed` (payment_intent.payment_failed) or `expired` (checkout.session.expired). `paid` is terminal and never downgraded.
+         * @enum {string}
+         */
+        PaymentStatus: "pending" | "paid" | "failed" | "expired";
+        PaymentLineItem: {
+            /** @description Line-item display name shown on the Stripe-hosted page. */
+            name: string;
+            /** @description Optional line-item description shown under the name. */
+            description?: string;
+            /** @description Unit price in the currency's minor unit (cents). Bounded server-side together with the order total (`BILLING_PAYMENT_MAX_TOTAL_CENTS`). */
+            unitAmountCents: number;
+            /** @description Units of this line item. */
+            quantity: number;
+        };
+        PaymentCheckoutRequest: {
+            /** @description Consumer product key (e.g. `mendys-datasets`). MUST be in the server-side allowlist (`BILLING_PRODUCT_KEYS`); unknown keys → 400. */
+            productKey: string;
+            /** @description The consumer product's own order id. Stamped on the session as `client_reference_id` + metadata and echoed on `billing.payment.completed` so the product can correlate. */
+            externalOrderId: string;
+            entityType: components["schemas"]["EntityType"];
+            /**
+             * Format: uuid
+             * @description Paying entity. MUST match the proxy-authorized entity (re-verified server-side; mismatch → 403).
+             */
+            entityId: string;
+            /**
+             * @description ISO 4217 currency code (case-insensitive; lowercased server-side). Must be in the configured allowlist (default `usd`, `eur`).
+             * @example usd
+             * @example eur
+             */
+            currency: string;
+            lineItems: components["schemas"]["PaymentLineItem"][];
+            /**
+             * Format: uri
+             * @description Where Stripe redirects after a completed payment.
+             */
+            successUrl: string;
+            /**
+             * Format: uri
+             * @description Where Stripe redirects if the buyer cancels.
+             */
+            cancelUrl: string;
+        };
+        PaymentCheckoutResponse: {
+            /** @description The Stripe Checkout Session id (`cs_...`). */
+            sessionId: string;
+            /** @description Stripe-hosted Checkout URL to redirect the buyer to. */
+            url: string | null;
+        };
+        BillingPayment: {
+            /**
+             * Format: uuid
+             * @description Local billing.payments primary key.
+             */
+            id: string;
+            /** @description Stripe Checkout Session id (`cs_...`). */
+            stripeSessionId: string;
+            /** @description Stripe PaymentIntent id (`pi_...`); null until Stripe creates the intent (typically when the buyer reaches the payment page). */
+            stripePaymentIntentId: string | null;
+            productKey: string;
+            externalOrderId: string;
+            entityType: components["schemas"]["EntityType"];
+            /** Format: uuid */
+            entityId: string;
+            /** @description Order total in the currency's minor unit (cents). */
+            amountTotalCents: number;
+            /**
+             * @description ISO 4217 currency code, lowercased.
+             * @example usd
+             */
+            currency: string;
+            status: components["schemas"]["PaymentStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BillingInvoice: {
+            /** @description Stripe invoice id (`in_...`). */
+            id: string;
+            /** @description Human-facing invoice number; null for drafts without one. */
+            number: string | null;
+            /**
+             * Format: date-time
+             * @description ISO-8601 timestamp derived from the Stripe `created` unix seconds.
+             */
+            created: string;
+            /** @description Amount due in the currency's minor unit (cents). */
+            amountDue: number;
+            /** @description Amount paid in the currency's minor unit (cents). */
+            amountPaid: number;
+            /**
+             * @description ISO 4217 currency code, lowercased.
+             * @example usd
+             */
+            currency: string;
+            /**
+             * @description Stripe invoice status.
+             * @example paid
+             * @example open
+             * @example void
+             * @example draft
+             * @example uncollectible
+             */
+            status: string;
+            /** @description Stripe-hosted invoice page url (null when unavailable). */
+            hostedInvoiceUrl: string | null;
+            /** @description Url to the invoice PDF (null when unavailable). */
+            invoicePdf: string | null;
+        };
+        InvoiceListResponse: {
+            invoices: components["schemas"]["BillingInvoice"][];
+            /** @description Opaque cursor (Stripe invoice id) for the next page; null when there are no further pages. */
+            nextCursor: string | null;
+        };
+        PortalSessionRequest: {
+            /**
+             * Format: uri
+             * @description Where Stripe returns the customer after they leave the portal.
+             */
+            returnUrl: string;
+        };
+        PortalSessionResponse: {
+            /** @description Stripe-hosted Customer Portal url to redirect the customer to. */
+            url: string;
         };
         Error: {
             error: string;
@@ -293,8 +564,17 @@ export interface components {
         };
     };
     responses: {
-        /** @description Missing or invalid internal token. */
+        /** @description Missing or invalid internal token, or missing actor context. */
         Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The authenticated/authorized caller may not act on the target object (e.g. organizationId does not match the authorized entity, or the operation requires platform-admin context). */
+        Forbidden: {
             headers: {
                 [name: string]: unknown;
             };
@@ -342,6 +622,12 @@ export interface components {
     parameters: {
         /** @description The Stripe subscription id (e.g. `sub_...`). */
         StripeSubscriptionId: string;
+        /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+        ActorUserIdHeader: string;
+        /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+        EntityTypeHeader: components["schemas"]["EntityType"];
+        /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+        EntityIdHeader: string;
     };
     requestBodies: never;
     headers: never;
@@ -515,10 +801,128 @@ export interface operations {
             502: components["responses"]["StripeError"];
         };
     };
+    createCheckoutSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Checkout Session created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutSessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["StripeError"];
+        };
+    };
+    createPaymentCheckoutSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Payment-mode Checkout Session created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentCheckoutResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Idempotency-key conflict (same key, different params). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StripeErrorBody"];
+                };
+            };
+            502: components["responses"]["StripeError"];
+        };
+    };
+    getPaymentSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path: {
+                /** @description The Stripe Checkout Session id (`cs_...`). */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The payment mirror row. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        payment: components["schemas"]["BillingPayment"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["StripeError"];
+        };
+    };
     addCredits: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Set to `true` by the proxy ONLY for platform-admin-authorized callers. Required — absent/other values are rejected with 403. */
+                "X-Billing-Actor-Is-Admin": "true";
+            };
             path?: never;
             cookie?: never;
         };
@@ -544,6 +948,89 @@ export interface operations {
             };
             400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["StripeError"];
+        };
+    };
+    listInvoices: {
+        parameters: {
+            query?: {
+                /** @description Page size, clamped server-side to 1..100. Defaults to 20. */
+                limit?: number;
+                /** @description Opaque pagination cursor (a Stripe invoice id) passed to Stripe's `starting_after`. Use the previous response's `nextCursor`. */
+                cursor?: string;
+            };
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of invoices for the entity (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceListResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            502: components["responses"]["StripeError"];
+        };
+    };
+    createPortalSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Portal session created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalSessionResponse"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The entity has no billing customer to manage. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example no billing customer */
+                        error: string;
+                        message?: string;
+                    };
+                };
+            };
             502: components["responses"]["StripeError"];
         };
     };
