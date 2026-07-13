@@ -1,15 +1,49 @@
 # docker-compose.test.yml
-# Standalone test harness. Bring up with:
-#   docker compose -f docker-compose.test.yml up -d
+# =============================================================================
+# Single integration test harness for the PR-level "Integration" tier.
+#
+# Bring up with:
+#   docker compose -f docker-compose.test.yml up -d <services...>
 # Tear down with:
 #   docker compose -f docker-compose.test.yml down -v
 #
-# Ports (all on localhost, won't conflict with prod compose):
+# -----------------------------------------------------------------------------
+# VERSION PARITY (read this before bumping any tag/digest below)
+# -----------------------------------------------------------------------------
+# The base-service image *tags* here are pinned to the versions FuzeInfra runs,
+# sourced from the vendored submodule's `FuzeInfra/docker-compose.FuzeInfra.yml`
+# (the version-parity source of truth — do NOT hand-pick drifting tags):
+#     postgres:15            redis:7-alpine
+#     confluentinc/cp-kafka:7.6.1   chromadb/chroma:latest
+# Each image is additionally pinned by **digest** (`@sha256:...`) so the harness
+# is byte-reproducible even when a tag is re-pushed upstream. To refresh after a
+# FuzeInfra version bump:
+#   1. update the tag to match FuzeInfra/docker-compose.FuzeInfra.yml
+#   2. re-resolve the digest: `docker buildx imagetools inspect <image:tag>`
+#   3. paste the new `@sha256:` here.
+#
+# External SaaS is never hit from CI — it is mocked in-process:
+#     stripe        -> stripe-mock (stripemock/stripe-mock)
+#     OpenAI/LLM    -> mock-llm (OpenAI-compatible stub on :11434)
+#     Permit.io     -> permit-pdp-test in OFFLINE mode (PDP_API_KEY defaults ci-noop)
+#
+# NOTE: when FuzeInfra ships its consumer-test-harness (FuzeInfra #33 / PR #34),
+# prefer reusing that published harness over maintaining these service defs by
+# hand. Tracking switch-over: replace the base-service blocks below with the
+# FuzeInfra harness compose include / action. (one-line switch — see ci.yml)
+#
+# Ports (all on localhost, won't conflict with the prod FuzeInfra compose):
 #   5433  -> Postgres (test DB)
+#   6380  -> Redis
+#   8002  -> ChromaDB (vector DB)
 #   9094  -> Kafka (KRaft, external listener)
 #   1025  -> MailHog SMTP
 #   8025  -> MailHog Web UI + API (http://localhost:8025)
-#   7767  -> Permit PDP
+#   7767  -> Permit PDP (offline)
+#  12111  -> stripe-mock (https/http)
+#  11434  -> mock-llm (OpenAI-compatible)
+#   3004  -> email-service (wired to MailHog)
+# =============================================================================
 
 networks:
   test-harness:
@@ -18,9 +52,9 @@ networks:
 
 services:
 
-  # ── Postgres ────────────────────────────────────────────────────────────────
+  # ── Postgres (FuzeInfra: postgres:15) ───────────────────────────────────────
   postgres-test:
-    image: postgres:15-alpine
+    image: postgres:15@sha256:c2ca90969ca293925ab474466e837689cc712321afdd9e4640bd0cf942fdca3a
     container_name: test-postgres
     environment:
       POSTGRES_USER: postgres
@@ -36,9 +70,39 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Kafka (KRaft — no ZooKeeper) ────────────────────────────────────────────
+  # ── Redis (FuzeInfra: redis:7-alpine) ───────────────────────────────────────
+  redis-test:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    container_name: test-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6380:6379"
+    networks:
+      - test-harness
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── ChromaDB (FuzeInfra: chromadb/chroma:latest) ────────────────────────────
+  # Vector DB for AI/RAG services (e.g. the LLM gateway / chat service). The tag
+  # is FuzeInfra's declared `latest`; the digest freezes it for reproducibility.
+  chromadb-test:
+    image: chromadb/chroma:latest@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
+    container_name: test-chromadb
+    ports:
+      - "8002:8000"
+    networks:
+      - test-harness
+    # No healthcheck: the pinned chroma image ships no curl/shell tooling and the
+    # v1 heartbeat route is gone (v2 only), so any in-container probe would leave
+    # the service perpetually "unhealthy". Nothing depends_on chroma health;
+    # consumers should probe http://localhost:8002/api/v2/heartbeat themselves.
+
+  # ── Kafka (FuzeInfra: confluentinc/cp-kafka:7.6.1, KRaft — no ZooKeeper) ─────
   kafka-test:
-    image: confluentinc/cp-kafka:7.6.1
+    image: confluentinc/cp-kafka:7.6.1@sha256:620734d9fc0bb1f9886932e5baf33806074469f40e3fe246a3fdbb59309535fa
     container_name: test-kafka
     environment:
       KAFKA_NODE_ID: 1
@@ -59,25 +123,37 @@ services:
     networks:
       - test-harness
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null && echo ok || exit 1"]
+      # Gate on the broker actually answering an API-versions request on the
+      # internal listener. `--version` confirms the broker is past startup and
+      # serving metadata, which is the readiness signal consumers depend on.
+      # The earlier `grep ApiKey` form was timing-fragile; this exit-code gate
+      # plus a generous start_period is what makes the email/Kafka tier stable.
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
       interval: 10s
-      timeout: 15s
-      retries: 20
-      start_period: 60s
+      timeout: 10s
+      retries: 24
+      start_period: 45s
 
   # ── MailHog (SMTP sink + assertion API) ─────────────────────────────────────
   mailhog:
-    image: mailhog/mailhog:v1.0.1
+    image: mailhog/mailhog:v1.0.1@sha256:8d76a3d4ffa32a3661311944007a415332c4bb855657f4f6c57996405c009bea
     container_name: test-mailhog
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI + REST API
     networks:
       - test-harness
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8025/api/v2/messages || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   # ── Permit PDP (offline mode — needs real API key for cloud-connected tests) ─
+  # No external SaaS is required: PDP_ENABLE_OFFLINE_MODE keeps it self-contained
+  # and the backend degrades to ci-noop when PERMIT_API_KEY is absent.
   permit-pdp-test:
-    image: permitio/pdp-v2:0.8.1
+    image: permitio/pdp-v2:0.8.1@sha256:05d7236b8caa068619da19a42d5b91de788022b7829842ae0670d56e0cb4f4ed
     container_name: test-permit-pdp
     environment:
       PDP_API_KEY: ${PERMIT_API_KEY:-ci-noop}
@@ -95,6 +171,32 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  # ── stripe-mock (external SaaS mock for billing) ────────────────────────────
+  # Stripe's own mock server; never reaches the real Stripe API. Listens on
+  # 12111 (http) / 12112 (https). Point STRIPE_API_BASE at http://localhost:12111.
+  stripe-mock:
+    image: stripemock/stripe-mock:latest
+    container_name: test-stripe-mock
+    ports:
+      - "12111:12111"
+      - "12112:12112"
+    networks:
+      - test-harness
+
+  # ── mock-llm (OpenAI-compatible LLM stub for AI/chat services) ──────────────
+  # Tiny stub returning canned chat/embeddings completions so AI services can be
+  # exercised without a real OpenAI key. Point OPENAI_BASE_URL at :11434/v1.
+  mock-llm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: test-mock-llm
+    command: ["--model", "gpt-3.5-turbo", "--mock_response", "ci-mock-llm-response", "--port", "11434"]
+    environment:
+      LITELLM_MODE: PRODUCTION
+    ports:
+      - "11434:11434"
+    networks:
+      - test-harness
 
   # ── email-service wired to MailHog ──────────────────────────────────────────
   email-service-test:
