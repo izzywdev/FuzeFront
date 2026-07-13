@@ -230,7 +230,7 @@ describe('OIDCService.handleCallback()', () => {
     expect(mockClient.callback).toHaveBeenCalledWith(
       expect.any(String), // redirectUri
       { code: 'auth-code-xyz', state: 'state-abc' },
-      { code_verifier: 'verifier-123' }
+      { code_verifier: 'verifier-123', state: 'state-abc' }
     )
   })
 
