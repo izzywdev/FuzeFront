@@ -123,6 +123,12 @@ entries:
       # Reference the flow defined above. !Find resolves within the same
       # blueprint run — the flow entry is applied before this provider entry.
       authorization_flow: !Find [authentik_flows.flow, [slug, mendys-datasets-authorization-implicit-consent]]
+      # REQUIRED since authentik 2024.10 — provider creation fails validation
+      # without it ("invalidation_flow: This field is required"), which is why
+      # the first apply of this blueprint errored and created nothing. The
+      # default system flow ships with every install (default blueprint
+      # flow-default-provider-invalidation.yaml).
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application

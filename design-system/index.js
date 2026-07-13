@@ -2,6 +2,12 @@
    Consumers: import { Button, AppCard } from '@fuzefront/design-system'
 */
 export { RoleBadge } from './components/access/RoleBadge.jsx'
+export { Alert } from './components/feedback/Alert.jsx'
+export { EmptyState } from './components/feedback/EmptyState.jsx'
+export { Spinner } from './components/feedback/Spinner.jsx'
+export { CenteredCard } from './components/layout/CenteredCard.jsx'
+export { InfoRow } from './components/layout/InfoRow.jsx'
+export { Toggle } from './components/forms/Toggle.jsx'
 export { PricingCard } from './components/billing/PricingCard.jsx'
 export { BrandMark } from './components/brand/BrandMark.jsx'
 export { SeamDivider } from './components/brand/SeamDivider.jsx'

@@ -38,22 +38,43 @@ jobs:
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
 
             Do, for THIS repo only:
-            1. BRANCHES — list non-default branches; delete merged-but-undeleted ones; for branches with
-               no PR, either open a draft PR (recent, has unique commits) or recommend deletion (stale).
+            1. BRANCHES — list non-default branches; delete merged-but-undeleted ones (the repo has
+               auto-delete-head-branches enabled, but stale unmerged branches must still be triaged).
+
+               STALE-DRAFT CLEANUP: For any DRAFT PR whose head branch has received no new commits in
+               the last 7 days, close the PR with this comment: "Closing: abandoned agent session — no
+               commits in 7+ days. Re-open or push new commits if work should resume." GitHub will
+               auto-delete the branch when the PR closes. Skip PRs labelled: blocked, hold, or wip.
+
+               NO-PR BRANCHES: For any remote branch with NO open PR:
+               - If the branch name starts with claude/, claude-auto-fix-ci-, ds-propagate/, or
+                 nightly-autofix- AND the newest commit is less than 3 days old: open a non-draft PR
+                 with label "auto-merge" so it self-resolves once CI passes.
+               - If the newest commit is older than 7 days AND all its commits are reachable from
+                 master (i.e. no unique work): delete the branch via
+                 `gh api repos/$REPO/git/refs/heads/$BRANCH -X DELETE`.
+               - Otherwise: list it in the governance issue for human review.
+
             2. OPEN PRs — for each, state why it is still open and the single next action to completion;
                take safe actions (update-branch, request review, nudge autofix). NEVER auto-merge; never
-               merge a deploy-on-push repo.
+               merge a deploy-on-push repo. For non-draft PRs with the auto-merge label that are not
+               yet in GitHub's merge queue, call `gh pr merge --auto --squash --delete-branch` to
+               re-enable auto-merge if it was dropped.
+
             3. OPEN ISSUES — drive each to a concrete next step: close ones demonstrably resolved (with
                evidence), open a PR or delegate small actionable ones via an @claude comment with a STATE
                block, and summarize decision-needing ones for the human.
+
             4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
                .fuze/manifest.json and the FuzeSDLC canonical; open a fix PR for mechanical drift, flag
                judgment calls.
 
             Then open or UPDATE a single issue titled "Governance reconciliation — <today's date>"
-            (label: governance) with: branch actions, per-PR blocker+next-action, per-issue disposition,
-            and the drift report; link everything you touched. Keep it idempotent (update, don't duplicate).
-            Guardrails: only safe/reversible actions automatically (delete merged branches, close proven-
-            resolved issues, open draft/follow-up PRs, comment/label, update-branch). Never force-push,
-            never auto-merge, never delete branches with unique unmerged commits, never close an issue you
-            cannot prove resolved.
+            (label: governance) with: branch actions taken, per-PR blocker+next-action, per-issue
+            disposition, and the drift report; link everything you touched. Keep it idempotent (update,
+            don't duplicate).
+            Guardrails: only safe/reversible actions automatically (delete merged/reachable-from-master
+            branches, close stale draft PRs, close proven-resolved issues, open non-draft PRs,
+            comment/label, update-branch). Never force-push, never auto-merge (use --auto only),
+            never delete branches with unique unmerged commits, never close an issue you cannot prove
+            resolved.

@@ -83,6 +83,26 @@ All mobile UI changes must pass a visual design-review gate **before any code is
 ### Fallback (PenPot unavailable)
 Render a static HTML mockup via the Artifact tool at 375 px width, embed a screenshot in the GitHub Issue labeled `design-review`, and follow the same approval flow.
 
+## Branch lifecycle policy
+
+Every agent-created branch must reach one of these terminal states — never left open indefinitely:
+
+| State | Definition | Time limit |
+|-------|-----------|-----------|
+| **MERGED** | PR squash-merged, branch auto-deleted | — (happy path) |
+| **CLOSED** | PR closed (abandoned/superseded), branch auto-deleted | — |
+| **ACTIVE** | Commits pushed, PR open, CI running | ≤ 7 days from last commit |
+| **PENDING-REVIEW** | PR non-draft, CI green, awaiting owner approval | indefinite while actively reviewed |
+| **DRAFT-BLOCKED** | Draft PR labelled `wip`, `hold`, or `blocked` | exempt from staleness |
+
+`governance-nightly` enforces this daily: closes stale draft PRs (no new commits in 7 days) and deletes branchless branches whose commits are fully reachable from master.
+
+**Agent branch → auto-merge path** (enforced by `claude-auto-pr.yml`):
+
+All four agent-branch prefixes (`claude/**`, `claude-auto-fix-ci-*`, `ds-propagate/**`, `nightly-autofix-*`) trigger an automatic non-draft PR with the `auto-merge` label the moment they are pushed to. `auto-merge.yml` then calls `gh pr merge --auto --squash --delete-branch`, so the branch self-resolves once all CI gates pass — no human required for routine agent work.
+
+Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold`, or `blocked`.
+
 ## Done
 
 Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
