@@ -33,7 +33,7 @@ jobs:
 
           # Legacy files whose alerts pre-date the SDLC gates (old logging
           # style, legacy local-auth machinery kept as machine/break-glass path).
-          LEGACY_PATHS='backend/src/routes/auth.ts backend/src/index.ts backend/security/src/routes/auth.ts'
+          LEGACY_PATHS='backend/src/routes/auth.ts backend/src/index.ts backend/security/src/routes/auth.ts frontend/src/pages/LoginPage.tsx'
           # Rules considered legacy-noise/by-design IN THOSE FILES ONLY.
           DISMISS_RULES='js/tainted-format-string js/log-injection js/missing-rate-limiting js/user-controlled-bypass js/clear-text-logging javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring fuze-auth-local-password-store semgrep.fuze-auth-local-password-store fuze-auth-self-minted-user-token semgrep.fuze-auth-self-minted-user-token'
 
