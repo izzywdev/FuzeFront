@@ -1,0 +1,128 @@
+# =============================================================================
+# arc-register.yml — registers FuzeFront on the shared FuzeInfra ARC cluster
+#
+# Run once (workflow_dispatch) to provision the "fuzefront" ephemeral runner
+# scale set and auto-set the RUNNER repo variable so all CI workflows
+# prefer the self-hosted runner with ubuntu-latest as fallback.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   KUBE_CONFIG    — base64-encoded kubeconfig for the FuzeInfra k3s cluster
+#                    (get from izzywdev/FuzeInfra repo secrets or infra team)
+#
+# GitHub App auth — pick ONE option:
+#   Option A (shared app — preferred):
+#     Set USE_EXISTING_SECRET to "arc-runner-github-app" in the env block below.
+#     No additional secrets needed if the app already covers this repo.
+#
+#   Option B (per-repo app creds):
+#     GH_APP_ID              — GitHub App ID
+#     GH_APP_INSTALLATION_ID — Installation ID for izzywdev/FuzeFront
+#     GH_APP_PRIVATE_KEY     — PEM private key (multiline secret)
+#
+# After a successful install the RUNNER repo variable is set to '["fuzefront"]'.
+# All CI jobs then run on the self-hosted runner; delete the variable to fall
+# back to ubuntu-latest (the fromJSON fallback in every runs-on: expression).
+# =============================================================================
+name: arc-register
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "install or uninstall"
+        required: true
+        default: install
+        type: choice
+        options: [install, uninstall]
+
+env:
+  SCALE_SET_NAME: "fuzefront"
+  ARC_VERSION: "0.14.2"
+  RUNNER_NS: "arc-runners"
+  # Shared FuzeInfra GitHub App secret — set to "" to supply per-repo creds instead
+  USE_EXISTING_SECRET: "arc-runner-github-app"
+
+permissions:
+  contents: read
+  # Needed to set the RUNNER repo variable via gh variable set
+  actions: write
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: izzywdev/FuzeInfra
+          ref: main
+          sparse-checkout: |
+            runners/arc/register-repo.sh
+
+      - name: Setup kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Write GitHub App private key
+        if: ${{ env.USE_EXISTING_SECRET == '' && inputs.action == 'install' }}
+        run: |
+          echo "${{ secrets.GH_APP_PRIVATE_KEY }}" > /tmp/arc-app-key.pem
+
+      - name: Install / upgrade scale set
+        if: ${{ inputs.action == 'install' }}
+        run: |
+          chmod +x runners/arc/register-repo.sh
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          if [ -n "$USE_EXISTING_SECRET" ]; then
+            ./runners/arc/register-repo.sh \
+              --repo-url "$REPO_URL" \
+              --name     "$SCALE_SET_NAME" \
+              --secret   "$USE_EXISTING_SECRET"
+          else
+            ./runners/arc/register-repo.sh \
+              --repo-url        "$REPO_URL" \
+              --name            "$SCALE_SET_NAME" \
+              --app-id          "${{ secrets.GH_APP_ID }}" \
+              --app-install-id  "${{ secrets.GH_APP_INSTALLATION_ID }}" \
+              --app-private-key /tmp/arc-app-key.pem
+          fi
+
+      - name: Set RUNNER repo variable → self-hosted
+        if: ${{ inputs.action == 'install' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh variable set RUNNER \
+            --body '["fuzefront"]' \
+            --repo "${{ github.repository }}"
+          echo "✓ RUNNER variable set to [\"fuzefront\"] — CI will now prefer the self-hosted runner"
+
+      - name: Verify registration
+        if: ${{ inputs.action == 'install' }}
+        run: |
+          echo "=== AutoscalingRunnerSets in $RUNNER_NS ==="
+          kubectl -n "$RUNNER_NS" get autoscalingrunnersets
+          echo ""
+          echo "=== Listener pod (may take 30s to appear) ==="
+          kubectl -n arc-systems get pods | grep "$SCALE_SET_NAME" || echo "(listener not up yet — wait ~30s)"
+
+      - name: Uninstall scale set
+        if: ${{ inputs.action == 'uninstall' }}
+        run: |
+          chmod +x runners/arc/register-repo.sh
+          ./runners/arc/register-repo.sh --name "$SCALE_SET_NAME" --uninstall
+
+      - name: Clear RUNNER repo variable → fall back to ubuntu-latest
+        if: ${{ inputs.action == 'uninstall' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh variable delete RUNNER --repo "${{ github.repository }}" || true
+          echo "✓ RUNNER variable cleared — CI falls back to ubuntu-latest"
