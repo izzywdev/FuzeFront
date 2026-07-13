@@ -424,11 +424,21 @@ router.get('/oidc/login', async (req, res) => {
  *       500:
  *         description: OIDC not configured or server error
  */
-router.get('/oidc/signup', async (req, res) => {
+// Unauthenticated redirect endpoint — cheap, but cap per-client abuse anyway
+// (URL-minting/log-noise). Generous: legitimate users click this once or twice.
+const signupRedirectRateLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-up attempts. Try again later.' },
+})
+
+router.get('/oidc/signup', signupRedirectRateLimiter, async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   try {
     if (!oidcService.isConfigured()) {
-      console.log(`❌ [${requestId}] OIDC not configured`)
+      console.log('❌ OIDC not configured (signup)', { requestId })
       return res.status(500).json({
         error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
       })
@@ -443,7 +453,7 @@ router.get('/oidc/signup', async (req, res) => {
       process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
     const enrollUrl = `${authorize.origin}/if/flow/${encodeURIComponent(enrollSlug)}/?next=${encodeURIComponent(`${authorize.pathname}${authorize.search}`)}`
 
-    console.log(`🔗 [${requestId}] Redirecting to Authentik enrollment:`, enrollUrl)
+    console.log('🔗 Redirecting to Authentik enrollment', { requestId, enrollUrl })
     // Same replica-agnostic state/PKCE cookies as /oidc/login — the enrollment
     // flow funnels into the identical authorize → callback exchange.
     res.setHeader('Set-Cookie', [
@@ -452,7 +462,7 @@ router.get('/oidc/signup', async (req, res) => {
     ])
     res.redirect(enrollUrl)
   } catch (error) {
-    console.error(`❌ [${requestId}] OIDC signup error:`, error)
+    console.error('❌ OIDC signup error', { requestId }, error)
     res.status(500).json({ error: 'Failed to initiate sign-up' })
   }
 })

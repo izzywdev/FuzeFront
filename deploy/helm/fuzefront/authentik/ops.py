@@ -7,7 +7,7 @@ Two callers, same script:
     AK_URL=http://authentik-server:9000, AK_TOKEN=AUTHENTIK_BOOTSTRAP_TOKEN from
     the fuzefront-secrets Secret, BLUEPRINT_DIR=/blueprints)
 """
-import json, os, sys, urllib.request, urllib.error
+import json, os, sys, time, urllib.request, urllib.error
 
 AK = os.environ['AK_URL'].rstrip('/')
 TOK = os.environ['AK_TOKEN']
@@ -69,15 +69,29 @@ else:
                 failed = True
                 report.append(f'- {name}: UPSERT FAILED HTTP {st_u} — {json.dumps(resp)[:250]}')
                 continue
+            # apply/ runs as a background task — an immediate readback shows the
+            # PRE-apply status and would green-lie. Snapshot last_applied first,
+            # then poll until a FRESH apply is reflected (or time out → failed).
+            st_pre, before = api(f'/managed/blueprints/{uuid}/')
+            prev_applied = before.get('last_applied') if st_pre == 200 else None
             st_a, _ = api(f'/managed/blueprints/{uuid}/apply/', 'POST', {})
-            st_g, after = api(f'/managed/blueprints/{uuid}/')
-            status = after.get('status', '?')
-            last = after.get('last_applied', '?')
-            # apply/ may run async in some versions — 'unknown' right after the
-            # call is not a failure; only definitive error states are.
-            if st_a not in (200, 201, 204) or status in ('error', 'orphaned'):
+            status, last = '?', '?'
+            confirmed = False
+            for _ in range(18):  # up to ~90s per blueprint
+                st_g, after = api(f'/managed/blueprints/{uuid}/')
+                status = after.get('status', '?')
+                last = after.get('last_applied', '?')
+                if (st_g == 200 and last != prev_applied
+                        and status in ('successful', 'warning', 'error', 'orphaned')):
+                    confirmed = True
+                    break
+                time.sleep(5)
+            if st_a not in (200, 201, 204) or status in ('error', 'orphaned') or not confirmed:
                 failed = True
-            report.append(f'- {name}: upsert HTTP {st_u}, apply HTTP {st_a}, status **{status}**, last_applied {last}')
+            report.append(
+                f'- {name}: upsert HTTP {st_u}, apply HTTP {st_a}, status **{status}**, '
+                f'last_applied {last}{"" if confirmed else " (UNCONFIRMED — apply not observed)"}'
+            )
 
     report.append('')
     report.append('### State')
