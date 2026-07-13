@@ -21,6 +21,7 @@ declare global {
     interface Request {
       userId?: string;
       orgId?: string;
+      appId?: string;
     }
   }
 }
@@ -28,6 +29,8 @@ declare global {
 interface JwtClaims {
   userId: string;
   orgId?: string;
+  /** Consuming application ('fuzefront', 'mendys', ...). Optional for older tokens. */
+  appId?: string;
   [key: string]: unknown;
 }
 
@@ -51,6 +54,7 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     const decoded = jwt.verify(token, secret) as JwtClaims;
     req.userId = decoded.userId;
     req.orgId = decoded.orgId;
+    req.appId = decoded.appId;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token.' });

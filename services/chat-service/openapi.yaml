@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Chat Service API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     HTTP + SSE API for the FuzeFront **chat-service** — an org/tenant-scoped AI
     chat microservice that wraps Anthropic (via the platform LiteLLM gateway),
@@ -18,16 +18,28 @@ info:
     browser talks to this service on a same-origin API base.
 
     ### Auth & isolation
-    Every `/chat/*` route requires a valid Authentik-issued JWT (`Authorization:
-    Bearer <token>`). `userId`/`orgId` are derived from the JWT, never from the
-    request body, and every read/write is scoped to the caller (BOLA-safe):
-    fetching another user's conversation by id returns `404`.
+    Every `/chat/*` route requires a valid JWT (`Authorization: Bearer <token>`)
+    signed with the service's `JWT_SECRET` (Authentik-issued for the FuzeFront
+    shell; consuming apps mint their own via a backend that shares the secret).
+    `userId`/`orgId` are derived from the JWT, never from the request body, and
+    every read/write is scoped to the caller (BOLA-safe): fetching another
+    user's conversation by id returns `404`.
+
+    ### Multi-app tenancy
+    Every conversation belongs to `(userId, appId[, orgId])` where `appId`
+    names the consuming application (`fuzefront`, `mendys`, ...). `appId` is
+    taken from the JWT `appId` claim when present, else from the request
+    (`appId` body field / query param), defaulting to `fuzefront`. It selects a
+    partition of the caller's OWN data — user isolation still comes solely from
+    the JWT `userId`.
 
     ### Streaming surface (SSE)
     `POST /chat/stream` returns `text/event-stream`; each `data:` line is one
     JSON `ChatStreamEvent` (the discriminated union in `ChatStreamEvent`). The
     event shape is intentionally AG-UI-compatible so the `@fuzefront/chat-ui`
-    renderer can consume it without translation.
+    renderer can consume it without translation. The first event of every
+    stream is `{ "type": "conversation", "conversationId": ... }` announcing
+    the resolved thread so clients can reuse and resume it.
 
     ### Async surface (events)
     The service emits a Kafka usage event after each turn for metered billing:
@@ -118,7 +130,20 @@ paths:
       summary: List the caller's conversations
       description: >-
         Conversations owned by the authenticated user, most-recently-updated
-        first. Mirrors `routes/chat.ts` -> `GET /chat/conversations`.
+        first, optionally narrowed to one app/org tenant. When the JWT carries
+        an `appId` claim it overrides the query param. Mirrors
+        `routes/chat.ts` -> `GET /chat/conversations`.
+      parameters:
+        - name: appId
+          in: query
+          required: false
+          description: Only conversations of this consuming app.
+          schema: { type: string }
+        - name: orgId
+          in: query
+          required: false
+          description: Only conversations of this organization.
+          schema: { type: string }
       responses:
         '200':
           description: The caller's conversations.
@@ -140,10 +165,12 @@ paths:
         not `403`, so ids are not enumerable. Mirrors `routes/chat.ts` ->
         `GET /chat/conversations/:id`.
 
-        **Planned (issue #120, `gate-pagination`):** the `before`/`limit` query
-        params below page the message history newest-first for the continuous
-        single-thread model. Marked `x-status: planned` until the backend +
-        independent contract tests land.
+        Message history is keyset-paginated on `(created_at, id)` for
+        bidirectional infinite scroll (issue #120, `gate-pagination`): without
+        a cursor the **newest** `limit` messages are returned; `before` pages
+        towards older messages, `after` towards newer. Messages are always
+        returned oldest-first within the page. `before` and `after` are
+        mutually exclusive (`400`); an unknown cursor id returns `400`.
       parameters:
         - name: id
           in: path
@@ -152,21 +179,26 @@ paths:
         - name: before
           in: query
           required: false
-          description: 'Planned: return messages created before this message id (cursor).'
+          description: Return messages created before this message id (cursor).
           schema: { type: string, format: uuid }
-          x-status: planned
+        - name: after
+          in: query
+          required: false
+          description: Return messages created after this message id (cursor).
+          schema: { type: string, format: uuid }
         - name: limit
           in: query
           required: false
-          description: 'Planned: max messages to return (default 50, max 200).'
+          description: 'Max messages to return (default 50, max 200).'
           schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-          x-status: planned
       responses:
         '200':
-          description: The conversation and its messages.
+          description: The conversation and one page of its messages.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConversationWithMessages' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -287,12 +319,19 @@ components:
         orgId:
           type: string
           description: Tenant scope. Cross-checked against the JWT org claim.
+        appId:
+          type: string
+          description: >-
+            Consuming application ('fuzefront', 'mendys', ...). Ignored when
+            the JWT carries an `appId` claim; defaults to `fuzefront`.
         conversationId:
           type: string
           format: uuid
           description: >-
-            Optional. Omit to use the caller's continuous thread (issue #120
-            target model). Currently a new conversation is created when omitted.
+            Optional. Reuse an existing conversation (must be owned by the
+            caller, else an `error` event is streamed). Omit to create a new
+            conversation; its id is announced by the stream's first event
+            (`EventConversation`).
 
     RagSource:
       type: object
@@ -305,6 +344,7 @@ components:
 
     ChatStreamEvent:
       oneOf:
+        - $ref: '#/components/schemas/EventConversation'
         - $ref: '#/components/schemas/EventTextDelta'
         - $ref: '#/components/schemas/EventToolPending'
         - $ref: '#/components/schemas/EventToolResult'
@@ -315,6 +355,13 @@ components:
       discriminator:
         propertyName: type
 
+    EventConversation:
+      type: object
+      description: First event of every stream — the resolved conversation id.
+      required: [type, conversationId]
+      properties:
+        type: { type: string, const: conversation }
+        conversationId: { type: string, format: uuid }
     EventTextDelta:
       type: object
       required: [type, delta]
@@ -367,10 +414,12 @@ components:
 
     Conversation:
       type: object
-      required: [id, title, createdAt, updatedAt]
+      required: [id, title, appId, orgId, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         title: { type: string, nullable: true }
+        appId: { type: string }
+        orgId: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -393,11 +442,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/Conversation'
         - type: object
-          required: [messages]
+          required: [messages, hasMoreBefore, hasMoreAfter]
           properties:
             messages:
+              description: One page of messages, oldest-first.
               type: array
               items: { $ref: '#/components/schemas/ConversationMessage' }
+            hasMoreBefore:
+              type: boolean
+              description: Older messages exist before the first message of this page.
+            hasMoreAfter:
+              type: boolean
+              description: Newer messages exist after the last message of this page.
 
 security:
   - bearerAuth: []
