@@ -416,6 +416,69 @@ router.get('/oidc/login', async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /api/auth/oidc/signup:
+ *   get:
+ *     summary: Initiate account sign-up via Authentik enrollment
+ *     description: >
+ *       Redirects to Authentik's enrollment flow with the OIDC authorize URL
+ *       as the flow's ?next= target, so a freshly-enrolled (and auto-logged-in)
+ *       user continues straight through the normal OIDC callback and lands in
+ *       the app with a session — no second sign-in step.
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to the Authentik enrollment flow
+ *       500:
+ *         description: OIDC not configured or server error
+ */
+// Unauthenticated redirect endpoint — cheap, but cap per-client abuse anyway
+// (URL-minting/log-noise). Generous: legitimate users click this once or twice.
+const signupRedirectRateLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-up attempts. Try again later.' },
+})
+
+router.get('/oidc/signup', signupRedirectRateLimiter, async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  console.log('📝 OIDC signup request received', { requestId })
+
+  try {
+    if (!oidcService.isConfigured()) {
+      console.log('❌ OIDC not configured (signup)', { requestId })
+      return res.status(500).json({
+        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.'
+      })
+    }
+
+    // Lazy re-initialization, mirroring /oidc/login.
+    if (!oidcService.isInitialized()) {
+      console.log('🔄 OIDC client not initialized — retrying initialization', { requestId })
+      await oidcService.initialize()
+    }
+
+    const state = uuidv4()
+    const authUrl = oidcService.generateAuthUrl(state)
+    // Wrap the authorize URL (same Authentik origin) in the enrollment flow's
+    // ?next= — Authentik redirects there after the flow's user-login stage.
+    const authorize = new URL(authUrl)
+    const enrollSlug =
+      process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+    const enrollUrl = `${authorize.origin}/if/flow/${encodeURIComponent(enrollSlug)}/?next=${encodeURIComponent(`${authorize.pathname}${authorize.search}`)}`
+
+    console.log('🔗 Redirecting to Authentik enrollment', { requestId, enrollUrl })
+    res.redirect(enrollUrl)
+  } catch (error) {
+    console.error('❌ OIDC signup error', { requestId }, error)
+    res.status(500).json({ error: 'Failed to initiate sign-up' })
+  }
+})
+
 
 // Rate limit for the password endpoint: the flow-executor login is a
 // credential-stuffing surface, so cap FAILED attempts per client before we

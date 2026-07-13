@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI, AuthMethods } from '../services/api'
@@ -14,11 +14,17 @@ const GOOGLE_BRAND = {
   green: '#34A853', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
 }
 
+/** Which sign-in action is in flight. Per-action (not a single boolean) so the
+ * button the user clicked shows ITS progress label while the others merely
+ * disable — a shared flag made every button flip to "Redirecting…" at once. */
+type PendingAction = 'credentials' | 'google' | 'signup' | null
+
 function LoginPage() {
   const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [pending, setPending] = useState<PendingAction>(null)
+  const loading = pending !== null
   const [error, setError] = useState('')
   const [authMethods, setAuthMethods] = useState<AuthMethods | null>(null)
   const [diagnostics, setDiagnostics] = useState<any>(null)
@@ -137,7 +143,7 @@ function LoginPage() {
   // Authentik (local dev, CI ephemeral environments).
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
+    setPending('credentials')
     setError('')
 
     try {
@@ -163,24 +169,49 @@ function LoginPage() {
 
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      setPending(null)
     }
   }
 
-  const handleOIDCLogin = async () => {
-    console.log('🔐 Starting OIDC login...')
-    setLoading(true)
+  // The redirect actions leave the page, so `pending` normally never resets.
+  // If the navigation target hangs (auth service not answering), the page
+  // would sit on "Redirecting…" forever — recover after a grace period.
+  const redirectWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
+    }
+  }, [])
+
+  const startRedirect = (
+    action: 'google' | 'signup',
+    navigate: () => void | Promise<void>
+  ) => {
+    setPending(action)
     setError('')
-
-    try {
-      await authAPI.loginWithOIDC()
-      // This will redirect to Authentik, so we won't reach here
-    } catch (err: any) {
-      console.error('❌ OIDC login error:', err)
-      setError('Failed to initiate OIDC login')
-      setLoading(false)
-    }
+    Promise.resolve()
+      .then(navigate)
+      .then(() => {
+        if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
+        redirectWatchdog.current = setTimeout(() => {
+          setPending(null)
+          setError(
+            'The sign-in service is not responding. Please try again in a moment.'
+          )
+        }, 12000)
+      })
+      .catch((err: any) => {
+        console.error('❌ OIDC redirect error:', err)
+        setError('Failed to start sign-in')
+        setPending(null)
+      })
   }
+
+  const handleGoogleLogin = () =>
+    startRedirect('google', () => authAPI.loginWithOIDC())
+
+  const handleSignUp = () =>
+    startRedirect('signup', () => authAPI.signupWithOIDC())
 
   const runNetworkDiagnostics = async () => {
     console.log('🔍 Running network diagnostics...')
@@ -334,7 +365,7 @@ function LoginPage() {
           </div>
 
           <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {pending === 'credentials' ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
       )}
@@ -358,7 +389,7 @@ function LoginPage() {
           </div>
           <button
             type="button"
-            onClick={handleOIDCLogin}
+            onClick={handleGoogleLogin}
             disabled={loading}
             aria-label="Sign in with Google"
             style={{
@@ -384,7 +415,7 @@ function LoginPage() {
               <path fill={GOOGLE_BRAND.yellow} d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
               <path fill={GOOGLE_BRAND.green} d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
             </svg>
-            {loading ? 'Redirecting...' : 'Sign in with Google'}
+            {pending === 'google' ? 'Redirecting to Google...' : 'Sign in with Google'}
           </button>
         </div>
       )}
@@ -425,7 +456,9 @@ function LoginPage() {
         </div>
       )}
 
-      {/* Sign-up affordance — redirects into Authentik enrollment (the OIDC path) */}
+      {/* Sign-up affordance — redirects into Authentik's ENROLLMENT flow, which
+          chains back into the OIDC authorize step so the new user lands in the
+          app already signed in (see /api/auth/oidc/signup). */}
       <div
         style={{
           marginTop: '1.5rem',
@@ -439,12 +472,12 @@ function LoginPage() {
         </p>
         <button
           type="button"
-          onClick={handleOIDCLogin}
+          onClick={handleSignUp}
           disabled={loading}
           className="btn btn-secondary"
           style={{ width: '100%' }}
         >
-          {loading ? 'Redirecting…' : t('signUp')}
+          {pending === 'signup' ? 'Redirecting…' : t('signUp')}
         </button>
       </div>
     </div>

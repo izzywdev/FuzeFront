@@ -122,6 +122,7 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     vi.spyOn(authAPI, 'handleOIDCCallback').mockResolvedValue({})
     vi.spyOn(authAPI, 'getAuthMethods')
     vi.spyOn(authAPI, 'loginWithOIDC').mockResolvedValue(undefined)
+    vi.spyOn(authAPI, 'signupWithOIDC').mockResolvedValue(undefined)
     vi.spyOn(authAPI, 'loginWithAuthentikPassword')
     vi.spyOn(authAPI, 'login')
     vi.spyOn(authAPI, 'getCurrentUser')
@@ -350,11 +351,11 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     expect(locationStub.href).toBe('/dashboard')
   })
 
-  // ── 6: Sign-Up affordance button also calls loginWithOIDC ───────────────
+  // ── 6: Sign-Up affordance goes to the ENROLLMENT flow, not plain login ───
 
-  it('Sign-Up button at the bottom also calls loginWithOIDC (OIDC enrollment path)', async () => {
+  it('Sign-Up button calls signupWithOIDC (Authentik enrollment path), not loginWithOIDC', async () => {
     // The sign-up button is always rendered (not conditional on oidcConfigured).
-    // It routes new users through Authentik enrollment — the same OIDC path.
+    // It routes new users through Authentik ENROLLMENT (/api/auth/oidc/signup).
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
 
     render(<LoginPage />)
@@ -375,6 +376,37 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
       fireEvent.click(signUpButton)
     })
 
-    expect(authAPI.loginWithOIDC).toHaveBeenCalledTimes(1)
+    expect(authAPI.signupWithOIDC).toHaveBeenCalledTimes(1)
+    expect(authAPI.loginWithOIDC).not.toHaveBeenCalled()
+  })
+
+  // ── 7: Per-action pending labels — only the clicked button shows progress ─
+
+  it('clicking Google shows "Redirecting" ONLY on the Google button; the others just disable', async () => {
+    vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
+    // Keep the redirect "in flight" — location.href assignment doesn't unload
+    // jsdom, so the component stays mounted with pending === 'google'.
+    vi.mocked(authAPI.loginWithOIDC).mockImplementation(() => new Promise(() => {}))
+
+    render(<LoginPage />)
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /sign in with google/i })
+      ).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /sign in with google/i }))
+    })
+
+    // Google button reflects ITS pending state…
+    expect(screen.getByText(/redirecting to google/i)).toBeInTheDocument()
+    // …while the credentials submit keeps its label (disabled, not relabeled)…
+    const signIn = screen.getByRole('button', { name: /^sign in$/i })
+    expect(signIn).toBeDisabled()
+    // …and the sign-up button keeps its label (disabled, not "Redirecting…").
+    const signUp = screen.getByRole('button', { name: 'signUp' })
+    expect(signUp).toBeDisabled()
   })
 })

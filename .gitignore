@@ -69,3 +69,4 @@ android/local.properties
 frontend/dist/
 task-manager-app/dist/
 .claude/worktrees/
+__pycache__/

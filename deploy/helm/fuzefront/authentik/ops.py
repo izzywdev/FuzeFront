@@ -1,9 +1,20 @@
-"""Prod Authentik ops helper — see .github/workflows/prod-authentik-ops.yml."""
-import json, os, urllib.request, urllib.error
+"""Authentik ops helper — diagnose/apply FuzeFront blueprints via the admin API.
+
+Two callers, same script:
+  - .github/workflows/prod-authentik-ops.yml (from a runner, AK_URL=public host,
+    AK_TOKEN=AUTHENTIK_PROD_TOKEN repo secret)
+  - the in-cluster authentik-config-apply Job (templates/authentik-config-apply.yaml,
+    AK_URL=http://authentik-server:9000, AK_TOKEN=AUTHENTIK_BOOTSTRAP_TOKEN from
+    the fuzefront-secrets Secret, BLUEPRINT_DIR=/blueprints)
+"""
+import json, os, sys, time, urllib.request, urllib.error
 
 AK = os.environ['AK_URL'].rstrip('/')
 TOK = os.environ['AK_TOKEN']
 PHASE = os.environ.get('PHASE', 'diagnose')
+BLUEPRINT_DIR = os.environ.get(
+    'BLUEPRINT_DIR', 'deploy/helm/fuzefront/authentik/blueprints'
+).rstrip('/')
 
 
 def api(path, method='GET', body=None):
@@ -23,10 +34,12 @@ def api(path, method='GET', body=None):
 
 
 report = [f'## Prod Authentik ops — phase: {PHASE}', '']
+failed = False
 
 st, ver = api('/admin/version/')
 report.append(f'- version endpoint: HTTP {st} — {json.dumps(ver)[:150]}')
 if st != 200:
+    failed = True
     report.append('')
     report.append('**Authentik admin API unreachable or token rejected — aborting.**')
 else:
@@ -37,11 +50,12 @@ else:
         report.append('')
         report.append(f'### Apply ({", ".join(wanted)})')
         for name in wanted:
-            path = f'deploy/helm/fuzefront/authentik/blueprints/{name}.yaml'
+            path = f'{BLUEPRINT_DIR}/{name}.yaml'
             try:
                 content = open(path).read()
             except FileNotFoundError:
-                report.append(f'- {name}: SKIP (file not found)')
+                failed = True
+                report.append(f'- {name}: MISSING FILE {path}')
                 continue
             inst_name = f'fuzefront-{name}'
             body = {'name': inst_name, 'content': content, 'enabled': True}
@@ -52,13 +66,32 @@ else:
                 st_u, resp = api('/managed/blueprints/', 'POST', body)
                 uuid = resp.get('pk')
             if st_u not in (200, 201) or not uuid:
+                failed = True
                 report.append(f'- {name}: UPSERT FAILED HTTP {st_u} — {json.dumps(resp)[:250]}')
                 continue
+            # apply/ runs as a background task — an immediate readback shows the
+            # PRE-apply status and would green-lie. Snapshot last_applied first,
+            # then poll until a FRESH apply is reflected (or time out → failed).
+            st_pre, before = api(f'/managed/blueprints/{uuid}/')
+            prev_applied = before.get('last_applied') if st_pre == 200 else None
             st_a, _ = api(f'/managed/blueprints/{uuid}/apply/', 'POST', {})
-            st_g, after = api(f'/managed/blueprints/{uuid}/')
-            status = after.get('status', '?')
-            last = after.get('last_applied', '?')
-            report.append(f'- {name}: upsert HTTP {st_u}, apply HTTP {st_a}, status **{status}**, last_applied {last}')
+            status, last = '?', '?'
+            confirmed = False
+            for _ in range(18):  # up to ~90s per blueprint
+                st_g, after = api(f'/managed/blueprints/{uuid}/')
+                status = after.get('status', '?')
+                last = after.get('last_applied', '?')
+                if (st_g == 200 and last != prev_applied
+                        and status in ('successful', 'warning', 'error', 'orphaned')):
+                    confirmed = True
+                    break
+                time.sleep(5)
+            if st_a not in (200, 201, 204) or status in ('error', 'orphaned') or not confirmed:
+                failed = True
+            report.append(
+                f'- {name}: upsert HTTP {st_u}, apply HTTP {st_a}, status **{status}**, '
+                f'last_applied {last}{"" if confirmed else " (UNCONFIRMED — apply not observed)"}'
+            )
 
     report.append('')
     report.append('### State')
@@ -92,3 +125,6 @@ else:
 
 open('report.md', 'w').write('\n'.join(report) + '\n')
 print('\n'.join(report))
+# Non-zero exit when anything went wrong so BOTH callers fail loudly (red
+# workflow run / failed in-cluster Job visible in Argo) instead of green-lying.
+sys.exit(1 if failed else 0)

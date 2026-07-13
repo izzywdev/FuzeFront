@@ -218,11 +218,17 @@ export const authAPI = {
     return response.data
   },
 
-  // OIDC authentication (redirects to Authentik — used for Google/SSO and
-  // the sign-up/enrollment affordance)
+  // OIDC authentication (redirects to Authentik — used for Google/SSO)
   async loginWithOIDC(): Promise<void> {
     // This will redirect the browser to Authentik
     window.location.href = `${API_URL}/auth/oidc/login`
+  },
+
+  // Sign-up: redirects to Authentik's ENROLLMENT flow. The backend wraps the
+  // OIDC authorize URL in the flow's ?next= so a freshly-enrolled user comes
+  // straight back through the normal OIDC callback, already signed in.
+  async signupWithOIDC(): Promise<void> {
+    window.location.href = `${API_URL}/auth/oidc/signup`
   },
 
   // Password sign-in against Authentik WITHOUT a redirect: the backend drives

@@ -1,0 +1,46 @@
+# Authentik Blueprint — FuzeFront login surface
+#
+# Wires the LOGIN PAGE ITSELF (the identification stage of the default
+# authentication flow) to the FuzeFront pieces created by the other blueprints:
+#
+#   - sources:          shows the "Sign in with Google" button (the OAuth source
+#                       from source-google.yaml — creating a source does NOT put
+#                       it on the login page; the identification stage's sources
+#                       list controls what renders).
+#   - enrollment_flow:  renders the "Sign up" link → fuzefront-enrollment
+#                       (flow-enrollment.yaml).
+#   - recovery_flow:    renders the "Forgot password?" link → fuzefront-recovery
+#                       (flow-recovery.yaml).
+#
+# APPLY ORDER: after source-google, flow-enrollment and flow-recovery — the
+# !Find lookups resolve objects those blueprints create. The in-cluster
+# config-apply Job and the prod-authentik-ops workflow both list this
+# blueprint last for that reason.
+version: 1
+metadata:
+  name: FuzeFront Login Surface
+entries:
+  # Patch the default identification stage in place (attrs merge onto the
+  # existing stage; identifiers must match Authentik's built-in stage name).
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      user_fields:
+        - username
+        - email
+      show_source_labels: true
+      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      recovery_flow: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      sources:
+        - !Find [authentik_core.source, [slug, authentik-built-in]]
+        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+
+  # Title shown on the hosted login card (default is "Welcome to authentik!").
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: default-authentication-flow
+    attrs:
+      title: "Sign in to FuzeFront"
