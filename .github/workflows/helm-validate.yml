@@ -70,13 +70,14 @@ jobs:
           # multi-document Authentik blueprint YAML with custom tags (!Env/!Find)
           # and repeated top-level keys, which kubeconform's strict unmarshaller
           # mis-reads. It is opaque string data to Kubernetes — no schema applies.
+          #
+          # NB: kubeconform's -skip is last-one-wins (Go flag semantics), so the
+          # skipped kinds MUST be a single comma-separated list, not repeated flags.
           kubeconform \
             -strict \
             -kubernetes-version 1.29.0 \
             -schema-location default \
-            -skip CustomResourceDefinition \
-            -skip Middleware \
-            -skip SealedSecret \
+            -skip CustomResourceDefinition,Middleware,SealedSecret \
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/
