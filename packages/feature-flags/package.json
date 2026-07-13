@@ -30,9 +30,13 @@
     "@openfeature/server-sdk": "^1.18.0",
     "@openfeature/web-sdk": "^1.5.0"
   },
-  "optionalDependencies": {
-    "unleash-openfeature-provider-server": "^1.4.0",
-    "@openfeature/unleash-web-provider": "^0.3.4"
+  "peerDependencies": {
+    "@openfeature/unleash-web-provider": ">=0.1.0",
+    "unleash-openfeature-provider-server": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@openfeature/unleash-web-provider": { "optional": true },
+    "unleash-openfeature-provider-server": { "optional": true }
   },
   "devDependencies": {
     "@types/jest": "29.5.12",
