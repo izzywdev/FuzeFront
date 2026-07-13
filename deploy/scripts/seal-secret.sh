@@ -33,7 +33,8 @@ NS="fuzefront"
 NAME="billing-secrets"
 # FuzeInfra publishes the sealed-secrets public cert here (single source of truth,
 # always current). Override via env if the URL differs.
-CERT_URL="${FUZEINFRA_SEALED_CERT_URL:-https://sealed-secrets.fuzeinfra.fuzefront.com/v1/cert.pem}"
+# (sealed-secrets.fuzeinfra.fuzefront.com no longer resolves; prod is canonical.)
+CERT_URL="${FUZEINFRA_SEALED_CERT_URL:-https://sealed-secrets.prod.fuzefront.com/v1/cert.pem}"
 
 CERT_OVERRIDE=""; INFILE=""; KEY=""; MANIFEST=""
 while [ $# -gt 0 ]; do
