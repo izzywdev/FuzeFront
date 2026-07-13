@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     outputs:
       ran: ${{ steps.detect.outputs.ran }}
     steps:
@@ -124,7 +124,7 @@ jobs:
       ${{ always() && needs.integration.result == 'failure' &&
           needs.integration.outputs.ran == 'true' &&
           !startsWith(github.ref_name, 'nightly-autofix-') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with:

@@ -16,7 +16,7 @@ permissions:
 jobs:
   codeql-analysis:
     name: CodeQL Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 360
     permissions:
       actions: read
@@ -48,7 +48,7 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout Repository
@@ -62,7 +62,7 @@ jobs:
 
   npm-audit:
     name: NPM Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -118,7 +118,7 @@ jobs:
 
   container-security:
     name: Container Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.event_name == 'pull_request'
 
     steps:
@@ -185,7 +185,7 @@ jobs:
 
   secret-scanning:
     name: Secret Scanning
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     steps:
       - name: Checkout code
@@ -205,7 +205,7 @@ jobs:
 
   sbom-generation:
     name: Generate SBOM
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - name: Checkout repository
@@ -237,7 +237,7 @@ jobs:
   # Add new external security tools integration
   snyk-security:
     name: Snyk Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.event_name == 'pull_request'
 
     steps:
@@ -288,7 +288,7 @@ jobs:
   # Add monitoring and alerting
   security-monitoring:
     name: Security Monitoring
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: [codeql-analysis, container-security, secret-scanning]
     if: always()
 

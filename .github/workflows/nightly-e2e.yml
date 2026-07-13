@@ -37,7 +37,7 @@ concurrency:
 jobs:
   nightly-e2e:
     name: Full-stack e2e on kind
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     timeout-minutes: 75
 
     env:

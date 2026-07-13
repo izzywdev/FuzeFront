@@ -12,7 +12,7 @@ on:
 jobs:
   lint-and-test:
     name: Lint & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     strategy:
       matrix:
@@ -88,7 +88,7 @@ jobs:
 
   identity-ui-and-security:
     name: Identity UI + Security (unit)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     steps:
       - name: Checkout code
@@ -143,7 +143,7 @@ jobs:
 
   build:
     name: Build Applications
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: lint-and-test
 
     steps:
@@ -194,7 +194,7 @@ jobs:
 
   integration-tests:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: build
 
     services:
@@ -254,7 +254,7 @@ jobs:
 
   email-integration:
     name: Email Integration (MailHog)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: build
 
     steps:
@@ -331,7 +331,7 @@ jobs:
   # ── Tier 4: Contract ─────────────────────────────────────────────────────
   contract-tests:
     name: Contract Tests (OpenAPI)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: build
 
     steps:
@@ -390,7 +390,7 @@ jobs:
 
   security-scan:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       security-events: write
@@ -460,7 +460,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: build
     if: github.ref == 'refs/heads/master'
     permissions:
@@ -491,7 +491,7 @@ jobs:
 
   notify:
     name: Notify Team
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     needs: [lint-and-test, build, integration-tests, email-integration]
     if: always()
 

@@ -44,7 +44,7 @@ jobs:
   # Secrets context is not available in job-level if: conditions.
   # Export availability as a step output so the main job can use needs.*.outputs.
   check-secrets:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     outputs:
       has_secrets: ${{ steps.check.outputs.has_secrets }}
     steps:
@@ -68,7 +68,7 @@ jobs:
     # Skip when tunnel/Google secrets are absent (forks, dependabot, etc.).
     # Checked via a prior job because secrets context is unavailable in job if:.
     if: needs.check-secrets.outputs.has_secrets == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     env:
       TUNNEL_HOSTNAME: ${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}

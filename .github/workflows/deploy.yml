@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
 
   build-and-push:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
@@ -241,7 +241,7 @@ jobs:
 
   deploy-infrastructure:
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     outputs:
       asg_name: ${{ steps.terraform-outputs.outputs.asg_name }}
@@ -350,7 +350,7 @@ jobs:
 
   deploy-application:
     needs: deploy-infrastructure
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/fuzefront-website'
     
     steps:
@@ -572,7 +572,7 @@ jobs:
 
   notify:
     needs: [test, build-and-push, deploy-infrastructure, deploy-application]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     if: always()
     
     steps:

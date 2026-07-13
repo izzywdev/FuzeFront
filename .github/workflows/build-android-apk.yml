@@ -27,7 +27,7 @@ permissions:
 jobs:
   build-apk:
     name: Build & sign TWA APK
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     steps:
       - uses: actions/checkout@v4

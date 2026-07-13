@@ -22,7 +22,7 @@ on:
 jobs:
   detect-changes:
     name: Detect DS change summary
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     outputs:
       summary: ${{ steps.summarise.outputs.summary }}
       changed_files: ${{ steps.summarise.outputs.changed_files }}
@@ -47,7 +47,7 @@ jobs:
   dispatch-frontend-agent:
     name: Dispatch frontend-engineer agent
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       actions: write
       contents: read
@@ -82,7 +82,7 @@ jobs:
   dispatch-mobile-agent:
     name: Dispatch mobile-frontend-engineer agent
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       actions: write
       contents: read
@@ -119,7 +119,7 @@ jobs:
     name: Dispatch frontend-test-engineer agent
     needs: [detect-changes, dispatch-frontend-agent, dispatch-mobile-agent]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       actions: write
       contents: read

@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   gate-lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,7 +46,7 @@ jobs:
           echo "lint complete (report-only)"; exit 0
 
   gate-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,7 +66,7 @@ jobs:
           echo "test complete (report-only)"; exit 0
 
   gate-build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,7 +81,7 @@ jobs:
           echo "build complete (report-only)"; exit 0
 
   gate-sast:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep (report-only, SARIF)
@@ -98,7 +98,7 @@ jobs:
           category: semgrep
 
   gate-secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -108,7 +108,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   gate-dependency-scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       security-events: write
       pull-requests: read
@@ -172,7 +172,7 @@ jobs:
   gate-authz:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
     # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -195,7 +195,7 @@ jobs:
     # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
     # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
     # to enforcing per-repo (see local-environment.md).
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -225,7 +225,7 @@ jobs:
     # SemVer discipline (governance/versioning.md): a changed npm package or API contract
     # must bump its version. Report-only first pass; ratchet to enforcing per repo.
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -272,7 +272,7 @@ jobs:
     # design value (hex/rgb/hsl/px-spacing/font-family) — blocking NEW mess without failing on
     # the ~178 pre-existing findings and needing no baseline file. On push to the default branch
     # it runs a full scan report-only + opens idempotent ds-extraction issues (advisory).
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       issues: write
@@ -298,7 +298,7 @@ jobs:
     # Automated code review via Claude. REPORT-ONLY: posts inline PR review
     # comments for correctness bugs found in the diff; never blocks merge. Only runs on PRs.
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       pull-requests: write
@@ -334,7 +334,7 @@ jobs:
   gate-pagination:
     # Pagination standard (CLAUDE.baseline.md §4.1). Report-only first pass; ratchet to enforcing
     # per repo once the billing-service contract annotates/allowlists its collection GETs.
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -352,7 +352,7 @@ jobs:
     # (hotfixed in 4428db9). NO `|| true` / `exit 0` here: vite/postcss/tsc errors fail the build.
     # Mirrors the ci.yml build job order (root npm ci -> frontend npm ci -> chat-client+chat-ui
     # dist -> vite build). GITHUB_TOKEN satisfies frontend/.npmrc (@fuzefront/* from GH Packages).
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:

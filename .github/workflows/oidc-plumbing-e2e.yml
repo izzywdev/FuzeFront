@@ -42,7 +42,7 @@ concurrency:
 jobs:
   oidc-plumbing-e2e:
     name: OIDC plumbing (local user, no Google)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '["ubuntu-latest"]') }}
 
     env:
       # No tunnel — backend and browser both reach Authentik via Docker-published port 9000.
