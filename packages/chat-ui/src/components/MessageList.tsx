@@ -18,9 +18,9 @@ export interface MessageListProps {
   /** Newer history exists below the window — scroll-down paging enabled. */
   hasMoreAfter?: boolean;
   /** Load one page of older messages (called near the top edge). */
-  onLoadOlder?: () => void;
+  onLoadOlder?: () => void | Promise<void>;
   /** Load one page of newer messages (called near the bottom edge). */
-  onLoadNewer?: () => void;
+  onLoadNewer?: () => void | Promise<void>;
 }
 
 /**
@@ -75,7 +75,14 @@ export function MessageList({
       anchorElRef.current = anchor;
       anchorOffsetRef.current = anchor?.offsetTop ?? 0;
       prependScrollHeightRef.current = el.scrollHeight;
-      onLoadOlder();
+      Promise.resolve(onLoadOlder()).finally(() => {
+        // If the page never prepended (request failed / came back empty) the
+        // layout effect below never clears the guard — re-arm paging once the
+        // commit (and its anchoring pass) has had a chance to run.
+        setTimeout(() => {
+          awaitingPrependRef.current = false;
+        }, 0);
+      });
     }
 
     if (distanceFromBottom <= EDGE_THRESHOLD && hasMoreAfter && onLoadNewer) {
