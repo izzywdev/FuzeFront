@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Alert } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import {
   createApp,
@@ -148,30 +149,9 @@ export default function AdminPage() {
       </div>
 
       {error && (
-        <div
-          style={{
-            padding: '1rem',
-            backgroundColor: 'var(--bg-tertiary)',
-            border: '1px solid var(--error-color)',
-            borderRadius: '4px',
-            color: 'var(--error-color)',
-            marginBottom: '1rem',
-          }}
-        >
+        <Alert tone="error" onDismiss={() => setError(null)} style={{ marginBottom: '1rem' }}>
           {error}
-          <button
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--error-color)',
-              float: 'right',
-              cursor: 'pointer',
-            }}
-            onClick={() => setError(null)}
-          >
-            ✕
-          </button>
-        </div>
+        </Alert>
       )}
 
       {showForm && (
