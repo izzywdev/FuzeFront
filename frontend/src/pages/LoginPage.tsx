@@ -58,7 +58,11 @@ function LoginPage() {
       setError('Authentication encountered an unexpected error. Please try again.')
       loadAuthMethods()
     })
-  }, [setUser])
+    // Runs ONCE on mount — this is a page-load handler (OIDC-callback exchange
+    // + auth-method fetch). Depending on setUser here previously re-fired the
+    // effect on every render and flooded /api/auth/method; setUser is now a
+    // stable ref, but a mount-only effect is the correct shape regardless.
+  }, [])
 
   const loadAuthMethods = async () => {
     try {
@@ -291,7 +295,7 @@ function LoginPage() {
             padding: '10px',
             border: '1px solid var(--error-color)',
             borderRadius: '4px',
-            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+            backgroundColor: 'var(--error-soft)',
           }}
         >
           <strong>Authentication Error:</strong>
