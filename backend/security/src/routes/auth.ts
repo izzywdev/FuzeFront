@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
@@ -7,6 +8,12 @@ import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
 import { oidcService } from '../services/oidc'
+import {
+  authentikPasswordLogin,
+  InvalidCredentialsError,
+  AuthentikUnavailableError,
+  UnsupportedFlowStageError,
+} from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
 
 
@@ -360,7 +367,18 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
  */
 router.get('/oidc/login', async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
-  console.log(`🔐 [${requestId}] OIDC login request received`)
+  // Structured trace: enough to diagnose a broken handoff from pod logs alone
+  // (misconfigured issuer/redirect/frontend-base, or an uninitialized client
+  // whose discovery against Authentik failed at boot).
+  console.log('🔐 OIDC login request received', {
+    requestId,
+    referer: req.get('Referer'),
+    configured: oidcService.isConfigured?.(),
+    initialized: oidcService.isInitialized?.(),
+    issuerUrl: process.env.AUTHENTIK_ISSUER_URL,
+    redirectUri: process.env.AUTHENTIK_REDIRECT_URI,
+    frontendBase: FRONTEND_BASE,
+  })
 
   try {
     if (!oidcService.isConfigured()) {
@@ -385,6 +403,199 @@ router.get('/oidc/login', async (req, res) => {
   } catch (error) {
     console.error(`❌ [${requestId}] OIDC login error:`, error)
     res.status(500).json({ error: 'Failed to initiate OIDC login' })
+  }
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/signup:
+ *   get:
+ *     summary: Initiate account sign-up via Authentik enrollment
+ *     description: >
+ *       Redirects to Authentik's enrollment flow with the OIDC authorize URL
+ *       as the flow's ?next= target, so a freshly-enrolled (and auto-logged-in)
+ *       user continues straight through the normal OIDC callback and lands in
+ *       the app with a session — no second sign-in step.
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to the Authentik enrollment flow
+ *       500:
+ *         description: OIDC not configured or server error
+ */
+// Unauthenticated redirect endpoint — cheap, but cap per-client abuse anyway
+// (URL-minting/log-noise). Generous: legitimate users click this once or twice.
+const signupRedirectRateLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-up attempts. Try again later.' },
+})
+
+router.get('/oidc/signup', signupRedirectRateLimiter, async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  try {
+    if (!oidcService.isConfigured()) {
+      console.log('❌ OIDC not configured (signup)', { requestId })
+      return res.status(500).json({
+        error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
+      })
+    }
+
+    const state = uuidv4()
+    const { url, codeVerifier } = oidcService.generateAuthUrl(state)
+    // Wrap the authorize URL (same Authentik origin) in the enrollment flow's
+    // ?next= — Authentik redirects there after the flow's user-login stage.
+    const authorize = new URL(url)
+    const enrollSlug =
+      process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+    const enrollUrl = `${authorize.origin}/if/flow/${encodeURIComponent(enrollSlug)}/?next=${encodeURIComponent(`${authorize.pathname}${authorize.search}`)}`
+
+    console.log('🔗 Redirecting to Authentik enrollment', { requestId, enrollUrl })
+    // Same replica-agnostic state/PKCE cookies as /oidc/login — the enrollment
+    // flow funnels into the identical authorize → callback exchange.
+    res.setHeader('Set-Cookie', [
+      `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=1800; Path=/`,
+      `oidc_cv=${codeVerifier}; HttpOnly; Secure; SameSite=Lax; Max-Age=1800; Path=/`,
+    ])
+    res.redirect(enrollUrl)
+  } catch (error) {
+    console.error('❌ OIDC signup error', { requestId }, error)
+    res.status(500).json({ error: 'Failed to initiate sign-up' })
+  }
+})
+
+// Rate limit for the password endpoint: the flow-executor login is a
+// credential-stuffing surface, so cap FAILED attempts per client before we
+// ever contact Authentik (same express-rate-limit convention as
+// tokenAuthRateLimiter). Successful sign-ins are never throttled.
+const passwordLoginRateLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 10,
+  // Count ONLY rejected credentials (401) against the budget: 503s from an
+  // Authentik outage or an MFA-required account must not lock users out.
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode !== 401,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-in attempts. Try again later.' },
+})
+
+/**
+ * @swagger
+ * /api/auth/oidc/password:
+ *   post:
+ *     summary: Password sign-in against Authentik (no redirect)
+ *     description: >
+ *       Authenticates email+password by driving Authentik's flow-executor API
+ *       server-side, then completes the OIDC code exchange with the resulting
+ *       Authentik session. Authentik remains the sole identity authority; the
+ *       response shape matches /api/auth/login so the frontend treats both
+ *       identically.
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Authenticated — platform JWT + user
+ *       400:
+ *         description: Missing email or password
+ *       401:
+ *         description: Invalid credentials
+ *       503:
+ *         description: OIDC not configured, Authentik unreachable, or the
+ *           account requires a browser flow (MFA/consent)
+ */
+router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
+  const requestId = uuidv4().substring(0, 8)
+  const { email, password } = req.body || {}
+
+  console.log('🔐 Authentik password login request', {
+    requestId,
+    hasEmail: !!email,
+    configured: oidcService.isConfigured?.(),
+    initialized: oidcService.isInitialized?.(),
+  })
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' })
+  }
+  if (!oidcService.isConfigured()) {
+    return res.status(503).json({
+      error:
+        'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
+    })
+  }
+
+  try {
+    // Lazy re-init mirrors the monolith and /oidc/login: Authentik may not
+    // have been ready when this replica booted — self-heal here instead of
+    // 503ing until an SSO request happens to re-initialize the client.
+    if (!oidcService.isInitialized()) {
+      try {
+        await oidcService.initialize()
+      } catch (initErr) {
+        console.error('❌ OIDC lazy init failed', JSON.stringify({ requestId, message: (initErr as Error).message?.replace(/[\r\n]+/g, ' ') }))
+        return res
+          .status(503)
+          .json({ error: 'Authentication service unavailable. Try again shortly.' })
+      }
+    }
+
+    const user = await authentikPasswordLogin(email, password)
+
+    // Session + JWT minting — identical to the local login / OIDC callback.
+    const sessionId = uuidv4()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    // This IS FuzeFront's identity service — the issuer of platform tokens
+    // (same mint as /login and the OIDC callback), not a product self-minting.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
+    const token = jwt.sign(
+      { userId: user.id, sessionId },
+      process.env.JWT_SECRET!,
+      { expiresIn: '24h' }
+    )
+    await db('sessions').insert({
+      id: sessionId,
+      user_id: user.id,
+      expires_at: expiresAt,
+    })
+
+    selfHealProvisioningOnLogin(user.id)
+
+    console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
+    return res.json({ token, user, sessionId })
+  } catch (error) {
+    if (error instanceof InvalidCredentialsError) {
+      console.log('❌ Authentik rejected credentials', { requestId })
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
+    if (error instanceof UnsupportedFlowStageError) {
+      console.warn('⚠️ Unsupported Authentik flow stage', JSON.stringify({ requestId, message: error.message.replace(/[\r\n]+/g, ' ') }))
+      return res.status(503).json({
+        error:
+          'This account requires a browser sign-in flow (e.g. MFA). Use the SSO button instead.',
+      })
+    }
+    if (error instanceof AuthentikUnavailableError) {
+      console.error('❌ Authentik unavailable', JSON.stringify({ requestId, message: error.message.replace(/[\r\n]+/g, ' ') }))
+      return res
+        .status(503)
+        .json({ error: 'Authentication service unavailable. Try again shortly.' })
+    }
+    console.error('❌ Authentik password login error', { requestId }, error)
+    return res.status(500).json({ error: 'Authentication failed' })
   }
 })
 

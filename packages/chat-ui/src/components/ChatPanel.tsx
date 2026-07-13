@@ -11,6 +11,16 @@ export interface ChatPanelProps {
   onCancel: (confirmationId: string) => void;
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
   onClose?: () => void;
+  /** True while the initial history page is loading (composer disabled). */
+  loadingHistory?: boolean;
+  /** Older history exists — enables scroll-up paging in the list. */
+  hasMoreBefore?: boolean;
+  /** Newer history exists — enables scroll-down paging in the list. */
+  hasMoreAfter?: boolean;
+  onLoadOlder?: () => void;
+  onLoadNewer?: () => void;
+  /** Increments per locally-sent user message; forces scroll-to-bottom. */
+  sendSignal?: number;
 }
 
 /**
@@ -27,6 +37,12 @@ export function ChatPanel({
   onCancel,
   onFeedback,
   onClose,
+  loadingHistory = false,
+  hasMoreBefore = false,
+  hasMoreAfter = false,
+  onLoadOlder,
+  onLoadNewer,
+  sendSignal,
 }: ChatPanelProps) {
   const { strings, dir } = useChatI18n();
 
@@ -57,9 +73,15 @@ export function ChatPanel({
         onApprove={onApprove}
         onCancel={onCancel}
         onFeedback={onFeedback}
+        loadingHistory={loadingHistory}
+        hasMoreBefore={hasMoreBefore}
+        hasMoreAfter={hasMoreAfter}
+        onLoadOlder={onLoadOlder}
+        onLoadNewer={onLoadNewer}
+        sendSignal={sendSignal}
       />
 
-      <Composer disabled={streaming} onSend={onSend} />
+      <Composer disabled={streaming || loadingHistory} onSend={onSend} />
     </aside>
   );
 }

@@ -1,10 +1,14 @@
 import axios, { AxiosInstance } from 'axios';
 import {
+  BillingActorContext,
   BillingClientConfig,
+  BillingPayment,
   BillingSubscription,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   EntityType,
+  PaymentCheckoutRequest,
+  PaymentCheckoutResponse,
   Plan,
   UpdateSubscriptionRequest,
 } from './types';
@@ -73,6 +77,27 @@ export class BillingClient {
     return res.data;
   }
 
+  async createPaymentCheckout(
+    req: PaymentCheckoutRequest,
+    actor?: BillingActorContext,
+  ): Promise<PaymentCheckoutResponse> {
+    const res = await this.http.post<PaymentCheckoutResponse>('/payments/checkout', req, {
+      headers: actorHeaders(actor),
+    });
+    return res.data;
+  }
+
+  async getPaymentSession(
+    sessionId: string,
+    actor?: BillingActorContext,
+  ): Promise<BillingPayment> {
+    const res = await this.http.get<{ payment: BillingPayment }>(
+      `/payments/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: actorHeaders(actor) },
+    );
+    return res.data.payment;
+  }
+
   async addCredits(
     entityType: EntityType,
     entityId: string,
@@ -81,4 +106,19 @@ export class BillingClient {
   ): Promise<void> {
     await this.http.post('/credits', { entityType, entityId, amount, note });
   }
+}
+
+/**
+ * Maps the optional actor context to the billing-service's trusted headers.
+ * The host-backend billing proxy injects these itself; direct internal callers
+ * (e.g. a consumer product's backend) pass `actor` explicitly — the payments
+ * routes reject requests without it (401) or with a mismatched entity (403).
+ */
+function actorHeaders(actor?: BillingActorContext): Record<string, string> {
+  if (!actor) return {};
+  return {
+    'X-Billing-Actor-User-Id': actor.actorUserId,
+    'X-Billing-Entity-Type': actor.entityType,
+    'X-Billing-Entity-Id': actor.entityId,
+  };
 }

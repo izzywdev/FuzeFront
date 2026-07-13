@@ -8,6 +8,7 @@
 // This test is intentionally non-blocking: CI runs without Postgres.
 
 import * as migration from '../../src/db/migrations/001_create_chat_tables';
+import * as migration002 from '../../src/db/migrations/002_multi_app_scope_and_pagination';
 
 const CHAT_TABLES = ['chat_conversations', 'chat_messages', 'chat_audit_log', 'chat_feedback'];
 
@@ -18,6 +19,13 @@ describe('001_create_chat_tables migration module', () => {
 
   it('exports a down() function', () => {
     expect(typeof migration.down).toBe('function');
+  });
+});
+
+describe('002_multi_app_scope_and_pagination migration module', () => {
+  it('exports up() and down() functions', () => {
+    expect(typeof migration002.up).toBe('function');
+    expect(typeof migration002.down).toBe('function');
   });
 });
 

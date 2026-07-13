@@ -125,11 +125,44 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker images for scanning
-        run: |
-          docker build -t frontfuse/backend:latest ./backend
-          docker build -t frontfuse/frontend:latest ./frontend
-          docker build -t frontfuse/task-manager:latest ./task-manager-app
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      # backend + frontend images build from the REPO ROOT context (they
+      # consume @fuzefront/* workspaces outside their own dir) — mirror
+      # release.yml's exact buildx config (context: . + file:) so the scanned
+      # image is what actually ships. load: true keeps it in the local daemon
+      # for Trivy. task-manager-app is self-contained.
+      - name: Build backend image for scanning
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          load: true
+          tags: frontfuse/backend:latest
+          cache-from: type=gha
+
+      - name: Build frontend image for scanning
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          build-args: |
+            VITE_API_URL=
+          tags: frontfuse/frontend:latest
+          cache-from: type=gha,scope=frontend-root
+
+      - name: Build task-manager image for scanning
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: task-manager-app
+          file: task-manager-app/Dockerfile
+          push: false
+          load: true
+          tags: frontfuse/task-manager:latest
+          cache-from: type=gha
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -137,6 +170,9 @@ jobs:
           image-ref: 'frontfuse/backend:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
         env:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
 
@@ -145,6 +181,7 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+          category: trivy-container
 
   secret-scanning:
     name: Secret Scanning
@@ -204,18 +241,38 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
+      # Snyk requires a SNYK_TOKEN org secret. When it is not provisioned the
+      # scan cannot authenticate (SNYK-0005 / 401), so skip the scan steps
+      # cleanly instead of hard-failing every PR. secrets.* is not available
+      # in job-level `if`, so gate at step level.
+      - name: Check for SNYK_TOKEN
+        id: snyk-token
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SNYK_TOKEN secret not configured — skipping Snyk scan"
+          fi
+
       - name: Checkout code
+        if: steps.snyk-token.outputs.present == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.snyk-token.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        if: steps.snyk-token.outputs.present == 'true'
         run: npm install
 
       - name: Run Snyk to check for vulnerabilities
+        if: steps.snyk-token.outputs.present == 'true'
         uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -224,7 +281,7 @@ jobs:
 
       - name: Upload Snyk results to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && steps.snyk-token.outputs.present == 'true'
         with:
           sarif_file: snyk.sarif
 

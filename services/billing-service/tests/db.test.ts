@@ -135,6 +135,56 @@ describe('001_billing_schema.sql — DDL shape', () => {
   });
 });
 
+describe('002_payments.sql — DDL shape', () => {
+  const PAYMENTS_SQL_PATH = path.join(__dirname, '../src/migrations/002_payments.sql');
+  let sql: string;
+
+  beforeAll(() => {
+    sql = fs.readFileSync(PAYMENTS_SQL_PATH, 'utf8');
+  });
+
+  const executableSql = () =>
+    sql
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+  it('does NOT run CREATE EXTENSION / CREATE SCHEMA (billing_svc least-privilege)', () => {
+    expect(executableSql()).not.toMatch(/CREATE\s+EXTENSION/i);
+    expect(executableSql()).not.toMatch(/CREATE\s+SCHEMA/i);
+  });
+
+  it('creates billing.payments table idempotently', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS billing\.payments/i);
+  });
+
+  it('payments has UNIQUE stripe_session_id', () => {
+    expect(sql).toMatch(/stripe_session_id\s+TEXT\s+NOT NULL UNIQUE/i);
+  });
+
+  it('payments has the (product_key, external_order_id) index, created idempotently', () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS \S+\s+ON billing\.payments\s*\(\s*product_key\s*,\s*external_order_id\s*\)/i,
+    );
+  });
+
+  it('payments has entity_type CHECK constraint', () => {
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*entity_type\s+IN\s*\(\s*'user'\s*,\s*'organization'\s*\)\s*\)/i,
+    );
+  });
+
+  it('payments has the status CHECK constraint (paid/failed/expired/pending)', () => {
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*status\s+IN\s*\(\s*'paid'\s*,\s*'failed'\s*,\s*'expired'\s*,\s*'pending'\s*\)\s*\)/i,
+    );
+  });
+
+  it('payments keeps amount in integer cents with a non-negative bound', () => {
+    expect(sql).toMatch(/amount_total_cents\s+INTEGER\s+NOT NULL\s+CHECK\s*\(\s*amount_total_cents\s*>=\s*0\s*\)/i);
+  });
+});
+
 describe('db.ts exports', () => {
   it('exports createPool function', () => {
     expect(typeof createPool).toBe('function');
@@ -173,7 +223,7 @@ const DB_URL = process.env.DATABASE_URL;
       await expect(runMigrations(pool)).resolves.not.toThrow();
     });
 
-    it('all five tables exist', async () => {
+    it('all six tables exist', async () => {
       const res = await pool.query(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = 'billing'
@@ -181,7 +231,7 @@ const DB_URL = process.env.DATABASE_URL;
       );
       const names = res.rows.map((r: { table_name: string }) => r.table_name).sort();
       expect(names).toEqual(
-        ['customers', 'plans', 'stripe_events', 'subscriptions', 'usage_events'].sort(),
+        ['customers', 'payments', 'plans', 'stripe_events', 'subscriptions', 'usage_events'].sort(),
       );
     });
   },

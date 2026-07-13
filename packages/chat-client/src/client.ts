@@ -22,6 +22,8 @@ import type {
   ChatStreamEvent,
   Conversation,
   ConversationWithMessages,
+  GetConversationOptions,
+  ListConversationsFilter,
 } from './types';
 
 export interface ChatServiceClientConfig {
@@ -120,19 +122,37 @@ export class ChatServiceClient {
   }
 
   /**
-   * List all conversations for the authenticated user / org.
+   * List conversations for the authenticated user, most-recently-updated
+   * first, optionally narrowed to one app/org tenant.
    * Throws on non-2xx (including 401).
    */
-  async listConversations(): Promise<Conversation[]> {
-    return this.fetchJson<Conversation[]>('GET', '/chat/conversations');
+  async listConversations(filter: ListConversationsFilter = {}): Promise<Conversation[]> {
+    const params = new URLSearchParams();
+    if (filter.appId) params.set('appId', filter.appId);
+    if (filter.orgId) params.set('orgId', filter.orgId);
+    const qs = params.toString();
+    return this.fetchJson<Conversation[]>('GET', `/chat/conversations${qs ? `?${qs}` : ''}`);
   }
 
   /**
-   * Fetch a single conversation with its full message history.
+   * Fetch a conversation with one keyset-paginated page of its history.
+   * Without a cursor the newest page is returned; `before` pages towards
+   * older messages (infinite scroll up), `after` towards newer.
    * Throws on non-2xx (including 401).
    */
-  async getConversation(id: string): Promise<ConversationWithMessages> {
-    return this.fetchJson<ConversationWithMessages>('GET', `/chat/conversations/${id}`);
+  async getConversation(
+    id: string,
+    options: GetConversationOptions = {},
+  ): Promise<ConversationWithMessages> {
+    const params = new URLSearchParams();
+    if (options.before) params.set('before', options.before);
+    if (options.after) params.set('after', options.after);
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    const qs = params.toString();
+    return this.fetchJson<ConversationWithMessages>(
+      'GET',
+      `/chat/conversations/${id}${qs ? `?${qs}` : ''}`,
+    );
   }
 
   /**

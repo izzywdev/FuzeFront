@@ -23,6 +23,11 @@
 # FuzeFront sealing.
 set -euo pipefail
 
+# Always run relative to the repo root so paths like deploy/contabo/sealed/...
+# resolve correctly regardless of the caller's CWD.
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
 # ---- per-repo defaults (this is the FuzeFront repo) ----------------------------
 NS="fuzefront"
 NAME="billing-secrets"
@@ -81,7 +86,7 @@ mkdir -p "$(dirname "$MANIFEST")"
 mkseal() { kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml | kubeseal --cert "$CERT" -o yaml; }
 if [ -f "$MANIFEST" ]; then
   kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml \
-    | kubeseal --cert "$CERT" --merge-into "$MANIFEST"
+    | kubeseal --cert "$CERT" -o yaml --merge-into "$MANIFEST"
 else
   mkseal > "$MANIFEST"
 fi

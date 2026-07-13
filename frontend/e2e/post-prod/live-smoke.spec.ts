@@ -6,22 +6,35 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  *
  * Verifies the acceptance-criteria critical journey on the real deployment:
  *   1. The Module-Federation SHELL serves (root 200, correct title).
- *   2. /login renders the local-auth sign-in form.
- *   3. Authenticate via local auth (the only path live: Authentik/OIDC is down,
- *      and the UI's "Sign Up" affordance routes into OIDC enrollment, so signup
- *      is not exercisable while Authentik is 503 — documented below).
- *   4. The dashboard renders for an authenticated user.
- *   5. Module-Federation remote apps load — app cards render, and at least one
- *      remote module mounts at /app/:id with no MF/console load error and no
- *      502 from /api/apps.
+ *   2. Core API health is up.
+ *   3. The backend advertises OIDC as configured (/api/auth/method) — this is
+ *      the flag that hides the local form, so it is asserted explicitly.
+ *   4. /login shows the NATIVE credentials form (email/password verified
+ *      against Authentik server-side — no redirect) plus a "Sign in with
+ *      Google" button (federated through Authentik). The old "Sign in with
+ *      Authentik" redirect button is gone.
+ *   5. Clicking "Sign in with Google" hands off into the OIDC flow.
+ *   6. The auth backend is routable.
+ *   7. The dashboard renders for an authenticated user and Module-Federation
+ *      remote apps load — app cards render, and at least one remote module
+ *      mounts at /app/:id with no MF/console load error and no 502 from
+ *      /api/apps.
+ *   8. The Authentik login surface itself is configured: identification
+ *      challenge offers the Google source, a sign-up (enrollment) link, a
+ *      recovery link, and FuzeFront branding — catches "handoff works but the
+ *      IdP was never configured".
+ *
+ * The authenticated journey (test 7) obtains its session via the API
+ * (POST /api/auth/login) rather than the UI: the local form is intentionally
+ * absent from the UI, and driving real Google/Authentik credentials through a
+ * synthetic check is brittle + a security liability. The API path remains as
+ * the platform's machine/break-glass authentication.
  *
  * Credentials come from env so we never hard-code secrets in the repo:
  *   POST_PROD_EMAIL / POST_PROD_PASSWORD  (fallback to the documented seeded
  *   admin creds, which may or may not exist in prod).
  */
 
-// The live /login page advertises these demo creds (note the .dev domain, as
-// rendered on app.fuzefront.com). Override via env for real prod accounts.
 const EMAIL = process.env.POST_PROD_EMAIL || 'admin@fuzefront.dev'
 const PASSWORD = process.env.POST_PROD_PASSWORD || 'admin123'
 
@@ -60,17 +73,60 @@ test.describe('FuzeFront live post-prod smoke', () => {
     expect(body?.database?.status, 'platform DB connection').toBe('connected')
   })
 
-  test('3. /login renders the local-auth sign-in form', async ({ page }) => {
+  test('3. backend advertises OIDC as configured (Authentik is the identity authority)', async ({ request }) => {
+    const resp = await request.get('/api/auth/method')
+    expect(resp.status(), '/api/auth/method status').toBe(200)
+    const body = await resp.json()
+    expect(
+      body.oidcConfigured,
+      'oidcConfigured must be true in prod — false would re-expose the local fallback form'
+    ).toBe(true)
+    expect(body.defaultMethod).toBe('oidc')
+  })
+
+  test('4. /login offers the native credentials form + Google (no Authentik redirect button)', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.locator('input[type="email"]')).toBeVisible()
+
+    // Native credentials form — the default UI. With oidcConfigured=true these
+    // fields are verified AGAINST AUTHENTIK server-side (no redirect).
+    await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('input[type="password"]')).toBeVisible()
-    await expect(page.locator('button[type="submit"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible()
+
+    // Google is federated through Authentik and offered as a button.
+    await expect(
+      page.getByRole('button', { name: /sign in with google/i })
+    ).toBeVisible()
+
+    // The old "Sign in with Authentik" redirect button is gone.
+    await expect(page.getByText(/sign in with authentik/i)).toHaveCount(0)
+
+    // The demo-credentials disclosure is gone.
+    await expect(page.getByText(/demo credentials/i)).toHaveCount(0)
+
     await page.screenshot({ path: 'test-results-post-prod/03-login.png', fullPage: true })
   })
 
-  test('4. auth backend is reachable (security service routable)', async ({ request }) => {
-    // Gate for the sign-in journey. While the security service is not routed,
-    // Traefik returns 502/503 ("no available server") and login cannot succeed.
+  test('5. "Sign in with Google" hands off to Authentik (OIDC flow starts)', async ({ page }) => {
+    await page.goto('/login')
+    const googleBtn = page.getByRole('button', { name: /sign in with google/i })
+    await expect(googleBtn).toBeVisible({ timeout: 20_000 })
+
+    // Clicking must navigate into the OIDC flow: the SPA calls
+    // /api/auth/oidc/login which 302s to the Authentik authorize endpoint.
+    // Assert we leave the login page toward an authorize URL rather than
+    // completing a login (read-only synthetic — no credentials driven).
+    const oidcRedirect = page.waitForRequest(
+      req => req.url().includes('/api/auth/oidc/login'),
+      { timeout: 20_000 }
+    )
+    await googleBtn.click()
+    await oidcRedirect
+  })
+
+  test('6. auth backend is reachable (security service routable)', async ({ request }) => {
+    // Gate for the authenticated journey. While the security service is not
+    // routed, Traefik returns 502/503 ("no available server").
     // We assert it is healthy so a red here clearly names the deploy blocker.
     const resp = await request.get('/api/auth/health')
     expect(
@@ -79,38 +135,30 @@ test.describe('FuzeFront live post-prod smoke', () => {
     ).toBeLessThan(500)
   })
 
-  test('5. sign-in + dashboard + Module-Federation apps load', async ({ page, request }) => {
+  test('7. authenticated dashboard + Module-Federation apps load', async ({ page, request }) => {
     const { consoleErrors, pageErrors, failedRequests } = attachErrorCollectors(page)
 
-    // Pre-flight: if the auth backend isn't routable, fail fast with a precise
-    // message rather than timing out on the form submit.
-    const authHealth = await request.get('/api/auth/health')
+    // Authenticate via the API (machine/break-glass path). The UI no longer
+    // renders a local form — human sign-in is Authentik/Google only — so the
+    // synthetic check mints its session directly and injects the token.
+    const loginResp = await request.post('/api/auth/login', {
+      data: { email: EMAIL, password: PASSWORD },
+    })
     expect(
-      authHealth.status(),
-      `auth backend not ready (/api/auth/health=${authHealth.status()}); sign-in journey is blocked at the deploy layer`
-    ).toBeLessThan(500)
-
-    await page.goto('/login')
-    await expect(page.locator('input[type="email"]')).toBeVisible()
-
-    await page.fill('input[type="email"]', EMAIL)
-    await page.fill('input[type="password"]', PASSWORD)
-
-    const loginResp = page.waitForResponse(
-      r => r.url().includes('/api/auth/login'),
-      { timeout: 30_000 }
-    )
-    await page.click('button[type="submit"]')
-    const resp = await loginResp
-    expect(
-      resp.status(),
-      `POST /api/auth/login -> ${resp.status()} (401/403 = creds rejected: seeded account likely not provisioned in prod; 5xx = backend error)`
+      loginResp.status(),
+      `POST /api/auth/login -> ${loginResp.status()} (401/403 = creds rejected: POST_PROD_EMAIL/POST_PROD_PASSWORD not provisioned in prod; 5xx = backend error)`
     ).toBe(200)
+    const loginBody = await loginResp.json()
+    const token: string = loginBody.token
+    expect(token, 'API login returned a token').toBeTruthy()
 
-    // The app does a hard redirect to /dashboard on success.
+    // Seed the SPA session before the app boots.
+    await page.addInitScript(t => {
+      window.localStorage.setItem('authToken', t)
+    }, token)
+
+    await page.goto('/dashboard')
     await page.waitForURL('**/dashboard', { timeout: 30_000 })
-    const token = await page.evaluate(() => localStorage.getItem('authToken'))
-    expect(token, 'authToken persisted in localStorage after login').toBeTruthy()
 
     // Dashboard shell renders.
     await expect(page.locator('.dashboard')).toBeVisible()
@@ -183,5 +231,53 @@ test.describe('FuzeFront live post-prod smoke', () => {
     if (consoleErrors.length) {
       console.log('Console errors observed (informational):\n' + consoleErrors.join('\n'))
     }
+  })
+
+  test('8. Authentik login surface is configured (Google source + sign-up + recovery + brand)', async ({ request }) => {
+    // Black-box probe of the IdP itself: the login page's identification
+    // challenge advertises exactly what a user will see. This is the test that
+    // catches "the app hands off fine but Authentik was never configured" —
+    // unthemed page, no Google button, no sign-up link (the failure mode that
+    // shipped once already).
+    const AUTH_ORIGIN =
+      process.env.POST_PROD_AUTH_ORIGIN || 'https://auth.fuzefront.com'
+
+    const resp = await request.get(
+      `${AUTH_ORIGIN}/api/v3/flows/executor/default-authentication-flow/?query=`,
+      { headers: { Accept: 'application/json' }, maxRedirects: 5 }
+    )
+    expect(resp.status(), 'flow executor reachable').toBe(200)
+    const challenge = await resp.json()
+
+    expect(
+      challenge.component,
+      `first challenge should be the identification stage, got ${JSON.stringify(challenge.component)}`
+    ).toBe('ak-stage-identification')
+
+    // Sign-up link → enrollment flow applied AND wired into the stage.
+    expect(
+      challenge.enroll_url,
+      'enroll_url missing — enrollment flow not linked on the identification stage (sign-up dead)'
+    ).toBeTruthy()
+
+    // Recovery link → recovery flow applied and wired.
+    expect(
+      challenge.recovery_url,
+      'recovery_url missing — recovery flow not linked (forgot-password dead)'
+    ).toBeTruthy()
+
+    // Google shows as a federated source button.
+    const sources: Array<{ name?: string; challenge?: { to?: string } }> =
+      challenge.sources ?? []
+    expect(
+      sources.some(s => /google/i.test(s.name ?? '')),
+      `Google source not offered on the login page — sources: ${JSON.stringify(sources.map(s => s.name))}`
+    ).toBe(true)
+
+    // Brand applied (title comes from the flow/brand config, not authentik's default).
+    expect(
+      String(challenge.flow_info?.title ?? ''),
+      `login page still shows the default authentik title — brand/flow blueprints not applied (got ${JSON.stringify(challenge.flow_info?.title)})`
+    ).toMatch(/fuzefront/i)
   })
 })

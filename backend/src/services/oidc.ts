@@ -45,6 +45,10 @@ class OIDCService {
         redirect_uris: [this.config.redirectUri],
         response_types: ['code'],
         grant_types: ['authorization_code'],
+        // Authentik signs ID tokens with HS256 when no signing_key is set in the
+        // provider blueprint; openid-client defaults to RS256 and throws RPError
+        // "unexpected JWT alg received" without this override.
+        id_token_signed_response_alg: 'HS256',
       });
 
       console.log('✅ OIDC client initialized successfully');
@@ -85,34 +89,39 @@ class OIDCService {
     }
 
     try {
-      // Get the stored code verifier
-      const codeVerifier = global.codeVerifiers?.get(state || 'default');
+      // Step 1: look up PKCE code verifier stored at login time
+      const stateKey = state || 'default';
+      const codeVerifier = global.codeVerifiers?.get(stateKey);
+      console.log(`🔄 [oidc] code verifier lookup: state=${stateKey?.substring(0,8)}… found=${!!codeVerifier} mapSize=${global.codeVerifiers?.size ?? 0}`);
       if (!codeVerifier) {
-        throw new Error('Code verifier not found');
+        throw new Error(`Code verifier not found for state=${stateKey}`);
       }
 
-      // Exchange code for tokens
+      // Step 2: exchange authorisation code → tokens (real HTTP POST /token/)
+      console.log('🔄 [oidc] exchanging code for tokens...');
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
-        { code_verifier: codeVerifier }
+        { code_verifier: codeVerifier, state }
       );
+      console.log('✅ [oidc] token exchange OK — access_token present:', !!tokenSet.access_token, 'id_token present:', !!tokenSet.id_token);
 
-      console.log('✅ Received tokens from Authentik');
-
-      // Get user info
+      // Step 3: fetch user profile from userinfo endpoint
+      console.log('🔄 [oidc] fetching userinfo...');
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log('✅ Retrieved user info:', userinfo);
+      console.log('✅ [oidc] userinfo OK — email:', userinfo.email, 'sub:', userinfo.sub);
 
-      // Sync user to local database
+      // Step 4: upsert into local database
+      console.log('🔄 [oidc] syncing user to database...');
       const user = await this.syncUserToDatabase(userinfo);
+      console.log('✅ [oidc] db sync OK — userId:', user.id);
 
       // Clean up code verifier
-      global.codeVerifiers?.delete(state || 'default');
+      global.codeVerifiers?.delete(stateKey);
 
       return user;
     } catch (error) {
-      console.error('❌ OIDC callback error:', error);
+      console.error('❌ [oidc] handleCallback FAILED:', (error as Error).message, (error as any).error_description ?? '');
       throw error;
     }
   }
@@ -140,7 +149,7 @@ class OIDCService {
       } else {
         // Create new user
         const newUser = {
-          id: userinfo.sub || require('uuid').v4(),
+          id: require('uuid').v4(),
           email: email,
           first_name: firstName,
           last_name: lastName,
@@ -149,30 +158,34 @@ class OIDCService {
           updated_at: new Date(),
         };
 
-        // Atomically insert the user AND an outbox row for identity.user.created.
-        // The outbox guarantees the event is durably recorded even if the Kafka
-        // publish below fails; reconcile-on-login is the ultimate safety net.
+        // Insert the user; reconcile-on-login is the ultimate safety net.
         const correlationId = `identity-${newUser.id}`;
-        await db.transaction(async trx => {
-          await trx('users').insert(newUser);
-          await trx('event_outbox').insert({
+        await db('users').insert(newUser);
+        userRow = newUser;
+
+        console.log(`✅ Created new user: ${email}`);
+
+        // Best-effort outbox insert — failure must NOT block authentication.
+        // jsonb payload requires an explicit ::jsonb cast because Postgres rejects
+        // implicit text→jsonb coercion in parameterized queries.
+        try {
+          await db('event_outbox').insert({
             id: require('uuid').v4(),
             topic: 'identity.user.created',
-            payload: JSON.stringify({
+            payload: db.raw('?::jsonb', [JSON.stringify({
               userId: newUser.id,
               email,
               firstName,
               lastName,
               intent: 'signup',
-            }),
+            })]),
             correlation_id: correlationId,
             status: 'pending',
             attempts: 0,
           });
-        });
-        userRow = newUser;
-
-        console.log(`✅ Created new user: ${email}`);
+        } catch (outboxErr) {
+          console.warn('⚠️ event_outbox insert skipped (non-fatal, reconcile-on-login applies):', (outboxErr as Error).message);
+        }
 
         // Best-effort publish; failure leaves the outbox row 'pending' for replay.
         try {
@@ -200,7 +213,7 @@ class OIDCService {
         email: userRow.email,
         firstName: userRow.first_name,
         lastName: userRow.last_name,
-        roles: JSON.parse(userRow.roles || '["user"]'),
+        roles: Array.isArray(userRow.roles) ? userRow.roles : JSON.parse(userRow.roles || '["user"]'),
       };
 
       return user;
@@ -212,6 +225,10 @@ class OIDCService {
 
   isConfigured(): boolean {
     return !!(this.config.clientId && this.config.clientSecret);
+  }
+
+  isInitialized(): boolean {
+    return this.client !== null;
   }
 }
 

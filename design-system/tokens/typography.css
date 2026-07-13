@@ -15,7 +15,6 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-  --weight-black: 800;     /* impact headlines, hero stats */
 
   /* ---- Type scale (rem) ---------------------------------- */
   --text-2xs: 0.7rem;     /* 11px — mono meta, badges */
@@ -27,7 +26,6 @@
   --text-xl: 1.35rem;     /* h2 */
   --text-2xl: 1.75rem;    /* h1 */
   --text-3xl: 2.25rem;    /* page hero */
-  --text-4xl: 3.25rem;    /* marketing / dashboard super-hero */
 
   /* ---- Line heights -------------------------------------- */
   --leading-tight: 1.15;
@@ -39,12 +37,11 @@
   --tracking-display: -0.02em;  /* headings & wordmark */
   --tracking-normal: 0;
   --tracking-wide: 0.04em;
-  --tracking-logo: 0.06em;      /* boxed wordmarks, LogoChip */
 
   /* ---- Semantic roles ------------------------------------ */
   --role-hero-font: var(--font-display);
-  --role-hero-size: var(--text-4xl);
-  --role-hero-weight: var(--weight-bold);
+  --role-hero-size: var(--text-3xl);
+  --role-hero-weight: var(--weight-semibold);
   --role-hero-leading: var(--leading-tight);
 
   --role-heading-font: var(--font-display);

@@ -84,10 +84,15 @@ export interface DepStubs {
     insert: jest.Mock;
   };
   customers: { ensureCustomer: jest.Mock };
+  payments: {
+    upsert: jest.Mock;
+    getBySessionId: jest.Mock;
+    findByOrder: jest.Mock;
+  };
   stripe: {
     setupIntents: { create: jest.Mock };
     customers: { createBalanceTransaction: jest.Mock };
-    checkout: { sessions: { create: jest.Mock } };
+    checkout: { sessions: { create: jest.Mock; retrieve: jest.Mock } };
     webhooks: { constructEvent: jest.Mock };
   };
   webhook: {
@@ -103,8 +108,19 @@ export interface DepStubs {
  * auth guard (omit to test the dev-bypass path documented in the spec's security
  * scheme description).
  */
+/** Default payments allowlists/bounds used by buildApp (override per test). */
+export const PAYMENTS_CONFIG = {
+  productKeys: ['mendys-datasets'],
+  currencies: ['usd', 'eur'],
+  maxTotalCents: 5_000_000,
+};
+
 export function buildApp(
-  opts: { internalToken?: string; stubs?: Partial<DepStubs> } = {},
+  opts: {
+    internalToken?: string;
+    stubs?: Partial<DepStubs>;
+    paymentsConfig?: typeof PAYMENTS_CONFIG;
+  } = {},
 ): { app: Application; stubs: DepStubs } {
   const constructEvent = jest.fn();
 
@@ -140,6 +156,16 @@ export function buildApp(
         stripeCustomerId: 'cus_test123',
       }),
     },
+    payments: {
+      upsert: jest.fn().mockImplementation(async (row: Record<string, unknown>) => ({
+        id: '77777777-7777-4777-8777-777777777777',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        updatedAt: '2026-07-01T00:00:00.000Z',
+        ...row,
+      })),
+      getBySessionId: jest.fn().mockResolvedValue(null),
+      findByOrder: jest.fn().mockResolvedValue(null),
+    },
     stripe: {
       setupIntents: { create: jest.fn() },
       customers: { createBalanceTransaction: jest.fn() },
@@ -149,6 +175,13 @@ export function buildApp(
             id: 'cs_test_session',
             url: 'https://checkout.stripe.com/c/pay/cs_test_session',
           }),
+          retrieve: jest.fn().mockRejectedValue(
+            Object.assign(new Error('No such checkout.session'), {
+              type: 'StripeInvalidRequestError',
+              code: 'resource_missing',
+              statusCode: 404,
+            }),
+          ),
         },
       },
       webhooks: { constructEvent },
@@ -177,6 +210,8 @@ export function buildApp(
     subscriptionRepo: stubs.subscriptionRepo as any,
     customerRepo: stubs.customerRepo as any,
     customers: stubs.customers as any,
+    payments: stubs.payments as any,
+    paymentsConfig: opts.paymentsConfig ?? { ...PAYMENTS_CONFIG },
     webhook: stubs.webhook as any,
   };
 

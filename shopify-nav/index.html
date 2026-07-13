@@ -1,0 +1,2252 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#004c3f" />
+<title>Shopify Navigator</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="favicon.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Shopify Nav" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --green: #008060;
+    --green-dark: #004c3f;
+    --green-light: #f0fdf7;
+    --ink: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --bg: #f3f4f6;
+  }
+  html, body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overscroll-behavior-y: none;
+  }
+  body {
+    max-width: 520px;
+    margin: 0 auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    position: relative;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea { font-family: inherit; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--green-dark) 0%, var(--green) 100%);
+    padding: calc(20px + env(safe-area-inset-top)) 20px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: ""; position: absolute; top: -30px; left: -30px; pointer-events: none;
+    width: 140px; height: 140px; background: rgba(255,255,255,0.05); border-radius: 50%;
+  }
+  .header::after {
+    content: ""; position: absolute; bottom: -40px; right: -10px; pointer-events: none;
+    width: 100px; height: 100px; background: rgba(255,255,255,0.04); border-radius: 50%;
+  }
+  .header-row { display: flex; align-items: center; justify-content: space-between; position: relative; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-icon {
+    background: rgba(255,255,255,0.15); border-radius: 10px; width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .brand h1 { color: #fff; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+  .brand p { color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 2px; }
+  .gear {
+    background: rgba(255,255,255,0.15); border: none; border-radius: 10px;
+    width: 38px; height: 38px; color: #fff; font-size: 18px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+
+  /* Body */
+  .body { padding: 16px 16px 40px; }
+
+  /* Search */
+  .search {
+    background: #fff; border-radius: 14px; padding: 5px; display: flex; gap: 5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1); margin-top: -18px; position: relative;
+  }
+  .search input {
+    flex: 1; border: none; outline: none; padding: 12px 14px; font-size: 16px;
+    background: transparent; color: var(--ink);
+  }
+  .search button {
+    background: var(--green); color: #fff; border: none; border-radius: 10px;
+    padding: 0 18px; font-weight: 700; font-size: 20px; min-width: 48px;
+    display: flex; align-items: center; justify-content: center; transition: background .15s;
+  }
+  .search button:disabled { background: #cbd5e1; }
+  .search button:active:not(:disabled) { background: var(--green-dark); }
+  html[dir="ltr"] .search button .arrow { transform: scaleX(-1); }
+
+  /* Examples */
+  .examples { margin-top: 16px; }
+  .examples .label { font-size: 12px; color: var(--muted); margin: 0 2px 8px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 20px;
+    padding: 7px 13px; font-size: 13px; color: #374151;
+  }
+  .chip:active { background: var(--green-light); border-color: var(--green); }
+
+  /* Loading */
+  .loading { text-align: center; padding: 48px 20px; }
+  .spinner {
+    width: 44px; height: 44px; border: 3px solid var(--border); border-top-color: var(--green);
+    border-radius: 50%; margin: 0 auto 14px; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading p { color: var(--muted); font-size: 14px; }
+
+  /* Empty */
+  .empty { text-align: center; padding: 40px 24px; color: #9ca3af; }
+  .empty .big { font-size: 52px; margin-bottom: 14px; }
+  .empty .t { font-size: 16px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+  .empty .s { font-size: 13px; line-height: 1.5; }
+
+  /* Results */
+  .result-title {
+    background: #fff; border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 12px;
+    animation: fadeIn .3s ease;
+  }
+  .result-title .ico { background: var(--green-light); border-radius: 9px; padding: 9px; font-size: 18px; }
+  .result-title .tag { font-size: 11px; color: var(--green); font-weight: 700; margin-bottom: 2px; }
+  .result-title .txt { font-size: 17px; font-weight: 700; }
+
+  .step {
+    background: #fff; border-radius: 12px; padding: 13px 14px 10px; margin-bottom: 7px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05); animation: fadeIn .3s ease backwards;
+  }
+  .step-main { display: flex; gap: 12px; align-items: flex-start; }
+  .step .num {
+    background: var(--green); color: #fff; border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .step .action { font-weight: 600; font-size: 15px; line-height: 1.45; }
+  .step .where { font-size: 12px; color: var(--green); margin-top: 4px; font-weight: 500; }
+  .step .detail { font-size: 13px; color: #555; margin-top: 5px; line-height: 1.55; }
+  .stuck-btn {
+    margin: 8px 0 0 40px; background: none; border: none; color: #9ca3af;
+    font-size: 12px; font-weight: 600; padding: 4px 0; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .stuck-btn:active { color: var(--green); }
+
+  .callout {
+    border-radius: 12px; padding: 13px 15px; margin-bottom: 8px; animation: fadeIn .3s ease;
+  }
+  .callout.tip { background: linear-gradient(135deg, #f0fdf7, #e8f9f3); border: 1px solid #a7f3d0; }
+  .callout.shortcut { background: #fafafa; border: 1px solid var(--border); }
+  .callout .ch { font-size: 11px; font-weight: 700; margin-bottom: 5px; }
+  .callout.tip .ch { color: var(--green); }
+  .callout.shortcut .ch { color: var(--muted); }
+  .callout .cb { font-size: 13px; line-height: 1.55; color: #1a1a1a; }
+
+  .again {
+    width: 100%; background: #fff; border: 2px solid var(--green); border-radius: 12px;
+    padding: 13px; color: var(--green); font-weight: 700; font-size: 14px; margin-top: 8px;
+  }
+  .again:active { background: var(--green-light); }
+
+  .err {
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;
+    padding: 14px; color: #dc2626; font-size: 14px; line-height: 1.5;
+  }
+  .cached-badge {
+    display: inline-block; font-size: 10px; background: #eef2ff; color: #4f46e5;
+    padding: 2px 8px; border-radius: 10px; margin: 0 8px; font-weight: 600; vertical-align: middle;
+  }
+  .scope-note {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.55; color: #92400e;
+    animation: fadeIn .3s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* Bottom sheet (settings + stuck + wizard) */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex;
+    align-items: flex-end; justify-content: center; z-index: 100; animation: fadeIn .2s;
+  }
+  .sheet {
+    background: #fff; width: 100%; max-width: 520px; border-radius: 20px 20px 0 0;
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+    animation: slideUp .28s ease; max-height: 92vh; max-height: 92dvh;
+    display: flex; flex-direction: column;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
+  .sheet h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .sheet .desc { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 16px; }
+  .sheet label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+  .sheet input[type=password], .sheet input[type=text] {
+    width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    font-size: 15px; outline: none; direction: ltr; text-align: left;
+  }
+  .sheet input:focus, .sheet textarea:focus { border-color: var(--green); }
+  .sheet .hint { font-size: 11px; color: #9ca3af; margin-top: 6px; line-height: 1.5; }
+  .sheet .hint a { color: var(--green); }
+  .sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+  .settings-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .settings-section > label:first-child { font-size: 13px; font-weight: 700; color: var(--ink); }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn-primary {
+    flex: 1; background: var(--green); color: #fff; border: none; border-radius: 11px;
+    padding: 13px; font-weight: 700; font-size: 15px;
+  }
+  .btn-primary:active { background: var(--green-dark); }
+  .btn-primary:disabled { background: #cbd5e1; }
+  .btn-ghost {
+    background: #fff; color: var(--muted); border: 1.5px solid var(--border); border-radius: 11px;
+    padding: 13px 18px; font-weight: 600; font-size: 15px;
+  }
+  .model-row { display: flex; gap: 8px; margin-top: 14px; }
+  .model-opt {
+    flex: 1; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 8px;
+    text-align: center; font-size: 12px; font-weight: 600; color: #374151; background: #fff;
+  }
+  .model-opt.sel { border-color: var(--green); background: var(--green-light); color: var(--green); }
+  .model-opt small { display: block; font-size: 10px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+
+  /* Language grid */
+  .lang-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px; }
+  .lang-opt {
+    border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 8px;
+    font-size: 13px; font-weight: 600; color: #374151; background: #fff; text-align: center;
+  }
+  .lang-opt.sel { border-color: var(--green); background: var(--green-light); color: var(--green); }
+
+  /* Store scan */
+  .scan-row { display: flex; gap: 8px; margin-top: 10px; }
+  .scan-row button {
+    background: var(--green); color: #fff; border: none; border-radius: 10px;
+    padding: 0 16px; font-weight: 700; font-size: 14px; white-space: nowrap; min-height: 40px;
+  }
+  .scan-row button:disabled { background: #cbd5e1; }
+  .scan-status { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .scan-status.ok { color: var(--green); }
+  .scan-status.err { color: #dc2626; }
+  .scan-mini-spin {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border);
+    border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite;
+    vertical-align: middle; margin-inline-end: 6px;
+  }
+
+  /* Stuck sheet specifics */
+  .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .sheet-close {
+    background: #f3f4f6; border: none; border-radius: 50%; width: 32px; height: 32px;
+    font-size: 16px; color: var(--muted); flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .stuck-ctx {
+    background: var(--green-light); border: 1px solid #a7f3d0; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 14px; font-size: 13px; line-height: 1.5;
+  }
+  .stuck-ctx b { color: var(--green-dark); }
+  .convo { overflow-y: auto; flex: 1; margin-bottom: 12px; -webkit-overflow-scrolling: touch; }
+  .convo:empty { display: none; }
+  .bubble-user {
+    background: var(--green); color: #fff; border-radius: 14px 14px 4px 14px;
+    padding: 10px 13px; margin: 0 0 10px auto; max-width: 85%; font-size: 14px; line-height: 1.5;
+    width: fit-content;
+  }
+  .bubble-user img { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+  .bubble-ai {
+    background: #f9fafb; border: 1px solid var(--border); border-radius: 14px 14px 14px 4px;
+    padding: 12px 14px; margin-bottom: 10px; max-width: 92%; animation: fadeIn .25s ease;
+  }
+  .bubble-ai .diag { font-size: 14px; line-height: 1.55; color: var(--ink); margin-bottom: 10px; }
+  .bubble-ai .hstep { display: flex; gap: 9px; margin-bottom: 8px; align-items: flex-start; }
+  .bubble-ai .hstep .d {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-top: 7px; flex-shrink: 0;
+  }
+  .bubble-ai .hstep .a { font-size: 14px; line-height: 1.5; }
+  .bubble-ai .hstep .a small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.5; }
+  .bubble-ai .hnote {
+    font-size: 12px; color: var(--muted); background: #fff; border-radius: 8px;
+    padding: 8px 10px; margin-top: 4px; line-height: 1.5;
+  }
+  .stuck-mini-spin { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .stuck-mini-spin .sp {
+    width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--green);
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  .stuck-input textarea {
+    width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 11px 13px;
+    font-size: 15px; outline: none; resize: none; line-height: 1.5; min-height: 46px;
+  }
+  .attach-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .attach-btn {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  .attach-btn:active { border-color: var(--green); color: var(--green); }
+  .send-btn {
+    flex: 1; background: var(--green); color: #fff; border: none; border-radius: 10px;
+    padding: 11px; font-weight: 700; font-size: 15px;
+  }
+  .send-btn:active { background: var(--green-dark); }
+  .send-btn:disabled { background: #cbd5e1; }
+  .preview-wrap { position: relative; margin-top: 8px; display: inline-block; }
+  .preview-wrap img { max-height: 90px; border-radius: 8px; border: 1px solid var(--border); display: block; }
+  .preview-x {
+    position: absolute; top: -7px; inset-inline-start: -7px; background: #dc2626; color: #fff; border: 2px solid #fff;
+    border-radius: 50%; width: 22px; height: 22px; font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Product wizard */
+  .wiz-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; margin: 0 -4px 4px; padding: 4px; }
+  .wiz-intro { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 14px; }
+  .idea-card {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px;
+    margin-bottom: 8px; text-align: start; width: 100%; display: block;
+  }
+  .idea-card:active { border-color: var(--green); background: var(--green-light); }
+  .idea-badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+    margin-bottom: 5px;
+  }
+  .idea-badge.classic { background: #eef2ff; color: #4f46e5; }
+  .idea-badge.unique { background: #fef3c7; color: #b45309; }
+  .idea-badge.trend { background: #fce7f3; color: #be185d; }
+  .idea-card .name { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .idea-card .why { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .wiz-or { text-align: center; font-size: 12px; color: #9ca3af; margin: 14px 0 8px; font-weight: 600; }
+  .wiz-input-box {
+    border: 1.5px solid var(--border); border-radius: 12px; padding: 6px; display: flex; gap: 6px; align-items: flex-end;
+  }
+  .wiz-input-box textarea {
+    flex: 1; border: none; outline: none; resize: none; font-size: 15px; padding: 8px 8px;
+    line-height: 1.5; min-height: 40px; background: transparent;
+  }
+  .wiz-plus {
+    background: #f3f4f6; border: none; border-radius: 9px; width: 40px; height: 40px; flex-shrink: 0;
+    font-size: 20px; color: var(--green); display: flex; align-items: center; justify-content: center;
+  }
+  .wiz-primary {
+    width: 100%; background: var(--green); color: #fff; border: none; border-radius: 11px;
+    padding: 13px; font-weight: 700; font-size: 15px; margin-top: 10px;
+  }
+  .wiz-primary:active { background: var(--green-dark); }
+  .wiz-primary:disabled { background: #cbd5e1; }
+  .cand-card {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 12px;
+  }
+  .cand-card img { width: 100%; max-height: 240px; object-fit: contain; background: #f9fafb; display: block; }
+  .cand-body { padding: 12px 14px; }
+  .cand-title { font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .cand-price { font-size: 18px; font-weight: 800; color: var(--green); margin-top: 6px; }
+  .cand-desc { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .cand-link { font-size: 12px; margin-top: 8px; display: inline-block; color: var(--green); word-break: break-all; }
+  .yn-question { font-size: 15px; font-weight: 700; text-align: center; margin: 6px 0 12px; }
+  .yn-row { display: flex; gap: 10px; }
+  .yn-btn { flex: 1; border-radius: 11px; padding: 14px; font-weight: 700; font-size: 15px; border: none; }
+  .yn-yes { background: var(--green); color: #fff; }
+  .yn-yes:active { background: var(--green-dark); }
+  .yn-no { background: #fff; color: #dc2626; border: 1.5px solid #fecaca; }
+  .yn-no:active { background: #fef2f2; }
+  .supplier-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .supplier-chip {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 20px; padding: 9px 15px;
+    font-size: 14px; font-weight: 600; color: #374151;
+  }
+  .supplier-chip.sel { border-color: var(--green); background: var(--green-light); color: var(--green); }
+  .prompt-box {
+    background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12px;
+    line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto;
+    direction: ltr; text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .copy-btn {
+    width: 100%; background: var(--green); color: #fff; border: none; border-radius: 11px;
+    padding: 14px; font-weight: 700; font-size: 15px; margin-top: 10px;
+  }
+  .copy-btn:active { background: var(--green-dark); }
+  .img-links { margin-top: 14px; }
+  .img-links .il-label { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+  .img-links a {
+    display: block; font-size: 12px; color: var(--green); word-break: break-all; margin-bottom: 5px;
+    direction: ltr; text-align: left;
+  }
+  .wiz-err {
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px;
+    padding: 14px; color: #dc2626; font-size: 14px; line-height: 1.5; margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-row">
+      <div class="brand">
+        <div class="brand-icon">🗺️</div>
+        <div>
+          <h1>Shopify Navigator</h1>
+          <p id="tagline">כתוב מה לעשות — AI יבנה מפה מדויקת</p>
+        </div>
+      </div>
+      <button class="gear" id="gearBtn" aria-label="הגדרות">⚙️</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="search">
+      <input id="q" type="text" placeholder="מה אתה רוצה לעשות בשופיפיי?" autocomplete="off" enterkeyhint="search" />
+      <button id="goBtn" aria-label="חפש"><span class="arrow">←</span></button>
+    </div>
+    <div id="content"></div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const LS_KEY = "sn_api_key";
+const LS_MODEL = "sn_model";
+const LS_CACHE = "sn_cache";
+const LS_SERVER = "sn_server";
+const LS_LANG = "sn_lang";
+const LS_STORE_URL = "sn_store_url";
+const LS_STORE_PROFILE = "sn_store_profile";
+
+/* ============================ i18n ============================ */
+const LANGS = [
+  { code: "he",    name: "עברית",          dir: "rtl", ai: "Hebrew" },
+  { code: "en-US", name: "English (US)",    dir: "ltr", ai: "English" },
+  { code: "ru",    name: "Русский",         dir: "ltr", ai: "Russian" },
+  { code: "zh",    name: "中文",            dir: "ltr", ai: "Simplified Chinese" },
+  { code: "fr",    name: "Français",        dir: "ltr", ai: "French" },
+  { code: "es",    name: "Español",         dir: "ltr", ai: "Spanish" },
+  { code: "de",    name: "Deutsch",         dir: "ltr", ai: "German" },
+  { code: "ar",    name: "العربية",         dir: "rtl", ai: "Arabic" },
+  { code: "en-GB", name: "English (UK)",    dir: "ltr", ai: "British English" },
+  { code: "pt",    name: "Português",       dir: "ltr", ai: "Portuguese" },
+];
+
+const I18N = {
+  "he": {
+    tagline: "כתוב מה לעשות — AI יבנה מפה מדויקת",
+    settings: "הגדרות", searchAria: "חפש",
+    searchPlaceholder: "מה אתה רוצה לעשות בשופיפיי?",
+    examplesLabel: "דוגמאות לחיפוש:",
+    examples: ["מחיר וריאנטים", "קוד הנחה", "אזורי משלוח", "הוספת מוצר לחנות", "ניהול מלאי", "עריכת עמוד בית"],
+    emptyTitle: "מפת ניווט ל-Shopify Admin",
+    emptySub: "תאר מה אתה רוצה לעשות,<br/>וקבל מדריך לחיצות מדויק",
+    buildingMap: "בונה מפת ניווט...",
+    foundLabel: "נמצא", cachedBadge: "שמור במטמון",
+    stuckBtn: "🤔 הסתבכתי בשלב הזה",
+    tipLabel: "💡 טיפ", shortcutLabel: "⚡ קיצור דרך",
+    newSearch: "🔍 חיפוש חדש", retry: "🔄 נסה שוב",
+    errKeyInvalid: "מפתח ה-API שגוי או לא תקף. בדוק אותו בהגדרות ⚙️",
+    errGeneric: "שגיאה ({status})",
+    errTruncated: "התשובה יצאה ארוכה מדי ונקטעה. נסה לנסח בקשה ממוקדת יותר (פעולה אחת ספציפית) וללחוץ נסה שוב.",
+    errBadJson: "התקבלה תשובה בפורמט לא צפוי מהמודל. לחץ נסה שוב.",
+    errOffline: "אין חיבור לאינטרנט. חיפושים שכבר ביצעת זמינים גם ללא רשת.",
+    stuckHelpTitle: "עזרה בשלב {step}", close: "סגור", stuckStepLabel: "השלב:",
+    stuckPlaceholder: "הסבר מה קרה — למשל: אני לא מוצא את הכפתור הזה, או שאני רואה מסך אחר...",
+    screenshotBtn: "📷 צילום מסך", getHelp: "קבל עזרה", analyzing: "מנתח...",
+    imgLoadErr: "לא הצלחתי לטעון את התמונה. נסה תמונה אחרת.",
+    stuckNetErr: "אין חיבור לאינטרנט. עזרה לפי צילום מסך דורשת חיבור.",
+    task: "המשימה שאני מנסה לבצע", stuckAt: "השלב שבו נתקעתי", where: "היכן", details: "פרטים", myExplain: "ההסבר שלי", noTextSeeImg: "(לא סופק טקסט, ראה צילום מסך)", seeImg: "(ראה צילום מסך)",
+    settingsDescFirst: "כדי להשתמש באפליקציה, הזן מפתח Anthropic API. הוא נשמר רק במכשיר שלך ולא נשלח לשום מקום מלבד Anthropic.",
+    settingsDescNormal: "המפתח נשמר מקומית במכשיר בלבד.",
+    apiKeyLabel: "Anthropic API Key", apiKeyHint: "משיגים מפתח ב-",
+    serverLabel: "כתובת שרת (אופציונלי)",
+    serverHint: "אם ריק — האפליקציה מדברת ישירות מול Claude. כשיהיה לך שרת — הדבק כאן את כתובתו.",
+    modelLabel: "מודל", save: "שמירה", cancel: "ביטול",
+    languageLabel: "שפה",
+    storeSectionLabel: "פרופיל החנות שלך",
+    storeLabel: "כתובת / שם החנות שלך",
+    storeHint: "האפליקציה תסרוק את החנות כדי להכיר את הסגנון שלה ולהתאים הצעות מוצרים. הסריקה מתרעננת אוטומטית כל 10 דקות כשהאפליקציה פתוחה.",
+    scanNow: "סרוק עכשיו", scanning: "סורק...", scanNever: "טרם נסרק",
+    scanLast: "נסרק לאחרונה: {time}", scanDone: "פרופיל החנות עודכן ✓", scanErr: "הסריקה נכשלה. בדוק את הכתובת ונסה שוב.",
+    storeMissing: "הזן קודם כתובת חנות",
+    scanBgNote: "הערה: סריקת רקע פעילה רק כשהאפליקציה פתוחה (מגבלת PWA).",
+    mHaiku: "מהיר", mSonnet: "מדויק", mOpus: "החכם ביותר",
+    serverConnectedNote: "מחובר לשרת של האפליקציה — לא נדרש מפתח API אישי. אפשר להזין מפתח משלך כדי להשתמש בו במקום.",
+    wizTitle: "עוזר הוספת מוצר",
+    wizIntro: "אני אבנה עבורך פרומפט מוכן שיעביר את המשימה לבינה מלאכותית אחרת (כמו Claude / Manus) שתעלה את המוצר לחנות. קודם — הנה כמה רעיונות שמתאימים לחנות שלך:",
+    wizLoadingIdeas: "חושב על מוצרים שמתאימים לחנות שלך...",
+    wizNoStore: "טיפ: הוסף את כתובת החנות שלך בהגדרות ⚙️ כדי שההצעות יתאימו בדיוק לסגנון שלך.",
+    wizOr: "או תאר מוצר בעצמך / הדבק קישור",
+    wizInputPlaceholder: "לדוגמה: בקבוק מים חכם, או הדבק קישור מעלי אקספרס...",
+    wizFind: "מצא מוצר", wizSearching: "מחפש מוצר תואם...",
+    wizCandidateQ: "זה המוצר שרצית?", wizYes: "כן", wizNo: "לא",
+    wizWhatWrong: "מה לא היה טוב במוצר? תאר ואחפש שוב:",
+    wizWhatWrongPlaceholder: "לדוגמה: אני רוצה צבע אחר / זול יותר / דגם אחר...",
+    wizSearchAgain: "חפש שוב",
+    wizSupplierQ: "באיזו אפליקציית ספק אתה משתמש להעלאת מוצרים?",
+    wizSupplierOtherPlaceholder: "שם אפליקציה אחרת...",
+    wizBuildPrompt: "בנה פרומפט", wizBuildingPrompt: "בונה פרומפט מפורט...",
+    wizPromptTitle: "הפרומפט מוכן! 🎉",
+    wizPromptIntro: "העתק את הפרומפט והדבק אותו לבינה מלאכותית עם שליטה בדפדפן/מחשב (כמו Claude Code / Manus). היא תמצא את המוצר, תערוך את התמונות והטקסט, ותעלה אותו לחנות שלך דרך אפליקציית הספק.",
+    wizCopyPrompt: "📋 העתק פרומפט", wizCopied: "הועתק ✓",
+    wizImagesTitle: "קישורי תמונות המוצר (העבר אותם יחד עם הפרומפט):",
+    wizAttachedImages: "התמונות שצירפת נכללות בפרומפט.",
+    wizNotFound: "לא הצלחתי למצוא מוצר תואם. נסה לתאר אחרת, להוסיף פרטים או לצרף קישור/תמונה.",
+    wizErr: "אירעה שגיאה. נסה שוב.",
+    wizRestart: "התחל מחדש", wizNeedInput: "כתוב תיאור, הדבק קישור או צרף תמונה כדי שאוכל למצוא מוצר.",
+    wizAttachedImg: "תמונה מצורפת",
+  },
+  "en-US": {
+    tagline: "Type what to do — AI builds a precise map",
+    settings: "Settings", searchAria: "Search",
+    searchPlaceholder: "What do you want to do in Shopify?",
+    examplesLabel: "Search examples:",
+    examples: ["Variant pricing", "Discount code", "Shipping zones", "Add a product", "Manage inventory", "Edit home page"],
+    emptyTitle: "Navigation map for Shopify Admin",
+    emptySub: "Describe what you want to do,<br/>and get an exact click-by-click guide",
+    buildingMap: "Building navigation map...",
+    foundLabel: "Found", cachedBadge: "cached",
+    stuckBtn: "🤔 I'm stuck on this step",
+    tipLabel: "💡 Tip", shortcutLabel: "⚡ Shortcut",
+    newSearch: "🔍 New search", retry: "🔄 Try again",
+    errKeyInvalid: "The API key is wrong or invalid. Check it in Settings ⚙️",
+    errGeneric: "Error ({status})",
+    errTruncated: "The answer got too long and was cut off. Try phrasing a more focused request (one specific action) and press Try again.",
+    errBadJson: "The model returned an unexpected format. Press Try again.",
+    errOffline: "No internet connection. Searches you've already run are available offline.",
+    stuckHelpTitle: "Help with step {step}", close: "Close", stuckStepLabel: "The step:",
+    stuckPlaceholder: "Explain what happened — e.g. I can't find this button, or I see a different screen...",
+    screenshotBtn: "📷 Screenshot", getHelp: "Get help", analyzing: "Analyzing...",
+    imgLoadErr: "Couldn't load the image. Try another one.",
+    stuckNetErr: "No internet connection. Screenshot help requires a connection.",
+    task: "The task I'm trying to do", stuckAt: "The step I'm stuck on", where: "where", details: "details", myExplain: "My explanation", noTextSeeImg: "(no text provided, see screenshot)", seeImg: "(see screenshot)",
+    settingsDescFirst: "To use the app, enter your Anthropic API key. It is stored only on your device and sent only to Anthropic.",
+    settingsDescNormal: "The key is stored locally on your device only.",
+    apiKeyLabel: "Anthropic API Key", apiKeyHint: "Get a key at ",
+    serverLabel: "Server URL (optional)",
+    serverHint: "If empty, the app talks directly to Claude. When you have a server, paste its address here.",
+    modelLabel: "Model", save: "Save", cancel: "Cancel",
+    languageLabel: "Language",
+    storeSectionLabel: "Your store profile",
+    storeLabel: "Your store URL / name",
+    storeHint: "The app scans your store to learn its style and tailor product ideas. The scan auto-refreshes every 10 minutes while the app is open.",
+    scanNow: "Scan now", scanning: "Scanning...", scanNever: "Not scanned yet",
+    scanLast: "Last scanned: {time}", scanDone: "Store profile updated ✓", scanErr: "Scan failed. Check the URL and try again.",
+    storeMissing: "Enter a store URL first",
+    scanBgNote: "Note: background scanning only runs while the app is open (PWA limitation).",
+    mHaiku: "Fast", mSonnet: "Precise", mOpus: "Smartest",
+    serverConnectedNote: "Connected to the app server — no personal API key needed. You can still enter your own key to use it instead.",
+    wizTitle: "Add-a-product assistant",
+    wizIntro: "I'll build a ready-made prompt that hands the task to another AI (like Claude / Manus) to upload the product to your store. First — here are ideas that fit your store:",
+    wizLoadingIdeas: "Thinking of products that fit your store...",
+    wizNoStore: "Tip: add your store URL in Settings ⚙️ so ideas match your style precisely.",
+    wizOr: "Or describe a product yourself / paste a link",
+    wizInputPlaceholder: "e.g. smart water bottle, or paste an AliExpress link...",
+    wizFind: "Find product", wizSearching: "Finding a matching product...",
+    wizCandidateQ: "Is this the product you wanted?", wizYes: "Yes", wizNo: "No",
+    wizWhatWrong: "What was wrong with it? Describe it and I'll search again:",
+    wizWhatWrongPlaceholder: "e.g. I want a different color / cheaper / another model...",
+    wizSearchAgain: "Search again",
+    wizSupplierQ: "Which supplier app do you use to upload products?",
+    wizSupplierOtherPlaceholder: "Another app name...",
+    wizBuildPrompt: "Build prompt", wizBuildingPrompt: "Building a detailed prompt...",
+    wizPromptTitle: "Your prompt is ready! 🎉",
+    wizPromptIntro: "Copy the prompt and paste it into an AI with browser/computer control (like Claude Code / Manus). It will find the product, edit the images and text, and upload it to your store through your supplier app.",
+    wizCopyPrompt: "📋 Copy prompt", wizCopied: "Copied ✓",
+    wizImagesTitle: "Product image links (pass these along with the prompt):",
+    wizAttachedImages: "The images you attached are included in the prompt.",
+    wizNotFound: "I couldn't find a matching product. Try describing it differently, adding details, or attaching a link/image.",
+    wizErr: "Something went wrong. Try again.",
+    wizRestart: "Start over", wizNeedInput: "Write a description, paste a link, or attach an image so I can find a product.",
+    wizAttachedImg: "Attached image",
+  },
+  "ru": {
+    tagline: "Опишите задачу — ИИ построит точную карту",
+    settings: "Настройки", searchAria: "Поиск",
+    searchPlaceholder: "Что вы хотите сделать в Shopify?",
+    examplesLabel: "Примеры запросов:",
+    examples: ["Цены вариантов", "Промокод", "Зоны доставки", "Добавить товар", "Управление складом", "Изменить главную"],
+    emptyTitle: "Карта навигации по Shopify Admin",
+    emptySub: "Опишите, что хотите сделать,<br/>и получите пошаговую инструкцию",
+    buildingMap: "Строю карту навигации...",
+    foundLabel: "Найдено", cachedBadge: "из кэша",
+    stuckBtn: "🤔 Я застрял на этом шаге",
+    tipLabel: "💡 Совет", shortcutLabel: "⚡ Быстрый путь",
+    newSearch: "🔍 Новый поиск", retry: "🔄 Повторить",
+    errKeyInvalid: "Ключ API неверен или недействителен. Проверьте его в Настройках ⚙️",
+    errGeneric: "Ошибка ({status})",
+    errTruncated: "Ответ получился слишком длинным и был обрезан. Сформулируйте более конкретный запрос (одно действие) и нажмите Повторить.",
+    errBadJson: "Модель вернула неожиданный формат. Нажмите Повторить.",
+    errOffline: "Нет соединения с интернетом. Ранее выполненные запросы доступны офлайн.",
+    stuckHelpTitle: "Помощь с шагом {step}", close: "Закрыть", stuckStepLabel: "Шаг:",
+    stuckPlaceholder: "Опишите, что случилось — например: не могу найти кнопку или вижу другой экран...",
+    screenshotBtn: "📷 Скриншот", getHelp: "Получить помощь", analyzing: "Анализирую...",
+    imgLoadErr: "Не удалось загрузить изображение. Попробуйте другое.",
+    stuckNetErr: "Нет соединения. Помощь по скриншоту требует интернета.",
+    task: "Задача, которую я выполняю", stuckAt: "Шаг, на котором застрял", where: "где", details: "детали", myExplain: "Моё пояснение", noTextSeeImg: "(текста нет, см. скриншот)", seeImg: "(см. скриншот)",
+    settingsDescFirst: "Чтобы пользоваться приложением, введите ключ Anthropic API. Он хранится только на вашем устройстве и отправляется только в Anthropic.",
+    settingsDescNormal: "Ключ хранится локально только на вашем устройстве.",
+    apiKeyLabel: "Ключ Anthropic API", apiKeyHint: "Получить ключ на ",
+    serverLabel: "Адрес сервера (необязательно)",
+    serverHint: "Если пусто — приложение обращается напрямую к Claude. Когда появится сервер, вставьте его адрес.",
+    modelLabel: "Модель", save: "Сохранить", cancel: "Отмена",
+    languageLabel: "Язык",
+    storeSectionLabel: "Профиль вашего магазина",
+    storeLabel: "URL / название магазина",
+    storeHint: "Приложение сканирует магазин, чтобы узнать его стиль и подобрать идеи товаров. Сканирование обновляется каждые 10 минут, пока приложение открыто.",
+    scanNow: "Сканировать", scanning: "Сканирую...", scanNever: "Ещё не сканировалось",
+    scanLast: "Последнее сканирование: {time}", scanDone: "Профиль магазина обновлён ✓", scanErr: "Сканирование не удалось. Проверьте адрес и повторите.",
+    storeMissing: "Сначала введите адрес магазина",
+    scanBgNote: "Примечание: фоновое сканирование работает только пока приложение открыто (ограничение PWA).",
+    mHaiku: "Быстро", mSonnet: "Точно", mOpus: "Умнейшая",
+    serverConnectedNote: "Подключено к серверу приложения — личный ключ API не нужен. Можно ввести свой ключ, чтобы использовать его вместо серверного.",
+    wizTitle: "Помощник добавления товара",
+    wizIntro: "Я подготовлю готовый промпт, который передаст задачу другому ИИ (например Claude / Manus) для загрузки товара в магазин. Сначала — идеи, подходящие вашему магазину:",
+    wizLoadingIdeas: "Подбираю товары под ваш магазин...",
+    wizNoStore: "Совет: добавьте URL магазина в Настройках ⚙️, чтобы идеи точно соответствовали стилю.",
+    wizOr: "Или опишите товар сами / вставьте ссылку",
+    wizInputPlaceholder: "Напр.: умная бутылка, или вставьте ссылку с AliExpress...",
+    wizFind: "Найти товар", wizSearching: "Ищу подходящий товар...",
+    wizCandidateQ: "Это тот товар, который вы хотели?", wizYes: "Да", wizNo: "Нет",
+    wizWhatWrong: "Что не так? Опишите, и я поищу снова:",
+    wizWhatWrongPlaceholder: "Напр.: другой цвет / дешевле / другая модель...",
+    wizSearchAgain: "Искать снова",
+    wizSupplierQ: "Какое приложение поставщика вы используете для загрузки товаров?",
+    wizSupplierOtherPlaceholder: "Название другого приложения...",
+    wizBuildPrompt: "Создать промпт", wizBuildingPrompt: "Создаю подробный промпт...",
+    wizPromptTitle: "Промпт готов! 🎉",
+    wizPromptIntro: "Скопируйте промпт и вставьте его в ИИ с управлением браузером/компьютером (например Claude Code / Manus). Он найдёт товар, отредактирует изображения и текст и загрузит его в ваш магазин через приложение поставщика.",
+    wizCopyPrompt: "📋 Копировать промпт", wizCopied: "Скопировано ✓",
+    wizImagesTitle: "Ссылки на изображения товара (передайте вместе с промптом):",
+    wizAttachedImages: "Прикреплённые вами изображения включены в промпт.",
+    wizNotFound: "Не удалось найти подходящий товар. Опишите иначе, добавьте детали или прикрепите ссылку/изображение.",
+    wizErr: "Что-то пошло не так. Повторите.",
+    wizRestart: "Начать заново", wizNeedInput: "Напишите описание, вставьте ссылку или прикрепите изображение, чтобы я нашёл товар.",
+    wizAttachedImg: "Прикреплённое изображение",
+  },
+  "zh": {
+    tagline: "输入要做的事 — AI 生成精确路线",
+    settings: "设置", searchAria: "搜索",
+    searchPlaceholder: "您想在 Shopify 中做什么？",
+    examplesLabel: "搜索示例：",
+    examples: ["变体定价", "折扣码", "配送区域", "添加商品", "库存管理", "编辑首页"],
+    emptyTitle: "Shopify 后台导航地图",
+    emptySub: "描述您想做的事，<br/>获取精确的逐步点击指南",
+    buildingMap: "正在生成导航地图...",
+    foundLabel: "已找到", cachedBadge: "已缓存",
+    stuckBtn: "🤔 我卡在这一步了",
+    tipLabel: "💡 提示", shortcutLabel: "⚡ 快捷方式",
+    newSearch: "🔍 新搜索", retry: "🔄 重试",
+    errKeyInvalid: "API 密钥错误或无效。请在设置 ⚙️ 中检查。",
+    errGeneric: "错误 ({status})",
+    errTruncated: "回答太长被截断。请提出更聚焦的请求（一个具体操作）再重试。",
+    errBadJson: "模型返回了意外的格式。请重试。",
+    errOffline: "无网络连接。已执行的搜索可离线使用。",
+    stuckHelpTitle: "步骤 {step} 的帮助", close: "关闭", stuckStepLabel: "步骤：",
+    stuckPlaceholder: "说明发生了什么 — 例如：找不到这个按钮，或看到不同的界面...",
+    screenshotBtn: "📷 截图", getHelp: "获取帮助", analyzing: "分析中...",
+    imgLoadErr: "无法加载图片。请换一张。",
+    stuckNetErr: "无网络连接。截图帮助需要联网。",
+    task: "我要完成的任务", stuckAt: "卡住的步骤", where: "位置", details: "详情", myExplain: "我的说明", noTextSeeImg: "（无文字，见截图）", seeImg: "（见截图）",
+    settingsDescFirst: "要使用本应用，请输入 Anthropic API 密钥。它仅保存在您的设备上，且只发送给 Anthropic。",
+    settingsDescNormal: "密钥仅保存在本设备上。",
+    apiKeyLabel: "Anthropic API 密钥", apiKeyHint: "获取密钥：",
+    serverLabel: "服务器地址（可选）",
+    serverHint: "留空则应用直接连接 Claude。有服务器后在此粘贴地址。",
+    modelLabel: "模型", save: "保存", cancel: "取消",
+    languageLabel: "语言",
+    storeSectionLabel: "您的店铺资料",
+    storeLabel: "您的店铺网址 / 名称",
+    storeHint: "应用会扫描您的店铺以了解风格并定制商品创意。应用打开时每 10 分钟自动刷新扫描。",
+    scanNow: "立即扫描", scanning: "扫描中...", scanNever: "尚未扫描",
+    scanLast: "上次扫描：{time}", scanDone: "店铺资料已更新 ✓", scanErr: "扫描失败。请检查网址后重试。",
+    storeMissing: "请先输入店铺网址",
+    scanBgNote: "注意：后台扫描仅在应用打开时运行（PWA 限制）。",
+    mHaiku: "快速", mSonnet: "精确", mOpus: "最智能",
+    serverConnectedNote: "已连接到应用服务器——无需个人 API 密钥。你仍可输入自己的密钥来代替使用。",
+    wizTitle: "添加商品助手",
+    wizIntro: "我会生成一个现成的提示词，把任务交给另一个 AI（如 Claude / Manus）将商品上传到您的店铺。首先 — 这是适合您店铺的一些创意：",
+    wizLoadingIdeas: "正在为您的店铺构思商品...",
+    wizNoStore: "提示：在设置 ⚙️ 中添加店铺网址，让创意更贴合您的风格。",
+    wizOr: "或自己描述商品 / 粘贴链接",
+    wizInputPlaceholder: "例如：智能水杯，或粘贴 AliExpress 链接...",
+    wizFind: "查找商品", wizSearching: "正在查找匹配的商品...",
+    wizCandidateQ: "这是您想要的商品吗？", wizYes: "是", wizNo: "否",
+    wizWhatWrong: "哪里不合适？描述一下我再找：",
+    wizWhatWrongPlaceholder: "例如：想要别的颜色 / 更便宜 / 其他型号...",
+    wizSearchAgain: "重新查找",
+    wizSupplierQ: "您用哪个供应商应用上传商品？",
+    wizSupplierOtherPlaceholder: "其他应用名称...",
+    wizBuildPrompt: "生成提示词", wizBuildingPrompt: "正在生成详细提示词...",
+    wizPromptTitle: "提示词已就绪！🎉",
+    wizPromptIntro: "复制提示词并粘贴到具有浏览器/电脑控制能力的 AI（如 Claude Code / Manus）。它会找到商品、编辑图片和文字，并通过您的供应商应用上传到店铺。",
+    wizCopyPrompt: "📋 复制提示词", wizCopied: "已复制 ✓",
+    wizImagesTitle: "商品图片链接（与提示词一起提供）：",
+    wizAttachedImages: "您附加的图片已包含在提示词中。",
+    wizNotFound: "未能找到匹配的商品。请换种描述、补充细节或附加链接/图片。",
+    wizErr: "出错了，请重试。",
+    wizRestart: "重新开始", wizNeedInput: "请写描述、粘贴链接或附加图片，我才能找到商品。",
+    wizAttachedImg: "附加图片",
+  },
+  "fr": {
+    tagline: "Décrivez la tâche — l'IA crée une carte précise",
+    settings: "Paramètres", searchAria: "Rechercher",
+    searchPlaceholder: "Que voulez-vous faire dans Shopify ?",
+    examplesLabel: "Exemples de recherche :",
+    examples: ["Prix des variantes", "Code de réduction", "Zones de livraison", "Ajouter un produit", "Gérer le stock", "Modifier l'accueil"],
+    emptyTitle: "Carte de navigation Shopify Admin",
+    emptySub: "Décrivez ce que vous voulez faire,<br/>et obtenez un guide clic par clic précis",
+    buildingMap: "Création de la carte de navigation...",
+    foundLabel: "Trouvé", cachedBadge: "en cache",
+    stuckBtn: "🤔 Je suis bloqué à cette étape",
+    tipLabel: "💡 Astuce", shortcutLabel: "⚡ Raccourci",
+    newSearch: "🔍 Nouvelle recherche", retry: "🔄 Réessayer",
+    errKeyInvalid: "La clé API est incorrecte ou invalide. Vérifiez-la dans Paramètres ⚙️",
+    errGeneric: "Erreur ({status})",
+    errTruncated: "La réponse était trop longue et a été coupée. Formulez une demande plus ciblée (une action précise) puis réessayez.",
+    errBadJson: "Le modèle a renvoyé un format inattendu. Réessayez.",
+    errOffline: "Pas de connexion internet. Les recherches déjà effectuées sont disponibles hors ligne.",
+    stuckHelpTitle: "Aide pour l'étape {step}", close: "Fermer", stuckStepLabel: "L'étape :",
+    stuckPlaceholder: "Expliquez ce qui s'est passé — ex. : je ne trouve pas ce bouton, ou je vois un autre écran...",
+    screenshotBtn: "📷 Capture d'écran", getHelp: "Obtenir de l'aide", analyzing: "Analyse...",
+    imgLoadErr: "Impossible de charger l'image. Essayez-en une autre.",
+    stuckNetErr: "Pas de connexion. L'aide par capture nécessite internet.",
+    task: "La tâche que j'essaie de faire", stuckAt: "L'étape où je suis bloqué", where: "où", details: "détails", myExplain: "Mon explication", noTextSeeImg: "(pas de texte, voir capture)", seeImg: "(voir capture)",
+    settingsDescFirst: "Pour utiliser l'app, saisissez votre clé Anthropic API. Elle est stockée uniquement sur votre appareil et envoyée uniquement à Anthropic.",
+    settingsDescNormal: "La clé est stockée localement sur votre appareil uniquement.",
+    apiKeyLabel: "Clé Anthropic API", apiKeyHint: "Obtenez une clé sur ",
+    serverLabel: "Adresse du serveur (facultatif)",
+    serverHint: "Si vide, l'app parle directement à Claude. Quand vous aurez un serveur, collez son adresse ici.",
+    modelLabel: "Modèle", save: "Enregistrer", cancel: "Annuler",
+    languageLabel: "Langue",
+    storeSectionLabel: "Profil de votre boutique",
+    storeLabel: "URL / nom de votre boutique",
+    storeHint: "L'app scanne votre boutique pour connaître son style et adapter les idées de produits. Le scan s'actualise toutes les 10 minutes tant que l'app est ouverte.",
+    scanNow: "Scanner", scanning: "Scan...", scanNever: "Pas encore scanné",
+    scanLast: "Dernier scan : {time}", scanDone: "Profil de la boutique mis à jour ✓", scanErr: "Échec du scan. Vérifiez l'URL et réessayez.",
+    storeMissing: "Saisissez d'abord l'URL de la boutique",
+    scanBgNote: "Note : le scan en arrière-plan ne fonctionne que si l'app est ouverte (limite PWA).",
+    mHaiku: "Rapide", mSonnet: "Précis", mOpus: "Le plus intelligent",
+    serverConnectedNote: "Connecté au serveur de l'app — aucune clé API personnelle requise. Vous pouvez quand même saisir votre propre clé pour l'utiliser à la place.",
+    wizTitle: "Assistant d'ajout de produit",
+    wizIntro: "Je vais créer une invite prête à l'emploi qui confie la tâche à une autre IA (comme Claude / Manus) pour téléverser le produit dans votre boutique. D'abord — voici des idées adaptées à votre boutique :",
+    wizLoadingIdeas: "Je réfléchis à des produits adaptés à votre boutique...",
+    wizNoStore: "Astuce : ajoutez l'URL de votre boutique dans Paramètres ⚙️ pour des idées adaptées à votre style.",
+    wizOr: "Ou décrivez un produit vous-même / collez un lien",
+    wizInputPlaceholder: "ex. : gourde intelligente, ou collez un lien AliExpress...",
+    wizFind: "Trouver le produit", wizSearching: "Recherche d'un produit correspondant...",
+    wizCandidateQ: "Est-ce le produit que vous vouliez ?", wizYes: "Oui", wizNo: "Non",
+    wizWhatWrong: "Qu'est-ce qui n'allait pas ? Décrivez-le et je rechercherai à nouveau :",
+    wizWhatWrongPlaceholder: "ex. : je veux une autre couleur / moins cher / un autre modèle...",
+    wizSearchAgain: "Rechercher à nouveau",
+    wizSupplierQ: "Quelle application fournisseur utilisez-vous pour téléverser des produits ?",
+    wizSupplierOtherPlaceholder: "Nom d'une autre application...",
+    wizBuildPrompt: "Créer l'invite", wizBuildingPrompt: "Création d'une invite détaillée...",
+    wizPromptTitle: "Votre invite est prête ! 🎉",
+    wizPromptIntro: "Copiez l'invite et collez-la dans une IA avec contrôle du navigateur/ordinateur (comme Claude Code / Manus). Elle trouvera le produit, modifiera les images et le texte, et le téléversera dans votre boutique via votre application fournisseur.",
+    wizCopyPrompt: "📋 Copier l'invite", wizCopied: "Copié ✓",
+    wizImagesTitle: "Liens des images du produit (à transmettre avec l'invite) :",
+    wizAttachedImages: "Les images que vous avez jointes sont incluses dans l'invite.",
+    wizNotFound: "Je n'ai pas trouvé de produit correspondant. Décrivez-le autrement, ajoutez des détails ou joignez un lien/une image.",
+    wizErr: "Une erreur s'est produite. Réessayez.",
+    wizRestart: "Recommencer", wizNeedInput: "Écrivez une description, collez un lien ou joignez une image pour que je trouve un produit.",
+    wizAttachedImg: "Image jointe",
+  },
+  "es": {
+    tagline: "Escribe qué hacer — la IA crea un mapa preciso",
+    settings: "Ajustes", searchAria: "Buscar",
+    searchPlaceholder: "¿Qué quieres hacer en Shopify?",
+    examplesLabel: "Ejemplos de búsqueda:",
+    examples: ["Precios de variantes", "Código de descuento", "Zonas de envío", "Añadir un producto", "Gestionar inventario", "Editar la página de inicio"],
+    emptyTitle: "Mapa de navegación de Shopify Admin",
+    emptySub: "Describe lo que quieres hacer,<br/>y obtén una guía exacta paso a paso",
+    buildingMap: "Creando el mapa de navegación...",
+    foundLabel: "Encontrado", cachedBadge: "en caché",
+    stuckBtn: "🤔 Estoy atascado en este paso",
+    tipLabel: "💡 Consejo", shortcutLabel: "⚡ Atajo",
+    newSearch: "🔍 Nueva búsqueda", retry: "🔄 Reintentar",
+    errKeyInvalid: "La clave API es incorrecta o no válida. Compruébala en Ajustes ⚙️",
+    errGeneric: "Error ({status})",
+    errTruncated: "La respuesta fue demasiado larga y se cortó. Formula una petición más concreta (una acción específica) y reintenta.",
+    errBadJson: "El modelo devolvió un formato inesperado. Reintenta.",
+    errOffline: "Sin conexión a internet. Las búsquedas ya realizadas están disponibles sin conexión.",
+    stuckHelpTitle: "Ayuda con el paso {step}", close: "Cerrar", stuckStepLabel: "El paso:",
+    stuckPlaceholder: "Explica qué pasó — p. ej.: no encuentro este botón, o veo otra pantalla...",
+    screenshotBtn: "📷 Captura", getHelp: "Obtener ayuda", analyzing: "Analizando...",
+    imgLoadErr: "No se pudo cargar la imagen. Prueba con otra.",
+    stuckNetErr: "Sin conexión. La ayuda por captura requiere internet.",
+    task: "La tarea que intento hacer", stuckAt: "El paso donde me atasqué", where: "dónde", details: "detalles", myExplain: "Mi explicación", noTextSeeImg: "(sin texto, ver captura)", seeImg: "(ver captura)",
+    settingsDescFirst: "Para usar la app, introduce tu clave de Anthropic API. Se guarda solo en tu dispositivo y solo se envía a Anthropic.",
+    settingsDescNormal: "La clave se guarda localmente solo en tu dispositivo.",
+    apiKeyLabel: "Clave de Anthropic API", apiKeyHint: "Consigue una clave en ",
+    serverLabel: "Dirección del servidor (opcional)",
+    serverHint: "Si está vacío, la app habla directamente con Claude. Cuando tengas un servidor, pega su dirección aquí.",
+    modelLabel: "Modelo", save: "Guardar", cancel: "Cancelar",
+    languageLabel: "Idioma",
+    storeSectionLabel: "Perfil de tu tienda",
+    storeLabel: "URL / nombre de tu tienda",
+    storeHint: "La app escanea tu tienda para conocer su estilo y adaptar ideas de productos. El escaneo se actualiza cada 10 minutos mientras la app está abierta.",
+    scanNow: "Escanear ahora", scanning: "Escaneando...", scanNever: "Aún sin escanear",
+    scanLast: "Último escaneo: {time}", scanDone: "Perfil de la tienda actualizado ✓", scanErr: "El escaneo falló. Revisa la URL y reintenta.",
+    storeMissing: "Introduce primero la URL de la tienda",
+    scanBgNote: "Nota: el escaneo en segundo plano solo funciona con la app abierta (limitación PWA).",
+    mHaiku: "Rápido", mSonnet: "Preciso", mOpus: "El más inteligente",
+    serverConnectedNote: "Conectado al servidor de la app — no se necesita clave API personal. Aun así puedes introducir tu propia clave para usarla en su lugar.",
+    wizTitle: "Asistente para añadir productos",
+    wizIntro: "Crearé un prompt listo que entrega la tarea a otra IA (como Claude / Manus) para subir el producto a tu tienda. Primero — aquí tienes ideas que encajan con tu tienda:",
+    wizLoadingIdeas: "Pensando productos que encajan con tu tienda...",
+    wizNoStore: "Consejo: añade la URL de tu tienda en Ajustes ⚙️ para que las ideas coincidan con tu estilo.",
+    wizOr: "O describe un producto tú mismo / pega un enlace",
+    wizInputPlaceholder: "p. ej.: botella inteligente, o pega un enlace de AliExpress...",
+    wizFind: "Buscar producto", wizSearching: "Buscando un producto que coincida...",
+    wizCandidateQ: "¿Es este el producto que querías?", wizYes: "Sí", wizNo: "No",
+    wizWhatWrong: "¿Qué estaba mal? Descríbelo y buscaré de nuevo:",
+    wizWhatWrongPlaceholder: "p. ej.: quiero otro color / más barato / otro modelo...",
+    wizSearchAgain: "Buscar de nuevo",
+    wizSupplierQ: "¿Qué app de proveedor usas para subir productos?",
+    wizSupplierOtherPlaceholder: "Nombre de otra app...",
+    wizBuildPrompt: "Crear prompt", wizBuildingPrompt: "Creando un prompt detallado...",
+    wizPromptTitle: "¡Tu prompt está listo! 🎉",
+    wizPromptIntro: "Copia el prompt y pégalo en una IA con control de navegador/ordenador (como Claude Code / Manus). Encontrará el producto, editará las imágenes y el texto, y lo subirá a tu tienda a través de tu app de proveedor.",
+    wizCopyPrompt: "📋 Copiar prompt", wizCopied: "Copiado ✓",
+    wizImagesTitle: "Enlaces de imágenes del producto (pásalos junto con el prompt):",
+    wizAttachedImages: "Las imágenes que adjuntaste están incluidas en el prompt.",
+    wizNotFound: "No encontré un producto que coincida. Descríbelo de otra forma, añade detalles o adjunta un enlace/imagen.",
+    wizErr: "Algo salió mal. Reintenta.",
+    wizRestart: "Empezar de nuevo", wizNeedInput: "Escribe una descripción, pega un enlace o adjunta una imagen para que encuentre un producto.",
+    wizAttachedImg: "Imagen adjunta",
+  },
+  "de": {
+    tagline: "Aufgabe eingeben — die KI erstellt eine genaue Karte",
+    settings: "Einstellungen", searchAria: "Suchen",
+    searchPlaceholder: "Was möchtest du in Shopify tun?",
+    examplesLabel: "Suchbeispiele:",
+    examples: ["Varianten-Preise", "Rabattcode", "Versandzonen", "Produkt hinzufügen", "Lager verwalten", "Startseite bearbeiten"],
+    emptyTitle: "Navigationskarte für Shopify Admin",
+    emptySub: "Beschreibe, was du tun möchtest,<br/>und erhalte eine genaue Klick-Anleitung",
+    buildingMap: "Navigationskarte wird erstellt...",
+    foundLabel: "Gefunden", cachedBadge: "zwischengespeichert",
+    stuckBtn: "🤔 Ich hänge bei diesem Schritt",
+    tipLabel: "💡 Tipp", shortcutLabel: "⚡ Abkürzung",
+    newSearch: "🔍 Neue Suche", retry: "🔄 Erneut versuchen",
+    errKeyInvalid: "Der API-Schlüssel ist falsch oder ungültig. Prüfe ihn in den Einstellungen ⚙️",
+    errGeneric: "Fehler ({status})",
+    errTruncated: "Die Antwort wurde zu lang und abgeschnitten. Formuliere eine gezieltere Anfrage (eine konkrete Aktion) und versuche es erneut.",
+    errBadJson: "Das Modell lieferte ein unerwartetes Format. Bitte erneut versuchen.",
+    errOffline: "Keine Internetverbindung. Bereits ausgeführte Suchen sind offline verfügbar.",
+    stuckHelpTitle: "Hilfe zu Schritt {step}", close: "Schließen", stuckStepLabel: "Der Schritt:",
+    stuckPlaceholder: "Erkläre, was passiert ist — z. B.: Ich finde diese Schaltfläche nicht, oder ich sehe einen anderen Bildschirm...",
+    screenshotBtn: "📷 Screenshot", getHelp: "Hilfe erhalten", analyzing: "Analysiere...",
+    imgLoadErr: "Bild konnte nicht geladen werden. Versuche ein anderes.",
+    stuckNetErr: "Keine Verbindung. Hilfe per Screenshot erfordert Internet.",
+    task: "Die Aufgabe, die ich erledigen will", stuckAt: "Der Schritt, an dem ich hänge", where: "wo", details: "Details", myExplain: "Meine Erklärung", noTextSeeImg: "(kein Text, siehe Screenshot)", seeImg: "(siehe Screenshot)",
+    settingsDescFirst: "Um die App zu nutzen, gib deinen Anthropic-API-Schlüssel ein. Er wird nur auf deinem Gerät gespeichert und nur an Anthropic gesendet.",
+    settingsDescNormal: "Der Schlüssel wird nur lokal auf deinem Gerät gespeichert.",
+    apiKeyLabel: "Anthropic-API-Schlüssel", apiKeyHint: "Schlüssel bekommst du bei ",
+    serverLabel: "Serveradresse (optional)",
+    serverHint: "Wenn leer, spricht die App direkt mit Claude. Wenn du einen Server hast, füge hier seine Adresse ein.",
+    modelLabel: "Modell", save: "Speichern", cancel: "Abbrechen",
+    languageLabel: "Sprache",
+    storeSectionLabel: "Profil deines Shops",
+    storeLabel: "URL / Name deines Shops",
+    storeHint: "Die App scannt deinen Shop, um seinen Stil zu kennen und Produktideen anzupassen. Der Scan aktualisiert sich alle 10 Minuten, während die App geöffnet ist.",
+    scanNow: "Jetzt scannen", scanning: "Scanne...", scanNever: "Noch nicht gescannt",
+    scanLast: "Zuletzt gescannt: {time}", scanDone: "Shop-Profil aktualisiert ✓", scanErr: "Scan fehlgeschlagen. Prüfe die URL und versuche es erneut.",
+    storeMissing: "Gib zuerst eine Shop-URL ein",
+    scanBgNote: "Hinweis: Hintergrund-Scan läuft nur, während die App geöffnet ist (PWA-Einschränkung).",
+    mHaiku: "Schnell", mSonnet: "Präzise", mOpus: "Am klügsten",
+    serverConnectedNote: "Mit dem App-Server verbunden — kein persönlicher API-Schlüssel nötig. Du kannst trotzdem einen eigenen Schlüssel eingeben, um ihn stattdessen zu verwenden.",
+    wizTitle: "Produkt-Hinzufügen-Assistent",
+    wizIntro: "Ich erstelle einen fertigen Prompt, der die Aufgabe an eine andere KI (wie Claude / Manus) übergibt, um das Produkt in deinen Shop hochzuladen. Zuerst — hier sind Ideen, die zu deinem Shop passen:",
+    wizLoadingIdeas: "Denke über Produkte nach, die zu deinem Shop passen...",
+    wizNoStore: "Tipp: Füge deine Shop-URL in den Einstellungen ⚙️ hinzu, damit die Ideen genau zu deinem Stil passen.",
+    wizOr: "Oder beschreibe ein Produkt selbst / füge einen Link ein",
+    wizInputPlaceholder: "z. B.: smarte Wasserflasche, oder füge einen AliExpress-Link ein...",
+    wizFind: "Produkt finden", wizSearching: "Suche ein passendes Produkt...",
+    wizCandidateQ: "Ist das das gewünschte Produkt?", wizYes: "Ja", wizNo: "Nein",
+    wizWhatWrong: "Was war nicht in Ordnung? Beschreibe es und ich suche erneut:",
+    wizWhatWrongPlaceholder: "z. B.: andere Farbe / günstiger / anderes Modell...",
+    wizSearchAgain: "Erneut suchen",
+    wizSupplierQ: "Welche Lieferanten-App nutzt du zum Hochladen von Produkten?",
+    wizSupplierOtherPlaceholder: "Name einer anderen App...",
+    wizBuildPrompt: "Prompt erstellen", wizBuildingPrompt: "Erstelle einen detaillierten Prompt...",
+    wizPromptTitle: "Dein Prompt ist fertig! 🎉",
+    wizPromptIntro: "Kopiere den Prompt und füge ihn in eine KI mit Browser-/Computersteuerung ein (wie Claude Code / Manus). Sie findet das Produkt, bearbeitet Bilder und Text und lädt es über deine Lieferanten-App in deinen Shop hoch.",
+    wizCopyPrompt: "📋 Prompt kopieren", wizCopied: "Kopiert ✓",
+    wizImagesTitle: "Produktbild-Links (zusammen mit dem Prompt weitergeben):",
+    wizAttachedImages: "Die von dir angehängten Bilder sind im Prompt enthalten.",
+    wizNotFound: "Ich konnte kein passendes Produkt finden. Beschreibe es anders, füge Details hinzu oder hänge einen Link/ein Bild an.",
+    wizErr: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+    wizRestart: "Neu beginnen", wizNeedInput: "Schreibe eine Beschreibung, füge einen Link ein oder hänge ein Bild an, damit ich ein Produkt finden kann.",
+    wizAttachedImg: "Angehängtes Bild",
+  },
+  "ar": {
+    tagline: "اكتب ما تريد فعله — سيبني الذكاء الاصطناعي خريطة دقيقة",
+    settings: "الإعدادات", searchAria: "بحث",
+    searchPlaceholder: "ماذا تريد أن تفعل في Shopify؟",
+    examplesLabel: "أمثلة للبحث:",
+    examples: ["أسعار المتغيرات", "رمز خصم", "مناطق الشحن", "إضافة منتج", "إدارة المخزون", "تعديل الصفحة الرئيسية"],
+    emptyTitle: "خريطة تنقّل لـ Shopify Admin",
+    emptySub: "صِف ما تريد فعله،<br/>واحصل على دليل نقر خطوة بخطوة",
+    buildingMap: "جاري بناء خريطة التنقّل...",
+    foundLabel: "تم العثور", cachedBadge: "مخزّن مؤقتًا",
+    stuckBtn: "🤔 تعثّرت في هذه الخطوة",
+    tipLabel: "💡 نصيحة", shortcutLabel: "⚡ اختصار",
+    newSearch: "🔍 بحث جديد", retry: "🔄 حاول مجددًا",
+    errKeyInvalid: "مفتاح API غير صحيح أو غير صالح. تحقق منه في الإعدادات ⚙️",
+    errGeneric: "خطأ ({status})",
+    errTruncated: "كانت الإجابة طويلة جدًا وتم اقتطاعها. صِغ طلبًا أكثر تحديدًا (إجراء واحد) ثم أعد المحاولة.",
+    errBadJson: "أعاد النموذج تنسيقًا غير متوقع. أعد المحاولة.",
+    errOffline: "لا يوجد اتصال بالإنترنت. عمليات البحث السابقة متاحة دون اتصال.",
+    stuckHelpTitle: "مساعدة في الخطوة {step}", close: "إغلاق", stuckStepLabel: "الخطوة:",
+    stuckPlaceholder: "اشرح ما حدث — مثلًا: لا أجد هذا الزر، أو أرى شاشة مختلفة...",
+    screenshotBtn: "📷 لقطة شاشة", getHelp: "احصل على مساعدة", analyzing: "جاري التحليل...",
+    imgLoadErr: "تعذّر تحميل الصورة. جرّب صورة أخرى.",
+    stuckNetErr: "لا يوجد اتصال. المساعدة عبر لقطة الشاشة تتطلب إنترنت.",
+    task: "المهمة التي أحاول تنفيذها", stuckAt: "الخطوة التي تعثّرت فيها", where: "أين", details: "تفاصيل", myExplain: "شرحي", noTextSeeImg: "(لا يوجد نص، انظر لقطة الشاشة)", seeImg: "(انظر لقطة الشاشة)",
+    settingsDescFirst: "لاستخدام التطبيق، أدخل مفتاح Anthropic API. يُحفظ على جهازك فقط ويُرسل إلى Anthropic فقط.",
+    settingsDescNormal: "يُحفظ المفتاح محليًا على جهازك فقط.",
+    apiKeyLabel: "مفتاح Anthropic API", apiKeyHint: "احصل على مفتاح من ",
+    serverLabel: "عنوان الخادم (اختياري)",
+    serverHint: "إن كان فارغًا، يتحدث التطبيق مباشرة مع Claude. عندما يتوفر لديك خادم، الصق عنوانه هنا.",
+    modelLabel: "النموذج", save: "حفظ", cancel: "إلغاء",
+    languageLabel: "اللغة",
+    storeSectionLabel: "ملف متجرك",
+    storeLabel: "عنوان / اسم متجرك",
+    storeHint: "يفحص التطبيق متجرك ليتعرّف على أسلوبه ويقترح منتجات مناسبة. يتحدّث الفحص تلقائيًا كل 10 دقائق أثناء فتح التطبيق.",
+    scanNow: "افحص الآن", scanning: "جاري الفحص...", scanNever: "لم يُفحص بعد",
+    scanLast: "آخر فحص: {time}", scanDone: "تم تحديث ملف المتجر ✓", scanErr: "فشل الفحص. تحقق من العنوان وأعد المحاولة.",
+    storeMissing: "أدخل عنوان المتجر أولًا",
+    scanBgNote: "ملاحظة: الفحص في الخلفية يعمل فقط أثناء فتح التطبيق (قيود PWA).",
+    mHaiku: "سريع", mSonnet: "دقيق", mOpus: "الأذكى",
+    serverConnectedNote: "متصل بخادم التطبيق — لا حاجة لمفتاح API شخصي. لا يزال بإمكانك إدخال مفتاحك الخاص لاستخدامه بدلًا من ذلك.",
+    wizTitle: "مساعد إضافة منتج",
+    wizIntro: "سأبني لك موجّهًا جاهزًا يسلّم المهمة إلى ذكاء اصطناعي آخر (مثل Claude / Manus) لرفع المنتج إلى متجرك. أولًا — إليك أفكار تناسب متجرك:",
+    wizLoadingIdeas: "أفكّر في منتجات تناسب متجرك...",
+    wizNoStore: "نصيحة: أضف عنوان متجرك في الإعدادات ⚙️ لتناسب الأفكار أسلوبك تمامًا.",
+    wizOr: "أو صِف منتجًا بنفسك / الصق رابطًا",
+    wizInputPlaceholder: "مثلًا: زجاجة ماء ذكية، أو الصق رابط AliExpress...",
+    wizFind: "ابحث عن منتج", wizSearching: "أبحث عن منتج مطابق...",
+    wizCandidateQ: "هل هذا هو المنتج الذي أردته؟", wizYes: "نعم", wizNo: "لا",
+    wizWhatWrong: "ما الذي لم يكن مناسبًا؟ صِفه وسأبحث مجددًا:",
+    wizWhatWrongPlaceholder: "مثلًا: أريد لونًا آخر / أرخص / طرازًا آخر...",
+    wizSearchAgain: "ابحث مجددًا",
+    wizSupplierQ: "أي تطبيق مورّد تستخدم لرفع المنتجات؟",
+    wizSupplierOtherPlaceholder: "اسم تطبيق آخر...",
+    wizBuildPrompt: "أنشئ الموجّه", wizBuildingPrompt: "جاري إنشاء موجّه مفصّل...",
+    wizPromptTitle: "موجّهك جاهز! 🎉",
+    wizPromptIntro: "انسخ الموجّه والصقه في ذكاء اصطناعي يتحكّم بالمتصفح/الحاسوب (مثل Claude Code / Manus). سيجد المنتج، ويعدّل الصور والنص، ويرفعه إلى متجرك عبر تطبيق المورّد.",
+    wizCopyPrompt: "📋 انسخ الموجّه", wizCopied: "تم النسخ ✓",
+    wizImagesTitle: "روابط صور المنتج (مرّرها مع الموجّه):",
+    wizAttachedImages: "الصور التي أرفقتها مضمّنة في الموجّه.",
+    wizNotFound: "لم أتمكن من العثور على منتج مطابق. جرّب وصفًا آخر، أضف تفاصيل أو أرفق رابطًا/صورة.",
+    wizErr: "حدث خطأ ما. أعد المحاولة.",
+    wizRestart: "ابدأ من جديد", wizNeedInput: "اكتب وصفًا، الصق رابطًا أو أرفق صورة كي أجد منتجًا.",
+    wizAttachedImg: "صورة مرفقة",
+  },
+  "en-GB": {
+    tagline: "Type what to do — AI builds a precise map",
+    settings: "Settings", searchAria: "Search",
+    searchPlaceholder: "What do you want to do in Shopify?",
+    examplesLabel: "Search examples:",
+    examples: ["Variant pricing", "Discount code", "Shipping zones", "Add a product", "Manage inventory", "Edit home page"],
+    emptyTitle: "Navigation map for Shopify Admin",
+    emptySub: "Describe what you want to do,<br/>and get an exact click-by-click guide",
+    buildingMap: "Building navigation map...",
+    foundLabel: "Found", cachedBadge: "cached",
+    stuckBtn: "🤔 I'm stuck on this step",
+    tipLabel: "💡 Tip", shortcutLabel: "⚡ Shortcut",
+    newSearch: "🔍 New search", retry: "🔄 Try again",
+    errKeyInvalid: "The API key is wrong or invalid. Check it in Settings ⚙️",
+    errGeneric: "Error ({status})",
+    errTruncated: "The answer got too long and was cut off. Try phrasing a more focused request (one specific action) and press Try again.",
+    errBadJson: "The model returned an unexpected format. Press Try again.",
+    errOffline: "No internet connection. Searches you've already run are available offline.",
+    stuckHelpTitle: "Help with step {step}", close: "Close", stuckStepLabel: "The step:",
+    stuckPlaceholder: "Explain what happened — e.g. I can't find this button, or I see a different screen...",
+    screenshotBtn: "📷 Screenshot", getHelp: "Get help", analyzing: "Analysing...",
+    imgLoadErr: "Couldn't load the image. Try another one.",
+    stuckNetErr: "No internet connection. Screenshot help requires a connection.",
+    task: "The task I'm trying to do", stuckAt: "The step I'm stuck on", where: "where", details: "details", myExplain: "My explanation", noTextSeeImg: "(no text provided, see screenshot)", seeImg: "(see screenshot)",
+    settingsDescFirst: "To use the app, enter your Anthropic API key. It is stored only on your device and sent only to Anthropic.",
+    settingsDescNormal: "The key is stored locally on your device only.",
+    apiKeyLabel: "Anthropic API Key", apiKeyHint: "Get a key at ",
+    serverLabel: "Server URL (optional)",
+    serverHint: "If empty, the app talks directly to Claude. When you have a server, paste its address here.",
+    modelLabel: "Model", save: "Save", cancel: "Cancel",
+    languageLabel: "Language",
+    storeSectionLabel: "Your store profile",
+    storeLabel: "Your store URL / name",
+    storeHint: "The app scans your store to learn its style and tailor product ideas. The scan auto-refreshes every 10 minutes while the app is open.",
+    scanNow: "Scan now", scanning: "Scanning...", scanNever: "Not scanned yet",
+    scanLast: "Last scanned: {time}", scanDone: "Store profile updated ✓", scanErr: "Scan failed. Check the URL and try again.",
+    storeMissing: "Enter a store URL first",
+    scanBgNote: "Note: background scanning only runs while the app is open (PWA limitation).",
+    mHaiku: "Fast", mSonnet: "Precise", mOpus: "Smartest",
+    serverConnectedNote: "Connected to the app server — no personal API key needed. You can still enter your own key to use it instead.",
+    wizTitle: "Add-a-product assistant",
+    wizIntro: "I'll build a ready-made prompt that hands the task to another AI (like Claude / Manus) to upload the product to your store. First — here are ideas that fit your store:",
+    wizLoadingIdeas: "Thinking of products that fit your store...",
+    wizNoStore: "Tip: add your store URL in Settings ⚙️ so ideas match your style precisely.",
+    wizOr: "Or describe a product yourself / paste a link",
+    wizInputPlaceholder: "e.g. smart water bottle, or paste an AliExpress link...",
+    wizFind: "Find product", wizSearching: "Finding a matching product...",
+    wizCandidateQ: "Is this the product you wanted?", wizYes: "Yes", wizNo: "No",
+    wizWhatWrong: "What was wrong with it? Describe it and I'll search again:",
+    wizWhatWrongPlaceholder: "e.g. I want a different colour / cheaper / another model...",
+    wizSearchAgain: "Search again",
+    wizSupplierQ: "Which supplier app do you use to upload products?",
+    wizSupplierOtherPlaceholder: "Another app name...",
+    wizBuildPrompt: "Build prompt", wizBuildingPrompt: "Building a detailed prompt...",
+    wizPromptTitle: "Your prompt is ready! 🎉",
+    wizPromptIntro: "Copy the prompt and paste it into an AI with browser/computer control (like Claude Code / Manus). It will find the product, edit the images and text, and upload it to your store through your supplier app.",
+    wizCopyPrompt: "📋 Copy prompt", wizCopied: "Copied ✓",
+    wizImagesTitle: "Product image links (pass these along with the prompt):",
+    wizAttachedImages: "The images you attached are included in the prompt.",
+    wizNotFound: "I couldn't find a matching product. Try describing it differently, adding details, or attaching a link/image.",
+    wizErr: "Something went wrong. Try again.",
+    wizRestart: "Start over", wizNeedInput: "Write a description, paste a link, or attach an image so I can find a product.",
+    wizAttachedImg: "Attached image",
+  },
+  "pt": {
+    tagline: "Digite o que fazer — a IA cria um mapa preciso",
+    settings: "Definições", searchAria: "Pesquisar",
+    searchPlaceholder: "O que quer fazer no Shopify?",
+    examplesLabel: "Exemplos de pesquisa:",
+    examples: ["Preços de variantes", "Código de desconto", "Zonas de envio", "Adicionar um produto", "Gerir stock", "Editar página inicial"],
+    emptyTitle: "Mapa de navegação do Shopify Admin",
+    emptySub: "Descreva o que quer fazer,<br/>e receba um guia exato passo a passo",
+    buildingMap: "A criar o mapa de navegação...",
+    foundLabel: "Encontrado", cachedBadge: "em cache",
+    stuckBtn: "🤔 Estou preso neste passo",
+    tipLabel: "💡 Dica", shortcutLabel: "⚡ Atalho",
+    newSearch: "🔍 Nova pesquisa", retry: "🔄 Tentar novamente",
+    errKeyInvalid: "A chave de API está errada ou inválida. Verifique nas Definições ⚙️",
+    errGeneric: "Erro ({status})",
+    errTruncated: "A resposta ficou demasiado longa e foi cortada. Formule um pedido mais focado (uma ação específica) e tente novamente.",
+    errBadJson: "O modelo devolveu um formato inesperado. Tente novamente.",
+    errOffline: "Sem ligação à internet. As pesquisas já efetuadas estão disponíveis offline.",
+    stuckHelpTitle: "Ajuda com o passo {step}", close: "Fechar", stuckStepLabel: "O passo:",
+    stuckPlaceholder: "Explique o que aconteceu — p. ex.: não encontro este botão, ou vejo outro ecrã...",
+    screenshotBtn: "📷 Captura de ecrã", getHelp: "Obter ajuda", analyzing: "A analisar...",
+    imgLoadErr: "Não foi possível carregar a imagem. Tente outra.",
+    stuckNetErr: "Sem ligação. A ajuda por captura requer internet.",
+    task: "A tarefa que estou a tentar fazer", stuckAt: "O passo onde fiquei preso", where: "onde", details: "detalhes", myExplain: "A minha explicação", noTextSeeImg: "(sem texto, ver captura)", seeImg: "(ver captura)",
+    settingsDescFirst: "Para usar a app, introduza a sua chave de Anthropic API. É guardada apenas no seu dispositivo e enviada apenas para a Anthropic.",
+    settingsDescNormal: "A chave é guardada localmente apenas no seu dispositivo.",
+    apiKeyLabel: "Chave Anthropic API", apiKeyHint: "Obtenha uma chave em ",
+    serverLabel: "Endereço do servidor (opcional)",
+    serverHint: "Se vazio, a app fala diretamente com o Claude. Quando tiver um servidor, cole aqui o endereço.",
+    modelLabel: "Modelo", save: "Guardar", cancel: "Cancelar",
+    languageLabel: "Idioma",
+    storeSectionLabel: "Perfil da sua loja",
+    storeLabel: "URL / nome da sua loja",
+    storeHint: "A app analisa a sua loja para conhecer o estilo e adaptar ideias de produtos. A análise atualiza a cada 10 minutos enquanto a app está aberta.",
+    scanNow: "Analisar agora", scanning: "A analisar...", scanNever: "Ainda não analisado",
+    scanLast: "Última análise: {time}", scanDone: "Perfil da loja atualizado ✓", scanErr: "A análise falhou. Verifique o URL e tente novamente.",
+    storeMissing: "Introduza primeiro o URL da loja",
+    scanBgNote: "Nota: a análise em segundo plano só funciona com a app aberta (limitação PWA).",
+    mHaiku: "Rápido", mSonnet: "Preciso", mOpus: "O mais inteligente",
+    serverConnectedNote: "Ligado ao servidor da app — não é necessária uma chave de API pessoal. Ainda pode introduzir a sua própria chave para a usar em alternativa.",
+    wizTitle: "Assistente de adicionar produto",
+    wizIntro: "Vou criar um prompt pronto que entrega a tarefa a outra IA (como Claude / Manus) para carregar o produto na sua loja. Primeiro — aqui estão ideias que combinam com a sua loja:",
+    wizLoadingIdeas: "A pensar em produtos que combinam com a sua loja...",
+    wizNoStore: "Dica: adicione o URL da sua loja nas Definições ⚙️ para as ideias combinarem com o seu estilo.",
+    wizOr: "Ou descreva um produto / cole um link",
+    wizInputPlaceholder: "p. ex.: garrafa inteligente, ou cole um link do AliExpress...",
+    wizFind: "Encontrar produto", wizSearching: "A procurar um produto correspondente...",
+    wizCandidateQ: "É este o produto que queria?", wizYes: "Sim", wizNo: "Não",
+    wizWhatWrong: "O que estava errado? Descreva e eu procuro novamente:",
+    wizWhatWrongPlaceholder: "p. ex.: quero outra cor / mais barato / outro modelo...",
+    wizSearchAgain: "Procurar novamente",
+    wizSupplierQ: "Que app de fornecedor usa para carregar produtos?",
+    wizSupplierOtherPlaceholder: "Nome de outra app...",
+    wizBuildPrompt: "Criar prompt", wizBuildingPrompt: "A criar um prompt detalhado...",
+    wizPromptTitle: "O seu prompt está pronto! 🎉",
+    wizPromptIntro: "Copie o prompt e cole-o numa IA com controlo de navegador/computador (como Claude Code / Manus). Ela irá encontrar o produto, editar as imagens e o texto, e carregá-lo na sua loja através da app do fornecedor.",
+    wizCopyPrompt: "📋 Copiar prompt", wizCopied: "Copiado ✓",
+    wizImagesTitle: "Links das imagens do produto (passe-os junto com o prompt):",
+    wizAttachedImages: "As imagens que anexou estão incluídas no prompt.",
+    wizNotFound: "Não encontrei um produto correspondente. Descreva de outra forma, adicione detalhes ou anexe um link/imagem.",
+    wizErr: "Algo correu mal. Tente novamente.",
+    wizRestart: "Recomeçar", wizNeedInput: "Escreva uma descrição, cole um link ou anexe uma imagem para eu encontrar um produto.",
+    wizAttachedImg: "Imagem anexada",
+  },
+};
+
+function getLang() {
+  const saved = localStorage.getItem(LS_LANG);
+  if (saved && I18N[saved]) return saved;
+  const nav = (navigator.language || navigator.userLanguage || "he");
+  let m = LANGS.find(l => l.code.toLowerCase() === nav.toLowerCase());
+  if (!m) { const base = nav.split("-")[0].toLowerCase(); m = LANGS.find(l => l.code.split("-")[0].toLowerCase() === base); }
+  return m ? m.code : "he";
+}
+function langMeta(code) { return LANGS.find(l => l.code === code) || LANGS[0]; }
+function setLang(code) { localStorage.setItem(LS_LANG, code); applyLangDir(); }
+function aiLangName() { return langMeta(getLang()).ai; }
+function t(key, vars) {
+  const lang = getLang();
+  const tbl = I18N[lang] || I18N["en-US"];
+  let s = (tbl[key] != null) ? tbl[key] : (I18N["en-US"][key] != null ? I18N["en-US"][key] : key);
+  if (vars && typeof s === "string") for (const k in vars) s = s.split("{" + k + "}").join(vars[k]);
+  return s;
+}
+function applyLangDir() {
+  const code = getLang();
+  const meta = langMeta(code);
+  document.documentElement.lang = code;
+  document.documentElement.dir = meta.dir;
+}
+
+/* Apply static translations to the shell (header, search) */
+function applyStaticText() {
+  $("tagline").textContent = t("tagline");
+  $("gearBtn").setAttribute("aria-label", t("settings"));
+  $("q").setAttribute("placeholder", t("searchPlaceholder"));
+  $("goBtn").setAttribute("aria-label", t("searchAria"));
+}
+
+/* ============================ Config / models ============================ */
+const MODELS = {
+  "claude-haiku-4-5-20251001": { name: "Haiku", descKey: "mHaiku" },
+  "claude-sonnet-5":           { name: "Sonnet", descKey: "mSonnet" },
+  "claude-opus-4-8":           { name: "Opus",   descKey: "mOpus" },
+};
+const HAIKU_ID = "claude-haiku-4-5-20251001";
+
+function getKey()   { return localStorage.getItem(LS_KEY) || ""; }
+function getModel() { return localStorage.getItem(LS_MODEL) || "claude-sonnet-5"; }
+/* Smart flows (store scan + product wizard) need a tools-capable model. Haiku is too weak → upgrade to Sonnet 5. */
+function getSmartModel() { const m = getModel(); return m === HAIKU_ID ? "claude-sonnet-5" : m; }
+function getServer(){ return localStorage.getItem(LS_SERVER) || ""; }
+function getCache() { try { return JSON.parse(localStorage.getItem(LS_CACHE) || "{}"); } catch { return {}; } }
+function saveCache(c){ localStorage.setItem(LS_CACHE, JSON.stringify(c)); }
+function getStoreUrl() { return localStorage.getItem(LS_STORE_URL) || ""; }
+function getStoreProfile() { try { return JSON.parse(localStorage.getItem(LS_STORE_PROFILE) || "null"); } catch { return null; } }
+function saveStoreProfile(p) { localStorage.setItem(LS_STORE_PROFILE, JSON.stringify(p)); }
+function norm(s)    { return s.trim().toLowerCase().replace(/\s+/g, " "); }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+}
+
+/* ============================ System prompts ============================ */
+function langInstruction() {
+  return `IMPORTANT: All user-facing text in your response (titles, steps, descriptions, tips, everything a human reads) MUST be written in ${aiLangName()}. Keep exact Shopify Admin UI labels in their original English form.`;
+}
+
+function SYSTEM_PROMPT() {
+  return `You are an expert on the Shopify Admin UI (admin.shopify.com). You know every screen, menu item, button, and workflow precisely.
+
+This app GUIDES the user through the Shopify Admin UI. It has NO access to the user's store and does NOT perform actions for them — it only shows them how to do things themselves.
+
+The user describes (in any language) something they want to do in Shopify. Respond with an exact click-by-click navigation guide.
+
+${langInstruction()}
+
+Respond ONLY with valid JSON, no markdown fences, no extra text:
+{
+  "actionRequested": "add_product" | null,
+  "title": "Short title of the task (in the target language)",
+  "scopeNote": "OPTIONAL. Include ONLY if the user asked the app to PERFORM the action for them (e.g. 'add a product for me', 'change the price for me'). A short sentence (in the target language) clarifying the app guides rather than performs, then leading into the steps. Omit this key entirely otherwise.",
+  "steps": [
+    { "step": 1, "action": "What to click/do", "where": "Where it appears on screen", "detail": "Optional: what you'll see, scroll direction, visual cue" }
+  ],
+  "tip": "One useful tip",
+  "shortcut": "Optional faster path (omit key entirely if none)"
+}
+
+Special key "actionRequested":
+- Set "actionRequested" to "add_product" ONLY when the user is asking to ADD / CREATE / UPLOAD a NEW PRODUCT to their store and wants it done for them or wants help doing it (e.g. "can you add a new product to my store", "add a product for me", "I want to add a product"). This app has a dedicated interactive assistant for that.
+- For everything else set "actionRequested" to null.
+- Even when "actionRequested" is "add_product", STILL fill title/steps/tip normally (the app decides what to show).
+
+Handling requests to PERFORM an action:
+- If the user asks you to DO the action for them, do NOT refuse and do NOT error. Set "scopeNote" to a sentence like "This app guides you through the action rather than performing it — here is how to do it yourself:" (in the target language) and STILL provide the full guide.
+- If the request is already phrased as a how-to question, omit scopeNote.
+
+Rules:
+- Use exact Shopify Admin menu labels (Products, Orders, Customers, Analytics, Marketing, Discounts, Content, Settings, etc.).
+- Reference the left sidebar, top bar, and exact button text.
+- Mention scrolling and section names when relevant.
+- One single action per step. Be precise, not verbose. Keep the whole response compact so it is never cut off — merge trivial sub-steps and avoid long paragraphs.`;
+}
+
+function STUCK_SYSTEM() {
+  return `You are helping a user who is following a Shopify Admin (admin.shopify.com) navigation guide and got stuck on a specific step. Your job is to unblock them with concrete, remedial guidance.
+
+The user's message includes the overall task, the exact step they're stuck on, their explanation, and often a SCREENSHOT of their current screen. If a screenshot is provided, look at it carefully and base your guidance on what is ACTUALLY visible — the Shopify UI can differ by plan, theme, account language, or a UI update, so the button may be elsewhere, named differently, or require a different path.
+
+${langInstruction()}
+
+Respond ONLY with valid JSON, no markdown fences, no extra text:
+{
+  "diagnosis": "Short explanation of what is most likely happening / why the original step didn't work for them",
+  "steps": [ { "action": "Corrected or clarified action", "detail": "Optional visual cue / where exactly to look" } ],
+  "note": "Optional extra tip (omit key if none)"
+}
+
+Rules:
+- If a screenshot is provided, refer to what you actually see on their screen (e.g. what's in the top bar or sidebar) so they can orient.
+- Assume the original instruction did not work — do not just repeat it. Offer the corrected location or an alternative route.
+- Be concrete and concise.`;
+}
+
+let state = { loading: false, result: null, error: null, cached: false, query: "" };
+
+/* ============================ Self-hosted server ============================ */
+/* When the PWA is served by its own server (shopify-nav/server), the server
+ * holds the Anthropic key and proxies /api/message — users don't need a key.
+ *   serverMode  = this origin is served by the shopify-nav server (route via it)
+ *   serverKeyed = that server holds a key, so keyless use is possible
+ * Both are persisted (per-origin) so an OFFLINE relaunch of the installed app
+ * still knows it's in server mode and doesn't wrongly demand an API key. */
+const LS_SERVER_SEEN = "sn_server_seen";
+const LS_SERVER_KEYED = "sn_server_keyed";
+let serverMode = localStorage.getItem(LS_SERVER_SEEN) === "1";
+let serverKeyed = localStorage.getItem(LS_SERVER_KEYED) === "1";
+function canCallAI() { return serverKeyed || !!getKey(); }
+async function detectServer() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch("api/health", { signal: ctrl.signal, cache: "no-store" });
+    clearTimeout(timer);
+    if (res.ok) {
+      const j = await res.json();
+      if (j && j.service === "shopify-nav") {
+        serverMode = true;
+        serverKeyed = !!j.keyed;
+        localStorage.setItem(LS_SERVER_SEEN, "1");
+        localStorage.setItem(LS_SERVER_KEYED, serverKeyed ? "1" : "0");
+        registerStoreOnServer(); // make sure a pre-existing store URL is registered for background scans
+      }
+    }
+    // Reachable-but-not-ours can't happen at same origin; leave persisted flags as-is on any non-ok.
+  } catch {
+    // health failed (offline / not served by the shopify-nav server). Keep the
+    // persisted flags: an installed keyless app relaunched offline stays usable.
+  }
+  return serverMode;
+}
+function registerStoreOnServer() {
+  const url = getStoreUrl();
+  if (!url || (!serverMode && !getServer())) return;
+  fetch((getServer() || "") + "/api/store/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, lang: aiLangName() }),
+  }).catch(() => {});
+}
+
+function apiHeaders() {
+  return {
+    "content-type": "application/json",
+    "x-api-key": getKey(),
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+  };
+}
+
+/* Single entry point for all Claude calls. Optional `model` overrides the stored model.
+ * Routing: explicit server URL from settings > auto-detected same-origin server > Anthropic direct. */
+async function callClaude({ system, messages, max_tokens, tools, model }) {
+  const useModel = model || getModel();
+  const server = getServer();
+  const payload = { model: useModel, system, messages, max_tokens };
+  if (tools) payload.tools = tools;
+  if (server || serverMode) {
+    const headers = { "content-type": "application/json" };
+    if (getKey()) headers["x-user-api-key"] = getKey();
+    return fetch((server || "") + "/api/message", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+  }
+  return fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: apiHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+/* Web tools for the smart flows (store scan + product wizard). */
+const WEB_TOOLS = [
+  { type: "web_search_20260209", name: "web_search", max_uses: 6 },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 6 },
+];
+
+/* Run a tools-enabled Claude call, looping over pause_turn until the turn ends. Returns the final message data. */
+async function callClaudeSmart({ system, messages, max_tokens, tools }) {
+  let msgs = messages.slice();
+  let data = null;
+  for (let hop = 0; hop < 8; hop++) {
+    const res = await callClaude({ system, messages: msgs, max_tokens, tools, model: getSmartModel() });
+    data = await res.json();
+    if (!res.ok) {
+      const e = new Error(data && data.error && data.error.message ? data.error.message : ("HTTP " + res.status));
+      e.status = res.status;
+      throw e;
+    }
+    if (data.stop_reason === "pause_turn") {
+      msgs.push({ role: "assistant", content: data.content });
+      continue;
+    }
+    break;
+  }
+  return data;
+}
+
+function textFromData(data) {
+  return ((data && data.content) || []).map(b => (b && b.type === "text" && b.text) ? b.text : "").join("");
+}
+
+function extractJson(text) {
+  let clean = String(text).replace(/```json|```/g, "").trim();
+  const first = clean.indexOf("{");
+  const last = clean.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) clean = clean.slice(first, last + 1);
+  return JSON.parse(clean);
+}
+
+/* ============================ Main render ============================ */
+function render() {
+  const c = $("content");
+  if (state.loading) {
+    c.innerHTML = `<div class="loading"><div class="spinner"></div><p>${esc(t("buildingMap"))}</p></div>`;
+    return;
+  }
+  if (state.error) {
+    c.innerHTML = `<div class="err">${esc(state.error)}</div>
+      <button class="again" id="retryBtn" style="margin-top:10px">${esc(t("retry"))}</button>`;
+    $("retryBtn").onclick = () => search();
+    return;
+  }
+  if (state.result) {
+    const r = state.result;
+    let html = `<div class="result-title">
+      <div class="ico">✅</div>
+      <div><div class="tag">${esc(t("foundLabel"))} ${state.cached ? `<span class="cached-badge">${esc(t("cachedBadge"))}</span>` : ''}</div>
+      <div class="txt">${esc(r.title)}</div></div>
+    </div>`;
+    if (r.scopeNote) html += `<div class="scope-note">ℹ️ ${esc(r.scopeNote)}</div>`;
+    (r.steps || []).forEach((s, i) => {
+      html += `<div class="step" style="animation-delay:${i * 0.05}s">
+        <div class="step-main">
+          <div class="num">${esc(s.step ?? i + 1)}</div>
+          <div>
+            <div class="action">${esc(s.action)}</div>
+            ${s.where ? `<div class="where">📍 ${esc(s.where)}</div>` : ""}
+            ${s.detail ? `<div class="detail">${esc(s.detail)}</div>` : ""}
+          </div>
+        </div>
+        <button class="stuck-btn" data-step="${i}">${esc(t("stuckBtn"))}</button>
+      </div>`;
+    });
+    if (r.tip) html += `<div class="callout tip"><div class="ch">${esc(t("tipLabel"))}</div><div class="cb">${esc(r.tip)}</div></div>`;
+    if (r.shortcut) html += `<div class="callout shortcut"><div class="ch">${esc(t("shortcutLabel"))}</div><div class="cb">${esc(r.shortcut)}</div></div>`;
+    html += `<button class="again" id="againBtn">${esc(t("newSearch"))}</button>`;
+    c.innerHTML = html;
+    $("againBtn").onclick = () => { state.result = null; state.cached = false; state.query = ""; $("q").value = ""; render(); $("q").focus(); };
+    c.querySelectorAll(".stuck-btn").forEach(btn => {
+      btn.onclick = () => openStuck(parseInt(btn.dataset.step, 10));
+    });
+    return;
+  }
+  // Empty
+  const examples = t("examples") || [];
+  c.innerHTML = `
+    <div class="examples">
+      <div class="label">${esc(t("examplesLabel"))}</div>
+      <div class="chips">${examples.map(e => `<button class="chip">${esc(e)}</button>`).join("")}</div>
+    </div>
+    <div class="empty">
+      <div class="big">🗺️</div>
+      <div class="t">${esc(t("emptyTitle"))}</div>
+      <div class="s">${t("emptySub")}</div>
+    </div>`;
+  c.querySelectorAll(".chip").forEach(btn => {
+    btn.onclick = () => { $("q").value = btn.textContent; search(); };
+  });
+}
+
+async function search() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  if (!canCallAI()) { openSettings(true); return; }
+
+  const cache = getCache();
+  const key = getLang() + "|" + norm(q);
+  if (cache[key]) {
+    const cached = cache[key];
+    if (cached.actionRequested === "add_product") { openProductWizard(q); return; }
+    state = { loading: false, result: cached, error: null, cached: true, query: q };
+    render();
+    return;
+  }
+
+  state = { loading: true, result: null, error: null, cached: false, query: q };
+  render();
+
+  try {
+    const res = await callClaude({
+      system: SYSTEM_PROMPT(),
+      messages: [{ role: "user", content: q }],
+      max_tokens: 2048,
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) throw new Error((serverMode && data && data.error && data.error.message) || t("errKeyInvalid"));
+      throw new Error((data && data.error && data.error.message) || t("errGeneric", { status: res.status }));
+    }
+    const text = (data.content || []).map(b => b.text || "").join("");
+    let parsed;
+    try {
+      parsed = extractJson(text);
+    } catch (parseErr) {
+      throw new Error(data.stop_reason === "max_tokens" ? "__TRUNCATED__" : "__BADJSON__");
+    }
+    cache[key] = parsed;
+    saveCache(cache);
+    if (parsed.actionRequested === "add_product") {
+      state = { loading: false, result: null, error: null, cached: false, query: q };
+      render();
+      openProductWizard(q);
+      return;
+    }
+    state = { loading: false, result: parsed, error: null, cached: false, query: q };
+    render();
+  } catch (err) {
+    let m = err.message || t("wizErr");
+    if (m === "__TRUNCATED__") m = t("errTruncated");
+    else if (m === "__BADJSON__") m = t("errBadJson");
+    else if (m.includes("Failed to fetch") || m.includes("NetworkError")) m = t("errOffline");
+    state = { loading: false, result: null, error: m, cached: false, query: q };
+    render();
+  }
+}
+
+/* ============================ Image resize ============================ */
+function resizeImage(file, maxDim = 1568, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read error"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("image error"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width >= height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > width && height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============================ Stuck helper ============================ */
+function openStuck(stepIndex) {
+  const step = state.result.steps[stepIndex];
+  const stepNo = step.step ?? stepIndex + 1;
+
+  const history = [];
+  let pendingImg = null;
+
+  const existing = document.querySelector(".overlay");
+  if (existing) existing.remove();
+
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>🤔 ${esc(t("stuckHelpTitle", { step: stepNo }))}</h2>
+        <button class="sheet-close" id="stuckClose" aria-label="${esc(t("close"))}">✕</button>
+      </div>
+      <div class="stuck-ctx">
+        <b>${esc(t("stuckStepLabel"))}</b> ${esc(step.action)}${step.where ? ` <span style="color:#008060">(${esc(step.where)})</span>` : ""}
+      </div>
+      <div class="convo" id="convo"></div>
+      <div class="stuck-input">
+        <textarea id="stuckText" placeholder="${esc(t("stuckPlaceholder"))}" rows="2"></textarea>
+        <div id="previewArea"></div>
+        <div class="attach-row">
+          <button class="attach-btn" id="attachBtn">${esc(t("screenshotBtn"))}</button>
+          <button class="send-btn" id="stuckSend">${esc(t("getHelp"))}</button>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" style="display:none" />
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  const convo = $("convo");
+  const textEl = $("stuckText");
+  const fileInput = $("fileInput");
+  const previewArea = $("previewArea");
+  const sendBtn = $("stuckSend");
+
+  function autoGrow() { textEl.style.height = "auto"; textEl.style.height = Math.min(textEl.scrollHeight, 120) + "px"; }
+  textEl.addEventListener("input", autoGrow);
+
+  $("stuckClose").onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+
+  $("attachBtn").onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    try {
+      pendingImg = await resizeImage(file);
+      previewArea.innerHTML = `<div class="preview-wrap"><img src="${pendingImg}" alt=""/><button class="preview-x" id="rmImg" aria-label="${esc(t("close"))}">✕</button></div>`;
+      $("rmImg").onclick = () => { pendingImg = null; previewArea.innerHTML = ""; fileInput.value = ""; };
+    } catch {
+      previewArea.innerHTML = `<div style="font-size:12px;color:#dc2626;margin-top:8px">${esc(t("imgLoadErr"))}</div>`;
+    }
+  };
+
+  function renderAiBubble(parsed) {
+    let html = `<div class="bubble-ai">`;
+    if (parsed.diagnosis) html += `<div class="diag">${esc(parsed.diagnosis)}</div>`;
+    (parsed.steps || []).forEach(s => {
+      html += `<div class="hstep"><div class="d"></div><div class="a">${esc(s.action)}${s.detail ? `<small>${esc(s.detail)}</small>` : ""}</div></div>`;
+    });
+    if (parsed.note) html += `<div class="hnote">💡 ${esc(parsed.note)}</div>`;
+    html += `</div>`;
+    return html;
+  }
+
+  async function sendStuck() {
+    const txt = textEl.value.trim();
+    if (!txt && !pendingImg) { textEl.focus(); return; }
+    if (!canCallAI()) { ov.remove(); openSettings(true); return; }
+
+    let userHtml = `<div class="bubble-user">`;
+    if (txt) userHtml += esc(txt);
+    if (pendingImg) userHtml += `<img src="${pendingImg}" alt=""/>`;
+    userHtml += `</div>`;
+    convo.insertAdjacentHTML("beforeend", userHtml);
+
+    const contentParts = [];
+    if (pendingImg) {
+      contentParts.push({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: pendingImg.split(",")[1] },
+      });
+    }
+    let msgText;
+    if (history.length === 0) {
+      msgText = `${t("task")}: "${state.query || state.result.title}"\n`
+        + `${t("stuckAt")} (${stepNo}): ${step.action}`
+        + (step.where ? ` — ${t("where")}: ${step.where}` : "")
+        + (step.detail ? ` — ${t("details")}: ${step.detail}` : "") + `\n`
+        + `${t("myExplain")}: ${txt || t("noTextSeeImg")}`;
+    } else {
+      msgText = txt || t("seeImg");
+    }
+    contentParts.push({ type: "text", text: msgText });
+    history.push({ role: "user", content: contentParts });
+
+    textEl.value = ""; autoGrow();
+    pendingImg = null; previewArea.innerHTML = ""; fileInput.value = "";
+    sendBtn.disabled = true;
+
+    const loadId = "ld" + convo.children.length;
+    convo.insertAdjacentHTML("beforeend", `<div class="stuck-mini-spin" id="${loadId}"><div class="sp"></div>${esc(t("analyzing"))}</div>`);
+    convo.scrollTop = convo.scrollHeight;
+
+    try {
+      const res = await callClaude({
+        system: STUCK_SYSTEM(),
+        messages: history,
+        max_tokens: 1500,
+      });
+      const data = await res.json();
+      const ld = $(loadId); if (ld) ld.remove();
+      if (!res.ok) {
+        if (res.status === 401) throw new Error((serverMode && data && data.error && data.error.message) || t("errKeyInvalid"));
+        throw new Error((data && data.error && data.error.message) || t("errGeneric", { status: res.status }));
+      }
+      const text = (data.content || []).map(b => b.text || "").join("");
+      history.push({ role: "assistant", content: text });
+      let parsed;
+      try { parsed = extractJson(text); }
+      catch { parsed = { diagnosis: text, steps: [] }; }
+      convo.insertAdjacentHTML("beforeend", renderAiBubble(parsed));
+      convo.scrollTop = convo.scrollHeight;
+    } catch (err) {
+      const ld = $(loadId); if (ld) ld.remove();
+      let m = err.message || t("wizErr");
+      if (m.includes("Failed to fetch") || m.includes("NetworkError")) m = t("stuckNetErr");
+      convo.insertAdjacentHTML("beforeend", `<div class="bubble-ai" style="border-color:#fecaca;background:#fef2f2;color:#dc2626;font-size:13px">${esc(m)}</div>`);
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  sendBtn.onclick = sendStuck;
+  textEl.focus();
+}
+
+/* ============================ Store scan ============================ */
+let scanInFlight = false;
+
+function SCAN_SYSTEM() {
+  return `You analyze a Shopify (or general e-commerce) online store and produce a compact structured profile of it, used to tailor product suggestions.
+
+Use the web_fetch tool to open the given store URL, and web_search if needed to learn more about the brand. Look at the homepage, product listings, and overall branding.
+
+${langInstruction()}
+
+Respond ONLY with valid JSON, no markdown, no extra text:
+{
+  "niche": "the store's niche / product category",
+  "style": "visual & brand style in a few words (e.g. minimalist, playful, luxury)",
+  "colors": ["main brand colors, e.g. #hex or names"],
+  "tone": "brand voice / tone",
+  "audience": "target audience",
+  "categories": ["product categories the store sells"],
+  "exampleProducts": ["a few example products currently sold"],
+  "summary": "2-3 sentence summary of the store for tailoring new product ideas"
+}
+
+If the site cannot be reached or is not an online store, still return your best guess from the name/URL and set summary to note the limitation. All descriptive text in ${aiLangName()}.`;
+}
+
+async function scanStore() {
+  const url = getStoreUrl();
+  if (!url) throw new Error(t("storeMissing"));
+  if (!canCallAI()) throw new Error(t("errKeyInvalid"));
+  if (serverMode || getServer()) {
+    // The server performs (and keeps refreshing) the scan with its own key.
+    const headers = { "content-type": "application/json" };
+    if (getKey()) headers["x-user-api-key"] = getKey();
+    const res = await fetch((getServer() || "") + "/api/store/scan", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url, lang: aiLangName() }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.profile) throw new Error((j && j.error) || "scan failed");
+    const profile = j.profile;
+    profile.url = url;
+    profile.scannedAt = j.scannedAt || nowStamp();
+    saveStoreProfile(profile);
+    return profile;
+  }
+  const data = await callClaudeSmart({
+    system: SCAN_SYSTEM(),
+    messages: [{ role: "user", content: `Analyze this store and produce its profile: ${url}` }],
+    max_tokens: 2000,
+    tools: WEB_TOOLS,
+  });
+  const text = textFromData(data);
+  let profile;
+  try { profile = extractJson(text); }
+  catch { profile = { summary: text, niche: "", style: "", colors: [], tone: "", categories: [], exampleProducts: [] }; }
+  profile.url = url;
+  profile.scannedAt = nowStamp();
+  saveStoreProfile(profile);
+  return profile;
+}
+
+function nowStamp() { try { return new Date().toISOString(); } catch { return ""; } }
+function fmtTime(iso) {
+  if (!iso) return "";
+  try { return new Date(iso).toLocaleString(getLang()); } catch { return iso; }
+}
+
+/* Background refresh every 10 minutes while the app is open.
+ * With a server: the server rescans on its own even when the app is closed —
+ * we only pull the latest profile. Without a server: run a client-side scan. */
+let bgScanTimer = null;
+function startBgScan() {
+  if (bgScanTimer) clearInterval(bgScanTimer);
+  bgScanTimer = setInterval(async () => {
+    const url = getStoreUrl();
+    if (!url || scanInFlight || document.visibilityState !== "visible") return;
+    if (serverMode || getServer()) {
+      try {
+        const res = await fetch((getServer() || "") + "/api/store/profile?url=" + encodeURIComponent(url), { cache: "no-store" });
+        if (res.ok) {
+          const j = await res.json();
+          if (j && j.profile) {
+            j.profile.url = url;
+            j.profile.scannedAt = j.scannedAt || j.profile.scannedAt;
+            saveStoreProfile(j.profile);
+          }
+        }
+      } catch { /* offline */ }
+      return;
+    }
+    if (!getKey()) return;
+    scanInFlight = true;
+    scanStore().catch(() => {}).finally(() => { scanInFlight = false; });
+  }, 10 * 60 * 1000);
+}
+
+/* ============================ Product wizard ============================ */
+function IDEAS_SYSTEM() {
+  const prof = getStoreProfile();
+  const profTxt = prof ? `\n\nThe user's store profile (use it so ideas fit their store):\n${JSON.stringify(prof)}` : "\n\n(No store profile is available yet — suggest broadly appealing dropshipping products.)";
+  return `You suggest new products a Shopify store owner could add to their store.
+
+Suggest EXACTLY 4 products, in this order:
+1. A classic, safe, popular product for this kind of store.
+2. Another classic, reliable product.
+3. A DIFFERENTIATING / unique product that helps the store stand out from competitors (Shopify stores need differentiation).
+4. A product in this store's style that is currently TRENDING on TikTok.
+${profTxt}
+
+${langInstruction()}
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "ideas": [
+    { "kind": "classic" | "unique" | "trend", "name": "short product name", "why": "one short sentence why it fits this store" }
+  ]
+}
+Exactly 4 ideas: index 0 and 1 kind "classic", index 2 kind "unique", index 3 kind "trend". Names and reasons in ${aiLangName()}.`;
+}
+
+function FIND_SYSTEM() {
+  const prof = getStoreProfile();
+  const profTxt = prof ? `\n\nStore profile (to judge fit & style): ${JSON.stringify(prof)}` : "";
+  return `You help a Shopify dropshipping store owner find a specific product to add to their store, preferably on AliExpress.
+
+You receive a description, and/or a pasted product URL, and/or an image of the product.
+- If a URL is provided, use the web_fetch tool to open it and read the real product (title, price, image, description).
+- Otherwise use the web_search tool (prefer aliexpress.com) and web_fetch to find a concrete, real matching product with an image and price.
+- If the user gives feedback about a previous candidate, find a DIFFERENT product that addresses the feedback.
+${profTxt}
+
+${langInstruction()}
+
+Respond ONLY with valid JSON, no markdown:
+{
+  "found": true | false,
+  "title": "the product's real title",
+  "price": "numeric price as shown, e.g. 12.99",
+  "currency": "currency symbol or code, e.g. $ or USD",
+  "imageUrl": "a direct URL to a real product image",
+  "sourceUrl": "the product page URL (AliExpress or the URL the user pasted)",
+  "description": "2-4 sentence description of the product",
+  "images": ["additional direct image URLs from the product page, if available"]
+}
+If you genuinely cannot find a real matching product, set "found": false and omit the other fields. The "title" and "description" must be in ${aiLangName()}; keep imageUrl/sourceUrl exact.`;
+}
+
+function PROMPT_SYSTEM() {
+  const prof = getStoreProfile();
+  const profTxt = prof ? JSON.stringify(prof) : "(no store profile available)";
+  return `You write a single, highly detailed ENGLISH prompt that will be handed to another AI agent that has control over a computer/browser/APIs (such as Claude Code or Manus). That agent must ADD a specific product to the user's Shopify store, working through the user's chosen dropshipping supplier app.
+
+You are given: the chosen product (title, price, source URL, description, image URLs), the user's supplier app name, and the user's store profile.
+
+Write the prompt in clear ENGLISH regardless of the app's display language. Output ONLY the prompt text itself — no JSON, no markdown fences, no commentary before or after.
+
+The prompt you write MUST instruct the target agent to:
+1. Find this EXACT product (include a precise product description and the source/AliExpress URL so it does not confuse it with a different product) inside the supplier app ("{SUPPLIER}") and use that app to import/upload it to the user's Shopify store.
+2. Download / take the product's images (from the provided image URLs) and, using an AI image-editing tool in a browser or on the computer (such as ChatGPT or Gemini), edit the images so they match the store's visual style, look and preferred colors (from the store profile). CRITICAL: the image editing must NOT change, remove, or alter the product itself or any of its parts/accessories in any way — only background/style/color grading to match the store.
+3. Write the product TITLE so it is at most TWO lines long.
+4. Write the product DESCRIPTION as about 10 lines covering the product's use, what makes it special, and how it is assembled (if applicable); then after those ~10 lines, include technical info such as size, weight and similar/important details.
+5. Match the store's style, tone and preferred colors (from the store profile) throughout the listing.
+
+Store profile: ${profTxt}
+
+Be concrete and unambiguous. Assume the target agent cannot ask follow-up questions.`;
+}
+
+let currentWizardOverlay = null;
+
+function openProductWizard(initialQuery) {
+  if (!canCallAI()) { openSettings(true); return; }
+  const existing = document.querySelector(".overlay");
+  if (existing) existing.remove();
+
+  const wiz = {
+    stage: "ideas",
+    ideas: [],
+    userText: (initialQuery && !/https?:\/\//i.test(initialQuery) ? "" : ""),
+    pastedImg: null,
+    candidate: null,
+    findHistory: [],
+    supplier: "",
+    finalPrompt: "",
+    promptImages: [],
+    error: "",
+  };
+
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  currentWizardOverlay = ov;
+  document.body.appendChild(ov);
+  ov.onclick = (e) => { if (e.target === ov) closeWiz(); };
+
+  function closeWiz() { ov.remove(); currentWizardOverlay = null; }
+
+  function shell(bodyHtml) {
+    ov.innerHTML = `
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>🛍️ ${esc(t("wizTitle"))}</h2>
+          <button class="sheet-close" id="wizClose" aria-label="${esc(t("close"))}">✕</button>
+        </div>
+        <div class="wiz-scroll" id="wizScroll">${bodyHtml}</div>
+      </div>`;
+    $("wizClose").onclick = closeWiz;
+  }
+
+  function loadingBody(msg) {
+    return `<div class="loading"><div class="spinner"></div><p>${esc(msg)}</p></div>`;
+  }
+
+  function inputRowHtml() {
+    return `
+      <div class="wiz-input-box">
+        <button class="wiz-plus" id="wizPlus" aria-label="+">＋</button>
+        <textarea id="wizInput" rows="1" placeholder="${esc(t("wizInputPlaceholder"))}"></textarea>
+      </div>
+      <div id="wizPreview"></div>
+      <button class="wiz-primary" id="wizFindBtn">${esc(t("wizFind"))}</button>
+      <input type="file" id="wizFile" accept="image/*" style="display:none" />`;
+  }
+
+  function wireInputRow() {
+    const input = $("wizInput");
+    if (input) {
+      input.value = wiz.userText || "";
+      const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px"; };
+      input.addEventListener("input", () => { wiz.userText = input.value; grow(); });
+      grow();
+    }
+    const file = $("wizFile");
+    const plus = $("wizPlus");
+    if (plus && file) {
+      plus.onclick = () => file.click();
+      file.onchange = async () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        try { wiz.pastedImg = await resizeImage(f); renderPreview(); } catch { /* ignore */ }
+      };
+    }
+    renderPreview();
+    const findBtn = $("wizFindBtn");
+    if (findBtn) findBtn.onclick = () => startFind();
+  }
+
+  function renderPreview() {
+    const p = $("wizPreview");
+    if (!p) return;
+    if (wiz.pastedImg) {
+      p.innerHTML = `<div class="preview-wrap"><img src="${wiz.pastedImg}" alt="${esc(t("wizAttachedImg"))}"/><button class="preview-x" id="wizRmImg" aria-label="${esc(t("close"))}">✕</button></div>`;
+      const rm = $("wizRmImg");
+      if (rm) rm.onclick = () => { wiz.pastedImg = null; renderPreview(); };
+    } else {
+      p.innerHTML = "";
+    }
+  }
+
+  async function fetchIdeas() {
+    try {
+      const data = await callClaudeSmart({
+        system: IDEAS_SYSTEM(),
+        messages: [{ role: "user", content: "Suggest 4 products for my store." }],
+        max_tokens: 1200,
+      });
+      const parsed = extractJson(textFromData(data));
+      wiz.ideas = (parsed.ideas || []).slice(0, 4);
+      const list = $("ideaList");
+      if (!list) return;
+      list.innerHTML = wiz.ideas.map((idea, i) => {
+        const kind = idea.kind === "unique" ? "unique" : idea.kind === "trend" ? "trend" : "classic";
+        const badge = kind === "unique" ? "★" : kind === "trend" ? "🔥 TikTok" : "✓";
+        return `<button class="idea-card" data-i="${i}">
+          <span class="idea-badge ${kind}">${esc(badge)}</span>
+          <div class="name">${esc(idea.name)}</div>
+          <div class="why">${esc(idea.why || "")}</div>
+        </button>`;
+      }).join("");
+      list.querySelectorAll(".idea-card").forEach(btn => {
+        btn.onclick = () => {
+          const idea = wiz.ideas[parseInt(btn.dataset.i, 10)];
+          const inp = $("wizInput");
+          wiz.userText = idea.name;
+          if (inp) inp.value = idea.name;
+          startFind();
+        };
+      });
+    } catch (err) {
+      const list = $("ideaList");
+      if (list) list.innerHTML = `<div class="scope-note">⚠️ ${esc(t("wizErr"))}</div>`;
+    }
+  }
+
+  function renderIdeas() {
+    let html = `<div class="wiz-intro">${esc(t("wizIntro"))}</div>`;
+    if (!getStoreProfile()) html += `<div class="scope-note" style="margin-bottom:12px">💡 ${esc(t("wizNoStore"))}</div>`;
+    html += `<div id="ideaList">${loadingBody(t("wizLoadingIdeas"))}</div>`;
+    html += `<div class="wiz-or">${esc(t("wizOr"))}</div>`;
+    html += inputRowHtml();
+    shell(html);
+    wireInputRow();
+    fetchIdeas();
+  }
+
+  function startFind(feedback) {
+    const text = (wiz.userText || "").trim();
+    if (!text && !wiz.pastedImg && !feedback) { alert(t("wizNeedInput")); return; }
+    wiz.stage = "searching";
+    shell(loadingBody(t("wizSearching")));
+
+    const parts = [];
+    if (!feedback && wiz.pastedImg) {
+      parts.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: wiz.pastedImg.split(",")[1] } });
+    }
+    let msg;
+    if (feedback) {
+      msg = `The previous candidate was not right. User feedback: "${feedback}". Find a different matching product.`;
+    } else {
+      msg = `Find a real product to add to my store.\nUser description / link: ${text || "(see attached image)"}`;
+    }
+    parts.push({ type: "text", text: msg });
+    wiz.findHistory.push({ role: "user", content: parts });
+
+    callClaudeSmart({
+      system: FIND_SYSTEM(),
+      messages: wiz.findHistory,
+      max_tokens: 2000,
+      tools: WEB_TOOLS,
+    }).then(data => {
+      wiz.findHistory.push({ role: "assistant", content: (data.content || []).filter(b => b.type === "text").map(b => ({ type: "text", text: b.text })) });
+      let parsed;
+      try { parsed = extractJson(textFromData(data)); }
+      catch { parsed = { found: false }; }
+      if (!parsed.found || !parsed.title) { wiz.stage = "notfound"; renderNotFound(); return; }
+      wiz.candidate = parsed;
+      wiz.stage = "candidate";
+      renderCandidate();
+    }).catch(err => {
+      wiz.error = (err && err.message) || t("wizErr");
+      wiz.stage = "error";
+      renderError();
+    });
+  }
+
+  function renderNotFound() {
+    let html = `<div class="wiz-err">${esc(t("wizNotFound"))}</div>`;
+    html += inputRowHtml();
+    shell(html);
+    wireInputRow();
+  }
+
+  function renderError() {
+    shell(`<div class="wiz-err">${esc(wiz.error)}</div>
+      <button class="wiz-primary" id="wizRetry">${esc(t("retry"))}</button>`);
+    const r = $("wizRetry"); if (r) r.onclick = () => renderIdeas();
+  }
+
+  function renderCandidate() {
+    const c = wiz.candidate;
+    const priceStr = c.price ? `${esc(c.currency || "")} ${esc(c.price)}`.trim() : "";
+    let html = `<div class="cand-card">`;
+    if (c.imageUrl) html += `<img src="${esc(c.imageUrl)}" alt="" onerror="this.style.display='none'"/>`;
+    html += `<div class="cand-body">
+        <div class="cand-title">${esc(c.title)}</div>
+        ${priceStr ? `<div class="cand-price">${priceStr}</div>` : ""}
+        ${c.description ? `<div class="cand-desc">${esc(c.description)}</div>` : ""}
+        ${c.sourceUrl ? `<a class="cand-link" href="${esc(c.sourceUrl)}" target="_blank" rel="noopener">${esc(c.sourceUrl)}</a>` : ""}
+      </div></div>`;
+    html += `<div class="yn-question">${esc(t("wizCandidateQ"))}</div>`;
+    html += `<div class="yn-row">
+        <button class="yn-btn yn-no" id="wizNo">${esc(t("wizNo"))}</button>
+        <button class="yn-btn yn-yes" id="wizYes">${esc(t("wizYes"))}</button>
+      </div>`;
+    shell(html);
+    $("wizYes").onclick = () => { wiz.stage = "supplier"; renderSupplier(); };
+    $("wizNo").onclick = () => { wiz.stage = "feedback"; renderFeedback(); };
+  }
+
+  function renderFeedback() {
+    let html = `<div class="wiz-intro">${esc(t("wizWhatWrong"))}</div>
+      <div class="wiz-input-box">
+        <textarea id="fbInput" rows="2" placeholder="${esc(t("wizWhatWrongPlaceholder"))}"></textarea>
+      </div>
+      <button class="wiz-primary" id="fbBtn">${esc(t("wizSearchAgain"))}</button>`;
+    shell(html);
+    const inp = $("fbInput");
+    if (inp) inp.focus();
+    $("fbBtn").onclick = () => {
+      const fb = (inp.value || "").trim();
+      if (!fb) { inp.focus(); return; }
+      startFind(fb);
+    };
+  }
+
+  const SUPPLIERS = ["DSers", "AutoDS", "Zendrop", "CJdropshipping", "Spocket"];
+  function renderSupplier() {
+    let html = `<div class="wiz-intro">${esc(t("wizSupplierQ"))}</div>`;
+    html += `<div class="supplier-chips" id="supChips">` +
+      SUPPLIERS.map(s => `<button class="supplier-chip" data-s="${esc(s)}">${esc(s)}</button>`).join("") +
+      `</div>`;
+    html += `<div class="wiz-input-box"><textarea id="supOther" rows="1" placeholder="${esc(t("wizSupplierOtherPlaceholder"))}"></textarea></div>`;
+    html += `<button class="wiz-primary" id="supBtn" disabled>${esc(t("wizBuildPrompt"))}</button>`;
+    shell(html);
+    const btn = $("supBtn");
+    const other = $("supOther");
+    function refresh() { btn.disabled = !wiz.supplier; }
+    $("supChips").querySelectorAll(".supplier-chip").forEach(chip => {
+      chip.onclick = () => {
+        $("supChips").querySelectorAll(".supplier-chip").forEach(x => x.classList.remove("sel"));
+        chip.classList.add("sel");
+        wiz.supplier = chip.dataset.s;
+        if (other) other.value = "";
+        refresh();
+      };
+    });
+    if (other) other.addEventListener("input", () => {
+      const v = other.value.trim();
+      if (v) { $("supChips").querySelectorAll(".supplier-chip").forEach(x => x.classList.remove("sel")); wiz.supplier = v; }
+      else if (![...$("supChips").querySelectorAll(".supplier-chip")].some(x => x.classList.contains("sel"))) wiz.supplier = "";
+      refresh();
+    });
+    btn.onclick = () => buildPrompt();
+  }
+
+  function buildPrompt() {
+    wiz.stage = "building";
+    shell(loadingBody(t("wizBuildingPrompt")));
+    const c = wiz.candidate;
+    const imgs = [];
+    if (c.imageUrl) imgs.push(c.imageUrl);
+    (c.images || []).forEach(u => { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
+
+    const userMsg = `Chosen product:
+- Title: ${c.title}
+- Price: ${c.currency || ""} ${c.price || ""}
+- Source URL: ${c.sourceUrl || "(none)"}
+- Description: ${c.description || ""}
+- Product image URLs: ${imgs.join(" , ") || "(none)"}
+
+Supplier app the user uses: ${wiz.supplier}
+
+Write the final English prompt now.`;
+
+    callClaudeSmart({
+      system: PROMPT_SYSTEM().split("{SUPPLIER}").join(wiz.supplier),
+      messages: [{ role: "user", content: userMsg }],
+      max_tokens: 2000,
+    }).then(data => {
+      let promptText = textFromData(data).trim();
+      let extra = "";
+      if (imgs.length) extra += `\n\nProduct image URLs to use:\n` + imgs.map(u => "- " + u).join("\n");
+      if (wiz.pastedImg) extra += `\n\n(The user also attached their own product image in the app; use it as an additional reference image.)`;
+      wiz.finalPrompt = promptText + extra;
+      wiz.promptImages = imgs;
+      wiz.stage = "prompt";
+      renderPrompt();
+    }).catch(err => {
+      wiz.error = (err && err.message) || t("wizErr");
+      wiz.stage = "error";
+      renderError();
+    });
+  }
+
+  function renderPrompt() {
+    const imgs = wiz.promptImages || [];
+    let html = `<div class="wiz-intro"><b>${esc(t("wizPromptTitle"))}</b><br/>${esc(t("wizPromptIntro"))}</div>`;
+    html += `<div class="prompt-box" id="promptBox">${esc(wiz.finalPrompt)}</div>`;
+    html += `<button class="copy-btn" id="copyBtn">${esc(t("wizCopyPrompt"))}</button>`;
+    if (imgs.length) {
+      html += `<div class="img-links"><div class="il-label">${esc(t("wizImagesTitle"))}</div>` +
+        imgs.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join("") + `</div>`;
+    }
+    if (wiz.pastedImg) html += `<div class="scan-status" style="margin-top:10px">${esc(t("wizAttachedImages"))}</div>`;
+    html += `<button class="again" id="wizRestart" style="margin-top:14px">🔄 ${esc(t("wizRestart"))}</button>`;
+    shell(html);
+    const copyBtn = $("copyBtn");
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(wiz.finalPrompt);
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents($("promptBox"));
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        try { document.execCommand("copy"); } catch {}
+        sel.removeAllRanges();
+      }
+      copyBtn.textContent = t("wizCopied");
+      setTimeout(() => { copyBtn.textContent = t("wizCopyPrompt"); }, 1600);
+    };
+    $("wizRestart").onclick = () => {
+      wiz.stage = "ideas"; wiz.userText = ""; wiz.pastedImg = null; wiz.candidate = null;
+      wiz.findHistory = []; wiz.supplier = ""; wiz.finalPrompt = ""; wiz.promptImages = [];
+      renderIdeas();
+    };
+  }
+
+  // start
+  renderIdeas();
+}
+
+/* ============================ Settings ============================ */
+function openSettings(firstTime) {
+  const existing = document.querySelector(".overlay");
+  if (existing) existing.remove();
+
+  const curKey = getKey();
+  const curModel = getModel();
+  const curServer = getServer();
+  const curLang = getLang();
+  const curStore = getStoreUrl();
+  const profile = getStoreProfile();
+
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.innerHTML = `
+    <div class="sheet">
+      <h2>${esc(t("settings"))}</h2>
+      <div class="sheet-scroll">
+      <p class="desc">${firstTime ? esc(t("settingsDescFirst")) : esc(t("settingsDescNormal"))}</p>
+      <label>${esc(t("apiKeyLabel"))}</label>
+      <input id="keyInput" type="password" placeholder="sk-ant-..." value="${esc(curKey)}" autocomplete="off" />
+      ${serverKeyed
+        ? `<div class="hint" style="color:var(--green)">✓ ${esc(t("serverConnectedNote"))}</div>`
+        : `<div class="hint">${esc(t("apiKeyHint"))}<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a></div>`}
+
+      <div class="model-row">
+        ${Object.entries(MODELS).map(([id, m]) => `
+          <button class="model-opt ${id === curModel ? "sel" : ""}" data-model="${id}">
+            ${m.name}<small>${esc(t(m.descKey))}</small>
+          </button>`).join("")}
+      </div>
+
+      <div class="settings-section">
+        <label>🌐 ${esc(t("languageLabel"))}</label>
+        <div class="lang-grid" id="langGrid">
+          ${LANGS.map(l => `<button class="lang-opt ${l.code === curLang ? "sel" : ""}" data-lang="${l.code}">${esc(l.name)}</button>`).join("")}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label>🏬 ${esc(t("storeSectionLabel"))}</label>
+        <label style="font-weight:600;margin-top:8px">${esc(t("storeLabel"))}</label>
+        <input id="storeInput" type="text" placeholder="https://your-store.myshopify.com" value="${esc(curStore)}" autocomplete="off" dir="ltr" />
+        <div class="scan-row">
+          <button id="scanBtn">${esc(t("scanNow"))}</button>
+        </div>
+        <div class="scan-status" id="scanStatus">${profile && profile.scannedAt ? esc(t("scanLast", { time: fmtTime(profile.scannedAt) })) : esc(t("scanNever"))}</div>
+        <div class="hint">${esc(t("storeHint"))}</div>
+        <div class="hint">${esc(t("scanBgNote"))}</div>
+      </div>
+
+      <div class="settings-section">
+        <label>${esc(t("serverLabel"))}</label>
+        <input id="serverInput" type="text" placeholder="https://your-server.com" value="${esc(curServer)}" autocomplete="off" dir="ltr" />
+        <div class="hint">${esc(t("serverHint"))}</div>
+      </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="btn-primary" id="saveBtn">${esc(t("save"))}</button>
+        ${firstTime ? "" : `<button class="btn-ghost" id="cancelBtn">${esc(t("cancel"))}</button>`}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  let pickedModel = curModel;
+  ov.querySelectorAll(".model-opt").forEach(b => {
+    b.onclick = () => {
+      pickedModel = b.dataset.model;
+      ov.querySelectorAll(".model-opt").forEach(x => x.classList.remove("sel"));
+      b.classList.add("sel");
+    };
+  });
+
+  function persistFields() {
+    const k = $("keyInput").value.trim();
+    if (k) localStorage.setItem(LS_KEY, k);
+    else localStorage.removeItem(LS_KEY); // allow clearing a personal key (server mode)
+    localStorage.setItem(LS_MODEL, pickedModel);
+    const s = $("serverInput").value.trim().replace(/\/+$/, "");
+    if (s) localStorage.setItem(LS_SERVER, s); else localStorage.removeItem(LS_SERVER);
+    const st = $("storeInput").value.trim();
+    if (st) localStorage.setItem(LS_STORE_URL, st); else localStorage.removeItem(LS_STORE_URL);
+  }
+
+  // Language: apply immediately so the whole settings sheet re-renders in the new language.
+  ov.querySelectorAll(".lang-opt").forEach(b => {
+    b.onclick = () => {
+      persistFields();
+      setLang(b.dataset.lang);
+      applyStaticText();
+      render();
+      openSettings(firstTime);
+    };
+  });
+
+  // Store scan
+  const scanBtn = $("scanBtn");
+  const scanStatus = $("scanStatus");
+  scanBtn.onclick = async () => {
+    const st = $("storeInput").value.trim();
+    if (!st) { scanStatus.className = "scan-status err"; scanStatus.textContent = t("storeMissing"); return; }
+    persistFields(); // persist store URL + key + server URL so scanStore routes correctly
+    if (!canCallAI()) { scanStatus.className = "scan-status err"; scanStatus.textContent = t("errKeyInvalid"); return; }
+    scanBtn.disabled = true;
+    scanStatus.className = "scan-status";
+    scanStatus.innerHTML = `<span class="scan-mini-spin"></span>${esc(t("scanning"))}`;
+    scanInFlight = true;
+    try {
+      const prof = await scanStore();
+      scanStatus.className = "scan-status ok";
+      scanStatus.textContent = t("scanDone") + " — " + t("scanLast", { time: fmtTime(prof.scannedAt) });
+    } catch (err) {
+      scanStatus.className = "scan-status err";
+      scanStatus.textContent = t("scanErr");
+    } finally {
+      scanInFlight = false;
+      scanBtn.disabled = false;
+    }
+  };
+
+  if (!serverKeyed) $("keyInput").focus();
+  $("saveBtn").onclick = () => {
+    const k = $("keyInput").value.trim();
+    // A key is only optional when the server can supply one (serverKeyed).
+    if (!k && !serverKeyed) { $("keyInput").focus(); return; }
+    persistFields();
+    registerStoreOnServer();
+    ov.remove();
+  };
+  const cancel = $("cancelBtn");
+  if (cancel) cancel.onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov && !firstTime) ov.remove(); };
+}
+
+/* ============================ Wire up ============================ */
+$("goBtn").onclick = search;
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+$("gearBtn").onclick = () => openSettings(false);
+
+applyLangDir();
+applyStaticText();
+render();
+startBgScan();
+detectServer().then(() => {
+  // Only demand an API key when there's no server to lean on.
+  if (!canCallAI()) openSettings(true);
+});
+
+/* ============================ Service worker ============================ */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>

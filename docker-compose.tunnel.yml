@@ -1,0 +1,38 @@
+# Cloudflare tunnel overlay — add to the main stack for Google OAuth local testing.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#
+# Prerequisites (one-time, per developer):
+#   1. Install cloudflared (brew install cloudflare/cloudflare/cloudflared)
+#   2. cloudflared tunnel login
+#   3. cloudflared tunnel create fuzefront-dev
+#   4. cloudflared tunnel route dns fuzefront-dev auth-dev.fuzefront.com
+#   5. cloudflared tunnel token fuzefront-dev  → paste into .env as CLOUDFLARE_TUNNEL_TOKEN
+#
+# The tunnel routes auth-dev.fuzefront.com → http://authentik-server:9000
+# (configured in the Cloudflare dashboard or via the API — the container just
+# picks up the routing from your account using the tunnel token).
+#
+# With this overlay running, set in .env:
+#   CLOUDFLARE_TUNNEL_TOKEN=<token>
+#   TUNNEL_HOSTNAME=auth-dev.fuzefront.com
+#   GOOGLE_DEV_CLIENT_ID=<dev oauth client id>
+#   GOOGLE_DEV_CLIENT_SECRET=<dev oauth client secret>
+#
+# Register https://auth-dev.fuzefront.com/source/oauth/callback/google/
+# as an Authorized redirect URI in the SEPARATE dev Google OAuth client
+# (keep the prod client clean — different client_id/secret).
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: fuzefront-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set to use the tunnel overlay}
+    networks:
+      - fuzefront
+    depends_on:
+      - authentik-server

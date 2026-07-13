@@ -76,6 +76,18 @@
       name: {{ include "fuzefront.secretName" . }}
       key: AUTHENTIK_CLIENT_SECRET
 {{- end }}
+# MendysRobotics datasets-marketplace OIDC client secret — read by the
+# provider-oidc-mendys-datasets blueprint's !Env resolver at apply time.
+# OPTIONAL (like the Google source creds): when the Secret key is absent the
+# blueprint applies with an empty placeholder secret; set the key (values
+# secret.mendysDatasetsClientSecret / the prod SealedSecret) and re-apply to
+# activate the provider for real.
+- name: AUTHENTIK_MENDYS_DATASETS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: MENDYS_DATASETS_CLIENT_SECRET
+      optional: true
 {{- if .Values.smsService.enabled }}
 # SMS MFA — the stages-sms blueprint reads these env vars at apply time.
 # AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster
@@ -145,6 +157,11 @@ spec:
       labels:
         {{- include "fuzefront.labels" . | nindent 8 }}
         app: authentik-server
+      annotations:
+        # Roll the pod when any blueprint changes: labeled blueprints
+        # (blueprints.goauthentik.io/instantiate) are applied on startup, so a
+        # restart == immediate re-apply instead of the hourly discovery cycle.
+        checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
     spec:
       {{- include "fuzefront.scheduling" (dict "svc" .Values.authentik "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
@@ -200,6 +217,9 @@ spec:
       labels:
         {{- include "fuzefront.labels" . | nindent 8 }}
         app: authentik-worker
+      annotations:
+        # See authentik-server: restart applies labeled blueprints immediately.
+        checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
     spec:
       {{- include "fuzefront.scheduling" (dict "svc" .Values.authentik "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}

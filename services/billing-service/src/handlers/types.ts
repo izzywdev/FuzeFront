@@ -2,6 +2,7 @@ import type Stripe from 'stripe';
 import { CustomerRepository } from '../repositories/customer.repository';
 import { SubscriptionRepository } from '../repositories/subscription.repository';
 import { PlanRepository } from '../repositories/plan.repository';
+import { PaymentRepository } from '../repositories/payment.repository';
 import { PermitSyncService } from '../services/permit.service';
 import { BillingEventEmitter } from '../kafka/producer';
 
@@ -13,6 +14,8 @@ export interface HandlerContext {
   customers: CustomerRepository;
   subscriptions: SubscriptionRepository;
   plans: PlanRepository;
+  /** One-time payment-mode Checkout mirror (billing.payments). */
+  payments: PaymentRepository;
   permit: PermitSyncService;
   emitter: BillingEventEmitter;
   /** Writes the plan-tier hot-path cache columns back to public.users/organizations. */

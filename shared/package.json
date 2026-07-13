@@ -14,6 +14,11 @@
       "default": "./dist/kafka/index.js"
     }
   },
+  "typesVersions": {
+    "*": {
+      "kafka": ["./dist/kafka/index.d.ts"]
+    }
+  },
   "scripts": {
     "build": "tsc",
     "build:kafka": "tsc -p tsconfig.kafka.json",

@@ -9,6 +9,8 @@
 version: 1
 metadata:
   name: FuzeFront Recovery Flow
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── Source-identification stage (email) ──────────────────────────────────────
   - model: authentik_stages_identification.identificationstage

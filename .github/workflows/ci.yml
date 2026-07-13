@@ -136,6 +136,11 @@ jobs:
           cd backend/security
           npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
 
+      - name: security — OIDC unit tests (openid-client mocked, no Authentik required)
+        run: |
+          cd backend/security
+          npx jest tests/oidc-google-signin.test.ts tests/oidc-state.test.ts tests/oidc-code-exchange.test.ts
+
   build:
     name: Build Applications
     runs-on: ubuntu-latest
@@ -279,21 +284,13 @@ jobs:
 
       - name: Start MailHog + Kafka + email-service
         run: |
-          # Start Kafka + MailHog first, then create the topic, then start email-service.
-          # email-service crashes with KafkaJSProtocolError if the topic doesn't exist
-          # when it calls consumer.subscribe() — auto-create can race with service startup.
-          docker compose -f docker-compose.test.yml up -d mailhog kafka-test
-          echo "Waiting for MailHog API..."
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8025/api/v2/messages >/dev/null 2>&1; then echo "MailHog up"; break; fi
-            sleep 2
-          done
-          echo "Waiting for Kafka (port 9094)..."
-          for i in $(seq 1 40); do
-            if nc -z localhost 9094 2>/dev/null; then echo "Kafka up"; break; fi
-            if [ "$i" -eq 40 ]; then echo "ERROR: Kafka did not become reachable" >&2; exit 1; fi
-            sleep 2
-          done
+          # Start Kafka + MailHog first. Use --wait so docker compose blocks until
+          # ALL declared healthchecks pass. For Kafka-KRaft the healthcheck waits
+          # for the broker to be fully initialised (not just the TCP port binding),
+          # which eliminates the race where kafka-topics --create runs before the
+          # broker is ready to serve requests.
+          docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 mailhog kafka-test
+          echo "Kafka and MailHog are healthy."
           echo "Pre-creating Kafka topic notify.email.requested..."
           docker exec test-kafka kafka-topics \
             --bootstrap-server localhost:9092 \
@@ -302,9 +299,14 @@ jobs:
           echo "Topic created."
           echo "Starting email-service..."
           docker compose -f docker-compose.test.yml up -d email-service-test
-          echo "Waiting for email-service health..."
+          echo "Waiting for email-service health (up to 60s)..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: email-service did not become healthy after 60s" >&2
+              docker compose -f docker-compose.test.yml logs email-service-test
+              exit 1
+            fi
             sleep 2
           done
           # Give the Kafka consumer inside email-service time to join its group
@@ -331,7 +333,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write # required to upload SARIF to the Security tab
+      security-events: write
+      pull-requests: read
 
     steps:
       - name: Checkout code
@@ -344,15 +347,56 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          exit-code: '0'
+          trivyignores: '.trivyignore'
+
+      - name: Detect open PR (associate SARIF with PR comparison when dispatched)
+        id: detect-pr
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
+              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
+            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
+              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
+              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha')
+              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
+                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+              else
+                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
-        # Don't fail CI if code scanning isn't enabled for the repo (e.g. no
-        # GitHub Advanced Security); the scan itself still ran above.
         continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
+          # No explicit category — matches master's baseline analysis key so the
+          # PR comparison check can find this upload as ci.yml:security-scan.
+          ref: ${{ steps.detect-pr.outputs.upload_ref }}
+          sha: ${{ steps.detect-pr.outputs.upload_sha }}
 
   deploy-docs:
     name: Deploy Documentation

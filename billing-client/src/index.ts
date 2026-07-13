@@ -3,10 +3,16 @@ export { BillingClient } from './client';
 export type { paths, components, operations } from './schema';
 export type { ContractAlignment } from './contract';
 export type {
+  BillingActorContext,
   BillingClientConfig,
+  BillingPayment,
   BillingSubscription,
   Plan,
   PlanTier,
+  PaymentCheckoutRequest,
+  PaymentCheckoutResponse,
+  PaymentLineItem,
+  PaymentStatus,
   SubscriptionStatus,
   EntityType,
   CreateSubscriptionRequest,

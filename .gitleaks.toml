@@ -6,14 +6,70 @@
 useDefault = true
 
 [allowlist]
-description = "@fuzefront/auth non-secret literals (AuthMode union values)"
+description = "Non-secret literals: AuthMode union values + E2E test-stack placeholders"
+# docker-compose.e2e.yml intentionally uses hard-coded placeholder values for
+# the self-contained E2E environment; they are NOT real credentials.
+# backend/security/tests/* uses mock values for unit tests.
+paths = [
+  # E2E compose / scripts — intentional hardcoded placeholders for self-contained CI stack.
+  '''docker-compose\.e2e\.yml''',
+  '''deploy/e2e/''',
+  # SealedSecret YAML files — values are kubesealed (encrypted with the cluster public key)
+  # and are designed to be committed to git; they are NOT plaintext credentials.
+  '''deploy/contabo/sealed/''',
+  # Helm template for the Cloudflare CF cache-purge SealedSecret — kubesealed blob,
+  # designed to be committed.
+  '''deploy/helm/fuzefront/templates/sealed-secret''',
+  # Historical prod values file that had a Cloudflare CF SealedSecret inlined at
+  # commit 7cfe0429; the kubesealed blob is asymmetrically encrypted and safe to commit.
+  '''deploy/helm/fuzefront/values-prod\.yaml''',
+  # backend/security/tests/ — mock token prefixes used in unit-test helper functions;
+  # they are not real credentials and are scoped to a dedicated test package.
+  '''backend/security/tests/''',
+  # packages/i18n-translate/src/config.ts — reads LLM API keys from env vars;
+  # the variable names themselves trigger generic-api-key but no actual key value is present.
+  '''packages/i18n-translate/''',
+  # backend/.env and root .env were accidentally committed in early repo history and purged;
+  # the values were placeholder strings, not real credentials.
+  '''backend/\.env$''',
+  '''^\.env$''',
+  # fuzefront_deploy_key — SSH deploy key added in commit c086be3c (2025-07-21) during the
+  # AppHub Developer phase. Moved to GitHub Secrets in commit 274bd24 and deleted from HEAD.
+  # The key has been rotated and is no longer active.
+  '''fuzefront_deploy_key''',
+]
 regexes = [
+  # @fuzefront/auth AuthMode type-union string literals
   '''legacy-hs256''',
   '''oidc-jwks''',
-]
-
-[[allowlists]]
-description = "SealedSecret encrypted values are ciphertext, not plaintext secrets"
-paths = [
-  '''deploy/helm/.*/sealed-secret.*\.yaml''',
+  # E2E test-stack placeholders (docker-compose.e2e.yml, backend tests)
+  '''e2e-authentik-secret-not-for-prod''',
+  '''e2e-jwt-secret-not-for-prod''',
+  '''e2e-bootstrap-token''',
+  '''e2e-oidc-client-secret''',
+  '''E2eAdmin123!''',
+  '''ci-noop''',
+  '''test-client-secret''',
+  '''mock\.jwt\.token''',
+  '''e2e-test-jwt''',
+  # E2E local Authentik user password (oidc-plumbing-e2e.yml E2E_USER_PASSWORD)
+  '''E2eP@ssw0rd123''',
+  # OIDC discovery URL path — gitleaks generic-api-key matches 'auth' in
+  # 'authentik-server:' and treats '9000/application/o/fuzefront/' as a secret.
+  # It is a URL, not a credential.
+  '''application/o/fuzefront''',
+  # Documentation curl-command examples — placeholder tokens, not real credentials.
+  '''YOUR_JWT_TOKEN''',
+  '''YOUR_TOKEN''',
+  # Historical placeholder value from docker-compose.yml / Dockerfile (pre-93cec2a purge).
+  '''fuzefront-production-secret-change-this''',
+  # Historical hardcoded DB password from backend/database.ts (pre-93cec2a purge); rotated.
+  '''FuzeFront_2024_SecureDB_Pass!''',
+  # Placeholder values from the accidentally committed backend/.env (initial commit, purged).
+  '''your-jwt-secret-here''',
+  '''your-stytch-project-id''',
+  '''your-stytch-secret''',
+  '''your-permit-api-key''',
+  # Truncated JWT placeholder used in JSDoc example blocks — real JWTs never end with "...".
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.''',
 ]

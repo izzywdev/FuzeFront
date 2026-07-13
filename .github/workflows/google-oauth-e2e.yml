@@ -1,0 +1,202 @@
+name: Google OAuth E2E
+
+# Full end-to-end test of the Google Sign-In → Authentik → FuzeFront flow.
+# Requires three repository secrets that are only set in the main repo (not forks):
+#   CLOUDFLARE_TUNNEL_TOKEN  — named tunnel that exposes authentik-server at TUNNEL_HOSTNAME
+#   GOOGLE_DEV_CLIENT_ID     — Google OAuth client id (dev tunnel client, separate from prod)
+#   GOOGLE_DEV_CLIENT_SECRET — Google OAuth client secret (dev tunnel client)
+#   GOOGLE_TEST_EMAIL        — test Google account email (no 2FA)
+#   GOOGLE_TEST_PASSWORD     — test Google account password
+#
+# The job skips gracefully (not fails) when these secrets are absent — safe for forks and
+# dependabot PRs. The skip uses a job-level `if:` so Playwright is never invoked.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/helm/fuzefront/authentik/blueprints/**'
+      - 'docker-compose.e2e.yml'
+      - '.github/workflows/google-oauth-e2e.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/helm/fuzefront/authentik/blueprints/**'
+      - 'docker-compose.e2e.yml'
+      - '.github/workflows/google-oauth-e2e.yml'
+  workflow_dispatch:
+    inputs:
+      tunnel_hostname:
+        description: 'Tunnel hostname (default: auth-dev.fuzefront.com)'
+        required: false
+        default: 'auth-dev.fuzefront.com'
+
+concurrency:
+  group: google-oauth-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Secret availability check ─────────────────────────────────────────────
+  # Secrets context is not available in job-level if: conditions.
+  # Export availability as a step output so the main job can use needs.*.outputs.
+  check-secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      has_secrets: ${{ steps.check.outputs.has_secrets }}
+    steps:
+      - id: check
+        run: |
+          if [ -n "$CLOUDFLARE_TUNNEL_TOKEN" ] && [ -n "$GOOGLE_DEV_CLIENT_ID" ] && [ -n "$GOOGLE_DEV_CLIENT_SECRET" ] && [ -n "$GOOGLE_TEST_EMAIL" ] && [ -n "$GOOGLE_TEST_PASSWORD" ]; then
+            echo "has_secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secrets=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          GOOGLE_DEV_CLIENT_ID: ${{ secrets.GOOGLE_DEV_CLIENT_ID }}
+          GOOGLE_DEV_CLIENT_SECRET: ${{ secrets.GOOGLE_DEV_CLIENT_SECRET }}
+          GOOGLE_TEST_EMAIL: ${{ secrets.GOOGLE_TEST_EMAIL }}
+          GOOGLE_TEST_PASSWORD: ${{ secrets.GOOGLE_TEST_PASSWORD }}
+
+  google-oauth-e2e:
+    name: Google OAuth full flow
+    needs: check-secrets
+    # Skip when tunnel/Google secrets are absent (forks, dependabot, etc.).
+    # Checked via a prior job because secrets context is unavailable in job if:.
+    if: needs.check-secrets.outputs.has_secrets == 'true'
+    runs-on: ubuntu-latest
+
+    env:
+      TUNNEL_HOSTNAME: ${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      GOOGLE_DEV_CLIENT_ID: ${{ secrets.GOOGLE_DEV_CLIENT_ID }}
+      GOOGLE_DEV_CLIENT_SECRET: ${{ secrets.GOOGLE_DEV_CLIENT_SECRET }}
+      AUTHENTIK_OIDC_CLIENT_SECRET: ${{ secrets.AUTHENTIK_OIDC_CLIENT_SECRET || 'e2e-oidc-client-secret' }}
+      GOOGLE_TEST_EMAIL: ${{ secrets.GOOGLE_TEST_EMAIL }}
+      GOOGLE_TEST_PASSWORD: ${{ secrets.GOOGLE_TEST_PASSWORD }}
+      # Tunnel-mode Authentik URLs (override docker-compose.e2e.yml defaults)
+      AUTHENTIK_EXTERNAL_URL: https://${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}
+      AUTHENTIK_ISSUER_URL: https://${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}/application/o/fuzefront/
+      AUTHENTIK_COOKIE_DOMAIN: ${{ inputs.tunnel_hostname || 'auth-dev.fuzefront.com' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install root workspace (for Playwright + frontend deps)
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        # Install only Chromium — the E2E runs in non-headless Chromium so Google's
+        # login page doesn't trigger its headless-browser fingerprint checks.
+        run: npx playwright install --with-deps chromium
+
+      - name: Start E2E stack with tunnel (Authentik + backend + frontend + cloudflared)
+        run: |
+          docker compose -f docker-compose.e2e.yml --profile tunnel up -d --build
+        timeout-minutes: 10
+
+      - name: Wait for Authentik to become healthy
+        # Authentik takes 2-3 minutes to start and apply blueprints on first boot.
+        # Poll the health endpoint through the published port (not through the tunnel).
+        run: |
+          echo "Waiting for Authentik..."
+          for i in $(seq 1 36); do
+            if curl -fsS http://localhost:9000/-/health/ready/ >/dev/null 2>&1; then
+              echo "Authentik ready after $((i * 5))s"
+              break
+            fi
+            if [ "$i" -eq 36 ]; then
+              echo "Authentik did not become ready in 3 minutes"
+              docker compose -f docker-compose.e2e.yml logs authentik-server | tail -50
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for backend to become healthy
+        run: |
+          for i in $(seq 1 18); do
+            if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then
+              echo "Backend ready"
+              break
+            fi
+            if [ "$i" -eq 18 ]; then
+              echo "Backend did not become ready in 90s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for frontend to become healthy
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS http://localhost:4173 >/dev/null 2>&1; then
+              echo "Frontend ready"
+              break
+            fi
+            if [ "$i" -eq 12 ]; then
+              echo "Frontend did not become ready in 60s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Wait for tunnel to register with Cloudflare edge
+        # Give cloudflared time to connect before running browser tests
+        run: |
+          echo "Waiting 15s for tunnel to register..."
+          sleep 15
+          curl -fsS "https://$TUNNEL_HOSTNAME/-/health/ready/" >/dev/null \
+            || echo "Tunnel not reachable yet — tests may still pass if it comes up in time"
+
+      - name: Run Google OAuth E2E tests
+        working-directory: frontend
+        env:
+          TUNNEL_HOSTNAME: ${{ env.TUNNEL_HOSTNAME }}
+          GOOGLE_TEST_EMAIL: ${{ env.GOOGLE_TEST_EMAIL }}
+          GOOGLE_TEST_PASSWORD: ${{ env.GOOGLE_TEST_PASSWORD }}
+        run: |
+          # Run in non-headless mode (with Xvfb) to avoid Google's headless detection.
+          # --headed requires a display; xvfb-run provides a virtual framebuffer.
+          xvfb-run --auto-servernum npx playwright test tests/google-oauth-e2e.spec.ts \
+            --headed \
+            --reporter=list,html \
+            --timeout=120000
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-oauth-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          echo "=== authentik-server ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -80
+          echo "=== authentik-worker ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -40
+          echo "=== backend ==="
+          docker compose -f docker-compose.e2e.yml logs backend | tail -40
+          echo "=== cloudflared ==="
+          docker compose -f docker-compose.e2e.yml logs cloudflared | tail -40
+
+      - name: Tear down E2E stack
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v

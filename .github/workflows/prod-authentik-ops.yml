@@ -1,0 +1,67 @@
+name: Prod Authentik ops (diagnose/apply blueprints)
+
+# Operates on PROD Authentik (https://auth.fuzefront.com) via its admin API —
+# the sandbox/agent cannot reach the cluster, and the file-based blueprint
+# runner fails silently, so this is the observable path for both diagnosis
+# and remediation.
+#
+# Requires repo secret AUTHENTIK_PROD_TOKEN (the akadmin API token — the
+# cluster's AUTHENTIK_BOOTSTRAP_TOKEN value). Mirror it with:
+#   kubectl -n fuzefront get secret fuzefront-secrets \
+#     -o jsonpath='{.data.AUTHENTIK_BOOTSTRAP_TOKEN}' | base64 -d \
+#     | gh secret set AUTHENTIK_PROD_TOKEN --repo izzywdev/FuzeFront
+#
+# phase=diagnose: read-only — version, brands, flows, sources, blueprint
+#   instances + status. Posts a report comment on PR #218.
+# phase=apply: upserts the repo's blueprint files as API blueprint instances
+#   (inline content), triggers apply, re-reads status, posts the report.
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'diagnose | apply'
+        required: true
+        default: 'diagnose'
+      blueprints:
+        description: 'comma-separated blueprint files (apply phase)'
+        required: false
+        default: 'brand-fuseseam,flow-recovery,flow-enrollment,source-google'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Authentik ops
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AK_TOKEN: ${{ secrets.AUTHENTIK_PROD_TOKEN }}
+          AK_URL: https://auth.fuzefront.com
+          PHASE: ${{ inputs.phase }}
+          BLUEPRINTS: ${{ inputs.blueprints }}
+        run: |
+          set -euo pipefail
+          if [ -z "$AK_TOKEN" ]; then
+            printf '%s\n' \
+              '## Prod Authentik ops' \
+              '' \
+              '**BLOCKED: repo secret `AUTHENTIK_PROD_TOKEN` is not set.** Mirror the cluster token:' \
+              '' \
+              '```bash' \
+              'kubectl -n fuzefront get secret fuzefront-secrets -o jsonpath="{.data.AUTHENTIK_BOOTSTRAP_TOKEN}" | base64 -d | gh secret set AUTHENTIK_PROD_TOKEN --repo izzywdev/FuzeFront' \
+              '```' > report.md
+            gh api "repos/${GITHUB_REPOSITORY}/issues/218/comments" -F body=@report.md >/dev/null
+            echo "::error::AUTHENTIK_PROD_TOKEN not set"
+            exit 1
+          fi
+          rc=0
+          python3 deploy/helm/fuzefront/authentik/ops.py || rc=$?
+          gh api "repos/${GITHUB_REPOSITORY}/issues/218/comments" -F body=@report.md >/dev/null
+          exit "$rc"

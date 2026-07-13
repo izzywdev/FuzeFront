@@ -1,1 +1,153 @@
-bmFtZTogRGVzaWduIFN5c3RlbSBQcm9wYWdhdGlvbgpvbjoKICBwdXNoOgogICAgYnJhbmNoZXM6IFttYXN0ZXJdCiAgICBwYXRoczoKICAgICAgLSAnZGVzaWduLXN5c3RlbS8qKicKICB3b3JrZmxvd19kaXNwYXRjaDoKICAgIGlucHV0czoKICAgICAgcmVhc29uOgogICAgICAgIGRlc2NyaXB0aW9uOiAnUmVhc29uIGZvciBtYW51YWwgdHJpZ2dlcicKICAgICAgICByZXF1aXJlZDogZmFsc2UKICAgICAgICBkZWZhdWx0OiAnTWFudWFsIERTIHByb3BhZ2F0aW9uIHJ1bicKam9iczoKICBkZXRlY3QtY2hhbmdlczoKICAgIG5hbWU6IERldGVjdCBEUyBjaGFuZ2Ugc3VtbWFyeQogICAgcnVucy1vbjogdWJ1bnR1LWxhdGVzdAogICAgb3V0cHV0czoKICAgICAgc3VtbWFyeTogJHt7IHN0ZXBzLnN1bW1hcmlzZS5vdXRwdXRzLnN1bW1hcnkgfX0KICAgICAgY2hhbmdlZF9maWxlczogJHt7IHN0ZXBzLnN1bW1hcmlzZS5vdXRwdXRzLmNoYW5nZWRfZmlsZXMgfX0KICAgIHN0ZXBzOgogICAgICAtIHVzZXM6IGFjdGlvbnMvY2hlY2tvdXRAdjQKICAgICAgICB3aXRoOgogICAgICAgICAgZmV0Y2gtZGVwdGg6IDIKICAgICAgLSBuYW1lOiBTdW1tYXJpc2UgRFMgZGlmZgogICAgICAgIGlkOiBzdW1tYXJpc2UKICAgICAgICBydW46IHwKICAgICAgICAgIENIQU5HRUQ9JChnaXQgZGlmZiAtLW5hbWUtb25seSBIRUFEfjEgSEVBRCAtLSAnZGVzaWduLXN5c3RlbS8qKicgMj4vZGV2L251bGwgfCBoZWFkIC04MCB8IHRyICdcbicgJywnIHx8IGVjaG8gIiIpCiAgICAgICAgICBDT01NSVRfTVNHPSQoZ2l0IGxvZyAtMSAtLWZvcm1hdD0nJXMnKQogICAgICAgICAgZWNobyAiY2hhbmdlZF9maWxlcz0ke0NIQU5HRUR9IiA+PiAiJEdJVEhVQl9PVVRQVVQiCiAgICAgICAgICBlY2hvICJzdW1tYXJ5PURTIHVwZGF0ZSAtLSAke0NPTU1JVF9NU0d9LiBGaWxlczogJHtDSEFOR0VEOi1ub25lfS4iID4+ICIkR0lUSFVCX09VVFBVVCIKICBkaXNwYXRjaC1mcm9udGVuZC1hZ2VudDoKICAgIG5hbWU6IERpc3BhdGNoIGZyb250ZW5kLWVuZ2luZWVyIGFnZW50CiAgICBuZWVkczogZGV0ZWN0LWNoYW5nZXMKICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIHBlcm1pc3Npb25zOgogICAgICBhY3Rpb25zOiB3cml0ZQogICAgICBjb250ZW50czogcmVhZAogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogRGlzcGF0Y2ggZHMtY2xhdWRlLWFnZW50IGZvciBmcm9udGVuZAogICAgICAgIGVudjoKICAgICAgICAgIEdIX1RPS0VOOiAke3sgc2VjcmV0cy5HSVRIVUJfVE9LRU4gfX0KICAgICAgICAgIFNVTU1BUlk6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLnN1bW1hcnkgfX0KICAgICAgICAgIENIQU5HRUQ6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLmNoYW5nZWRfZmlsZXMgfX0KICAgICAgICAgIFJVTjogJHt7IGdpdGh1Yi5ydW5fbnVtYmVyIH19CiAgICAgICAgcnVuOiB8CiAgICAgICAgICBQUk9NUFQ9IllvdSBhcmUgYWN0aW5nIGFzIGZyb250ZW5kLWVuZ2luZWVyIGZvciBGdXplRnJvbnQuCiAgICAgICAgICBEUyB1cGRhdGVkIG9uIG1hc3RlciAocnVuICMke1JVTn0pOiAke1NVTU1BUll9CiAgICAgICAgICBGaWxlczogJHtDSEFOR0VEfQogICAgICAgICAgVGFzazogcmVhZCBkZXNpZ24tc3lzdGVtL2NvbXBvbmVudHMvbW9iaWxlLyBhbmQgdG9rZW5zL3NwYWNpbmcuY3NzLAogICAgICAgICAgdXBkYXRlIGZyb250ZW5kLyB0byB1c2UgbmV3IG1vYmlsZSBwcmltaXRpdmVzIGF0IHhzL3NtIGJyZWFrcG9pbnRzLAogICAgICAgICAgY29tbWl0IG9uIGRzLXByb3BhZ2F0ZS9mcm9udGVuZC0ke1JVTn0sIG9wZW4gZHJhZnQgUFIsIHJlcG9ydCBTQ09QRSBET05FLiIKICAgICAgICAgIGdoIHdvcmtmbG93IHJ1biBkcy1jbGF1ZGUtYWdlbnQueW1sIFwKICAgICAgICAgICAgLS1yZXBvICIkR0lUSFVCX1JFUE9TSVRPUlkiIC0tcmVmIG1hc3RlciBcCiAgICAgICAgICAgIC0tZmllbGQgInByb21wdD0ke1BST01QVH0iIFwKICAgICAgICAgICAgLS1maWVsZCAiYnJhbmNoX2hpbnQ9ZHMtcHJvcGFnYXRlL2Zyb250ZW5kLSR7UlVOfSIKICBkaXNwYXRjaC1tb2JpbGUtYWdlbnQ6CiAgICBuYW1lOiBEaXNwYXRjaCBtb2JpbGUtZnJvbnRlbmQtZW5naW5lZXIgYWdlbnQKICAgIG5lZWRzOiBkZXRlY3QtY2hhbmdlcwogICAgcnVucy1vbjogdWJ1bnR1LWxhdGVzdAogICAgcGVybWlzc2lvbnM6CiAgICAgIGFjdGlvbnM6IHdyaXRlCiAgICAgIGNvbnRlbnRzOiByZWFkCiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBEaXNwYXRjaCBkcy1jbGF1ZGUtYWdlbnQgZm9yIG1vYmlsZQogICAgICAgIGVudjoKICAgICAgICAgIEdIX1RPS0VOOiAke3sgc2VjcmV0cy5HSVRIVUJfVE9LRU4gfX0KICAgICAgICAgIFNVTU1BUlk6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLnN1bW1hcnkgfX0KICAgICAgICAgIENIQU5HRUQ6ICR7eyBuZWVkcy5kZXRlY3QtY2hhbmdlcy5vdXRwdXRzLmNoYW5nZWRfZmlsZXMgfX0KICAgICAgICAgIFJVTjogJHt7IGdpdGh1Yi5ydW5fbnVtYmVyIH19CiAgICAgICAgcnVuOiB8CiAgICAgICAgICBQUk9NUFQ9IllvdSBhcmUgYWN0aW5nIGFzIG1vYmlsZS1mcm9udGVuZC1lbmdpbmVlciBmb3IgRnV6ZUZyb250LgogICAgICAgICAgRFMgdXBkYXRlZCBvbiBtYXN0ZXIgKHJ1biAjJHtSVU59KTogJHtTVU1NQVJZfQogICAgICAgICAgRmlsZXM6ICR7Q0hBTkdFRH0KICAgICAgICAgIFRhc2s6IHJlYWQgZGVzaWduLXN5c3RlbS9jb21wb25lbnRzL21vYmlsZS8gYW5kIHRva2Vucy9zcGFjaW5nLmNzcywKICAgICAgICAgIHdpcmUgQm90dG9tTmF2IGludG8gQW5kcm9pZCBUV0Egc2hlbGwgYW5kIHhzL3NtIGJyZWFrcG9pbnRzLAogICAgICAgICAgYXBwbHkgdG91Y2gvbW90aW9uL3NhZmUtYXJlYSB0b2tlbnMsCiAgICAgICAgICBjb21taXQgb24gZHMtcHJvcGFnYXRlL21vYmlsZS0ke1JVTn0sIG9wZW4gZHJhZnQgUFIsIHJlcG9ydCBTQ09QRSBET05FLiIKICAgICAgICAgIGdoIHdvcmtmbG93IHJ1biBkcy1jbGF1ZGUtYWdlbnQueW1sIFwKICAgICAgICAgICAgLS1yZXBvICIkR0lUSFVCX1JFUE9TSVRPUlkiIC0tcmVmIG1hc3RlciBcCiAgICAgICAgICAgIC0tZmllbGQgInByb21wdD0ke1BST01QVH0iIFwKICAgICAgICAgICAgLS1maWVsZCAiYnJhbmNoX2hpbnQ9ZHMtcHJvcGFnYXRlL21vYmlsZS0ke1JVTn0iCiAgZGlzcGF0Y2gtZTJlLWFnZW50OgogICAgbmFtZTogRGlzcGF0Y2ggZnJvbnRlbmQtdGVzdC1lbmdpbmVlciBhZ2VudAogICAgbmVlZHM6IFtkaXNwYXRjaC1mcm9udGVuZC1hZ2VudCwgZGlzcGF0Y2gtbW9iaWxlLWFnZW50XQogICAgaWY6IGFsd2F5cygpCiAgICBydW5zLW9uOiB1YnVudHUtbGF0ZXN0CiAgICBwZXJtaXNzaW9uczoKICAgICAgYWN0aW9uczogd3JpdGUKICAgICAgY29udGVudHM6IHJlYWQKICAgIHN0ZXBzOgogICAgICAtIG5hbWU6IERpc3BhdGNoIGRzLWNsYXVkZS1hZ2VudCBmb3IgZTJlIHRlc3RzCiAgICAgICAgZW52OgogICAgICAgICAgR0hfVE9LRU46ICR7eyBzZWNyZXRzLkdJVEhVQl9UT0tFTiB9fQogICAgICAgICAgU1VNTUFSWTogJHt7IG5lZWRzLmRldGVjdC1jaGFuZ2VzLm91dHB1dHMuc3VtbWFyeSB9fQogICAgICAgICAgUlVOOiAke3sgZ2l0aHViLnJ1bl9udW1iZXIgfX0KICAgICAgICBydW46IHwKICAgICAgICAgIFBST01QVD0iWW91IGFyZSBhY3RpbmcgYXMgZnJvbnRlbmQtdGVzdC1lbmdpbmVlciBmb3IgRnV6ZUZyb250LgogICAgICAgICAgRFMgdXBkYXRlZCB3aXRoIG1vYmlsZSBwcmltaXRpdmVzIChCb3R0b21OYXYsIEJvdHRvbVNoZWV0LCBEcmF3ZXIpCiAgICAgICAgICBhbmQgc3BhY2luZy9tb3Rpb24gdG9rZW5zIChkcy1wcm9wYWdhdGUgcnVuICMke1JVTn0pLiAke1NVTU1BUll9CiAgICAgICAgICBUYXNrOiB3cml0ZSBQbGF5d3JpZ2h0IHRlc3RzIGZvciBCb3R0b21OYXYgYXQgMzc1cHgsIERyYXdlciwgQm90dG9tU2hlZXQsCiAgICAgICAgICBhc3NlcnQgQ1NTIGNvbXB1dGVkIHByb3BlcnRpZXMsIGNoZWNrIG5vIHJlZ3Jlc3Npb25zLAogICAgICAgICAgY29tbWl0IG9uIGRzLXByb3BhZ2F0ZS9lMmUtJHtSVU59LCBvcGVuIGRyYWZ0IFBSLCByZXBvcnQgU0NPUEUgRE9ORS4iCiAgICAgICAgICBnaCB3b3JrZmxvdyBydW4gZHMtY2xhdWRlLWFnZW50LnltbCBcCiAgICAgICAgICAgIC0tcmVwbyAiJEdJVEhVQl9SRVBPU0lUT1JZIiAtLXJlZiBtYXN0ZXIgXAogICAgICAgICAgICAtLWZpZWxkICJwcm9tcHQ9JHtQUk9NUFR9IiBcCiAgICAgICAgICAgIC0tZmllbGQgImJyYW5jaF9oaW50PWRzLXByb3BhZ2F0ZS9lMmUtJHtSVU59Igo=
+name: Design System Propagation
+
+# On push to master touching design-system/**, dispatch ds-claude-agent.yml
+# three times -- once per agent slice. GITHUB_TOKEN CAN trigger workflow_dispatch
+# on other workflows (unlike issue/push events), so no PAT is needed.
+# Each dispatched run calls claude-code-action@v1 with a full prompt.
+#
+# Requires: ANTHROPIC_API_KEY repo secret (used by ds-claude-agent.yml).
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'design-system/**'
+
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual DS propagation run'
+
+jobs:
+  detect-changes:
+    name: Detect DS change summary
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.summarise.outputs.summary }}
+      changed_files: ${{ steps.summarise.outputs.changed_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Summarise DS diff
+        id: summarise
+        run: |
+          # On workflow_dispatch HEAD~1 may not exist -- guard with || true
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'design-system/**' 2>/dev/null | head -80 | tr '\n' ',' || echo "")
+          NEW_COMPONENTS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/components/**/*.jsx' 2>/dev/null | \
+            sed 's|design-system/components/||;s|\.jsx||' | tr '\n' ', ' || echo "")
+          NEW_TOKENS=$(git diff --name-only HEAD~1 HEAD -- 'design-system/tokens/**' 2>/dev/null | \
+            sed 's|design-system/tokens/||' | tr '\n' ', ' || echo "")
+          COMMIT_MSG=$(git log -1 --format='%s')
+          echo "changed_files=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "summary=DS update -- ${COMMIT_MSG}. Components: ${NEW_COMPONENTS:-none}. Token files: ${NEW_TOKENS:-none}." >> "$GITHUB_OUTPUT"
+
+  dispatch-frontend-agent:
+    name: Dispatch frontend-engineer agent
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for frontend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as frontend-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "Changed files: ${CHANGED}" \
+            "" \
+            "Your task:" \
+            "1. Read the changed design-system files: design-system/components/mobile/ (BottomNav, BottomSheet, Drawer) and design-system/tokens/spacing.css." \
+            "2. Update frontend/ to import and use the new mobile primitives in the shell layout at xs/sm breakpoints (<768px). The responsive shell should render BottomNav instead of the side panel on xs/sm." \
+            "3. Replace any raw spacing/motion values in frontend/ that now have a DS token with the token variable." \
+            "4. Commit your changes on branch ds-propagate/frontend-${RUN}, push it, and open a draft PR titled 'feat(frontend): apply DS mobile primitives (run #${RUN})'." \
+            "5. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/frontend-${RUN}"
+
+  dispatch-mobile-agent:
+    name: Dispatch mobile-frontend-engineer agent
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for mobile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          CHANGED: ${{ needs.detect-changes.outputs.changed_files }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as mobile-frontend-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "Changed files: ${CHANGED}" \
+            "" \
+            "Your task:" \
+            "1. Read design-system/components/mobile/ (BottomNav, BottomSheet, Drawer) and design-system/tokens/spacing.css (--bottom-nav-height, --drawer-width, --sheet-max-h, --touch-target, safe-area vars, motion tokens)." \
+            "2. Wire BottomNav into the Android TWA shell and any responsive shell layouts under frontend/ targeting xs/sm breakpoints." \
+            "3. Apply touch-target, safe-area, and motion tokens wherever touch interactions or slide animations exist." \
+            "4. Verify frontend/public/manifest.webmanifest viewport is consistent with --top-bar-height-mobile (52px)." \
+            "5. Commit on branch ds-propagate/mobile-${RUN}, push, open a draft PR titled 'feat(mobile): apply DS mobile tokens + primitives (run #${RUN})'." \
+            "6. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/mobile-${RUN}"
+
+  dispatch-e2e-agent:
+    name: Dispatch frontend-test-engineer agent
+    needs: [detect-changes, dispatch-frontend-agent, dispatch-mobile-agent]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch ds-claude-agent for e2e tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ needs.detect-changes.outputs.summary }}
+          RUN: ${{ github.run_number }}
+        run: |
+          PROMPT=$(printf '%s\n' \
+            "You are acting as frontend-test-engineer for FuzeFront." \
+            "" \
+            "The @fuzefront/design-system has been updated with mobile primitives (BottomNav, BottomSheet, Drawer) and the frontend/mobile propagation agents for run #${RUN} have been dispatched." \
+            "" \
+            "Change summary: ${SUMMARY}" \
+            "" \
+            "Your task:" \
+            "1. Write or update Playwright e2e tests covering:" \
+            "   - BottomNav renders at 375px viewport width and tab selection works." \
+            "   - Drawer opens/closes via hamburger button, Escape closes it, backdrop tap closes it, focus is trapped inside." \
+            "   - BottomSheet opens, Escape closes it, backdrop tap closes it, focus is trapped." \
+            "2. Add CSS computed-style assertions that --bottom-nav-height, --touch-target, and --sheet-max-h are actually applied." \
+            "3. Run the existing e2e suite and confirm no regressions in TopBar, Modal, SidePanel at 1024px+ viewport." \
+            "4. Commit on branch ds-propagate/e2e-${RUN}, push, open a draft PR titled 'test(e2e): mobile DS primitives Playwright coverage (run #${RUN})'." \
+            "5. Report SCOPE DONE (verified) when complete.")
+          gh workflow run ds-claude-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            --field "prompt=${PROMPT}" \
+            --field "branch_hint=ds-propagate/e2e-${RUN}"

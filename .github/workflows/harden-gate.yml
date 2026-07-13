@@ -10,6 +10,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -108,6 +109,9 @@ jobs:
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (report-only, SARIF)
@@ -119,12 +123,51 @@ jobs:
           output: trivy.sarif
           severity: CRITICAL,HIGH
           exit-code: '0'
+          ignore-unfixed: true
+          trivyignores: '.trivyignore'
+      - name: Detect open PR for SARIF upload ref
+        id: detect-pr
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "push" ]; then
+            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
+              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
+            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
+              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
+              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha // empty')
+              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
+                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+              else
+                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
+                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              fi
+            else
+              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
+        continue-on-error: true
         if: always()
         with:
           sarif_file: trivy.sarif
           category: trivy
+          ref: ${{ steps.detect-pr.outputs.upload_ref }}
+          sha: ${{ steps.detect-pr.outputs.upload_sha }}
 
   gate-authz:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
@@ -275,7 +318,9 @@ jobs:
         shell: bash
         run: |
           git fetch origin "$BASE_REF" --depth=1
-          DIFF=$(git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' | head -c 80000)
+          # Write diff to a temp file first to avoid SIGPIPE (exit 141) when `head` closes early
+          git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' > /tmp/fulldiff.txt 2>/dev/null || true
+          DIFF=$(head -c 80000 /tmp/fulldiff.txt)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
           PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
           claude --print --output-format text "$PROMPT" > /tmp/review.txt 2>/tmp/review-err.txt || true

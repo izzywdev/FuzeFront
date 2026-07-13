@@ -12,6 +12,29 @@ export interface BillingCustomer {
   stripeCustomerId: string;
 }
 
+/**
+ * Lifecycle of a payment-mode Checkout mirror row: 'pending' from session
+ * creation until a webhook lands, then 'paid' / 'failed' / 'expired'.
+ * 'paid' is terminal (never downgraded — see PgPaymentRepository.upsert).
+ */
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
+
+/** Local mirror of a ONE-TIME payment-mode Stripe Checkout Session. */
+export interface BillingPayment {
+  id: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  productKey: string;
+  externalOrderId: string;
+  entityType: EntityType;
+  entityId: string;
+  amountTotalCents: number;
+  currency: string;
+  status: PaymentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type PlanTier = 'free' | 'starter' | 'pro' | 'enterprise' | string;
 
 /** Mirrors Stripe subscription status enum values. */

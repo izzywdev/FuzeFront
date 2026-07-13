@@ -29,6 +29,42 @@ describe('loadConfig', () => {
     delete process.env.KAFKA_BROKERS;
   });
 
+  it('payments defaults: empty product allowlist (fail closed), usd/eur, 5M cent cap', () => {
+    delete process.env.BILLING_PRODUCT_KEYS;
+    delete process.env.BILLING_PAYMENT_CURRENCIES;
+    delete process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS;
+
+    const cfg = loadConfig();
+
+    expect(cfg.payments.productKeys).toEqual([]);
+    expect(cfg.payments.currencies).toEqual(['usd', 'eur']);
+    expect(cfg.payments.maxTotalCents).toBe(5_000_000);
+  });
+
+  it('parses BILLING_PRODUCT_KEYS / CURRENCIES as trimmed, lowercased CSV', () => {
+    process.env.BILLING_PRODUCT_KEYS = ' mendys-datasets , Other-Product ,';
+    process.env.BILLING_PAYMENT_CURRENCIES = 'USD, gbp';
+    process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS = '250000';
+
+    const cfg = loadConfig();
+
+    expect(cfg.payments.productKeys).toEqual(['mendys-datasets', 'other-product']);
+    expect(cfg.payments.currencies).toEqual(['usd', 'gbp']);
+    expect(cfg.payments.maxTotalCents).toBe(250000);
+
+    delete process.env.BILLING_PRODUCT_KEYS;
+    delete process.env.BILLING_PAYMENT_CURRENCIES;
+    delete process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS;
+  });
+
+  it('falls back to the default cent cap on a non-numeric/zero override', () => {
+    process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS = 'not-a-number';
+    expect(loadConfig().payments.maxTotalCents).toBe(5_000_000);
+    process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS = '0';
+    expect(loadConfig().payments.maxTotalCents).toBe(5_000_000);
+    delete process.env.BILLING_PAYMENT_MAX_TOTAL_CENTS;
+  });
+
   it('reads optional billing env vars', () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_123';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_abc';
