@@ -21,6 +21,12 @@ export interface MessageListProps {
   onLoadOlder?: () => void | Promise<void>;
   /** Load one page of newer messages (called near the bottom edge). */
   onLoadNewer?: () => void | Promise<void>;
+  /**
+   * Increments on each locally-sent user message (ChatModel.sendCount).
+   * Forces a scroll to the bottom on the user's own send even when they had
+   * scrolled up into history.
+   */
+  sendSignal?: number;
 }
 
 /**
@@ -40,6 +46,7 @@ export function MessageList({
   hasMoreAfter = false,
   onLoadOlder,
   onLoadNewer,
+  sendSignal = 0,
 }: MessageListProps) {
   const { strings } = useChatI18n();
   const listRef = useRef<HTMLDivElement>(null);
@@ -108,6 +115,15 @@ export function MessageList({
     }
     prevFirstIdRef.current = firstId;
   }, [messages]);
+
+  // The user's own send always snaps to the bottom (and re-pins auto-scroll),
+  // even if they had scrolled up into history before composing.
+  useEffect(() => {
+    if (sendSignal > 0) {
+      nearBottomRef.current = true;
+      endRef.current?.scrollIntoView({ block: 'end' });
+    }
+  }, [sendSignal]);
 
   // Auto-scroll on new content (including streaming deltas) — but only while
   // the user is already at the bottom.

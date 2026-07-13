@@ -31,6 +31,12 @@ export interface ChatModel {
   hasMoreAfter: boolean;
   /** The active server conversation id, once known (prop, hydrate, or stream). */
   conversationId?: string;
+  /**
+   * Monotonic count of locally-sent user messages. UI uses it to force-scroll
+   * to the bottom on the user's OWN send even when they had scrolled up into
+   * history (streamed deltas alone never yank a reader away from history).
+   */
+  sendCount: number;
 }
 
 export type ChatAction =
@@ -59,6 +65,7 @@ export const initialModel: ChatModel = {
   hasMoreBefore: false,
   hasMoreAfter: false,
   conversationId: undefined,
+  sendCount: 0,
 };
 
 /** Update the last assistant message in place via the given transform. */
@@ -93,6 +100,7 @@ export function chatReducer(state: ChatModel, action: ChatAction): ChatModel {
     case 'user_message':
       return {
         ...state,
+        sendCount: state.sendCount + 1,
         messages: [
           ...state.messages,
           { id: action.id, role: 'user', content: action.content, streaming: false },

@@ -102,6 +102,7 @@ function ChatWidgetInner({
       hasMoreAfter={chat.hasMoreAfter}
       onLoadOlder={chat.loadOlder}
       onLoadNewer={chat.loadNewer}
+      sendSignal={chat.sendCount}
       onSend={chat.send}
       onApprove={chat.confirm}
       onCancel={chat.cancel}

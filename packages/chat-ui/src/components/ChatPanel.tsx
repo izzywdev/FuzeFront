@@ -19,6 +19,8 @@ export interface ChatPanelProps {
   hasMoreAfter?: boolean;
   onLoadOlder?: () => void;
   onLoadNewer?: () => void;
+  /** Increments per locally-sent user message; forces scroll-to-bottom. */
+  sendSignal?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export function ChatPanel({
   hasMoreAfter = false,
   onLoadOlder,
   onLoadNewer,
+  sendSignal,
 }: ChatPanelProps) {
   const { strings, dir } = useChatI18n();
 
@@ -75,6 +78,7 @@ export function ChatPanel({
         hasMoreAfter={hasMoreAfter}
         onLoadOlder={onLoadOlder}
         onLoadNewer={onLoadNewer}
+        sendSignal={sendSignal}
       />
 
       <Composer disabled={streaming || loadingHistory} onSend={onSend} />
