@@ -1,0 +1,86 @@
+# Publish the chat packages to GitHub Packages under the @izzywdev scope.
+#
+# GitHub Packages requires the npm scope to match the repository owner, so the
+# canonical @fuzefront/* names cannot publish until the org transfer completes
+# (see packages-publish.yml, which stays the long-term path and no-ops until
+# then). Consuming apps (e.g. MendysRobotics) need the chat packages TODAY, so
+# this workflow publishes the same builds under owner-scoped alias names:
+#
+#   @fuzefront/chat-client -> @izzywdev/fuzefront-chat-client
+#   @fuzefront/chat-ui     -> @izzywdev/fuzefront-chat-ui
+#
+# Consumers install via npm aliases so their imports keep the canonical names:
+#
+#   "@fuzefront/chat-client": "npm:@izzywdev/fuzefront-chat-client@^1.1.0",
+#   "@fuzefront/chat-ui":     "npm:@izzywdev/fuzefront-chat-ui@^1.1.0"
+#
+# Once the org transfer lands and packages-publish.yml activates, consumers
+# drop the alias and this workflow is deleted. Publishing is idempotent: a
+# version that already exists in the registry is skipped, not overwritten.
+name: Publish chat packages (alias scope)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/chat-client/**'
+      - 'packages/chat-ui/**'
+
+concurrency:
+  group: chat-packages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_owner == 'izzywdev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@izzywdev'
+
+      - name: Build chat-client
+        working-directory: packages/chat-client
+        run: |
+          npm install --workspaces=false --no-audit --no-fund
+          npm run build
+
+      - name: Build chat-ui
+        working-directory: packages/chat-ui
+        run: |
+          npm install --workspaces=false --no-audit --no-fund
+          npm run build
+
+      - name: Publish @izzywdev/fuzefront-chat-client
+        working-directory: packages/chat-client
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(npm pkg get version | tr -d '"')
+          npm pkg set name=@izzywdev/fuzefront-chat-client
+          if npm view "@izzywdev/fuzefront-chat-client@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "@izzywdev/fuzefront-chat-client@${VERSION} already published — skipping."
+          else
+            npm publish --registry=https://npm.pkg.github.com
+          fi
+
+      - name: Publish @izzywdev/fuzefront-chat-ui
+        working-directory: packages/chat-ui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(npm pkg get version | tr -d '"')
+          npm pkg set name=@izzywdev/fuzefront-chat-ui
+          if npm view "@izzywdev/fuzefront-chat-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "@izzywdev/fuzefront-chat-ui@${VERSION} already published — skipping."
+          else
+            npm publish --registry=https://npm.pkg.github.com
+          fi
