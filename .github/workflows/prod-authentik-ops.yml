@@ -25,7 +25,7 @@ on:
       blueprints:
         description: 'comma-separated blueprint files (apply phase)'
         required: false
-        default: 'brand-fuseseam,flow-enrollment,flow-recovery,source-google'
+        default: 'brand-fuseseam,flow-recovery,flow-enrollment,source-google,login-surface'
 
 permissions:
   contents: read
@@ -61,5 +61,7 @@ jobs:
             echo "::error::AUTHENTIK_PROD_TOKEN not set"
             exit 1
           fi
-          python3 scripts/ci-authentik-ops.py
+          rc=0
+          python3 deploy/helm/fuzefront/authentik/ops.py || rc=$?
           gh api "repos/${GITHUB_REPOSITORY}/issues/218/comments" -F body=@report.md >/dev/null
+          exit "$rc"

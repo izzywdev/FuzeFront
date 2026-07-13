@@ -19,6 +19,10 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  *      remote apps load — app cards render, and at least one remote module
  *      mounts at /app/:id with no MF/console load error and no 502 from
  *      /api/apps.
+ *   8. The Authentik login surface itself is configured: identification
+ *      challenge offers the Google source, a sign-up (enrollment) link, a
+ *      recovery link, and FuzeFront branding — catches "handoff works but the
+ *      IdP was never configured".
  *
  * The authenticated journey (test 7) obtains its session via the API
  * (POST /api/auth/login) rather than the UI: the local form is intentionally
@@ -227,5 +231,53 @@ test.describe('FuzeFront live post-prod smoke', () => {
     if (consoleErrors.length) {
       console.log('Console errors observed (informational):\n' + consoleErrors.join('\n'))
     }
+  })
+
+  test('8. Authentik login surface is configured (Google source + sign-up + recovery + brand)', async ({ request }) => {
+    // Black-box probe of the IdP itself: the login page's identification
+    // challenge advertises exactly what a user will see. This is the test that
+    // catches "the app hands off fine but Authentik was never configured" —
+    // unthemed page, no Google button, no sign-up link (the failure mode that
+    // shipped once already).
+    const AUTH_ORIGIN =
+      process.env.POST_PROD_AUTH_ORIGIN || 'https://auth.fuzefront.com'
+
+    const resp = await request.get(
+      `${AUTH_ORIGIN}/api/v3/flows/executor/default-authentication-flow/?query=`,
+      { headers: { Accept: 'application/json' }, maxRedirects: 5 }
+    )
+    expect(resp.status(), 'flow executor reachable').toBe(200)
+    const challenge = await resp.json()
+
+    expect(
+      challenge.component,
+      `first challenge should be the identification stage, got ${JSON.stringify(challenge.component)}`
+    ).toBe('ak-stage-identification')
+
+    // Sign-up link → enrollment flow applied AND wired into the stage.
+    expect(
+      challenge.enroll_url,
+      'enroll_url missing — enrollment flow not linked on the identification stage (sign-up dead)'
+    ).toBeTruthy()
+
+    // Recovery link → recovery flow applied and wired.
+    expect(
+      challenge.recovery_url,
+      'recovery_url missing — recovery flow not linked (forgot-password dead)'
+    ).toBeTruthy()
+
+    // Google shows as a federated source button.
+    const sources: Array<{ name?: string; challenge?: { to?: string } }> =
+      challenge.sources ?? []
+    expect(
+      sources.some(s => /google/i.test(s.name ?? '')),
+      `Google source not offered on the login page — sources: ${JSON.stringify(sources.map(s => s.name))}`
+    ).toBe(true)
+
+    // Brand applied (title comes from the flow/brand config, not authentik's default).
+    expect(
+      String(challenge.flow_info?.title ?? ''),
+      `login page still shows the default authentik title — brand/flow blueprints not applied (got ${JSON.stringify(challenge.flow_info?.title)})`
+    ).toMatch(/fuzefront/i)
   })
 })

@@ -12,13 +12,23 @@ version: 1
 metadata:
   name: FuzeFront Brand — fuse-seam
 entries:
+  # Retire the earlier dev-scoped brand row (superseded by the apex-domain
+  # brand below) so two `default: true` brands never coexist.
+  - model: authentik_brands.brand
+    state: absent
+    identifiers:
+      domain: "fuzefront.dev.local"
+
   - model: authentik_brands.brand
     state: present
     identifiers:
-      domain: "fuzefront.dev.local"
+      # Apex-suffix match covers auth.fuzefront.com (prod) and any other
+      # *.fuzefront.com host; default:true additionally covers dev hosts
+      # (fuzefront.dev.local) that don't suffix-match.
+      domain: "fuzefront.com"
     attrs:
       name: "FuzeFront"
-      domain: "fuzefront.dev.local"
+      domain: "fuzefront.com"
       default: true
       branding_title: "FuzeFront"
       # Inline SVG: a simple "seam" flame icon — safe across pod restarts
