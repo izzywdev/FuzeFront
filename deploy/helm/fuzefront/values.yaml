@@ -398,6 +398,13 @@ billingService:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "billing-service"
     groupId: "billing-service-group"
+  # Payment-path config (checkout allowlist). Fail-closed by default: empty
+  # productKeys means the payments route rejects every product key. Prod
+  # overrides these in values-prod.yaml.
+  payment:
+    productKeys: ""
+    currencies: ""
+    maxTotalCents: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 512Mi }
@@ -597,6 +604,10 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+    - name: billing.payment.completed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 2592000000 # 30d — billing audit trail
 
 # ── Cloudflare edge integration ──────────────────────────────────────────────
 # Cache purge lets the backend purge the CF edge cache after MFE deploys.

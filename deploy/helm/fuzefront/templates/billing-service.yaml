@@ -78,6 +78,22 @@ spec:
                   key: PERMIT_API_KEY
             - name: PERMIT_PDP_URL
               value: {{ .Values.billingService.permitPdpUrl | quote }}
+            # Payment-path enablement — plain config, not secrets. Fail-closed:
+            # an empty/unset productKeys allowlist rejects every checkout key.
+            {{- with .Values.billingService.payment }}
+            {{- if .productKeys }}
+            - name: BILLING_PRODUCT_KEYS
+              value: {{ .productKeys | quote }}
+            {{- end }}
+            {{- if .currencies }}
+            - name: BILLING_PAYMENT_CURRENCIES
+              value: {{ .currencies | quote }}
+            {{- end }}
+            {{- if .maxTotalCents }}
+            - name: BILLING_PAYMENT_MAX_TOTAL_CENTS
+              value: {{ .maxTotalCents | quote }}
+            {{- end }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
