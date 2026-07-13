@@ -1,5 +1,11 @@
 /* AUTO-GENERATED type barrel — mirrors index.js exports */
 export * from './components/access/RoleBadge';
+export * from './components/feedback/Alert';
+export * from './components/feedback/EmptyState';
+export * from './components/feedback/Spinner';
+export * from './components/layout/CenteredCard';
+export * from './components/layout/InfoRow';
+export * from './components/forms/Toggle';
 export * from './components/billing/PricingCard';
 export * from './components/brand/BrandMark';
 export * from './components/brand/SeamDivider';

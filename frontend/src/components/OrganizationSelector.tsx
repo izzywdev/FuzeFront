@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Skeleton, RoleBadge, Modal, EmptyState, Alert, Spinner } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {
@@ -154,21 +155,6 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
     }
   }
 
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'owner':
-        return 'bg-purple-100 text-purple-800'
-      case 'admin':
-        return 'bg-blue-100 text-blue-800'
-      case 'member':
-        return 'bg-green-100 text-green-800'
-      case 'viewer':
-        return 'bg-gray-100 text-gray-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   if (!isAuthenticated) {
     return null
   }
@@ -176,7 +162,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
   if (isLoading) {
     return (
       <div className={`${compact ? 'w-48' : 'w-64'} ${className}`}>
-        <div className="animate-pulse bg-gray-200 rounded-md h-10"></div>
+        <Skeleton height="40px" />
       </div>
     )
   }
@@ -227,9 +213,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg">
           <div className="max-h-60 overflow-auto">
             {organizations.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-500 text-center">
-                No organizations found
-              </div>
+              <EmptyState compact title="No organizations found" />
             ) : (
               organizations.map(org => (
                 <button
@@ -251,11 +235,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
                       )}
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(org.role)}`}
-                      >
-                        {org.role}
-                      </span>
+                      <RoleBadge role={org.role} />
                       {selectedOrg?.id === org.id && (
                         <svg
                           className="h-4 w-4 text-blue-600"
@@ -312,98 +292,60 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
       )}
 
       {/* Create Organization Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity">
-              <div
-                className="absolute inset-0 bg-gray-500 opacity-75"
-                onClick={() => setShowCreateModal(false)}
-              ></div>
-            </div>
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Create New Organization"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              Organization Name *
+            </label>
+            <input
+              type="text"
+              value={newOrgName}
+              onChange={e => setNewOrgName(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.75rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.875rem' }}
+              placeholder="Enter organization name"
+              maxLength={100}
+            />
+          </div>
 
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Create New Organization
-                </h3>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              Description
+            </label>
+            <textarea
+              value={newOrgDescription}
+              onChange={e => setNewOrgDescription(e.target.value)}
+              rows={3}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.75rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.875rem', resize: 'vertical' }}
+              placeholder="Optional description"
+              maxLength={500}
+            />
+          </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Organization Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={newOrgName}
-                      onChange={e => setNewOrgName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Enter organization name"
-                      maxLength={100}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description
-                    </label>
-                    <textarea
-                      value={newOrgDescription}
-                      onChange={e => setNewOrgDescription(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Optional description"
-                      maxLength={500}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button
-                  onClick={handleCreateOrganization}
-                  disabled={!newOrgName.trim() || isCreating}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isCreating ? (
-                    <>
-                      <svg
-                        className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Creating...
-                    </>
-                  ) : (
-                    'Create'
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button
+              onClick={() => setShowCreateModal(false)}
+              className="btn"
+              style={{ background: 'var(--bg-quaternary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateOrganization}
+              disabled={!newOrgName.trim() || isCreating}
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              {isCreating && <Spinner size={14} color="#fff" />}
+              {isCreating ? 'Creating...' : 'Create'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
