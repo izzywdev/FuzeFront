@@ -25,7 +25,7 @@ on:
       blueprints:
         description: 'comma-separated blueprint files (apply phase)'
         required: false
-        default: 'brand-fuseseam,flow-recovery,flow-enrollment,source-google,login-surface'
+        default: 'brand-fuseseam,flow-recovery,flow-enrollment,source-google'
 
 permissions:
   contents: read

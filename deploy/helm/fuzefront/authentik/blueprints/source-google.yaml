@@ -32,6 +32,8 @@
 version: 1
 metadata:
   name: FuzeFront Google OAuth Source
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── User-matching / de-dupe policy ───────────────────────────────────────────
   # Link on verified email prevents duplicate accounts when the same address
@@ -57,3 +59,32 @@ entries:
       # Show a "Sign in with Google" button on the login page
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
+  # ── Login surface wiring ─────────────────────────────────────────────────────
+  # Creating flows/sources does NOT surface them on the login page — the
+  # identification stage of the default authentication flow controls what
+  # renders. Patch it here, in the SAME file and AFTER the source entry, so the
+  # !Find lookups resolve in one pass (fuzefront-enrollment / fuzefront-recovery
+  # come from their own blueprints, which sort earlier alphabetically).
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      user_fields:
+        - username
+        - email
+      show_source_labels: true
+      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
+      recovery_flow: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
+      sources:
+        - !Find [authentik_core.source, [slug, authentik-built-in]]
+        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+
+  # Title shown on the hosted login card (default is "Welcome to authentik!").
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: default-authentication-flow
+    attrs:
+      title: "Sign in to FuzeFront"
