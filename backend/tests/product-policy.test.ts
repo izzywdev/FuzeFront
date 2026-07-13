@@ -62,7 +62,7 @@ const sample: ProductPolicy = {
 describe('namespaceKey', () => {
   it('joins product and bare key with the namespace separator', () => {
     expect(namespaceKey('fuzemarket', 'Listing')).toBe(`fuzemarket${PRODUCT_NS_SEP}Listing`)
-    expect(namespaceKey('fuzemarket', 'seller')).toBe('fuzemarket.seller')
+    expect(namespaceKey('fuzemarket', 'seller')).toBe('fuzemarket_seller')
   })
 })
 
@@ -104,11 +104,11 @@ describe('validateProductPolicy', () => {
 describe('namespaceProductPolicy', () => {
   it('namespaces resource keys, role keys, and permission resource refs', () => {
     const ns = namespaceProductPolicy(sample)
-    expect(ns.resources.map(r => r.key)).toEqual(['fuzemarket.Listing'])
-    expect(ns.roles.map(r => r.key)).toEqual(['fuzemarket.seller'])
+    expect(ns.resources.map(r => r.key)).toEqual(['fuzemarket_Listing'])
+    expect(ns.roles.map(r => r.key)).toEqual(['fuzemarket_seller'])
     expect(ns.roles[0].permissions).toEqual([
-      'fuzemarket.Listing:create',
-      'fuzemarket.Listing:read',
+      'fuzemarket_Listing:create',
+      'fuzemarket_Listing:read',
     ])
   })
 
@@ -126,8 +126,8 @@ describe('mergeProductPolicy', () => {
     const merged = mergeProductPolicy(permitSchema, sample)
 
     expect(merged.resources.map(r => r.key)).toContain('Organization')
-    expect(merged.resources.map(r => r.key)).toContain('fuzemarket.Listing')
-    expect(merged.roles.map(r => r.key)).toContain('fuzemarket.seller')
+    expect(merged.resources.map(r => r.key)).toContain('fuzemarket_Listing')
+    expect(merged.roles.map(r => r.key)).toContain('fuzemarket_seller')
     // base unchanged
     expect(permitSchema.resources).toHaveLength(baseResourceCount)
     expect(permitSchema.roles).toHaveLength(baseRoleCount)
@@ -137,10 +137,10 @@ describe('mergeProductPolicy', () => {
     const other: ProductPolicy = { ...sample, product: 'fuzeshop', name: 'FuzeShop' }
     const merged = mergeProductPolicy(permitSchema, sample, other)
     expect(merged.resources.map(r => r.key)).toEqual(
-      expect.arrayContaining(['fuzemarket.Listing', 'fuzeshop.Listing'])
+      expect.arrayContaining(['fuzemarket_Listing', 'fuzeshop_Listing'])
     )
     expect(merged.roles.map(r => r.key)).toEqual(
-      expect.arrayContaining(['fuzemarket.seller', 'fuzeshop.seller'])
+      expect.arrayContaining(['fuzemarket_seller', 'fuzeshop_seller'])
     )
   })
 
@@ -168,10 +168,10 @@ describe('syncPermitSchemaWithProducts (via merged schema)', () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client, buildEnvSchema(sample))
     expect(calls.resourceCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining(['Organization', 'App', 'fuzemarket.Listing'])
+      expect.arrayContaining(['Organization', 'App', 'fuzemarket_Listing'])
     )
     expect(calls.roleCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining(['admin', 'fuzemarket.seller'])
+      expect.arrayContaining(['admin', 'fuzemarket_seller'])
     )
   })
 
@@ -180,20 +180,20 @@ describe('syncPermitSchemaWithProducts (via merged schema)', () => {
     await syncPermitSchema(client, buildEnvSchema(fuzemarketPolicy, mendysDatasetsPolicy))
     expect(calls.resourceCreate.map(r => r.key)).toEqual(
       expect.arrayContaining([
-        'fuzemarket.Listing',
-        'mendys-datasets.Dataset',
-        'mendys-datasets.TalentProfile',
-        'mendys-datasets.Order',
-        'mendys-datasets.Equipment',
-        'mendys-datasets.Report',
+        'fuzemarket_Listing',
+        'mendys-datasets_Dataset',
+        'mendys-datasets_TalentProfile',
+        'mendys-datasets_Order',
+        'mendys-datasets_Equipment',
+        'mendys-datasets_Report',
       ])
     )
     expect(calls.roleCreate.map(r => r.key)).toEqual(
       expect.arrayContaining([
-        'fuzemarket.buyer',
-        'mendys-datasets.talent',
-        'mendys-datasets.buyer',
-        'mendys-datasets.admin',
+        'fuzemarket_buyer',
+        'mendys-datasets_talent',
+        'mendys-datasets_buyer',
+        'mendys-datasets_admin',
       ])
     )
   })
@@ -288,10 +288,10 @@ describe('MendysRobotics datasets policy', () => {
   })
 
   it('namespaces cleanly (hyphenated product key is valid)', () => {
-    expect(namespaceKey('mendys-datasets', 'Order')).toBe('mendys-datasets.Order')
+    expect(namespaceKey('mendys-datasets', 'Order')).toBe('mendys-datasets_Order')
     const ns = namespaceProductPolicy(mendysDatasetsPolicy)
     expect(ns.roles.map(r => r.key)).toEqual(
-      expect.arrayContaining(['mendys-datasets.talent', 'mendys-datasets.buyer', 'mendys-datasets.admin'])
+      expect.arrayContaining(['mendys-datasets_talent', 'mendys-datasets_buyer', 'mendys-datasets_admin'])
     )
   })
 })

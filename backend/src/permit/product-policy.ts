@@ -16,11 +16,15 @@ import {
   permitSchema as basePermitSchema,
 } from './schema'
 
-// Separator between a product key and its bare resource/role key. A dot reads as
-// the intended `fuzemarket.Listing` form and never collides with the `:` used in
-// permission strings ("<ResourceKey>:<action>"). Kept as a single constant so the
-// whole platform agrees on one convention.
-export const PRODUCT_NS_SEP = '.'
+// Separator between a product key and its bare resource/role key. Permit.io
+// keys must match ^[A-Za-z0-9\-_]+$ — a dot is REJECTED at the API (422), so
+// the original `fuzemarket.Listing` form could never register. Underscore is
+// the only unambiguous legal choice: product keys cannot contain `_` (see
+// PRODUCT_KEY_RE), so `fuzemarket_Listing` splits cleanly at the first `_`,
+// and it never collides with the `:` used in permission strings
+// ("<ResourceKey>:<action>"). Kept as a single constant so the whole platform
+// agrees on one convention — datasets-service's Python _ns() mirrors this.
+export const PRODUCT_NS_SEP = '_'
 
 // A product policy as SUBMITTED by a consumer product — bare, un-namespaced keys.
 export interface ProductPolicy {
