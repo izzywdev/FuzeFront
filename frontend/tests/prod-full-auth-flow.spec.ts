@@ -39,6 +39,9 @@ const AUTH_ORIGIN = process.env.POST_PROD_AUTH_ORIGIN || 'https://auth.fuzefront
 const SIGNIN_EMAIL = process.env.POST_PROD_EMAIL || ''
 const SIGNIN_PASSWORD = process.env.POST_PROD_PASSWORD || ''
 
+// Credentials for T3 (Google OAuth — local headed only, human approves consent screen)
+const GOOGLE_EMAIL = process.env.GOOGLE_TEST_EMAIL || 'izzy.weinberg@gmail.com'
+
 // Credentials for T1 (create a new account)
 const ts = Date.now()
 const SIGNUP_EMAIL = process.env.SIGNUP_EMAIL || `test+e2e-${ts}@fuzefront.dev`
@@ -82,8 +85,8 @@ test.describe('T1 · Sign-up (Authentik enrollment flow)', () => {
 
     // Click the Sign Up button — this calls window.location.href = /api/auth/oidc/signup
     // which 302s to the Authentik enrollment flow.
-    const signUpBtn = page.getByRole('button', { name: /sign.?up/i })
-    await expect(signUpBtn, 'Sign Up button must be visible').toBeVisible()
+    const signUpBtn = page.getByRole('button', { name: /create an account|sign.?up/i })
+    await expect(signUpBtn, '"Create an account" button must be visible').toBeVisible()
     await signUpBtn.click()
 
     // We should now be on Authentik's enrollment flow (auth.fuzefront.com).
@@ -174,60 +177,76 @@ test.describe('T2 · Sign-in (native email/password form)', () => {
 })
 
 // ── T3: Google OAuth sign-in ──────────────────────────────────────────────────
+// Requires GOOGLE_TEST_EMAIL (default: izzy.weinberg@gmail.com).
+// Run locally in headed mode — the test fills the email then waits for YOU
+// to approve the Google consent screen. No password is automated.
+//
+//   GOOGLE_TEST_EMAIL=izzy.weinberg@gmail.com \
+//   npx playwright test --config playwright.prod.config.ts --headed --grep T3
 
-test.describe('T3 · Sign-in with Google (OIDC handoff)', () => {
-  test('clicking Sign in with Google hands off to Authentik which offers Google', async ({
-    page,
-  }) => {
-    test.setTimeout(60_000)
+test.describe('T3 · Sign-in with Google (full OAuth flow)', () => {
+  test.skip(
+    !process.env.GOOGLE_TEST_EMAIL,
+    'Set GOOGLE_TEST_EMAIL to run T3 (local headed only — human approves Google consent)'
+  )
+
+  test('Google OAuth completes and lands on dashboard', async ({ page }) => {
+    // Long timeout: human must approve the Google consent screen
+    test.setTimeout(120_000)
 
     await gotoLogin(page)
     await page.screenshot({ path: 'test-results-prod/T3-01-login-page.png', fullPage: true })
 
-    const googleBtn = page.getByRole('button', {
-      name: /sign.?in with google/i,
-    })
+    const googleBtn = page.getByRole('button', { name: /sign.?in with google/i })
     await expect(googleBtn, '"Sign in with Google" button must be visible').toBeVisible()
 
-    // The button triggers GET /api/auth/oidc/login → 302 → Authentik authorize endpoint.
-    // Intercept the navigation request at the OIDC login initiation point.
+    // FuzeFront → /api/auth/oidc/login → Authentik authorize endpoint
     const oidcLoginReq = page.waitForRequest(
       r => r.url().includes('/api/auth/oidc/login'),
       { timeout: 20_000 }
     )
     await googleBtn.click()
     const oidcReq = await oidcLoginReq
+    expect(oidcReq.url()).toContain('/api/auth/oidc/login')
 
-    expect(
-      oidcReq.url(),
-      'click must trigger /api/auth/oidc/login'
-    ).toContain('/api/auth/oidc/login')
-
-    await page.screenshot({ path: 'test-results-prod/T3-02-oidc-initiated.png', fullPage: true })
-
-    // Follow through to Authentik — we should land on the authorization endpoint.
+    // Authentik identification page
     await page.waitForURL(
       url => url.href.includes('auth.fuzefront.com') || url.href.includes('/application/o/'),
       { timeout: 30_000 }
     )
+    await page.screenshot({ path: 'test-results-prod/T3-02-authentik-page.png', fullPage: true })
 
-    await page.screenshot({ path: 'test-results-prod/T3-03-authentik-auth-page.png', fullPage: true })
-
-    // Authentik's identification page (the "login" stage shown before selecting a source).
-    // It should offer a "Sign in with Google" source button from the Google social source.
+    // Click the Google source button on Authentik
     const authentikGoogleSource = page.locator(
       'a[href*="google"], button:has-text("Google"), .pf-v5-c-button:has-text("Google")'
     )
     await expect(
       authentikGoogleSource,
-      'Authentik must render a Google source button — check social-source binding on the authentication flow'
+      'Authentik must render a Google source button'
     ).toBeVisible({ timeout: 20_000 })
+    await authentikGoogleSource.first().click()
 
-    await page.screenshot({ path: 'test-results-prod/T3-04-authentik-google-source.png', fullPage: true })
+    // accounts.google.com — fill the email, then wait for the human to approve
+    await page.waitForURL(url => url.href.includes('accounts.google.com'), { timeout: 20_000 })
+    await page.screenshot({ path: 'test-results-prod/T3-03-google-accounts.png', fullPage: true })
 
-    // We stop here — clicking the Google button would hand off to accounts.google.com
-    // which requires a real Google account and is out of scope for automated E2E.
-    // The assertions above confirm: FuzeFront → /api/auth/oidc/login → Authentik →
-    // Google source button is present. T3 is verified.
+    const emailInput = page.locator('input[type="email"]')
+    await expect(emailInput, 'Google email input must appear').toBeVisible({ timeout: 15_000 })
+    await emailInput.fill(GOOGLE_EMAIL)
+    await page.keyboard.press('Enter')
+
+    await page.screenshot({ path: 'test-results-prod/T3-04-google-email-filled.png', fullPage: true })
+
+    // ── HUMAN STEP ──────────────────────────────────────────────────────────
+    // Google may ask for password (use saved credentials) and will show a
+    // consent screen. Approve it manually. The test waits up to 90 s.
+    // ────────────────────────────────────────────────────────────────────────
+    await page.waitForURL(`${BASE}/dashboard`, { timeout: 90_000 })
+
+    await page.screenshot({ path: 'test-results-prod/T3-05-dashboard.png', fullPage: true })
+    await expect(
+      page.locator('.dashboard'),
+      'T3: .dashboard element must be visible after Google OAuth'
+    ).toBeVisible({ timeout: 20_000 })
   })
 })
