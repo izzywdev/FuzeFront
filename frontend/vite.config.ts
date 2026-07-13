@@ -133,6 +133,10 @@ export default defineConfig({
       // NetworkFirst so the shell always fetches fresh federation assets.
       globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
+        // Exclude /api/* from the SPA navigation fallback so full-page navigations
+        // to backend redirect endpoints (e.g. /api/auth/oidc/signup → 302) are not
+        // intercepted by the SW and silently served as index.html instead.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             // API + WebSocket upgrade paths — never cache
