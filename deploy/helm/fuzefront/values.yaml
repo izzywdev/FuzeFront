@@ -597,3 +597,15 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+
+# ── Cloudflare edge integration ──────────────────────────────────────────────
+# Cache purge lets the backend purge the CF edge cache after MFE deploys.
+# Disabled by default; prod enables it and supplies the kubesealed token blob
+# (see templates/sealed-secret-cloudflare-cache-purge.yaml for reseal steps).
+cloudflare:
+  cachePurge:
+    enabled: false
+    # Cloudflare zone ID for app.fuzefront.com (not a secret).
+    zoneId: "94eaf85fb0ed9a26b5645af10fed0788"
+    # kubesealed ciphertext of the CF API token; empty disables the SealedSecret.
+    sealedToken: ""

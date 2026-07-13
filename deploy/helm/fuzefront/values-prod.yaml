@@ -294,3 +294,12 @@ unleash:
               - key: kubernetes.io/hostname
                 operator: In
                 values: ["fuzefront-node-2"]
+
+# ── Cloudflare cache purge (prod) ────────────────────────────────────────────
+# Sealed for the Contabo k3s cluster; reseal per the template header if the
+# token or cluster sealing key rotates.
+cloudflare:
+  cachePurge:
+    enabled: true
+    zoneId: "94eaf85fb0ed9a26b5645af10fed0788"
+    sealedToken: AgB2IdP3R/cVa3/oAOHcXtgZA6UKRuusGTOmPFshlI18a+qaZhF+7Gl0+EPhgDkl1vw9tmUD7+YvcOYy7VlT4Llddyyh2fojfADPxozkcOvPyub6gjy+kKTYYbrqZNIB2Q53P1fja0jQQv1EsKFg4wyO/x8nNObVV4ZFCrVRScyLjtIgNBiIjU6h/YUSQYLyFz8iuzO8LnpGz4Jd5a0VRNvgRJKJFifGKA9NBvDWbhn45ARQGIbyvkphgiSf1NmG/F2fE5CO3+1gpH/mUEBu6q1DgQNvyR7+B4aHOtCnJI7yEn48I36DS3i1/kFyeam+1C+LxjZwtqNlpn/MHlUVUmEd5YKCdX2U0WeyyHoxb6eIsSPv+ZEeqkEh8sVyC8xuh6zvhCqNcfMdPbqQ3ctGfNynSTO7GgSahZI0CoQy0TCLKDe8Q0PuBDXw83V/wozHQX5wxPqowcROok5+ZeCVfzIdV3hV+h5zNosNkEkT1CoV7N9fNHdVOK0d9vGr/7sAg08JvpF38+X/DyNvjF3E00qGiAgQ8Iu+tfiV0HkWzDMpoeFHF3Gej6viGi95ZQ2Bx1Mg6VWZIl9qEDxzYmD9i/uF8hMLcdLLk/+ehRrAFA8jYdcCpVnVBU+YoTuIiXiR+DSZAqZN2qslLzITsDxikHYzVUJnK8ggpMxE5AuN8V5FAmSWS1q0xLlPqaPOx6cZpYcEIIb2/02YGwgErMj3gu9H8JuKXvt/jYq4VYJu340rtR8N5mszKZnf3K7Qit/ffhDzb8Z3aQ==

@@ -153,6 +153,20 @@ spec:
               value: /etc/fuzefront-ca/ca.crt
             {{- end }}
             {{- end }}
+            {{- if .Values.cloudflare.cachePurge.enabled }}
+            # Cloudflare cache purge — lets the platform purge the CF edge cache
+            # after MFE deploys. Token comes from the cloudflare-cache-purge
+            # SealedSecret; optional:true keeps the pod schedulable while the
+            # secret is still being sealed/synced.
+            - name: CF_CACHE_PURGE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-cache-purge
+                  key: CF_CACHE_PURGE_TOKEN
+                  optional: true
+            - name: CF_ZONE_ID
+              value: {{ .Values.cloudflare.cachePurge.zoneId | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
