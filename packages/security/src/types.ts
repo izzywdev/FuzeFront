@@ -17,7 +17,7 @@
  * Semantic version of THIS contract. Bump on every interface change; record it
  * in CHANGELOG.md. Consumers may assert on the major.
  */
-export const SECURITY_CONTRACT_VERSION = '0.2.0' as const;
+export const SECURITY_CONTRACT_VERSION = '0.3.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -117,4 +117,34 @@ export interface VerificationStatus {
   emailVerified: boolean;
   phoneVerified: boolean;
   phone?: string;
+}
+
+/** A resource-instance reference for a ReBAC-scoped grant. */
+export interface ResourceRef {
+  type: string;
+  key?: string;
+}
+
+/**
+ * Grant a role (and/or permission) to a subject. Omit `resource` for a
+ * tenant-wide (RBAC) grant; include it to scope to a resource instance (ReBAC).
+ * A grant is a rollout/assignment convenience — `authz/check` stays authoritative.
+ */
+export interface GrantRequest {
+  subject: string;
+  tenant: string;
+  role: string;
+  permission?: string;
+  resource?: ResourceRef;
+}
+
+/** A created, revocable grant. */
+export interface Grant {
+  id: string;
+  subject: string;
+  tenant: string;
+  role: string;
+  permission?: string;
+  resource?: ResourceRef;
+  createdAt?: number;
 }

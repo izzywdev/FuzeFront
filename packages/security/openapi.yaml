@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -74,7 +74,7 @@ tags:
   - name: capabilities
     description: Neutral capability descriptor for the auth surface.
   - name: authz
-    description: Authorization decisions (check / bulk-check / permissions).
+    description: Authorization decisions (check / bulk-check / permissions) + grants (write-side).
   - name: tenants
     description: Tenant, membership, and role management (neutralized authz primitives).
   - name: tokens
@@ -402,6 +402,110 @@ paths:
       x-pagination-reason: >-
         Bounded by the policy model (fixed resource/action catalogue for one
         subject in one tenant), not by user-controlled data growth.
+  # ─────────────────────────────── AuthZ: grants ────────────────────────────
+  /v1/security/authz/grants:
+    post:
+      tags: [authz]
+      summary: Grant a role/permission to a subject (RBAC or resource-instance/ReBAC)
+      operationId: createGrant
+      description: >-
+        Grants a role (and/or permission) to a subject within a tenant. Omit
+        `resource` for a tenant-wide (RBAC) grant; include `resource: { type,
+        key }` to scope it to a specific resource instance (ReBAC). Returns the
+        created `Grant`. A grant is a rollout/assignment convenience — the
+        AUTHORITATIVE decision is always `POST /authz/check`. Fail-closed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRequest'
+      responses:
+        '201':
+          description: Grant created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton grant creation.
+    delete:
+      tags: [authz]
+      summary: Revoke a grant
+      operationId: revokeGrant
+      description: >-
+        Revokes a grant, identified EITHER by `{ grantId }` OR by its identity
+        tuple `{ subject, tenant, role, resource? }` (supply one form). Idempotent
+        — revoking an absent grant still returns 204. A revoke never changes the
+        authoritative model beyond removing the assignment; `authz/check` remains
+        the source of truth. Fail-closed.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRevokeRequest'
+      responses:
+        '204':
+          description: Grant revoked (idempotent).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton revoke action.
+    get:
+      tags: [authz]
+      summary: List grants for a subject within a tenant
+      operationId: listGrants
+      description: >-
+        Lists grants for `subject` within `tenant`, optionally filtered by
+        resource instance (`resourceType`/`resourceKey`). Because a subject can
+        hold grants across MANY resource instances under ReBAC, this set is
+        treated as potentially unbounded and is cursor-paginated per the family
+        pagination standard.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subject
+          in: query
+          required: true
+          schema: { type: string }
+        - name: tenant
+          in: query
+          required: true
+          schema: { type: string }
+        - name: resourceType
+          in: query
+          required: false
+          schema: { type: string }
+        - name: resourceKey
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of grants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   # ─────────────────────────── AuthZ: tenants/members/roles ─────────────────
   /v1/security/tenants:
     get:
@@ -1284,6 +1388,71 @@ components:
           items:
             type: string
       required: [subject, tenant, permissions]
+    GrantRequest:
+      type: object
+      description: >-
+        Grant a role (and/or permission) to a subject. Omit `resource` for a
+        tenant-wide (RBAC) grant; include it to scope to a resource instance
+        (ReBAC).
+      properties:
+        subject:
+          type: string
+        tenant:
+          type: string
+        role:
+          type: string
+          description: Role key to assign.
+        permission:
+          type: string
+          description: Optional explicit `resource:action` permission to grant alongside the role.
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+      required: [subject, tenant, role]
+    Grant:
+      type: object
+      description: A created, revocable grant wrapping the provider's assignment.
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        tenant:
+          type: string
+        role:
+          type: string
+        permission:
+          type: string
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+        createdAt:
+          type: integer
+      required: [id, subject, tenant, role]
+    GrantRevokeRequest:
+      type: object
+      description: >-
+        Revoke a grant by `grantId` OR by its identity tuple
+        `{ subject, tenant, role, resource? }`. Supply exactly one form.
+      properties:
+        grantId:
+          type: string
+        subject:
+          type: string
+        tenant:
+          type: string
+        role:
+          type: string
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+    GrantPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required: [items, page]
     Tenant:
       type: object
       properties:

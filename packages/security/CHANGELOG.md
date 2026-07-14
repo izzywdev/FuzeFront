@@ -1,5 +1,35 @@
 # Changelog — @fuzefront/security-client
 
+## 0.3.0 — AuthZ grants (write-side) (unreleased)
+
+Adds the permission/role GRANT endpoints (owner review of PR #243) — the
+write-side wrapping the authorization provider's role-assignment + resource-
+instance (ReBAC) assignment. `SECURITY_CONTRACT_VERSION` 0.2.0 → 0.3.0.
+
+### Added
+
+- **Grants** under `/api/v1/security/authz/grants`:
+  - `POST /authz/grants` — grant a role (and/or permission) to a subject;
+    omit `resource` for a tenant-wide (RBAC) grant, include
+    `resource: { type, key }` for a resource-instance (ReBAC) grant. Returns
+    `Grant`. 201.
+  - `DELETE /authz/grants` — revoke by `{ grantId }` OR the identity tuple
+    `{ subject, tenant, role, resource? }`. 204, idempotent.
+  - `GET /authz/grants?subject=&tenant=&resourceType=&resourceKey=` — list a
+    subject's grants; **cursor-paginated** (family `{ items, page }` envelope)
+    because a subject may hold grants across many resource instances under ReBAC.
+- Descriptions note a grant is a rollout/assignment convenience; `authz/check`
+  stays authoritative. Fail-closed.
+- Client types: `Grant`, `GrantRequest`, `ResourceRef`. `AuthorizationProvider`
+  extended with `grant`, `revoke`, `listGrants` (+ `Grant`/`GrantRequest`/
+  `GrantRevokeRequest`/`GrantQuery`).
+
+### Notes
+
+- Provider-agnostic: the first impl wraps Permit.io role-assignment +
+  resource-instance assignment (RBAC + ReBAC), named only inside the concrete
+  adapter — never in this consumer surface.
+
 ## 0.2.0 — MFA + contact verification (unreleased)
 
 Adds two provider-agnostic surfaces to the frozen contract (owner review of

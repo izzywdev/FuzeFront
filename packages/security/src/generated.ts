@@ -192,6 +192,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/authz/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List grants for a subject within a tenant
+         * @description Lists grants for `subject` within `tenant`, optionally filtered by resource instance (`resourceType`/`resourceKey`). Because a subject can hold grants across MANY resource instances under ReBAC, this set is treated as potentially unbounded and is cursor-paginated per the family pagination standard.
+         */
+        get: operations["listGrants"];
+        put?: never;
+        /**
+         * Grant a role/permission to a subject (RBAC or resource-instance/ReBAC)
+         * @description Grants a role (and/or permission) to a subject within a tenant. Omit `resource` for a tenant-wide (RBAC) grant; include `resource: { type, key }` to scope it to a specific resource instance (ReBAC). Returns the created `Grant`. A grant is a rollout/assignment convenience — the AUTHORITATIVE decision is always `POST /authz/check`. Fail-closed.
+         */
+        post: operations["createGrant"];
+        /**
+         * Revoke a grant
+         * @description Revokes a grant, identified EITHER by `{ grantId }` OR by its identity tuple `{ subject, tenant, role, resource? }` (supply one form). Idempotent — revoking an absent grant still returns 204. A revoke never changes the authoritative model beyond removing the assignment; `authz/check` remains the source of truth. Fail-closed.
+         */
+        delete: operations["revokeGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/tenants": {
         parameters: {
             query?: never;
@@ -724,6 +752,38 @@ export interface components {
             /** @description Effective `resource:action` grants. */
             permissions: string[];
         };
+        /** @description Grant a role (and/or permission) to a subject. Omit `resource` for a tenant-wide (RBAC) grant; include it to scope to a resource instance (ReBAC). */
+        GrantRequest: {
+            subject: string;
+            tenant: string;
+            /** @description Role key to assign. */
+            role: string;
+            /** @description Optional explicit `resource:action` permission to grant alongside the role. */
+            permission?: string;
+            resource?: components["schemas"]["ResourceRef"];
+        };
+        /** @description A created, revocable grant wrapping the provider's assignment. */
+        Grant: {
+            id: string;
+            subject: string;
+            tenant: string;
+            role: string;
+            permission?: string;
+            resource?: components["schemas"]["ResourceRef"];
+            createdAt?: number;
+        };
+        /** @description Revoke a grant by `grantId` OR by its identity tuple `{ subject, tenant, role, resource? }`. Supply exactly one form. */
+        GrantRevokeRequest: {
+            grantId?: string;
+            subject?: string;
+            tenant?: string;
+            role?: string;
+            resource?: components["schemas"]["ResourceRef"];
+        };
+        GrantPage: {
+            items: components["schemas"]["Grant"][];
+            page: components["schemas"]["PageInfo"];
+        };
         Tenant: {
             id: string;
             name: string;
@@ -1197,6 +1257,88 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PermissionSet"];
                 };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listGrants: {
+        parameters: {
+            query: {
+                subject: string;
+                tenant: string;
+                resourceType?: string;
+                resourceKey?: string;
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of grants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Grant created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Grant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Grant revoked (idempotent). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];

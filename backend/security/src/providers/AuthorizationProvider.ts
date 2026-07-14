@@ -67,6 +67,49 @@ export interface Role {
   name?: string;
 }
 
+/**
+ * A grant request (mirrors API `GrantRequest`). Omit `resource` for a
+ * tenant-wide RBAC grant; include it to scope to a resource instance (ReBAC).
+ */
+export interface GrantRequest {
+  subject: string;
+  tenant: string;
+  role: string;
+  /** Optional explicit `resource:action` permission alongside the role. */
+  permission?: string;
+  resource?: ResourceRef;
+}
+
+/** A created, revocable grant (mirrors API `Grant`). */
+export interface Grant {
+  id: string;
+  subject: string;
+  tenant: string;
+  role: string;
+  permission?: string;
+  resource?: ResourceRef;
+  createdAt?: number;
+}
+
+/** Revoke by grant id OR by the identity tuple (supply one form). */
+export interface GrantRevokeRequest {
+  grantId?: string;
+  subject?: string;
+  tenant?: string;
+  role?: string;
+  resource?: ResourceRef;
+}
+
+/** Query for listing grants for a subject within a tenant. */
+export interface GrantQuery {
+  subject: string;
+  tenant: string;
+  resourceType?: string;
+  resourceKey?: string;
+  limit?: number;
+  cursor?: string;
+}
+
 /** Cursor-paginated page (family standard). */
 export interface Page<T> {
   items: T[];
@@ -97,6 +140,22 @@ export interface AuthorizationProvider {
 
   /** Effective `resource:action` grants for a subject within a tenant. */
   getPermissions(subject: string, tenant: string): Promise<string[]>;
+
+  // ── Grants (write-side) ──
+  //
+  // The first impl wraps Permit.io's role-assignment + resource-instance
+  // assignment API (RBAC + ReBAC). The family uses Permit ReBAC (org-hierarchy),
+  // so the resource-instance grant path matters. Swappable; the provider is
+  // named only inside the concrete impl.
+
+  /** Grant a role/permission to a subject (tenant-wide or resource-instance scoped). */
+  grant(req: GrantRequest): Promise<Grant>;
+
+  /** Revoke a grant by id or identity tuple. Idempotent. */
+  revoke(req: GrantRevokeRequest): Promise<void>;
+
+  /** List grants for a subject within a tenant (cursor-paginated). */
+  listGrants(query: GrantQuery): Promise<Page<Grant>>;
 
   // ── Tenant / membership / role management (neutralized org primitives) ──
 
