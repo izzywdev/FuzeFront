@@ -413,6 +413,7 @@ async function forward(
     // Sanitize the request-derived parts (strip CR/LF + other control chars)
     // before logging so externally-controlled values cannot forge log records
     // — clears CodeQL js/log-injection + js/tainted-format-string.
+    // eslint-disable-next-line no-control-regex
     const stripControl = (v: string) => String(v).replace(/[\u0000-\u001f\u007f]/g, '')
     console.error(
       '[billing-proxy] upstream error for %s %s:',
