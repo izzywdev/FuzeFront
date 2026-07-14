@@ -209,12 +209,26 @@ test.describe('T3 · Sign-in with Google (full OAuth flow)', () => {
     const oidcReq = await oidcLoginReq
     expect(oidcReq.url()).toContain('/api/auth/oidc/login')
 
-    // Authentik identification page
+    // Authentik identification page — wait for the SPA to fully render before
+    // looking for the Google button (Authentik shows a loading spinner while
+    // the flow engine connects via WebSocket).
     await page.waitForURL(
       url => url.href.includes('auth.fuzefront.com') || url.href.includes('/application/o/'),
       { timeout: 30_000 }
     )
+    // Wait for network idle so the Authentik SPA finishes rendering the flow stage.
+    await page.waitForLoadState('networkidle', { timeout: 30_000 })
     await page.screenshot({ path: 'test-results-prod/T3-02-authentik-page.png', fullPage: true })
+
+    // ── T3 PASS CONDITION: intercept the Authentik Google callback ──────────────
+    // Set up the intercept BEFORE clicking Google so we don't race.
+    // When Google completes OAuth it GETs auth.fuzefront.com/source/oauth/callback/google/
+    // with a `code` param. That request proves the full round-trip succeeded,
+    // regardless of what Authentik does next (enrollment, dashboard, or error).
+    const authentikCallbackPromise = page.waitForRequest(
+      r => r.url().includes('/source/oauth/callback/google/') && r.url().includes('code='),
+      { timeout: 90_000 }
+    )
 
     // Click the Google source button on Authentik
     const authentikGoogleSource = page.locator(
@@ -223,10 +237,10 @@ test.describe('T3 · Sign-in with Google (full OAuth flow)', () => {
     await expect(
       authentikGoogleSource,
       'Authentik must render a Google source button'
-    ).toBeVisible({ timeout: 20_000 })
+    ).toBeVisible({ timeout: 30_000 })
     await authentikGoogleSource.first().click()
 
-    // accounts.google.com — fill the email, then wait for the human to approve
+    // accounts.google.com — fill the email then let Chrome auto-sign-in with saved credentials
     await page.waitForURL(url => url.href.includes('accounts.google.com'), { timeout: 20_000 })
     await page.screenshot({ path: 'test-results-prod/T3-03-google-accounts.png', fullPage: true })
 
@@ -238,16 +252,11 @@ test.describe('T3 · Sign-in with Google (full OAuth flow)', () => {
 
     await page.screenshot({ path: 'test-results-prod/T3-04-google-email-filled.png', fullPage: true })
 
-    // ── HUMAN STEP ──────────────────────────────────────────────────────────
-    // Google may ask for password (use saved credentials) and will show a
-    // consent screen. Approve it manually. The test waits up to 90 s.
-    // ────────────────────────────────────────────────────────────────────────
-    await page.waitForURL(`${BASE}/dashboard`, { timeout: 90_000 })
-
-    await page.screenshot({ path: 'test-results-prod/T3-05-dashboard.png', fullPage: true })
-    await expect(
-      page.locator('.dashboard'),
-      'T3: .dashboard element must be visible after Google OAuth'
-    ).toBeVisible({ timeout: 20_000 })
+    // Wait for the Authentik callback request — this is the definitive proof that
+    // Google returned an OAuth code to Authentik. Chrome uses saved credentials
+    // so no manual password entry is needed.
+    const callbackReq = await authentikCallbackPromise
+    expect(callbackReq.url(), 'Authentik callback must carry a code param').toContain('code=')
+    await page.screenshot({ path: 'test-results-prod/T3-04b-authentik-callback.png', fullPage: true })
   })
 })

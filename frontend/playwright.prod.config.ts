@@ -47,11 +47,21 @@ export default defineConfig({
       grep: /T1|T2/,
     },
     {
-      // T3 only: use real Chrome so Google accepts the login
+      // T3 only: use real Chrome with automation flags disabled so Google
+      // doesn't reject the OAuth flow with "browser not secure".
+      // Uses a persistent profile dir so Authentik enrollment only happens once.
       // Run: GOOGLE_TEST_EMAIL=izzy.weinberg@gmail.com npx playwright test
       //        --config playwright.prod.config.ts --project chrome --headed --grep T3
       name: 'chrome',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', headless: false },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        headless: false,
+        launchOptions: {
+          args: ['--disable-blink-features=AutomationControlled'],
+          ignoreDefaultArgs: ['--enable-automation'],
+        },
+      },
       grep: /T3/,
     },
   ],
