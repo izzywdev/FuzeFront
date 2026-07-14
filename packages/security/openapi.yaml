@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -48,6 +48,15 @@ info:
 
     AuthN is delivered first (it fixes the acute live provider leak); AuthZ is
     designed here in full and its consumer rollout is sequenced after AuthN.
+
+
+    ## MFA + contact verification (provider-agnostic)
+
+    Multi-factor step-up (`/mfa`) and contact-ownership verification (`/verify`,
+    email + SMS) are provider-agnostic: internally they are backed by the
+    identity provider's MFA stages and the family email/SMS services via the
+    adapter, but consumers see only neutral factor `type` values
+    (`totp`/`sms`/`email`, with room for `webauthn` later).
   license:
     name: MIT
 servers:
@@ -70,6 +79,10 @@ tags:
     description: Tenant, membership, and role management (neutralized authz primitives).
   - name: tokens
     description: FuzeFront-owned machine-to-machine (M2M) token issuance and introspection.
+  - name: mfa
+    description: Provider-agnostic multi-factor authentication — factor management + login step-up.
+  - name: verify
+    description: Contact-ownership verification (email + phone), distinct from MFA login step-up.
 paths:
   # ─────────────────────────────── AuthN: session ───────────────────────────
   /v1/security/session:
@@ -79,9 +92,11 @@ paths:
       operationId: createSession
       description: >-
         Validates credentials via the configured identity provider (server-
-        brokered; the browser never leaves `app.fuzefront.com`) and returns a
-        FuzeFront-minted session token plus the hydrated user. Fail-closed on
-        bad credentials.
+        brokered; the browser never leaves `app.fuzefront.com`). Returns a
+        `SessionResult`: either an authenticated session, OR — when the account
+        has MFA enabled — an `mfa_required` challenge (discriminated by
+        `status`) that the client completes via `/mfa/challenge` + `/mfa/verify`.
+        Fail-closed on bad credentials.
       requestBody:
         required: true
         content:
@@ -90,11 +105,11 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Authenticated; token, user, and session id returned.
+          description: Authenticated session, or an MFA-required challenge.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                $ref: '#/components/schemas/SessionResult'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -143,8 +158,10 @@ paths:
       operationId: exchangeSessionCode
       description: >-
         Exchanges the FuzeFront-minted opaque `code` issued by
-        `GET /v1/security/social/callback` for a session token. The code is
-        single-use and short-lived. Fail-closed on an unknown/expired code.
+        `GET /v1/security/social/callback` for a session. The code is single-use
+        and short-lived. Returns a `SessionResult`: an authenticated session, or
+        an `mfa_required` challenge when the account requires step-up.
+        Fail-closed on an unknown/expired code.
       requestBody:
         required: true
         content:
@@ -153,11 +170,11 @@ paths:
               $ref: '#/components/schemas/ExchangeRequest'
       responses:
         '200':
-          description: Session established.
+          description: Authenticated session, or an MFA-required challenge.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                $ref: '#/components/schemas/SessionResult'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -209,7 +226,9 @@ paths:
         The server broker completes the social handshake, provisions/links the
         user, mints a single-use opaque code, and 302-redirects the browser back
         to the app with `?code=<opaque>`. The SPA then calls
-        `POST /v1/security/session/exchange`. No token is placed in the URL.
+        `POST /v1/security/session/exchange`, whose `SessionResult` may itself be
+        an `mfa_required` challenge if the account requires step-up. No token is
+        placed in the URL.
       parameters:
         - name: code
           in: query
@@ -651,6 +670,298 @@ paths:
           $ref: '#/components/responses/BadRequest'
       x-pagination: exempt
       x-pagination-reason: Singleton introspection.
+  # ─────────────────────────────── MFA: factors ─────────────────────────────
+  /v1/security/mfa/factors:
+    get:
+      tags: [mfa]
+      summary: List the current user's enrolled MFA factors
+      operationId: listMfaFactors
+      description: >-
+        Returns the caller's enrolled factors. Bounded per user (a person has a
+        handful of factors), so the full set is returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The enrolled factors.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MfaFactor'
+                required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Bounded per-user factor set, not user-controlled data growth.
+    post:
+      tags: [mfa]
+      summary: Begin enrolling an MFA factor
+      operationId: enrollMfaFactor
+      description: >-
+        Starts enrollment of a factor. For `totp` the response returns a
+        provisioning URI + secret (render as a QR); for `sms`/`email` a code is
+        sent and a pending `factorId` is returned. Confirm via
+        `POST /mfa/factors/{factorId}/activate`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaEnrollRequest'
+      responses:
+        '201':
+          description: Enrollment started (pending activation).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaEnrollResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton enrollment action.
+  /v1/security/mfa/factors/{factorId}/activate:
+    post:
+      tags: [mfa]
+      summary: Activate a pending MFA factor
+      operationId: activateMfaFactor
+      description: Confirms a pending factor with a one-time code. Fail-closed on bad/expired code.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FactorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCodeRequest'
+      responses:
+        '200':
+          description: Factor activated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaFactor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton activation action.
+  /v1/security/mfa/factors/{factorId}:
+    delete:
+      tags: [mfa]
+      summary: Remove an MFA factor
+      operationId: removeMfaFactor
+      description: Removes an enrolled factor. Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FactorId'
+      responses:
+        '204':
+          description: Factor removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  /v1/security/mfa/recovery-codes:
+    post:
+      tags: [mfa]
+      summary: (Re)generate one-time recovery codes
+      operationId: regenerateRecoveryCodes
+      description: >-
+        Generates a fresh set of single-use recovery codes, invalidating any
+        prior set. The codes are returned ONCE and never retrievable again.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The newly generated recovery codes (shown once).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryCodes'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton generation; codes shown once.
+  # ─────────────────────────────── MFA: step-up ─────────────────────────────
+  /v1/security/mfa/challenge:
+    post:
+      tags: [mfa]
+      summary: Trigger an MFA challenge during login step-up
+      operationId: challengeMfa
+      description: >-
+        Given a `challengeId` (from an `mfa_required` `SessionResult`) and a
+        chosen `factorId`, triggers delivery (SMS/email OTP) or signals a TOTP
+        prompt. Then call `POST /mfa/verify`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaChallengeRequest'
+      responses:
+        '202':
+          description: Challenge dispatched (or TOTP prompt expected).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaChallengeAck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton challenge action.
+  /v1/security/mfa/verify:
+    post:
+      tags: [mfa]
+      summary: Verify an MFA challenge and complete login
+      operationId: verifyMfa
+      description: >-
+        Verifies the one-time `code` for a `challengeId`/`factorId`. On success
+        returns the authenticated `LoginResponse`. Fail-closed on bad/expired code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaVerifyRequest'
+      responses:
+        '200':
+          description: MFA satisfied; authenticated session returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton verification action.
+  # ──────────────────────── Contact verification: email ─────────────────────
+  /v1/security/verify/email/start:
+    post:
+      tags: [verify]
+      summary: Send an email verification link/code
+      operationId: startEmailVerification
+      description: >-
+        Sends a verification link/code. Targets the current user's email when
+        authenticated, or a signup-scoped address supplied in the body.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyStartRequest'
+      responses:
+        '202':
+          description: Verification message dispatched.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton send action.
+  /v1/security/verify/email/confirm:
+    post:
+      tags: [verify]
+      summary: Confirm email ownership
+      operationId: confirmEmailVerification
+      description: Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyConfirmRequest'
+      responses:
+        '200':
+          description: Email marked verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton confirmation action.
+  # ──────────────────────── Contact verification: phone ─────────────────────
+  /v1/security/verify/phone/start:
+    post:
+      tags: [verify]
+      summary: Send an SMS verification code
+      operationId: startPhoneVerification
+      description: Sends an SMS OTP to the supplied phone number.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneVerifyStartRequest'
+      responses:
+        '202':
+          description: SMS code dispatched.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton send action.
+  /v1/security/verify/phone/confirm:
+    post:
+      tags: [verify]
+      summary: Confirm phone ownership
+      operationId: confirmPhoneVerification
+      description: Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneVerifyConfirmRequest'
+      responses:
+        '200':
+          description: Phone marked verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton confirmation action.
+  /v1/security/verify/status:
+    get:
+      tags: [verify]
+      summary: Contact verification status for the current user
+      operationId: getVerificationStatus
+      description: Returns the caller's email/phone verification state.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The verification status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton status for the caller.
 components:
   securitySchemes:
     bearerAuth:
@@ -680,6 +991,12 @@ components:
         type: string
     TenantId:
       name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+    FactorId:
+      name: factorId
       in: path
       required: true
       schema:
@@ -730,6 +1047,53 @@ components:
         user:
           $ref: '#/components/schemas/User'
       required: [token, user]
+    SessionResult:
+      description: >-
+        The outcome of a login/exchange attempt: EITHER an authenticated session
+        OR an MFA-required challenge. Discriminated by `status`.
+      oneOf:
+        - $ref: '#/components/schemas/AuthenticatedSession'
+        - $ref: '#/components/schemas/MfaRequiredChallenge'
+      discriminator:
+        propertyName: status
+        mapping:
+          authenticated: '#/components/schemas/AuthenticatedSession'
+          mfa_required: '#/components/schemas/MfaRequiredChallenge'
+    AuthenticatedSession:
+      type: object
+      description: >-
+        Authenticated variant of `SessionResult`. Carries the same fields as
+        `LoginResponse` plus the `status` discriminator, so a client that only
+        needs the session reads `token`/`sessionId`/`user` directly.
+      properties:
+        status:
+          type: string
+          enum: [authenticated]
+        token:
+          type: string
+          description: FuzeFront-minted session token.
+        sessionId:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required: [status, token, user]
+    MfaRequiredChallenge:
+      type: object
+      description: >-
+        MFA-required variant of `SessionResult`. The client picks a factor and
+        completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing
+        `challengeId`.
+      properties:
+        status:
+          type: string
+          enum: [mfa_required]
+        challengeId:
+          type: string
+        factors:
+          type: array
+          items:
+            $ref: '#/components/schemas/MfaFactorRef'
+      required: [status, challengeId, factors]
     SignupRequest:
       type: object
       properties:
@@ -764,7 +1128,10 @@ components:
       required: [identity, user]
     AuthMethods:
       type: object
-      description: Neutral auth capability descriptor. Replaces `oidcConfigured`.
+      description: >-
+        Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the
+        UI render affordances (password form, social buttons, MFA, contact
+        verification) without knowing any provider.
       properties:
         password:
           type: boolean
@@ -774,7 +1141,27 @@ components:
           description: Enabled social provider slugs (may be empty).
           items:
             $ref: '#/components/schemas/SocialProvider'
-      required: [password, social]
+        mfa:
+          type: object
+          description: Multi-factor capability.
+          properties:
+            enabled:
+              type: boolean
+            types:
+              type: array
+              items:
+                $ref: '#/components/schemas/MfaFactorType'
+          required: [enabled, types]
+        verification:
+          type: object
+          description: Contact-verification capability.
+          properties:
+            email:
+              type: boolean
+            sms:
+              type: boolean
+          required: [email, sms]
+      required: [password, social, mfa, verification]
     SocialProvider:
       type: string
       description: Supported social provider slug. Extensible; `google` is first.
@@ -1001,6 +1388,158 @@ components:
         expiresAt:
           type: integer
       required: [active]
+    # ── MFA shapes ──
+    MfaFactorType:
+      type: string
+      description: Neutral factor type. Extensible; `webauthn` reserved for later.
+      enum: [totp, sms, email, webauthn]
+    MfaFactorStatus:
+      type: string
+      enum: [pending, active]
+    MfaFactor:
+      type: object
+      properties:
+        factorId:
+          type: string
+        type:
+          $ref: '#/components/schemas/MfaFactorType'
+        status:
+          $ref: '#/components/schemas/MfaFactorStatus'
+        label:
+          type: string
+          description: Neutral display hint (e.g. masked phone/email), never a provider name.
+        createdAt:
+          type: integer
+      required: [factorId, type, status]
+    MfaFactorRef:
+      type: object
+      description: Minimal factor reference offered in an MFA challenge.
+      properties:
+        factorId:
+          type: string
+        type:
+          $ref: '#/components/schemas/MfaFactorType'
+      required: [factorId, type]
+    MfaEnrollRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/MfaFactorType'
+        phone:
+          type: string
+          description: Required when `type` is `sms`.
+        email:
+          type: string
+          format: email
+          description: Required when `type` is `email`.
+      required: [type]
+    MfaEnrollResult:
+      type: object
+      description: >-
+        Enrollment material. For `totp`, `secret` + `provisioningUri` are
+        present (render a QR). For `sms`/`email`, a code was sent and the factor
+        is pending.
+      properties:
+        factorId:
+          type: string
+        type:
+          $ref: '#/components/schemas/MfaFactorType'
+        status:
+          $ref: '#/components/schemas/MfaFactorStatus'
+        secret:
+          type: string
+          description: TOTP shared secret (present only for `totp`).
+        provisioningUri:
+          type: string
+          description: otpauth:// URI for QR rendering (present only for `totp`).
+        codeSent:
+          type: boolean
+          description: Whether an OTP was dispatched (present for `sms`/`email`).
+      required: [factorId, type, status]
+    MfaCodeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+      required: [code]
+    RecoveryCodes:
+      type: object
+      properties:
+        codes:
+          type: array
+          items:
+            type: string
+      required: [codes]
+    MfaChallengeRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        factorId:
+          type: string
+      required: [challengeId, factorId]
+    MfaChallengeAck:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        factorId:
+          type: string
+        delivered:
+          type: boolean
+          description: True when an OTP was dispatched; false/omitted for TOTP prompts.
+      required: [challengeId, factorId]
+    MfaVerifyRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        factorId:
+          type: string
+        code:
+          type: string
+      required: [challengeId, factorId, code]
+    # ── Contact verification shapes ──
+    EmailVerifyStartRequest:
+      type: object
+      description: Optional body; omit when verifying the authenticated user's email.
+      properties:
+        email:
+          type: string
+          format: email
+          description: Signup-scoped address to verify when unauthenticated.
+    PhoneVerifyStartRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+      required: [phone]
+    VerifyConfirmRequest:
+      type: object
+      description: Confirm with a link `token` OR an OTP `code`.
+      properties:
+        token:
+          type: string
+        code:
+          type: string
+    PhoneVerifyConfirmRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+      required: [phone, code]
+    VerificationStatus:
+      type: object
+      properties:
+        emailVerified:
+          type: boolean
+        phoneVerified:
+          type: boolean
+        phone:
+          type: string
+      required: [emailVerified, phoneVerified]
     # ── Pagination envelopes (family standard) ──
     PageInfo:
       type: object

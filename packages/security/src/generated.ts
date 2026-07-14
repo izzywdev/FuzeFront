@@ -19,7 +19,7 @@ export interface paths {
         put?: never;
         /**
          * Password login — establish a session
-         * @description Validates credentials via the configured identity provider (server- brokered; the browser never leaves `app.fuzefront.com`) and returns a FuzeFront-minted session token plus the hydrated user. Fail-closed on bad credentials.
+         * @description Validates credentials via the configured identity provider (server- brokered; the browser never leaves `app.fuzefront.com`). Returns a `SessionResult`: either an authenticated session, OR — when the account has MFA enabled — an `mfa_required` challenge (discriminated by `status`) that the client completes via `/mfa/challenge` + `/mfa/verify`. Fail-closed on bad credentials.
          */
         post: operations["createSession"];
         /**
@@ -43,7 +43,7 @@ export interface paths {
         put?: never;
         /**
          * Exchange an opaque broker code for a session
-         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session token. The code is single-use and short-lived. Fail-closed on an unknown/expired code.
+         * @description Exchanges the FuzeFront-minted opaque `code` issued by `GET /v1/security/social/callback` for a session. The code is single-use and short-lived. Returns a `SessionResult`: an authenticated session, or an `mfa_required` challenge when the account requires step-up. Fail-closed on an unknown/expired code.
          */
         post: operations["exchangeSessionCode"];
         delete?: never;
@@ -81,7 +81,7 @@ export interface paths {
         };
         /**
          * Social login broker callback (302 back to app)
-         * @description The server broker completes the social handshake, provisions/links the user, mints a single-use opaque code, and 302-redirects the browser back to the app with `?code=<opaque>`. The SPA then calls `POST /v1/security/session/exchange`. No token is placed in the URL.
+         * @description The server broker completes the social handshake, provisions/links the user, mints a single-use opaque code, and 302-redirects the browser back to the app with `?code=<opaque>`. The SPA then calls `POST /v1/security/session/exchange`, whose `SessionResult` may itself be an `mfa_required` challenge if the account requires step-up. No token is placed in the URL.
          */
         get: operations["socialCallback"];
         put?: never;
@@ -360,6 +360,230 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/mfa/factors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the current user's enrolled MFA factors
+         * @description Returns the caller's enrolled factors. Bounded per user (a person has a handful of factors), so the full set is returned.
+         */
+        get: operations["listMfaFactors"];
+        put?: never;
+        /**
+         * Begin enrolling an MFA factor
+         * @description Starts enrollment of a factor. For `totp` the response returns a provisioning URI + secret (render as a QR); for `sms`/`email` a code is sent and a pending `factorId` is returned. Confirm via `POST /mfa/factors/{factorId}/activate`.
+         */
+        post: operations["enrollMfaFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/mfa/factors/{factorId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate a pending MFA factor
+         * @description Confirms a pending factor with a one-time code. Fail-closed on bad/expired code.
+         */
+        post: operations["activateMfaFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/mfa/factors/{factorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an MFA factor
+         * @description Removes an enrolled factor. Idempotent.
+         */
+        delete: operations["removeMfaFactor"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/mfa/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * (Re)generate one-time recovery codes
+         * @description Generates a fresh set of single-use recovery codes, invalidating any prior set. The codes are returned ONCE and never retrievable again.
+         */
+        post: operations["regenerateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/mfa/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger an MFA challenge during login step-up
+         * @description Given a `challengeId` (from an `mfa_required` `SessionResult`) and a chosen `factorId`, triggers delivery (SMS/email OTP) or signals a TOTP prompt. Then call `POST /mfa/verify`.
+         */
+        post: operations["challengeMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify an MFA challenge and complete login
+         * @description Verifies the one-time `code` for a `challengeId`/`factorId`. On success returns the authenticated `LoginResponse`. Fail-closed on bad/expired code.
+         */
+        post: operations["verifyMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/verify/email/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an email verification link/code
+         * @description Sends a verification link/code. Targets the current user's email when authenticated, or a signup-scoped address supplied in the body.
+         */
+        post: operations["startEmailVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/verify/email/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm email ownership
+         * @description Confirms via `{ token }` (link) or `{ code }` (OTP). Fail-closed on invalid/expired.
+         */
+        post: operations["confirmEmailVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/verify/phone/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an SMS verification code
+         * @description Sends an SMS OTP to the supplied phone number.
+         */
+        post: operations["startPhoneVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/verify/phone/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm phone ownership
+         * @description Confirms `{ phone, code }`. Fail-closed on invalid/expired code.
+         */
+        post: operations["confirmPhoneVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/verify/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Contact verification status for the current user
+         * @description Returns the caller's email/phone verification state.
+         */
+        get: operations["getVerificationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -377,6 +601,30 @@ export interface components {
             /** @description Server session identifier. */
             sessionId?: string;
             user: components["schemas"]["User"];
+        };
+        /** @description The outcome of a login/exchange attempt: EITHER an authenticated session OR an MFA-required challenge. Discriminated by `status`. */
+        SessionResult: components["schemas"]["AuthenticatedSession"] | components["schemas"]["MfaRequiredChallenge"];
+        /** @description Authenticated variant of `SessionResult`. Carries the same fields as `LoginResponse` plus the `status` discriminator, so a client that only needs the session reads `token`/`sessionId`/`user` directly. */
+        AuthenticatedSession: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "authenticated";
+            /** @description FuzeFront-minted session token. */
+            token: string;
+            sessionId?: string;
+            user: components["schemas"]["User"];
+        };
+        /** @description MFA-required variant of `SessionResult`. The client picks a factor and completes step-up via `/mfa/challenge` + `/mfa/verify`, referencing `challengeId`. */
+        MfaRequiredChallenge: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "mfa_required";
+            challengeId: string;
+            factors: components["schemas"]["MfaFactorRef"][];
         };
         SignupRequest: {
             /** Format: email */
@@ -396,12 +644,22 @@ export interface components {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
         };
-        /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. */
+        /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
             /** @description Whether password login/signup is available. */
             password: boolean;
             /** @description Enabled social provider slugs (may be empty). */
             social: components["schemas"]["SocialProvider"][];
+            /** @description Multi-factor capability. */
+            mfa: {
+                enabled: boolean;
+                types: components["schemas"]["MfaFactorType"][];
+            };
+            /** @description Contact-verification capability. */
+            verification: {
+                email: boolean;
+                sms: boolean;
+            };
         };
         /**
          * @description Supported social provider slug. Extensible; `google` is first.
@@ -516,6 +774,94 @@ export interface components {
             scope?: string;
             expiresAt?: number;
         };
+        /**
+         * @description Neutral factor type. Extensible; `webauthn` reserved for later.
+         * @enum {string}
+         */
+        MfaFactorType: "totp" | "sms" | "email" | "webauthn";
+        /** @enum {string} */
+        MfaFactorStatus: "pending" | "active";
+        MfaFactor: {
+            factorId: string;
+            type: components["schemas"]["MfaFactorType"];
+            status: components["schemas"]["MfaFactorStatus"];
+            /** @description Neutral display hint (e.g. masked phone/email), never a provider name. */
+            label?: string;
+            createdAt?: number;
+        };
+        /** @description Minimal factor reference offered in an MFA challenge. */
+        MfaFactorRef: {
+            factorId: string;
+            type: components["schemas"]["MfaFactorType"];
+        };
+        MfaEnrollRequest: {
+            type: components["schemas"]["MfaFactorType"];
+            /** @description Required when `type` is `sms`. */
+            phone?: string;
+            /**
+             * Format: email
+             * @description Required when `type` is `email`.
+             */
+            email?: string;
+        };
+        /** @description Enrollment material. For `totp`, `secret` + `provisioningUri` are present (render a QR). For `sms`/`email`, a code was sent and the factor is pending. */
+        MfaEnrollResult: {
+            factorId: string;
+            type: components["schemas"]["MfaFactorType"];
+            status: components["schemas"]["MfaFactorStatus"];
+            /** @description TOTP shared secret (present only for `totp`). */
+            secret?: string;
+            /** @description otpauth:// URI for QR rendering (present only for `totp`). */
+            provisioningUri?: string;
+            /** @description Whether an OTP was dispatched (present for `sms`/`email`). */
+            codeSent?: boolean;
+        };
+        MfaCodeRequest: {
+            code: string;
+        };
+        RecoveryCodes: {
+            codes: string[];
+        };
+        MfaChallengeRequest: {
+            challengeId: string;
+            factorId: string;
+        };
+        MfaChallengeAck: {
+            challengeId: string;
+            factorId: string;
+            /** @description True when an OTP was dispatched; false/omitted for TOTP prompts. */
+            delivered?: boolean;
+        };
+        MfaVerifyRequest: {
+            challengeId: string;
+            factorId: string;
+            code: string;
+        };
+        /** @description Optional body; omit when verifying the authenticated user's email. */
+        EmailVerifyStartRequest: {
+            /**
+             * Format: email
+             * @description Signup-scoped address to verify when unauthenticated.
+             */
+            email?: string;
+        };
+        PhoneVerifyStartRequest: {
+            phone: string;
+        };
+        /** @description Confirm with a link `token` OR an OTP `code`. */
+        VerifyConfirmRequest: {
+            token?: string;
+            code?: string;
+        };
+        PhoneVerifyConfirmRequest: {
+            phone: string;
+            code: string;
+        };
+        VerificationStatus: {
+            emailVerified: boolean;
+            phoneVerified: boolean;
+            phone?: string;
+        };
         /** @description Cursor-pagination page metadata (family standard). */
         PageInfo: {
             /** @description Opaque cursor for the next page; null on the last page. */
@@ -574,6 +920,7 @@ export interface components {
         /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
         Cursor: string;
         TenantId: string;
+        FactorId: string;
     };
     requestBodies: never;
     headers: never;
@@ -615,13 +962,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Authenticated; token, user, and session id returned. */
+            /** @description Authenticated session, or an MFA-required challenge. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["SessionResult"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -660,13 +1007,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Session established. */
+            /** @description Authenticated session, or an MFA-required challenge. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["SessionResult"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -1117,6 +1464,296 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+        };
+    };
+    listMfaFactors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The enrolled factors. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["MfaFactor"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    enrollMfaFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaEnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Enrollment started (pending activation). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaEnrollResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    activateMfaFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                factorId: components["parameters"]["FactorId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Factor activated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaFactor"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removeMfaFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                factorId: components["parameters"]["FactorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Factor removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    regenerateRecoveryCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newly generated recovery codes (shown once). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    challengeMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaChallengeRequest"];
+            };
+        };
+        responses: {
+            /** @description Challenge dispatched (or TOTP prompt expected). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaChallengeAck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    verifyMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description MFA satisfied; authenticated session returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    startEmailVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EmailVerifyStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Verification message dispatched. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    confirmEmailVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Email marked verified. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    startPhoneVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneVerifyStartRequest"];
+            };
+        };
+        responses: {
+            /** @description SMS code dispatched. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    confirmPhoneVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneVerifyConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Phone marked verified. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getVerificationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The verification status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }
