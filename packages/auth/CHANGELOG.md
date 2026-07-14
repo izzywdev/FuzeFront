@@ -4,6 +4,26 @@ All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
 the contract-stability guarantee consumers may assert on).
 
+## 0.2.0 — Provider-neutral rename (unreleased)
+
+Neutralizes the identity-vendor leak in the consumer surface, coincident with
+the new provider-agnostic FuzeFront Security API (`@fuzefront/security-client`).
+
+### Changed (BREAKING)
+
+- `AuthMode` value `'oidc-jwks'` → **`'federated-jwks'`** (provider-neutral). The
+  `legacy-hs256` value is unchanged.
+- `OidcJwksConfig` → **`FederatedJwksConfig`** (`mode: 'federated-jwks'`), with
+  all vendor naming stripped and documented as SERVER-INTERNAL wiring config.
+  `OidcJwksConfig` is retained as a `@deprecated` type alias for one release.
+- `Identity.issuer` and error-code docs no longer name any identity vendor.
+
+### Migration
+
+- Consumers asserting on `authMode === 'oidc-jwks'` update to `'federated-jwks'`.
+- Host wiring importing `OidcJwksConfig` should switch to `FederatedJwksConfig`
+  and set `mode: 'federated-jwks'` (the alias keeps old imports compiling for now).
+
 ## 0.1.0 — Contract freeze (unreleased)
 
 Initial **interface freeze** (resolves #117). Interface only — runtime

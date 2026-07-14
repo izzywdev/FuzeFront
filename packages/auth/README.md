@@ -3,7 +3,7 @@
 The consumable **authN/authZ client** for the FuzeFront family (resolves
 [#117](https://github.com/izzywdev/FuzeFront/issues/117)). Every product verifies
 tokens and gates routes through this one package, so identity handling — and the
-eventual Authentik/OIDC migration — is uniform across the family.
+eventual federated-JWKS migration — is uniform across the family.
 
 > **Status: CONTRACT FREEZE (v0.1.0).** This PR freezes the public *interface*
 > only. Runtime verification (JWKS fetch, `jsonwebtoken`/`jose`) is a **follow-up
@@ -15,7 +15,7 @@ eventual Authentik/OIDC migration — is uniform across the family.
 FuzeDeploy (#13) and FuzeMarket (FF-auth) are deploy-blocked on a shared auth
 client. Rolling their own would fork identity handling across the family. This
 package gives them **one stable `Identity` shape** and a **pluggable verifier**,
-so they get interop with today's token immediately and migrate to Authentik
+so they get interop with today's token immediately and migrate to the federated token
 OIDC/JWKS later **without any consumer code change**.
 
 ## Public interface
@@ -42,7 +42,7 @@ import {
 | mode           | when       | key            | tenantId / roles                 |
 | -------------- | ---------- | -------------- | -------------------------------- |
 | `legacy-hs256` | today      | `JWT_SECRET`   | out-of-band resolver (token lacks them) |
-| `oidc-jwks`    | target     | Authentik JWKS | from token claims                |
+| `federated-jwks`    | target     | federated JWKS | from token claims                |
 
 Full token/claims contract + migration path: [`docs/TOKEN_CONTRACT.md`](./docs/TOKEN_CONTRACT.md).
 HTTP surface + schemas: [`openapi.yaml`](./openapi.yaml).

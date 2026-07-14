@@ -13,16 +13,16 @@ transparent to them.
 
 Every verifier normalizes to the same shape (see `src/types.ts`):
 
-| field       | type               | legacy-hs256                            | oidc-jwks                                  |
+| field       | type               | legacy-hs256                            | federated-jwks                                  |
 | ----------- | ------------------ | --------------------------------------- | ------------------------------------------ |
 | `userId`    | `string`           | from `userId` claim (always present)    | from `sub` claim                           |
 | `tenantId`  | `string \| null`   | `null` unless out-of-band resolved      | from `tenantId` claim                      |
 | `roles`     | `string[]`         | `[]` unless out-of-band resolved        | from `roles` claim                         |
 | `email`     | `string?`          | out-of-band                             | from `email` claim                         |
-| `authMode`  | `'legacy-hs256' \| 'oidc-jwks'` | constant                    | constant                                   |
+| `authMode`  | `'legacy-hs256' \| 'federated-jwks'` | constant                    | constant                                   |
 | `issuedAt`  | `number?`          | `iat`                                   | `iat`                                      |
 | `expiresAt` | `number?`          | `exp`                                   | `exp`                                      |
-| `issuer`    | `string?`          | absent                                  | `iss` (Authentik issuer URL)               |
+| `issuer`    | `string?`          | absent                                  | `iss` (federation issuer URL)               |
 
 **Contract guarantee:** `userId`, `tenantId`, `roles`, `authMode` are ALWAYS
 present (`tenantId` may be `null`; `roles` may be `[]`). Consumers must treat
@@ -64,13 +64,13 @@ const verifier = createVerifier({
 app.use('/api/private', requireAuth({ verifier }));
 ```
 
-## Mode 2 — `oidc-jwks` (TARGET)
+## Mode 2 — `federated-jwks` (TARGET)
 
-Verifies the Authentik-issued token directly, no shared secret:
+Verifies the federated RS256/JWKS token directly, no shared secret:
 
 - **Algorithm:** RS256 (asymmetric); public keys fetched from the provider **JWKS**.
 - **Key discovery:** via OIDC discovery of `${issuer}/.well-known/openid-configuration`
-  (Authentik issuer `AUTHENTIK_ISSUER_URL`), or an explicit `jwksUri`.
+  (federation issuer, server-side config), or an explicit `jwksUri`.
 - **Validation:** signature, `exp`/`nbf` (with clock tolerance), `iss` (must equal
   the configured issuer), and `aud` when configured.
 - **Claims:** `sub` → `userId`, `tenantId` claim → `tenantId`, `roles` claim →
@@ -78,9 +78,9 @@ Verifies the Authentik-issued token directly, no shared secret:
 
 ```ts
 const verifier = createVerifier({
-  mode: 'oidc-jwks',
-  issuer: process.env.AUTHENTIK_ISSUER_URL!,
-  audience: process.env.AUTHENTIK_CLIENT_ID,
+  mode: 'federated-jwks',
+  issuer: process.env.FEDERATION_ISSUER_URL!,
+  audience: process.env.FEDERATION_CLIENT_ID,
   tenantClaim: 'tenantId',   // defaults shown
   rolesClaim: 'roles',
   subjectClaim: 'sub',
@@ -92,14 +92,14 @@ const verifier = createVerifier({
 The `Identity` shape is invariant, so **consumers do not change** across the
 migration. Only the verifier config the host wires changes:
 
-1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@fuzefront/auth` gives interop immediately without waiting on Authentik token issuance.
-2. **Dual-accept (transition).** Authentik begins issuing RS256/JWKS tokens carrying `tenantId`+`roles`. A host may run BOTH verifiers and try `oidc-jwks` first, falling back to `legacy-hs256`, until all clients present the new token. (The package exposes both verifiers; the dual-accept composition is a small host-side wrapper — a follow-up impl detail, not a contract change.)
+1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@fuzefront/auth` gives interop immediately without waiting on federated token issuance.
+2. **Dual-accept (transition).** The federation provider begins issuing RS256/JWKS tokens carrying `tenantId`+`roles`. A host may run BOTH verifiers and try `federated-jwks` first, falling back to `legacy-hs256`, until all clients present the new token. (The package exposes both verifiers; the dual-accept composition is a small host-side wrapper — a follow-up impl detail, not a contract change.)
 3. **OIDC-only.** Once all tokens are RS256/JWKS, drop `legacy-hs256`, remove `JWT_SECRET` from services, and rely on JWKS. `tenantId`/`roles` now come from the token itself; the out-of-band resolver is retired. **No consumer code change** — they still read `Identity`.
 
 ### What changes for whom
 
 - **Consumers of `Identity`:** nothing. Same fields, same guarantees.
-- **Host wiring `createVerifier`:** swaps `legacy-hs256` config for `oidc-jwks` config (or runs both during transition).
+- **Host wiring `createVerifier`:** swaps `legacy-hs256` config for `federated-jwks` config (or runs both during transition).
 - **Identity service (out of this package's scope):** starts issuing RS256 tokens with `tenantId`+`roles` claims — a backend slice tracked separately.
 
 ## Error contract
