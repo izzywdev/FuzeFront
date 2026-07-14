@@ -3,3 +3,9 @@
 # parse error even when braces are balanced (Vite 6 + @tailwindcss/postcss 4).
 *.css  text eol=lf
 *.scss text eol=lf
+
+# Force LF for Helm values/templates — the release workflow's GitOps bump step
+# anchors on line content in deploy/helm/fuzefront/values-prod.yaml; a CRLF
+# checkin once broke every release until the endings were manually restored.
+# (Contents-API commits bypass gitattributes; the bump awk also tolerates \r.)
+deploy/helm/** text eol=lf
