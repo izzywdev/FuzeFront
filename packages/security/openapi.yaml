@@ -1,0 +1,1060 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Security API
+  version: 0.1.0
+  description: >-
+    The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
+    family. It exposes both authentication (AuthN) and authorization (AuthZ)
+    behind a single, stable, same-origin contract under `/api/v1/security`.
+
+
+    ## Provider-agnostic by design
+
+    The underlying identity provider (federation / MFA / enrollment engine) and
+    the authorization engine (policy / ReBAC) are **swappable implementations**
+    hidden behind internal adapter interfaces (`IdentityProvider`,
+    `AuthorizationProvider`). Consumers, the frontend SPA, and federated remotes
+    know **only** this API and the generated `@fuzefront/security-client` — never
+    a vendor. We can switch or blend providers for features/cost without any
+    consumer change.
+
+
+    ## Naming rule (strict)
+
+    No vendor/product name appears in ANY consumer-facing path, schema name,
+    field, config key, or description. Open-standard protocol terms
+    (OIDC/OAuth2/JWKS/PKCE) may appear where they describe a genuine wire
+    protocol, but are kept out of consumer-facing **names** where practical.
+    Provider names live only inside server-side adapter implementations and
+    server-only environment configuration.
+
+
+    ## Boundary guarantee
+
+    For social login the user's browser only ever transits `app.fuzefront.com`
+    and (briefly, for the chosen social provider) the provider's own consent
+    host (e.g. `accounts.google.com`). No FuzeFront-internal identity host is
+    ever visible to the browser or named in this contract.
+
+
+    ## Fail-closed
+
+    Every AuthN and AuthZ decision is fail-closed: any verification, provider,
+    or transport error yields a denial (401/403) or an explicit error body —
+    never a permissive fallback.
+
+
+    ## Delivery phasing
+
+    AuthN is delivered first (it fixes the acute live provider leak); AuthZ is
+    designed here in full and its consumer rollout is sequenced after AuthN.
+  license:
+    name: MIT
+servers:
+  - url: /api
+    description: >-
+      Same-origin API base. Works identically under local TLS and prod ingress;
+      never hard-code an absolute API host.
+tags:
+  - name: session
+    description: Session lifecycle — password login, current identity, logout, code exchange.
+  - name: social
+    description: Server-brokered social login. The browser never sees an internal identity host.
+  - name: signup
+    description: Server-brokered account creation.
+  - name: capabilities
+    description: Neutral capability descriptor for the auth surface.
+  - name: authz
+    description: Authorization decisions (check / bulk-check / permissions).
+  - name: tenants
+    description: Tenant, membership, and role management (neutralized authz primitives).
+  - name: tokens
+    description: FuzeFront-owned machine-to-machine (M2M) token issuance and introspection.
+paths:
+  # ─────────────────────────────── AuthN: session ───────────────────────────
+  /v1/security/session:
+    post:
+      tags: [session]
+      summary: Password login — establish a session
+      operationId: createSession
+      description: >-
+        Validates credentials via the configured identity provider (server-
+        brokered; the browser never leaves `app.fuzefront.com`) and returns a
+        FuzeFront-minted session token plus the hydrated user. Fail-closed on
+        bad credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated; token, user, and session id returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton session-creation action; returns one session.
+    get:
+      tags: [session]
+      summary: Current identity ("me")
+      operationId: getSession
+      description: >-
+        Returns the normalized `Identity` and hydrated user for the presented
+        session token. This is the source of any out-of-band role/tenant
+        hydration in legacy token mode.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The current identity + user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton — the current caller's identity.
+    delete:
+      tags: [session]
+      summary: Logout — revoke the current session
+      operationId: deleteSession
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Session revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation; no collection.
+  /v1/security/session/exchange:
+    post:
+      tags: [session]
+      summary: Exchange an opaque broker code for a session
+      operationId: exchangeSessionCode
+      description: >-
+        Exchanges the FuzeFront-minted opaque `code` issued by
+        `GET /v1/security/social/callback` for a session token. The code is
+        single-use and short-lived. Fail-closed on an unknown/expired code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeRequest'
+      responses:
+        '200':
+          description: Session established.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton code-exchange action.
+  # ─────────────────────────────── AuthN: social ────────────────────────────
+  /v1/security/social/{provider}/start:
+    get:
+      tags: [social]
+      summary: Begin social login (302)
+      operationId: startSocialLogin
+      description: >-
+        Initiates a server-brokered social login handshake and 302-redirects the
+        browser to the social provider's own consent host via a FuzeFront-owned,
+        same-host authorize path. No internal identity host is ever exposed. On
+        completion the provider returns to `GET /v1/security/social/callback`.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: Social provider slug. Extensible; `google` is the first supported value.
+          schema:
+            $ref: '#/components/schemas/SocialProvider'
+        - name: redirectTo
+          in: query
+          required: false
+          description: >-
+            Optional app-relative path to return to after login completes.
+            Must be same-origin; absolute URLs are rejected.
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the social provider consent flow.
+          headers:
+            Location:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Redirect action; no collection.
+  /v1/security/social/callback:
+    get:
+      tags: [social]
+      summary: Social login broker callback (302 back to app)
+      operationId: socialCallback
+      description: >-
+        The server broker completes the social handshake, provisions/links the
+        user, mints a single-use opaque code, and 302-redirects the browser back
+        to the app with `?code=<opaque>`. The SPA then calls
+        `POST /v1/security/session/exchange`. No token is placed in the URL.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: Provider authorization code (protocol-level; consumed server-side).
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          description: Opaque anti-forgery state issued at start.
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirect back to the app with a FuzeFront opaque `?code=`.
+          headers:
+            Location:
+              schema: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Redirect action; no collection.
+  # ─────────────────────────────── AuthN: signup ────────────────────────────
+  /v1/security/signup:
+    post:
+      tags: [signup]
+      summary: Create an account (server-brokered)
+      operationId: signup
+      description: >-
+        Server-brokered account creation via the configured identity provider.
+        The user only ever sees FuzeFront-branded UI — never a provider's raw
+        enrollment page. On success a session may be established directly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: Account created; session established.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: An account with that email already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton account-creation action.
+  # ─────────────────────────── AuthN: capabilities ──────────────────────────
+  /v1/security/methods:
+    get:
+      tags: [capabilities]
+      summary: Auth capability descriptor
+      operationId: getAuthMethods
+      description: >-
+        Neutral capability descriptor for the auth surface. Replaces the legacy
+        vendor-specific `oidcConfigured` boolean. Lets the UI render the right
+        affordances (password form, social buttons) without knowing any provider.
+      responses:
+        '200':
+          description: The configured auth capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMethods'
+      x-pagination: exempt
+      x-pagination-reason: Singleton capability descriptor.
+  # ─────────────────────────────── AuthZ: checks ────────────────────────────
+  /v1/security/authz/check:
+    post:
+      tags: [authz]
+      summary: Authorization check (single)
+      operationId: authzCheck
+      description: >-
+        Returns whether `subject` may perform `action` on `resource` within
+        `tenant`. Fail-closed: any provider/transport error returns
+        `{ allow: false }` (never an exception surfaced as allow).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthzCheckRequest'
+      responses:
+        '200':
+          description: The decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthzDecision'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton decision.
+  /v1/security/authz/bulk-check:
+    post:
+      tags: [authz]
+      summary: Authorization check (bulk)
+      operationId: authzBulkCheck
+      description: >-
+        Evaluates an ordered list of checks and returns decisions in the same
+        order. Fail-closed per element. The number of decisions equals the
+        number of requested checks. Bounded by the caller-supplied input array
+        (`maxItems`), so no server-side pagination applies.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthzBulkCheckRequest'
+      responses:
+        '200':
+          description: Decisions, index-aligned with the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthzBulkDecision'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Response is index-aligned to the caller-supplied, bounded (maxItems)
+        request array — not an unbounded server-side collection.
+  /v1/security/authz/permissions:
+    get:
+      tags: [authz]
+      summary: Effective permissions for a subject in a tenant
+      operationId: getPermissions
+      description: >-
+        Returns the effective permission set for `subject` scoped to `tenant`.
+        The permission set for a single subject within one tenant is bounded by
+        the policy model (a fixed catalogue of resource/action pairs), not by
+        user-controlled data growth, so it is returned whole.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subject
+          in: query
+          required: true
+          schema: { type: string }
+        - name: tenant
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The effective permissions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionSet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded by the policy model (fixed resource/action catalogue for one
+        subject in one tenant), not by user-controlled data growth.
+  # ─────────────────────────── AuthZ: tenants/members/roles ─────────────────
+  /v1/security/tenants:
+    get:
+      tags: [tenants]
+      summary: List tenants visible to the caller
+      operationId: listTenants
+      description: Unbounded collection — cursor-paginated per the family pagination standard.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of tenants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [tenants]
+      summary: Create a tenant
+      operationId: createTenant
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantCreate'
+      responses:
+        '201':
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton creation.
+  /v1/security/tenants/{tenantId}:
+    get:
+      tags: [tenants]
+      summary: Get a tenant
+      operationId: getTenant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: The tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton resource.
+  /v1/security/tenants/{tenantId}/members:
+    get:
+      tags: [tenants]
+      summary: List members of a tenant
+      operationId: listTenantMembers
+      description: Unbounded collection — cursor-paginated per the family pagination standard.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [tenants]
+      summary: Add a member to a tenant
+      operationId: addTenantMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberCreate'
+      responses:
+        '201':
+          description: Member added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton creation.
+  /v1/security/tenants/{tenantId}/members/{userId}:
+    delete:
+      tags: [tenants]
+      summary: Remove a member from a tenant
+      operationId: removeTenantMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Member removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  /v1/security/tenants/{tenantId}/roles:
+    get:
+      tags: [tenants]
+      summary: List roles defined for a tenant
+      operationId: listTenantRoles
+      description: >-
+        Roles are a bounded, policy-defined catalogue per tenant (not
+        user-data-driven), so the full set is returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: The tenant's roles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
+                required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded policy-defined role catalogue per tenant, not user-controlled
+        data growth.
+  /v1/security/tenants/{tenantId}/members/{userId}/roles:
+    put:
+      tags: [tenants]
+      summary: Assign roles to a member
+      operationId: assignMemberRoles
+      description: Replaces the member's role assignment within the tenant.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleAssignment'
+      responses:
+        '200':
+          description: Roles updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  # ─────────────────────────────── M2M tokens ───────────────────────────────
+  /v1/security/tokens:
+    post:
+      tags: [tokens]
+      summary: Issue an M2M token
+      operationId: issueToken
+      description: >-
+        Issues a FuzeFront-owned machine-to-machine token for a provisioned
+        service client (client-credentials style). The issuing identity provider
+        is hidden behind the adapter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenIssueRequest'
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenIssueResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton token issuance.
+  /v1/security/tokens/introspect:
+    post:
+      tags: [tokens]
+      summary: Introspect an M2M token
+      operationId: introspectToken
+      description: >-
+        Returns the active state and normalized claims for a presented M2M
+        token. Fail-closed: an unknown/expired token returns `{ active: false }`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenIntrospectRequest'
+      responses:
+        '200':
+          description: Introspection result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenIntrospection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton introspection.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        `Authorization: Bearer <token>`. A FuzeFront-minted session or M2M
+        token, verified server-side. Consumers depend on the normalized
+        `Identity`, never the raw claims.
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Max items per page. Clamped server-side to the maximum.
+      schema:
+        type: integer
+        default: 50
+        maximum: 200
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque, server-issued cursor for the next page. Omit for the first page.
+      schema:
+        type: string
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Authentication failed (fail-closed).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+  schemas:
+    # ── AuthN request/response shapes (kept compatible with today's @fuzefront/auth) ──
+    LoginRequest:
+      type: object
+      description: Password login credentials. Shape-compatible with today's login.
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+    LoginResponse:
+      type: object
+      description: >-
+        Session established. Kept shape-compatible with today's login response
+        (adds `sessionId`) so the frontend rename is mechanical.
+      properties:
+        token:
+          type: string
+          description: FuzeFront-minted session token.
+        sessionId:
+          type: string
+          description: Server session identifier.
+        user:
+          $ref: '#/components/schemas/User'
+      required: [token, user]
+    SignupRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        tenantName:
+          type: string
+          description: Optional tenant/organization name to provision on signup.
+      required: [email, password]
+    ExchangeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: The single-use opaque code from the social callback redirect.
+      required: [code]
+    SessionInfo:
+      type: object
+      description: Current identity plus hydrated user.
+      properties:
+        identity:
+          $ref: '#/components/schemas/Identity'
+        user:
+          $ref: '#/components/schemas/User'
+      required: [identity, user]
+    AuthMethods:
+      type: object
+      description: Neutral auth capability descriptor. Replaces `oidcConfigured`.
+      properties:
+        password:
+          type: boolean
+          description: Whether password login/signup is available.
+        social:
+          type: array
+          description: Enabled social provider slugs (may be empty).
+          items:
+            $ref: '#/components/schemas/SocialProvider'
+      required: [password, social]
+    SocialProvider:
+      type: string
+      description: Supported social provider slug. Extensible; `google` is first.
+      enum: [google]
+    User:
+      type: object
+      description: Hydrated user (source of out-of-band role/tenant resolution).
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        defaultAppId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+      required: [id, email, roles]
+    Identity:
+      type: object
+      description: >-
+        The STABLE normalized identity, invariant across token-format
+        migrations. Mirrors the TypeScript `Identity` interface in
+        `@fuzefront/security-client`. Provider-neutral.
+      properties:
+        userId:
+          type: string
+          description: Stable subject id. Always present.
+        tenantId:
+          type: [string, 'null']
+          description: >-
+            Tenant/org scope. May be null in legacy token mode when unresolved.
+            Consumers fail-closed on tenant-scoped authz when null.
+        roles:
+          type: array
+          items:
+            type: string
+          description: Always an array; empty means "no roles known".
+        email:
+          type: string
+        authMode:
+          type: string
+          enum: [legacy-hs256, federated-jwks]
+        issuedAt:
+          type: integer
+        expiresAt:
+          type: integer
+        issuer:
+          type: string
+      required: [userId, tenantId, roles, authMode]
+    # ── AuthZ shapes ──
+    AuthzCheckRequest:
+      type: object
+      properties:
+        subject:
+          type: string
+          description: The principal id (user or service client).
+        tenant:
+          type: string
+          description: Tenant/org scope for the decision.
+        resource:
+          $ref: '#/components/schemas/ResourceRef'
+        action:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+      required: [subject, tenant, resource, action]
+    ResourceRef:
+      type: object
+      properties:
+        type:
+          type: string
+        key:
+          type: string
+          description: Optional specific resource instance key.
+      required: [type]
+    AuthzDecision:
+      type: object
+      properties:
+        allow:
+          type: boolean
+      required: [allow]
+    AuthzBulkCheckRequest:
+      type: object
+      properties:
+        checks:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/AuthzCheckRequest'
+      required: [checks]
+    AuthzBulkDecision:
+      type: object
+      properties:
+        decisions:
+          type: array
+          description: Index-aligned with the request `checks`.
+          items:
+            $ref: '#/components/schemas/AuthzDecision'
+      required: [decisions]
+    PermissionSet:
+      type: object
+      properties:
+        subject:
+          type: string
+        tenant:
+          type: string
+        permissions:
+          type: array
+          description: Effective `resource:action` grants.
+          items:
+            type: string
+      required: [subject, tenant, permissions]
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+      required: [id, name]
+    TenantCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+      required: [name]
+    Member:
+      type: object
+      properties:
+        userId:
+          type: string
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+      required: [userId, roles]
+    MemberCreate:
+      type: object
+      properties:
+        userId:
+          type: string
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+      required: []
+    Role:
+      type: object
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+      required: [key]
+    RoleAssignment:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: string
+      required: [roles]
+    # ── M2M shapes ──
+    TokenIssueRequest:
+      type: object
+      properties:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        scope:
+          type: string
+      required: [clientId, clientSecret]
+    TokenIssueResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          default: Bearer
+        expiresIn:
+          type: integer
+          description: Lifetime in seconds.
+        scope:
+          type: string
+      required: [accessToken, tokenType, expiresIn]
+    TokenIntrospectRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required: [token]
+    TokenIntrospection:
+      type: object
+      description: Fail-closed introspection result.
+      properties:
+        active:
+          type: boolean
+        subject:
+          type: string
+        tenantId:
+          type: [string, 'null']
+        scope:
+          type: string
+        expiresAt:
+          type: integer
+      required: [active]
+    # ── Pagination envelopes (family standard) ──
+    PageInfo:
+      type: object
+      description: Cursor-pagination page metadata (family standard).
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: Opaque cursor for the next page; null on the last page.
+        hasMore:
+          type: boolean
+        total:
+          type: integer
+          description: Optional; omitted when counting the full set is expensive.
+      required: [nextCursor, hasMore]
+    TenantPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tenant'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required: [items, page]
+    MemberPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required: [items, page]
+    # ── Errors ──
+    ErrorBody:
+      type: object
+      description: Stable error body. Fail-closed; provider-neutral codes.
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - NO_TOKEN
+            - MALFORMED
+            - INVALID_SIGNATURE
+            - EXPIRED
+            - NOT_ACTIVE
+            - INVALID_ISSUER
+            - INVALID_AUDIENCE
+            - MISSING_CLAIM
+            - JWKS_UNAVAILABLE
+            - VERIFIER_UNAVAILABLE
+            - INVALID_CREDENTIALS
+            - INVALID_CODE
+            - CONFLICT
+            - FORBIDDEN
+            - NOT_FOUND
+            - PROVIDER_UNAVAILABLE
+            - UNKNOWN
+      required: [error, code]
