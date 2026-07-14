@@ -19,8 +19,23 @@ const billingClientSrc = fileURLToPath(
   new URL('../billing-client/src/index.ts', import.meta.url)
 )
 
+// Pre-enforce plugin: intercept ALL .css imports before vite:css runs.
+// css: false alone does not prevent vite:css from invoking postcss on CSS
+// files that are resolved *outside* the frontend root (e.g. the billing-ui
+// stylesheet imported via a relative path from BillingPage.tsx). That
+// invocation loads frontend/postcss.config.js → @tailwindcss/postcss →
+// @tailwindcss/oxide native binary, which is absent in CI and causes the
+// transform to fail even though the test makes no assertions on CSS.
+const stubCss = {
+  name: 'vitest-stub-css',
+  enforce: 'pre' as const,
+  transform(_code: string, id: string) {
+    if (id.endsWith('.css')) return { code: '', map: null }
+  },
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [stubCss, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
@@ -48,10 +63,5 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['tests/**', 'node_modules/**'],
     testTimeout: 15000,
-    // jsdom unit tests don't assert on real CSS. Disable CSS processing so raw
-    // stylesheet imports (e.g. BillingPage importing billing-ui.css) become
-    // no-ops instead of routing through PostCSS — which fails in CI on a missing
-    // native binding (npm optional-deps bug) the moment a test imports raw CSS.
-    css: false,
   },
 })
