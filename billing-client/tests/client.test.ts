@@ -107,7 +107,7 @@ describe('BillingClient', () => {
 
   it('getPaymentSession GETs the encoded id with actor headers and unwraps {payment}', async () => {
     verbs.get.mockResolvedValue({
-      data: { payment: { stripeSessionId: 'cs 1', status: 'paid' } },
+      data: { payment: { sessionId: 'cs 1', status: 'paid' } },
     });
     const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
     const out = await c.getPaymentSession('cs 1', {
@@ -122,7 +122,7 @@ describe('BillingClient', () => {
         'X-Billing-Entity-Id': 'org-1',
       },
     });
-    expect(out).toEqual({ stripeSessionId: 'cs 1', status: 'paid' });
+    expect(out).toEqual({ sessionId: 'cs 1', status: 'paid' });
   });
 
   it('listInvoices GETs /invoices with limit + cursor query params', async () => {

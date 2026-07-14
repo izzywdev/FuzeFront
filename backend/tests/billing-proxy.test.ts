@@ -118,7 +118,7 @@ describe('billing proxy', () => {
   })
 
   it('GET subscription forwards the path param', async () => {
-    okUpstream({ subscription: { stripeSubscriptionId: 'sub_123' } })
+    okUpstream({ subscription: { subscriptionId: 'sub_123' } })
 
     const res = await request(app)
       .get('/api/v1/billing/subscriptions/sub_123')
@@ -133,7 +133,7 @@ describe('billing proxy', () => {
   })
 
   it('PATCH subscription forwards body + path', async () => {
-    okUpstream({ subscription: { stripeSubscriptionId: 'sub_123' } })
+    okUpstream({ subscription: { subscriptionId: 'sub_123' } })
 
     const res = await request(app)
       .patch('/api/v1/billing/subscriptions/sub_123')
@@ -338,7 +338,7 @@ describe('billing proxy', () => {
 
       it('PATCH /subscriptions/:id forwards (manage) without polluting the body schema', async () => {
         mockCheckOrgPermission.mockResolvedValue(true)
-        okUpstream({ subscription: { stripeSubscriptionId: 'sub_123' } })
+        okUpstream({ subscription: { subscriptionId: 'sub_123' } })
 
         const res = await request(app)
           .patch('/api/v1/billing/subscriptions/sub_123')
@@ -358,7 +358,7 @@ describe('billing proxy', () => {
 
       it('GET /subscriptions/:id requires only read permission', async () => {
         mockCheckOrgPermission.mockResolvedValue(true)
-        okUpstream({ subscription: { stripeSubscriptionId: 'sub_123' } })
+        okUpstream({ subscription: { subscriptionId: 'sub_123' } })
 
         const res = await request(app)
           .get('/api/v1/billing/subscriptions/sub_123')
@@ -428,7 +428,7 @@ describe('billing proxy', () => {
 
     describe('query param allow-list (no verbatim pass-through)', () => {
       it('drops unknown query params and forwards only the allow-list', async () => {
-        okUpstream({ subscription: { stripeSubscriptionId: 'sub_123' } })
+        okUpstream({ subscription: { subscriptionId: 'sub_123' } })
 
         await request(app)
           .get('/api/v1/billing/subscriptions/sub_123')

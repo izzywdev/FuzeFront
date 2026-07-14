@@ -31,8 +31,8 @@ export function assertBillingSubscription(sub: any): void {
   const required = [
     'id',
     'customerId',
-    'stripeSubscriptionId',
-    'stripePriceId',
+    'subscriptionId',
+    'priceId',
     'planTier',
     'status',
     'seatQuantity',
@@ -49,8 +49,8 @@ export function assertBillingSubscription(sub: any): void {
 
   expect(typeof sub.id).toBe('string');
   expect(typeof sub.customerId).toBe('string');
-  expect(typeof sub.stripeSubscriptionId).toBe('string');
-  expect(typeof sub.stripePriceId).toBe('string');
+  expect(typeof sub.subscriptionId).toBe('string');
+  expect(typeof sub.priceId).toBe('string');
   expect(typeof sub.planTier).toBe('string');
   expect(typeof sub.status).toBe('string');
   expect(Number.isInteger(sub.seatQuantity)).toBe(true);
@@ -64,8 +64,8 @@ export function assertBillingSubscription(sub: any): void {
 /** Plan — components/schemas/Plan. */
 export function assertPlan(plan: any): void {
   const required = [
-    'stripePriceId',
-    'stripeProductId',
+    'priceId',
+    'productId',
     'tierName',
     'displayName',
     'billingInterval',
@@ -79,8 +79,8 @@ export function assertPlan(plan: any): void {
   ];
   assertRequired(plan, required, 'Plan');
   assertNoExtraKeys(plan, required, 'Plan');
-  expect(typeof plan.stripePriceId).toBe('string');
-  expect(typeof plan.stripeProductId).toBe('string');
+  expect(typeof plan.priceId).toBe('string');
+  expect(typeof plan.productId).toBe('string');
   expect(typeof plan.tierName).toBe('string');
   expect(typeof plan.displayName).toBe('string');
   expect(typeof plan.billingInterval).toBe('string');

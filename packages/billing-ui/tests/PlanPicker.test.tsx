@@ -5,9 +5,9 @@ import { PlanPicker } from '../src/components/PlanPicker';
 import { renderWithI18n, makePlan } from './helpers';
 
 const plans = [
-  makePlan({ stripePriceId: 'free_m', tierName: 'free', displayName: 'Starter', unitAmount: 0, sortOrder: 0, billingInterval: 'month', features: ['1 app'] }),
-  makePlan({ stripePriceId: 'pro_m', displayName: 'Pro', unitAmount: 2900, sortOrder: 2, billingInterval: 'month' }),
-  makePlan({ stripePriceId: 'pro_y', displayName: 'Pro Annual', unitAmount: 29000, sortOrder: 2, billingInterval: 'year' }),
+  makePlan({ priceId: 'free_m', tierName: 'free', displayName: 'Starter', unitAmount: 0, sortOrder: 0, billingInterval: 'month', features: ['1 app'] }),
+  makePlan({ priceId: 'pro_m', displayName: 'Pro', unitAmount: 2900, sortOrder: 2, billingInterval: 'month' }),
+  makePlan({ priceId: 'pro_y', displayName: 'Pro Annual', unitAmount: 29000, sortOrder: 2, billingInterval: 'year' }),
 ];
 
 /** Locate a plan card section by its heading text. */
@@ -45,7 +45,7 @@ describe('PlanPicker / PlanCard', () => {
     renderWithI18n(<PlanPicker plans={plans} showIntervalToggle={false} onSelect={onSelect} />);
     const proCard = cardByName('Pro');
     await user.click(within(proCard).getByRole('button', { name: 'Select' }));
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ stripePriceId: 'pro_m' }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ priceId: 'pro_m' }));
   });
 
   it('marks the current plan and disables its select button', () => {

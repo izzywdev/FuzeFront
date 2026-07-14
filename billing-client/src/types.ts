@@ -15,8 +15,8 @@ export type SubscriptionStatus =
 export interface BillingSubscription {
   id: string;
   customerId: string;
-  stripeSubscriptionId: string;
-  stripePriceId: string;
+  subscriptionId: string;
+  priceId: string;
   planTier: PlanTier;
   status: SubscriptionStatus;
   seatQuantity: number;
@@ -29,8 +29,8 @@ export interface BillingSubscription {
 }
 
 export interface Plan {
-  stripePriceId: string;
-  stripeProductId: string;
+  priceId: string;
+  productId: string;
   tierName: PlanTier;
   displayName: string;
   billingInterval: 'month' | 'year' | string;
@@ -72,7 +72,7 @@ export interface UpdateSubscriptionRequest {
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
 
 export interface PaymentLineItem {
-  /** Line-item display name shown on the Stripe-hosted page. */
+  /** Line-item display name shown on the provider-hosted page. */
   name: string;
   /** Optional line-item description shown under the name. */
   description?: string;
@@ -98,9 +98,9 @@ export interface PaymentCheckoutRequest {
 }
 
 export interface PaymentCheckoutResponse {
-  /** The Stripe Checkout Session id (`cs_...`). */
+  /** The hosted Checkout Session id (`cs_...`). */
   sessionId: string;
-  /** Stripe-hosted Checkout URL to redirect the buyer to. */
+  /** Provider-hosted Checkout URL to redirect the buyer to. */
   url: string | null;
 }
 
@@ -140,8 +140,8 @@ export interface InvoiceListResponse {
 /** Local billing.payments mirror of a one-time payment-mode Checkout Session. */
 export interface BillingPayment {
   id: string;
-  stripeSessionId: string;
-  stripePaymentIntentId: string | null;
+  sessionId: string;
+  paymentIntentId: string | null;
   productKey: string;
   externalOrderId: string;
   entityType: EntityType;

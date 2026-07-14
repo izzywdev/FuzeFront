@@ -19,11 +19,11 @@ export interface BillingCustomer {
  */
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';
 
-/** Local mirror of a ONE-TIME payment-mode Stripe Checkout Session. */
+/** Local mirror of a ONE-TIME payment-mode hosted Checkout Session. */
 export interface BillingPayment {
   id: string;
-  stripeSessionId: string;
-  stripePaymentIntentId: string | null;
+  sessionId: string;
+  paymentIntentId: string | null;
   productKey: string;
   externalOrderId: string;
   entityType: EntityType;
@@ -51,8 +51,8 @@ export type SubscriptionStatus =
 export interface BillingSubscription {
   id: string;
   customerId: string;
-  stripeSubscriptionId: string;
-  stripePriceId: string;
+  subscriptionId: string;
+  priceId: string;
   planTier: PlanTier;
   status: SubscriptionStatus;
   seatQuantity: number;
@@ -65,8 +65,8 @@ export interface BillingSubscription {
 }
 
 export interface Plan {
-  stripePriceId: string;
-  stripeProductId: string;
+  priceId: string;
+  productId: string;
   tierName: PlanTier;
   displayName: string;
   billingInterval: 'month' | 'year' | string;

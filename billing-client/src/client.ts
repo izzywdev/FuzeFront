@@ -19,7 +19,7 @@ const API_BASE = '/api/v1/billing';
 /**
  * Typed client over the billing-service REST API. Consumed by `backend` (and
  * other internal services) to read entitlements and drive checkout. Card data
- * never flows through here — only Stripe ids and client secrets.
+ * never flows through here — only provider ids and client secrets.
  */
 export class BillingClient {
   private readonly http: AxiosInstance;
@@ -37,9 +37,9 @@ export class BillingClient {
     return res.data.plans;
   }
 
-  async getSubscription(stripeSubscriptionId: string): Promise<BillingSubscription> {
+  async getSubscription(subscriptionId: string): Promise<BillingSubscription> {
     const res = await this.http.get<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
     return res.data.subscription;
   }
@@ -50,19 +50,19 @@ export class BillingClient {
   }
 
   async updateSubscription(
-    stripeSubscriptionId: string,
+    subscriptionId: string,
     req: UpdateSubscriptionRequest,
   ): Promise<BillingSubscription> {
     const res = await this.http.patch<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
       req,
     );
     return res.data.subscription;
   }
 
-  async cancelSubscription(stripeSubscriptionId: string): Promise<BillingSubscription> {
+  async cancelSubscription(subscriptionId: string): Promise<BillingSubscription> {
     const res = await this.http.delete<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
     return res.data.subscription;
   }

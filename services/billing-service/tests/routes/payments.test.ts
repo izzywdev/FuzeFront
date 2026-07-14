@@ -58,8 +58,8 @@ function validBody(overrides: Record<string, unknown> = {}) {
 function mirrorRow(overrides: Record<string, unknown> = {}) {
   return {
     id: '77777777-7777-4777-8777-777777777777',
-    stripeSessionId: 'cs_test_session',
-    stripePaymentIntentId: null,
+    sessionId: 'cs_test_session',
+    paymentIntentId: null,
     productKey: 'mendys-datasets',
     externalOrderId: 'order-42',
     entityType: 'organization',
@@ -144,7 +144,7 @@ describe('POST /payments/checkout — one-time payment-mode Checkout Session', (
 
     expect(stubs.payments.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        stripeSessionId: 'cs_test_session',
+        sessionId: 'cs_test_session',
         productKey: 'mendys-datasets',
         externalOrderId: 'order-42',
         entityType: 'organization',
@@ -413,7 +413,7 @@ describe('GET /payments/sessions/:sessionId — reconciliation polling', () => {
     expect(res.status).toBe(200);
     expect(res.body.payment).toEqual(
       expect.objectContaining({
-        stripeSessionId: 'cs_test_session',
+        sessionId: 'cs_test_session',
         productKey: 'mendys-datasets',
         externalOrderId: 'order-42',
         status: 'paid',
@@ -482,8 +482,8 @@ describe('GET /payments/sessions/:sessionId — reconciliation polling', () => {
     expect(res.status).toBe(200);
     expect(stubs.payments.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        stripeSessionId: 'cs_live_9',
-        stripePaymentIntentId: 'pi_9',
+        sessionId: 'cs_live_9',
+        paymentIntentId: 'pi_9',
         productKey: 'mendys-datasets',
         externalOrderId: 'order-42',
         entityType: 'organization',
@@ -493,7 +493,7 @@ describe('GET /payments/sessions/:sessionId — reconciliation polling', () => {
         status: 'paid',
       }),
     );
-    expect(res.body.payment).toEqual(expect.objectContaining({ stripeSessionId: 'cs_live_9' }));
+    expect(res.body.payment).toEqual(expect.objectContaining({ sessionId: 'cs_live_9' }));
   });
 
   it('fallback 404s a live session whose productKey is NOT allowlisted', async () => {

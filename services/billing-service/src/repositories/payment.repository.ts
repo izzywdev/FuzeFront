@@ -2,8 +2,8 @@ import { Pool } from 'pg';
 import { BillingPayment, EntityType, PaymentStatus } from '../types';
 
 export interface PaymentUpsert {
-  stripeSessionId: string;
-  stripePaymentIntentId: string | null;
+  sessionId: string;
+  paymentIntentId: string | null;
   productKey: string;
   externalOrderId: string;
   entityType: EntityType;
@@ -47,8 +47,8 @@ interface PaymentRow {
 function mapRow(r: PaymentRow): BillingPayment {
   return {
     id: r.id,
-    stripeSessionId: r.stripe_session_id,
-    stripePaymentIntentId: r.stripe_payment_intent_id,
+    sessionId: r.stripe_session_id,
+    paymentIntentId: r.stripe_payment_intent_id,
     productKey: r.product_key,
     externalOrderId: r.external_order_id,
     entityType: r.entity_type,
@@ -92,8 +92,8 @@ export class PgPaymentRepository implements PaymentRepository {
           updated_at               = now()
        RETURNING *`,
       [
-        row.stripeSessionId,
-        row.stripePaymentIntentId,
+        row.sessionId,
+        row.paymentIntentId,
         row.productKey,
         row.externalOrderId,
         row.entityType,

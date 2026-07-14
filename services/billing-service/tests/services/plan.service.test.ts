@@ -9,7 +9,7 @@ class FakePlanRepo implements PlanRepository {
 
   async upsert(plan: Plan) {
     this.upsertCalls++;
-    const i = this.plans.findIndex((p) => p.stripePriceId === plan.stripePriceId);
+    const i = this.plans.findIndex((p) => p.priceId === plan.priceId);
     if (i >= 0) this.plans[i] = plan;
     else this.plans.push(plan);
   }
@@ -18,7 +18,7 @@ class FakePlanRepo implements PlanRepository {
     return this.plans.filter((p) => p.isActive);
   }
   async findByPriceId(id: string) {
-    return this.plans.find((p) => p.stripePriceId === id) ?? null;
+    return this.plans.find((p) => p.priceId === id) ?? null;
   }
 }
 
@@ -49,8 +49,8 @@ describe('PlanService.syncPlans', () => {
 
     expect(count).toBe(1);
     expect(repo.plans[0]).toMatchObject({
-      stripePriceId: 'price_pro',
-      stripeProductId: 'prod_pro',
+      priceId: 'price_pro',
+      productId: 'prod_pro',
       tierName: 'pro',
       seatBased: true,
       billingInterval: 'month',
@@ -82,7 +82,7 @@ describe('PlanService.getActivePlans', () => {
   it('serves from cache within TTL (repo hit once)', async () => {
     const repo = new FakePlanRepo();
     repo.plans = [
-      { stripePriceId: 'p1', stripeProductId: 'pr1', tierName: 'starter', displayName: 'Starter', billingInterval: 'month', unitAmount: 900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 1 },
+      { priceId: 'p1', productId: 'pr1', tierName: 'starter', displayName: 'Starter', billingInterval: 'month', unitAmount: 900, currency: 'usd', seatBased: false, meteredMeterName: null, features: [], isActive: true, sortOrder: 1 },
     ];
     let t = 1000;
     const svc = new PlanService({} as any, repo, 60_000, () => t);

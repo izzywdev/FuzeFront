@@ -32,8 +32,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
   return {
     id: '55555555-5555-4555-8555-555555555555',
     customerId: '66666666-6666-4666-8666-666666666666',
-    stripeSubscriptionId: 'sub_test123',
-    stripePriceId: BASIC_PRICE_ID,
+    subscriptionId: 'sub_test123',
+    priceId: BASIC_PRICE_ID,
     planTier: 'starter',
     status: 'active',
     seatQuantity: 1,
@@ -50,8 +50,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
 /** A spec-conformant Plan fixture (the $9/mo Basic plan). */
 export function makeBasicPlan(overrides: Partial<Plan> = {}): Plan {
   return {
-    stripePriceId: BASIC_PRICE_ID,
-    stripeProductId: 'prod_basic',
+    priceId: BASIC_PRICE_ID,
+    productId: 'prod_basic',
     tierName: 'starter',
     displayName: 'Basic',
     billingInterval: 'month',

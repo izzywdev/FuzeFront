@@ -90,7 +90,7 @@ describe('webhook-router — invoice event wiring', () => {
 
   it('invoice.payment_succeeded persists AND runs the entitlement/notify path', async () => {
     const ctx = makeCtx({
-      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro', stripeSubscriptionId: 'sub_1' }) },
+      subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro', subscriptionId: 'sub_1' }) },
       permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
       emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
       writePlanCache: jest.fn().mockResolvedValue(undefined),

@@ -67,7 +67,7 @@ describe('billing-service contract :: getPlans (GET /plans)', () => {
     });
     const res = await request(app).get(`${BASE}/plans`);
     expect(res.status).toBe(200);
-    const basic = res.body.plans.find((p: any) => p.stripePriceId === BASIC_PRICE_ID);
+    const basic = res.body.plans.find((p: any) => p.priceId === BASIC_PRICE_ID);
     expect(basic).toBeDefined();
     expect(basic.unitAmount).toBe(900);
     expect(basic.currency).toBe('usd');
@@ -181,7 +181,7 @@ describe('billing-service contract :: getSubscription (GET /subscriptions/{id})'
 describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{id})', () => {
   it('200 {subscription} on a valid plan change', async () => {
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
-    stubs.subscriptionService.update.mockResolvedValue(makeSubscription({ stripePriceId: 'price_pro' }));
+    stubs.subscriptionService.update.mockResolvedValue(makeSubscription({ priceId: 'price_pro' }));
     const res = await request(app)
       .patch(`${BASE}/subscriptions/sub_test123`)
       .set(...authHeader())
