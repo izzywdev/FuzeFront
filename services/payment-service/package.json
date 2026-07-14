@@ -12,12 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "express": "4.21.2",
+    "express": "^5.1.0",
     "stripe": "^17",
     "zod": "3.22.4"
   },
   "devDependencies": {
-    "@types/express": "4.17.21",
+    "@types/express": "^5.0.0",
     "@types/jest": "29.5.12",
     "@types/node": "18.19.0",
     "@types/supertest": "6.0.2",

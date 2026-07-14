@@ -41,7 +41,7 @@ export function createPaymentsRouter(deps: PaymentsRouterDeps): Router {
 
   router.get('/customers/:customerId', async (req: Request, res: Response) => {
     try {
-      const customer = await provider.getCustomer(req.params.customerId);
+      const customer = await provider.getCustomer(String(req.params.customerId));
       if (!customer) {
         res.status(404).json({ error: 'not_found' });
         return;
@@ -56,7 +56,7 @@ export function createPaymentsRouter(deps: PaymentsRouterDeps): Router {
     try {
       const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
       const startingAfter = req.query.cursor ? String(req.query.cursor) : undefined;
-      const page = await provider.listInvoices(req.params.customerId, { limit, startingAfter });
+      const page = await provider.listInvoices(String(req.params.customerId), { limit, startingAfter });
       res.json(page);
     } catch (err) {
       handleError(res, err);
@@ -98,7 +98,7 @@ export function createWebhookRouter(deps: PaymentsRouterDeps): Router {
   router.post('/webhooks/:provider', async (req: Request, res: Response) => {
     try {
       const signature = req.header('stripe-signature') || undefined;
-      const event = provider.parseWebhook(req.params.provider, req.body as Buffer, signature);
+      const event = provider.parseWebhook(String(req.params.provider), req.body as Buffer, signature);
       res.json({ received: true, handled: Boolean(event) });
     } catch (err) {
       handleError(res, err);
