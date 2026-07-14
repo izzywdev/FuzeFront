@@ -410,8 +410,13 @@ async function forward(
   } catch (err) {
     const ax = err as AxiosError
     // Connection refused / DNS / timeout — the service is unreachable.
+    // Pass the request-derived parts as console arguments (not interpolated into
+    // the format string) so externally-controlled values can't shape the log
+    // record — clears CodeQL js/tainted-format-string + js/log-injection.
     console.error(
-      `[billing-proxy] upstream error for ${req.method} ${options.path}:`,
+      '[billing-proxy] upstream error for %s %s:',
+      req.method,
+      options.path,
       ax.code || ax.message
     )
     res
