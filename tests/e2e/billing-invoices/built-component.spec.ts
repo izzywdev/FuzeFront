@@ -89,6 +89,10 @@ function buildBundle() {
       'react/jsx-runtime': require.resolve('react/jsx-runtime'),
     },
   })
+  // Static, test-only harness page (constant HTML; the <script src> is a fixed
+  // local path to our own esbuild bundle — no external/dynamic input). Not a web
+  // response and never served to users.
+  // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
   writeFileSync(
     HTML,
     `<!doctype html><html><head><meta charset="utf-8"><title>invoice-history harness</title></head><body><div id="root"></div><script src="./bundle.js"></script></body></html>`,
