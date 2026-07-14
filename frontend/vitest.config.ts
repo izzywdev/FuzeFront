@@ -48,5 +48,8 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['tests/**', 'node_modules/**'],
     testTimeout: 15000,
+    // CSS imports (e.g. billing-ui.css) are irrelevant in jsdom tests and
+    // @tailwindcss/postcss fails to transform them in the Node environment.
+    css: false,
   },
 })
