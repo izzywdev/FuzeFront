@@ -48,5 +48,10 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['tests/**', 'node_modules/**'],
     testTimeout: 15000,
+    // jsdom unit tests don't assert on real CSS. Disable CSS processing so raw
+    // stylesheet imports (e.g. BillingPage importing billing-ui.css) become
+    // no-ops instead of routing through PostCSS — which fails in CI on a missing
+    // native binding (npm optional-deps bug) the moment a test imports raw CSS.
+    css: false,
   },
 })
