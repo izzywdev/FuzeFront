@@ -132,6 +132,61 @@ export interface TokenIntrospection {
   expiresAt?: number;
 }
 
+// ── MFA (provider-agnostic; TOTP / SMS-OTP / email-OTP, WebAuthn reserved) ──
+
+/** Neutral factor type. `webauthn` reserved for later. */
+export type MfaFactorType = 'totp' | 'sms' | 'email' | 'webauthn';
+
+export interface MfaFactor {
+  factorId: string;
+  type: MfaFactorType;
+  status: 'pending' | 'active';
+  /** Neutral display hint (e.g. masked phone/email); never a provider name. */
+  label?: string;
+  createdAt?: number;
+}
+
+export interface MfaEnrollInput {
+  type: MfaFactorType;
+  /** Required when `type` is `sms`. */
+  phone?: string;
+  /** Required when `type` is `email`. */
+  email?: string;
+}
+
+/**
+ * Enrollment material. For `totp`, `secret` + `provisioningUri` are present
+ * (render a QR); for `sms`/`email`, `codeSent` indicates an OTP was dispatched.
+ */
+export interface MfaEnrollResult {
+  factorId: string;
+  type: MfaFactorType;
+  status: 'pending' | 'active';
+  secret?: string;
+  provisioningUri?: string;
+  codeSent?: boolean;
+}
+
+/** Minimal factor reference offered inside a login MFA challenge. */
+export interface MfaFactorRef {
+  factorId: string;
+  type: MfaFactorType;
+}
+
+export interface MfaChallengeAck {
+  challengeId: string;
+  factorId: string;
+  /** True when an OTP was dispatched; false/undefined for TOTP prompts. */
+  delivered?: boolean;
+}
+
+/** Contact-ownership verification status for a user. */
+export interface VerificationStatus {
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  phone?: string;
+}
+
 /**
  * The AuthN swap contract. Shaped from the current server-brokered behavior in
  * `backend/security/src/routes/auth.ts` (`/oidc/password` :520, `/oidc/login`
@@ -168,4 +223,49 @@ export interface IdentityProvider {
 
   /** Introspect a presented token. Fail-closed: unknown/expired ⇒ { active: false }. */
   introspectToken(token: string): Promise<TokenIntrospection>;
+
+  // ── MFA factor management + login step-up ──
+  //
+  // Provider-agnostic. The identity provider's MFA stages and the family
+  // email-service / sms-service (SMS OTP via the family verification service)
+  // are the FIRST implementations behind this contract — swappable, and named
+  // only inside the concrete impl.
+
+  /** List the user's enrolled factors (bounded per user). */
+  listFactors(token: string): Promise<MfaFactor[]>;
+
+  /** Begin enrolling a factor; returns enrollment material (pending activation). */
+  enrollFactor(token: string, input: MfaEnrollInput): Promise<MfaEnrollResult>;
+
+  /** Activate a pending factor with a one-time code. Rejects on bad/expired code. */
+  activateFactor(token: string, factorId: string, code: string): Promise<MfaFactor>;
+
+  /** Remove an enrolled factor. Idempotent. */
+  removeFactor(token: string, factorId: string): Promise<void>;
+
+  /** (Re)generate one-time recovery codes; returns them once. */
+  regenerateRecoveryCodes(token: string): Promise<string[]>;
+
+  /** Trigger a login-step-up challenge (deliver OTP or signal TOTP prompt). */
+  challengeMfa(challengeId: string, factorId: string): Promise<MfaChallengeAck>;
+
+  /** Verify a login-step-up challenge; on success returns an authenticated session. */
+  verifyMfa(challengeId: string, factorId: string, code: string): Promise<BrokeredSession>;
+
+  // ── Contact-ownership verification (distinct from MFA login step-up) ──
+
+  /** Send an email verification link/code (current user, or a signup-scoped address). */
+  startEmailVerification(token: string | null, email?: string): Promise<void>;
+
+  /** Confirm email ownership via a link `token` or an OTP `code`. */
+  confirmEmailVerification(input: { token?: string; code?: string }): Promise<VerificationStatus>;
+
+  /** Send an SMS OTP to a phone number. */
+  startPhoneVerification(token: string, phone: string): Promise<void>;
+
+  /** Confirm phone ownership via `{ phone, code }`. */
+  confirmPhoneVerification(phone: string, code: string): Promise<VerificationStatus>;
+
+  /** Current contact-verification status for the user. */
+  getVerificationStatus(token: string): Promise<VerificationStatus>;
 }

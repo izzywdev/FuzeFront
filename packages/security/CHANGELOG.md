@@ -1,5 +1,39 @@
 # Changelog — @fuzefront/security-client
 
+## 0.2.0 — MFA + contact verification (unreleased)
+
+Adds two provider-agnostic surfaces to the frozen contract (owner review of
+PR #243). `SECURITY_CONTRACT_VERSION` 0.1.0 → 0.2.0.
+
+### Added
+
+- **MFA / 2FA** under `/api/v1/security/mfa` (provider-neutral `totp`/`sms`/
+  `email`, `webauthn` reserved): `GET/POST /mfa/factors`,
+  `POST /mfa/factors/{factorId}/activate`, `DELETE /mfa/factors/{factorId}`,
+  `POST /mfa/recovery-codes`, plus login step-up `POST /mfa/challenge` +
+  `POST /mfa/verify`.
+- **Step-up result shape:** `POST /session` and `POST /session/exchange` now
+  return `SessionResult` — a `status`-discriminated `oneOf` of
+  `AuthenticatedSession` (same fields as `LoginResponse` + `status`) and
+  `MfaRequiredChallenge` (`challengeId` + offered `factors`). The social
+  callback → exchange path inherits this.
+- **Contact verification** under `/api/v1/security/verify` (email + phone
+  start/confirm, `GET /verify/status`) — distinct from MFA login step-up.
+- `AuthMethods` (`GET /methods`) now advertises `mfa: { enabled, types }` and
+  `verification: { email, sms }`.
+- Client types: `MfaFactorType`, `SessionResult`, `VerificationStatus`, extended
+  `AuthMethods`; adapter `IdentityProvider` extended with `listFactors`,
+  `enrollFactor`, `activateFactor`, `removeFactor`, `regenerateRecoveryCodes`,
+  `challengeMfa`, `verifyMfa`, `startEmailVerification`,
+  `confirmEmailVerification`, `startPhoneVerification`,
+  `confirmPhoneVerification`, `getVerificationStatus`.
+
+### Notes
+
+- MFA/verification remain provider-agnostic: the identity provider's MFA stages
+  and the family email/SMS verification services are the first impls, named only
+  inside the concrete adapter, never in this consumer surface.
+
 ## 0.1.0 — Contract freeze (unreleased)
 
 Initial **interface freeze** for the provider-agnostic FuzeFront Security API.

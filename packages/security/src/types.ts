@@ -17,7 +17,7 @@
  * Semantic version of THIS contract. Bump on every interface change; record it
  * in CHANGELOG.md. Consumers may assert on the major.
  */
-export const SECURITY_CONTRACT_VERSION = '0.1.0' as const;
+export const SECURITY_CONTRACT_VERSION = '0.2.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -77,8 +77,44 @@ export type SecurityErrorCode =
 /** Supported social provider slugs. Extensible; `google` is first. */
 export type SocialProvider = 'google';
 
+/** Neutral MFA factor type. `webauthn` reserved for later. */
+export type MfaFactorType = 'totp' | 'sms' | 'email' | 'webauthn';
+
 /** Neutral auth capability descriptor (replaces `oidcConfigured`). */
 export interface AuthMethods {
   password: boolean;
   social: SocialProvider[];
+  mfa: {
+    enabled: boolean;
+    types: MfaFactorType[];
+  };
+  verification: {
+    email: boolean;
+    sms: boolean;
+  };
+}
+
+/**
+ * Discriminated login/exchange outcome: either an authenticated session or an
+ * MFA-required challenge. Mirrors the API `SessionResult` oneOf (discriminator
+ * `status`). Narrow on `status` before reading the variant fields.
+ */
+export type SessionResult =
+  | {
+      status: 'authenticated';
+      token: string;
+      sessionId?: string;
+      user: unknown;
+    }
+  | {
+      status: 'mfa_required';
+      challengeId: string;
+      factors: { factorId: string; type: MfaFactorType }[];
+    };
+
+/** Contact-ownership verification status for the current user. */
+export interface VerificationStatus {
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  phone?: string;
 }
