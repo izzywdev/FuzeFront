@@ -19,8 +19,22 @@ const billingClientSrc = fileURLToPath(
   new URL('../billing-client/src/index.ts', import.meta.url)
 )
 
+// Intercept ALL .css imports (including out-of-root ones like billing-ui.css that
+// BillingPage imports) and return an empty module BEFORE vite:css runs. This stops
+// vite from routing any stylesheet through frontend/postcss.config.js →
+// @tailwindcss/postcss → @tailwindcss/oxide (a native binary absent in CI), which
+// otherwise crashes the test file during transform. jsdom tests assert DOM/logic,
+// not visual output, so stubbing CSS is correct. Runs before @vitejs/plugin-react.
+const stubCss = {
+  name: 'stub-css-imports',
+  enforce: 'pre' as const,
+  load(id: string) {
+    return id.split('?')[0].endsWith('.css') ? 'export default {}' : null
+  },
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [stubCss, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
@@ -40,13 +54,6 @@ export default defineConfig({
     // single instance of React and the i18n runtime.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
-  // Override PostCSS with an inline empty config so vite does NOT auto-load
-  // frontend/postcss.config.js (which pulls @tailwindcss/postcss). That plugin's
-  // native binding is absent in CI and crashes the CSS transform the moment a
-  // test imports raw CSS (BillingPage -> billing-ui.css). Tests don't build real
-  // CSS, so an empty pipeline is correct here. test.css:false alone is not enough
-  // — vite still loads the external postcss config to process the import.
-  css: { postcss: { plugins: [] } },
   test: {
     environment: 'jsdom',
     globals: true,
