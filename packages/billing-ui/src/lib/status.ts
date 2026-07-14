@@ -28,6 +28,37 @@ export function statusTone(status: SubscriptionStatus): StatusTone {
   return TONE_BY_STATUS[status] ?? 'neutral';
 }
 
+/**
+ * Visual tone for a vendor-neutral invoice status. The invoice status set is
+ * independent of the subscription set (paid/open/void/uncollectible/draft), so
+ * it gets its own mapping rather than overloading `statusTone`.
+ */
+const TONE_BY_INVOICE_STATUS: Record<string, StatusTone> = {
+  paid: 'success',
+  open: 'warning',
+  void: 'neutral',
+  draft: 'neutral',
+  uncollectible: 'error',
+};
+
+export function invoiceStatusTone(status: string): StatusTone {
+  return TONE_BY_INVOICE_STATUS[status] ?? 'neutral';
+}
+
+const INVOICE_STRING_KEY_BY_STATUS: Record<string, keyof BillingStrings> = {
+  paid: 'invoiceStatusPaid',
+  open: 'invoiceStatusOpen',
+  void: 'invoiceStatusVoid',
+  draft: 'invoiceStatusDraft',
+  uncollectible: 'invoiceStatusUncollectible',
+};
+
+/** Resolve a human-readable, translated label for an invoice status. */
+export function invoiceStatusLabel(status: string, strings: BillingStrings): string {
+  const key = INVOICE_STRING_KEY_BY_STATUS[status];
+  return key ? strings[key] : status;
+}
+
 /** Resolve a human-readable, translated label for a subscription status. */
 export function statusLabel(status: SubscriptionStatus, strings: BillingStrings): string {
   const key = STRING_KEY_BY_STATUS[status];

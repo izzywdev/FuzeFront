@@ -23,7 +23,14 @@ export {
 } from './i18n';
 
 // Status helpers (re-exported for consumers building custom chrome)
-export { statusTone, statusLabel, isEntitled, type StatusTone } from './lib/status';
+export {
+  statusTone,
+  statusLabel,
+  isEntitled,
+  invoiceStatusTone,
+  invoiceStatusLabel,
+  type StatusTone,
+} from './lib/status';
 
 // Primitives
 export {
@@ -69,6 +76,13 @@ export {
   type CardSummary,
 } from './components/PaymentMethodPanel';
 
+// Invoice history
+export {
+  InvoiceHistoryPanel,
+  type InvoiceHistoryPanelProps,
+  type ListInvoices,
+} from './components/InvoiceHistoryPanel';
+
 // Re-export the contract types consumers will need alongside the components.
 export type {
   Plan,
@@ -76,4 +90,6 @@ export type {
   SubscriptionStatus,
   PlanTier,
   EntityType,
+  BillingInvoice,
+  InvoiceListResponse,
 } from '@fuzefront/billing-client';

@@ -84,6 +84,25 @@ export interface BillingStrings {
   statusCanceled: string;
   statusUnpaid: string;
   statusIncomplete: string;
+  // Invoice history
+  invoicesHeading: string;
+  invoicesShownSuffix: string;
+  invoicesLoadMore: string;
+  invoicesEmptyHeading: string;
+  invoicesEmptyBody: string;
+  invoicesErrorHeading: string;
+  invoicesErrorBody: string;
+  invoiceDownloadPdf: string;
+  invoiceView: string;
+  /** Accessible-name prefix for a PDF download link: "<prefix> <number> <invoiceDownloadPdf>". */
+  invoiceDownloadAria: string;
+  /** Accessible-name prefix for a hosted-invoice link: "<prefix> <number>". */
+  invoiceViewAria: string;
+  invoiceStatusPaid: string;
+  invoiceStatusOpen: string;
+  invoiceStatusVoid: string;
+  invoiceStatusDraft: string;
+  invoiceStatusUncollectible: string;
   // Generic
   errorPrefix: string;
   retry: string;
@@ -152,6 +171,22 @@ const EN: BillingStrings = {
   statusCanceled: 'Canceled',
   statusUnpaid: 'Unpaid',
   statusIncomplete: 'Incomplete',
+  invoicesHeading: 'Invoices',
+  invoicesShownSuffix: 'shown',
+  invoicesLoadMore: 'Load more',
+  invoicesEmptyHeading: 'No invoices yet',
+  invoicesEmptyBody: 'Invoices appear here after your first billed period.',
+  invoicesErrorHeading: "Couldn't load invoices",
+  invoicesErrorBody: 'Something went wrong on our end.',
+  invoiceDownloadPdf: 'PDF',
+  invoiceView: 'View',
+  invoiceDownloadAria: 'Download invoice',
+  invoiceViewAria: 'View invoice',
+  invoiceStatusPaid: 'Paid',
+  invoiceStatusOpen: 'Open',
+  invoiceStatusVoid: 'Void',
+  invoiceStatusDraft: 'Draft',
+  invoiceStatusUncollectible: 'Uncollectible',
   errorPrefix: 'Something went wrong',
   retry: 'Try again',
   loading: 'Loading…',
