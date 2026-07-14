@@ -25,11 +25,20 @@ const billingClientSrc = fileURLToPath(
 // @tailwindcss/postcss → @tailwindcss/oxide (a native binary absent in CI), which
 // otherwise crashes the test file during transform. jsdom tests assert DOM/logic,
 // not visual output, so stubbing CSS is correct. Runs before @vitejs/plugin-react.
+const CSS_STUB_ID = '\0css-stub.js'
 const stubCss = {
   name: 'stub-css-imports',
   enforce: 'pre' as const,
+  // Map every .css import to a virtual module whose id does NOT end in .css, so
+  // vite:css's isCSSRequest(id) returns false and its transform (which would load
+  // frontend/postcss.config.js -> @tailwindcss/postcss -> native @tailwindcss/oxide,
+  // absent in CI) is skipped entirely. A load-only stub is insufficient: vite:css
+  // re-checks the id by extension after load. jsdom tests assert DOM/logic, not CSS.
+  resolveId(id: string) {
+    return id.split('?')[0].endsWith('.css') ? CSS_STUB_ID : null
+  },
   load(id: string) {
-    return id.split('?')[0].endsWith('.css') ? 'export default {}' : null
+    return id === CSS_STUB_ID ? 'export default {}' : null
   },
 }
 
