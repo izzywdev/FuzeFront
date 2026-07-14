@@ -1,5 +1,14 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
+import type {
+  AuthMethods,
+  SessionResult,
+  SocialProvider,
+} from '@fuzefront/security-client'
+
+// Re-export the provider-neutral contract types so existing consumers can keep
+// importing them from this module (e.g. `import { AuthMethods } from '../services/api'`).
+export type { AuthMethods, SessionResult, SocialProvider }
 
 // Default to the same origin the app is served from (the in-pod / ingress nginx
 // proxies /api/ to the backend). Same-origin keeps the protocol correct — http
@@ -189,82 +198,102 @@ export interface LoginResponse {
   sessionId: string
 }
 
-export interface AuthMethods {
-  methods: string[]
-  oidcConfigured: boolean
-  defaultMethod: string
-  oidcLoginUrl?: string
+// Account-creation payload for the server-brokered signup endpoint. Mirrors the
+// contract `SignupRequest` (see @fuzefront/security-client / openapi.yaml).
+export interface SignupCredentials {
+  email: string
+  password: string
+  firstName?: string
+  lastName?: string
+  tenantName?: string
 }
 
-// Authentication API
+// Persist a freshly authenticated session so it survives the post-login page
+// reload and is attached to subsequent requests by the axios interceptor.
+function persistSession(token?: string, sessionId?: string): void {
+  if (token) localStorage.setItem('authToken', token)
+  if (sessionId) localStorage.setItem('sessionId', sessionId)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authentication API — provider-agnostic FuzeFront Security API.
+//
+// Talks ONLY to FuzeFront's own same-origin `/api/v1/security/*` surface and the
+// generated `@fuzefront/security-client` contract types. No identity provider is
+// named here or anywhere on the consumer surface: the underlying federation /
+// MFA / enrollment engine is a swappable server-side adapter the browser never
+// sees. Social login transits only `app.fuzefront.com` and the chosen social
+// provider's own consent host.
+// ─────────────────────────────────────────────────────────────────────────────
+const SECURITY_BASE = '/v1/security'
+
 export const authAPI = {
-  // Get available authentication methods
+  // Neutral auth capability descriptor — lets the UI render the right affordances
+  // (password form, social buttons, MFA, contact verification) without knowing
+  // any provider. Replaces the legacy vendor-specific `oidcConfigured` boolean.
   async getAuthMethods(): Promise<AuthMethods> {
-    const response = await api.get<AuthMethods>('/auth/method')
+    const response = await api.get<AuthMethods>(`${SECURITY_BASE}/methods`)
     return response.data
   },
 
-  // Local authentication
-  async login(credentials: LoginCredentials): Promise<LoginResponse> {
-    const response = await api.post<LoginResponse>('/auth/login', credentials)
-    // Persist the token so it survives the post-login page reload and is sent
-    // on subsequent requests by the axios interceptor.
-    if (response.data?.token) {
-      localStorage.setItem('authToken', response.data.token)
-    }
-    if (response.data?.sessionId) {
-      localStorage.setItem('sessionId', response.data.sessionId)
-    }
-    return response.data
-  },
-
-  // OIDC authentication (redirects to Authentik — used for Google/SSO)
-  async loginWithOIDC(): Promise<void> {
-    // This will redirect the browser to Authentik
-    window.location.href = `${API_URL}/auth/oidc/login`
-  },
-
-  // Sign-up: redirects to Authentik's ENROLLMENT flow. The backend wraps the
-  // OIDC authorize URL in the flow's ?next= so a freshly-enrolled user comes
-  // straight back through the normal OIDC callback, already signed in.
-  async signupWithOIDC(): Promise<void> {
-    window.location.href = `${API_URL}/auth/oidc/signup`
-  },
-
-  // Password sign-in against Authentik WITHOUT a redirect: the backend drives
-  // Authentik's flow-executor with these credentials and returns the same
-  // { token, user, sessionId } shape as local login.
-  async loginWithAuthentikPassword(
-    credentials: LoginCredentials
-  ): Promise<LoginResponse> {
-    const response = await api.post<LoginResponse>(
-      '/auth/oidc/password',
+  // Password login — establishes a session. Returns a `SessionResult`: either an
+  // authenticated session, OR (when the account has MFA enabled) an
+  // `mfa_required` challenge the caller completes via `mfaAPI`. On the
+  // authenticated branch the session is persisted here.
+  async login(credentials: LoginCredentials): Promise<SessionResult> {
+    const response = await api.post<SessionResult>(
+      `${SECURITY_BASE}/session`,
       credentials
     )
-    if (response.data?.token) {
-      localStorage.setItem('authToken', response.data.token)
+    const result = response.data
+    if (result.status === 'authenticated') {
+      persistSession(result.token, result.sessionId)
     }
-    if (response.data?.sessionId) {
-      localStorage.setItem('sessionId', response.data.sessionId)
-    }
+    return result
+  },
+
+  // Server-brokered account creation. The user only ever sees FuzeFront-branded
+  // UI — never a provider's raw enrollment page. On success a session is
+  // established directly and persisted.
+  async signup(credentials: SignupCredentials): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>(
+      `${SECURITY_BASE}/signup`,
+      credentials
+    )
+    persistSession(response.data?.token, response.data?.sessionId)
     return response.data
   },
 
-  // Get current user (the backend wraps the payload as { user })
+  // Begin a server-brokered social login. 302-redirects the browser to the
+  // social provider's own consent host via a FuzeFront-owned, same-host authorize
+  // path; on completion the app is returned to with `?code=` for exchange.
+  async startSocialLogin(provider: SocialProvider = 'google'): Promise<void> {
+    window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
+  },
+
+  // Current identity ("me"). The Security API returns `{ identity, user }`; the
+  // UI consumes the hydrated user.
   async getCurrentUser(): Promise<User> {
-    const response = await api.get<{ user: User }>('/auth/user')
+    const response = await api.get<{ user: User }>(`${SECURITY_BASE}/session`)
     return response.data.user
   },
 
-  // Logout
+  // Logout — revoke the current session (idempotent) and clear local state.
   async logout(): Promise<void> {
-    await api.post('/auth/logout')
+    await api.delete(`${SECURITY_BASE}/session`)
     localStorage.removeItem('authToken')
+    localStorage.removeItem('sessionId')
     localStorage.removeItem('user')
   },
 
-  // Handle OIDC callback (exchange ?code for token+sessionId)
-  async handleOIDCCallback(): Promise<{ token?: string; sessionId?: string; error?: string }> {
+  // Complete a social-login round-trip. The social callback redirects back to
+  // the app with a single-use opaque `?code=`; exchange it for a session via
+  // `POST /session/exchange`. The `SessionResult` may itself be an
+  // `mfa_required` challenge when the account requires step-up.
+  async handleAuthCallback(): Promise<{
+    result?: SessionResult
+    error?: string
+  }> {
     const urlParams = new URLSearchParams(window.location.search)
     const code = urlParams.get('code')
     const error = urlParams.get('error')
@@ -276,15 +305,21 @@ export const authAPI = {
 
     if (code) {
       try {
-        const response = await api.post<{ token: string; sessionId: string }>('/auth/token-exchange', { code })
-        const { token, sessionId } = response.data
-        localStorage.setItem('authToken', token)
-        localStorage.setItem('sessionId', sessionId)
+        const response = await api.post<SessionResult>(
+          `${SECURITY_BASE}/session/exchange`,
+          { code }
+        )
+        const result = response.data
+        if (result.status === 'authenticated') {
+          persistSession(result.token, result.sessionId)
+        }
+        // Strip the opaque code from the URL so a reload can't re-exchange it.
         window.history.replaceState({}, document.title, window.location.pathname)
-        return { token, sessionId }
+        return { result }
       } catch (err: any) {
-        const message = err?.response?.data?.error || err?.message || 'Token exchange failed'
-        return { error: message }
+        const failMessage =
+          err?.response?.data?.error || err?.message || 'Sign-in failed'
+        return { error: failMessage }
       }
     }
 
