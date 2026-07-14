@@ -40,6 +40,13 @@ export default defineConfig({
     // single instance of React and the i18n runtime.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
+  // Override PostCSS with an inline empty config so vite does NOT auto-load
+  // frontend/postcss.config.js (which pulls @tailwindcss/postcss). That plugin's
+  // native binding is absent in CI and crashes the CSS transform the moment a
+  // test imports raw CSS (BillingPage -> billing-ui.css). Tests don't build real
+  // CSS, so an empty pipeline is correct here. test.css:false alone is not enough
+  // — vite still loads the external postcss config to process the import.
+  css: { postcss: { plugins: [] } },
   test: {
     environment: 'jsdom',
     globals: true,
