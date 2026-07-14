@@ -5,10 +5,13 @@ import path from 'node:path'
  * ROOT Playwright config — the repo-level entry point for the PRE-PROD
  * APPROVED-FRAMES GATE (acceptance criterion #2 of the Federated App Platform).
  *
- * This config runs ONLY the self-contained frames-gate spec
- * (`frontend/tests/federated-apps-frames.spec.ts`), which loads the approved
- * static design frames in `design/frames/federated-apps/` over `file://`. It
- * needs NO running stack, so it can gate a merge from a cold checkout.
+ * This config runs the self-contained frames-gate specs
+ * (`frontend/tests/*-frames.spec.ts`) — currently the Federated App Platform
+ * (`federated-apps-frames.spec.ts`, frames in `design/frames/federated-apps/`)
+ * and Locked App Mode (`locked-app-mode-frames.spec.ts`, frames in
+ * `design/frames/locked-app-mode/`). Each loads its approved static design
+ * frames over `file://` and needs NO running stack, so it can gate a merge from
+ * a cold checkout.
  *
  * The app-driven specs (sign-in, register→activate, FuzeClock load) live under
  * `frontend/` and run via `frontend/playwright.config.ts`
@@ -22,9 +25,9 @@ import path from 'node:path'
  *   npx playwright test
  */
 export default defineConfig({
-  // Only the frames-gate spec; the app-driven specs are owned by frontend/.
+  // Only the frames-gate specs; the app-driven specs are owned by frontend/.
   testDir: path.join('frontend', 'tests'),
-  testMatch: /federated-apps-frames\.spec\.ts$/,
+  testMatch: /-frames\.spec\.ts$/,
 
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

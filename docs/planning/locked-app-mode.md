@@ -297,15 +297,23 @@ criterion (retire once the first locked product — FuzeSocial — is GA on its 
 1. **Contract:** `spectral lint services/app-registry-service/openapi.yaml` clean; the regenerated
    `@fuzefront/app-registry-client` type-checks; the Zod mirror accepts the `fuzesocial` locked
    fixture and rejects a `locked` manifest missing `routing.host` / `branding.appName`.
-2. **Web white-label (the key one):** boot the shell locally against a locked host (override
+2. **Approved-frames gate (runs now, no stack):** the white-label UX is frozen as static frames in
+   `design/frames/locked-app-mode/` (login, locked shell, locked mobile, separate-native-apps) with a
+   `DESIGN.md` + `manifest.json`. The self-contained Playwright gate
+   `frontend/tests/locked-app-mode-frames.spec.ts` (wired into the root `playwright.config.ts`
+   alongside the federated-apps gate) loads them over `file://` and asserts the **white-label
+   invariant** — no "FuzeFront" string and no launcher/org-switcher/return-to-portal element inside the
+   product surface — plus the 375px mobile surface and the distinct per-product `packageId`s. Run:
+   `npx playwright test -c playwright.config.ts`.
+3. **Web white-label (post-implementation):** boot the shell locally against a locked host (override
    `window.location.host` / a hosts entry) and assert **only** FuzeSocial renders — branded from
    `manifest.branding`, with working same-origin login and a billing surface, and **zero** FuzeFront
-   logo/wordmark/launcher/org-switcher/return-to-portal in the DOM. Run the Playwright white-label
-   regression against the approved frames.
-3. **Host resolution:** an unknown host resolves to a neutral 404 (never the FuzeFront portal); a known
+   logo/wordmark/launcher/org-switcher/return-to-portal in the DOM. The frames gate above is the
+   pre-production baseline this is checked against.
+4. **Host resolution:** an unknown host resolves to a neutral 404 (never the FuzeFront portal); a known
    host resolves to exactly its product.
-4. **Native:** register a second product, run the matrixed workflow, install the produced APK, and
+5. **Native:** register a second product, run the matrixed workflow, install the produced APK, and
    confirm Digital Asset Links verification succeeds (Chrome suppresses the URL bar) and the app opens
    locked to that product only.
-5. **Flag both states:** with `fuzefront.platform.locked-app-mode` OFF, the portal and all existing
+6. **Flag both states:** with `fuzefront.platform.locked-app-mode` OFF, the portal and all existing
    `/app/:slug` + `/standalone/:slug` behavior is unchanged; ON, locked domains resolve as above.
