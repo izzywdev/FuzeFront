@@ -7,6 +7,7 @@ import {
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   EntityType,
+  InvoiceListResponse,
   PaymentCheckoutRequest,
   PaymentCheckoutResponse,
   Plan,
@@ -96,6 +97,31 @@ export class BillingClient {
       { headers: actorHeaders(actor) },
     );
     return res.data.payment;
+  }
+
+  /**
+   * List the authorized entity's invoices (GET /invoices), newest first, served
+   * from the local invoice store. Pagination is opaque-cursor based: pass the
+   * previous response's `nextCursor` as `cursor`. Actor/entity context is added
+   * by the host-backend billing proxy.
+   */
+  async listInvoices(opts: { limit?: number; cursor?: string } = {}): Promise<InvoiceListResponse> {
+    const res = await this.http.get<InvoiceListResponse>('/invoices', {
+      params: {
+        ...(opts.limit != null ? { limit: opts.limit } : {}),
+        ...(opts.cursor ? { cursor: opts.cursor } : {}),
+      },
+    });
+    return res.data;
+  }
+
+  /**
+   * Force a provider→store resync of the authorized entity's invoices
+   * (POST /invoices/sync) and return how many were upserted. Idempotent.
+   */
+  async syncInvoices(): Promise<{ synced: number }> {
+    const res = await this.http.post<{ synced: number }>('/invoices/sync', {});
+    return res.data;
   }
 
   async addCredits(

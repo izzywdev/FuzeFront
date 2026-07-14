@@ -3,9 +3,23 @@ import { HandlerContext, StripeEventHandler } from './types';
 import { handleSubscriptionUpdated } from './subscription-updated';
 import { handleInvoicePaid } from './invoice-paid';
 import { handleInvoiceFailed } from './invoice-failed';
+import { handleInvoiceSynced } from './invoice-synced';
 import { handleTrialEnding } from './trial-ending';
 import { handleCheckoutCompleted } from './checkout-completed';
 import { handlePaymentCompleted } from './payment-completed';
+
+/**
+ * Runs the given handlers in sequence for one event. Used so an invoice event
+ * BOTH persists into billing.invoices (invoice-synced) AND drives its existing
+ * entitlement/notify side-effect (invoice-paid / invoice-failed).
+ */
+function chain(...handlers: StripeEventHandler[]): StripeEventHandler {
+  return async (event, ctx) => {
+    for (const handler of handlers) {
+      await handler(event, ctx);
+    }
+  };
+}
 
 /**
  * checkout.session.completed fans out BY SESSION MODE:
@@ -42,8 +56,14 @@ export const HANDLERS: Record<string, StripeEventHandler> = {
   'customer.subscription.updated': handleSubscriptionUpdated,
   'customer.subscription.deleted': handleSubscriptionUpdated,
   'customer.subscription.trial_will_end': handleTrialEnding,
-  'invoice.payment_succeeded': handleInvoicePaid,
-  'invoice.payment_failed': handleInvoiceFailed,
+  // Invoice lifecycle: persist the invoice into billing.invoices (invoice-synced)
+  // for every relevant event, and — for the succeeded/failed events — ALSO run
+  // the existing entitlement/notify handler (order: persist, then notify).
+  'invoice.payment_succeeded': chain(handleInvoiceSynced, handleInvoicePaid),
+  'invoice.payment_failed': chain(handleInvoiceSynced, handleInvoiceFailed),
+  'invoice.paid': handleInvoiceSynced,
+  'invoice.finalized': handleInvoiceSynced,
+  'invoice.updated': handleInvoiceSynced,
 };
 
 export async function routeWebhookEvent(

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Billing Invoices — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 880px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 64ch; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-8); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Billing — Invoice history · Approval Frames</h1>
+  <p class="lead">These frames demonstrate the <b>InvoiceHistoryPanel</b> UX before any feature UI is
+    implemented. Approving them freezes the visual contract that the implementation and
+    <code>frontend-test-engineer</code>'s Playwright pre-production checks are verified against.
+    Built in the fuse-seam design system (tokens only). No vendor name appears anywhere in the UI —
+    invoice ids, status and amount come from FuzeFront's own store.</p>
+
+  <div class="grid">
+    <a href="01-invoice-history.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (a)</div>
+      <h3>🧾 Invoice history</h3>
+      <p>Populated list on the Billing page: date · number · amount · status pill · download. "Load more" cursor pagination.</p>
+    </a>
+    <a href="02-states.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (b)</div>
+      <h3>◔ States</h3>
+      <p>Loading skeleton, empty state, error+retry, and the paid/open/void/uncollectible status variants.</p>
+    </a>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>services/billing-service/openapi.yaml</code> → <code>@fuzefront/billing-client</code> ·
+    Component: <code>@fuzefront/billing-ui → InvoiceHistoryPanel</code> ·
+    Flag: <code>fuzefront.billing.invoice-history</code> (default OFF).<br />
+    Approve by setting <code>approved: true</code> (+ approver + date) in <code>manifest.json</code>,
+    or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

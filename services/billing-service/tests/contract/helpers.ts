@@ -89,6 +89,10 @@ export interface DepStubs {
     getBySessionId: jest.Mock;
     findByOrder: jest.Mock;
   };
+  invoiceRepo: {
+    upsertFromProvider: jest.Mock;
+    listByCustomer: jest.Mock;
+  };
   stripe: {
     setupIntents: { create: jest.Mock };
     customers: { createBalanceTransaction: jest.Mock };
@@ -166,6 +170,11 @@ export function buildApp(
       getBySessionId: jest.fn().mockResolvedValue(null),
       findByOrder: jest.fn().mockResolvedValue(null),
     },
+    invoiceRepo: {
+      upsertFromProvider: jest.fn().mockResolvedValue(undefined),
+      // Default: empty store, no further page. Override per test.
+      listByCustomer: jest.fn().mockResolvedValue({ rows: [], nextCursor: null }),
+    },
     stripe: {
       setupIntents: { create: jest.fn() },
       customers: { createBalanceTransaction: jest.fn() },
@@ -211,6 +220,7 @@ export function buildApp(
     customerRepo: stubs.customerRepo as any,
     customers: stubs.customers as any,
     payments: stubs.payments as any,
+    invoiceRepo: stubs.invoiceRepo as any,
     paymentsConfig: opts.paymentsConfig ?? { ...PAYMENTS_CONFIG },
     webhook: stubs.webhook as any,
   };

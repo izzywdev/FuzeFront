@@ -112,6 +112,46 @@ export function assertSubscriptionWrapper(body: any): void {
   assertBillingSubscription(body.subscription);
 }
 
+/** BillingInvoice — components/schemas/BillingInvoice (vendor-neutral). */
+export function assertBillingInvoice(inv: any): void {
+  const required = [
+    'id',
+    'number',
+    'created',
+    'amountDue',
+    'amountPaid',
+    'currency',
+    'status',
+    'hostedInvoiceUrl',
+    'invoicePdf',
+  ];
+  assertRequired(inv, required, 'BillingInvoice');
+  assertNoExtraKeys(inv, required, 'BillingInvoice');
+  // id is OUR opaque FuzeFront id — a string, NOT a Stripe `in_...` id.
+  expect(typeof inv.id).toBe('string');
+  expect(inv.id.startsWith('in_')).toBe(false);
+  expect(inv.number === null || typeof inv.number === 'string').toBe(true);
+  expect(isNullableDateTime(inv.created)).toBe(true);
+  expect(Number.isInteger(inv.amountDue)).toBe(true);
+  expect(inv.amountDue).toBeGreaterThanOrEqual(0);
+  expect(Number.isInteger(inv.amountPaid)).toBe(true);
+  expect(inv.amountPaid).toBeGreaterThanOrEqual(0);
+  expect(typeof inv.currency).toBe('string');
+  expect(inv.currency).toBe(inv.currency.toLowerCase());
+  expect(typeof inv.status).toBe('string');
+  expect(inv.hostedInvoiceUrl === null || typeof inv.hostedInvoiceUrl === 'string').toBe(true);
+  expect(inv.invoicePdf === null || typeof inv.invoicePdf === 'string').toBe(true);
+}
+
+/** InvoiceListResponse — required [invoices, nextCursor]; nextCursor opaque. */
+export function assertInvoiceListResponse(body: any): void {
+  assertRequired(body, ['invoices', 'nextCursor'], 'InvoiceListResponse');
+  assertNoExtraKeys(body, ['invoices', 'nextCursor'], 'InvoiceListResponse');
+  expect(Array.isArray(body.invoices)).toBe(true);
+  body.invoices.forEach((i: unknown) => assertBillingInvoice(i));
+  expect(body.nextCursor === null || typeof body.nextCursor === 'string').toBe(true);
+}
+
 /** ValidationErrorBody — required [error], optional details. */
 export function assertValidationErrorBody(body: any): void {
   assertRequired(body, ['error'], 'ValidationErrorBody');

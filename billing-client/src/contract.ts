@@ -12,8 +12,10 @@
  */
 import type { components } from './schema';
 import type {
+  BillingInvoice,
   BillingPayment,
   BillingSubscription,
+  InvoiceListResponse,
   Plan,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
@@ -45,6 +47,8 @@ type _PaymentRes = Exact<PaymentCheckoutResponse, Schemas['PaymentCheckoutRespon
 type _PaymentLine = Exact<PaymentLineItem, Schemas['PaymentLineItem']>;
 type _PaymentStatus = Exact<PaymentStatus, Schemas['PaymentStatus']>;
 type _Payment = Exact<BillingPayment, Schemas['BillingPayment']>;
+type _Invoice = Exact<BillingInvoice, Schemas['BillingInvoice']>;
+type _InvoiceList = Exact<InvoiceListResponse, Schemas['InvoiceListResponse']>;
 
 // Reference the aliases so `noUnusedLocals`-style lints don't strip them.
 export type ContractAlignment = {
@@ -59,4 +63,6 @@ export type ContractAlignment = {
   paymentLineItem: _PaymentLine;
   paymentStatus: _PaymentStatus;
   payment: _Payment;
+  invoice: _Invoice;
+  invoiceList: _InvoiceList;
 };

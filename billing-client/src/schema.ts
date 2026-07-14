@@ -197,15 +197,37 @@ export interface paths {
         };
         /**
          * List the authorized entity's invoices
-         * @description Returns the Stripe invoice history for the proxy-authorized entity (user or organization), most-recent first, as a stable contract subset of the Stripe Invoice. Read-only. Mirrors `GET /invoices`.
+         * @description Returns the invoice history for the proxy-authorized entity (user or organization), most-recent first. Served from the local invoice store, synced from the payment provider. Read-only.
          *
          *     Authorization: behind the internal-token guard; the entity is the SERVER-DERIVED actor context the proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`, `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). Identity is never taken from the query string. An entity that has never had billing returns `{ invoices: [], nextCursor: null }` (200, not an error).
          *
-         *     Pagination is opaque-cursor based: pass the previous response's `nextCursor` (a Stripe invoice id) as `cursor` to fetch the next page. `nextCursor` is null on the last page.
+         *     Pagination is opaque-cursor based: pass the previous response's `nextCursor` as `cursor` to fetch the next page. `nextCursor` is null on the last page.
          */
         get: operations["listInvoices"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force a provider→store resync of the authorized entity's invoices
+         * @description Forces a resync of the proxy-authorized entity's invoices from the payment provider into the local invoice store, then returns the number of invoices upserted. Idempotent — safe to call repeatedly.
+         *
+         *     Authorization is identical to `GET /invoices`: behind the internal-token guard, with the entity taken from the SERVER-DERIVED actor context the proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`, `X-Billing-Entity-Id`). An entity that has never had billing returns `{ synced: 0 }` (200, not an error).
+         */
+        post: operations["syncInvoices"];
         delete?: never;
         options?: never;
         head?: never;
@@ -500,13 +522,16 @@ export interface components {
             updatedAt: string;
         };
         BillingInvoice: {
-            /** @description Stripe invoice id (`in_...`). */
+            /**
+             * Format: uuid
+             * @description FuzeFront invoice id (opaque, stable). A FuzeFront UUID, not a provider id.
+             */
             id: string;
             /** @description Human-facing invoice number; null for drafts without one. */
             number: string | null;
             /**
              * Format: date-time
-             * @description ISO-8601 timestamp derived from the Stripe `created` unix seconds.
+             * @description ISO-8601 issue timestamp.
              */
             created: string;
             /** @description Amount due in the currency's minor unit (cents). */
@@ -519,22 +544,22 @@ export interface components {
              */
             currency: string;
             /**
-             * @description Stripe invoice status.
-             * @example paid
-             * @example open
-             * @example void
+             * @description Neutral invoice status: draft|open|paid|void|uncollectible.
              * @example draft
+             * @example open
+             * @example paid
+             * @example void
              * @example uncollectible
              */
             status: string;
-            /** @description Stripe-hosted invoice page url (null when unavailable). */
+            /** @description Provider-hosted document URL, opaque to consumers; null when unavailable. */
             hostedInvoiceUrl: string | null;
-            /** @description Url to the invoice PDF (null when unavailable). */
+            /** @description Provider-hosted document URL, opaque to consumers; null when unavailable. */
             invoicePdf: string | null;
         };
         InvoiceListResponse: {
             invoices: components["schemas"]["BillingInvoice"][];
-            /** @description Opaque cursor (Stripe invoice id) for the next page; null when there are no further pages. */
+            /** @description Opaque cursor for the next page; null on the last page. */
             nextCursor: string | null;
         };
         PortalSessionRequest: {
@@ -957,7 +982,7 @@ export interface operations {
             query?: {
                 /** @description Page size, clamped server-side to 1..100. Defaults to 20. */
                 limit?: number;
-                /** @description Opaque pagination cursor (a Stripe invoice id) passed to Stripe's `starting_after`. Use the previous response's `nextCursor`. */
+                /** @description Opaque cursor (previous `nextCursor`). Use the previous response's `nextCursor` to fetch the next page. */
                 cursor?: string;
             };
             header: {
@@ -983,6 +1008,38 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            502: components["responses"]["StripeError"];
+        };
+    };
+    syncInvoices: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Authenticated actor (the platform user id) — set by the host proxy AFTER it authenticates + authorizes the caller. Short alias: `X-FF-Actor-Id`. */
+                "X-Billing-Actor-User-Id": components["parameters"]["ActorUserIdHeader"];
+                /** @description Server-derived authorized entity type (`user`|`organization`) set by the proxy. When the `X-FF-Org-Id` alias is used this is implied to be `organization`. */
+                "X-Billing-Entity-Type": components["parameters"]["EntityTypeHeader"];
+                /** @description Server-derived authorized entity id set by the proxy. The service re-verifies the request target matches this. Short alias: `X-FF-Org-Id`. */
+                "X-Billing-Entity-Id": components["parameters"]["EntityIdHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resync completed; reports how many invoices were upserted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Number of invoices upserted into the local store. */
+                        synced: number;
+                    };
+                };
+            };
             401: components["responses"]["Unauthorized"];
             502: components["responses"]["StripeError"];
         };

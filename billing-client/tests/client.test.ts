@@ -125,6 +125,33 @@ describe('BillingClient', () => {
     expect(out).toEqual({ stripeSessionId: 'cs 1', status: 'paid' });
   });
 
+  it('listInvoices GETs /invoices with limit + cursor query params', async () => {
+    verbs.get.mockResolvedValue({
+      data: { invoices: [{ id: 'uuid-1' }], nextCursor: 'opaque-cursor' },
+    });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    const out = await c.listInvoices({ limit: 50, cursor: 'prev-cursor' });
+    expect(verbs.get).toHaveBeenCalledWith('/invoices', {
+      params: { limit: 50, cursor: 'prev-cursor' },
+    });
+    expect(out).toEqual({ invoices: [{ id: 'uuid-1' }], nextCursor: 'opaque-cursor' });
+  });
+
+  it('listInvoices omits absent params (no limit/cursor)', async () => {
+    verbs.get.mockResolvedValue({ data: { invoices: [], nextCursor: null } });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    await c.listInvoices();
+    expect(verbs.get).toHaveBeenCalledWith('/invoices', { params: {} });
+  });
+
+  it('syncInvoices POSTs /invoices/sync and returns {synced}', async () => {
+    verbs.post.mockResolvedValue({ data: { synced: 3 } });
+    const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });
+    const out = await c.syncInvoices();
+    expect(verbs.post).toHaveBeenCalledWith('/invoices/sync', {});
+    expect(out).toEqual({ synced: 3 });
+  });
+
   it('createSetupIntent POSTs entity + returns clientSecret', async () => {
     verbs.post.mockResolvedValue({ data: { clientSecret: 'seti_secret' } });
     const c = new BillingClient({ baseUrl: 'http://b', internalToken: 't' });

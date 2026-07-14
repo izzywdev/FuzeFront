@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Billing Service API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     REST API for the FuzeFront billing-service. Bridges platform entities
     (users / organizations, referenced by `(entityType, entityId)` only) to
@@ -55,7 +55,7 @@ tags:
   - name: credits
     description: Admin-only manual customer balance adjustments.
   - name: invoices
-    description: Read-only invoice history for the authorized entity (Stripe-backed).
+    description: Read-only invoice history for the authorized entity (provider-backed).
   - name: portal
     description: Stripe Customer Portal session creation (manage subscription / payment methods).
   - name: webhooks
@@ -486,9 +486,9 @@ paths:
       tags: [invoices]
       summary: List the authorized entity's invoices
       description: >-
-        Returns the Stripe invoice history for the proxy-authorized entity
-        (user or organization), most-recent first, as a stable contract subset
-        of the Stripe Invoice. Read-only. Mirrors `GET /invoices`.
+        Returns the invoice history for the proxy-authorized entity (user or
+        organization), most-recent first. Served from the local invoice store,
+        synced from the payment provider. Read-only.
 
 
         Authorization: behind the internal-token guard; the entity is the
@@ -501,8 +501,8 @@ paths:
 
 
         Pagination is opaque-cursor based: pass the previous response's
-        `nextCursor` (a Stripe invoice id) as `cursor` to fetch the next page.
-        `nextCursor` is null on the last page.
+        `nextCursor` as `cursor` to fetch the next page. `nextCursor` is null on
+        the last page.
       security:
         - internalToken: []
       parameters:
@@ -522,8 +522,8 @@ paths:
           in: query
           required: false
           description: >-
-            Opaque pagination cursor (a Stripe invoice id) passed to Stripe's
-            `starting_after`. Use the previous response's `nextCursor`.
+            Opaque cursor (previous `nextCursor`). Use the previous response's
+            `nextCursor` to fetch the next page.
           schema:
             type: string
       responses:
@@ -535,6 +535,47 @@ paths:
                 $ref: '#/components/schemas/InvoiceListResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/StripeError'
+
+  /invoices/sync:
+    post:
+      operationId: syncInvoices
+      tags: [invoices]
+      summary: Force a provider→store resync of the authorized entity's invoices
+      description: >-
+        Forces a resync of the proxy-authorized entity's invoices from the
+        payment provider into the local invoice store, then returns the number
+        of invoices upserted. Idempotent — safe to call repeatedly.
+
+
+        Authorization is identical to `GET /invoices`: behind the internal-token
+        guard, with the entity taken from the SERVER-DERIVED actor context the
+        proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`). An entity that has never had billing returns
+        `{ synced: 0 }` (200, not an error).
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      responses:
+        '200':
+          description: The resync completed; reports how many invoices were upserted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [synced]
+                properties:
+                  synced:
+                    type: integer
+                    minimum: 0
+                    description: Number of invoices upserted into the local store.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
@@ -1203,14 +1244,15 @@ components:
       properties:
         id:
           type: string
-          description: Stripe invoice id (`in_...`).
+          format: uuid
+          description: FuzeFront invoice id (opaque, stable). A FuzeFront UUID, not a provider id.
         number:
           type: [string, 'null']
           description: Human-facing invoice number; null for drafts without one.
         created:
           type: string
           format: date-time
-          description: ISO-8601 timestamp derived from the Stripe `created` unix seconds.
+          description: ISO-8601 issue timestamp.
         amountDue:
           type: integer
           description: Amount due in the currency's minor unit (cents).
@@ -1225,14 +1267,14 @@ components:
           examples: [usd]
         status:
           type: string
-          description: Stripe invoice status.
-          examples: [paid, open, void, draft, uncollectible]
+          description: 'Neutral invoice status: draft|open|paid|void|uncollectible.'
+          examples: [draft, open, paid, void, uncollectible]
         hostedInvoiceUrl:
           type: [string, 'null']
-          description: Stripe-hosted invoice page url (null when unavailable).
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
         invoicePdf:
           type: [string, 'null']
-          description: Url to the invoice PDF (null when unavailable).
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
 
     InvoiceListResponse:
       type: object
@@ -1246,8 +1288,7 @@ components:
         nextCursor:
           type: [string, 'null']
           description: >-
-            Opaque cursor (Stripe invoice id) for the next page; null when there
-            are no further pages.
+            Opaque cursor for the next page; null on the last page.
 
     PortalSessionRequest:
       type: object

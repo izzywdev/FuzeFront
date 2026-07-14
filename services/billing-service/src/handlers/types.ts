@@ -3,6 +3,8 @@ import { CustomerRepository } from '../repositories/customer.repository';
 import { SubscriptionRepository } from '../repositories/subscription.repository';
 import { PlanRepository } from '../repositories/plan.repository';
 import { PaymentRepository } from '../repositories/payment.repository';
+import { InvoiceRepository } from '../repositories/invoice.repository';
+import { PaymentProvider } from '../providers/payment-provider';
 import { PermitSyncService } from '../services/permit.service';
 import { BillingEventEmitter } from '../kafka/producer';
 
@@ -16,6 +18,13 @@ export interface HandlerContext {
   plans: PlanRepository;
   /** One-time payment-mode Checkout mirror (billing.payments). */
   payments: PaymentRepository;
+  /**
+   * DB-backed invoice store + neutral provider port. Injected by app.ts so the
+   * invoice-synced handler can persist invoice.* webhooks. Optional so handler
+   * unit tests that don't exercise invoice persistence can omit them.
+   */
+  invoiceRepo?: InvoiceRepository;
+  provider?: PaymentProvider;
   permit: PermitSyncService;
   emitter: BillingEventEmitter;
   /** Writes the plan-tier hot-path cache columns back to public.users/organizations. */

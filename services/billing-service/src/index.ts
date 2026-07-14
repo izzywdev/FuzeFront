@@ -13,6 +13,7 @@ import { PgPlanRepository } from './repositories/plan.repository';
 import { PgSubscriptionRepository } from './repositories/subscription.repository';
 import { PgEventRepository } from './repositories/event.repository';
 import { PgPaymentRepository } from './repositories/payment.repository';
+import { PgInvoiceRepository } from './repositories/invoice.repository';
 import { PgUsageRepository } from './repositories/usage.repository';
 import { CustomerService } from './services/customer.service';
 import { PlanService } from './services/plan.service';
@@ -56,6 +57,7 @@ async function main() {
   const subscriptionRepo = new PgSubscriptionRepository(pool);
   const eventRepo = new PgEventRepository(pool);
   const paymentRepo = new PgPaymentRepository(pool);
+  const invoiceRepo = new PgInvoiceRepository(pool);
   const usageRepo = new PgUsageRepository(pool);
 
   // --- Services ---
@@ -122,6 +124,7 @@ async function main() {
     customerRepo,
     customers,
     payments: paymentRepo,
+    invoiceRepo,
     paymentsConfig: config.payments,
     webhook: {
       stripe,
