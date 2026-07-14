@@ -12,6 +12,14 @@ const designSystemSrc = fileURLToPath(
 const i18nSrc = fileURLToPath(
   new URL('../packages/i18n/src/index.ts', import.meta.url)
 )
+// @fuzefront/billing-ui and @fuzefront/billing-client are file: workspace packages
+// whose dist/ is not built in CI — resolve from source, same as identity-ui/chat-ui.
+const billingUiSrc = fileURLToPath(
+  new URL('../packages/billing-ui/src/index.ts', import.meta.url)
+)
+const billingClientSrc = fileURLToPath(
+  new URL('../billing-client/src/index.ts', import.meta.url)
+)
 
 export default defineConfig({
   plugins: [react()],
@@ -20,6 +28,8 @@ export default defineConfig({
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/i18n': i18nSrc,
       '@fuzefront/design-system': designSystemSrc,
+      '@fuzefront/billing-ui': billingUiSrc,
+      '@fuzefront/billing-client': billingClientSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe
