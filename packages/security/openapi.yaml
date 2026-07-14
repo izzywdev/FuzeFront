@@ -126,6 +126,7 @@ paths:
       tags: [session]
       summary: Logout — revoke the current session
       operationId: deleteSession
+      description: Revokes the presented session token. Idempotent; fail-closed.
       security:
         - bearerAuth: []
       responses:
@@ -407,6 +408,7 @@ paths:
       tags: [tenants]
       summary: Create a tenant
       operationId: createTenant
+      description: Creates a new tenant/organization scope.
       security:
         - bearerAuth: []
       requestBody:
@@ -433,6 +435,7 @@ paths:
       tags: [tenants]
       summary: Get a tenant
       operationId: getTenant
+      description: Returns a single tenant by id.
       security:
         - bearerAuth: []
       parameters:
@@ -477,6 +480,7 @@ paths:
       tags: [tenants]
       summary: Add a member to a tenant
       operationId: addTenantMember
+      description: Adds a user as a member of the tenant, optionally with roles.
       security:
         - bearerAuth: []
       parameters:
@@ -507,6 +511,7 @@ paths:
       tags: [tenants]
       summary: Remove a member from a tenant
       operationId: removeTenantMember
+      description: Removes a member from the tenant. Idempotent.
       security:
         - bearerAuth: []
       parameters:

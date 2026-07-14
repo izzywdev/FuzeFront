@@ -22,7 +22,10 @@ export interface paths {
          * @description Validates credentials via the configured identity provider (server- brokered; the browser never leaves `app.fuzefront.com`) and returns a FuzeFront-minted session token plus the hydrated user. Fail-closed on bad credentials.
          */
         post: operations["createSession"];
-        /** Logout — revoke the current session */
+        /**
+         * Logout — revoke the current session
+         * @description Revokes the presented session token. Idempotent; fail-closed.
+         */
         delete: operations["deleteSession"];
         options?: never;
         head?: never;
@@ -202,7 +205,10 @@ export interface paths {
          */
         get: operations["listTenants"];
         put?: never;
-        /** Create a tenant */
+        /**
+         * Create a tenant
+         * @description Creates a new tenant/organization scope.
+         */
         post: operations["createTenant"];
         delete?: never;
         options?: never;
@@ -217,7 +223,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a tenant */
+        /**
+         * Get a tenant
+         * @description Returns a single tenant by id.
+         */
         get: operations["getTenant"];
         put?: never;
         post?: never;
@@ -240,7 +249,10 @@ export interface paths {
          */
         get: operations["listTenantMembers"];
         put?: never;
-        /** Add a member to a tenant */
+        /**
+         * Add a member to a tenant
+         * @description Adds a user as a member of the tenant, optionally with roles.
+         */
         post: operations["addTenantMember"];
         delete?: never;
         options?: never;
@@ -258,7 +270,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove a member from a tenant */
+        /**
+         * Remove a member from a tenant
+         * @description Removes a member from the tenant. Idempotent.
+         */
         delete: operations["removeTenantMember"];
         options?: never;
         head?: never;
