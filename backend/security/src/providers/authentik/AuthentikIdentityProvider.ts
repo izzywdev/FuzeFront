@@ -53,9 +53,7 @@ import {
 } from './notifications'
 import * as totp from './totp'
 import {
-  appBaseUrl,
   idpProxyPrefix,
-  socialCallbackPath,
   jwtSecret,
   SESSION_TTL_MS,
   CODE_TTL_MS,
@@ -410,7 +408,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   // ── M2M ───────────────────────────────────────────────────────────────────
   async provisionM2MClient(input: M2MClientProvisionInput): Promise<M2MClient> {
     if (this.provisionM2MFn) return this.provisionM2MFn(input.name, input.scope ? input.scope.split(' ') : ['openid'])
-    const { registerMachineClient } = await import('../../../../src/services/machine-identity')
+    const { registerMachineClient } = await import('../../services/machine-identity')
     const res = await registerMachineClient(input.name, input.scope ? input.scope.split(' ') : ['openid'])
     return { clientId: res.clientId, clientSecret: res.clientSecret, scope: input.scope }
   }
@@ -456,7 +454,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
     try {
       if (this.introspectM2MFn) return this.introspectM2MFn(token)
-      const { introspectMachineToken } = await import('../../../../src/services/machine-identity')
+      const { introspectMachineToken } = await import('../../services/machine-identity')
       const r = await introspectMachineToken(token)
       if (!r.active) return { active: false }
       return { active: true, subject: r.sub || r.client_id, scope: r.scope, expiresAt: r.exp }

@@ -83,7 +83,6 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
-    const isProduction = process.env.NODE_ENV === 'production'
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
