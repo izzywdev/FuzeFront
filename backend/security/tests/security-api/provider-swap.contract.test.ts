@@ -34,11 +34,14 @@ import {
   VerificationStatus,
 } from '../../src/providers/IdentityProvider'
 import { ProviderError } from './mockIdentityProvider'
+import { randomUUID } from 'crypto'
 
 /** A deliberately different second implementation of the SAME swap contract. */
 class AltIdentityProvider implements IdentityProvider {
+  // ids are uuid-format (the contract's User.id format) but everything else —
+  // token format, storage, roles — differs from MockIdentityProvider.
   private users: Record<string, { id: string; pw: string }> = {
-    'bob@alt.test': { id: 'ALT-1', pw: 'alt-pass-99' },
+    'bob@alt.test': { id: randomUUID(), pw: 'alt-pass-99' },
   }
   private live = new Set<string>()
   private m2m = new Map<string, number>()
@@ -83,14 +86,15 @@ class AltIdentityProvider implements IdentityProvider {
   }
   async getUserInfo(t: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
     if (!this.live.has(t)) throw new ProviderError('INVALID_SIGNATURE', 'bad token', 401)
+    const id = this.users['bob@alt.test'].id
     return {
       identity: {
-        userId: 'ALT-1',
+        userId: id,
         tenantId: null,
         roles: ['member'],
         authMode: 'federated-jwks',
       },
-      user: { id: 'ALT-1', email: 'bob@alt.test', roles: ['member'] },
+      user: { id, email: 'bob@alt.test', roles: ['member'] },
     }
   }
   async logout(t: string): Promise<void> {
@@ -148,7 +152,11 @@ describe('provider-swap proof — full path through an independent IdentityProvi
   // If we are pointed at a live implementation, the swap is proven by the impl
   // itself; this in-process proof only runs for the contract-mock configuration.
   const runIt = process.env.SECURITY_BASE_URL ? it.skip : it
-  const api = () => supertest(createSecurityApp(new AltIdentityProvider()))
+  // ONE app + ONE alternate provider for the whole proof, so a token minted by
+  // login is visible to the follow-up "me"/introspect calls (the alt provider
+  // holds session/token state in memory, mirroring a live server).
+  const app = createSecurityApp(new AltIdentityProvider())
+  const api = () => supertest(app)
 
   runIt('login → me → logout works identically under the alternate provider', async () => {
     const login = await api()
