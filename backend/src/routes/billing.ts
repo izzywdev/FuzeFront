@@ -410,13 +410,14 @@ async function forward(
   } catch (err) {
     const ax = err as AxiosError
     // Connection refused / DNS / timeout — the service is unreachable.
-    // Pass the request-derived parts as console arguments (not interpolated into
-    // the format string) so externally-controlled values can't shape the log
-    // record — clears CodeQL js/tainted-format-string + js/log-injection.
+    // Sanitize the request-derived parts (strip CR/LF + other control chars)
+    // before logging so externally-controlled values cannot forge log records
+    // — clears CodeQL js/log-injection + js/tainted-format-string.
+    const stripControl = (v: string) => String(v).replace(/[\u0000-\u001f\u007f]/g, '')
     console.error(
       '[billing-proxy] upstream error for %s %s:',
-      req.method,
-      options.path,
+      stripControl(req.method),
+      stripControl(options.path),
       ax.code || ax.message
     )
     res

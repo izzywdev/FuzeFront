@@ -1,11 +1,12 @@
 name: Billing Service Tests
 
-# Runs the billing-service test suites in CI. Crucially this provisions a real
-# Postgres so the DB-backed INTEGRATION tests (migration 003 + PgInvoiceRepository:
-# store -> read -> keyset-paginate, idempotent upsert) actually EXECUTE against a
-# real database instead of self-skipping. Without a reachable DATABASE_URL the
-# integration + db suites skip (see tests/integration/*.integration.test.ts and
-# tests/db.test.ts), which is what happened before this workflow existed.
+# Runs the billing-service DB-backed test suites in CI. Crucially this provisions
+# a real Postgres so the invoice INTEGRATION tests (migration 003 +
+# PgInvoiceRepository: store -> read -> keyset-paginate, idempotent upsert) actually
+# EXECUTE against a real database instead of self-skipping. Without a reachable
+# DATABASE_URL the integration suite skips (tests/integration/*.integration.test.ts),
+# which is what happened before this workflow existed. The no-DB acceptance suite
+# (tests/acceptance) runs alongside.
 #
 # billing-service is a standalone package (NOT part of the root npm workspace /
 # lerna set), so deps are installed inside the service dir, mirroring its
@@ -63,7 +64,7 @@ jobs:
         # needed — jest maps @fuzefront/shared to the TS source via moduleNameMapper.
         run: npm install --ignore-scripts
 
-      - name: Run DB integration + acceptance + db suites (real Postgres)
+      - name: Run invoice DB integration + acceptance suites (real Postgres)
         working-directory: services/billing-service
         env:
           # Presence of DATABASE_URL is what flips the gated suites from
