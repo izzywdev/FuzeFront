@@ -31,8 +31,7 @@
     "@openfeature/web-sdk": "^1.5.0"
   },
   "optionalDependencies": {
-    "unleash-openfeature-provider-server": "^1.4.0",
-    "@openfeature/unleash-web-provider": "^0.3.4"
+    "@openfeature/unleash-web-provider": "^0.1.1"
   },
   "devDependencies": {
     "@types/jest": "29.5.12",
