@@ -19,17 +19,31 @@ const billingClientSrc = fileURLToPath(
   new URL('../billing-client/src/index.ts', import.meta.url)
 )
 
-// Intercept ALL .css imports (including out-of-root ones like billing-ui.css that
-// BillingPage imports) and return an empty module BEFORE vite:css runs. This stops
-// vite from routing any stylesheet through frontend/postcss.config.js →
-// @tailwindcss/postcss → @tailwindcss/oxide (a native binary absent in CI), which
-// otherwise crashes the test file during transform. jsdom tests assert DOM/logic,
-// not visual output, so stubbing CSS is correct. Runs before @vitejs/plugin-react.
+// Remap ALL .css imports to a virtual JS module so vite:css never sees them.
+//
+// Why resolveId (not just load): vite:css uses a *transform* hook that fires
+// AFTER load and re-checks the module ID via isCSSRequest(id). isCSSRequest
+// matches any ID whose path ends with ".css" (regex: /\.(css|…)(?:$|\?)/). A
+// load-only stub returns JS content but leaves the ".css" ID intact, so
+// vite:css.transform still runs and triggers the PostCSS pipeline — which loads
+// @tailwindcss/postcss → @tailwindcss/oxide, a native binary absent in CI
+// (npm optional-deps bug). Remapping to "\0css-stub.js" in resolveId changes the
+// module ID to one that does NOT end in ".css", so isCSSRequest() returns false
+// and vite:css skips it entirely. jsdom tests assert DOM/logic, not styles.
 const stubCss = {
   name: 'stub-css-imports',
   enforce: 'pre' as const,
+  resolveId(id: string) {
+    if (id.split('?')[0].endsWith('.css')) {
+      return '\0css-stub.js'
+    }
+    return null
+  },
   load(id: string) {
-    return id.split('?')[0].endsWith('.css') ? 'export default {}' : null
+    if (id === '\0css-stub.js') {
+      return 'export default {}'
+    }
+    return null
   },
 }
 
