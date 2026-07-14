@@ -22,8 +22,10 @@ const P = 'v1/billing'
 
 export interface BillingPlan {
   id?: string
+  // The `/plans` payload carries the provider price/product id here (neutral).
   priceId?: string
-  // The backend `/plans` payload carries the Stripe price id here.
+  productId?: string
+  // Back-compat: older payloads named these fields with the provider prefix.
   stripePriceId?: string
   stripeProductId?: string
   name?: string
@@ -87,13 +89,14 @@ export interface PortalSessionResponse {
 /**
  * Normalize a raw plan payload into a shape the UI can rely on.
  *
- * The `/plans` payload exposes the Stripe price id as `stripePriceId` and the
- * label split across `displayName` / `tierName`. We resolve a single canonical
- * `id` (the Stripe price id `/checkout` expects) and a `name`/`displayName`
- * here so every consumer (key, title, the subscribe call) reads from one place.
+ * The `/plans` payload exposes the provider price id as `priceId` (older
+ * payloads used `stripePriceId`) and the label split across `displayName` /
+ * `tierName`. We resolve a single canonical `id` (the price id `/checkout`
+ * expects) and a `name`/`displayName` here so every consumer (key, title, the
+ * subscribe call) reads from one place.
  */
 function normalizePlan(raw: BillingPlan): BillingPlan {
-  const id = raw.stripePriceId ?? raw.id ?? raw.priceId
+  const id = raw.priceId ?? raw.id ?? raw.stripePriceId
   const name = raw.displayName ?? raw.name ?? raw.tierName
   return {
     ...raw,

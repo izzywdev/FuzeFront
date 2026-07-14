@@ -5,8 +5,10 @@ export type { ContractAlignment } from './contract';
 export type {
   BillingActorContext,
   BillingClientConfig,
+  BillingInvoice,
   BillingPayment,
   BillingSubscription,
+  InvoiceListResponse,
   Plan,
   PlanTier,
   PaymentCheckoutRequest,

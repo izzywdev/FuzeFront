@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Billing Service API
-  version: 1.0.0
+  version: 1.2.0
   description: >-
     REST API for the FuzeFront billing-service. Bridges platform entities
     (users / organizations, referenced by `(entityType, entityId)` only) to
-    Stripe customers, subscriptions, payment-method setup, usage metering, and
+    payment-provider customers, subscriptions, payment-method setup, usage metering, and
     manual credits.
 
     This contract is **derived from the real route handlers** in
@@ -13,7 +13,7 @@ info:
     source of truth for `@fuzefront/billing-client`. Changing the API means
     amending this file first (see the `api-contract-first` skill).
 
-    Card data never flows through this API — only Stripe ids and client secrets.
+    Card data never flows through this API — only provider ids and client secrets.
 
     ### Async surface (events)
     Beyond HTTP, the service emits Kafka events whose Zod schemas live in
@@ -40,26 +40,26 @@ servers:
 
 tags:
   - name: plans
-    description: Public plan catalogue (read cache of the Stripe product/price catalogue).
+    description: Public plan catalogue (read cache of the provider product/price catalogue).
   - name: subscriptions
-    description: Subscription lifecycle against Stripe + local mirror.
+    description: Subscription lifecycle against the provider + local mirror.
   - name: payment-methods
     description: SetupIntent creation for collecting a payment method without an immediate charge.
   - name: checkout
-    description: Hosted Stripe Checkout Session creation (subscription mode).
+    description: Hosted Checkout Session creation (subscription mode).
   - name: payments
     description: >-
-      Hosted Stripe Checkout Session creation in ONE-TIME `payment` mode for
+      Hosted Checkout Session creation in ONE-TIME `payment` mode for
       consumer products (allowlisted `productKey`s), plus the local payment
       mirror used for reconciliation polling.
   - name: credits
     description: Admin-only manual customer balance adjustments.
   - name: invoices
-    description: Read-only invoice history for the authorized entity (Stripe-backed).
+    description: Read-only invoice history for the authorized entity (provider-backed).
   - name: portal
-    description: Stripe Customer Portal session creation (manage subscription / payment methods).
+    description: Customer Portal session creation (manage subscription / payment methods).
   - name: webhooks
-    description: Stripe webhook receiver (public, Stripe-signature verified).
+    description: Payment-provider webhook receiver (public, provider-signature verified).
   - name: health
     description: Liveness / readiness.
 
@@ -96,9 +96,9 @@ paths:
       tags: [subscriptions]
       summary: Create or upgrade a subscription
       description: >-
-        Creates a Stripe subscription for the entity (creating the Stripe
+        Creates a provider subscription for the entity (creating the provider
         customer if needed) and mirrors it locally. Returns a `clientSecret`
-        when Stripe needs SCA/3DS confirmation on the client. Mirrors
+        when the provider needs SCA/3DS confirmation on the client. Mirrors
         `POST /subscriptions`.
       security:
         - internalToken: []
@@ -120,17 +120,17 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
-  /subscriptions/{stripeSubscriptionId}:
+  /subscriptions/{subscriptionId}:
     parameters:
-      - $ref: '#/components/parameters/StripeSubscriptionId'
+      - $ref: '#/components/parameters/SubscriptionId'
     get:
       operationId: getSubscription
       tags: [subscriptions]
       summary: Get the local mirror of a subscription
       description: >-
-        Returns the locally-mirrored subscription by Stripe subscription id, or
+        Returns the locally-mirrored subscription by provider subscription id, or
         404 if no mirror exists. Mirrors `GET /subscriptions/:id`.
       security:
         - internalToken: []
@@ -182,13 +182,13 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
     delete:
       operationId: cancelSubscription
       tags: [subscriptions]
       summary: Cancel at period end (soft cancel)
       description: >-
-        Sets `cancel_at_period_end=true`; Stripe keeps the subscription active
+        Sets `cancel_at_period_end=true`; the provider keeps the subscription active
         until the period boundary. Mirrors `DELETE /subscriptions/:id`.
       security:
         - internalToken: []
@@ -207,7 +207,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /setup-intent:
     post:
@@ -215,9 +215,9 @@ paths:
       tags: [payment-methods]
       summary: Create a SetupIntent to collect a payment method
       description: >-
-        Creates a Stripe SetupIntent (usage `off_session`) so the client can
+        Creates a provider SetupIntent (usage `off_session`) so the client can
         collect a payment method without an immediate charge (e.g. add a card
-        during a no-card trial). Returns the `clientSecret` for the Stripe
+        during a no-card trial). Returns the `clientSecret` for the provider
         Payment Element. Mirrors `POST /setup-intent`.
       security:
         - internalToken: []
@@ -239,24 +239,24 @@ paths:
                 properties:
                   clientSecret:
                     type: string
-                    description: Stripe SetupIntent client secret for the Payment Element.
+                    description: provider SetupIntent client secret for the Payment Element.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /checkout:
     post:
       operationId: createCheckoutSession
       tags: [checkout]
-      summary: Create a hosted Stripe Checkout Session (subscription mode)
+      summary: Create a hosted Checkout Session (subscription mode)
       description: >-
-        Creates a hosted Stripe Checkout Session in `subscription` mode for the
-        given organization and plan, and returns the Stripe-hosted `url` to
-        redirect the customer to. Stripe collects the card on its hosted page;
-        on completion Stripe fires `checkout.session.completed`, which activates
+        Creates a hosted Checkout Session in `subscription` mode for the
+        given organization and plan, and returns the provider-hosted `url` to
+        redirect the customer to. the provider collects the card on its hosted page;
+        on completion the provider fires `checkout.session.completed`, which activates
         the local subscription mirror. We use HOSTED Checkout (not in-app
         Elements) so no raw card data touches our surface. Mirrors
         `POST /checkout`.
@@ -268,7 +268,7 @@ paths:
         (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
         `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`).
         The service RE-VERIFIES that `organizationId` matches the authorized
-        entity before creating any Stripe object (rejects with 403 otherwise),
+        entity before creating any provider object (rejects with 403 otherwise),
         and validates `planId` against the active plan catalogue (rejects
         unknown/inactive plans with 400). `planId: "basic"` resolves to the live
         $9/mo price.
@@ -298,20 +298,20 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /payments/checkout:
     post:
       operationId: createPaymentCheckoutSession
       tags: [payments]
-      summary: Create a hosted Stripe Checkout Session (one-time payment mode)
+      summary: Create a hosted Checkout Session (one-time payment mode)
       description: >-
-        Creates a hosted Stripe Checkout Session in `payment` mode for an
+        Creates a hosted Checkout Session in `payment` mode for an
         allowlisted consumer product (e.g. `mendys-datasets`) and returns the
-        Stripe-hosted `url` to redirect the buyer to. The caller supplies the
+        provider-hosted `url` to redirect the buyer to. The caller supplies the
         priced line items (name + unit amount in cents + quantity); the service
-        builds Stripe `price_data` from them — no Stripe price catalogue entry
-        is required. On completion Stripe fires `checkout.session.completed`
+        builds provider `price_data` from them — no provider price catalogue entry
+        is required. On completion the provider fires `checkout.session.completed`
         (mode `payment`), which upserts the local `billing.payments` mirror and
         emits `billing.payment.completed` on Kafka. Failure/expiry are mirrored
         via `payment_intent.payment_failed` / `checkout.session.expired`.
@@ -324,7 +324,7 @@ paths:
         trusted headers (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
         `X-Billing-Entity-Id`; aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). The
         service RE-VERIFIES that the body's `entityType`/`entityId` match the
-        authorized entity before creating any Stripe object (mismatch → 403).
+        authorized entity before creating any provider object (mismatch → 403).
         `productKey` must be in the server-side allowlist
         (`BILLING_PRODUCT_KEYS`), `currency` in the configured allowlist
         (default `usd`, `eur`), and each line amount plus the order total are
@@ -332,7 +332,7 @@ paths:
         5,000,000 cents) — violations → 400.
 
 
-        Idempotency: retries with IDENTICAL parameters dedupe to one Stripe
+        Idempotency: retries with IDENTICAL parameters dedupe to one provider
         session (param-fingerprint idempotency key, same scheme as
         `/checkout`); any changed parameter yields a fresh session.
       security:
@@ -365,16 +365,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StripeErrorBody'
+                $ref: '#/components/schemas/ProviderErrorBody'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /payments/sessions/{sessionId}:
     parameters:
       - name: sessionId
         in: path
         required: true
-        description: The Stripe Checkout Session id (`cs_...`).
+        description: The hosted Checkout Session id (`cs_...`).
         schema:
           type: string
     get:
@@ -388,8 +388,8 @@ paths:
         that missed (or cannot receive) the `billing.payment.completed` event.
         `status` is `pending` until a webhook lands, then `paid` / `failed` /
         `expired`. 404 when the session is unknown. When the local row is
-        missing but the session exists in Stripe AND its `productKey` metadata
-        is allowlisted, the service falls back to live Stripe, re-mirrors the
+        missing but the session exists at the provider AND its `productKey` metadata
+        is allowlisted, the service falls back to the live provider, re-mirrors the
         row, and returns it (singleton resource — pagination exempt).
 
 
@@ -420,7 +420,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /credits:
     post:
@@ -428,7 +428,7 @@ paths:
       tags: [credits]
       summary: Add a one-time customer balance adjustment (admin only)
       description: >-
-        Adds a one-time customer balance adjustment (credit) via a Stripe
+        Adds a one-time customer balance adjustment (credit) via a provider
         customer balance transaction. A positive `amount` (in cents, bounded)
         credits the customer (reduces what they owe). Mirrors `POST /credits`.
 
@@ -467,7 +467,7 @@ paths:
                 properties:
                   id:
                     type: string
-                    description: Stripe customer balance transaction id.
+                    description: payment-provider customer balance transaction id.
                   endingBalance:
                     type: integer
                     description: Resulting customer balance in cents (negative = credit).
@@ -478,7 +478,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
   /invoices:
     get:
@@ -486,9 +486,9 @@ paths:
       tags: [invoices]
       summary: List the authorized entity's invoices
       description: >-
-        Returns the Stripe invoice history for the proxy-authorized entity
-        (user or organization), most-recent first, as a stable contract subset
-        of the Stripe Invoice. Read-only. Mirrors `GET /invoices`.
+        Returns the invoice history for the proxy-authorized entity (user or
+        organization), most-recent first. Served from the local invoice store,
+        synced from the payment provider. Read-only.
 
 
         Authorization: behind the internal-token guard; the entity is the
@@ -501,8 +501,8 @@ paths:
 
 
         Pagination is opaque-cursor based: pass the previous response's
-        `nextCursor` (a Stripe invoice id) as `cursor` to fetch the next page.
-        `nextCursor` is null on the last page.
+        `nextCursor` as `cursor` to fetch the next page. `nextCursor` is null on
+        the last page.
       security:
         - internalToken: []
       parameters:
@@ -522,8 +522,8 @@ paths:
           in: query
           required: false
           description: >-
-            Opaque pagination cursor (a Stripe invoice id) passed to Stripe's
-            `starting_after`. Use the previous response's `nextCursor`.
+            Opaque cursor (previous `nextCursor`). Use the previous response's
+            `nextCursor` to fetch the next page.
           schema:
             type: string
       responses:
@@ -538,16 +538,57 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
+
+  /invoices/sync:
+    post:
+      operationId: syncInvoices
+      tags: [invoices]
+      summary: Force a provider→store resync of the authorized entity's invoices
+      description: >-
+        Forces a resync of the proxy-authorized entity's invoices from the
+        payment provider into the local invoice store, then returns the number
+        of invoices upserted. Idempotent — safe to call repeatedly.
+
+
+        Authorization is identical to `GET /invoices`: behind the internal-token
+        guard, with the entity taken from the SERVER-DERIVED actor context the
+        proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`). An entity that has never had billing returns
+        `{ synced: 0 }` (200, not an error).
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      responses:
+        '200':
+          description: The resync completed; reports how many invoices were upserted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [synced]
+                properties:
+                  synced:
+                    type: integer
+                    minimum: 0
+                    description: Number of invoices upserted into the local store.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
 
   /portal:
     post:
       operationId: createPortalSession
       tags: [portal]
-      summary: Create a Stripe Customer Portal session
+      summary: Create a Customer Portal session
       description: >-
-        Creates a Stripe Customer Portal session for the proxy-authorized
-        entity and returns the Stripe-hosted `url` to redirect the customer to,
+        Creates a Customer Portal session for the proxy-authorized
+        entity and returns the provider-hosted `url` to redirect the customer to,
         where they can manage their subscription and payment methods. Mirrors
         `POST /portal`.
 
@@ -594,35 +635,47 @@ paths:
                   message:
                     type: string
         '502':
-          $ref: '#/components/responses/StripeError'
+          $ref: '#/components/responses/ProviderError'
 
-  /webhooks/stripe:
+  /webhooks/{provider}:
     post:
-      operationId: receiveStripeWebhook
+      operationId: receiveProviderWebhook
       tags: [webhooks]
-      summary: Stripe webhook receiver
+      summary: Provider webhook receiver
       description: >-
-        Receives Stripe events. The body MUST be the raw signed bytes
-        (`application/json` consumed via `express.raw`) so signature
+        Provider webhook receiver; authenticity verified by the provider
+        signature. Receives events from the configured payment provider
+        (selected by the `provider` path slug). The body MUST be the raw signed
+        bytes (`application/json` consumed via `express.raw`) so signature
         verification works. Public (no internal token) — authenticity is
-        established by the `Stripe-Signature` header. Idempotent: duplicate
+        established by the provider signature header. Idempotent: duplicate
         deliveries of the same event id return 200 without re-processing.
-        Mirrors `POST /webhooks/stripe`.
       security: []
       parameters:
-        - name: Stripe-Signature
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >-
+            Payment-provider slug identifying which provider sent the webhook
+            (e.g. the configured payment provider). Selects the signature
+            verifier + event decoder.
+        - name: X-Provider-Signature
           in: header
           required: true
           schema:
             type: string
-          description: Stripe webhook signature header used to verify the payload.
+          description: >-
+            Provider webhook signature header used to verify the payload
+            authenticity.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              description: Raw Stripe Event object (not parsed by this service before verification).
+              description: Raw provider Event object (not parsed by this service before verification).
               additionalProperties: true
       responses:
         '200':
@@ -652,7 +705,7 @@ paths:
       tags: [health]
       summary: Liveness / readiness probe
       description: >-
-        Always available, even in degraded mode (no DB / no Stripe key).
+        Always available, even in degraded mode (no DB / no provider key).
         NOTE: mounted at the service root (`/health`), NOT under
         `/api/v1/billing` -- call it on the bare server origin.
       security: []
@@ -689,11 +742,11 @@ components:
         `requireInternalToken`.
 
   parameters:
-    StripeSubscriptionId:
-      name: stripeSubscriptionId
+    SubscriptionId:
+      name: subscriptionId
       in: path
       required: true
-      description: The Stripe subscription id (e.g. `sub_...`).
+      description: The provider subscription id (e.g. `sub_...`).
       schema:
         type: string
     ActorUserIdHeader:
@@ -755,12 +808,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ValidationErrorBody'
-    StripeError:
-      description: Upstream Stripe error (bad gateway).
+    ProviderError:
+      description: Upstream provider error (bad gateway).
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/StripeErrorBody'
+            $ref: '#/components/schemas/ProviderErrorBody'
     InternalError:
       description: Unexpected server error.
       content:
@@ -777,13 +830,13 @@ components:
     PlanTier:
       type: string
       description: >-
-        Plan tier name resolved from the Stripe price (free / starter / pro /
+        Plan tier name resolved from the provider price (free / starter / pro /
         enterprise, or any custom tier). Open string by design.
       examples: [free, starter, pro, enterprise]
 
     SubscriptionStatus:
       type: string
-      description: Mirrors Stripe subscription status values. Open string by design.
+      description: Mirrors provider subscription status values. Open string by design.
       examples:
         - trialing
         - active
@@ -811,8 +864,8 @@ components:
       required:
         - id
         - customerId
-        - stripeSubscriptionId
-        - stripePriceId
+        - subscriptionId
+        - priceId
         - planTier
         - status
         - seatQuantity
@@ -831,9 +884,9 @@ components:
           type: string
           format: uuid
           description: Local billing.customers primary key.
-        stripeSubscriptionId:
+        subscriptionId:
           type: string
-        stripePriceId:
+        priceId:
           type: string
         planTier:
           $ref: '#/components/schemas/PlanTier'
@@ -864,8 +917,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        - stripePriceId
-        - stripeProductId
+        - priceId
+        - productId
         - tierName
         - displayName
         - billingInterval
@@ -877,9 +930,9 @@ components:
         - isActive
         - sortOrder
       properties:
-        stripePriceId:
+        priceId:
           type: string
-        stripeProductId:
+        productId:
           type: string
         tierName:
           $ref: '#/components/schemas/PlanTier'
@@ -887,7 +940,7 @@ components:
           type: string
         billingInterval:
           type: string
-          description: Billing cadence (`month` / `year`, or any Stripe interval).
+          description: Billing cadence (`month` / `year`, or any provider interval).
           examples: [month, year]
         unitAmount:
           type: integer
@@ -925,7 +978,7 @@ components:
           minLength: 1
         trial:
           type: boolean
-          description: Start a no-card trial (Stripe trial_period_days).
+          description: Start a no-card trial (provider trial_period_days).
         trialPeriodDays:
           type: integer
           minimum: 1
@@ -935,7 +988,7 @@ components:
           description: Seat quantity for per-seat plans. Defaults to 1.
         paymentMethodId:
           type: string
-          description: Existing Stripe PaymentMethod to attach (omit for no-card trials).
+          description: Existing provider payment method to attach (omit for no-card trials).
 
     CreateSubscriptionResponse:
       type: object
@@ -946,7 +999,7 @@ components:
           $ref: '#/components/schemas/BillingSubscription'
         clientSecret:
           type: string
-          description: Set when Stripe needs SCA/3DS confirmation on the client.
+          description: Set when the provider needs SCA/3DS confirmation on the client.
         requiresAction:
           type: boolean
           description: True when the client must confirm a PaymentIntent/SetupIntent.
@@ -995,7 +1048,7 @@ components:
           type: string
           minLength: 1
           description: >-
-            Logical plan id (e.g. `basic`), a tier name, or a Stripe price id
+            Logical plan id (e.g. `basic`), a tier name, or a provider price id
             present in the active catalogue. Validated against active plans;
             `basic` resolves to the live $9/mo price.
         organizationId:
@@ -1007,11 +1060,11 @@ components:
         successUrl:
           type: string
           format: uri
-          description: Where Stripe redirects after a completed checkout.
+          description: Where the provider redirects after a completed checkout.
         cancelUrl:
           type: string
           format: uri
-          description: Where Stripe redirects if the customer cancels.
+          description: Where the provider redirects if the customer cancels.
 
     CheckoutSessionResponse:
       type: object
@@ -1020,10 +1073,10 @@ components:
       properties:
         url:
           type: [string, 'null']
-          description: Stripe-hosted Checkout URL to redirect the customer to.
+          description: provider-hosted Checkout URL to redirect the customer to.
         sessionId:
           type: string
-          description: The Stripe Checkout Session id (`cs_...`).
+          description: The hosted Checkout Session id (`cs_...`).
 
     PaymentStatus:
       type: string
@@ -1044,7 +1097,7 @@ components:
           type: string
           minLength: 1
           maxLength: 250
-          description: Line-item display name shown on the Stripe-hosted page.
+          description: Line-item display name shown on the provider-hosted page.
         description:
           type: string
           minLength: 1
@@ -1114,11 +1167,11 @@ components:
         successUrl:
           type: string
           format: uri
-          description: Where Stripe redirects after a completed payment.
+          description: Where the provider redirects after a completed payment.
         cancelUrl:
           type: string
           format: uri
-          description: Where Stripe redirects if the buyer cancels.
+          description: Where the provider redirects if the buyer cancels.
 
     PaymentCheckoutResponse:
       type: object
@@ -1127,18 +1180,18 @@ components:
       properties:
         sessionId:
           type: string
-          description: The Stripe Checkout Session id (`cs_...`).
+          description: The hosted Checkout Session id (`cs_...`).
         url:
           type: [string, 'null']
-          description: Stripe-hosted Checkout URL to redirect the buyer to.
+          description: provider-hosted Checkout URL to redirect the buyer to.
 
     BillingPayment:
       type: object
       additionalProperties: false
       required:
         - id
-        - stripeSessionId
-        - stripePaymentIntentId
+        - sessionId
+        - paymentIntentId
         - productKey
         - externalOrderId
         - entityType
@@ -1153,13 +1206,13 @@ components:
           type: string
           format: uuid
           description: Local billing.payments primary key.
-        stripeSessionId:
+        sessionId:
           type: string
-          description: Stripe Checkout Session id (`cs_...`).
-        stripePaymentIntentId:
+          description: hosted Checkout Session id (`cs_...`).
+        paymentIntentId:
           type: [string, 'null']
           description: >-
-            Stripe PaymentIntent id (`pi_...`); null until Stripe creates the
+            provider PaymentIntent id (`pi_...`); null until the provider creates the
             intent (typically when the buyer reaches the payment page).
         productKey:
           type: string
@@ -1203,14 +1256,15 @@ components:
       properties:
         id:
           type: string
-          description: Stripe invoice id (`in_...`).
+          format: uuid
+          description: FuzeFront invoice id (opaque, stable). A FuzeFront UUID, not a provider id.
         number:
           type: [string, 'null']
           description: Human-facing invoice number; null for drafts without one.
         created:
           type: string
           format: date-time
-          description: ISO-8601 timestamp derived from the Stripe `created` unix seconds.
+          description: ISO-8601 issue timestamp.
         amountDue:
           type: integer
           description: Amount due in the currency's minor unit (cents).
@@ -1225,14 +1279,14 @@ components:
           examples: [usd]
         status:
           type: string
-          description: Stripe invoice status.
-          examples: [paid, open, void, draft, uncollectible]
+          description: 'Neutral invoice status: draft|open|paid|void|uncollectible.'
+          examples: [draft, open, paid, void, uncollectible]
         hostedInvoiceUrl:
           type: [string, 'null']
-          description: Stripe-hosted invoice page url (null when unavailable).
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
         invoicePdf:
           type: [string, 'null']
-          description: Url to the invoice PDF (null when unavailable).
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
 
     InvoiceListResponse:
       type: object
@@ -1246,8 +1300,7 @@ components:
         nextCursor:
           type: [string, 'null']
           description: >-
-            Opaque cursor (Stripe invoice id) for the next page; null when there
-            are no further pages.
+            Opaque cursor for the next page; null on the last page.
 
     PortalSessionRequest:
       type: object
@@ -1257,7 +1310,7 @@ components:
         returnUrl:
           type: string
           format: uri
-          description: Where Stripe returns the customer after they leave the portal.
+          description: Where the provider returns the customer after they leave the portal.
 
     PortalSessionResponse:
       type: object
@@ -1266,7 +1319,7 @@ components:
       properties:
         url:
           type: string
-          description: Stripe-hosted Customer Portal url to redirect the customer to.
+          description: provider-hosted Customer Portal url to redirect the customer to.
 
     Error:
       type: object
@@ -1276,14 +1329,14 @@ components:
         error:
           type: string
 
-    StripeErrorBody:
+    ProviderErrorBody:
       type: object
       additionalProperties: false
       required: [error]
       properties:
         error:
           type: string
-          examples: ['stripe error']
+          examples: ['provider error']
         message:
           type: string
 

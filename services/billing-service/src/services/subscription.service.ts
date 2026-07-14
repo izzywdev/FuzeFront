@@ -80,7 +80,7 @@ export class SubscriptionService {
 
     const params: Stripe.SubscriptionUpdateParams = {};
     if (req.priceId) {
-      const isUpgrade = await this.isUpgrade(existing.stripePriceId, req.priceId);
+      const isUpgrade = await this.isUpgrade(existing.priceId, req.priceId);
       params.items = [
         { id: itemId, price: req.priceId, quantity: req.seatQuantity ?? existing.seatQuantity },
       ];
@@ -100,7 +100,7 @@ export class SubscriptionService {
     });
 
     const planTier = await this.resolvePlanTier(
-      req.priceId ?? existing.stripePriceId,
+      req.priceId ?? existing.priceId,
     );
     return this.repo.upsert(
       mapStripeSubscription(updated, { customerId: existing.customerId, planTier }),
@@ -128,14 +128,14 @@ export class SubscriptionService {
 
   private async resolvePlanTier(priceId: string): Promise<string> {
     const plans = await this.plans.getActivePlans();
-    return plans.find((p) => p.stripePriceId === priceId)?.tierName ?? 'unknown';
+    return plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown';
   }
 
   /** Upgrade vs downgrade is decided by unit_amount of the target vs current price. */
   private async isUpgrade(currentPriceId: string, nextPriceId: string): Promise<boolean> {
     const plans = await this.plans.getActivePlans();
-    const cur = plans.find((p) => p.stripePriceId === currentPriceId)?.unitAmount ?? 0;
-    const next = plans.find((p) => p.stripePriceId === nextPriceId)?.unitAmount ?? 0;
+    const cur = plans.find((p) => p.priceId === currentPriceId)?.unitAmount ?? 0;
+    const next = plans.find((p) => p.priceId === nextPriceId)?.unitAmount ?? 0;
     return next >= cur;
   }
 

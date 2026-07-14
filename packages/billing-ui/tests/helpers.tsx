@@ -17,8 +17,8 @@ export function renderWithI18n(
 }
 
 export const makePlan = (over: Partial<Plan> = {}): Plan => ({
-  stripePriceId: 'price_pro_month',
-  stripeProductId: 'prod_pro',
+  priceId: 'price_pro_month',
+  productId: 'prod_pro',
   tierName: 'pro',
   displayName: 'Pro',
   billingInterval: 'month',
@@ -37,8 +37,8 @@ export const makeSubscription = (
 ): BillingSubscription => ({
   id: 'sub_local_1',
   customerId: 'cus_1',
-  stripeSubscriptionId: 'sub_123',
-  stripePriceId: 'price_pro_month',
+  subscriptionId: 'sub_123',
+  priceId: 'price_pro_month',
   planTier: 'pro',
   status: 'active',
   seatQuantity: 1,

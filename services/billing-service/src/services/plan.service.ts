@@ -48,8 +48,8 @@ export class PlanService {
       const product = price.product as Stripe.Product;
       const md = product.metadata ?? {};
       const plan: Plan = {
-        stripePriceId: price.id,
-        stripeProductId: typeof price.product === 'string' ? price.product : product.id,
+        priceId: price.id,
+        productId: typeof price.product === 'string' ? price.product : product.id,
         tierName: (md.tier_name as PlanTier) || product.name || 'unknown',
         displayName: product.name || md.tier_name || price.id,
         billingInterval: price.recurring?.interval ?? 'month',
@@ -102,11 +102,11 @@ export class PlanService {
     const candidate = mapped ?? planId;
 
     // 2) Accept the candidate only if it is an active price OR an active tier.
-    const byPrice = active.find((p) => p.stripePriceId === candidate && p.isActive);
-    if (byPrice) return byPrice.stripePriceId;
+    const byPrice = active.find((p) => p.priceId === candidate && p.isActive);
+    if (byPrice) return byPrice.priceId;
 
     const byTier = active.find((p) => p.tierName === candidate && p.isActive);
-    if (byTier) return byTier.stripePriceId;
+    if (byTier) return byTier.priceId;
 
     // 3) Allow the configured 'basic' live price even before a catalogue sync
     //    has populated it (the live-charge demo path), but never an arbitrary

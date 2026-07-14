@@ -22,8 +22,8 @@ export function mapStripeSubscription(
 
   return {
     customerId: args.customerId,
-    stripeSubscriptionId: sub.id,
-    stripePriceId: priceId,
+    subscriptionId: sub.id,
+    priceId: priceId,
     planTier: args.planTier,
     status: sub.status,
     seatQuantity,

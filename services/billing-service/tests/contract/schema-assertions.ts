@@ -31,8 +31,8 @@ export function assertBillingSubscription(sub: any): void {
   const required = [
     'id',
     'customerId',
-    'stripeSubscriptionId',
-    'stripePriceId',
+    'subscriptionId',
+    'priceId',
     'planTier',
     'status',
     'seatQuantity',
@@ -49,8 +49,8 @@ export function assertBillingSubscription(sub: any): void {
 
   expect(typeof sub.id).toBe('string');
   expect(typeof sub.customerId).toBe('string');
-  expect(typeof sub.stripeSubscriptionId).toBe('string');
-  expect(typeof sub.stripePriceId).toBe('string');
+  expect(typeof sub.subscriptionId).toBe('string');
+  expect(typeof sub.priceId).toBe('string');
   expect(typeof sub.planTier).toBe('string');
   expect(typeof sub.status).toBe('string');
   expect(Number.isInteger(sub.seatQuantity)).toBe(true);
@@ -64,8 +64,8 @@ export function assertBillingSubscription(sub: any): void {
 /** Plan — components/schemas/Plan. */
 export function assertPlan(plan: any): void {
   const required = [
-    'stripePriceId',
-    'stripeProductId',
+    'priceId',
+    'productId',
     'tierName',
     'displayName',
     'billingInterval',
@@ -79,8 +79,8 @@ export function assertPlan(plan: any): void {
   ];
   assertRequired(plan, required, 'Plan');
   assertNoExtraKeys(plan, required, 'Plan');
-  expect(typeof plan.stripePriceId).toBe('string');
-  expect(typeof plan.stripeProductId).toBe('string');
+  expect(typeof plan.priceId).toBe('string');
+  expect(typeof plan.productId).toBe('string');
   expect(typeof plan.tierName).toBe('string');
   expect(typeof plan.displayName).toBe('string');
   expect(typeof plan.billingInterval).toBe('string');
@@ -110,6 +110,46 @@ export function assertSubscriptionWrapper(body: any): void {
   assertRequired(body, ['subscription'], 'SubscriptionWrapper');
   assertNoExtraKeys(body, ['subscription'], 'SubscriptionWrapper');
   assertBillingSubscription(body.subscription);
+}
+
+/** BillingInvoice — components/schemas/BillingInvoice (vendor-neutral). */
+export function assertBillingInvoice(inv: any): void {
+  const required = [
+    'id',
+    'number',
+    'created',
+    'amountDue',
+    'amountPaid',
+    'currency',
+    'status',
+    'hostedInvoiceUrl',
+    'invoicePdf',
+  ];
+  assertRequired(inv, required, 'BillingInvoice');
+  assertNoExtraKeys(inv, required, 'BillingInvoice');
+  // id is OUR opaque FuzeFront id — a string, NOT a Stripe `in_...` id.
+  expect(typeof inv.id).toBe('string');
+  expect(inv.id.startsWith('in_')).toBe(false);
+  expect(inv.number === null || typeof inv.number === 'string').toBe(true);
+  expect(isNullableDateTime(inv.created)).toBe(true);
+  expect(Number.isInteger(inv.amountDue)).toBe(true);
+  expect(inv.amountDue).toBeGreaterThanOrEqual(0);
+  expect(Number.isInteger(inv.amountPaid)).toBe(true);
+  expect(inv.amountPaid).toBeGreaterThanOrEqual(0);
+  expect(typeof inv.currency).toBe('string');
+  expect(inv.currency).toBe(inv.currency.toLowerCase());
+  expect(typeof inv.status).toBe('string');
+  expect(inv.hostedInvoiceUrl === null || typeof inv.hostedInvoiceUrl === 'string').toBe(true);
+  expect(inv.invoicePdf === null || typeof inv.invoicePdf === 'string').toBe(true);
+}
+
+/** InvoiceListResponse — required [invoices, nextCursor]; nextCursor opaque. */
+export function assertInvoiceListResponse(body: any): void {
+  assertRequired(body, ['invoices', 'nextCursor'], 'InvoiceListResponse');
+  assertNoExtraKeys(body, ['invoices', 'nextCursor'], 'InvoiceListResponse');
+  expect(Array.isArray(body.invoices)).toBe(true);
+  body.invoices.forEach((i: unknown) => assertBillingInvoice(i));
+  expect(body.nextCursor === null || typeof body.nextCursor === 'string').toBe(true);
 }
 
 /** ValidationErrorBody — required [error], optional details. */

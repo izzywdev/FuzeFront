@@ -1,0 +1,51 @@
+{
+  "name": "Billing Invoice History — approval frames",
+  "description": "Contract-freeze UX artifacts for the vendor-neutral, DB-backed invoice history capability. Approving these frames approves the InvoiceHistoryPanel visual + interaction model before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* attributes.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "approved": true,
+  "approvedBy": "izzywdev",
+  "approvedAt": "2026-07-14",
+  "contract": {
+    "openapi": "services/billing-service/openapi.yaml",
+    "client": "@fuzefront/billing-client",
+    "schemas": ["components.schemas.BillingInvoice", "components.schemas.InvoiceListResponse"],
+    "endpoints": ["GET /api/v1/billing/invoices", "POST /api/v1/billing/invoices/sync"],
+    "component": "@fuzefront/billing-ui → InvoiceHistoryPanel",
+    "featureFlag": "fuzefront.billing.invoice-history"
+  },
+  "entry": "index.html",
+  "frames": [
+    {
+      "id": "01-invoice-history",
+      "file": "01-invoice-history.html",
+      "label": "(a) Invoice history",
+      "route": "/billing",
+      "summary": "Populated invoice list on the Billing page: date, our invoice number, amount, status pill, provider-hosted download link; cursor 'Load more'.",
+      "acceptanceNotes": "Rows render newest-first from GET /invoices. id/number/amount/status come from our store; download link is opaque (data-download pdf|hosted). No vendor name in the DOM. Load more appends the next cursor page.",
+      "testHooks": [
+        "[data-frame='01-invoice-history']",
+        "[data-panel='invoice-history']",
+        "[data-invoice='FF-2026-0042']",
+        "[data-status='paid']",
+        "[data-download]",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "02-states",
+      "file": "02-states.html",
+      "label": "(b) States",
+      "route": "/billing",
+      "summary": "Loading skeleton, empty state, error+retry, and paid/open/void/uncollectible status pill variants.",
+      "acceptanceNotes": "Loading shows skeleton rows; empty shows the no-invoices message; error shows retry (data-action='retry'); each status maps to its semantic soft token pill.",
+      "testHooks": [
+        "[data-frame='02-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-status='uncollectible']"
+      ]
+    }
+  ]
+}
