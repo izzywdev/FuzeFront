@@ -286,7 +286,18 @@ function LoginPage() {
           the provider. */}
       {socialEnabled && (
         <div style={{ marginTop: 'var(--space-4, 16px)' }}>
-          <SeamDivider>or</SeamDivider>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3, 12px)',
+              margin: 'var(--space-4, 16px) 0',
+            }}
+          >
+            <SeamDivider style={{ flex: 1 }} />
+            <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 14px)' }}>or</span>
+            <SeamDivider style={{ flex: 1 }} />
+          </div>
           <button
             type="button"
             onClick={handleGoogleLogin}
@@ -300,7 +311,7 @@ function LoginPage() {
               border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md, 6px)',
               cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: 'var(--font-size-md, 16px)',
+              fontSize: 'var(--text-md, 16px)',
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
@@ -330,7 +341,7 @@ function LoginPage() {
           textAlign: 'center',
         }}
       >
-        <p style={{ margin: '0 0 var(--space-3, 12px)', color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm, 0.9rem)' }}>
+        <p style={{ margin: '0 0 var(--space-3, 12px)', color: 'var(--text-secondary)', fontSize: 'var(--text-base, 0.9rem)' }}>
           {mode === 'signin' ? t('signUpMessage') : 'Already have an account?'}
         </p>
         <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
