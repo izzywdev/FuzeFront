@@ -14,6 +14,7 @@ import {
 import path from 'path'
 
 import authRoutes from './routes/auth'
+import securityRoutes from './routes/security'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
@@ -32,7 +33,13 @@ app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const startTime = Date.now()
 
-// Domain routes (identical paths to the monolith).
+// Provider-agnostic Security API (AuthN surface). New consumers use this.
+app.use('/api/v1/security', securityRoutes)
+// Domain routes (identical paths to the monolith). These remain the working,
+// prod-tested `/api/auth/*` surface; they are the DEPRECATED compatibility
+// layer that the SPA migrates OFF onto `/api/v1/security/*`. Converting them
+// into thin shims that delegate into the new provider is scheduled as a
+// follow-up (kept intact here to avoid regressing the live login path).
 app.use('/api/auth', authRoutes)
 // Org-token sub-route: GET /api/organizations/:orgId/tokens (rate-limited, mounted BEFORE
 // organizationsRoutes so the specific /:orgId/tokens path cannot be shadowed by any future wildcard)
