@@ -1,0 +1,67 @@
+<!-- @dsCard group="Locked App Mode" viewport="375x760" name="(d) Separate native apps" subtitle="Each product is its own installed app (own package id) — not one container" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Locked App Mode — (d) Separate native apps</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0; }
+  .phone { width: 375px; min-height: 720px; border: 1px solid var(--border-color); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
+    background:
+      radial-gradient(700px 360px at 80% -5%, rgba(110,92,255,0.22), transparent 60%),
+      radial-gradient(620px 320px at 0% 110%, rgba(41,211,230,0.16), transparent 60%),
+      var(--bg-primary);
+  }
+  .home-head { padding: 22px 20px 6px; }
+  .home-head .clock { font-family: var(--font-display); font-size: 40px; font-weight: var(--weight-bold); }
+  .home-head .date { color: var(--text-secondary); font-size: var(--text-sm); }
+  .hint { padding: 4px 20px 14px; font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); }
+  .grid { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 12px; align-content: start; padding: 14px 20px; }
+  .app-icon { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; }
+  .app-icon .tile { width: 56px; height: 56px; border-radius: 15px; display: grid; place-items: center; font-size: 28px; box-shadow: var(--shadow-md); }
+  .app-icon .label { font-size: 11px; color: var(--text-primary); text-align: center; }
+  .app-icon .pkg { font-family: var(--font-mono); font-size: 8px; color: var(--text-tertiary); }
+  .t-social { background: linear-gradient(135deg, #ff4d6d, #ffb36b); }
+  .t-market { background: linear-gradient(135deg, #6e5cff, #29d3e6); }
+  .t-chat   { background: linear-gradient(135deg, #22c55e, #10b981); }
+  .t-keys   { background: linear-gradient(135deg, #f59e0b, #f97316); }
+  .dock { display: flex; justify-content: space-around; padding: 16px 24px calc(16px + env(safe-area-inset-bottom)); }
+  .dock .tile { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; background: var(--bg-tertiary); border: 1px solid var(--border-color); }
+</style>
+</head>
+<body data-frame="04-native-app-home">
+<!-- The phone home screen: on desktop these products live behind one 9-dots
+     launcher; on mobile each is its OWN installed app (own package id + signing
+     key + assetlinks), locked to that product. No single "FuzeFront container". -->
+<div class="phone" data-model="separate-native-apps" data-container="absent">
+  <div class="home-head">
+    <div class="clock">9:41</div>
+    <div class="date">Tuesday, July 14</div>
+  </div>
+  <div class="hint">Each icon = a separate signed app, locked to one product</div>
+  <div class="grid">
+    <a class="app-icon" data-app="fuzesocial" data-packageid="com.fuzefront.fuzesocial" href="03-locked-mobile.html">
+      <span class="tile t-social">💬</span><span class="label">FuzeSocial</span>
+      <span class="pkg">com.fuzefront.fuzesocial</span>
+    </a>
+    <a class="app-icon" data-app="fuzemarket" data-packageid="com.fuzefront.fuzemarket" href="#">
+      <span class="tile t-market">🛒</span><span class="label">FuzeMarket</span>
+      <span class="pkg">com.fuzefront.fuzemarket</span>
+    </a>
+    <a class="app-icon" data-app="fuzechat" data-packageid="com.fuzefront.fuzechat" href="#">
+      <span class="tile t-chat">💭</span><span class="label">FuzeChat</span>
+      <span class="pkg">com.fuzefront.fuzechat</span>
+    </a>
+    <a class="app-icon" data-app="fuzekeys" data-packageid="com.fuzefront.fuzekeys" href="#">
+      <span class="tile t-keys">🔑</span><span class="label">FuzeKeys</span>
+      <span class="pkg">com.fuzefront.fuzekeys</span>
+    </a>
+  </div>
+  <div class="dock">
+    <span class="tile">📞</span><span class="tile">✉️</span><span class="tile">🌐</span><span class="tile">📷</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "name": "Locked App Mode — approval frames",
+  "description": "Contract-freeze UX artifacts for locked app mode (white-label own-domain web + per-product native app). Approving these frames approves the mode:locked + branding + native manifest model before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* attributes (frontend/tests/locked-app-mode-frames.spec.ts).",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/locked-app-mode.md",
+  "contract": {
+    "openapi": "services/app-registry-service/openapi.yaml",
+    "client": "@fuzefront/app-registry-client",
+    "manifestSchema": "components.schemas.AppManifest",
+    "newFields": ["AppMode.locked", "AppManifest.branding", "AppManifest.native"]
+  },
+  "entry": "index.html",
+  "frames": [
+    {
+      "id": "01-white-label-login",
+      "file": "01-white-label-login.html",
+      "label": "(a) White-label login",
+      "summary": "Locked-domain sign-in — product brand only, FuzeFront hidden; auth served same-origin by the platform.",
+      "testHooks": ["[data-frame='01-white-label-login']", "[data-mode='locked'][data-whitelabel='true']", "[data-app='fuzesocial']", "[data-action='login']"]
+    },
+    {
+      "id": "02-locked-shell",
+      "file": "02-locked-shell.html",
+      "label": "(b) Locked product shell",
+      "summary": "Product runs full-screen with its OWN chrome — no 9-dots launcher, no org-switcher, no return-to-portal, no FuzeFront wordmark. Platform infra active but hidden.",
+      "testHooks": ["[data-frame='02-locked-shell']", "[data-mode='locked'][data-chrome='none']", "[data-launcher='absent']", "[data-return-portal='absent']"]
+    },
+    {
+      "id": "03-locked-mobile",
+      "file": "03-locked-mobile.html",
+      "label": "(c) Locked mobile shell",
+      "summary": "375px white-label product surface with touch tab-bar + safe-area padding — the TWA viewport.",
+      "testHooks": ["[data-frame='03-locked-mobile']", "[data-mode='locked'][data-viewport='375']", ".m-tabbar"]
+    },
+    {
+      "id": "04-native-app-home",
+      "file": "04-native-app-home.html",
+      "label": "(d) Separate native apps",
+      "summary": "Phone home screen: each product is its OWN installed app (distinct package id / signing key / assetlinks) — no single FuzeFront container app.",
+      "testHooks": ["[data-frame='04-native-app-home']", "[data-container='absent']", "[data-app='fuzesocial'][data-packageid='com.fuzefront.fuzesocial']"]
+    }
+  ]
+}

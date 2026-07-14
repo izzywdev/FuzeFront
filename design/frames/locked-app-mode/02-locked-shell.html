@@ -1,0 +1,85 @@
+<!-- @dsCard group="Locked App Mode" viewport="1180x760" name="(b) Locked product shell" subtitle="Product runs full-screen — its own chrome, no FuzeFront launcher / org-switcher / return-to-portal" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Locked App Mode — (b) Locked product shell</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  :root { --brand-accent: #ff4d6d; }
+  .locked-app { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg-primary); }
+  /* The PRODUCT's own top bar (data-owner="app") — NOT the FuzeFront portal topbar.
+     No 9-dots launcher, no org switcher, no "return to portal". */
+  .app-topbar {
+    display: flex; align-items: center; gap: var(--space-6);
+    padding: var(--space-4) var(--space-8); border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+  }
+  .app-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-lg); }
+  .app-brand .glyph { font-size: 22px; }
+  .app-nav { display: flex; gap: var(--space-5); }
+  .app-nav a { text-decoration: none; color: var(--text-secondary); font-size: var(--text-sm); padding: 6px 2px; border-bottom: 2px solid transparent; }
+  .app-nav a.active { color: var(--text-primary); border-bottom-color: var(--brand-accent); }
+  .app-topbar .spacer { flex: 1; }
+  .app-topbar .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-accent), #ffb36b); }
+  .app-body { flex: 1; display: grid; grid-template-columns: 220px 1fr; }
+  /* Product-owned side nav — again the app's, not the portal's. */
+  .app-side { border-right: 1px solid var(--border-color); padding: var(--space-6) var(--space-4); background: var(--bg-secondary); }
+  .app-side .item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--text-sm); cursor: pointer; }
+  .app-side .item.active { background: var(--bg-tertiary); color: var(--text-primary); }
+  .feed { padding: var(--space-8); max-width: 620px; }
+  .composer { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); margin-bottom: var(--space-5); color: var(--text-tertiary); }
+  .post { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-5); margin-bottom: var(--space-4); }
+  .post .who { display: flex; align-items: center; gap: 10px; margin-bottom: var(--space-3); }
+  .post .who .dot { width: 28px; height: 28px; border-radius: 50%; background: var(--seam); }
+  .post .who b { font-size: var(--text-sm); }
+  .post p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  /* Reviewer-only annotation strip — clearly OUTSIDE .locked-app. Documents that
+     the platform services are active but hidden. Not shipped to end users. */
+  .infra-annotation { border-top: 1px dashed var(--border-color); padding: var(--space-4) var(--space-8); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .infra-annotation .lead { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-2xs); padding: 4px 10px; border-radius: var(--radius-pill); border: 1px solid rgba(52,211,153,0.4); color: var(--success-color); }
+</style>
+</head>
+<body data-frame="02-locked-shell">
+<div class="locked-app" data-mode="locked" data-chrome="none" data-app="fuzesocial" data-launcher="absent" data-org-switcher="absent" data-return-portal="absent">
+  <header class="app-topbar" data-owner="app">
+    <div class="app-brand"><span class="glyph">💬</span> FuzeSocial</div>
+    <nav class="app-nav">
+      <a class="active" href="#">Home</a>
+      <a href="#">Explore</a>
+      <a href="#">Messages</a>
+      <a href="#">Communities</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="avatar" title="Your FuzeSocial profile"></div>
+  </header>
+  <div class="app-body">
+    <aside class="app-side" data-owner="app">
+      <div class="item active">🏠 Home</div>
+      <div class="item">🔎 Explore</div>
+      <div class="item">✉️ Messages</div>
+      <div class="item">👥 Communities</div>
+      <div class="item">⚙️ Settings</div>
+    </aside>
+    <main class="feed">
+      <div class="composer">What's happening on FuzeSocial?</div>
+      <article class="post"><div class="who"><span class="dot"></span><b>Ava Chen</b></div><p>Locked-mode means my whole team just sees FuzeSocial — clean, ours, on our domain.</p></article>
+      <article class="post"><div class="who"><span class="dot"></span><b>Marco Diaz</b></div><p>Notifications and DMs feel instant. Didn't even know there was a platform underneath.</p></article>
+      <article class="post"><div class="who"><span class="dot"></span><b>Priya N.</b></div><p>Signed in once, everything just worked. 🔒</p></article>
+    </main>
+  </div>
+</div>
+<!-- Design-review annotation only — proves platform infra is ACTIVE but INVISIBLE.
+     Lives outside .locked-app; never shipped to the end user. -->
+<div class="infra-annotation" data-role="design-annotation">
+  <span class="lead">powered by hidden FuzeFront platform ·</span>
+  <span class="chip" data-infra="auth" data-state="on">● authN</span>
+  <span class="chip" data-infra="authz" data-state="on">● authZ</span>
+  <span class="chip" data-infra="billing" data-state="on">● billing</span>
+  <span class="chip" data-infra="payments" data-state="on">● payments</span>
+  <span class="chip" data-infra="notifications" data-state="on">● notifications</span>
+  <span class="chip" data-infra="sockets" data-state="on">● sockets</span>
+</div>
+</body>
+</html>
