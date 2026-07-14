@@ -7,16 +7,17 @@ import { test, expect, type Page } from '@playwright/test'
  *                     E2E_USER_EMAIL=… E2E_USER_PASSWORD=… \
  *                     npx playwright test -c tests/e2e/billing-invoices/playwright.config.ts -g @postprod )
  *
- * This is a SKELETON. The React component (`@fuzefront/billing-ui →
- * InvoiceHistoryPanel`) is not built yet, so this cannot pass against a real
- * deploy today — it exists so the critical live-app journey is wired the moment
- * the component ships, and it SKIPS CLEANLY (never a false green, never a hard
- * fail) when BASE_URL / credentials are absent.
+ * The React component (`@fuzefront/billing-ui → InvoiceHistoryPanel`) now EXISTS
+ * and is verified pre-production by `built-component.spec.ts`; this smoke targets
+ * the built component's real `data-panel` / `data-testid` selectors on the live
+ * `/billing` route. It SKIPS CLEANLY (never a false green, never a hard fail)
+ * when BASE_URL / credentials are absent.
  *
- * What it verifies once live:
- *   sign-in → navigate to /billing → the invoice panel renders →
- *   a download link points at an https provider-hosted URL →
- *   no vendor brand name ("stripe"/"link") leaks into the DOM.
+ * What it verifies against the live app:
+ *   sign-in → navigate to /billing → the built invoice panel
+ *   ([data-testid='invoice-history-panel']) renders → at least one invoice row
+ *   ([data-testid='invoice-row']) with a download link pointing at an https
+ *   provider-hosted URL → no vendor brand name ("stripe"/"link") leaks into DOM.
  *
  * Login reuses this repo's server-side password sign-in convention
  * (POST /api/auth/oidc/password → platform JWT → localStorage.authToken),
@@ -82,17 +83,25 @@ test.describe('@postprod Billing invoice history — live smoke', () => {
 
     await page.goto(`${BASE_URL}/billing`)
 
-    // The invoice panel renders (data-panel is the frozen frame hook; the built
-    // component may also expose a testid — accept either).
+    // The built invoice panel renders. Prefer the component's stable testid;
+    // fall back to the frozen frame hook (data-panel) — both are emitted.
     const panel = page
-      .locator("[data-panel='invoice-history'], [data-testid='invoice-history-panel']")
+      .locator("[data-testid='invoice-history-panel'], [data-panel='invoice-history']")
       .first()
     await expect(panel, 'invoice history panel did not render on /billing').toBeVisible({
       timeout: 20_000,
     })
 
+    // At least one invoice row (the built component's row testid).
+    await expect(
+      panel.locator("[data-testid='invoice-row'], [data-invoice]").first(),
+      'no invoice row rendered on /billing'
+    ).toBeVisible()
+
     // At least one download link, pointing at an https provider-hosted document.
-    const download = panel.locator('[data-download]').first()
+    const download = panel
+      .locator("[data-testid='invoice-download'], [data-download]")
+      .first()
     await expect(download, 'no invoice download link rendered').toBeVisible()
     const href = (await download.getAttribute('href')) ?? ''
     expect(
