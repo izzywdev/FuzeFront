@@ -54,6 +54,12 @@ export default defineConfig({
     // single instance of React and the i18n runtime.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
   },
+  // Inline PostCSS config: per Vite docs, when css.postcss is an inline object
+  // Vite does NOT search for / load frontend/postcss.config.js (which pulls
+  // @tailwindcss/postcss -> @tailwindcss/oxide, a native binary absent in CI that
+  // crashes the CSS transform the moment a test imports raw CSS). This is the
+  // authoritative stop; the stub-css pre-plugin above is defence-in-depth.
+  css: { postcss: { plugins: [] } },
   test: {
     environment: 'jsdom',
     globals: true,
