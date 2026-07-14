@@ -3,7 +3,7 @@
  *
  * The stable, family-wide authN/authZ client contract. Consumers import the
  * `Identity` shape + `verifyToken`/`requireAuth` here; the underlying token
- * verifier is pluggable (`legacy-hs256` today, `oidc-jwks` target) and the
+ * verifier is pluggable (`legacy-hs256` today, `federated-jwks` target) and the
  * `Identity` shape is invariant across that migration.
  *
  * This package NEVER mints tokens and is FAIL-CLOSED. Runtime verification is a
@@ -21,6 +21,7 @@ export type {
   Verifier,
   VerifierConfig,
   LegacyHs256Config,
+  FederatedJwksConfig,
   OidcJwksConfig,
   OutOfBandResolver,
 } from './types';

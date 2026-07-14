@@ -3,6 +3,13 @@ info:
   title: FuzeFront Auth Contract
   version: 0.1.0
   description: >-
+    SUPERSEDED — this spec is replaced by the provider-agnostic FuzeFront
+    Security API in `packages/security/openapi.yaml` (`@fuzefront/security-client`).
+    It documents the LEGACY, vendor-named auth surface and is retained only for
+    reference during the transition; new consumers must target the Security API.
+
+
+
     Contract for the FuzeFront authN/authZ surface consumed via the
     `@fuzefront/auth` client (issue #117). Documents the current auth HTTP
     endpoints (verified against `backend/src/routes/auth.ts`) and the stable
