@@ -10,6 +10,7 @@ import { createCheckoutRouter } from './routes/checkout';
 import { createPaymentsRouter } from './routes/payments';
 import { createInvoicesRouter } from './routes/invoices';
 import { createPortalRouter } from './routes/portal';
+import { createDocsRouter } from './routes/docs';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
@@ -59,6 +60,10 @@ export function createApp(deps?: AppDeps): Application {
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', service: 'billing-service' });
   });
+
+  // Public API docs (Swagger UI + raw contract). No auth, no deps — available
+  // even in degraded mode so the contract is always inspectable.
+  app.use(API_BASE, createDocsRouter());
 
   if (!deps) return app;
 

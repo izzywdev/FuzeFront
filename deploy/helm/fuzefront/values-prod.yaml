@@ -146,6 +146,37 @@ billingService:
                 operator: In
                 values: ["fuzefront-node-2"]
 
+# payment-service — vendor-neutral payment GATEWAY (SCAFFOLD; not yet the live
+# money path). Synced by the UMBRELLA `fuzefront` Argo Application (gated by
+# paymentService.enabled), NOT a separate Application — its templates live in this
+# umbrella chart, so a second Argo app on the same chart path would DOUBLE-CLAIM
+# the Deployment (same hybrid-Argo rule that keeps billing/unleash in the
+# umbrella). A dedicated Argo app is only correct once payment-service is extracted
+# into its own chart (tracked follow-up). Isolation the hybrid model wants is still
+# satisfied: it has its OWN per-service `payment-secrets` SealedSecret.
+paymentService:
+  # First-light: DISABLED. While false the Deployment does NOT render, so the
+  # gateway adds ZERO freeze surface to the umbrella sync (no InvalidImageName even
+  # though its release image build step is still pending — see
+  # deploy/PENDING-WORKFLOW-CHANGES-payment-service.md). GO-LIVE for the gateway is
+  # a deliberate later step: add the release.yml build, flip this to true, seal the
+  # real STRIPE_SECRET_KEY / PAYMENT_INTERNAL_TOKEN. It is a SCAFFOLD, not the
+  # money path — billing-service remains the live path until the migration.
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-payment-service
+    tag: ""  # CI's release sed writes the real image SHA here (once the build lands)
+  # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]
+
 permit:
   enabled: true
 

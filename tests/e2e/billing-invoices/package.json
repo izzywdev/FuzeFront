@@ -1,0 +1,9 @@
+{
+  "name": "billing-invoices-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated Playwright e2e for the billing invoice-history UI (frames pre-prod + postprod smoke). Self-contained so it needs no root install.",
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}
