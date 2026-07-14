@@ -18,7 +18,9 @@
     "packages/i18n-translate",
     "packages/feature-flags",
     "design-system",
-    "services/email-service"
+    "services/email-service",
+    "services/sms-service",
+    "services/provisioning-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
