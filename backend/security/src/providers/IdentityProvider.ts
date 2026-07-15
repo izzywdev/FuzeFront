@@ -76,6 +76,13 @@ export interface SocialLoginStart {
   redirectUrl: string;
   /** Opaque anti-forgery state the callback must echo. */
   state: string;
+  /**
+   * PKCE code_verifier for this authorize request. The route persists it in an
+   * HttpOnly cookie so the (replica-agnostic) OIDC callback can complete the
+   * token exchange — the social handshake transits the registered OIDC
+   * redirect_uri (`/api/auth/oidc/callback`), which reads this cookie.
+   */
+  codeVerifier: string;
 }
 
 export interface SocialCallbackInput {

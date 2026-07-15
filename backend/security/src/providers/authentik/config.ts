@@ -12,13 +12,23 @@ export function appBaseUrl(): string {
 
 /**
  * The internal IdP reverse-proxy prefix. The browser is ALWAYS sent to a
- * same-host path under this prefix (devops reverse-proxies it to the internal
- * authentik-server ClusterIP), so the browser never sees an internal identity
- * host. Configurable; defaults to the coordinated same-host prefix.
+ * same-host path (optionally under this prefix), so the browser never sees an
+ * internal identity host.
+ *
+ * DEFAULT is now EMPTY (""): PR #256 removed the `/api/auth/idp` ingress path and
+ * routes Authentik's NATIVE paths (`/application`, `/if`, `/flows`, `/source`,
+ * `/ws`, `/-`, …) directly under app.fuzefront.com with NO prefix. So the
+ * authorize URL must be a bare native same-host path
+ * (`/application/o/authorize/…`) which #256 routes to the internal
+ * authentik-server. Set `SECURITY_IDP_PROXY_PREFIX` only if a deployment
+ * re-introduces a reverse-proxy prefix.
  */
 export function idpProxyPrefix(): string {
-  const raw = process.env.SECURITY_IDP_PROXY_PREFIX || '/api/auth/idp'
-  return '/' + raw.replace(/^\/+|\/+$/g, '')
+  const raw = process.env.SECURITY_IDP_PROXY_PREFIX ?? ''
+  const trimmed = raw.replace(/^\/+|\/+$/g, '')
+  // Empty → no prefix at all (native paths), NOT a bare "/" (which would
+  // produce a "//application/…" double-slash when concatenated with pathname).
+  return trimmed ? '/' + trimmed : ''
 }
 
 /** Same-origin social-callback path (where the internal IdP returns the browser). */

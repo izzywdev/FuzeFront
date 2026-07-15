@@ -15,11 +15,10 @@ import {
   UnsupportedFlowStageError,
 } from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
+import { putBrokerCode, takeBrokerCode, sweepBrokerCodes } from '../services/brokerCodes'
 
 
 const CODE_TTL_MS = 60_000
-interface PendingCode { token: string; sessionId: string; expiresAt: number }
-const pendingCodes = new Map<string, PendingCode>()
 
 // Use the configured frontend base URL for all redirects so that exchange codes
 // ride HTTPS in production rather than a hardcoded http:// origin.
@@ -27,14 +26,7 @@ const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local')
 
 // Periodic sweep: remove never-redeemed codes that have passed their TTL.
 // .unref() prevents this interval from keeping the process alive in tests.
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, value] of pendingCodes) {
-    if (value.expiresAt < now) {
-      pendingCodes.delete(key)
-    }
-  }
-}, CODE_TTL_MS).unref()
+setInterval(() => sweepBrokerCodes(), CODE_TTL_MS).unref()
 
 const router = express.Router()
 
@@ -721,7 +713,14 @@ router.get('/oidc/callback', async (req, res) => {
     // Issue a short-lived opaque exchange code instead of putting the bearer token in the URL
     // (avoids token leakage via referrer headers, server logs, and browser history).
     const exchangeCode = crypto.randomBytes(32).toString('hex')
-    pendingCodes.set(exchangeCode, { token, sessionId, expiresAt: Date.now() + CODE_TTL_MS })
+    // Shared store: redeemable by BOTH /api/auth/token-exchange and the
+    // provider-agnostic /api/v1/security/session/exchange (which social login uses).
+    putBrokerCode(exchangeCode, {
+      token,
+      sessionId,
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, roles: user.roles },
+      expiresAt: Date.now() + CODE_TTL_MS,
+    })
     res.redirect(`${FRONTEND_BASE}/?code=${exchangeCode}`)
 
   } catch (error) {
@@ -804,13 +803,10 @@ router.post('/token-exchange', async (req, res) => {
   if (!code || typeof code !== 'string') {
     return res.status(400).json({ error: 'code required' })
   }
-  const pending = pendingCodes.get(code)
-  if (!pending || Date.now() > pending.expiresAt) {
-    pendingCodes.delete(code)  // clean up expired entry if present
+  const pending = takeBrokerCode(code)
+  if (!pending) {
     return res.status(401).json({ error: 'invalid or expired code' })
   }
-  // Single-use: delete immediately
-  pendingCodes.delete(code)
   return res.json({ token: pending.token, sessionId: pending.sessionId })
 })
 

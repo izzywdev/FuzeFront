@@ -151,10 +151,17 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
 router.get('/social/:provider/start', async (req: Request, res: Response) => {
   try {
     const redirectTo = typeof req.query.redirectTo === 'string' ? req.query.redirectTo : '/'
-    const { redirectUrl, state } = await getIdentityProvider().startSocialLogin(req.params.provider, redirectTo)
-    // Persist anti-forgery state (+ desired return path) in an HttpOnly cookie
-    // so the callback is replica-agnostic.
+    const { redirectUrl, state, codeVerifier } = await getIdentityProvider().startSocialLogin(req.params.provider, redirectTo)
+    // The authorize URL's redirect_uri is the OIDC client's registered callback
+    // (`/api/auth/oidc/callback`), so the browser returns THERE after Google
+    // consent. That handler is replica-agnostic via the oidc_state + oidc_cv
+    // cookies — set them here (same names/semantics as /api/auth/oidc/login) so
+    // the exchange completes and mints the shared opaque ?code= the SPA redeems
+    // at /api/v1/security/session/exchange. `sec_social_state` is retained for
+    // the (non-default) brokerCallback path.
     res.setHeader('Set-Cookie', [
+      `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+      `oidc_cv=${codeVerifier}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
       `sec_social_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
     ])
     res.redirect(302, redirectUrl)

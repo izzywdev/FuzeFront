@@ -24,7 +24,8 @@ import { db as defaultDb } from '../../config/database'
 import { oidcService as defaultOidc } from '../../services/oidc'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
-import { defaultEventPublisher } from '../../services/eventPublisher'
+import { authentikSignup as defaultSignup, EnrollmentConflictError } from '../../services/authentikPassword'
+import { putBrokerCode, takeBrokerCode } from '../../services/brokerCodes'
 import type {
   IdentityProvider,
   BrokeredSession,
@@ -96,10 +97,6 @@ export class UnauthorizedError extends Error {
 
 type Db = typeof defaultDb
 
-interface PendingCode {
-  session: BrokeredSession
-  expiresAt: number
-}
 interface SocialState {
   codeVerifier: string
   redirectTo: string
@@ -117,6 +114,8 @@ export interface AuthentikProviderDeps {
   db: Db
   oidc: typeof defaultOidc
   passwordLoginFn: (email: string, password: string) => Promise<BrokeredUser>
+  /** Drives Authentik enrollment + OIDC sync; returns the synced user projection. */
+  signupFn: (input: SignupInput) => Promise<BrokeredUser>
   notifications: NotificationClient
   now: () => number
   /** Injected M2M provisioning (defaults to the absorbed machine-identity module). */
@@ -141,13 +140,13 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private db: Db
   private oidc: typeof defaultOidc
   private passwordLoginFn: (email: string, password: string) => Promise<BrokeredUser>
+  private signupFn: (input: SignupInput) => Promise<BrokeredUser>
   private notifications: NotificationClient
   private now: () => number
   private provisionM2MFn?: (name: string, scopes: string[]) => Promise<M2MClient>
   private issueM2MFn?: (input: M2MTokenInput) => Promise<M2MToken>
   private introspectM2MFn?: (token: string) => Promise<TokenIntrospection>
 
-  private pendingCodes = new Map<string, PendingCode>()
   private socialStates = new Map<string, SocialState>()
   private mfaChallenges = new Map<string, MfaChallenge>()
 
@@ -158,6 +157,17 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       deps.passwordLoginFn ??
       (async (email, password) => {
         const user = await defaultPasswordLogin(email, password)
+        return { ...user, roles: user.roles ?? [] } as BrokeredUser
+      })
+    this.signupFn =
+      deps.signupFn ??
+      (async (input) => {
+        const user = await defaultSignup({
+          email: input.email,
+          password: input.password,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        })
         return { ...user, roles: user.roles ?? [] } as BrokeredUser
       })
     this.notifications = deps.notifications ?? new HttpNotificationClient()
@@ -244,7 +254,9 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       redirectTo,
       expiresAt: this.now() + 10 * 60_000,
     })
-    return { redirectUrl, state }
+    // codeVerifier is handed back so the route can persist it in an HttpOnly
+    // cookie (`oidc_cv`) for the replica-agnostic OIDC callback.
+    return { redirectUrl, state, codeVerifier }
   }
 
   async brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult> {
@@ -265,87 +277,54 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // in the URL). Social sign-in does not re-gate MFA at the browser hop.
     const session = await this.mintSession(user)
     const code = crypto.randomBytes(32).toString('hex')
-    this.pendingCodes.set(code, { session, expiresAt: this.now() + CODE_TTL_MS })
+    // Shared store: a code minted here OR by the legacy /api/auth/oidc/callback
+    // is redeemable by the SPA's /api/v1/security/session/exchange.
+    putBrokerCode(code, {
+      token: session.token,
+      sessionId: session.sessionId,
+      user: session.user,
+      expiresAt: this.now() + CODE_TTL_MS,
+    })
     return { code, redirectTo: st.redirectTo || '/' }
   }
 
   async exchangeCode(code: string): Promise<BrokeredSession> {
-    const pending = this.pendingCodes.get(code)
-    if (!pending || pending.expiresAt < this.now()) {
-      this.pendingCodes.delete(code)
+    const entry = takeBrokerCode(code, this.now())
+    if (!entry) {
       throw new UnauthorizedError('invalid or expired code')
     }
-    this.pendingCodes.delete(code) // single-use
-    return pending.session
+    return { token: entry.token, sessionId: entry.sessionId, user: entry.user }
   }
 
-  // ── Signup (server-brokered) ──────────────────────────────────────────────
+  // ── Signup (server-brokered against Authentik enrollment) ─────────────────
+  //
+  // The account is created in AUTHENTIK (the sole identity authority) by driving
+  // its self-service enrollment flow server-side; the flow's final user-login
+  // stage auto-authenticates the new user, so the OIDC code exchange runs and
+  // the local `users` row is created as a SYNCED PROJECTION via the SAME
+  // syncUserToDatabase path login uses (which also writes the identity.user.created
+  // outbox row + event). There is NO local bcrypt user — that split-brain (a
+  // local user Authentik never knew about, thus unable to log in) is the bug this
+  // replaces.
   async signup(input: SignupInput): Promise<BrokeredSession> {
     if (!input?.email || !input?.password) {
       throw new InvalidInputError('email and password are required')
     }
-    const bcrypt = await import('bcryptjs')
+    // Fast-path conflict on the synced projection (cheap; the enrollment flow is
+    // also authoritative and maps its own "already exists" to ConflictError).
     const existing = await this.db('users').where('email', input.email).first()
     if (existing) throw new ConflictError()
 
-    const id = uuidv4()
-    const passwordHash = await bcrypt.hash(input.password, 10)
-    const correlationId = `identity-${id}`
-    const row = {
-      id,
-      email: input.email,
-      password_hash: passwordHash,
-      first_name: input.firstName ?? null,
-      last_name: input.lastName ?? null,
-      roles: JSON.stringify(['user']),
-      created_at: new Date(),
-      updated_at: new Date(),
-    }
-    await this.db.transaction(async (trx: any) => {
-      await trx('users').insert(row)
-      await trx('event_outbox').insert({
-        id: uuidv4(),
-        topic: 'identity.user.created',
-        payload: JSON.stringify({
-          userId: id,
-          email: input.email,
-          firstName: input.firstName,
-          lastName: input.lastName,
-          intent: 'signup',
-          tenantName: input.tenantName,
-        }),
-        correlation_id: correlationId,
-        status: 'pending',
-        attempts: 0,
-      })
-    })
-    // Best-effort publish; the outbox row is the durable record.
+    let user: BrokeredUser
     try {
-      await defaultEventPublisher.publishIdentityUserCreated(
-        {
-          userId: id,
-          email: input.email,
-          firstName: input.firstName,
-          lastName: input.lastName,
-          intent: 'signup',
-        },
-        correlationId
-      )
-      await this.db('event_outbox')
-        .where({ correlation_id: correlationId })
-        .update({ status: 'sent', attempts: 1, sent_at: new Date() })
-    } catch (pubErr) {
-      console.error('⚠️ identity.user.created publish failed (outbox retains it):', pubErr)
+      user = await this.signupFn(input)
+    } catch (err) {
+      if (err instanceof EnrollmentConflictError) throw new ConflictError()
+      throw err
     }
-
-    const user: BrokeredUser = {
-      id,
-      email: input.email,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      roles: ['user'],
-    }
-    return this.mintSession(user)
+    // Gate through MFA step-up if the (rare, freshly-enrolled) account already
+    // has active factors — otherwise mint the session directly.
+    return this.sessionOrChallenge(user)
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
