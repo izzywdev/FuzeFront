@@ -25,18 +25,30 @@ For the architecture and trust model, read
 
 ## Step 0 — Install `@fuzefront/security-client`
 
-The client is published **privately** to GitHub Packages under the `@fuzefront`
-scope (`access: restricted`). Add a scoped `.npmrc` (do **not** commit a token —
-use an env var / CI secret):
+The client is published to GitHub Packages. Until this repo moves to the
+`fuzefront` org, it ships under the owner scope as
+**`@izzywdev/fuzefront-security-client`** and is consumed via an npm **alias**, so
+your imports stay `@fuzefront/security-client`. Add a scoped `.npmrc` (do **not**
+commit a token — use an env var / CI secret):
 
 ```ini
 # .npmrc
-@fuzefront:registry=https://npm.pkg.github.com
+@izzywdev:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
+Alias the canonical import name to the published package in your `package.json`,
+then install:
+
+```jsonc
+// package.json
+"dependencies": {
+  "@fuzefront/security-client": "npm:@izzywdev/fuzefront-security-client@^0.1.0"
+}
+```
+
 ```bash
-npm install @fuzefront/security-client
+npm install
 ```
 
 ```ts
@@ -250,7 +262,7 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 | `authz/check` always `{ allow: false }` | Fail-closed on error, or the AuthZ rollout isn't live yet | Confirm the AuthZ endpoints are enabled; check `subject`/`tenant`/`resource.type`/`action` are all set. |
 | `identity.tenantId` is `null` | Legacy token mode, tenant unresolved | Fail closed on tenant-scoped authz; do not default a tenant. |
 | Social login loops / no `code` | Absolute or cross-origin `redirectTo` | Use a **same-origin, app-relative** `redirectTo`; absolute URLs are rejected. |
-| `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@fuzefront:registry` line + a valid `GITHUB_TOKEN`. |
+| `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN`. |
 | Tempted to parse the JWT / fetch JWKS | Wrong layer | Resolve identity via `GET /session` (or `/tokens/introspect`); consume `Identity`. |
 
 ---
