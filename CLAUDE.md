@@ -83,6 +83,18 @@ All mobile UI changes must pass a visual design-review gate **before any code is
 ### Fallback (PenPot unavailable)
 Render a static HTML mockup via the Artifact tool at 375 px width, embed a screenshot in the GitHub Issue labeled `design-review`, and follow the same approval flow.
 
+## UI runtime validation — the console-clean gate
+
+Design-review checks how the UI *looks*; this gate checks how it *runs*. A UI change that type-checks, passes vitest, and matches its approved frame can still be broken at runtime — an uncaught exception, a 404 on a JS chunk, a **CSP / mixed-content** block under TLS, or a failed **Module-Federation** remote load. None of those surface in unit tests or a static frame diff.
+
+**Mandate:** no UI work is "done" until it has been rendered in a real Chromium via the **Chrome DevTools MCP** (`chrome-devtools-mcp` plugin, marketplace `chrome-devtools-plugins`) and the **console is clean** — 0 errors, 0 CSP/mixed-content violations, 0 failed app requests, or every remaining message explained. This is a hard gate at every UI hat:
+
+- **`frontend-engineer` / `mobile-frontend-engineer`** — dev-time **self-check** before reporting `SCOPE DONE` (mobile validates under device emulation).
+- **`frontend-test-engineer`** — independent **QA**, on top of the Playwright run, pre- and post-production. A runtime console error is a bug to **REPORT**, never patched by QA.
+- **`test-engineer`** (API/service) is excluded — it is browser-less by design.
+
+The procedure, the FuzeFront gotchas (same-origin API base / no mixed-content under TLS, Module-Federation load), the full MCP capability map (console, network, Lighthouse/perf, a11y, device emulation, heap snapshots), and the DONE-report wording live in the **`ui-runtime-validation`** skill (`.claude/skills/ui-runtime-validation/`). The plugin must be installed in the session (`claude plugin marketplace add ChromeDevTools/chrome-devtools-mcp` → `claude plugin install chrome-devtools-mcp@chrome-devtools-plugins`); it is user/environment-scoped, not committed repo config.
+
 ## Branch lifecycle policy
 
 Every agent-created branch must reach one of these terminal states — never left open indefinitely:
