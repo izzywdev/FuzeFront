@@ -101,6 +101,14 @@ function newProvider(db = makeFakeDb(), overrides: any = {}) {
     oidc: fakeOidc,
     notifications,
     passwordLoginFn: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', roles: ['user'] }),
+    // Default signupFn simulates Authentik enrollment + OIDC sync: the synced
+    // projection row is inserted into the (fake) users table, mirroring the real
+    // syncUserToDatabase path. Provider.signup then mints the session.
+    signupFn: jest.fn().mockImplementation(async (input: any) => {
+      const id = 'newuser-1'
+      await db('users').insert({ id, email: input.email, first_name: input.firstName, last_name: input.lastName, roles: JSON.stringify(['user']) })
+      return { id, email: input.email, firstName: input.firstName, lastName: input.lastName, roles: ['user'] }
+    }),
     ...overrides,
   })
 }
@@ -132,12 +140,29 @@ describe('passwordLogin', () => {
 })
 
 describe('social login boundary', () => {
-  it('rewrites the authorize URL to the same-host IdP proxy prefix', async () => {
+  it('rewrites the authorize URL to the same-host IdP proxy prefix when one is set', async () => {
     const p = newProvider()
-    const { redirectUrl, state } = await p.startSocialLogin('google', '/home')
+    const { redirectUrl, state, codeVerifier } = await p.startSocialLogin('google', '/home')
     expect(redirectUrl.startsWith('/api/auth/idp/application/o/authorize/')).toBe(true)
     expect(redirectUrl).not.toMatch(/auth\.internal\.example/)
     expect(state).toBeTruthy()
+    // codeVerifier is surfaced so the route can set the oidc_cv cookie.
+    expect(codeVerifier).toBe('cv')
+  })
+
+  it('defaults to a NATIVE same-host authorize path (empty prefix, matching #256 ingress)', async () => {
+    const saved = process.env.SECURITY_IDP_PROXY_PREFIX
+    delete process.env.SECURITY_IDP_PROXY_PREFIX
+    try {
+      const p = newProvider()
+      const { redirectUrl } = await p.startSocialLogin('google', '/home')
+      // Native path, no /api/auth/idp prefix, no double slash, no internal host.
+      expect(redirectUrl.startsWith('/application/o/authorize/')).toBe(true)
+      expect(redirectUrl.startsWith('//')).toBe(false)
+      expect(redirectUrl).not.toMatch(/auth\.internal\.example/)
+    } finally {
+      if (saved !== undefined) process.env.SECURITY_IDP_PROXY_PREFIX = saved
+    }
   })
   it('rejects an absolute redirectTo (open-redirect guard)', async () => {
     await expect(newProvider().startSocialLogin('google', 'https://evil.com')).rejects.toBeInstanceOf(InvalidInputError)
@@ -161,14 +186,43 @@ describe('social login boundary', () => {
 })
 
 describe('signup', () => {
-  it('creates a user + session and rejects a duplicate email with ConflictError', async () => {
+  it('delegates to Authentik enrollment (signupFn) then mints a session; no local bcrypt user', async () => {
     const db = makeFakeDb()
-    const p = newProvider(db)
+    const signupFn = jest.fn().mockImplementation(async (input: any) => {
+      // Simulate the synced projection the OIDC callback would create.
+      await db('users').insert({ id: 'ak-1', email: input.email, first_name: input.firstName, roles: JSON.stringify(['user']) })
+      return { id: 'ak-1', email: input.email, firstName: input.firstName, roles: ['user'] }
+    })
+    const p = newProvider(db, { signupFn })
     const s = await p.signup({ email: 'new@e.com', password: 'pw', firstName: 'N' })
     expect(s.token).toBeTruthy()
+    expect(s.user.id).toBe('ak-1')
+    expect(signupFn).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@e.com', password: 'pw' }))
+    // The user row is a synced projection — NOT a locally-hashed bcrypt insert.
     expect(db.__tables.users.length).toBe(1)
-    expect(db.__tables.event_outbox.length).toBe(1)
-    await expect(p.signup({ email: 'new@e.com', password: 'pw' })).rejects.toBeInstanceOf(ConflictError)
+    expect(db.__tables.users[0].password_hash).toBeUndefined()
+    expect(db.__tables.sessions.length).toBe(1)
+  })
+
+  it('rejects a duplicate email (existing projection) with ConflictError, without calling enrollment', async () => {
+    const db = makeFakeDb()
+    db.__tables.users.push({ id: 'u1', email: 'dup@e.com', roles: '["user"]' })
+    const signupFn = jest.fn()
+    const p = newProvider(db, { signupFn })
+    await expect(p.signup({ email: 'dup@e.com', password: 'pw' })).rejects.toBeInstanceOf(ConflictError)
+    expect(signupFn).not.toHaveBeenCalled()
+  })
+
+  it('maps an Authentik EnrollmentConflictError to ConflictError', async () => {
+    const { EnrollmentConflictError } = require('../src/services/authentikPassword')
+    const db = makeFakeDb()
+    const signupFn = jest.fn().mockRejectedValue(new EnrollmentConflictError())
+    const p = newProvider(db, { signupFn })
+    await expect(p.signup({ email: 'x@e.com', password: 'pw' })).rejects.toBeInstanceOf(ConflictError)
+  })
+
+  it('rejects missing credentials with InvalidInputError', async () => {
+    await expect(newProvider().signup({ email: '', password: '' } as any)).rejects.toBeInstanceOf(InvalidInputError)
   })
 })
 

@@ -47,7 +47,7 @@ export class UnsupportedFlowStageError extends Error {
 }
 
 /** Minimal cookie jar for the short-lived per-login Authentik session. */
-class CookieJar {
+export class CookieJar {
   private cookies = new Map<string, string>()
 
   absorb(res: { headers: Headers }): void {
@@ -81,7 +81,7 @@ class CookieJar {
   }
 }
 
-function authentikBaseUrl(): string {
+export function authentikBaseUrl(): string {
   if (process.env.AUTHENTIK_BASE_URL) {
     return process.env.AUTHENTIK_BASE_URL.replace(/\/$/, '')
   }
@@ -95,14 +95,18 @@ function authFlowSlug(): string {
   return process.env.AUTHENTIK_AUTH_FLOW_SLUG || 'default-authentication-flow'
 }
 
-function redirectUri(): string {
+export function redirectUri(): string {
   return (
     process.env.AUTHENTIK_REDIRECT_URI ||
     'http://fuzefront.dev.local/api/auth/oidc/callback'
   )
 }
 
-interface FlowChallenge {
+function enrollmentFlowSlug(): string {
+  return process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+}
+
+export interface FlowChallenge {
   component?: string
   type?: string
   to?: string
@@ -111,7 +115,7 @@ interface FlowChallenge {
   [key: string]: unknown
 }
 
-async function flowRequest(
+export async function flowRequest(
   base: string,
   slug: string,
   jar: CookieJar,
@@ -264,7 +268,21 @@ export async function authentikPasswordLogin(
     }
   }
 
-  // ── Complete OIDC code+PKCE with the authenticated session ────────────────
+  // Complete OIDC code+PKCE with the now-authenticated Authentik session.
+  return completeOidcWithSession(base, jar)
+}
+
+/**
+ * Drive the OIDC authorize→code exchange using an ALREADY-AUTHENTICATED
+ * Authentik session (the cookie jar). Shared by both server-side password login
+ * and server-side signup (enrollment auto-logs the new user in, establishing the
+ * same session). Token exchange + user sync is identical to the redirect
+ * callback path — Authentik stays the SOLE identity authority.
+ */
+export async function completeOidcWithSession(
+  base: string,
+  jar: CookieJar
+): Promise<User> {
   const state = generators.state()
   const { url: authorizeUrl, codeVerifier } = oidcService.generateAuthUrl(state)
   const target = redirectUri()
@@ -326,4 +344,113 @@ export async function authentikPasswordLogin(
 
   // Token exchange + user sync — identical to the redirect callback path.
   return oidcService.handleCallback(code, returnedState || state, codeVerifier)
+}
+
+/** Thrown when an account already exists for the email (signup conflict). */
+export class EnrollmentConflictError extends Error {
+  constructor(message = 'An account with that email already exists') {
+    super(message)
+    this.name = 'EnrollmentConflictError'
+  }
+}
+
+export interface AuthentikSignupInput {
+  email: string
+  password: string
+  firstName?: string
+  lastName?: string
+  username?: string
+}
+
+/**
+ * Create the account in AUTHENTIK by driving the self-service enrollment flow
+ * server-side (same CookieJar + flow-executor driver as password login), then
+ * complete the OIDC code exchange — the enrollment flow's final user-login
+ * stage establishes an authenticated session, so the freshly-created user is
+ * synced into the platform DB via the SAME `syncUserToDatabase` path login
+ * uses. Authentik is the sole identity store; no local bcrypt user is written.
+ *
+ * The blueprint flow (deploy/helm/.../authentik/blueprints/flow-enrollment.yaml)
+ * has a single prompt stage (email/username/password/password_repeat/tos) then
+ * a user-write + user-login stage. Only that shape is driven; any other stage
+ * (e.g. an email-verification stage) fails closed as unsupported server-side.
+ */
+export async function authentikSignup(input: AuthentikSignupInput): Promise<User> {
+  if (!oidcService.isConfigured() || !oidcService.isInitialized()) {
+    throw new AuthentikUnavailableError('OIDC is not configured/initialized')
+  }
+  if (!input.email || !input.password) {
+    throw new InvalidCredentialsError('email and password are required')
+  }
+
+  const base = authentikBaseUrl()
+  const slug = enrollmentFlowSlug()
+  const jar = new CookieJar()
+
+  // Derive a username from the local-part when the caller did not supply one.
+  const username =
+    input.username || input.email.split('@')[0].replace(/[^a-zA-Z0-9_.-]/g, '') || input.email
+
+  let challenge = await flowRequest(base, slug, jar)
+  const MAX_STEPS = 8
+  let enrolled = false
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const component = challenge.component || challenge.type || ''
+
+    if (component === 'xak-flow-redirect') {
+      enrolled = true
+      break
+    }
+
+    if (component === 'ak-stage-prompt') {
+      // The enrollment prompt collects all fields at once. Include name fields
+      // and the ToS acceptance; Authentik ignores unknown fields.
+      const body: Record<string, unknown> = {
+        component,
+        email: input.email,
+        username,
+        password: input.password,
+        password_repeat: input.password,
+        tos_accepted: true,
+      }
+      if (input.firstName || input.lastName) {
+        body.name = [input.firstName, input.lastName].filter(Boolean).join(' ')
+      }
+      challenge = await flowRequest(base, slug, jar, body)
+    } else if (component === 'ak-stage-user-login' || component === 'ak-stage-user-write') {
+      // Non-interactive stages that occasionally surface a challenge — re-POST
+      // the bare component to advance.
+      challenge = await flowRequest(base, slug, jar, { component })
+    } else if (component === 'ak-stage-access-denied') {
+      throw new EnrollmentConflictError()
+    } else {
+      // Captcha, email-verification, MFA-enroll, consent … not driveable here.
+      throw new UnsupportedFlowStageError(component || 'unknown')
+    }
+
+    if (challengeHasCredentialErrors(challenge)) {
+      // Distinguish "already exists" from a password-policy rejection.
+      const errs = challenge.response_errors || {}
+      const flat = JSON.stringify(errs).toLowerCase()
+      if (
+        errs.email ||
+        errs.username ||
+        /already|exist|taken|unique/.test(flat)
+      ) {
+        throw new EnrollmentConflictError()
+      }
+      throw new InvalidCredentialsError(
+        'Enrollment rejected: ' + flat.slice(0, 200)
+      )
+    }
+  }
+
+  if (!enrolled) {
+    const last = challenge.component || challenge.type || 'unknown'
+    throw new UnsupportedFlowStageError(last)
+  }
+
+  // Enrollment auto-logged-in → complete OIDC + sync via the shared path.
+  return completeOidcWithSession(base, jar)
 }
