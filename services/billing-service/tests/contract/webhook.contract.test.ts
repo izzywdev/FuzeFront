@@ -90,11 +90,15 @@ describe('billing-service contract :: receiveStripeWebhook', () => {
     const raw = JSON.stringify({ id: 'evt_raw_1', type: 'invoice.paid', data: { object: {} } });
     stubs.webhook.stripe.webhooks.constructEvent.mockReturnValue(JSON.parse(raw));
 
+    // Send the raw JSON bytes verbatim (a string), exactly as the provider does.
+    // Passing a Buffer here would make superagent JSON-serialize it
+    // (`{"type":"Buffer",...}`) — a harness artifact, not the real wire format —
+    // so we send the string to faithfully assert express.raw captured the bytes.
     await request(app)
       .post(URL)
       .set('Content-Type', 'application/json')
       .set('Stripe-Signature', 'good-sig')
-      .send(Buffer.from(raw));
+      .send(raw);
 
     const [body, sig, secret] = stubs.webhook.stripe.webhooks.constructEvent.mock.calls[0];
     expect(Buffer.isBuffer(body)).toBe(true); // raw bytes, signature-verifiable

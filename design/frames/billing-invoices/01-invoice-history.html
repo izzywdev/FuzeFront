@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Billing — Invoice history</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body>
+<div class="shell" data-frame="01-invoice-history">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" aria-hidden="true">▦</div>
+    <div class="avatar">IZ</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Organization</div>
+      <a class="nav-item"><span class="ico">📊</span> Overview</a>
+      <a class="nav-item"><span class="ico">👥</span> Members</a>
+      <a class="nav-item active" data-nav="billing"><span class="ico">🧾</span> Billing</a>
+      <a class="nav-item"><span class="ico">⚙️</span> Settings</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Billing</h1>
+      <p class="page-sub">Acme Corp · Pro plan · renews Aug 1, 2026</p>
+
+      <section class="ffb-invoices" data-panel="invoice-history" aria-label="Invoice history">
+        <div class="ffb-invoices__seam"></div>
+        <div class="ffb-invoices__head">
+          <h2 class="ffb-invoices__title">Invoices</h2>
+          <span class="ffb-invoices__count" data-invoice-count="4">4 shown</span>
+        </div>
+        <div class="ffb-invoices__list" data-invoice-list>
+
+          <div class="ffb-invoice-row" data-invoice="FF-2026-0042" data-status="paid">
+            <div class="ffb-invoice-row__main">
+              <div class="ffb-invoice-row__top">
+                <span class="ffb-invoice-row__num">FF-2026-0042</span>
+                <span class="ffb-invoice-row__date">· Jul 1, 2026</span>
+              </div>
+            </div>
+            <div class="ffb-invoice-row__side">
+              <span class="ffb-pill ffb-pill--paid"><span class="ffb-pill__dot"></span>Paid</span>
+              <span class="ffb-invoice-row__amount">$49.00</span>
+              <a class="ffb-dl" href="#" data-download="pdf" aria-label="Download invoice FF-2026-0042 PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16"/></svg>PDF</a>
+            </div>
+          </div>
+
+          <div class="ffb-invoice-row" data-invoice="FF-2026-0031" data-status="paid">
+            <div class="ffb-invoice-row__main">
+              <div class="ffb-invoice-row__top">
+                <span class="ffb-invoice-row__num">FF-2026-0031</span>
+                <span class="ffb-invoice-row__date">· Jun 1, 2026</span>
+              </div>
+            </div>
+            <div class="ffb-invoice-row__side">
+              <span class="ffb-pill ffb-pill--paid"><span class="ffb-pill__dot"></span>Paid</span>
+              <span class="ffb-invoice-row__amount">$49.00</span>
+              <a class="ffb-dl" href="#" data-download="pdf" aria-label="Download invoice FF-2026-0031 PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16"/></svg>PDF</a>
+            </div>
+          </div>
+
+          <div class="ffb-invoice-row" data-invoice="FF-2026-0025" data-status="open">
+            <div class="ffb-invoice-row__main">
+              <div class="ffb-invoice-row__top">
+                <span class="ffb-invoice-row__num">FF-2026-0025</span>
+                <span class="ffb-invoice-row__date">· May 1, 2026</span>
+              </div>
+            </div>
+            <div class="ffb-invoice-row__side">
+              <span class="ffb-pill ffb-pill--open"><span class="ffb-pill__dot"></span>Open</span>
+              <span class="ffb-invoice-row__amount">$49.00</span>
+              <a class="ffb-dl" href="#" data-download="hosted" aria-label="View invoice FF-2026-0025">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M8 13h8M8 17h5M6 3h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>View</a>
+            </div>
+          </div>
+
+          <div class="ffb-invoice-row" data-invoice="FF-2026-0018" data-status="void">
+            <div class="ffb-invoice-row__main">
+              <div class="ffb-invoice-row__top">
+                <span class="ffb-invoice-row__num">FF-2026-0018</span>
+                <span class="ffb-invoice-row__date">· Apr 1, 2026</span>
+              </div>
+            </div>
+            <div class="ffb-invoice-row__side">
+              <span class="ffb-pill ffb-pill--void"><span class="ffb-pill__dot"></span>Void</span>
+              <span class="ffb-invoice-row__amount">$0.00</span>
+              <a class="ffb-dl" href="#" data-download="pdf" aria-label="Download invoice FF-2026-0018 PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 21h16"/></svg>PDF</a>
+            </div>
+          </div>
+
+        </div>
+        <div class="ffb-invoices__foot">
+          <button class="btn btn-ghost" data-action="load-more">Load more</button>
+        </div>
+      </section>
+
+      <p class="ffb-note" style="margin-top: var(--space-4); max-width: 620px;">
+        Invoice ids, status and amounts are served from FuzeFront's own store (synced from the
+        payment provider). The download link is a provider-hosted document, opaque to the app —
+        no vendor name is ever exposed to the UI.
+      </p>
+    </main>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (a) · <b>Invoice history</b> — populated list</span>
+  <a href="02-states.html" class="btn btn-primary">Next: states →</a>
+</div>
+</body>
+</html>

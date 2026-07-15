@@ -81,11 +81,11 @@ async function handleSessionEvent(event: Stripe.Event, ctx: HandlerContext): Pro
   }
 
   const row = await ctx.payments.upsert({
-    stripeSessionId: session.id,
-    stripePaymentIntentId:
+    sessionId: session.id,
+    paymentIntentId:
       typeof session.payment_intent === 'string'
         ? session.payment_intent
-        : session.payment_intent?.id ?? existing?.stripePaymentIntentId ?? null,
+        : session.payment_intent?.id ?? existing?.paymentIntentId ?? null,
     productKey,
     externalOrderId,
     entityType,
@@ -107,8 +107,8 @@ async function handleSessionEvent(event: Stripe.Event, ctx: HandlerContext): Pro
     externalOrderId: row.externalOrderId,
     entityType: row.entityType,
     entityId: row.entityId,
-    stripeSessionId: row.stripeSessionId,
-    stripePaymentIntentId: row.stripePaymentIntentId,
+    stripeSessionId: row.sessionId,
+    stripePaymentIntentId: row.paymentIntentId,
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
     status: status as 'paid' | 'expired',
@@ -141,7 +141,7 @@ async function handleIntentFailed(event: Stripe.Event, ctx: HandlerContext): Pro
 
   const row = await ctx.payments.upsert({
     ...toUpsert(existing),
-    stripePaymentIntentId: intent.id,
+    paymentIntentId: intent.id,
     status: 'failed',
   });
 
@@ -149,7 +149,7 @@ async function handleIntentFailed(event: Stripe.Event, ctx: HandlerContext): Pro
   // success (buyer retried in-session), do not emit a stale 'failed'.
   if (row.status !== 'failed') {
     console.info(
-      `[payment-completed] session ${row.stripeSessionId} already ${row.status} — failed event superseded`,
+      `[payment-completed] session ${row.sessionId} already ${row.status} — failed event superseded`,
     );
     return;
   }
@@ -159,8 +159,8 @@ async function handleIntentFailed(event: Stripe.Event, ctx: HandlerContext): Pro
     externalOrderId: row.externalOrderId,
     entityType: row.entityType,
     entityId: row.entityId,
-    stripeSessionId: row.stripeSessionId,
-    stripePaymentIntentId: row.stripePaymentIntentId,
+    stripeSessionId: row.sessionId,
+    stripePaymentIntentId: row.paymentIntentId,
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
     status: 'failed',
@@ -169,8 +169,8 @@ async function handleIntentFailed(event: Stripe.Event, ctx: HandlerContext): Pro
 }
 
 function toUpsert(row: {
-  stripeSessionId: string;
-  stripePaymentIntentId: string | null;
+  sessionId: string;
+  paymentIntentId: string | null;
   productKey: string;
   externalOrderId: string;
   entityType: 'user' | 'organization';
@@ -180,8 +180,8 @@ function toUpsert(row: {
   status: PaymentStatus;
 }) {
   return {
-    stripeSessionId: row.stripeSessionId,
-    stripePaymentIntentId: row.stripePaymentIntentId,
+    sessionId: row.sessionId,
+    paymentIntentId: row.paymentIntentId,
     productKey: row.productKey,
     externalOrderId: row.externalOrderId,
     entityType: row.entityType,

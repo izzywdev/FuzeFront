@@ -60,6 +60,12 @@ function isProduction(): boolean {
  */
 export function requireInternalToken(expectedToken?: string) {
   return (req: Request, res: Response, next: NextFunction): void => {
+    // `/health` is never a guarded API route — it lives at the bare server root,
+    // NOT under /api/v1/billing. When this guard is mounted as prefix middleware
+    // (app.use(API_BASE, guard, router)) a stray GET /api/v1/billing/health would
+    // otherwise 401 before falling through to its natural 404. Let it pass so the
+    // unknown path 404s (contract: health is not under the API base).
+    if (req.path === '/health') return next();
     if (!expectedToken) {
       if (isProduction()) {
         // Fail CLOSED: refuse to serve guarded routes without a configured token.

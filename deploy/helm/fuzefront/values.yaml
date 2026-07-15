@@ -412,6 +412,35 @@ billingService:
   affinity: {}
   tolerations: []
 
+# payment-service — vendor-neutral payment GATEWAY (SCAFFOLD; not the live money
+# path yet). Stateless: no DB, no Kafka. Runnable with zero secrets — without a
+# real STRIPE_SECRET_KEY it serves /health only (degraded mode). Its templates
+# live in this umbrella chart, so it is synced by the umbrella `fuzefront` Argo
+# Application (hybrid-Argo — same rule as billingService/unleash). Disabled by
+# default; flip `enabled` + seal payment-secrets to bring it up.
+paymentService:
+  enabled: false
+  image:
+    repository: fuzefront/payment-service
+    tag: local
+  # 3007: billing-service is 3006. Keep unique across the service port map.
+  port: 3007
+  replicas: 1
+  # Active vendor adapter. Swapping the vendor = adding a sibling adapter and
+  # changing this. Default 'stripe'.
+  provider: stripe
+  # Per-service secret (payment-only keys: STRIPE_SECRET_KEY,
+  # PAYMENT_INTERNAL_TOKEN). Placeholders committed in
+  # deploy/contabo/sealed/payment-secrets.yaml; both keys are `optional: true` in
+  # the Deployment so the scaffold pod runs even before real values are sealed.
+  secretName: payment-secrets
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 litellm:
   enabled: false
   image:

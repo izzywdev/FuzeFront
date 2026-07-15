@@ -7,8 +7,8 @@ const OCCURRED_ISO = new Date(OCCURRED_UNIX * 1000).toISOString();
 function mirrorRow(overrides: any = {}) {
   return {
     id: '77777777-7777-4777-8777-777777777777',
-    stripeSessionId: 'cs_pay_1',
-    stripePaymentIntentId: null,
+    sessionId: 'cs_pay_1',
+    paymentIntentId: null,
     productKey: 'mendys-datasets',
     externalOrderId: 'order-42',
     entityType: 'organization',
@@ -97,8 +97,8 @@ describe('handlePaymentCompleted — checkout.session.completed (payment mode)',
 
     expect(ctx.payments.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        stripeSessionId: 'cs_pay_1',
-        stripePaymentIntentId: 'pi_1',
+        sessionId: 'cs_pay_1',
+        paymentIntentId: 'pi_1',
         productKey: 'mendys-datasets',
         externalOrderId: 'order-42',
         entityType: 'organization',
@@ -190,7 +190,7 @@ describe('handlePaymentCompleted — checkout.session.expired', () => {
     );
 
     expect(ctx.payments.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ stripeSessionId: 'cs_pay_1', status: 'expired' }),
+      expect.objectContaining({ sessionId: 'cs_pay_1', status: 'expired' }),
     );
     expect(ctx.emitter.paymentCompleted).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -210,8 +210,8 @@ describe('handlePaymentCompleted — payment_intent.payment_failed', () => {
     expect(ctx.payments.findByOrder).toHaveBeenCalledWith('mendys-datasets', 'order-42');
     expect(ctx.payments.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        stripeSessionId: 'cs_pay_1',
-        stripePaymentIntentId: 'pi_1',
+        sessionId: 'cs_pay_1',
+        paymentIntentId: 'pi_1',
         status: 'failed',
       }),
     );

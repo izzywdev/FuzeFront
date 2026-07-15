@@ -32,8 +32,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
   return {
     id: '55555555-5555-4555-8555-555555555555',
     customerId: '66666666-6666-4666-8666-666666666666',
-    stripeSubscriptionId: 'sub_test123',
-    stripePriceId: BASIC_PRICE_ID,
+    subscriptionId: 'sub_test123',
+    priceId: BASIC_PRICE_ID,
     planTier: 'starter',
     status: 'active',
     seatQuantity: 1,
@@ -50,8 +50,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
 /** A spec-conformant Plan fixture (the $9/mo Basic plan). */
 export function makeBasicPlan(overrides: Partial<Plan> = {}): Plan {
   return {
-    stripePriceId: BASIC_PRICE_ID,
-    stripeProductId: 'prod_basic',
+    priceId: BASIC_PRICE_ID,
+    productId: 'prod_basic',
     tierName: 'starter',
     displayName: 'Basic',
     billingInterval: 'month',
@@ -88,6 +88,10 @@ export interface DepStubs {
     upsert: jest.Mock;
     getBySessionId: jest.Mock;
     findByOrder: jest.Mock;
+  };
+  invoiceRepo: {
+    upsertFromProvider: jest.Mock;
+    listByCustomer: jest.Mock;
   };
   stripe: {
     setupIntents: { create: jest.Mock };
@@ -166,6 +170,11 @@ export function buildApp(
       getBySessionId: jest.fn().mockResolvedValue(null),
       findByOrder: jest.fn().mockResolvedValue(null),
     },
+    invoiceRepo: {
+      upsertFromProvider: jest.fn().mockResolvedValue(undefined),
+      // Default: empty store, no further page. Override per test.
+      listByCustomer: jest.fn().mockResolvedValue({ rows: [], nextCursor: null }),
+    },
     stripe: {
       setupIntents: { create: jest.fn() },
       customers: { createBalanceTransaction: jest.fn() },
@@ -211,6 +220,7 @@ export function buildApp(
     customerRepo: stubs.customerRepo as any,
     customers: stubs.customers as any,
     payments: stubs.payments as any,
+    invoiceRepo: stubs.invoiceRepo as any,
     paymentsConfig: opts.paymentsConfig ?? { ...PAYMENTS_CONFIG },
     webhook: stubs.webhook as any,
   };

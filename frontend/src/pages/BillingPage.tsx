@@ -7,6 +7,13 @@ import {
   Skeleton,
   Tabs,
 } from '@fuzefront/design-system'
+import { InvoiceHistoryPanel, BillingI18nProvider } from '@fuzefront/billing-ui'
+// The billing-ui stylesheet (design-system tokens only). Imported from source
+// here because the frontend build resolves @fuzefront/billing-ui from source
+// (see frontend/vite.config.ts) and the published `./styles.css` subpath is not
+// aliased for dev. Wiring a `@fuzefront/billing-ui/styles.css` vite alias
+// (mirroring @fuzefront/chat-ui) is a follow-up owned by devops.
+import '../../../packages/billing-ui/src/styles/billing-ui.css'
 import { useOrganizations } from '../lib/shared'
 import {
   listPlans,
@@ -21,6 +28,19 @@ import {
   type BillingSubscriptionView,
   type BillingInvoice,
 } from '../services/billingService'
+
+/**
+ * Gate for the design-system-first invoice history panel
+ * (`fuzefront.billing.invoice-history`, default OFF). The family flag standard
+ * is Unleash via `@fuzefront/feature-flags`; until the web flag client is
+ * initialized in the shell bootstrap this reads a build-time override and
+ * defaults OFF, so production behavior is unchanged. Swap the body for
+ * `getBoolean('fuzefront.billing.invoice-history', false)` once the web client
+ * is wired — the flag key and default stay identical.
+ */
+function useInvoiceHistoryFlag(): boolean {
+  return import.meta.env.VITE_FF_BILLING_INVOICE_HISTORY === 'true'
+}
 
 /**
  * Billing area for the FuzeFront shell — an industry-standard, design-system-
@@ -363,6 +383,37 @@ const CELL_STYLE: React.CSSProperties = {
 }
 
 const InvoicesTab: React.FC<{ organizationId?: string }> = ({
+  organizationId,
+}) => {
+  const invoiceHistoryEnabled = useInvoiceHistoryFlag()
+
+  // Adapter over the same-origin billing service (no absolute host) matching the
+  // billing-ui InvoiceHistoryPanel's injected `listInvoices` contract.
+  const fetchInvoices = useCallback(
+    (opts: { limit?: number; cursor?: string }) =>
+      listInvoices(organizationId, opts),
+    [organizationId]
+  )
+
+  // Flag ON → the design-system-first, vendor-neutral InvoiceHistoryPanel from
+  // @fuzefront/billing-ui. Flag OFF → the existing native table below.
+  if (invoiceHistoryEnabled) {
+    return (
+      <section aria-labelledby="invoices-h">
+        <h2 id="invoices-h" style={{ marginTop: 0 }}>
+          Invoices
+        </h2>
+        <BillingI18nProvider>
+          <InvoiceHistoryPanel enabled listInvoices={fetchInvoices} />
+        </BillingI18nProvider>
+      </section>
+    )
+  }
+
+  return <LegacyInvoicesTab organizationId={organizationId} />
+}
+
+const LegacyInvoicesTab: React.FC<{ organizationId?: string }> = ({
   organizationId,
 }) => {
   const [invoices, setInvoices] = useState<BillingInvoice[]>([])
