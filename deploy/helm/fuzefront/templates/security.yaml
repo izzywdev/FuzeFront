@@ -111,6 +111,13 @@ spec:
               value: {{ .Values.authentik.oidc.issuerUrl | quote }}
             - name: AUTHENTIK_REDIRECT_URI
               value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            # Server-side base for Authentik's flow-executor (password + enrollment
+            # driver). Points at the IN-CLUSTER service so the multi-hop flow does
+            # NOT hairpin out to the app host via Cloudflare (which took 17-34s and
+            # blew the client timeout). The external issuer/redirect above stay for
+            # the browser + the `iss` claim.
+            - name: AUTHENTIK_BASE_URL
+              value: {{ .Values.authentik.oidc.internalUrl | default "http://authentik-server:9000" | quote }}
             # Admin token for server-side Authentik REST (M2M client provisioning).
             # Reuses the akadmin bootstrap token (see authentik-m2m-provisioning).
             - name: AUTHENTIK_ADMIN_TOKEN
