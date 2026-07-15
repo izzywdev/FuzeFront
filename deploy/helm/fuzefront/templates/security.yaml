@@ -111,6 +111,20 @@ spec:
               value: {{ .Values.authentik.oidc.issuerUrl | quote }}
             - name: AUTHENTIK_REDIRECT_URI
               value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            # Admin token for server-side Authentik REST (M2M client provisioning).
+            # Reuses the akadmin bootstrap token (see authentik-m2m-provisioning).
+            - name: AUTHENTIK_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_BOOTSTRAP_TOKEN
+            # Enrollment flow slug driven server-side by signup() (blueprint: flow-enrollment.yaml).
+            - name: AUTHENTIK_ENROLLMENT_FLOW_SLUG
+              value: {{ .Values.authentik.oidc.enrollmentFlowSlug | default "fuzefront-enrollment" | quote }}
+            # Empty prefix: PR #256 routes Authentik's NATIVE paths under app.fuzefront.com
+            # (no /api/auth/idp prefix). Pin it so the authorize URL stays a bare native path.
+            - name: SECURITY_IDP_PROXY_PREFIX
+              value: {{ .Values.authentik.oidc.idpProxyPrefix | default "" | quote }}
             {{- if .Values.authentik.oidc.caConfigMap }}
             - name: NODE_EXTRA_CA_CERTS
               value: /etc/fuzefront-ca/ca.crt
