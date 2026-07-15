@@ -54,6 +54,12 @@ class OIDCService {
         };
         effectiveIssuer = new Issuer({
           ...issuer.metadata,
+          // Authentik derives `iss` from the request host even in per_provider
+          // mode, so a token fetched from authentik-server:9000 carries
+          // iss=http://authentik-server:9000/... — expect exactly that. The
+          // browser-facing FuzeFront session token is separately HS256-minted, so
+          // this internal `iss` never leaves the server.
+          issuer: toInternal(issuer.metadata.issuer) as string,
           token_endpoint: toInternal(issuer.metadata.token_endpoint),
           userinfo_endpoint: toInternal(issuer.metadata.userinfo_endpoint),
           jwks_uri: toInternal(issuer.metadata.jwks_uri),
