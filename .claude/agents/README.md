@@ -27,13 +27,16 @@ MCP servers are granted via each agent's `tools:` allowlist; plugin **skills** a
 | External surface | MCP server(s) | Owner agent | Plugin skills |
 |---|---|---|---|
 | Design-to-code | Figma | **frontend-engineer** (sole) | `frontend-design`, `figma-*` |
-| Browser e2e / QA | Playwright + Chrome DevTools | **frontend-test-engineer** | `chrome-devtools`, `a11y-debugging` |
+| Browser e2e / QA | Playwright + Chrome DevTools | **frontend-test-engineer** (owner) | `chrome-devtools`, `a11y-debugging`, `ui-runtime-validation` |
+| UI runtime self-validation (console-clean gate) | Chrome DevTools | **frontend-engineer**, **mobile-frontend-engineer** (dev-time self-check) | `ui-runtime-validation`, `chrome-devtools` |
 | Edge / DNS / Workers | Cloudflare (api/bindings/builds/docs/observability) | **devops-engineer** | `cloudflare`, `wrangler`, `workers-best-practices`, `cloudflare-one` |
 | Cloud (AWS) | *(skills only)* | **devops-engineer** | `aws-iam`, `aws-cdk`/`aws-cloudformation`, `aws-serverless`, `aws-containers`, `aws-secrets-manager`, `aws-observability` |
 | Payments | Stripe | **billing-payments-engineer** | `stripe-*` + `stripe:Company Researcher` agent |
 | Telephony / messaging / email | Twilio (+ SendGrid) | **telephony-integrator** | `twilio-*`, `twilio-sendgrid-*` |
 | Project tracking + team comms | Atlassian + Slack | **agile-manager** | `ticket-*`, `triage-issue`, `spec-to-backlog`, `generate-status-report`, `slack-*` |
 | WordPress | *(skills only)* | **wordpress-engineer** | `build-with-wordpress`, `site-specification` |
+
+> **Chrome DevTools — two non-conflicting uses.** `frontend-test-engineer` **owns** the browser-e2e / QA surface (independent verification is its job). The implementers (`frontend-engineer`, `mobile-frontend-engineer`) also drive the Chrome DevTools MCP, but only for **dev-time console self-validation** of their own change before `SCOPE DONE` — a distinct, non-conflicting use that does **not** violate the single-owner rule (implementer self-check ≠ independent QA). The mandate lives in the `ui-runtime-validation` skill; `test-engineer` (API/service, browser-less) is deliberately excluded.
 
 > **Unassigned:** the **Shopify** MCP has no named hat yet — it stays available to general agents until an e-commerce hat is created. Pure-code/platform agents (`backend-engineer`, `contract-designer`, `test-engineer`, `docs-maintainer`, `feature-flags-engineer`) intentionally get **core tools only, no MCP** — flag administration is config/API, not an MCP surface.
 
