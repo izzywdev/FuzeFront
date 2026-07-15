@@ -110,6 +110,26 @@ interface MfaChallenge {
 const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
 
+/**
+ * Registration-time email verification is a two-condition gate, kept a release
+ * flag (default OFF) until prod SMTP is wired:
+ *
+ *   - `REQUIRE_EMAIL_VERIFICATION` (default `false`) is the release/kill switch.
+ *   - `EMAIL_SERVICE_URL` must be configured (the family email-service reachable
+ *     by Service DNS) for a real message to be deliverable.
+ *
+ * When BOTH hold, verification is REQUIRED: we mint a link token + OTP and
+ * dispatch it. Otherwise we GRACEFULLY DEGRADE — auto-verify the address and log
+ * — so signup/local dev/prod-without-SMTP never strands a user on an
+ * undeliverable challenge. Provider-neutral: no vendor is named.
+ */
+function emailVerificationEnabled(): boolean {
+  return (
+    process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
+    !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
+  )
+}
+
 export interface AuthentikProviderDeps {
   db: Db
   oidc: typeof defaultOidc
@@ -322,9 +342,53 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       if (err instanceof EnrollmentConflictError) throw new ConflictError()
       throw err
     }
+    // Kick off contact-ownership verification for the freshly-enrolled address.
+    // Best-effort: a delivery/transport failure must NOT fail the signup — the
+    // user can re-request via /verify/email/start. In degrade mode this simply
+    // auto-verifies + logs. Uses the user id directly (no bearer needed yet).
+    try {
+      await this.startEmailVerificationForUser(user.id, user.email)
+    } catch (err) {
+      console.error(
+        `[security] signup email-verification dispatch failed for ${maskContact(
+          user.email,
+        )}:`,
+        (err as Error).message,
+      )
+    }
+
     // Gate through MFA step-up if the (rare, freshly-enrolled) account already
     // has active factors — otherwise mint the session directly.
     return this.sessionOrChallenge(user)
+  }
+
+  /**
+   * Internal variant of startEmailVerification keyed by a known user id (used at
+   * signup, before any bearer exists). Honours the same degrade gate.
+   */
+  private async startEmailVerificationForUser(userId: string, email: string): Promise<void> {
+    if (!email) return
+    if (!emailVerificationEnabled()) {
+      await this.db('users').where({ id: userId }).update({ email_verified: true })
+      console.warn(
+        `[security] email verification degraded at signup (auto-verified ${maskContact(
+          email,
+        )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`,
+      )
+      return
+    }
+    const linkToken = crypto.randomBytes(32).toString('hex')
+    const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+    await this.db('email_verifications').insert({
+      id: uuidv4(),
+      user_id: userId,
+      email,
+      token_hash: sha256(linkToken),
+      code_hash: sha256(code),
+      expires_at: new Date(this.now() + EMAIL_VERIFY_TTL_MS),
+      consumed: false,
+    })
+    await this.notifications.sendEmailVerification(email, linkToken, code)
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
@@ -586,6 +650,22 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       target = target || user.email
     }
     if (!target) throw new InvalidInputError('email is required')
+
+    // Degrade mode: verification not required (flag off) or no email-service
+    // wired — auto-verify the local projection and log. Never strand the user on
+    // an undeliverable challenge.
+    if (!emailVerificationEnabled()) {
+      if (userId) {
+        await this.db('users').where({ id: userId }).update({ email_verified: true })
+      }
+      console.warn(
+        `[security] email verification degraded (auto-verified ${maskContact(
+          target,
+        )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`,
+      )
+      return
+    }
+
     const linkToken = crypto.randomBytes(32).toString('hex')
     const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     await this.db('email_verifications').insert({

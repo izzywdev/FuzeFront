@@ -152,18 +152,26 @@ class OIDCService {
     const email = userinfo.email;
     const firstName = userinfo.given_name || userinfo.name?.split(' ')[0] || 'User';
     const lastName = userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || '';
+    // Project the provider's email-verification assertion into our local column.
+    // The enrollment email-verify stage (or a verified social login) sets the
+    // standard OIDC `email_verified` claim; we only ever flip FALSE->TRUE here so
+    // a stale/absent claim never un-verifies an already-verified account.
+    const emailVerifiedClaim = userinfo.email_verified === true;
 
     try {
       // Check if user exists
       let userRow = await db('users').where('email', email).first();
 
       if (userRow) {
-        // Update existing user
+        // Update existing user. Only ever promote email_verified FALSE->TRUE.
         await db('users')
           .where('id', userRow.id)
           .update({
             first_name: firstName,
             last_name: lastName,
+            ...(emailVerifiedClaim && !userRow.email_verified
+              ? { email_verified: true }
+              : {}),
             updated_at: new Date(),
           });
 
@@ -179,6 +187,7 @@ class OIDCService {
           first_name: firstName,
           last_name: lastName,
           roles: JSON.stringify(['user']), // Default role
+          email_verified: emailVerifiedClaim,
           created_at: new Date(),
           updated_at: new Date(),
         };
