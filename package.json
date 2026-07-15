@@ -17,6 +17,7 @@
     "packages/i18n",
     "packages/i18n-translate",
     "packages/feature-flags",
+    "packages/security",
     "design-system",
     "services/email-service"
   ],
