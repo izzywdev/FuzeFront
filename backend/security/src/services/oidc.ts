@@ -131,9 +131,12 @@ class OIDCService {
 
         console.log(`✅ Updated existing user: ${email}`);
       } else {
-        // Create new user
+        // Create new user. The local `id` is ALWAYS a generated uuid — never the
+        // OIDC `sub`, which Authentik sets to the email/username (not a uuid) and
+        // which would fail the uuid-typed `id` column. Email is the natural key we
+        // match on (above), so a fresh uuid is safe and stable per-account.
         const newUser = {
-          id: userinfo.sub || require('uuid').v4(),
+          id: require('uuid').v4(),
           email: email,
           first_name: firstName,
           last_name: lastName,
