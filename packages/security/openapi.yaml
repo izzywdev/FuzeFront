@@ -1997,6 +1997,111 @@ components:
         phone:
           type: string
       required: [emailVerified, phoneVerified]
+    # ── Account: password reset / set-password shapes ──
+    PasswordResetRequest:
+      type: object
+      description: Self-service password-reset request. Response never reveals account existence.
+      properties:
+        email:
+          type: string
+          format: email
+      required: [email]
+    PasswordResetConfirmRequest:
+      type: object
+      description: Complete a password reset with the single-use token from the reset message.
+      properties:
+        token:
+          type: string
+          description: Single-use, short-lived reset token from the dispatched message.
+        newPassword:
+          type: string
+          description: The new password; must satisfy the account password policy.
+      required: [token, newPassword]
+    PasswordResetResult:
+      type: object
+      description: Outcome of a successful password reset.
+      properties:
+        reset:
+          type: boolean
+          description: Always true on success.
+      required: [reset]
+    SetPasswordRequest:
+      type: object
+      description: Set/add a password on an account that has no password sign-in method yet.
+      properties:
+        newPassword:
+          type: string
+          description: The password to set; must satisfy the account password policy.
+      required: [newPassword]
+    # ── Sessions: device-management shapes ──
+    SessionDevice:
+      type: object
+      description: >-
+        One active session for the current user, describing the device/agent it
+        was established from. `current: true` marks the session making the request.
+      properties:
+        id:
+          type: string
+          description: Session id; pass to `DELETE /v1/security/sessions/{id}` to revoke.
+        device:
+          type: [string, 'null']
+          description: Best-effort device descriptor (e.g. "iPhone", "Desktop"), or null.
+        browser:
+          type: [string, 'null']
+          description: Best-effort browser name, or null.
+        os:
+          type: [string, 'null']
+          description: Best-effort OS name, or null.
+        ip:
+          type: [string, 'null']
+          description: Source IP recorded for the session, or null.
+        geo:
+          type: [string, 'null']
+          description: Best-effort coarse geolocation label (e.g. city/country), or null.
+        lastSeenAt:
+          type: integer
+          description: Epoch millis of the session's most recent activity.
+        current:
+          type: boolean
+          description: True for the session making this request.
+      required: [id, current]
+    # ── Account: social linking / connections shapes ──
+    SocialLinkStart:
+      type: object
+      description: >-
+        Result of beginning a social-link handshake. The SPA navigates the
+        browser to `redirectUrl` (the same-host authorize path); the browser
+        never sees an internal identity host.
+      properties:
+        redirectUrl:
+          type: string
+          description: Same-origin/consent-host URL to navigate to in order to continue linking.
+      required: [redirectUrl]
+    SocialConnection:
+      type: object
+      description: A linked social sign-in connection on the account.
+      properties:
+        provider:
+          $ref: '#/components/schemas/SocialProvider'
+        linkedAt:
+          type: integer
+          description: Epoch millis when the provider was linked.
+      required: [provider]
+    IdentityConnections:
+      type: object
+      description: >-
+        The account's sign-in connections: which social providers are linked and
+        whether a password sign-in method exists. Drives link/unlink and
+        set-password affordances in the UI.
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialConnection'
+        hasPassword:
+          type: boolean
+          description: Whether the account has a password sign-in method.
+      required: [providers, hasPassword]
     # ── Pagination envelopes (family standard) ──
     PageInfo:
       type: object
