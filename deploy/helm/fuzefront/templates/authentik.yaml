@@ -284,24 +284,5 @@ spec:
   headers:
     customRequestHeaders:
       X-Forwarded-Proto: "https"
-{{- if eq .Values.ingress.className "traefik" }}
----
-# Strip the `/api/auth/idp` prefix before forwarding to authentik-server, so
-# Authentik receives its native paths (e.g. /application/o/fuzefront/). Traefik's
-# stripPrefix also sets `X-Forwarded-Prefix: /api/auth/idp`, which Authentik uses
-# to build absolute discovery/authorize URLs back under the app host + prefix —
-# keeping the issuer `https://app.fuzefront.com/api/auth/idp/...` consistent.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: authentik-idp-stripprefix
-  labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
-spec:
-  stripPrefix:
-    prefixes:
-      - /api/auth/idp
-    forceSlash: false
-{{- end }}
 {{- end }}
 {{- end }}
