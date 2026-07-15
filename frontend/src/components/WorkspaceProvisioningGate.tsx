@@ -155,6 +155,10 @@ export function WorkspaceProvisioningGate({
   }
 
   if (gateState === 'checking' || gateState === 'provisioning') {
+    // First-timers have their workspace CREATED (provisioning); returning users
+    // already have one and we're just LOADING it (checking). Distinct copy so an
+    // existing user doesn't see "Creating your workspace".
+    const isCreating = gateState === 'provisioning'
     return (
       <div
         style={{
@@ -165,7 +169,13 @@ export function WorkspaceProvisioningGate({
           background: 'var(--bg-primary)',
         }}
       >
-        <ProvisioningCard state="loading" />
+        <ProvisioningCard
+          state="loading"
+          title={isCreating ? undefined : 'Loading your workspace…'}
+          description={
+            isCreating ? undefined : 'Getting your workspace ready…'
+          }
+        />
       </div>
     )
   }

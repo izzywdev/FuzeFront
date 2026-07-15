@@ -4,7 +4,7 @@ import { LanguageSelector, useT } from '@fuzefront/i18n'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
 import { OrganizationSelector } from './OrganizationSelector'
-import FrontFuseLogo from '../assets/FrontFuseLogo.png'
+import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 interface TopBarProps {
   onMenuToggle?: () => void
@@ -35,7 +35,7 @@ function TopBar({ onMenuToggle }: TopBarProps) {
         style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
       >
         <img
-          src={FrontFuseLogo}
+          src={FuzeFrontLogo}
           alt="FuzeFront"
           style={{ height: '28px', width: 'auto' }}
         />

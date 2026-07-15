@@ -11,7 +11,7 @@ interface LanguageContextType {
 const translations = {
   en: {
     // Top bar
-    appHub: 'FrontFuse',
+    appHub: 'FuzeFront',
     switchToLight: 'Switch to light mode',
     switchToDark: 'Switch to dark mode',
 
@@ -24,7 +24,7 @@ const translations = {
     portal: 'Portal',
     appMenu: 'App Menu',
     logout: 'Logout',
-    frontFuse: 'FrontFuse',
+    frontFuse: 'FuzeFront',
 
     // User menu
     profile: 'Profile',
@@ -43,12 +43,12 @@ const translations = {
 
     // Dashboard
     welcome: 'Welcome',
-    welcomeMessage: 'Welcome to FrontFuse',
+    welcomeMessage: 'Welcome to FuzeFront',
     myApps: 'My Applications',
     recentActivity: 'Recent Activity',
 
     // Auth
-    welcomeToAppHub: 'Welcome to FrontFuse',
+    welcomeToAppHub: 'Welcome to FuzeFront',
     signInMessage: 'Sign in to access your microfrontend platform',
     email: 'Email',
     password: 'Password',
@@ -86,7 +86,7 @@ const translations = {
 
     // New additions
     addApp: 'Add Application',
-    welcomeToFrontFuse: 'Welcome to FrontFuse',
+    welcomeToFrontFuse: 'Welcome to FuzeFront',
     login: 'Login',
     loginButton: 'Login',
 
@@ -110,7 +110,7 @@ const translations = {
   },
   he: {
     // Top bar
-    appHub: 'FrontFuse',
+    appHub: 'FuzeFront',
     switchToLight: 'עבור למצב בהיר',
     switchToDark: 'עבור למצב כהה',
 
@@ -123,7 +123,7 @@ const translations = {
     portal: 'פורטל',
     appMenu: 'תפריט אפליקציות',
     logout: 'התנתק',
-    frontFuse: 'FrontFuse',
+    frontFuse: 'FuzeFront',
 
     // User menu
     profile: 'פרופיל',
@@ -142,12 +142,12 @@ const translations = {
 
     // Dashboard
     welcome: 'ברוך הבא',
-    welcomeMessage: 'ברוך הבא ל-FrontFuse',
+    welcomeMessage: 'ברוך הבא ל-FuzeFront',
     myApps: 'האפליקציות שלי',
     recentActivity: 'פעילות אחרונה',
 
     // Auth
-    welcomeToAppHub: 'ברוכים הבאים ל-FrontFuse',
+    welcomeToAppHub: 'ברוכים הבאים ל-FuzeFront',
     signInMessage: 'היכנס כדי לגשת לפלטפורמת המיקרו-פרונטאנד שלך',
     email: 'אימייל',
     password: 'סיסמה',
@@ -185,7 +185,7 @@ const translations = {
 
     // New additions
     addApp: 'הוסף אפליקציה',
-    welcomeToFrontFuse: 'ברוך הבא ל-FrontFuse',
+    welcomeToFrontFuse: 'ברוך הבא ל-FuzeFront',
     login: 'התחבר',
     loginButton: 'התחבר',
 
