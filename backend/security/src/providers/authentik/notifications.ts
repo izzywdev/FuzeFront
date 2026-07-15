@@ -24,18 +24,40 @@ function smsServiceBase(): string {
   ).replace(/\/$/, '')
 }
 
+/**
+ * Shared-secret bearer token the sms-service requires on every `/sms/*` route
+ * (its `SMS_AUTH_SECRET`). Server-only; never inlined. Absent in unit tests /
+ * inert mode — the request simply carries no Authorization header then.
+ */
+function smsServiceToken(): string | undefined {
+  return process.env.SMS_SERVICE_TOKEN || process.env.SMS_AUTH_SECRET || undefined
+}
+
 function emailServiceBase(): string {
   return (
     process.env.EMAIL_SERVICE_URL || 'http://email-service:3000'
   ).replace(/\/$/, '')
 }
 
-async function postJson(url: string, body: unknown): Promise<Response> {
+function emailServiceToken(): string | undefined {
+  return process.env.EMAIL_SERVICE_TOKEN || undefined
+}
+
+async function postJson(
+  url: string,
+  body: unknown,
+  bearer?: string
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+  if (bearer) headers['Authorization'] = `Bearer ${bearer}`
   let res: Response
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
   } catch (err) {
@@ -44,19 +66,37 @@ async function postJson(url: string, body: unknown): Promise<Response> {
   return res
 }
 
-/** Default HTTP-backed client wiring the family sms/email services. */
+/**
+ * Default HTTP-backed client wiring the family sms/email services.
+ *
+ * SMS OTP is delivered through the sms-service abstraction (Twilio Verify) — the
+ * security service NEVER calls Twilio directly. The sms-service exposes
+ * `POST /sms/send` and `POST /sms/verify`, both guarded by a shared-secret
+ * bearer (`SMS_AUTH_SECRET`). Twilio Verify owns OTP generation/expiry/rate
+ * limiting; we never roll our own OTP store.
+ */
 export class HttpNotificationClient implements NotificationClient {
   async sendSmsOtp(phone: string): Promise<void> {
-    const res = await postJson(`${smsServiceBase()}/send`, { to: phone })
+    const res = await postJson(
+      `${smsServiceBase()}/sms/send`,
+      { to: phone },
+      smsServiceToken()
+    )
     if (!res.ok) {
-      throw new Error(`sms-service /send returned HTTP ${res.status}`)
+      // Surfaces transport, auth (401), and rate-limit (429) failures so the
+      // caller returns a 5xx/429 rather than silently claiming "sent".
+      throw new Error(`sms-service /sms/send returned HTTP ${res.status}`)
     }
   }
 
   async checkSmsOtp(phone: string, code: string): Promise<boolean> {
-    const res = await postJson(`${smsServiceBase()}/verify`, { to: phone, code })
+    const res = await postJson(
+      `${smsServiceBase()}/sms/verify`,
+      { to: phone, code },
+      smsServiceToken()
+    )
     if (!res.ok) {
-      // Fail-closed: any non-2xx means "not verified".
+      // Fail-closed: any non-2xx (incl. 401/429) means "not verified".
       return false
     }
     const body = (await res.json().catch(() => ({}))) as { verified?: boolean }
@@ -66,11 +106,15 @@ export class HttpNotificationClient implements NotificationClient {
   async sendEmailVerification(email: string, token: string, code: string): Promise<void> {
     // email-service consumes an `email.requested` intent; we post it over HTTP.
     // Fail-closed on transport error so the caller can surface a 5xx.
-    const res = await postJson(`${emailServiceBase()}/send`, {
-      to: email,
-      template: 'verify-email',
-      data: { token, code },
-    })
+    const res = await postJson(
+      `${emailServiceBase()}/send`,
+      {
+        to: email,
+        template: 'verify-email',
+        data: { token, code },
+      },
+      emailServiceToken()
+    )
     if (!res.ok) {
       throw new Error(`email-service /send returned HTTP ${res.status}`)
     }
