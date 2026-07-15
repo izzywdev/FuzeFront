@@ -23,7 +23,7 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './tests',
-  testMatch: /prod-full-auth-flow\.spec\.ts/,
+  testMatch: /(prod-full-auth-flow|account-security-e2e)\.spec\.ts/,
   // Auth flows mutate session state and share the same test account — never
   // run them in parallel against one target.
   fullyParallel: false,
