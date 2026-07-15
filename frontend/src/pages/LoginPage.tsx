@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
-import { authAPI, AuthMethods } from '../services/api'
+import { authAPI } from '../services/api'
+import type { AuthMethods, SessionResult } from '../services/api'
+import { Button, Input, Alert, SeamDivider } from '@fuzefront/design-system'
 import FrontFuseLogo from '../assets/FrontFuseLogo.png'
 
 // Official Google "G" mark palette — these exact values are mandated by
@@ -14,167 +16,141 @@ const GOOGLE_BRAND = {
   green: '#34A853', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
 }
 
+// Neutral fallback capability descriptor — password-only. Used when the Security
+// API can't be reached so the form is still usable. No provider is named: the
+// browser only ever knows FuzeFront's own /api/v1/security surface.
+const FALLBACK_METHODS: AuthMethods = {
+  password: true,
+  social: [],
+  mfa: { enabled: false, types: [] },
+  verification: { email: false, sms: false },
+}
+
 /** Which sign-in action is in flight. Per-action (not a single boolean) so the
  * button the user clicked shows ITS progress label while the others merely
  * disable — a shared flag made every button flip to "Redirecting…" at once. */
 type PendingAction = 'credentials' | 'google' | 'signup' | null
 
+type FormMode = 'signin' | 'signup'
+
 function LoginPage() {
   const { t } = useLanguage()
+  const [mode, setMode] = useState<FormMode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [pending, setPending] = useState<PendingAction>(null)
   const loading = pending !== null
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [authMethods, setAuthMethods] = useState<AuthMethods | null>(null)
-  const [diagnostics, setDiagnostics] = useState<any>(null)
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const { setUser } = useCurrentUser()
 
-  // Handle OIDC callback on page load
+  // Route an authenticated Security-API session into the app: hydrate the
+  // current user then land on the dashboard. A `SessionResult` may instead be an
+  // `mfa_required` challenge (step-up) — surfaced as a notice here; the full
+  // step-up UI is a separate, flagged screen.
+  const completeSession = async (result: SessionResult): Promise<void> => {
+    if (result.status === 'mfa_required') {
+      setNotice(
+        'Additional verification is required to finish signing in. Please complete the verification step to continue.'
+      )
+      return
+    }
+    try {
+      const user = await authAPI.getCurrentUser()
+      setUser(user)
+      window.location.href = '/dashboard'
+    } catch (err) {
+      console.error('Failed to hydrate user after sign-in:', err)
+      setError('Signed in, but failed to load your profile. Please retry.')
+    }
+  }
+
+  // Handle a social sign-in round-trip on page load. The provider callback
+  // returns to the app with an opaque `?code=`; exchange it for a session.
   useEffect(() => {
-    authAPI.handleOIDCCallback().then(oidcResult => {
-      if (oidcResult.error) {
-        setError(`Authentication failed: ${oidcResult.error}`)
-        // Leave the login form usable so the user can retry
+    authAPI
+      .handleAuthCallback()
+      .then(({ result, error: callbackError }) => {
+        if (callbackError) {
+          setError(`Authentication failed: ${callbackError}`)
+          loadAuthMethods()
+          return
+        }
+        if (result) {
+          void completeSession(result)
+          return
+        }
         loadAuthMethods()
-        return
-      }
-
-      if (oidcResult.token) {
-        console.log('🎉 OIDC authentication successful')
-        // Get user info and redirect
-        authAPI.getCurrentUser()
-          .then(user => {
-            setUser(user)
-            window.location.href = '/dashboard'
-          })
-          .catch(err => {
-            console.error('❌ Failed to get user after OIDC login:', err)
-            setError('Failed to get user information')
-          })
-        return
-      }
-
-      // Load authentication methods
-      loadAuthMethods()
-    }).catch(err => {
-      // Backstop: a rejected promise must never freeze the page
-      console.error('❌ Unexpected error in OIDC callback handler:', err)
-      setError('Authentication encountered an unexpected error. Please try again.')
-      loadAuthMethods()
-    })
-    // Runs ONCE on mount — this is a page-load handler (OIDC-callback exchange
-    // + auth-method fetch). Depending on setUser here previously re-fired the
-    // effect on every render and flooded /api/auth/method; setUser is now a
-    // stable ref, but a mount-only effect is the correct shape regardless.
+      })
+      .catch(err => {
+        // Backstop: a rejected promise must never freeze the page.
+        console.error('Unexpected error in auth-callback handler:', err)
+        setError('Authentication encountered an unexpected error. Please try again.')
+        loadAuthMethods()
+      })
+    // Runs ONCE on mount — this is a page-load handler (social-callback exchange
+    // + auth-method fetch). setUser is a stable ref; a mount-only effect is the
+    // correct shape for a page-load handler regardless.
   }, [])
 
   const loadAuthMethods = async () => {
     try {
       const methods = await authAPI.getAuthMethods()
       setAuthMethods(methods)
-      console.log('🔧 Available authentication methods:', methods)
-    } catch (error) {
-      console.error('❌ Failed to load auth methods:', error)
-      // Fallback to local auth only
-      setAuthMethods({
-        methods: ['local'],
-        oidcConfigured: false,
-        defaultMethod: 'local'
-      })
+    } catch (err) {
+      console.error('Failed to load auth methods:', err)
+      setAuthMethods(FALLBACK_METHODS)
     }
   }
 
-  // Log environment information on component mount (dev-only: this block also
-  // fired a /health probe and dumped env/localStorage details into the prod
-  // console on every login-page visit).
-  useEffect(() => {
-    if (!import.meta.env.DEV) return
-    console.log('🏠 LoginPage mounted - Environment Info:', {
-      timestamp: new Date().toISOString(),
-      currentURL: window.location.href,
-      origin: window.location.origin,
-      hostname: window.location.hostname,
-      port: window.location.port,
-      protocol: window.location.protocol,
-      userAgent: navigator.userAgent,
-      cookieEnabled: navigator.cookieEnabled,
-      onLine: navigator.onLine,
-      language: navigator.language,
-      platform: navigator.platform,
-      localStorage: {
-        available: typeof Storage !== 'undefined',
-        authToken: !!localStorage.getItem('authToken'),
-        tokenPreview:
-          localStorage.getItem('authToken')?.substring(0, 20) + '...' || 'none',
-      },
-      env: {
-        NODE_ENV: import.meta.env.NODE_ENV,
-        MODE: import.meta.env.MODE,
-        VITE_API_URL: import.meta.env.VITE_API_URL,
-        BASE_URL: import.meta.env.BASE_URL,
-        DEV: import.meta.env.DEV,
-        PROD: import.meta.env.PROD,
-      },
-    })
-
-    // Test network connectivity
-    console.log('🌐 Testing network connectivity...')
-    fetch('/health')
-      .then(response => {
-        console.log('✅ Health endpoint accessible:', {
-          status: response.status,
-          statusText: response.statusText,
-          url: response.url,
-        })
-      })
-      .catch(error => {
-        console.log('❌ Health endpoint not accessible:', {
-          error: error.message,
-          type: error.constructor.name,
-        })
-      })
-  }, [])
-
-  // Credentials form submit. When Authentik/OIDC is configured the credentials
-  // are verified AGAINST AUTHENTIK (server-side flow-executor — no redirect);
-  // the local users-table login is only the fallback for stacks without
-  // Authentik (local dev, CI ephemeral environments).
-  const handleCredentialsLogin = async (e: React.FormEvent) => {
+  // Credentials submit — password sign-in OR account creation, both brokered by
+  // FuzeFront's own Security API. The user only ever sees FuzeFront-branded UI;
+  // the identity engine behind it is a swappable server-side adapter.
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setPending('credentials')
     setError('')
+    setNotice('')
 
     try {
-      const { token, user } = authMethods?.oidcConfigured
-        ? await authAPI.loginWithAuthentikPassword({ email, password })
-        : await authAPI.login({ email, password })
-
-      if (token && user) {
-        setUser(user)
-        window.location.href = '/dashboard'
-      } else {
-        throw new Error('Invalid response from server')
+      if (mode === 'signup') {
+        const { token, user } = await authAPI.signup({
+          email,
+          password,
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
+        })
+        if (token && user) {
+          setUser(user)
+          window.location.href = '/dashboard'
+        } else {
+          throw new Error('Invalid response from server')
+        }
+        return
       }
+
+      const result = await authAPI.login({ email, password })
+      await completeSession(result)
     } catch (err: any) {
-      console.error('❌ Login error:', err)
-      let errorMessage = err.response?.data?.error || err.message || 'Login failed'
-
+      console.error('Authentication error:', err)
+      let errorMessage =
+        err.response?.data?.error || err.message || 'Authentication failed'
       if (err.code === 'NETWORK_ERROR' || !err.response) {
-        errorMessage += ' (Network connection failed - check if backend is running)'
+        errorMessage += ' (Network connection failed — check if the service is running)'
       } else if (err.response?.status === 500) {
-        errorMessage += ' (Server error - check backend logs)'
+        errorMessage += ' (Server error — please try again shortly)'
       }
-
       setError(errorMessage)
     } finally {
       setPending(null)
     }
   }
 
-  // The redirect actions leave the page, so `pending` normally never resets.
-  // If the navigation target hangs (auth service not answering), the page
+  // The social redirect leaves the page, so `pending` normally never resets. If
+  // the navigation target hangs (the sign-in service isn't answering), the page
   // would sit on "Redirecting…" forever — recover after a grace period.
   const redirectWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -183,117 +159,34 @@ function LoginPage() {
     }
   }, [])
 
-  const startRedirect = (
-    action: 'google' | 'signup',
-    navigate: () => void | Promise<void>
-  ) => {
-    setPending(action)
+  const handleGoogleLogin = () => {
+    setPending('google')
     setError('')
+    setNotice('')
     Promise.resolve()
-      .then(navigate)
+      .then(() => authAPI.startSocialLogin('google'))
       .then(() => {
         if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
         redirectWatchdog.current = setTimeout(() => {
           setPending(null)
-          setError(
-            'The sign-in service is not responding. Please try again in a moment.'
-          )
+          setError('The sign-in service is not responding. Please try again in a moment.')
         }, 12000)
       })
       .catch((err: any) => {
-        console.error('❌ OIDC redirect error:', err)
+        console.error('Social sign-in redirect error:', err)
         setError('Failed to start sign-in')
         setPending(null)
       })
   }
 
-  const handleGoogleLogin = () =>
-    startRedirect('google', () => authAPI.loginWithOIDC())
-
-  const handleSignUp = () =>
-    startRedirect('signup', () => authAPI.signupWithOIDC())
-
-  const runNetworkDiagnostics = async () => {
-    console.log('🔍 Running network diagnostics...')
-    const results: any = {
-      timestamp: new Date().toISOString(),
-      browser: {
-        userAgent: navigator.userAgent,
-        onLine: navigator.onLine,
-        connection: (navigator as any).connection,
-        cookieEnabled: navigator.cookieEnabled,
-      },
-      location: {
-        href: window.location.href,
-        origin: window.location.origin,
-        hostname: window.location.hostname,
-        port: window.location.port,
-        protocol: window.location.protocol,
-      },
-      environment: {
-        NODE_ENV: import.meta.env.NODE_ENV,
-        MODE: import.meta.env.MODE,
-        VITE_API_URL: import.meta.env.VITE_API_URL,
-        BASE_URL: import.meta.env.BASE_URL,
-      },
-      tests: {},
-    }
-
-    // Test 1: Frontend health endpoint
-    try {
-      const response = await fetch('/health')
-      results.tests.frontendHealth = {
-        success: true,
-        status: response.status,
-        statusText: response.statusText,
-        url: response.url,
-      }
-    } catch (error: any) {
-      results.tests.frontendHealth = {
-        success: false,
-        error: error.message,
-        type: error.constructor.name,
-      }
-    }
-
-    // Test 2: Backend health endpoint
-    try {
-      const response = await fetch('/api/health')
-      results.tests.backendHealth = {
-        success: true,
-        status: response.status,
-        statusText: response.statusText,
-        url: response.url,
-      }
-    } catch (error: any) {
-      results.tests.backendHealth = {
-        success: false,
-        error: error.message,
-        type: error.constructor.name,
-      }
-    }
-
-    // Test 3: Backend auth endpoint (should return 401)
-    try {
-      const response = await fetch('/api/auth/user')
-      results.tests.authEndpoint = {
-        success: true,
-        status: response.status,
-        statusText: response.statusText,
-        expected401: response.status === 401,
-      }
-    } catch (error: any) {
-      results.tests.authEndpoint = {
-        success: false,
-        error: error.message,
-        type: error.constructor.name,
-      }
-    }
-
-    console.log('🔍 Network diagnostics results:', results)
-    setDiagnostics(results)
-    setShowDiagnostics(true)
+  const toggleMode = () => {
+    setMode(m => (m === 'signin' ? 'signup' : 'signin'))
+    setError('')
+    setNotice('')
   }
+
+  const socialEnabled = Boolean(authMethods?.social?.includes('google'))
+  const passwordEnabled = authMethods?.password !== false
 
   return (
     <div className="auth-form">
@@ -302,90 +195,108 @@ function LoginPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: '24px',
+          marginBottom: 'var(--space-6, 24px)',
         }}
       >
         <img
           src={FrontFuseLogo}
           alt="FrontFuse"
-          style={{
-            height: '48px',
-            width: 'auto',
-            marginRight: '12px',
-          }}
+          style={{ height: '48px', width: 'auto', marginRight: 'var(--space-3, 12px)' }}
         />
         <h2 style={{ margin: 0 }}>Welcome to FrontFuse</h2>
       </div>
-      <p>Sign in to access your microfrontend platform</p>
+      <p style={{ color: 'var(--text-secondary)' }}>
+        {mode === 'signin'
+          ? 'Sign in to access your microfrontend platform'
+          : 'Create your account to get started'}
+      </p>
 
       {error && (
-        <div
-          style={{
-            color: 'var(--error-color)',
-            marginBottom: '1rem',
-            padding: '10px',
-            border: '1px solid var(--error-color)',
-            borderRadius: '4px',
-            backgroundColor: 'var(--error-soft)',
-          }}
-        >
-          <strong>Authentication Error:</strong>
-          <br />
+        <Alert tone="error" title="Authentication Error" style={{ marginBottom: 'var(--space-4, 16px)' }}>
           {error}
-        </div>
+        </Alert>
+      )}
+      {notice && (
+        <Alert tone="info" style={{ marginBottom: 'var(--space-4, 16px)' }}>
+          {notice}
+        </Alert>
       )}
 
-      {/* Credentials form — the DEFAULT sign-in UI. When Authentik/OIDC is
-          configured, submitting verifies the credentials against AUTHENTIK
-          server-side (no redirect); Authentik stays the sole identity
-          authority. Without Authentik (local dev / CI stacks) the same form
-          falls back to the local users-table login. */}
-      {authMethods && (
-        <form onSubmit={handleCredentialsLogin}>
-          <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-            />
-          </div>
+      {/* Credentials form — the DEFAULT sign-in/sign-up UI, brokered entirely by
+          FuzeFront's own Security API (same-origin /api/v1/security). No identity
+          provider is named or contacted by the browser. */}
+      {authMethods && passwordEnabled && (
+        <form onSubmit={handleCredentialsSubmit}>
+          {mode === 'signup' && (
+            <div style={{ display: 'flex', gap: 'var(--space-3, 12px)' }}>
+              <Input
+                id="firstName"
+                label="First name"
+                value={firstName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
+                autoComplete="given-name"
+                style={{ flex: 1 }}
+              />
+              <Input
+                id="lastName"
+                label="Last name"
+                value={lastName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
+                autoComplete="family-name"
+                style={{ flex: 1 }}
+              />
+            </div>
+          )}
 
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
+          <Input
+            id="email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+          />
 
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {pending === 'credentials' ? 'Signing in...' : 'Sign In'}
-          </button>
+          <Input
+            id="password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            required
+          />
+
+          <Button type="submit" variant="primary" fullWidth disabled={loading}>
+            {pending === 'credentials'
+              ? mode === 'signup'
+                ? 'Creating account…'
+                : 'Signing in…'
+              : mode === 'signup'
+                ? 'Create account'
+                : 'Sign In'}
+          </Button>
         </form>
       )}
 
-      {/* Google sign-in — federated through Authentik (the platform never
-          contacts Google directly), so the button starts the Authentik OIDC
-          redirect flow where Google is offered as the identity provider. */}
-      {authMethods?.oidcConfigured && (
-        <div style={{ marginTop: '1rem' }}>
+      {/* Social sign-in — brokered through FuzeFront's Security API; the platform
+          starts a same-host authorize flow and the browser never talks to any
+          provider directly. Shown only when the capability descriptor advertises
+          the provider. */}
+      {socialEnabled && (
+        <div style={{ marginTop: 'var(--space-4, 16px)' }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              margin: '16px 0',
-              color: 'var(--text-tertiary)',
+              gap: 'var(--space-3, 12px)',
+              margin: 'var(--space-4, 16px) 0',
             }}
           >
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
-            <span style={{ padding: '0 15px', fontSize: '14px' }}>or</span>
-            <hr style={{ flex: 1, border: 'none', borderTop: '1px solid var(--border-color)' }} />
+            <SeamDivider style={{ flex: 1 }} />
+            <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 14px)' }}>or</span>
+            <SeamDivider style={{ flex: 1 }} />
           </div>
           <button
             type="button"
@@ -394,18 +305,18 @@ function LoginPage() {
             aria-label="Sign in with Google"
             style={{
               width: '100%',
-              padding: '12px',
+              padding: 'var(--space-3, 12px)',
               backgroundColor: 'var(--bg-primary)',
               color: 'var(--text-primary)',
               border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold',
+              borderRadius: 'var(--radius-md, 6px)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: 'var(--text-md, 16px)',
+              fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '10px',
+              gap: 'var(--space-2, 10px)',
             }}
           >
             {/* Official Google "G" mark — see GOOGLE_BRAND above. */}
@@ -415,75 +326,30 @@ function LoginPage() {
               <path fill={GOOGLE_BRAND.yellow} d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
               <path fill={GOOGLE_BRAND.green} d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
             </svg>
-            {pending === 'google' ? 'Redirecting to Google...' : 'Sign in with Google'}
+            {pending === 'google' ? 'Redirecting to Google…' : 'Sign in with Google'}
           </button>
         </div>
       )}
 
-      <div style={{ marginTop: '1rem' }}>
-        <button
-          type="button"
-          onClick={runNetworkDiagnostics}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: 'var(--bg-quaternary)',
-            color: 'var(--text-primary)',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          🔍 Run Network Diagnostics
-        </button>
-      </div>
-
-      {showDiagnostics && diagnostics && (
-        <div
-          style={{
-            marginTop: '1rem',
-            padding: '10px',
-            border: '1px solid var(--border-color)',
-            borderRadius: '4px',
-            backgroundColor: 'var(--bg-tertiary)',
-            fontSize: '12px',
-            maxHeight: '300px',
-            overflow: 'auto',
-          }}
-        >
-          <h4>Network Diagnostics Results</h4>
-          <pre>{JSON.stringify(diagnostics, null, 2)}</pre>
-        </div>
-      )}
-
-      {/* Sign-up affordance — redirects into Authentik's ENROLLMENT flow, which
-          chains back into the OIDC authorize step so the new user lands in the
-          app already signed in (see /api/auth/oidc/signup). */}
+      {/* Mode toggle — sign-up / sign-in both happen on this page, brokered by
+          the Security API (no external enrollment redirect). */}
       <div
         style={{
-          marginTop: '1.5rem',
-          paddingTop: '1.5rem',
+          marginTop: 'var(--space-6, 24px)',
+          paddingTop: 'var(--space-6, 24px)',
           borderTop: '1px solid var(--border-color)',
           textAlign: 'center',
         }}
       >
-        <p style={{ margin: '0 0 0.75rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          {t('signUpMessage')}
+        <p style={{ margin: '0 0 var(--space-3, 12px)', color: 'var(--text-secondary)', fontSize: 'var(--text-base, 0.9rem)' }}>
+          {mode === 'signin' ? t('signUpMessage') : 'Already have an account?'}
         </p>
-        <button
-          type="button"
-          onClick={handleSignUp}
-          disabled={loading}
-          className="btn btn-secondary"
-          style={{ width: '100%' }}
-        >
-          {pending === 'signup' ? 'Redirecting…' : t('signUp')}
-        </button>
+        <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
+          {mode === 'signin' ? t('signUp') : 'Back to sign in'}
+        </Button>
       </div>
     </div>
   )
 }
 
 export default LoginPage
-
-
