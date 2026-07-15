@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 
 // Import routes
 import authRoutes from './routes/auth'
+import securityCompatRoutes from './routes/security-compat'
 import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
@@ -274,6 +275,9 @@ try {
 }
 
 // Routes
+// Security API compat shim: expose /api/v1/security/* using the monolith's local-DB
+// auth so the E2E CI environment works without spinning up the separate security-service.
+app.use('/api/v1/security', securityCompatRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
