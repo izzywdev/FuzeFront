@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityShimRoutes from './routes/securityShim'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,10 @@ try {
 }
 
 // Routes
+// Security API shim: handles /api/v1/security/* locally (bcrypt + JWT) so that
+// the SPA's provider-neutral authAPI calls work when only the monolith runs
+// (e.g. CI). The dedicated security-service handles these in production.
+app.use('/api/v1/security', securityShimRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
