@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 90afe812a5c3
+    tag: 077f17d3a4a5
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 90afe812a5c3
+    tag: 077f17d3a4a5
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -51,14 +51,14 @@ securityService:
   adminEmail: admin@fuzefront.com
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 90afe812a5c3
+    tag: 077f17d3a4a5
   replicas: 2
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 90afe812a5c3
+    tag: 077f17d3a4a5
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -81,7 +81,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 90afe812a5c3
+    tag: 077f17d3a4a5
 
 emailService:
   image:
