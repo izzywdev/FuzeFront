@@ -210,7 +210,12 @@ spec:
           # OIDC discovery/authorize URLs at these root paths using the forwarded
           # Host (app.fuzefront.com) — which must therefore be routable here.
           # These prefixes don't overlap the app's /api, /apps, /socket.io, / routes.
-          {{- range $p := list "/application" "/if" "/source" "/flows" "/ws" "/-" "/outpost.goauthentik.io" "/static/dist" "/static/authentik" }}
+          {{- /* /api/v3 = Authentik's flow-executor + REST API, called BOTH by the
+                 login-page SPA (browser) AND server-side by the security-service
+                 (password/enrollment flow driver). Must route to authentik-server,
+                 or flow-executor calls hit FuzeFront's /api and fail with
+                 PROVIDER_UNAVAILABLE. Does not collide with FuzeFront's /api/v1/*. */ -}}
+          {{- range $p := list "/application" "/if" "/source" "/flows" "/ws" "/-" "/outpost.goauthentik.io" "/api/v3" "/static/dist" "/static/authentik" }}
           - path: {{ $p }}
             pathType: Prefix
             backend:
