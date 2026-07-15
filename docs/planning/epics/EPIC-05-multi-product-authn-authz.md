@@ -53,12 +53,22 @@ domain: Identity / Security
 - Replacing Permit — authz stays Permit; this extends the schema-merge + ReBAC.
 
 ### 🏗️ High-Level Architecture Notes
-> AuthN = Authentik OIDC (per `values-prod.yaml` `authentik` block). AuthZ = Permit.io. Namespaced
-> per-product resource keys avoid collisions. `sync-permit-schema.ts` is extended to merge a product's
-> submitted policy into the env. ReBAC: FuzeOne is the root/parent tenant; FuzeOne staff manage child
-> customer tenants (parent→child derivation). The manifest `auth` section (from #107) is the integration
-> seam — consumer authn/authz plugs into the federated-app manifest. Tests cover schema-merge + a sample
+> **The integration seam for consumers is the FuzeFront Security API (`/api/v1/security/*`, contract
+> `packages/security/openapi.yaml`) and the `@fuzefront/security-client` types — NOT any vendor.** Consumers
+> authenticate via `/session`, `/signup`, `/social/{provider}/start`, `/session/exchange`, `/methods` and
+> authorize via `/authz/check` + `/authz/grants` + `/tenants/*`, always resolving to the stable `Identity`.
+> The identity engine and the authorization engine are swappable server-side implementations hidden behind
+> the `IdentityProvider` / `AuthorizationProvider` adapters — their vendor names never appear in any
+> consumer-facing surface. Internally: namespaced per-product resource keys avoid collisions;
+> `sync-permit-schema.ts` merges a product's submitted policy into the policy env; ReBAC makes FuzeOne the
+> root/parent tenant so FuzeOne staff manage child customer tenants (parent→child derivation). The manifest
+> `auth`/`authz` sections (from #107) remain the declarative provisioning input, but the runtime consumer
+> contract is the Security API, not the manifest or a vendor SDK. Tests cover schema-merge + a sample
 > FuzeMarket policy.
+>
+> **Status note:** AuthN is shipped first behind `/api/v1/security/*`; the AuthZ endpoints (`/authz/*`,
+> `/tenants/*`) are contract-frozen and generated into the client but not yet wired in the Security
+> service — the consumer docs mark them "coming".
 
 ### 📊 Success Metrics
 | Metric | Current Baseline | Target |
@@ -105,9 +115,13 @@ domain: Identity / Security
 > the ReBAC hierarchy** so that **I understand how my product gets SSO + authz before any code is written**.
 
 #### 📌 Background & Context
-This design doc is the gate: it defines register → declare auth+authz policy → platform provisions OIDC
-client + merges Permit resources/roles → product consumes authn+authz at runtime, plus the FuzeOne-root
-ReBAC hierarchy. Subsequent stories implement against it.
+This design doc is the gate: it defines how a consumer integrates **through the FuzeFront Security API
+(`/api/v1/security/*`) and `@fuzefront/security-client`** — capability discovery + sign-in/up + session
+(AuthN) and `authz/check` + grants + tenant/role management (AuthZ), all resolving to the stable
+`Identity`, with the identity/authorization engines hidden behind server-side adapters. It also covers the
+internal provisioning (manifest `auth`/`authz` → per-product policy merge) and the FuzeOne-root ReBAC
+hierarchy. Subsequent stories implement against it. (Delivered as `docs/consumers/authn-authz-integration.md`
++ `docs/consumers/onboarding-authn-authz.md`.)
 
 #### ✅ Acceptance Criteria
 1. **Given** the requirements **When** the doc is authored at `docs/consumers/authn-authz-integration.md` **Then** it covers the full register→provision→consume flow and the ReBAC FuzeOne-root hierarchy.
