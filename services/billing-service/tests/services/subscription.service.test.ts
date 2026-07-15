@@ -6,13 +6,13 @@ class FakeSubRepo implements SubscriptionRepository {
   rows: BillingSubscription[] = [];
   async upsert(row: SubscriptionUpsert): Promise<BillingSubscription> {
     const mapped: BillingSubscription = { id: 'localsub_1', ...row };
-    const i = this.rows.findIndex((r) => r.stripeSubscriptionId === row.stripeSubscriptionId);
+    const i = this.rows.findIndex((r) => r.subscriptionId === row.subscriptionId);
     if (i >= 0) this.rows[i] = mapped;
     else this.rows.push(mapped);
     return mapped;
   }
   async findByStripeId(id: string) {
-    return this.rows.find((r) => r.stripeSubscriptionId === id) ?? null;
+    return this.rows.find((r) => r.subscriptionId === id) ?? null;
   }
   async findByCustomer(cid: string) {
     return this.rows.find((r) => r.customerId === cid) ?? null;
@@ -29,8 +29,8 @@ const fakeCustomers = {
 } as any;
 
 const plansList = [
-  { stripePriceId: 'price_starter', tierName: 'starter', unitAmount: 900 },
-  { stripePriceId: 'price_pro', tierName: 'pro', unitAmount: 2900 },
+  { priceId: 'price_starter', tierName: 'starter', unitAmount: 900 },
+  { priceId: 'price_pro', tierName: 'pro', unitAmount: 2900 },
 ];
 const fakePlans = { getActivePlans: jest.fn().mockResolvedValue(plansList) } as any;
 
@@ -103,7 +103,7 @@ describe('SubscriptionService.update', () => {
   it('upgrade uses create_prorations', async () => {
     const repo = new FakeSubRepo();
     await repo.upsert({
-      customerId: 'localcust_1', stripeSubscriptionId: 'sub_1', stripePriceId: 'price_starter',
+      customerId: 'localcust_1', subscriptionId: 'sub_1', priceId: 'price_starter',
       planTier: 'starter', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
       currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
     });
@@ -121,7 +121,7 @@ describe('SubscriptionService.update', () => {
   it('downgrade uses none + billing_cycle_anchor unchanged (period-end)', async () => {
     const repo = new FakeSubRepo();
     await repo.upsert({
-      customerId: 'localcust_1', stripeSubscriptionId: 'sub_1', stripePriceId: 'price_pro',
+      customerId: 'localcust_1', subscriptionId: 'sub_1', priceId: 'price_pro',
       planTier: 'pro', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
       currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
     });
@@ -142,7 +142,7 @@ describe('SubscriptionService.cancel', () => {
   it('sets cancel_at_period_end true', async () => {
     const repo = new FakeSubRepo();
     await repo.upsert({
-      customerId: 'localcust_1', stripeSubscriptionId: 'sub_1', stripePriceId: 'price_pro',
+      customerId: 'localcust_1', subscriptionId: 'sub_1', priceId: 'price_pro',
       planTier: 'pro', status: 'active', seatQuantity: 1, trialStart: null, trialEnd: null,
       currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
     });

@@ -88,8 +88,8 @@ export async function handleCheckoutCompleted(
       ? mapStripeSubscription(sub, { customerId: entity.id, planTier })
       : {
           customerId: entity.id,
-          stripeSubscriptionId,
-          stripePriceId: priceId,
+          subscriptionId: stripeSubscriptionId,
+          priceId: priceId,
           planTier,
           status,
           seatQuantity,

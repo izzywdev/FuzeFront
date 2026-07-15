@@ -1,0 +1,76 @@
+name: Billing Service Tests
+
+# Runs the billing-service DB-backed test suites in CI. Crucially this provisions
+# a real Postgres so the invoice INTEGRATION tests (migration 003 +
+# PgInvoiceRepository: store -> read -> keyset-paginate, idempotent upsert) actually
+# EXECUTE against a real database instead of self-skipping. Without a reachable
+# DATABASE_URL the integration suite skips (tests/integration/*.integration.test.ts),
+# which is what happened before this workflow existed. The no-DB acceptance suite
+# (tests/acceptance) runs alongside.
+#
+# billing-service is a standalone package (NOT part of the root npm workspace /
+# lerna set), so deps are installed inside the service dir, mirroring its
+# Dockerfile.
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'services/billing-service/**'
+      - '.github/workflows/billing-service-tests.yml'
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  db-integration:
+    name: Billing service DB integration + acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Stateless Postgres service container. Same image/creds convention as
+    # backend-tests.yml. The DB name matches docker-compose.test.yml so the
+    # integration test's DATABASE_URL points at a pre-created database (the
+    # least-privilege migrations never CREATE DATABASE; the test creates the
+    # billing SCHEMA up-front as the superuser, then runs the real migrations).
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: fuzefront_platform_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Install billing-service dependencies
+        working-directory: services/billing-service
+        # Matches the service Dockerfile (`npm install --ignore-scripts`): this
+        # package is standalone (not a workspace member), and no shared build is
+        # needed — jest maps @fuzefront/shared to the TS source via moduleNameMapper.
+        run: npm install --ignore-scripts
+
+      - name: Run invoice DB integration + acceptance suites (real Postgres)
+        working-directory: services/billing-service
+        env:
+          # Presence of DATABASE_URL is what flips the gated suites from
+          # describe.skip -> describe (they run for real against the service DB).
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/fuzefront_platform_test
+          NODE_ENV: test
+        run: |
+          echo "Running DB-backed integration + acceptance suites against real Postgres..."
+          npx jest tests/integration tests/acceptance --runInBand --verbose

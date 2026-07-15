@@ -283,7 +283,7 @@ async function forward(
      * X-Billing-* headers so the service can re-verify. When
      * `injectEntityToBody` is true it ALSO overrides the body's
      * entityType/entityId (for routes whose upstream schema carries the entity
-     * selector — create / setup-intent). The :stripeSubscriptionId routes use
+     * selector — create / setup-intent). The :subscriptionId routes use
      * an upstream schema with `additionalProperties: false` and NO entity
      * selector, so for those the entity travels via headers only.
      */
@@ -334,7 +334,7 @@ async function forward(
     delete sanitized.entityId
     delete sanitized.organizationId
     // Re-add the SERVER-DERIVED entity only for routes whose upstream schema
-    // accepts it (create / setup-intent). For :stripeSubscriptionId routes the
+    // accepts it (create / setup-intent). For :subscriptionId routes the
     // upstream schema forbids extra props, so the entity goes via headers only.
     if (options.authorizedEntity && options.injectEntityToBody) {
       sanitized.entityType = options.authorizedEntity.entityType
@@ -410,9 +410,16 @@ async function forward(
   } catch (err) {
     const ax = err as AxiosError
     // Connection refused / DNS / timeout — the service is unreachable.
+    // Collapse CR/LF from every dynamic value before logging so externally
+    // controlled input can't inject/forge log records. eslint no-control-regex
+    // safe, and the newline replace is the barrier CodeQL js/log-injection
+    // recognizes; the constant format string covers js/tainted-format-string.
+    const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
     console.error(
-      `[billing-proxy] upstream error for ${req.method} ${options.path}:`,
-      ax.code || ax.message
+      '[billing-proxy] upstream error for %s %s: %s',
+      oneLine(req.method),
+      oneLine(options.path),
+      oneLine(ax.code || ax.message)
     )
     res
       .status(502)
@@ -433,7 +440,7 @@ router.get('/plans', (req, res) =>
 // level authorization against the target entity before forwarding.
 //
 // Mutations require 'manage' on the target org; reads require 'read'. For the
-// :stripeSubscriptionId routes the caller must declare the owning entity
+// :subscriptionId routes the caller must declare the owning entity
 // (entityType + entityId / organizationId) so the proxy can authorize them on
 // it; the proxy forwards the trusted (authorized) entity downstream as
 // X-Billing-* headers and the billing-service re-verifies the subscription
@@ -465,7 +472,7 @@ router.post(
 // { subscription: <view> | null }. Absence is 200 {subscription:null}, never a
 // 404 — the UI treats null as "no current subscription".
 //
-// MUST be registered BEFORE GET /subscriptions/:stripeSubscriptionId so the
+// MUST be registered BEFORE GET /subscriptions/:subscriptionId so the
 // param route does not shadow this collection route.
 router.get(
   '/subscriptions',
@@ -483,13 +490,13 @@ router.get(
 )
 
 router.get(
-  '/subscriptions/:stripeSubscriptionId',
+  '/subscriptions/:subscriptionId',
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'read')
     if (!entity) return
     return forward(req, res, {
-      path: `/subscriptions/${encodeURIComponent(req.params.stripeSubscriptionId)}`,
+      path: `/subscriptions/${encodeURIComponent(req.params.subscriptionId)}`,
       internalAuth: true,
       authorizedEntity: entity,
       actorUserId: req.user!.id,
@@ -498,13 +505,13 @@ router.get(
 )
 
 router.patch(
-  '/subscriptions/:stripeSubscriptionId',
+  '/subscriptions/:subscriptionId',
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
     if (!entity) return
     return forward(req, res, {
-      path: `/subscriptions/${encodeURIComponent(req.params.stripeSubscriptionId)}`,
+      path: `/subscriptions/${encodeURIComponent(req.params.subscriptionId)}`,
       internalAuth: true,
       authorizedEntity: entity,
       actorUserId: req.user!.id,
@@ -513,13 +520,13 @@ router.patch(
 )
 
 router.delete(
-  '/subscriptions/:stripeSubscriptionId',
+  '/subscriptions/:subscriptionId',
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
     if (!entity) return
     return forward(req, res, {
-      path: `/subscriptions/${encodeURIComponent(req.params.stripeSubscriptionId)}`,
+      path: `/subscriptions/${encodeURIComponent(req.params.subscriptionId)}`,
       internalAuth: true,
       authorizedEntity: entity,
       actorUserId: req.user!.id,

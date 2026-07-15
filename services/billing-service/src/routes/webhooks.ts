@@ -22,11 +22,18 @@ export interface WebhookDeps {
 export function createWebhookRouter(deps: WebhookDeps): Router {
   const router = Router();
 
+  // Contract path is the vendor-neutral `/webhooks/{provider}` (openapi.yaml).
+  // The `:provider` param keeps the live provider endpoint URL working — a POST
+  // to `/api/v1/billing/webhooks/stripe` resolves here with `provider = 'stripe'`
+  // — while the contract stays generic. The real provider-signature header is
+  // still read for verification; the neutral `X-Provider-Signature` is accepted
+  // as an alias.
   router.post(
-    '/webhooks/stripe',
+    '/webhooks/:provider',
     express.raw({ type: 'application/json' }),
     async (req: Request, res: Response) => {
-      const sig = req.headers['stripe-signature'];
+      const sig =
+        req.headers['stripe-signature'] ?? req.headers['x-provider-signature'];
       if (!sig) {
         return res.status(400).send('Missing stripe-signature header');
       }

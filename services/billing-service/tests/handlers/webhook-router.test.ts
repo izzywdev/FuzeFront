@@ -14,8 +14,8 @@ const BASIC_PRICE_ID = 'price_1TnCqVDaNn3aKLEz05TbFbFQ';
 function mirrorRow(overrides: any = {}) {
   return {
     id: '77777777-7777-4777-8777-777777777777',
-    stripeSessionId: 'cs_pay_1',
-    stripePaymentIntentId: null,
+    sessionId: 'cs_pay_1',
+    paymentIntentId: null,
     productKey: 'mendys-datasets',
     externalOrderId: 'order-42',
     entityType: 'organization',
@@ -129,7 +129,7 @@ describe('webhook-router — checkout.session.completed mode dispatch', () => {
     );
 
     expect(ctx.payments.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ stripeSessionId: 'cs_pay_1', status: 'paid' }),
+      expect.objectContaining({ sessionId: 'cs_pay_1', status: 'paid' }),
     );
     expect(ctx.emitter.paymentCompleted).toHaveBeenCalledTimes(1);
     expect(ctx.subscriptions.upsert).not.toHaveBeenCalled();

@@ -362,7 +362,11 @@ jobs:
       - name: Lint specs (Spectral) + smoke the Prism mock
         if: steps.discover.outputs.found == 'true'
         run: |
-          npm install -g @stoplight/spectral-cli @stoplight/prism-cli
+          # Pin the CLIs: unpinned installs pull a spectral-cli whose transitive
+          # @asyncapi/specs ships an ESM index that crashes on CJS require
+          # ("module is not defined in ES module scope") before any lint runs.
+          # 6.11.1 predates that break and lints OpenAPI 3.1 fine.
+          npm install -g @stoplight/spectral-cli@6.11.1 @stoplight/prism-cli@5.8.1
           echo "${{ steps.discover.outputs.specs }}" | while read -r spec; do
             [ -z "$spec" ] && continue
             echo "=== $spec ==="

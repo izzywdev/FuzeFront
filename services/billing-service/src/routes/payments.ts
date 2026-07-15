@@ -224,8 +224,8 @@ export function createPaymentsRouter(deps: PaymentsDeps): Router {
         // converges the row later.
         try {
           await deps.payments.upsert({
-            stripeSessionId: session.id,
-            stripePaymentIntentId:
+            sessionId: session.id,
+            paymentIntentId:
               typeof session.payment_intent === 'string'
                 ? session.payment_intent
                 : session.payment_intent?.id ?? null,
@@ -321,8 +321,8 @@ export function createPaymentsRouter(deps: PaymentsDeps): Router {
       }
 
       const payment: BillingPayment = await deps.payments.upsert({
-        stripeSessionId: session.id,
-        stripePaymentIntentId:
+        sessionId: session.id,
+        paymentIntentId:
           typeof session.payment_intent === 'string'
             ? session.payment_intent
             : session.payment_intent?.id ?? null,
