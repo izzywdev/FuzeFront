@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -83,6 +83,23 @@ tags:
     description: Provider-agnostic multi-factor authentication — factor management + login step-up.
   - name: verify
     description: Contact-ownership verification (email + phone), distinct from MFA login step-up.
+  - name: sessions
+    description: >-
+      Active-session / device management for the current user (list devices,
+      revoke one, revoke all others). Distinct from `session` (single-session
+      login lifecycle).
+  - name: account
+    description: >-
+      Self-service account credential & connection management — password reset,
+      set/add password on a social-only account, and linked social connections.
+x-design-note:
+  accountSwitching: >-
+    There is deliberately NO server "switch account" endpoint. Account
+    switching is a CLIENT-SIDE multi-session concern: the SPA may hold multiple
+    independent `/v1/security/session` tokens (one per signed-in account) and
+    switches the active account by selecting which token it presents on the
+    same-origin API base. The server treats each token as its own session; it
+    never needs to know which one the UI currently considers "active".
 paths:
   # ─────────────────────────────── AuthN: session ───────────────────────────
   /v1/security/session:
@@ -181,6 +198,277 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton code-exchange action.
+  # ─────────────────────── AuthN: self-service password reset ────────────────
+  /v1/security/session/password/reset-request:
+    post:
+      tags: [account]
+      summary: Request a password-reset link/code (unauthenticated)
+      operationId: requestPasswordReset
+      description: >-
+        Begins self-service password reset for the supplied email. ALWAYS
+        returns 202 regardless of whether an account exists — the response never
+        reveals account existence (no user enumeration). If an account exists, a
+        reset link/code is dispatched via the family email service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '202':
+          description: >-
+            Accepted. A reset message was dispatched IF the email maps to an
+            account. Response is identical either way (no enumeration).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton reset-request action; no collection.
+  /v1/security/session/password/reset-confirm:
+    post:
+      tags: [account]
+      summary: Confirm a password reset with a token (unauthenticated)
+      operationId: confirmPasswordReset
+      description: >-
+        Completes password reset by presenting the single-use `token` from the
+        reset message together with a `newPassword`. Fail-closed on an
+        unknown/expired/consumed token or a password that fails policy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '200':
+          description: Password reset; the account may now sign in with the new password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      x-pagination: exempt
+      x-pagination-reason: Singleton reset-confirm action; no collection.
+  # ─────────────────────── Account: set/add password ────────────────────────
+  /v1/security/password:
+    post:
+      tags: [account]
+      summary: Set/add a password on a social-only account
+      operationId: setPassword
+      description: >-
+        Adds a password sign-in method to the authenticated account (e.g. an
+        account created via social login that has no password yet). Returns 409
+        if a password already exists — use the reset flow to change an existing
+        one. Fail-closed on a password that fails policy.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPasswordRequest'
+      responses:
+        '200':
+          description: Password set; the account now has a password sign-in method.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityConnections'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: A password sign-in method already exists on this account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton set-password action; no collection.
+  # ─────────────────────── Sessions: device management ──────────────────────
+  /v1/security/sessions:
+    get:
+      tags: [sessions]
+      summary: List the current user's active sessions / devices
+      operationId: listSessions
+      description: >-
+        Returns the authenticated user's active sessions, one per device/agent,
+        with the current session flagged (`current: true`). Bounded per user (a
+        person signs in from a handful of devices), so the full set is returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The active sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SessionDevice'
+                required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Bounded per-user active-session set, not user-controlled data growth.
+    delete:
+      tags: [sessions]
+      summary: Revoke all other sessions (keep the current one)
+      operationId: revokeOtherSessions
+      description: >-
+        Revokes every active session for the authenticated user EXCEPT the one
+        making the request. Idempotent. Useful for "sign out everywhere else".
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Other sessions revoked; the current session remains valid.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton bulk-revoke mutation; no collection returned.
+  /v1/security/sessions/{id}:
+    delete:
+      tags: [sessions]
+      summary: Revoke one session by id
+      operationId: revokeSession
+      description: >-
+        Revokes a single active session belonging to the authenticated user.
+        Idempotent — revoking an absent/already-revoked session still returns
+        204. A user may revoke their current session (equivalent to logout).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The session id from `GET /v1/security/sessions`.
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session revoked (idempotent).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation; no collection.
+  # ─────────────────────── Account: social linking ──────────────────────────
+  /v1/security/social/{provider}/link:
+    post:
+      tags: [social]
+      summary: Begin linking a social provider to the current account
+      operationId: linkSocial
+      description: >-
+        Starts a server-brokered handshake to link the named social provider to
+        the authenticated account. Like login, the browser only ever transits
+        the app host and the provider's own consent host. Returns either a 302
+        redirect to the consent flow, or `{ redirectUrl }` for the SPA to
+        navigate to. On completion the provider returns to
+        `GET /v1/security/social/callback`, which links (rather than signs in)
+        when an authenticated link handshake is in progress.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: Social provider slug. Extensible; `google` is the first supported value.
+          schema:
+            $ref: '#/components/schemas/SocialProvider'
+      responses:
+        '200':
+          description: Link handshake started; navigate the browser to `redirectUrl`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialLinkStart'
+        '302':
+          description: Redirect to the social provider consent flow.
+          headers:
+            Location:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: This provider is already linked to the account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton link handshake; no collection.
+    delete:
+      tags: [social]
+      summary: Unlink a social provider from the current account
+      operationId: unlinkSocial
+      description: >-
+        Removes the named social provider from the authenticated account.
+        Fail-closed: returns 409 if unlinking would leave the account with NO
+        remaining sign-in method (no other social connection AND no password) —
+        the account must always retain at least one way to sign in.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: Social provider slug to unlink.
+          schema:
+            $ref: '#/components/schemas/SocialProvider'
+      responses:
+        '200':
+          description: Provider unlinked; remaining connections returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityConnections'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            Unlinking would leave the account with no sign-in method. Set a
+            password or link another provider first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton unlink mutation; no collection.
+  /v1/security/identity/connections:
+    get:
+      tags: [account]
+      summary: List the current account's sign-in connections
+      operationId: getIdentityConnections
+      description: >-
+        Returns the authenticated account's linked social providers and whether
+        it has a password sign-in method. The UI uses this to render link/unlink
+        affordances and to decide whether "set password" is offered. Bounded by
+        the fixed provider catalogue, so the full set is returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The account's sign-in connections.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityConnections'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Bounded by the fixed social-provider catalogue, not user-controlled growth.
   # ─────────────────────────────── AuthN: social ────────────────────────────
   /v1/security/social/{provider}/start:
     get:
