@@ -4,7 +4,7 @@ import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { AuthMethods, SessionResult } from '../services/api'
 import { Button, Input, Alert, SeamDivider } from '@fuzefront/design-system'
-import FrontFuseLogo from '../assets/FrontFuseLogo.png'
+import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 // Official Google "G" mark palette — these exact values are mandated by
 // Google's brand identity guidelines for third-party sign-in buttons and must
@@ -35,7 +35,10 @@ type FormMode = 'signin' | 'signup'
 
 function LoginPage() {
   const { t } = useLanguage()
-  const [mode, setMode] = useState<FormMode>('signin')
+  // Open in sign-up mode when the user arrived at /signup; sign-in otherwise.
+  const [mode, setMode] = useState<FormMode>(
+    window.location.pathname.includes('signup') ? 'signup' : 'signin'
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [firstName, setFirstName] = useState('')
@@ -199,11 +202,11 @@ function LoginPage() {
         }}
       >
         <img
-          src={FrontFuseLogo}
-          alt="FrontFuse"
+          src={FuzeFrontLogo}
+          alt="FuzeFront"
           style={{ height: '48px', width: 'auto', marginRight: 'var(--space-3, 12px)' }}
         />
-        <h2 style={{ margin: 0 }}>Welcome to FrontFuse</h2>
+        <h2 style={{ margin: 0 }}>Welcome to FuzeFront</h2>
       </div>
       <p style={{ color: 'var(--text-secondary)' }}>
         {mode === 'signin'

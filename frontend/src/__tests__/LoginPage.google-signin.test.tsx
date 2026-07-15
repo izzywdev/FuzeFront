@@ -35,7 +35,7 @@ import type { AuthMethods } from '@fuzefront/security-client'
 // ── Hoisted mocks (processed before imports) ──────────────────────────────
 
 // PNG asset — jsdom cannot load real images; return a stable string.
-vi.mock('../assets/FrontFuseLogo.png', () => ({ default: 'mock-logo.png' }))
+vi.mock('../assets/FuzeFrontLogo.svg', () => ({ default: 'mock-logo.png' }))
 
 // LanguageContext — LoginPage calls useLanguage(). Echo translation keys so
 // t('signUp') returns 'signUp', making button text predictable in assertions.
