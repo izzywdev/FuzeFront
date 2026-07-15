@@ -1,9 +1,12 @@
-# Consumer onboarding: authN + authZ (FuzeMarket worked example)
+# Consumer onboarding: authN + authZ (step-by-step)
 
-Step-by-step recipe for onboarding a **consumer product** to FuzeFront's
-authentication (Authentik OIDC) and authorization (Permit.io). The running
-example is **FuzeMarket**: a marketplace product with resources
-`Listing`/`Order`/`Cart` and roles `seller`/`buyer`/`market-admin`.
+A recipe for wiring a **consumer product** to FuzeFront authentication and
+authorization. You integrate against exactly two things — the **FuzeFront
+Security API** (`/api/v1/security/*`) and the **`@fuzefront/security-client`**
+types. You never touch an identity or policy vendor.
+
+The running example is **FuzeMarket**: a marketplace product with resources like
+`Listing`/`Order`/`Cart` and roles like `seller`/`buyer`/`market-admin`.
 
 For the architecture and trust model, read
 [`authn-authz-integration.md`](./authn-authz-integration.md) first.
@@ -12,165 +15,254 @@ For the architecture and trust model, read
 
 ## Prerequisites
 
-- Your product is (or will be) registered with the platform via an **App
-  Manifest** (the federated-app registration contract).
-- You have a product key: a lowercase `[a-z0-9-]` slug, e.g. `fuzemarket`. This
-  is your **namespace** for every Permit resource/role and your Authentik
-  application slug.
+- Your product is served **same-origin** with the platform (under
+  `app.fuzefront.com` in prod, or local TLS in dev), so `/api/v1/security/*`
+  resolves without a cross-origin base URL. Never hard-code an absolute API host.
+- You can read a GitHub Packages token to install a private `@fuzefront/*`
+  package (below).
 
 ---
 
-## Step 1 — Declare your `auth` section (authN)
+## Step 0 — Install `@fuzefront/security-client`
 
-Add an `auth.oidc` block to your App Manifest:
+The client is published **privately** to GitHub Packages under the `@fuzefront`
+scope (`access: restricted`). Add a scoped `.npmrc` (do **not** commit a token —
+use an env var / CI secret):
 
-```jsonc
-"auth": {
-  "oidc": {
-    "applicationSlug": "fuzemarket",
-    "redirectUris": [
-      "https://market.fuzefront.com/api/auth/oidc/callback"
-    ],
-    "scopes": ["openid", "email", "profile"],
-    "claims": { "sub": "userId", "email": "email", "groups": "roles" }
+```ini
+# .npmrc
+@fuzefront:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+```bash
+npm install @fuzefront/security-client
+```
+
+```ts
+import type {
+  Identity,
+  AuthMethods,
+  SessionResult,
+  SECURITY_CONTRACT_VERSION,
+} from '@fuzefront/security-client'
+// generated request/response shapes:
+import type { components } from '@fuzefront/security-client'
+type LoginResponse = components['schemas']['LoginResponse']
+type AuthzCheckRequest = components['schemas']['AuthzCheckRequest']
+```
+
+> **The package is types-only.** It ships the OpenAPI-generated TypeScript types
+> and the stable hand-authored contract types (the `Identity` keystone). There is
+> no `client.login()` / `createClient()` — you call the same-origin Security API
+> with your own `fetch`/HTTP layer and let these types make contract drift a
+> compile error. (A non-TS consumer just calls the HTTP API directly using
+> [`packages/security/openapi.yaml`](../../packages/security/openapi.yaml) as the
+> reference.)
+
+---
+
+## Step 1 — Discover capabilities and render the sign-in UI
+
+Call `GET /api/v1/security/methods` and render affordances from the neutral
+`AuthMethods` descriptor — never assume a provider:
+
+```ts
+const methods: AuthMethods = await fetch('/api/v1/security/methods').then(r => r.json())
+// methods.password        → show the email/password form
+// methods.social          → e.g. ["google"] → render those buttons
+// methods.mfa.enabled      → be ready for an mfa_required SessionResult
+// methods.verification     → whether email/SMS ownership verification is offered
+```
+
+---
+
+## Step 2 — Sign users in / up
+
+### Password login
+
+```ts
+const res: SessionResult = await fetch('/api/v1/security/session', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+}).then(r => r.json())
+
+if (res.status === 'authenticated') {
+  saveToken(res.token)              // FuzeFront-minted session token
+} else {
+  // res.status === 'mfa_required'
+  await completeMfa(res.challengeId, res.factors)  // /mfa/challenge → /mfa/verify
+}
+```
+
+### Social login (server-brokered)
+
+1. Navigate the browser to `GET /api/v1/security/social/google/start`
+   (optionally `?redirectTo=/some/app/path`, same-origin only).
+2. The platform brokers the provider handshake and returns the browser to your
+   app with a single-use `?code=…` (never a token in the URL).
+3. Exchange it:
+
+```ts
+const res: SessionResult = await fetch('/api/v1/security/session/exchange', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ code }),
+}).then(r => r.json())
+// same authenticated | mfa_required handling as above
+```
+
+The browser only ever sees `app.fuzefront.com` and the provider's own consent
+host — no internal identity host.
+
+### Signup
+
+```ts
+await fetch('/api/v1/security/signup', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email, password, firstName, lastName, tenantName }),
+}) // 201 → LoginResponse (session established); 409 if the email exists
+```
+
+> A valid token **authenticates**; it does **not** authorize. Always re-check
+> permissions at your API (Step 4).
+
+---
+
+## Step 3 — Read "who am I" (Identity)
+
+On every authenticated request, resolve the caller to the stable `Identity` via
+the platform — do not parse the JWT or fetch a JWKS yourself:
+
+```ts
+const { identity, user } = await fetch('/api/v1/security/session', {
+  headers: { authorization: `Bearer ${token}` },
+}).then(r => r.json())
+
+// identity: Identity
+//   identity.userId    → stable subject id (use this as the user id everywhere)
+//   identity.tenantId  → tenant/org scope, or null if unresolved
+//   identity.roles     → string[]
+```
+
+- Use `identity.userId` as the canonical user id — do **not** invent your own.
+- If `identity.tenantId` is `null`, **fail closed** on any tenant-scoped
+  authorization; never guess a tenant.
+- `identity.authMode` (`legacy-hs256` → `federated-jwks`) is informational; your
+  code stays the same across the migration because `Identity` is invariant.
+
+For M2M callers, introspect the token instead:
+`POST /api/v1/security/tokens/introspect` with `{ token }` → fail-closed
+`{ active, subject, tenantId, scope, expiresAt }`.
+
+---
+
+## Step 4 — Authorize actions
+
+> **Status:** the AuthZ endpoints below are **frozen in the contract** and
+> generated into the client, but are **not yet live** in the Security service —
+> AuthN ships first, AuthZ follows. Type your integration against them now and
+> gate the calls behind your own feature flag until the AuthZ rollout lands.
+
+Ask the platform for the decision — never a local role cache and never a policy
+SDK. `authz/check` is authoritative and fail-closed (`{ allow: false }` on any
+error):
+
+```ts
+async function may(subject: string, tenant: string,
+                   resourceType: string, action: string, key?: string) {
+  const body: AuthzCheckRequest = {
+    subject, tenant, resource: { type: resourceType, key }, action,
   }
+  const { allow } = await fetch('/api/v1/security/authz/check', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  }).then(r => r.json())
+  return allow
 }
+
+// guard a route
+app.patch('/listings/:id', async (req, res) => {
+  if (!(await may(req.identity.userId, req.identity.tenantId!, 'Listing', 'update', req.params.id))) {
+    return res.status(403).json({ error: 'forbidden', code: 'FORBIDDEN' })
+  }
+  // …
+})
 ```
 
-The platform provisions a **per-product Authentik application + OIDC provider**
-from this. You receive:
+Batch checks with `POST /api/v1/security/authz/bulk-check` (≤ 200, index-aligned
+decisions); read a subject's effective permissions with
+`GET /api/v1/security/authz/permissions?subject&tenant`.
 
-- `AUTHENTIK_ISSUER_URL` — shared issuer (same for all products).
-- `AUTHENTIK_CLIENT_ID` / `AUTHENTIK_CLIENT_SECRET` — **your** client, delivered
-  as a k8s Secret (SealedSecret in prod). Never commit these.
-- `AUTHENTIK_REDIRECT_URI` — one of your declared redirect URIs.
+Expected FuzeMarket outcomes once AuthZ is live:
 
-At runtime, run the OIDC code flow against the shared issuer with your client
-(mirror `backend/src/services/oidc.ts`). The `sub` claim is the **same user id**
-the platform uses for Permit role assignments — do not invent your own user ids.
-
-> A valid token authenticates; it does **not** authorize. Always re-check
-> permissions against Permit at your API (Step 4).
-
----
-
-## Step 2 — Write your `ProductPolicy` (authZ declaration)
-
-Declare resources/actions/roles with **bare** keys (no `fuzemarket.` prefix —
-the platform adds it). This is the FuzeMarket policy
-(`backend/src/permit/products/fuzemarket.policy.ts`):
-
-```ts
-export const fuzemarketPolicy: ProductPolicy = {
-  product: 'fuzemarket',
-  name: 'FuzeMarket',
-  resources: [
-    { key: 'Listing', name: 'Listing',
-      actions: { create:{name:'Create'}, read:{name:'Read'}, update:{name:'Update'},
-                 delete:{name:'Delete'}, publish:{name:'Publish'} } },
-    { key: 'Order', name: 'Order',
-      actions: { create:{name:'Create'}, read:{name:'Read'}, update:{name:'Update'},
-                 cancel:{name:'Cancel'}, refund:{name:'Refund'} } },
-    { key: 'Cart', name: 'Cart',
-      actions: { read:{name:'Read'}, add_item:{name:'Add Item'},
-                 remove_item:{name:'Remove Item'}, checkout:{name:'Checkout'} } },
-  ],
-  roles: [
-    { key: 'seller', name: 'Seller',
-      permissions: ['Listing:create','Listing:read','Listing:update','Listing:delete',
-                    'Listing:publish','Order:read','Order:update','Order:refund'] },
-    { key: 'buyer', name: 'Buyer',
-      permissions: ['Listing:read','Cart:read','Cart:add_item','Cart:remove_item',
-                    'Cart:checkout','Order:create','Order:read','Order:cancel'] },
-    { key: 'market-admin', name: 'Market Admin',
-      permissions: [/* full control of Listing/Order/Cart */] },
-  ],
-}
-```
-
-Rules enforced by `validateProductPolicy()`:
-
-- `product` must match `^[a-z][a-z0-9-]{1,30}[a-z0-9]$`.
-- Resource/role keys must be unique and match `^[A-Za-z][A-Za-z0-9_-]*$`.
-- Every permission `Resource:action` must reference a resource **and** action
-  you declared. Typos fail fast at sync time, not at runtime.
-
----
-
-## Step 3 — Merge & sync into Permit
-
-The platform validates, **namespaces**, and merges your policy into the Permit
-environment schema, then runs the idempotent sync:
-
-```ts
-import { syncPermitSchemaWithProducts } from './permit/sync-permit-schema'
-import { fuzemarketPolicy } from './permit/products/fuzemarket.policy'
-import permit from './config/permit'
-
-await syncPermitSchemaWithProducts(permit, [fuzemarketPolicy])
-```
-
-After sync, Permit has (alongside the platform's own resources/roles):
-
-| Bare | In Permit |
-| --- | --- |
-| resource `Listing` | `fuzemarket.Listing` |
-| role `seller` | `fuzemarket.seller` |
-| permission `Listing:create` | `fuzemarket.Listing:create` |
-
-Re-running sync is safe and only touches **your** namespace.
-
----
-
-## Step 4 — Assign roles & check permissions at runtime
-
-Use the helpers in `backend/src/utils/permit/product-authz.ts` — they namespace
-for you, so you pass bare names:
-
-```ts
-// onboard a user as a seller within an org (tenant)
-await assignProductRole(userId, 'fuzemarket', 'seller', orgId)
-
-// guard an API route
-router.patch('/listings/:id',
-  requireProductPermission('fuzemarket', 'Listing', 'update',
-    req => req.organizationId,           // tenant
-    req => req.params.id),               // resource instance
-  updateListingHandler)
-
-// or check inline
-if (!(await checkProductPermission(userId, 'fuzemarket', 'Listing', 'publish', orgId, listingId))) {
-  return res.status(403).json({ error: 'forbidden' })
-}
-```
-
-Expected outcomes for FuzeMarket:
-
-- a `buyer` calling `Listing:create` or `Listing:publish` → **denied**.
-- a `seller` calling `Listing:publish` → **allowed**.
+- a `buyer` calling `Listing:update` → **denied**.
+- a `seller` calling `Listing:update` on their listing → **allowed**.
 - a `market-admin` calling `Order:refund` → **allowed**.
 
 ---
 
-## Step 5 — Multi-tenant & the FuzeOne hierarchy
+## Step 5 — Manage tenants, members, roles, and grants
 
-- Authorization is **per-tenant**: a user's `fuzemarket.seller` role in org A
-  does **not** grant it in org B. Assign per org.
-- **FuzeOne staff** who hold the ReBAC `org-admin` role on the **FuzeOne root
-  org** automatically administer **child** orgs (see §5 of the integration doc).
-  Your product gets this for free via the org hierarchy — you don't model it.
-- When the platform creates a customer org it calls
-  `setOrganizationParent(childOrgId, fuzeOneRootOrgId)` so the derivation
-  applies. Your product never sets parents itself.
+Assign roles and manage org membership through the API (again, contract-frozen /
+AuthZ-rollout gated):
+
+```ts
+// make a user a seller in a tenant (tenant-wide RBAC grant)
+await fetch('/api/v1/security/authz/grants', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+  body: JSON.stringify({ subject: userId, tenant: tenantId, role: 'seller' }),
+})
+
+// scope a grant to one resource instance (ReBAC)
+await fetch('/api/v1/security/authz/grants', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+  body: JSON.stringify({
+    subject: userId, tenant: tenantId, role: 'editor',
+    resource: { type: 'Listing', key: 'listing-123' },
+  }),
+})
+```
+
+- Tenants: `GET`/`POST /api/v1/security/tenants`, `GET /tenants/{tenantId}`.
+- Members: `GET`/`POST /tenants/{tenantId}/members`,
+  `DELETE /tenants/{tenantId}/members/{userId}`,
+  `PUT /tenants/{tenantId}/members/{userId}/roles`.
+- Roles catalogue: `GET /tenants/{tenantId}/roles`.
+- Revoke a grant: `DELETE /authz/grants` by `{ grantId }` or the identity tuple
+  (idempotent).
+
+Authorization is **per-tenant** — a role in one tenant does not carry to another.
+Grants are convenience; `authz/check` (Step 4) stays the source of truth.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `401` on `/session` GET | Missing/expired token | Send `Authorization: Bearer <token>`; re-login on expiry. |
+| `authz/check` always `{ allow: false }` | Fail-closed on error, or the AuthZ rollout isn't live yet | Confirm the AuthZ endpoints are enabled; check `subject`/`tenant`/`resource.type`/`action` are all set. |
+| `identity.tenantId` is `null` | Legacy token mode, tenant unresolved | Fail closed on tenant-scoped authz; do not default a tenant. |
+| Social login loops / no `code` | Absolute or cross-origin `redirectTo` | Use a **same-origin, app-relative** `redirectTo`; absolute URLs are rejected. |
+| `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@fuzefront:registry` line + a valid `GITHUB_TOKEN`. |
+| Tempted to parse the JWT / fetch JWKS | Wrong layer | Resolve identity via `GET /session` (or `/tokens/introspect`); consume `Identity`. |
 
 ---
 
 ## Checklist
 
-- [ ] Product key chosen (`[a-z0-9-]`), used for both Authentik slug and authZ namespace.
-- [ ] `auth.oidc` block in the App Manifest; client secret delivered as a k8s Secret.
-- [ ] `ProductPolicy` written with bare keys; passes `validateProductPolicy`.
-- [ ] `syncPermitSchemaWithProducts` wired into your provisioning/onboarding job.
-- [ ] Runtime routes guarded with `requireProductPermission` / `checkProductPermission`.
-- [ ] Role assignment on user onboarding via `assignProductRole`.
-- [ ] Verified deny/allow for at least one buyer-vs-seller-vs-admin case.
+- [ ] `@fuzefront/security-client` installed via a scoped `.npmrc` (token not committed).
+- [ ] Same-origin `/api/v1/security/*` reachable (no absolute API host hard-coded).
+- [ ] Sign-in UI rendered from `GET /methods` (no provider assumptions).
+- [ ] Login/signup handles the `authenticated` **and** `mfa_required` `SessionResult`.
+- [ ] Identity resolved via `GET /session` — no raw JWT/JWKS parsing.
+- [ ] `tenantId === null` fails closed on tenant-scoped authz.
+- [ ] Every protected action re-checked via `POST /authz/check` (AuthZ-rollout gated).
+- [ ] Roles/grants managed via `/authz/grants` + `/tenants/*`, not a vendor SDK.
+</content>
