@@ -267,6 +267,13 @@ spec:
 # authorization_endpoint/token_endpoint) — which breaks the server-side token
 # exchange and `iss` validation in the OIDC client. Pinning the header makes
 # Authentik build https URLs.
+#
+# NOTE: there is deliberately NO public `auth.fuzefront.com` Ingress anymore.
+# Authentik is ClusterIP-only (Service `authentik-server`, above). The only
+# browser-transitable Authentik surface is the reverse-proxied
+# `app.fuzefront.com/api/auth/idp/*` path defined on the app Ingress
+# (templates/ingress.yaml), which uses this middleware. This is the
+# provider-agnostic security boundary: the IdP host is invisible to the browser.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -277,37 +284,24 @@ spec:
   headers:
     customRequestHeaders:
       X-Forwarded-Proto: "https"
+{{- if eq .Values.ingress.className "traefik" }}
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# Strip the `/api/auth/idp` prefix before forwarding to authentik-server, so
+# Authentik receives its native paths (e.g. /application/o/fuzefront/). Traefik's
+# stripPrefix also sets `X-Forwarded-Prefix: /api/auth/idp`, which Authentik uses
+# to build absolute discovery/authorize URLs back under the app host + prefix —
+# keeping the issuer `https://app.fuzefront.com/api/auth/idp/...` consistent.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
 metadata:
-  name: authentik
+  name: authentik-idp-stripprefix
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
-    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
 spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        - {{ $ak.host | quote }}
-      secretName: {{ printf "%s-tls" $ak.host }}
-  {{- end }}
-  rules:
-    - host: {{ $ak.host | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: authentik-server
-                port:
-                  number: 9000
+  stripPrefix:
+    prefixes:
+      - /api/auth/idp
+    forceSlash: false
+{{- end }}
 {{- end }}
 {{- end }}
