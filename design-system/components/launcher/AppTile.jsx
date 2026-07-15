@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { HealthDot } from "./HealthDot.jsx";
 
 // The per-integration-type icon fallback, tuned to the cool runtime palette —
@@ -37,6 +37,10 @@ export function AppTile({
   // precedence over the per-integration-type fallback emoji.
   const glyph = iconGlyph || TYPE_EMOJI[integrationType] || TYPE_EMOJI.other;
   const gradient = TYPE_GRADIENT[integrationType] || TYPE_GRADIENT.other;
+  // A broken icon URL falls back to the emoji glyph, per the documented
+  // contract — swap the whole node, don't just hide the <img>.
+  const [iconFailed, setIconFailed] = useState(false);
+  const showImage = Boolean(iconUrl) && !iconFailed;
 
   const highlight = (e) => {
     if (!isHealthy) return;
@@ -80,7 +84,7 @@ export function AppTile({
       {...rest}
     >
       <div style={{ position: "relative", width: "48px", height: "48px", flex: "none" }}>
-        {iconUrl ? (
+        {showImage ? (
           <img
             src={iconUrl}
             alt=""
@@ -90,9 +94,7 @@ export function AppTile({
               borderRadius: "12px",
               objectFit: "cover",
             }}
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
+            onError={() => setIconFailed(true)}
           />
         ) : (
           <div
