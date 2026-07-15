@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// authAPI.handleOIDCCallback calls `api.post` where `api` is the module-level
+// authAPI.handleAuthCallback calls `api.post` where `api` is the module-level
 // axios instance — the same object reference as the default export of ../services/api.
 // We use vi.spyOn on the imported default to intercept calls made by the
 // closed-over internal `api` variable (same object reference).
@@ -37,7 +37,7 @@ function setSearch(search: string) {
   })
 }
 
-describe('authAPI.handleOIDCCallback', () => {
+describe('authAPI.handleAuthCallback', () => {
   beforeEach(() => {
     localStorageMock.clear()
     vi.clearAllMocks()
@@ -54,22 +54,24 @@ describe('authAPI.handleOIDCCallback', () => {
   it('exchanges code for token and stores in localStorage', async () => {
     setSearch('?code=abc123')
     vi.mocked(api.post).mockResolvedValueOnce({
-      data: { token: 'jwt-token', sessionId: 'sess-1' }
+      data: { status: 'authenticated', token: 'jwt-token', sessionId: 'sess-1', user: {} }
     })
 
-    const result = await authAPI.handleOIDCCallback()
+    const result = await authAPI.handleAuthCallback()
 
-    expect(api.post).toHaveBeenCalledWith('/auth/token-exchange', { code: 'abc123' })
+    expect(api.post).toHaveBeenCalledWith('/v1/security/session/exchange', { code: 'abc123' })
     expect(localStorageMock.getItem('authToken')).toBe('jwt-token')
     expect(localStorageMock.getItem('sessionId')).toBe('sess-1')
-    expect(result).toEqual({ token: 'jwt-token', sessionId: 'sess-1' })
+    expect(result).toEqual({
+      result: { status: 'authenticated', token: 'jwt-token', sessionId: 'sess-1', user: {} }
+    })
     expect(mockReplaceState).toHaveBeenCalled()
   })
 
   it('returns error from URL when error param present', async () => {
     setSearch('?error=oidc_error&message=access_denied')
 
-    const result = await authAPI.handleOIDCCallback()
+    const result = await authAPI.handleAuthCallback()
 
     expect(result).toEqual({ error: 'access_denied' })
     expect(api.post).not.toHaveBeenCalled()
@@ -78,7 +80,7 @@ describe('authAPI.handleOIDCCallback', () => {
   it('returns empty object when no params in URL', async () => {
     setSearch('')
 
-    const result = await authAPI.handleOIDCCallback()
+    const result = await authAPI.handleAuthCallback()
 
     expect(result).toEqual({})
     expect(api.post).not.toHaveBeenCalled()
@@ -87,7 +89,7 @@ describe('authAPI.handleOIDCCallback', () => {
   it('does not read token directly from URL', async () => {
     setSearch('?token=some-jwt&sessionId=sess')
 
-    const result = await authAPI.handleOIDCCallback()
+    const result = await authAPI.handleAuthCallback()
 
     expect(result).toEqual({})
     expect(api.post).not.toHaveBeenCalled()

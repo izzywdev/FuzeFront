@@ -1,34 +1,34 @@
 /**
  * LoginPage.google-signin.test.tsx
  *
- * Component-level unit tests for the Google Sign-In (via Authentik OIDC) flow
- * on the LoginPage.
+ * Component-level unit tests for the Google Sign-In flow on the LoginPage.
  *
- * Architecture reminder:
- *   User → "Sign in with Authentik" → backend /api/auth/oidc/login
- *        → Authentik (has Google button) → user completes Google auth
- *        → Authentik callback → backend /api/auth/oidc/callback
- *        → backend mints short-lived exchange code → redirect to frontend
- *          with ?code=<32-byte-hex>
- *        → frontend handleOIDCCallback() reads ?code= and POSTs to
- *          /api/auth/token-exchange
- *        → backend returns { token: JWT, sessionId }
- *        → frontend stores token, fetches /api/auth/user, navigates to /dashboard
+ * Architecture:
+ *   User → "Sign in with Google" button → authAPI.startSocialLogin('google')
+ *        → backend /api/v1/security/social/google/start (302 redirect)
+ *        → provider consent → callback → backend mints exchange code
+ *        → redirect to frontend with ?code=<opaque>
+ *        → authAPI.handleAuthCallback() reads ?code= and POSTs to
+ *          /api/v1/security/session/exchange
+ *        → backend returns SessionResult → frontend stores token + navigates
  *
- * What is NOT tested here (already covered by handleOIDCCallback.test.ts):
- *   - The internals of authAPI.handleOIDCCallback (?code= exchange, error
+ * What is NOT tested here (covered by handleOIDCCallback.test.ts):
+ *   - The internals of authAPI.handleAuthCallback (?code= exchange, error
  *     param handling, empty URL, ?token= security boundary).
  *
  * What IS tested here:
- *   1. OIDC button visibility based on oidcConfigured flag
- *   2. Clicking OIDC button calls loginWithOIDC
- *   3. Error from handleOIDCCallback is surfaced on the page
- *   4. Successful token from handleOIDCCallback triggers getCurrentUser + redirect
- *   5. Sign-Up affordance button also calls loginWithOIDC
+ *   1. Google button visibility based on social capability (social: ['google'])
+ *   2. Clicking Google button calls authAPI.startSocialLogin('google')
+ *   3. Error from handleAuthCallback is surfaced on the page
+ *   4. Successful result from handleAuthCallback triggers getCurrentUser + redirect
+ *   5. Credentials form submit calls authAPI.login()
+ *   6. Sign-up mode toggle: clicking the toggle button switches to signup form
+ *   7. Per-action pending labels — only the clicked button shows progress
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
+import type { AuthMethods } from '../services/api'
 
 // ── Hoisted mocks (processed before imports) ──────────────────────────────
 
@@ -71,23 +71,25 @@ function makeUserCtx(overrides: Partial<ReturnType<typeof sharedMock.useCurrentU
   }
 }
 
-/** Minimal AuthMethods shape with OIDC disabled. */
-const LOCAL_ONLY_METHODS = {
-  methods: ['local'] as string[],
-  oidcConfigured: false,
-  defaultMethod: 'local',
+/** Minimal AuthMethods shape with only password (no social). */
+const LOCAL_ONLY_METHODS: AuthMethods = {
+  password: true,
+  social: [],
+  mfa: { enabled: false, types: [] },
+  verification: { email: false, sms: false },
 }
 
-/** Minimal AuthMethods shape with OIDC enabled. */
-const OIDC_METHODS = {
-  methods: ['local', 'oidc'] as string[],
-  oidcConfigured: true,
-  defaultMethod: 'oidc',
+/** Minimal AuthMethods shape with Google social login enabled. */
+const OIDC_METHODS: AuthMethods = {
+  password: true,
+  social: ['google'],
+  mfa: { enabled: false, types: [] },
+  verification: { email: false, sms: false },
 }
 
 // ── Suite ──────────────────────────────────────────────────────────────────
 
-describe('LoginPage — OIDC / Google Sign-In UI', () => {
+describe('LoginPage — Google Sign-In UI', () => {
   /**
    * Mutable location stub — written by the component when it does
    * `window.location.href = '/dashboard'`. Reset in beforeEach.
@@ -119,12 +121,11 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     ;(sharedMock.useCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(makeUserCtx())
 
     // Default authAPI spies — individual tests override per-case.
-    vi.spyOn(authAPI, 'handleOIDCCallback').mockResolvedValue({})
+    vi.spyOn(authAPI, 'handleAuthCallback').mockResolvedValue({})
     vi.spyOn(authAPI, 'getAuthMethods')
-    vi.spyOn(authAPI, 'loginWithOIDC').mockResolvedValue(undefined)
-    vi.spyOn(authAPI, 'signupWithOIDC').mockResolvedValue(undefined)
-    vi.spyOn(authAPI, 'loginWithAuthentikPassword')
+    vi.spyOn(authAPI, 'startSocialLogin').mockResolvedValue(undefined)
     vi.spyOn(authAPI, 'login')
+    vi.spyOn(authAPI, 'signup')
     vi.spyOn(authAPI, 'getCurrentUser')
 
     // Suppress api.ts / component console noise so test output stays clean.
@@ -139,9 +140,9 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     vi.restoreAllMocks()
   })
 
-  // ── 1: No Google button, local-auth form fallback when oidcConfigured=false
+  // ── 1: No Google button, local-auth form fallback when social=[]
 
-  it('renders the credentials form but no Google button when oidcConfigured is false', async () => {
+  it('renders the credentials form but no Google button when social capability is empty', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(LOCAL_ONLY_METHODS)
 
     render(<LoginPage />)
@@ -153,7 +154,6 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     })
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
 
-    expect(screen.queryByText(/sign in with authentik/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/sign in with google/i)).not.toBeInTheDocument()
   })
 
@@ -170,16 +170,14 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     // Give any runaway effect a chance to re-fire before asserting.
     await new Promise(r => setTimeout(r, 100))
 
-    // A single mount must produce a single /api/auth/method fetch. Before the
-    // useCurrentUser stabilization, an unstable setUser ref re-fired the
-    // page-load effect every render and flooded this endpoint (~2-3 req/s).
+    // A single mount must produce a single /api/auth/method fetch.
     expect(authAPI.getAuthMethods).toHaveBeenCalledTimes(1)
-    expect(authAPI.handleOIDCCallback).toHaveBeenCalledTimes(1)
+    expect(authAPI.handleAuthCallback).toHaveBeenCalledTimes(1)
   })
 
-  // ── 2: Native credentials form + Google button when oidcConfigured is true
+  // ── 2: Credentials form + Google button when social=['google']
 
-  it('renders the credentials form AND "Sign in with Google" (no Authentik redirect button) when oidcConfigured is true', async () => {
+  it('renders the credentials form AND "Sign in with Google" button when social includes google', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
 
     render(<LoginPage />)
@@ -192,13 +190,11 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     // Default UI components for credentials — always present.
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
-    // The redirect button is gone — Authentik is driven server-side instead.
-    expect(screen.queryByText(/sign in with authentik/i)).not.toBeInTheDocument()
   })
 
-  // ── 2a: Form submit verifies credentials AGAINST AUTHENTIK when configured
+  // ── 2a: Form submit calls authAPI.login() with provided credentials
 
-  it('submitting the form calls loginWithAuthentikPassword (not local login) when oidcConfigured is true', async () => {
+  it('submitting the credentials form calls authAPI.login()', async () => {
     const mockUser = {
       id: 'user-1',
       email: 'someone@example.com',
@@ -211,11 +207,13 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
       makeUserCtx({ setUser })
     )
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
-    vi.mocked(authAPI.loginWithAuthentikPassword).mockResolvedValue({
-      token: 'jwt-authentik',
-      sessionId: 'sess-ak',
+    vi.mocked(authAPI.login).mockResolvedValue({
+      status: 'authenticated',
+      token: 'jwt-token',
+      sessionId: 'sess-1',
       user: mockUser,
     } as any)
+    vi.mocked(authAPI.getCurrentUser).mockResolvedValue(mockUser)
 
     render(<LoginPage />)
 
@@ -233,22 +231,25 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }))
     })
 
-    expect(authAPI.loginWithAuthentikPassword).toHaveBeenCalledWith({
+    expect(authAPI.login).toHaveBeenCalledWith({
       email: 'someone@example.com',
       password: 'hunter22',
     })
-    expect(authAPI.login).not.toHaveBeenCalled()
     expect(setUser).toHaveBeenCalledWith(mockUser)
     expect(locationStub.href).toBe('/dashboard')
   })
 
-  it('submitting the form calls the LOCAL login when oidcConfigured is false', async () => {
+  it('submitting the form calls authAPI.login() when social capability is disabled too', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(LOCAL_ONLY_METHODS)
     vi.mocked(authAPI.login).mockResolvedValue({
+      status: 'authenticated',
       token: 'jwt-local',
       sessionId: 'sess-local',
       user: { id: 'u2', email: 'dev@local', firstName: 'D', lastName: 'V', roles: ['user'] },
     } as any)
+    vi.mocked(authAPI.getCurrentUser).mockResolvedValue({
+      id: 'u2', email: 'dev@local', firstName: 'D', lastName: 'V', roles: ['user'],
+    })
 
     render(<LoginPage />)
 
@@ -267,12 +268,11 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     })
 
     expect(authAPI.login).toHaveBeenCalledTimes(1)
-    expect(authAPI.loginWithAuthentikPassword).not.toHaveBeenCalled()
   })
 
-  // ── 2b: Clicking the Google button starts the Authentik OIDC redirect ────
+  // ── 2b: Clicking the Google button starts the social login redirect ───────
 
-  it('clicking "Sign in with Google" calls authAPI.loginWithOIDC (Google is federated via Authentik)', async () => {
+  it('clicking "Sign in with Google" calls authAPI.startSocialLogin("google")', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
 
     render(<LoginPage />)
@@ -287,16 +287,15 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
       fireEvent.click(screen.getByRole('button', { name: /sign in with google/i }))
     })
 
-    expect(authAPI.loginWithOIDC).toHaveBeenCalledTimes(1)
+    expect(authAPI.startSocialLogin).toHaveBeenCalledWith('google')
   })
 
-  // ── 4: Error from handleOIDCCallback surfaces on the page ───────────────
+  // ── 4: Error from handleAuthCallback surfaces on the page ───────────────
 
-  it('shows "Authentication Error" on page when handleOIDCCallback returns an error', async () => {
-    // Simulates landing on the login page after an OIDC provider error
-    // (?error=oidc_error&message=access_denied in the URL).
-    // handleOIDCCallback reads those params and returns { error: '...' }.
-    vi.mocked(authAPI.handleOIDCCallback).mockResolvedValue({
+  it('shows "Authentication Error" on page when handleAuthCallback returns an error', async () => {
+    // Simulates landing on the login page after a social provider error.
+    // handleAuthCallback reads those params and returns { error: '...' }.
+    vi.mocked(authAPI.handleAuthCallback).mockResolvedValue({
       error: 'access_denied',
     })
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(LOCAL_ONLY_METHODS)
@@ -311,9 +310,9 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     expect(screen.getByText(/access_denied/i)).toBeInTheDocument()
   })
 
-  // ── 5: Successful callback token → getCurrentUser → navigate to /dashboard
+  // ── 5: Successful callback result → getCurrentUser → navigate to /dashboard
 
-  it('completes login and navigates to /dashboard when handleOIDCCallback returns a token', async () => {
+  it('completes login and navigates to /dashboard when handleAuthCallback returns a session', async () => {
     const mockUser = {
       id: 'user-1',
       email: 'test@google.com',
@@ -327,17 +326,15 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
       makeUserCtx({ setUser })
     )
 
-    // handleOIDCCallback returns a token (from a ?code= exchange that already
-    // happened internally — the real function is tested in handleOIDCCallback.test.ts).
-    vi.mocked(authAPI.handleOIDCCallback).mockResolvedValue({
-      token: 'jwt-test-token',
-      sessionId: 'sess-1',
+    // handleAuthCallback returns a successful session result.
+    vi.mocked(authAPI.handleAuthCallback).mockResolvedValue({
+      result: { status: 'authenticated', token: 'jwt-test-token', sessionId: 'sess-1', user: mockUser },
     })
     vi.mocked(authAPI.getCurrentUser).mockResolvedValue(mockUser)
 
     render(<LoginPage />)
 
-    // Component calls getCurrentUser after receiving the token.
+    // Component calls getCurrentUser after receiving the session result.
     await waitFor(() => {
       expect(authAPI.getCurrentUser).toHaveBeenCalledTimes(1)
     })
@@ -351,33 +348,26 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     expect(locationStub.href).toBe('/dashboard')
   })
 
-  // ── 6: Sign-Up affordance goes to the ENROLLMENT flow, not plain login ───
+  // ── 6: Sign-up mode toggle switches the form to signup ───────────────────
 
-  it('Sign-Up button calls signupWithOIDC (Authentik enrollment path), not loginWithOIDC', async () => {
-    // The sign-up button is always rendered (not conditional on oidcConfigured).
-    // It routes new users through Authentik ENROLLMENT (/api/auth/oidc/signup).
+  it('clicking the sign-up toggle button switches form to signup mode', async () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
 
     render(<LoginPage />)
 
-    // Wait for auth methods so the page is fully settled.
+    // Wait for the page to settle with auth methods loaded.
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /sign in with google/i })
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'signUp' })).toBeInTheDocument()
     })
-
-    // The sign-up button text comes from t('signUp'). With our mocked useLanguage
-    // returning the translation key directly, the button text is literally 'signUp'.
-    const signUpButton = screen.getByRole('button', { name: 'signUp' })
-    expect(signUpButton).toBeInTheDocument()
 
     await act(async () => {
-      fireEvent.click(signUpButton)
+      fireEvent.click(screen.getByRole('button', { name: 'signUp' }))
     })
 
-    expect(authAPI.signupWithOIDC).toHaveBeenCalledTimes(1)
-    expect(authAPI.loginWithOIDC).not.toHaveBeenCalled()
+    // In signup mode the submit button reads "Create account".
+    expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
+    // The toggle now offers "Back to sign in".
+    expect(screen.getByRole('button', { name: /back to sign in/i })).toBeInTheDocument()
   })
 
   // ── 7: Per-action pending labels — only the clicked button shows progress ─
@@ -386,7 +376,7 @@ describe('LoginPage — OIDC / Google Sign-In UI', () => {
     vi.mocked(authAPI.getAuthMethods).mockResolvedValue(OIDC_METHODS)
     // Keep the redirect "in flight" — location.href assignment doesn't unload
     // jsdom, so the component stays mounted with pending === 'google'.
-    vi.mocked(authAPI.loginWithOIDC).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(authAPI.startSocialLogin).mockImplementation(() => new Promise(() => {}))
 
     render(<LoginPage />)
 
