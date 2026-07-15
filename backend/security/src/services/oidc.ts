@@ -196,7 +196,13 @@ class OIDCService {
         email: userRow.email,
         firstName: userRow.first_name,
         lastName: userRow.last_name,
-        roles: JSON.parse(userRow.roles || '["user"]'),
+        // `roles` is a JSONB column — Postgres returns it already-parsed (an
+        // array) for a row read from the DB, but the freshly-inserted in-memory
+        // row holds the JSON string. Handle both, or an existing-user login
+        // double-parses the array → JSON.parse("user") → "Unexpected token u".
+        roles: Array.isArray(userRow.roles)
+          ? userRow.roles
+          : JSON.parse(userRow.roles || '["user"]'),
       };
 
       return user;
