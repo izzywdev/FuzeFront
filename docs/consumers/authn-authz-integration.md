@@ -1,258 +1,303 @@
-# Multi-product authN/authZ integration
+# AuthN + AuthZ integration for consumer products
 
 How a **consumer product** (a product built on the FuzeFront platform — e.g.
-**FuzeMarket**) onboards its own **authentication** (Authentik OIDC) and
-**authorization** (Permit.io) policy, scoped to FuzeFront's multi-tenant org
-model.
+**FuzeMarket**) authenticates its users and authorizes their actions **through
+the FuzeFront Security API**, without ever talking to an identity or policy
+vendor directly.
 
 > Audience: platform engineers extending FuzeFront, and product teams onboarding
-> a new consumer product. For the step-by-step consumer recipe see
+> a new consumer product. For the step-by-step recipe see
 > [`onboarding-authn-authz.md`](./onboarding-authn-authz.md).
+
+---
+
+## The only two things a consumer knows
+
+1. **The FuzeFront Security API** — a stable, same-origin HTTP surface under
+   **`/api/v1/security/*`**. The source of truth is the OpenAPI contract at
+   [`packages/security/openapi.yaml`](../../packages/security/openapi.yaml).
+2. **The `@fuzefront/security-client` package** — the generated TypeScript types
+   for that contract (including the stable `Identity` shape). Install it from
+   GitHub Packages (see the onboarding guide) and import its types.
+
+That is the entire integration seam. A consumer never sees, names, or configures
+an identity provider, an authorization engine, a JWKS endpoint, or any vendor
+SDK. Those are **swappable server-side implementations** hidden behind the
+Security API's internal adapters (`IdentityProvider`, `AuthorizationProvider`).
+FuzeFront can switch or blend providers for features or cost with **zero**
+consumer change.
+
+**Naming rule (strict):** no vendor/product name appears in any consumer-facing
+path, type, field, config key, URL, or doc. Open-standard protocol terms
+(OIDC/OAuth2/JWKS/PKCE) may appear only where they name a genuine wire protocol
+the browser transits — never as a thing you integrate against.
 
 ---
 
 ## TL;DR
 
-- A consumer product registers via its **App Manifest** (the federated-app
-  registration contract). The manifest gains two new sections: **`auth`**
-  (authN) and **`authz`** (authZ policy).
-- **AuthN**: the platform provisions a **per-product Authentik OIDC application/
-  client** from the manifest `auth` section (redirect URIs, scopes, claims).
-  Identity is one shared Authentik; products trust the same issuer.
-- **AuthZ**: the product declares its OWN resources/actions/roles with **bare
-  keys** (`Listing`, `seller`). The platform **namespaces** them
-  (`fuzemarket.Listing`, `fuzemarket.seller`) and **merges** them into the
-  Permit environment schema. Two products can't collide.
-- **Org model**: authZ is **per-tenant** (one Permit tenant per org), with a
-  **ReBAC hierarchy** where **FuzeOne is the root/parent tenant** and FuzeOne
-  staff manage child (customer) tenants by derivation.
+- **AuthN** — sign users in/up and manage their session entirely through
+  `/api/v1/security/*` (`/session`, `/signup`, `/social/{provider}/start`,
+  `/session/exchange`, `/methods`). For social login the user's browser only
+  ever transits `app.fuzefront.com` and, briefly, the social provider's own
+  consent host (e.g. `accounts.google.com`) — never a FuzeFront-internal
+  identity host.
+- **Identity** — every authenticated caller resolves to the stable, normalized
+  **`Identity`** (`{ userId, tenantId, roles, authMode, … }`) from
+  `@fuzefront/security-client`. It is **invariant across token-format
+  migrations**, so your code never parses raw JWTs or fetches JWKS. Read
+  "who am I" from `GET /api/v1/security/session`.
+- **AuthZ** — ask the platform for decisions with
+  `POST /api/v1/security/authz/check` (single) or `/authz/bulk-check`, list
+  effective `/authz/permissions`, and manage tenants/members/roles/grants under
+  `/authz/grants` and `/tenants/*`. Never call a policy SDK.
+- **Fail-closed everywhere** — any verification, provider, or transport error
+  yields a denial (401/403) or an explicit error body, never a permissive
+  fallback. `authz/check` returns `{ allow: false }` on any error.
 
 ---
 
 ## 1. Architecture
 
 ```
-                         ┌──────────────────────────────────────────┐
-                         │              FuzeFront platform            │
-                         │                                            │
-   Product registers     │   App Manifest                             │
-   (App Manifest) ──────►│   ├─ auth   { oidc: {...} }  ──┐           │
-                         │   └─ authz  { product, resources, roles }  │
-                         │                               │  │         │
-                         │      provisioning             │  │         │
-                         │      ┌────────────────────────┘  │         │
-                         │      ▼                            ▼         │
-                         │  Authentik (OIDC)           Permit.io       │
-                         │  per-product application    env schema      │
-                         │  + client                   (merged,        │
-                         │                              namespaced)    │
-                         └──────┬──────────────────────────┬──────────┘
-                                │ id_token / userinfo       │ check()/assign()
-                                ▼                            ▼
-                         ┌──────────────────────────────────────────┐
-                         │      Consumer product runtime (FuzeMarket) │
-                         │  - logs users in via shared Authentik OIDC │
-                         │  - checks fuzemarket.Listing:update etc.   │
-                         └──────────────────────────────────────────┘
+   Consumer product (e.g. FuzeMarket)
+   ─ browser SPA ─┐                        ┌───────────────────────────────────┐
+                  │  same-origin HTTPS      │        FuzeFront platform          │
+                  ▼                        │                                    │
+        /api/v1/security/*  ──────────────►│   FuzeFront Security API           │
+        (@fuzefront/security-client types) │   (packages/security/openapi.yaml) │
+                  ▲                        │        │                           │
+   ─ product API ─┘                        │        ▼   internal adapters       │
+        Bearer <token>                     │   IdentityProvider  AuthorizationProvider
+        authz/check ─────────────────────►│   (identity engine) (policy engine)  │
+                                           │        ▲                ▲            │
+                                           │   swappable, vendor-hidden           │
+                                           └───────────────────────────────────┘
 ```
 
-- **AuthN** = **Authentik OIDC** (`backend/src/services/oidc.ts`; Helm
-  `authentik` block in `deploy/helm/fuzefront/values-prod.yaml`). One Authentik
-  instance, one issuer; each product is its own OIDC *application + client*.
-- **AuthZ** = **Permit.io**, per-tenant (one Permit tenant per org). Base
-  platform schema in `backend/security/src/permit/schema.ts` (mirrored to
-  `backend/src/permit/schema.ts`), synced by
-  `backend/src/permit/sync-permit-schema.ts`, checked via
-  `backend/src/utils/permit/permission-check.ts` and (for product resources)
-  `backend/src/utils/permit/product-authz.ts`.
+- The consumer SPA and the consumer's own API both speak **only** to
+  `/api/v1/security/*` on the same origin (`app.fuzefront.com` in prod; local
+  TLS locally). Never hard-code an absolute API host — the base is same-origin so
+  it works identically local and prod.
+- Every request carries `Authorization: Bearer <token>` where the token is a
+  **FuzeFront-minted** session or M2M token. Consumers depend on the normalized
+  `Identity`, never on the raw claims inside the token.
+- The identity engine and the authorization engine live behind server-side
+  adapters. Their vendor identity is a server-only implementation detail.
 
 ---
 
-## 2. End-to-end flow
+## 2. AuthN — authenticate through the Security API
 
-1. **Register** — the product publishes its App Manifest with `auth` + `authz`.
-2. **Declare policy** — `authz` lists the product's resources/actions/roles with
-   bare keys. `auth.oidc` lists redirect URIs, scopes, claim mapping.
-3. **Platform provisions**:
-   - **AuthN**: creates/updates an Authentik **application + OIDC provider** for
-     the product (client_id/secret, redirect URIs, scopes). Secrets land in a
-     k8s Secret the product consumes.
-   - **AuthZ**: validates + **namespaces** the product policy and **merges** it
-     into the Permit environment schema, then runs the idempotent sync
-     (`syncPermitSchemaWithProducts`).
-4. **Product consumes at runtime**:
-   - **AuthN**: redirect users to the shared Authentik issuer with the product's
-     client; trust `id_token`/`userinfo` (same `sub` across products).
-   - **AuthZ**: assign product roles to users
-     (`assignProductRole(user, 'fuzemarket', 'seller', orgId)`) and check
-     (`checkProductPermission(user, 'fuzemarket', 'Listing', 'update', orgId)`).
+The consumer never runs an OIDC code flow itself and never redirects users to an
+identity host. It calls the Security API; the platform brokers everything.
 
----
+### 2.1 Capability discovery — `GET /api/v1/security/methods`
 
-## 3. AuthN — per-product Authentik OIDC client
-
-One Authentik, one issuer, **one OIDC application/client per product**. The
-manifest drives provisioning:
+Returns the neutral `AuthMethods` descriptor so the UI can render the right
+affordances (password form, which social buttons, whether MFA / contact
+verification are enabled) **without knowing any provider**:
 
 ```jsonc
-// App Manifest — auth section
-"auth": {
-  "oidc": {
-    "applicationSlug": "fuzemarket",          // Authentik application + provider slug
-    "redirectUris": [
-      "https://market.fuzefront.com/api/auth/oidc/callback"
-    ],
-    "scopes": ["openid", "email", "profile"],  // default platform scopes
-    "claims": {                                 // claim → product field mapping
-      "sub": "userId",
-      "email": "email",
-      "groups": "roles"
-    }
-  }
+{
+  "password": true,
+  "social": ["google"],
+  "mfa": { "enabled": true, "types": ["totp", "sms", "email"] },
+  "verification": { "email": true, "sms": true }
 }
 ```
 
-**Trust model**
+This replaces the legacy vendor-specific `oidcConfigured` boolean.
 
-- All products trust the **same Authentik issuer** (`AUTHENTIK_ISSUER_URL`). The
-  `sub` claim is a stable, cross-product user id — the same person is the same
-  `sub` in FuzeFront and in FuzeMarket. This is what lets a Permit role
-  assignment made by the platform apply to the product's checks.
-- Each product gets its **own client_id/client_secret** and its **own redirect
-  URIs** so tokens are scoped and revocable per product. Secrets are delivered
-  as k8s Secrets (SealedSecrets in prod), never embedded in the manifest.
-- The platform shell remains the canonical session holder; products may either
-  reuse the shell session (same-origin) or run their own OIDC code-flow against
-  the shared issuer with their client. Authorization is **always** re-checked
-  against Permit at the product API — a valid token is necessary but not
-  sufficient.
+### 2.2 Password login — `POST /api/v1/security/session`
 
-Provisioning the Authentik application/provider from the manifest is an
-operations step (Authentik blueprint or API); the manifest is the declarative
-source. See the onboarding guide for the exact blueprint fields.
+Body `{ email, password }`. Returns a **`SessionResult`** — a discriminated union
+on `status`:
+
+- `{ status: "authenticated", token, sessionId?, user }` — session established.
+- `{ status: "mfa_required", challengeId, factors[] }` — the account has MFA;
+  complete step-up via `POST /mfa/challenge` then `POST /mfa/verify` (which
+  returns the authenticated `LoginResponse`).
+
+Always narrow on `status` before reading variant fields. Bad credentials
+fail-closed with `401`.
+
+### 2.3 Social login — server-brokered, no internal host exposed
+
+1. Send the browser to `GET /api/v1/security/social/{provider}/start`
+   (`provider` = `google` today; extensible). Optional same-origin `redirectTo`.
+   The platform 302-redirects to the provider's own consent host.
+2. The provider returns to `GET /api/v1/security/social/callback`. The platform
+   completes the handshake, provisions/links the user, mints a **single-use
+   opaque `code`**, and 302-redirects back to the app with `?code=<opaque>`.
+   **No token is ever placed in the URL.**
+3. The SPA calls `POST /api/v1/security/session/exchange` with `{ code }` and
+   gets a `SessionResult` (which may itself be an `mfa_required` challenge).
+
+The browser only ever transits `app.fuzefront.com` and the social provider's
+consent host. No FuzeFront-internal identity host is visible or named.
+
+### 2.4 Signup — `POST /api/v1/security/signup`
+
+Body `{ email, password, firstName?, lastName?, tenantName? }`. The user sees
+only FuzeFront-branded UI — never a provider's raw enrollment page. On success a
+session is established (`201` → `LoginResponse`). `409` if the email exists.
+
+### 2.5 Session lifecycle
+
+- `GET /api/v1/security/session` → `SessionInfo { identity, user }` — the current
+  identity ("me"). This is the authoritative source of any out-of-band
+  role/tenant hydration.
+- `DELETE /api/v1/security/session` — logout; revokes the presented token
+  (idempotent, `204`).
+
+### 2.6 MFA and contact verification (provider-agnostic)
+
+- **MFA** (`/mfa/*`): enroll/list/activate/remove factors, regenerate
+  recovery codes, and the login step-up pair `/mfa/challenge` + `/mfa/verify`.
+  Consumers see only neutral factor `type` values (`totp`/`sms`/`email`, with
+  `webauthn` reserved) — never a provider name.
+- **Contact verification** (`/verify/*`): email + phone ownership verification,
+  distinct from MFA login step-up; `GET /verify/status` returns
+  `{ emailVerified, phoneVerified, phone? }`.
+
+### 2.7 Machine-to-machine tokens
+
+- `POST /api/v1/security/tokens` — issue a FuzeFront-owned M2M token
+  (client-credentials style) for a provisioned service client.
+- `POST /api/v1/security/tokens/introspect` — introspect it; fail-closed
+  (`{ active: false }` for unknown/expired).
 
 ---
 
-## 4. AuthZ — per-product policy declaration & merge
+## 3. Identity — the stable keystone
 
-### 4.1 Declaration schema (`ProductPolicy`)
-
-A product submits **bare** keys; the platform namespaces them. Type:
-`backend/src/permit/product-policy.ts`.
+Every authenticated caller resolves to the normalized `Identity` from
+`@fuzefront/security-client`:
 
 ```ts
-interface ProductPolicy {
-  product: string            // namespace key, lowercase [a-z0-9-], e.g. 'fuzemarket'
-  name?: string              // display prefix, e.g. 'FuzeMarket'
-  resources: { key; name; actions: Record<string,{name}> }[]
-  roles:     { key; name; permissions: string[] }[]   // 'Listing:create' (bare)
+import type { Identity } from '@fuzefront/security-client'
+
+// Identity = {
+//   userId: string            // stable subject id — always present
+//   tenantId: string | null   // tenant/org scope; null when unresolved (legacy mode)
+//   roles: string[]           // always an array; [] means "no roles known"
+//   email?: string
+//   authMode: 'legacy-hs256' | 'federated-jwks'
+//   issuedAt?, expiresAt?, issuer?
+// }
+```
+
+- **Verify tokens via the platform, not by hand.** Do not parse the JWT, do not
+  fetch a JWKS, do not trust raw claims. Present the token to the Security API
+  (e.g. `GET /session`, or `/tokens/introspect` for M2M) and consume the
+  resulting `Identity`.
+- **`Identity` is invariant across the token-format migration** (`authMode`
+  moves `legacy-hs256` → `federated-jwks`). Your integration does not change when
+  the underlying token format does.
+- **`tenantId` may be `null`** in legacy token mode when the tenant is not yet
+  resolved. Consumers **fail-closed** on tenant-scoped authorization when it is
+  null — never default it to a tenant.
+- The `userId` is the same stable subject across the whole family, so a role or
+  grant the platform assigns applies to your product's checks for the same user.
+
+The contract version is exported as `SECURITY_CONTRACT_VERSION` (currently
+`0.3.0`); consumers may assert on the major.
+
+---
+
+## 4. AuthZ — decisions through the Security API
+
+> **Delivery status:** AuthN is shipped first (it closes the acute vendor-leak).
+> The AuthZ surface below (`/authz/*`, `/tenants/*`) is **frozen in the contract**
+> and generated into the client, but its endpoints are **not yet live** in the
+> Security service. Build against the contract/client types now; the endpoints
+> light up in the AuthZ rollout that follows AuthN. Treat any AuthZ call as
+> "coming" until then and gate it behind your own flag.
+
+A grant/role assignment is a rollout convenience — the **authoritative** answer
+to "may this subject do this?" is always `POST /authz/check`, never the presence
+of a role record and never a local cache.
+
+### 4.1 Check a single decision — `POST /api/v1/security/authz/check`
+
+```jsonc
+// request (AuthzCheckRequest)
+{
+  "subject": "<userId>",
+  "tenant":  "<tenantId>",
+  "resource": { "type": "Listing", "key": "listing-123" },  // key optional (ReBAC instance)
+  "action":  "update",
+  "context": { }                                            // optional
 }
+// response (AuthzDecision)
+{ "allow": true }
 ```
 
-Worked example: `backend/src/permit/products/fuzemarket.policy.ts` — resources
-`Listing`/`Order`/`Cart`, roles `seller`/`buyer`/`market-admin`.
+Fail-closed: any provider/transport error returns `{ allow: false }`.
 
-### 4.2 Namespacing (collision avoidance)
+### 4.2 Bulk + effective permissions
 
-Every product key is prefixed with `<product>.` (the separator `PRODUCT_NS_SEP`,
-a `.`). So `Listing` → **`fuzemarket.Listing`**, role `seller` →
-**`fuzemarket.seller`**, and permission `Listing:create` →
-**`fuzemarket.Listing:create`**. The `.` never collides with the `:` that
-separates a resource key from its action in a permission string.
+- `POST /api/v1/security/authz/bulk-check` — ordered `checks[]` (≤ 200) →
+  `decisions[]` index-aligned with the request.
+- `GET /api/v1/security/authz/permissions?subject&tenant` → `PermissionSet`
+  (`{ subject, tenant, permissions: ["resource:action", …] }`) — the effective,
+  bounded permission set for one subject in one tenant.
 
-Two products that both define a `Listing` resource and a `seller` role never
-collide: `fuzemarket.Listing` vs `fuzeshop.Listing`.
+### 4.3 Grants (write side) — `/api/v1/security/authz/grants`
 
-### 4.3 Merge & sync
+- `POST` — grant a `role` (and/or explicit `permission`) to a `subject` within a
+  `tenant`. Omit `resource` for a **tenant-wide (RBAC)** grant; include
+  `resource: { type, key }` to scope to a **specific resource instance (ReBAC)**.
+  Returns the created `Grant`.
+- `DELETE` — revoke by `{ grantId }` **or** by the identity tuple
+  `{ subject, tenant, role, resource? }` (supply one form). Idempotent (`204`
+  even if absent).
+- `GET ?subject&tenant` — list a subject's grants (cursor-paginated `GrantPage`,
+  because ReBAC grants across many resource instances are potentially unbounded).
 
-`mergeProductPolicy(base, ...policies)` is a **pure** function that returns the
-base platform schema with the namespaced product resources/roles appended; it
-throws `ProductPolicyError` on a re-used product namespace. `buildEnvSchema(...)`
-is the base + products convenience wrapper.
+### 4.4 Tenants, members, roles — `/api/v1/security/tenants/*`
 
-`syncPermitSchemaWithProducts(permit, [fuzemarketPolicy])` builds the merged
-schema and runs the existing **idempotent** get-or-(create|update) sync. Running
-it for one product never disturbs another product's namespace.
+Neutralized authorization primitives for multi-tenant org management:
 
-### 4.4 Runtime checks & role assignment
-
-Product resources are checked/assigned with namespacing handled for you
-(`backend/src/utils/permit/product-authz.ts`):
-
-```ts
-// is this user allowed to update this listing in org `orgId`?
-await checkProductPermission(userId, 'fuzemarket', 'Listing', 'update', orgId, listingId)
-
-// make a user a seller in org `orgId`
-await assignProductRole(userId, 'fuzemarket', 'seller', orgId)
-
-// express route guard
-router.patch('/listings/:id',
-  requireProductPermission('fuzemarket', 'Listing', 'update',
-    req => req.organizationId, req => req.params.id),
-  handler)
-```
-
-Permit checks **fail safe** (deny on PDP error), matching the platform's
-existing `checkPermission`.
-
----
-
-## 5. ReBAC org hierarchy — FuzeOne is the root
-
-AuthZ is **per-tenant** (one Permit tenant per org). On top of that, the
-`Organization` resource declares a **ReBAC** parent→child hierarchy so **FuzeOne
-staff manage all child (customer) tenants** without a per-tenant assignment.
-
-In the base schema (`schema.ts`), the `Organization` resource gains:
-
-```ts
-relations: { parent: 'Organization' },     // a child org points at its parent
-roles: {
-  'org-admin': {                            // resource-instance-scoped ReBAC role
-    permissions: ['create','read','update','delete','manage'],
-    granted_to: { users_with_role: [
-      { role: 'org-admin', on_resource: 'Organization', linked_by_relation: 'parent' }
-    ] },
-  },
-}
-```
-
-Read it as: *a user who is `org-admin` on a **parent** Organization instance is
-**granted** `org-admin` on every **child** instance via the `parent` relation* —
-transitively down the whole tree. Grant a FuzeOne staff member `org-admin` on
-the **FuzeOne root org** and they administer every customer org beneath it.
-
-**Provisioning** (`backend/src/utils/permit/resource-instances.ts`):
-
-- `setOrganizationParent(childOrgId, parentOrgId)` — records the `parent`
-  relationship tuple between two Organization instances (idempotent). Customer
-  orgs are created with `parent = FuzeOne root org`.
-- `assignOrgAdminRebac(userId, organizationId)` — grants `org-admin` on a
-  specific Organization instance (use the FuzeOne root for platform staff).
-
-The existing flat tenant roles (`admin`/`editor`/`viewer`, mapped from
-membership in `role-assignment.ts`) are unchanged and additive — they govern
-in-tenant membership; the ReBAC `org-admin` governs cross-tenant staff reach.
-
-> The org `type: 'platform'` (see `Organization` in
-> `backend/src/types/shared.ts`) marks the FuzeOne root; customer orgs are
-> `type: 'organization'` with `parent_id` set to the root.
-
----
-
-## 6. Files
-
-| Concern | File |
+| Operation | Endpoint |
 | --- | --- |
-| Base platform schema + ReBAC | `backend/src/permit/schema.ts` (mirror: `backend/security/src/permit/schema.ts`) |
-| Product policy types + merge | `backend/src/permit/product-policy.ts` (mirror under `backend/security`) |
-| Schema sync (+ product merge) | `backend/src/permit/sync-permit-schema.ts` |
-| FuzeMarket sample policy | `backend/src/permit/products/fuzemarket.policy.ts` |
-| Runtime product checks/roles | `backend/src/utils/permit/product-authz.ts` |
-| ReBAC org provisioning | `backend/src/utils/permit/resource-instances.ts` |
-| AuthN (OIDC) | `backend/src/services/oidc.ts`, Helm `authentik` block |
-| Tests | `backend/tests/product-policy.test.ts` |
+| List / create tenants | `GET` / `POST /tenants` (list is cursor-paginated) |
+| Get a tenant | `GET /tenants/{tenantId}` |
+| List / add members | `GET` / `POST /tenants/{tenantId}/members` (list paginated) |
+| Remove a member | `DELETE /tenants/{tenantId}/members/{userId}` |
+| List roles (bounded catalogue) | `GET /tenants/{tenantId}/roles` |
+| Replace a member's roles | `PUT /tenants/{tenantId}/members/{userId}/roles` |
 
-> `backend/src/permit/*` and `backend/security/src/permit/*` are kept
-> **byte-identical** (the security microservice owns the sync job). Edit both.
+Authorization is **per-tenant**: a role in tenant A does not grant it in tenant
+B. Assign per tenant.
+
+---
+
+## 5. Cross-product session handoff — coming
+
+A within-product opaque-`code` exchange exists today for social login
+(`/social/callback` → `/session/exchange`, §2.3). A **cross-product** one-time
+handoff — where a user already signed in to one Fuze product lands
+pre-authenticated in another without re-login — is **not yet available**. When it
+ships it will reuse the same opaque single-use-`code` + `/session/exchange`
+pattern (no token in the URL). Do not build against it until it is in the
+contract; treat it as a future capability.
+
+---
+
+## 6. What lives where
+
+| Concern | Location (source of truth) |
+| --- | --- |
+| Contract (all paths + schemas) | `packages/security/openapi.yaml` |
+| Generated + stable client types | `@fuzefront/security-client` (`packages/security/src/`) |
+| `Identity`, `AuthMode`, `AuthMethods`, `Grant`, … | `packages/security/src/types.ts` |
+| Contract version | `SECURITY_CONTRACT_VERSION` (`0.3.0`) |
+
+Everything else — which identity engine, which policy engine, JWKS, provider
+config — is server-side and **out of the consumer's contract**. If you find
+yourself needing a vendor name to integrate, that is a bug in the integration,
+not a missing doc.
+</content>
+</invoke>
