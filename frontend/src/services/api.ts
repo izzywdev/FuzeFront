@@ -59,7 +59,10 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  // Server-brokered sign-in/up drive the identity provider's flow-executor +
+  // OIDC exchange server-side (several hops); allow headroom so a legitimate
+  // login isn't cut off. The provider itself is reached over fast in-cluster DNS.
+  timeout: 30000, // 30 second timeout
 })
 
 // Add request timing and enhanced logging
