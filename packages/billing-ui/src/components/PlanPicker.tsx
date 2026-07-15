@@ -7,11 +7,11 @@ export type BillingInterval = 'month' | 'year';
 
 export interface PlanPickerProps {
   plans: Plan[];
-  /** stripePriceId of the entity's current plan, if any. */
+  /** priceId of the entity's current plan, if any. */
   currentPriceId?: string | null;
-  /** stripePriceId to highlight as recommended. */
+  /** priceId to highlight as recommended. */
   featuredPriceId?: string | null;
-  /** Controlled selection (stripePriceId). */
+  /** Controlled selection (priceId). */
   selectedPriceId?: string | null;
   onSelect?: (plan: Plan) => void;
   /** Show the monthly/yearly toggle (only when both intervals exist). */
@@ -86,11 +86,11 @@ export function PlanPicker({
       <div className="ffb-plans__grid">
         {visiblePlans.map((plan) => (
           <PlanCard
-            key={plan.stripePriceId}
+            key={plan.priceId}
             plan={plan}
-            current={plan.stripePriceId === currentPriceId}
-            featured={plan.stripePriceId === featuredPriceId}
-            selected={plan.stripePriceId === selectedPriceId}
+            current={plan.priceId === currentPriceId}
+            featured={plan.priceId === featuredPriceId}
+            selected={plan.priceId === selectedPriceId}
             onSelect={onSelect}
             disabled={disabled}
           />

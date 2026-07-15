@@ -67,8 +67,8 @@ describe('handleCheckoutCompleted', () => {
     expect(upserted).toEqual(
       expect.objectContaining({
         customerId: 'localcust_1',
-        stripeSubscriptionId: 'sub_test123',
-        stripePriceId: BASIC_PRICE_ID,
+        subscriptionId: 'sub_test123',
+        priceId: BASIC_PRICE_ID,
         planTier: 'basic',
         status: 'active',
         seatQuantity: 1,
@@ -112,7 +112,7 @@ describe('handleCheckoutCompleted', () => {
     expect(ctx.subscriptions.upsert).toHaveBeenCalledTimes(1);
     const upserted = ctx.subscriptions.upsert.mock.calls[0][0];
     expect(upserted).toEqual(
-      expect.objectContaining({ stripeSubscriptionId: 'sub_test123', status: 'active' }),
+      expect.objectContaining({ subscriptionId: 'sub_test123', status: 'active' }),
     );
     expect(ctx.emitter.subscriptionChanged).toHaveBeenCalled();
   });

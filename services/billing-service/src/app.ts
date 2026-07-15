@@ -10,12 +10,16 @@ import { createCheckoutRouter } from './routes/checkout';
 import { createPaymentsRouter } from './routes/payments';
 import { createInvoicesRouter } from './routes/invoices';
 import { createPortalRouter } from './routes/portal';
+import { createDocsRouter } from './routes/docs';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
 import { CustomerService } from './services/customer.service';
 import { SubscriptionRepository } from './repositories/subscription.repository';
 import { CustomerRepository } from './repositories/customer.repository';
 import { PaymentRepository } from './repositories/payment.repository';
+import { InvoiceRepository } from './repositories/invoice.repository';
+import { InvoiceService } from './services/invoice.service';
+import { StripePaymentProvider } from './providers/stripe/stripe-payment-provider';
 import { PaymentsConfig } from './config';
 
 export interface AppDeps {
@@ -29,6 +33,8 @@ export interface AppDeps {
   customers: CustomerService;
   /** One-time payment-mode Checkout mirror (billing.payments). */
   payments: PaymentRepository;
+  /** DB-backed, provider-neutral invoice store (billing.invoices). */
+  invoiceRepo: InvoiceRepository;
   /** Allowlists/bounds for POST /payments/checkout (config.payments). */
   paymentsConfig: PaymentsConfig;
   webhook: WebhookDeps;
@@ -55,7 +61,24 @@ export function createApp(deps?: AppDeps): Application {
     res.json({ status: 'ok', service: 'billing-service' });
   });
 
+  // Public API docs (Swagger UI + raw contract). No auth, no deps — available
+  // even in degraded mode so the contract is always inspectable.
+  app.use(API_BASE, createDocsRouter());
+
   if (!deps) return app;
+
+  // Vendor-neutral invoice slice: the Stripe adapter (the port's ONLY vendor
+  // dependency), the DB-backed store, and the read/sync service. The provider +
+  // repo are also injected into the webhook ctx so the invoice-synced handler
+  // can persist invoice.* events.
+  const paymentProvider = new StripePaymentProvider(deps.stripe);
+  const invoiceService = new InvoiceService({
+    customerRepo: deps.customerRepo,
+    invoiceRepo: deps.invoiceRepo,
+    provider: paymentProvider,
+  });
+  deps.webhook.ctx.provider = paymentProvider;
+  deps.webhook.ctx.invoiceRepo = deps.invoiceRepo;
 
   // 1) Webhook (raw body) — before express.json, public + sig-verified.
   app.use(API_BASE, createWebhookRouter(deps.webhook));
@@ -123,7 +146,7 @@ export function createApp(deps?: AppDeps): Application {
   // internal token AND re-derive the SERVER-DERIVED entity via
   // requireActorContext (applied inside their routers, scoped to their exact
   // method+path) — identity is never taken from a client query/body.
-  app.use(API_BASE, guard, createInvoicesRouter({ stripe: deps.stripe, customerRepo: deps.customerRepo }));
+  app.use(API_BASE, guard, createInvoicesRouter({ service: invoiceService }));
   app.use(API_BASE, guard, createPortalRouter({ stripe: deps.stripe, customerRepo: deps.customerRepo }));
 
   return app;

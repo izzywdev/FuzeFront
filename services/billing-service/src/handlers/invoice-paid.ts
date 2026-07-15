@@ -43,6 +43,6 @@ export async function handleInvoicePaid(
     entityType: entity.entityType,
     planTier,
     status: 'active',
-    stripeSubscriptionId: existing?.stripeSubscriptionId ?? '',
+    stripeSubscriptionId: existing?.subscriptionId ?? '',
   });
 }

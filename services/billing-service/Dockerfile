@@ -38,6 +38,9 @@ RUN cd services/billing-service && npm run build
 # and every billing table is missing ("relation billing.* does not exist").
 RUN mkdir -p services/billing-service/dist/migrations && \
     cp services/billing-service/src/migrations/*.sql services/billing-service/dist/migrations/
+# The public /docs route (Swagger UI) reads dist/openapi.yaml at request time;
+# tsc does not copy non-TS assets, so place the contract next to the compiled JS.
+RUN cp services/billing-service/openapi.yaml services/billing-service/dist/openapi.yaml
 
 # ---------- production ----------
 FROM node:18-alpine AS production

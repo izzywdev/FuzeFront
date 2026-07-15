@@ -41,7 +41,7 @@ const billingUiSrc = fileURLToPath(
   new URL('../packages/billing-ui/src/index.ts', import.meta.url)
 )
 const billingClientSrc = fileURLToPath(
-  new URL('../billing-client/index.ts', import.meta.url)
+  new URL('../billing-client/src/index.ts', import.meta.url)
 )
 // @fuzefront/app-registry-client (apps-client/) is an unpublished file: workspace
 // package whose dist/ is not built in CI — resolve from SOURCE, same as

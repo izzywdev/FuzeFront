@@ -7,6 +7,7 @@ import {
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   EntityType,
+  InvoiceListResponse,
   PaymentCheckoutRequest,
   PaymentCheckoutResponse,
   Plan,
@@ -18,7 +19,7 @@ const API_BASE = '/api/v1/billing';
 /**
  * Typed client over the billing-service REST API. Consumed by `backend` (and
  * other internal services) to read entitlements and drive checkout. Card data
- * never flows through here — only Stripe ids and client secrets.
+ * never flows through here — only provider ids and client secrets.
  */
 export class BillingClient {
   private readonly http: AxiosInstance;
@@ -36,9 +37,9 @@ export class BillingClient {
     return res.data.plans;
   }
 
-  async getSubscription(stripeSubscriptionId: string): Promise<BillingSubscription> {
+  async getSubscription(subscriptionId: string): Promise<BillingSubscription> {
     const res = await this.http.get<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
     return res.data.subscription;
   }
@@ -49,19 +50,19 @@ export class BillingClient {
   }
 
   async updateSubscription(
-    stripeSubscriptionId: string,
+    subscriptionId: string,
     req: UpdateSubscriptionRequest,
   ): Promise<BillingSubscription> {
     const res = await this.http.patch<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
       req,
     );
     return res.data.subscription;
   }
 
-  async cancelSubscription(stripeSubscriptionId: string): Promise<BillingSubscription> {
+  async cancelSubscription(subscriptionId: string): Promise<BillingSubscription> {
     const res = await this.http.delete<{ subscription: BillingSubscription }>(
-      `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+      `/subscriptions/${encodeURIComponent(subscriptionId)}`,
     );
     return res.data.subscription;
   }
@@ -96,6 +97,31 @@ export class BillingClient {
       { headers: actorHeaders(actor) },
     );
     return res.data.payment;
+  }
+
+  /**
+   * List the authorized entity's invoices (GET /invoices), newest first, served
+   * from the local invoice store. Pagination is opaque-cursor based: pass the
+   * previous response's `nextCursor` as `cursor`. Actor/entity context is added
+   * by the host-backend billing proxy.
+   */
+  async listInvoices(opts: { limit?: number; cursor?: string } = {}): Promise<InvoiceListResponse> {
+    const res = await this.http.get<InvoiceListResponse>('/invoices', {
+      params: {
+        ...(opts.limit != null ? { limit: opts.limit } : {}),
+        ...(opts.cursor ? { cursor: opts.cursor } : {}),
+      },
+    });
+    return res.data;
+  }
+
+  /**
+   * Force a provider→store resync of the authorized entity's invoices
+   * (POST /invoices/sync) and return how many were upserted. Idempotent.
+   */
+  async syncInvoices(): Promise<{ synced: number }> {
+    const res = await this.http.post<{ synced: number }>('/invoices/sync', {});
+    return res.data;
   }
 
   async addCredits(

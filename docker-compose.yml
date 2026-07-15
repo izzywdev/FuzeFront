@@ -100,6 +100,41 @@ services:
       - fuzefront-backend
 
   # ================================
+  # PAYMENT SERVICE (vendor-neutral payment gateway — SCAFFOLD, not the live
+  # money path yet). Runnable with zero secrets: without STRIPE_SECRET_KEY it
+  # serves /health only (degraded mode). Listens on 3007 (billing is 3006).
+  # ================================
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=development
+      - PORT=3007
+      - PAYMENT_PROVIDER=stripe
+      # STRIPE_SECRET_KEY intentionally unset locally → degraded mode (/health).
+      # PAYMENT_INTERNAL_TOKEN optional; unset leaves the neutral API open locally.
+    networks:
+      - FuzeInfra
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3007/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ================================
   # FRONTEND SERVICE
   # ================================
   fuzefront-frontend:

@@ -15,6 +15,11 @@ on:
         description: 'Target base URL'
         required: false
         default: 'https://app.fuzefront.com'
+      run_authn_boundary:
+        description: 'Also run the AuthN provider-boundary smoke (expected-fail until the AuthN deploy lands)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -49,7 +54,19 @@ jobs:
           # Falls back to the seeded admin creds inside the spec when unset.
           POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
           POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --reporter=list,html
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+
+      # AuthN provider-boundary smoke (contract PR #243). Runs only when
+      # explicitly requested; until the AuthN deploy lands these tests self-skip
+      # (gated on /api/v1/security/methods == 200), and `continue-on-error`
+      # keeps a pre-deploy run from turning the job red. After the deploy,
+      # dispatch with run_authn_boundary=true to make it the AuthN gate.
+      - name: Run AuthN boundary smoke (pending-deploy allowed to fail)
+        if: ${{ inputs.run_authn_boundary }}
+        continue-on-error: true
+        env:
+          POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy" --reporter=list,html
 
       - name: Upload report
         if: always()
