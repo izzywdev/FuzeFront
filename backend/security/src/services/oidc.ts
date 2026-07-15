@@ -31,8 +31,40 @@ class OIDCService {
       const issuer = await Issuer.discover(this.config.issuerUrl);
       console.log('✅ Discovered issuer:', issuer.metadata.issuer);
 
+      // Route the SERVER-SIDE OIDC calls (token / userinfo / jwks) over in-cluster
+      // DNS instead of hairpinning out to app.fuzefront.com via Cloudflare (which
+      // made login 15-28s and intermittently 401). Safe because the provider's
+      // issuer_mode is `per_provider` — the `iss` claim is fixed to the external
+      // issuer regardless of the request host, so token validation still matches.
+      // The authorization_endpoint stays EXTERNAL (it is browser-facing).
+      let effectiveIssuer = issuer;
+      const internalBase = process.env.AUTHENTIK_BASE_URL;
+      if (internalBase) {
+        const toInternal = (u?: string): string | undefined => {
+          if (!u) return u;
+          try {
+            const url = new URL(u);
+            const ib = new URL(internalBase);
+            url.protocol = ib.protocol;
+            url.host = ib.host;
+            return url.toString();
+          } catch {
+            return u;
+          }
+        };
+        effectiveIssuer = new Issuer({
+          ...issuer.metadata,
+          token_endpoint: toInternal(issuer.metadata.token_endpoint),
+          userinfo_endpoint: toInternal(issuer.metadata.userinfo_endpoint),
+          jwks_uri: toInternal(issuer.metadata.jwks_uri),
+          introspection_endpoint: toInternal(issuer.metadata.introspection_endpoint as string | undefined),
+          revocation_endpoint: toInternal(issuer.metadata.revocation_endpoint as string | undefined),
+        });
+        console.log('✅ OIDC server-side endpoints routed in-cluster via', internalBase);
+      }
+
       // Create the client
-      this.client = new issuer.Client({
+      this.client = new effectiveIssuer.Client({
         client_id: this.config.clientId,
         client_secret: this.config.clientSecret,
         redirect_uris: [this.config.redirectUri],
