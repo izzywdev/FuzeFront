@@ -4,6 +4,16 @@ name: Release (images + GitOps bump)
 # GHCR tagged with the commit SHA, then bump the tags in values-prod.yaml and
 # commit. Argo CD sees the git change and rolls out the new images.
 on:
+  # Manual trigger: auto-merged PRs push to master under GITHUB_TOKEN, and GitHub
+  # does NOT start push-triggered workflows for GITHUB_TOKEN pushes — so this
+  # workflow otherwise never runs after an auto-merge and images never build.
+  # Dispatch this after a deploy-window merge to build + bump the image tags.
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why this manual build (e.g. deploy security-service after an auto-merged PR)'
+        required: false
+        default: 'manual release'
   push:
     branches: [master]
     paths:
