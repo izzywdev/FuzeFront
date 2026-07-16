@@ -7,12 +7,12 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  * Verifies the acceptance-criteria critical journey on the real deployment:
  *   1. The Module-Federation SHELL serves (root 200, correct title).
  *   2. Core API health is up.
- *   3. The backend advertises OIDC as configured (/api/auth/method) — this is
- *      the flag that hides the local form, so it is asserted explicitly.
+ *   3. The Security API advertises the expected capabilities
+ *      (/api/v1/security/methods) — a non-empty `social` array is what renders
+ *      the Google button, so it is asserted explicitly.
  *   4. /login shows the NATIVE credentials form (email/password verified
- *      against Authentik server-side — no redirect) plus a "Sign in with
- *      Google" button (federated through Authentik). The old "Sign in with
- *      Authentik" redirect button is gone.
+ *      server-side by the identity provider — no redirect) plus a "Sign in with
+ *      Google" button. The old "Sign in with Authentik" redirect button is gone.
  *   5. Clicking "Sign in with Google" hands off into the OIDC flow.
  *   6. The auth backend is routable.
  *   7. The dashboard renders for an authenticated user and Module-Federation
@@ -25,9 +25,10 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
  *      IdP was never configured".
  *
  * The authenticated journey (test 7) obtains its session via the API
- * (POST /api/auth/login) rather than the UI: the local form is intentionally
- * absent from the UI, and driving real Google/Authentik credentials through a
- * synthetic check is brittle + a security liability. The API path remains as
+ * (POST /api/v1/security/session) rather than the UI: driving real Google
+ * credentials through a synthetic check is brittle + a security liability.
+ * This is the same endpoint the SPA uses, so it still fails if sign-in
+ * genuinely breaks. The API path remains as
  * the platform's machine/break-glass authentication.
  *
  * Credentials come from env so we never hard-code secrets in the repo:
@@ -73,15 +74,19 @@ test.describe('FuzeFront live post-prod smoke', () => {
     expect(body?.database?.status, 'platform DB connection').toBe('connected')
   })
 
-  test('3. backend advertises OIDC as configured (Authentik is the identity authority)', async ({ request }) => {
-    const resp = await request.get('/api/auth/method')
-    expect(resp.status(), '/api/auth/method status').toBe(200)
+  test('3. Security API advertises the expected auth capabilities in prod', async ({ request }) => {
+    // The SPA reads the provider-agnostic Security API, not the deprecated
+    // /api/auth shim — smoke the surface prod actually serves to browsers.
+    const resp = await request.get('/api/v1/security/methods')
+    expect(resp.status(), '/api/v1/security/methods status').toBe(200)
     const body = await resp.json()
     expect(
-      body.oidcConfigured,
-      'oidcConfigured must be true in prod — false would re-expose the local fallback form'
-    ).toBe(true)
-    expect(body.defaultMethod).toBe('oidc')
+      body.social,
+      'social login must be advertised in prod — an empty array hides the Google button'
+    ).toContain('google')
+    expect(body.password, 'password sign-in must be advertised in prod').toBe(true)
+    // Boundary: prod must never leak the identity/authz vendor to a browser.
+    expect(JSON.stringify(body)).not.toMatch(/authentik|permit/i)
   })
 
   test('4. /login offers the native credentials form + Google (no Authentik redirect button)', async ({ page }) => {
@@ -138,17 +143,20 @@ test.describe('FuzeFront live post-prod smoke', () => {
   test('7. authenticated dashboard + Module-Federation apps load', async ({ page, request }) => {
     const { consoleErrors, pageErrors, failedRequests } = attachErrorCollectors(page)
 
-    // Authenticate via the API (machine/break-glass path). The UI no longer
-    // renders a local form — human sign-in is Authentik/Google only — so the
-    // synthetic check mints its session directly and injects the token.
-    const loginResp = await request.post('/api/auth/login', {
+    // Authenticate via the Security API (machine/break-glass path) — the same
+    // surface the SPA uses, so this smoke fails if real sign-in is broken.
+    const loginResp = await request.post('/api/v1/security/session', {
       data: { email: EMAIL, password: PASSWORD },
     })
     expect(
       loginResp.status(),
-      `POST /api/auth/login -> ${loginResp.status()} (401/403 = creds rejected: POST_PROD_EMAIL/POST_PROD_PASSWORD not provisioned in prod; 5xx = backend error)`
+      `POST /api/v1/security/session -> ${loginResp.status()} (401/403 = creds rejected: POST_PROD_EMAIL/POST_PROD_PASSWORD not provisioned in prod; 5xx = backend error)`
     ).toBe(200)
     const loginBody = await loginResp.json()
+    expect(
+      loginBody.status,
+      'break-glass account must not require MFA step-up, or this synthetic cannot sign in'
+    ).not.toBe('mfa_required')
     const token: string = loginBody.token
     expect(token, 'API login returned a token').toBeTruthy()
 
