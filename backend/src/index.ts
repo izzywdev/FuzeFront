@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityCompatRoutes from './routes/security-compat'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,10 @@ try {
 }
 
 // Routes
+// Provider-neutral Security API (same surface as backend/security service).
+// This compat shim lets the monolith serve /api/v1/security/* in CI and local
+// dev where the separate security-service is not running.
+app.use('/api/v1/security', securityCompatRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
