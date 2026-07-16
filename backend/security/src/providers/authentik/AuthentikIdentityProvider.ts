@@ -110,6 +110,26 @@ interface MfaChallenge {
 const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
 
+/**
+ * Registration-time email verification is a two-condition gate, kept a release
+ * flag (default OFF) until prod SMTP is wired:
+ *
+ *   - `REQUIRE_EMAIL_VERIFICATION` (default `false`) is the release/kill switch.
+ *   - `EMAIL_SERVICE_URL` must be configured (the family email-service reachable
+ *     by Service DNS) for a real message to be deliverable.
+ *
+ * When BOTH hold, verification is REQUIRED: we mint a link token + OTP and
+ * dispatch it. Otherwise we GRACEFULLY DEGRADE — auto-verify the address and log
+ * — so signup/local dev/prod-without-SMTP never strands a user on an
+ * undeliverable challenge. Provider-neutral: no vendor is named.
+ */
+function emailVerificationEnabled(): boolean {
+  return (
+    process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
+    !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
+  )
+}
+
 export interface AuthentikProviderDeps {
   db: Db
   oidc: typeof defaultOidc
@@ -341,9 +361,55 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       if (err instanceof EnrollmentConflictError) throw new ConflictError()
       throw err
     }
+    // Kick off contact-ownership verification for the freshly-enrolled address.
+    // Best-effort: a delivery/transport failure must NOT fail the signup — the
+    // user can re-request via /verify/email/start. In degrade mode this simply
+    // auto-verifies + logs. Uses the user id directly (no bearer needed yet).
+    try {
+      await this.startEmailVerificationForUser(user.id, user.email)
+    } catch (err) {
+      // Constant format string + args: the email is attacker-chosen, so
+      // interpolating it INTO the format string lets a `%s` in an address forge
+      // log output (console.* applies util.format specifiers to the first arg).
+      console.error(
+        '[security] signup email-verification dispatch failed for %s: %s',
+        maskContact(user.email),
+        (err as Error).message,
+      )
+    }
+
     // Gate through MFA step-up if the (rare, freshly-enrolled) account already
     // has active factors — otherwise mint the session directly.
     return this.sessionOrChallenge(user)
+  }
+
+  /**
+   * Internal variant of startEmailVerification keyed by a known user id (used at
+   * signup, before any bearer exists). Honours the same degrade gate.
+   */
+  private async startEmailVerificationForUser(userId: string, email: string): Promise<void> {
+    if (!email) return
+    if (!emailVerificationEnabled()) {
+      await this.db('users').where({ id: userId }).update({ email_verified: true })
+      console.warn(
+        `[security] email verification degraded at signup (auto-verified ${maskContact(
+          email,
+        )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`,
+      )
+      return
+    }
+    const linkToken = crypto.randomBytes(32).toString('hex')
+    const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+    await this.db('email_verifications').insert({
+      id: uuidv4(),
+      user_id: userId,
+      email,
+      token_hash: sha256(linkToken),
+      code_hash: sha256(code),
+      expires_at: new Date(this.now() + EMAIL_VERIFY_TTL_MS),
+      consumed: false,
+    })
+    await this.notifications.sendEmailVerification(email, linkToken, code)
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
@@ -605,6 +671,35 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       target = target || user.email
     }
     if (!target) throw new InvalidInputError('email is required')
+
+    // Degrade mode: verification not required (flag off) or no email-service
+    // wired — auto-verify the local projection and log. Never strand the user on
+    // an undeliverable challenge.
+    if (!emailVerificationEnabled()) {
+      // Resolve by EMAIL when there is no token: the signup path calls this with
+      // an address and no session, so `userId` is null there. Gating the update
+      // on `userId` meant that path updated NOTHING while still logging
+      // "auto-verified" — the account stayed unverified and the log said
+      // otherwise. Harmless while the flag is off, but it strands exactly those
+      // accounts the moment REQUIRE_EMAIL_VERIFICATION is switched on.
+      const updated = userId
+        ? await this.db('users').where({ id: userId }).update({ email_verified: true })
+        : await this.db('users').where({ email: target }).update({ email_verified: true })
+
+      // Log what actually happened. `updated === 0` is legitimate (the user row
+      // may not be synced yet mid-signup) but it must not read as success.
+      console.warn(
+        updated
+          ? `[security] email verification degraded (auto-verified ${maskContact(
+              target,
+            )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`
+          : `[security] email verification degraded and NO user row matched ${maskContact(
+              target,
+            )} — left unverified; it will be promoted on first login via the OIDC email_verified claim.`,
+      )
+      return
+    }
+
     const linkToken = crypto.randomBytes(32).toString('hex')
     const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     await this.db('email_verifications').insert({

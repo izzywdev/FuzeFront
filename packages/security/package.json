@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/security-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-agnostic client + types for the FuzeFront Security API (AuthN + AuthZ). Generated from openapi.yaml; consumers know only FuzeFront, never a vendor.",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
