@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityCompatRoutes from './routes/securityCompat'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,11 @@ try {
 }
 
 // Routes
+// Security API shim: the full Security service (backend/security, port 3002)
+// is not started in CI/local. This shim implements the minimal /api/v1/security/*
+// surface the frontend needs so the e2e tests can sign in without the separate
+// security microservice running.
+app.use('/api/v1/security', securityCompatRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)

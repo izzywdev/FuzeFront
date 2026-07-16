@@ -27,9 +27,14 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
   await page.fill('input[type="email"]', 'admin@fuzefront.dev')
   await page.fill('input[type="password"]', 'admin123')
+  // The frontend calls the Security API (/api/v1/security/session); the
+  // legacy /api/auth/login alias is kept as a fallback match.
   await Promise.all([
     page.waitForResponse(
-      r => r.url().includes('/api/auth/login') && r.status() === 200
+      r =>
+        (r.url().includes('/api/v1/security/session') ||
+          r.url().includes('/api/auth/login')) &&
+        r.status() === 200
     ),
     page.click('button[type="submit"]'),
   ])
