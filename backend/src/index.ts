@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityAdapterRoutes from './routes/security-adapter'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,9 @@ try {
 }
 
 // Routes
+// Provider-agnostic security API (bridges the security-service surface for CI /
+// local dev where only the monolith is started).
+app.use('/api/v1/security', securityAdapterRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)

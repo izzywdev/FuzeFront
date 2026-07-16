@@ -16,12 +16,12 @@ test.describe('Authentication - Simple', () => {
 
     // Wait for login response and submit
     const responsePromise = page.waitForResponse(
-      response => response.url().includes('/api/auth/login') && response.status() === 200,
+      response => response.url().includes('/api/v1/security/session') && response.status() === 200,
       { timeout: 15000 }
     )
 
     await page.click('button[type="submit"]')
-    
+
     // Wait for successful login response
     const response = await responsePromise
     expect(response.status()).toBe(200)
