@@ -14,9 +14,16 @@ test.describe('Authentication - Simple', () => {
     await page.fill('input[type="email"]', 'admin@fuzefront.dev')
     await page.fill('input[type="password"]', 'admin123')
 
-    // Wait for login response and submit
+    // Wait for login response and submit.
+    // The SPA logs in via the provider-agnostic Security API (POST
+    // /api/v1/security/session), not the deprecated /api/auth/login. Match the
+    // METHOD too — GET /session ("me") hits the same URL and would otherwise
+    // satisfy this wait before the login round-trip completes.
     const responsePromise = page.waitForResponse(
-      response => response.url().includes('/api/auth/login') && response.status() === 200,
+      response =>
+        response.url().includes('/api/v1/security/session') &&
+        response.request().method() === 'POST' &&
+        response.status() === 200,
       { timeout: 15000 }
     )
 

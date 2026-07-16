@@ -95,6 +95,19 @@ Design-review checks how the UI *looks*; this gate checks how it *runs*. A UI ch
 
 The procedure, the FuzeFront gotchas (same-origin API base / no mixed-content under TLS, Module-Federation load), the full MCP capability map (console, network, Lighthouse/perf, a11y, device emulation, heap snapshots), and the DONE-report wording live in the **`ui-runtime-validation`** skill (`.claude/skills/ui-runtime-validation/`). The plugin must be installed in the session (`claude plugin marketplace add ChromeDevTools/chrome-devtools-mcp` → `claude plugin install chrome-devtools-mcp@chrome-devtools-plugins`); it is user/environment-scoped, not committed repo config.
 
+## Agent worktree lifecycle — reap them, or agents stop launching
+
+The Agent tool auto-removes an isolated worktree **only if it is unchanged**. Agents exist to change files, so in practice **every productive agent — and every agent killed mid-run** (API error, usage cap, timeout) — leaks its worktree and its `worktree-agent-*` branch. Nothing reaps them by default.
+
+This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_modules` if the agent installed). Past **~50** the repo gets slow enough that `git worktree add` exceeds the launcher's timeout and **no agent can start at all** — a self-inflicted DoS. This has already happened here: a fan-out session reached 100+ worktrees and every subsequent launch failed with `Failed to create worktree` until they were reaped. On Windows the leak is worse to clean up — `node_modules` carries read-only attributes, so plain `rm -rf` fails with "Permission denied" and each `git worktree remove` can take minutes.
+
+- **`scripts/reap-agent-worktrees.sh`** reclaims them. It runs automatically via the **`SessionStart` hook** in `.claude/settings.json`, so a fresh session self-heals; run it by hand any time launches start failing.
+- **Safety contract: work is never destroyed.** A worktree is reaped only if it has **no uncommitted changes** AND **no unpushed commits**. Anything dirty or unpushed is reported under `KEPT` and skipped so it can be salvaged. There is deliberately no `--force`.
+- `--dry-run` reports without changing anything.
+- This is the local counterpart to the branch policy below: `governance-nightly` reaps stale *branches* on the remote; the reaper reaps stale *worktrees* on the developer's disk. Neither covers the other.
+
+**This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
+
 ## Branch lifecycle policy
 
 Every agent-created branch must reach one of these terminal states — never left open indefinitely:

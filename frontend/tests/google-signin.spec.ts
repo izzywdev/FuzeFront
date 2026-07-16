@@ -3,21 +3,26 @@
  *
  * FRONTEND COMPONENT TESTS (mock-based) — NOT an end-to-end integration test.
  *
- * All backend/Authentik calls are intercepted with page.route() so these tests
- * do NOT require a live Authentik instance or Google OAuth credentials. They test
- * ONLY the frontend's rendering and routing logic in isolation.
+ * All backend calls are intercepted with page.route() so these tests do NOT
+ * require a live identity provider or Google OAuth credentials. They test ONLY
+ * the frontend's rendering and routing logic in isolation.
+ *
+ * The SPA talks exclusively to FuzeFront's own provider-agnostic Security API
+ * (`/api/v1/security/*`) — it never names or calls a vendor — so these mocks
+ * intercept that surface, not the deprecated `/api/auth/*` compatibility layer.
  *
  * For the real end-to-end integration test that exercises every layer —
- * frontend → backend OIDC login → Authentik → token exchange → JWT — see:
- *   tests/oidc-plumbing.e2e.spec.ts   (local Authentik user, runs on every PR)
+ * frontend → Security API → identity provider → token exchange → JWT — see:
+ *   tests/oidc-plumbing.e2e.spec.ts   (local provider user, runs on every PR)
  *   tests/google-oauth-e2e.spec.ts    (real Google OAuth, requires CI secrets)
  *
  * What these mock tests cover:
- *   1. Login page shows / hides the OIDC button based on /api/auth/method response
- *   2. Click → loginWithOIDC() → browser navigates to GET /api/auth/oidc/login
- *      (intercepted — does NOT hit the real backend or Authentik)
- *   3. After Authentik auth, backend redirects frontend to /?code=<hex>
- *   4. LoginPage.handleOIDCCallback() reads ?code=, POSTs /api/auth/token-exchange
+ *   1. Login page shows / hides the Google button based on the `social` array
+ *      returned by GET /api/v1/security/methods
+ *   2. Click → startSocialLogin() → browser navigates to
+ *      GET /api/v1/security/social/google/start (intercepted — never hits Google)
+ *   3. After provider auth, the backend redirects the frontend to /?code=<hex>
+ *   4. handleAuthCallback() reads ?code=, POSTs /api/v1/security/session/exchange
  *   5. App navigates to /dashboard on success
  *   6. Error path: ?error= shows an error on the login page
  */
@@ -33,15 +38,19 @@ async function setupCommonMocks(page: Parameters<Parameters<typeof test>[1]>[0],
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) })
   )
 
-  // Auth method discovery endpoint
-  await page.route('**/api/auth/method', route =>
+  // Auth capability discovery. The SPA reads the provider-agnostic Security API
+  // (`GET /api/v1/security/methods`), which returns a neutral descriptor — a
+  // non-empty `social` array is what enables the Google button; the legacy
+  // vendor-flavoured `oidcConfigured` boolean is gone.
+  await page.route('**/api/v1/security/methods', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        methods: oidcConfigured ? ['local', 'oidc'] : ['local'],
-        oidcConfigured,
-        defaultMethod: oidcConfigured ? 'oidc' : 'local',
+        password: true,
+        social: oidcConfigured ? ['google'] : [],
+        mfa: { enabled: true, types: ['totp', 'sms', 'email'] },
+        verification: { email: true, sms: true },
       }),
     })
   )
@@ -80,28 +89,28 @@ test.describe('OIDC / Google Sign-In — pre-production E2E', () => {
   })
 
   /**
-   * 3. Clicking "Sign in with Authentik" navigates the browser to /api/auth/oidc/login.
-   *    We intercept that route to prevent a real redirect to Authentik.
+   * 3. Clicking "Sign in with Google" navigates the browser to the Security API's
+   *    social-start endpoint. We intercept it to prevent a real redirect out.
    */
-  test('clicking "Sign in with Authentik" issues a request to /api/auth/oidc/login', async ({ page }) => {
+  test('clicking "Sign in with Google" issues a request to /api/v1/security/social/google/start', async ({ page }) => {
     await setupCommonMocks(page, true)
 
-    // Intercept the OIDC login initiation endpoint.  The real backend would
-    // redirect here to Authentik; we short-circuit to keep the test self-contained.
-    let oidcLoginRequested = false
-    await page.route('**/api/auth/oidc/login', route => {
-      oidcLoginRequested = true
+    // Intercept the server-brokered social-login initiation endpoint. The real
+    // backend 302s from here toward Google; we short-circuit to stay self-contained.
+    let socialStartRequested = false
+    await page.route('**/api/v1/security/social/google/start', route => {
+      socialStartRequested = true
       // Fulfill with a 200 so the browser doesn't chase a real 302.
-      route.fulfill({ status: 200, body: 'Intercepted — redirecting to Authentik…' })
+      route.fulfill({ status: 200, body: 'Intercepted — redirecting to Google…' })
     })
 
     await page.goto('/')
-    await page.getByRole('button', { name: /sign in with authentik/i }).click()
+    await page.getByRole('button', { name: /sign in with google/i }).click()
 
     // Give the navigation a moment to reach our route handler.
     await page.waitForTimeout(1500)
 
-    expect(oidcLoginRequested).toBe(true)
+    expect(socialStartRequested).toBe(true)
   })
 
   /**
@@ -136,17 +145,24 @@ test.describe('OIDC / Google Sign-In — pre-production E2E', () => {
     // (Playwright evaluates routes in reverse-registration order).
     await setupCommonMocks(page, true)
 
-    // Token exchange: frontend POSTs the code → backend returns JWT.
-    await page.route('**/api/auth/token-exchange', route =>
+    // Token exchange: frontend POSTs the opaque code to the Security API
+    // (`POST /api/v1/security/session/exchange`) → returns a SessionResult.
+    await page.route('**/api/v1/security/session/exchange', route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ token: 'e2e-test-jwt', sessionId: 'e2e-session-1' }),
+        body: JSON.stringify({
+          status: 'authenticated',
+          token: 'e2e-test-jwt',
+          sessionId: 'e2e-session-1',
+          user: { id: 'u-1', email: 'e2e@fuzefront.dev', firstName: 'E2E', lastName: 'User', roles: ['user'] },
+        }),
       })
     )
 
-    // User lookup: frontend GETs /api/auth/user after storing the token.
-    await page.route('**/api/auth/user', route =>
+    // User lookup ("me"): frontend GETs the Security API session after storing
+    // the token. Exact path — `/session/exchange` above keeps its own route.
+    await page.route('**/api/v1/security/session', route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
