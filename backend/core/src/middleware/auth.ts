@@ -26,25 +26,62 @@ export const authenticateToken = async (
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string
+      sessionId?: string
     }
 
-    const userRow = await db('users')
-      .select(
-        'id',
-        'email',
-        'first_name',
-        'last_name',
-        'default_app_id',
-        'roles'
-      )
-      .where('id', decoded.userId)
-      .first()
+    // Revocation is enforced HERE, on the request path, or it does not exist.
+    //
+    // The session JWT is stateless HS256, so signature validity alone says
+    // nothing about whether the session still lives. `logout()` and any
+    // device-revoke delete the `sessions` row — but until this check existed,
+    // nothing on the request path read that table, so a "logged out" token kept
+    // authenticating every route until `exp` (up to 24h). Revocation was
+    // enforced only by GET /session ("me"), i.e. effectively nowhere.
+    //
+    // Run in parallel with the user load: this is a PK lookup, so the added
+    // cost is one concurrent round-trip, not a serial one.
+    const [userRow, session] = await Promise.all([
+      db('users')
+        .select(
+          'id',
+          'email',
+          'first_name',
+          'last_name',
+          'default_app_id',
+          'roles'
+        )
+        .where('id', decoded.userId)
+        .first(),
+      decoded.sessionId
+        ? db('sessions').select('id', 'expires_at').where('id', decoded.sessionId).first()
+        : Promise.resolve(undefined),
+    ])
 
     if (!userRow) {
       console.log(`❌ [${requestId}] User not found in database:`, {
         userId: decoded.userId,
       })
       return res.status(401).json({ error: 'User not found' })
+    }
+
+    if (decoded.sessionId) {
+      if (!session) {
+        // Signed-out, device-revoked, or reaped. Deny.
+        console.log(`❌ [${requestId}] Session revoked`, { sessionId: decoded.sessionId })
+        return res.status(401).json({ error: 'Session revoked' })
+      }
+      if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
+        console.log(`❌ [${requestId}] Session expired`, { sessionId: decoded.sessionId })
+        return res.status(401).json({ error: 'Session expired' })
+      }
+    } else {
+      // Every current mint site includes `sessionId`, so absence means a token
+      // issued by an older build. Those age out with the 24h TTL; allowing them
+      // keeps this deploy from signing everyone out mid-session. Not a new
+      // weakness — an attacker cannot strip the claim without the signing key,
+      // and holding that key lets them mint anything anyway.
+      // TODO: once a release has fully rolled (>24h), make this branch a 401.
+      console.warn(`⚠️ [${requestId}] Session token has no sessionId — pre-rollout token, revocation cannot be enforced`)
     }
 
     const user: User = {
