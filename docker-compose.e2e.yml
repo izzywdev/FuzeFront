@@ -228,6 +228,78 @@ services:
       retries: 6
       start_period: 30s
 
+  # ── Security service ──────────────────────────────────────────────────────
+  # The SPA signs in through the provider-agnostic Security API
+  # (/api/v1/security/*), which ONLY this service serves — the monolith `backend`
+  # above mounts /api/auth, /api/apps, /api/organizations, /api/v1/app-registry
+  # and nothing else. Without this container the SPA's login POST 404s, so the
+  # sign-in e2e times out waiting for a response that can never arrive. nginx
+  # (see deploy/e2e/nginx.e2e.conf) path-routes /api/v1/security/ here, mirroring
+  # the prod Ingress which sends /api/v1/security → fuzefront-security.
+  security:
+    build:
+      context: .
+      dockerfile: backend/security/Dockerfile
+    ports:
+      - '3002:3002'
+    environment:
+      NODE_ENV: production
+      USE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: fuzefront_platform
+      DB_USER: e2e
+      DB_PASSWORD: e2e_pass
+      # Must match the monolith: both mint/validate the same platform JWT.
+      JWT_SECRET: e2e-jwt-secret-not-for-prod
+      PORT: '3002'
+      FRONTEND_URL: http://localhost:4173
+      PERMIT_API_KEY: ci-noop
+      PERMIT_PDP_URL: http://localhost:7766
+      # Password sign-in is brokered SERVER-side through Authentik's
+      # flow-executor (no browser redirect), so these are required even for the
+      # plain email/password e2e — not just the social flow.
+      AUTHENTIK_CLIENT_ID: fuzefront-oidc-client
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+      AUTHENTIK_ISSUER_URL: ${AUTHENTIK_ISSUER_URL:-http://authentik-server:9000/application/o/fuzefront/}
+      # Server-side calls (flow-executor, token, userinfo, jwks) go over the
+      # compose network rather than back out through a published port.
+      AUTHENTIK_BASE_URL: http://authentik-server:9000
+      # Native IdP paths — no reverse-proxy prefix (matches the prod ingress).
+      SECURITY_IDP_PROXY_PREFIX: ''
+      # MUST be a redirect_uri registered on the OIDC provider (matching_mode:
+      # strict), or Authentik rejects the authorize call and password login
+      # fails — password sign-in is a full authorize→code→exchange, not just a
+      # flow-executor call. It does NOT need to be browser-reachable: the server
+      # follows that 302 itself and lifts `code` out of the Location header.
+      # So we reuse the shared, registered /api/auth/oidc/callback — exactly what
+      # prod's security service does (values.authentik.oidc.redirectUri points at
+      # https://app.fuzefront.com/api/auth/oidc/callback). The registered set
+      # lives in authentik/blueprints/provider-oidc.yaml.
+      AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authentik-server:
+        condition: service_started
+      # Serialise migrations. This service runs the SAME 001-009 chain against
+      # the SAME `knex_migrations` table as the monolith (see
+      # backend/security/src/index.ts). Started concurrently, the two race for
+      # the migration lock and one dies — which is exactly what happened when
+      # this container was first added: `backend exited (1)` took the whole
+      # stack down with it. Waiting for backend to be healthy means the chain is
+      # already applied and this service's run is a no-op.
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3002/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
   # ── Frontend ──────────────────────────────────────────────────────────────
   # Built from repo root (Dockerfile requires workspace context for @fuzefront/* aliases).
   frontend:
@@ -253,4 +325,8 @@ services:
       - e2e
     depends_on:
       backend:
+        condition: service_healthy
+      # nginx resolves upstreams at startup, so it fails to boot if `security`
+      # is not up yet — and without it the SPA cannot sign in at all.
+      security:
         condition: service_healthy

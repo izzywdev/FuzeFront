@@ -18,8 +18,13 @@ test.describe('Mobile layout', () => {
     await page.fill('input[type="email"]', 'admin@fuzefront.dev')
     await page.fill('input[type="password"]', 'admin123')
     await Promise.all([
+      // Login goes through the Security API (POST /api/v1/security/session);
+      // match the method so GET /session ("me") cannot satisfy the wait early.
       page.waitForResponse(
-        r => r.url().includes('/api/auth/login') && r.status() === 200,
+        r =>
+          r.url().includes('/api/v1/security/session') &&
+          r.request().method() === 'POST' &&
+          r.status() === 200,
         { timeout: 15000 }
       ),
       page.click('button[type="submit"]'),
