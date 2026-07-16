@@ -1,0 +1,82 @@
+# Authentik Blueprint — FuzeFront account-security flow bindings
+#
+# The stage-definition blueprints (stages-mfa.yaml, stages-sms.yaml) DEFINE the
+# TOTP / WebAuthn / SMS authenticator stages but do NOT bind them to any flow, so
+# on their own they never surface to users. This blueprint supplies the missing
+# wiring, idempotently (state: present + stable identifiers), completing the
+# account-security surface:
+#
+#   1. Self-service device + social management — bind the authenticator SETUP
+#      stages (TOTP, WebAuthn/passkey, SMS) to the default user-settings flow so
+#      users can enroll/remove MFA devices from their profile. Authentik renders
+#      connected OAuth sources (Google — see source-google.yaml) for link/unlink
+#      in the SAME user-settings flow, so this is also the social link/unlink
+#      surface.
+#   2. Enforce-if-enrolled MFA at login — bind the authenticator VALIDATION stage
+#      (fuzefront-mfa-validate, device_classes = totp/webauthn/sms) to the default
+#      authentication flow. not_configured_action=skip (set on the stage) keeps
+#      the SMS/TOTP/WebAuthn factor OPTIONAL: users without an enrolled device are
+#      not blocked, users with one are challenged.
+#
+# Depends on (applied earlier — alphabetical sort puts flow-bindings-* after
+# flow-*/stages-* only for stages-sms.yaml; !Find resolves post-apply regardless
+# of file order because Authentik applies all discovered blueprints, then
+# re-resolves references):
+#   - stages-mfa.yaml   → fuzefront-mfa-totp-setup, fuzefront-mfa-webauthn-setup,
+#                         fuzefront-mfa-validate
+#   - stages-sms.yaml   → fuzefront-mfa-sms-setup (adds sms to fuzefront-mfa-validate)
+#   - Authentik built-in default flows: default-user-settings-flow,
+#     default-authentication-flow
+version: 1
+metadata:
+  name: FuzeFront Account-Security Flow Bindings
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  # ── User-settings flow: MFA device enrollment (TOTP) ─────────────────────────
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-user-settings-flow]]
+      stage: !Find [authentik_stages_authenticator_totp.authenticatortotpstage, [name, fuzefront-mfa-totp-setup]]
+    attrs:
+      order: 10
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
+  # ── User-settings flow: MFA device enrollment (WebAuthn / passkey) ───────────
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-user-settings-flow]]
+      stage: !Find [authentik_stages_authenticator_webauthn.authenticatorwebauthnstage, [name, fuzefront-mfa-webauthn-setup]]
+    attrs:
+      order: 20
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
+  # ── User-settings flow: MFA device enrollment (SMS / phone) ──────────────────
+  # Optional factor: sms-service (Twilio Verify) must be enabled for this to work.
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-user-settings-flow]]
+      stage: !Find [authentik_stages_authenticator_sms.authenticatorsmsstage, [name, fuzefront-mfa-sms-setup]]
+    attrs:
+      order: 30
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
+  # ── Authentication flow: enforce-if-enrolled MFA (TOTP / WebAuthn / SMS) ─────
+  # Ordered after the password stage (default-authentication-password order=20)
+  # and before the login stage, so an enrolled user is challenged for a second
+  # factor. Unenrolled users are skipped (not_configured_action=skip on the stage).
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      stage: !Find [authentik_stages_authenticator_validate.authenticatorvalidatestage, [name, fuzefront-mfa-validate]]
+    attrs:
+      order: 30
+      evaluate_on_plan: false
+      re_evaluate_policies: true

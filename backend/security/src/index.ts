@@ -15,6 +15,7 @@ import path from 'path'
 
 import authRoutes from './routes/auth'
 import securityRoutes from './routes/security'
+import authzRoutes from './routes/authz'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
@@ -35,6 +36,9 @@ const startTime = Date.now()
 
 // Provider-agnostic Security API (AuthN surface). New consumers use this.
 app.use('/api/v1/security', securityRoutes)
+// Provider-agnostic Security API (AuthZ surface) — /authz/* + /tenants/*,
+// implemented purely against the AuthorizationProvider contract (Permit hidden).
+app.use('/api/v1/security', authzRoutes)
 // Domain routes (identical paths to the monolith). These remain the working,
 // prod-tested `/api/auth/*` surface; they are the DEPRECATED compatibility
 // layer that the SPA migrates OFF onto `/api/v1/security/*`. Converting them
