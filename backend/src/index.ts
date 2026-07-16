@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 
 // Import routes
 import authRoutes from './routes/auth'
+import securityRoutes from './routes/security'
 import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
@@ -275,6 +276,10 @@ try {
 
 // Routes
 app.use('/api/auth', authRoutes)
+// Security API shim: the frontend calls /api/v1/security/session for login and
+// session management. The standalone security-service serves this in production;
+// this shim serves it on the main backend for CI and local-dev.
+app.use('/api/v1/security', securityRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the

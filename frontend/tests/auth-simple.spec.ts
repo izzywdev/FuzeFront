@@ -16,7 +16,7 @@ test.describe('Authentication - Simple', () => {
 
     // Wait for login response and submit
     const responsePromise = page.waitForResponse(
-      response => response.url().includes('/api/auth/login') && response.status() === 200,
+      response => response.url().includes('/api/v1/security/session') && response.request().method() === 'POST' && response.status() === 200,
       { timeout: 15000 }
     )
 
