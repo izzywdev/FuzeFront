@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/reap-agent-worktrees.sh >/dev/null 2>&1 &"
+          }
+        ]
+      }
+    ]
+  }
+}
