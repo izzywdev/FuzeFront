@@ -156,7 +156,16 @@ class OIDCService {
     // The enrollment email-verify stage (or a verified social login) sets the
     // standard OIDC `email_verified` claim; we only ever flip FALSE->TRUE here so
     // a stale/absent claim never un-verifies an already-verified account.
-    const emailVerifiedClaim = userinfo.email_verified === true;
+    //
+    // Accept the STRING "true" as well as the boolean. The OIDC spec types this
+    // as a boolean, but real providers emit `"true"` — and this claim passes
+    // through from the upstream social provider (e.g. Google) as well as from our
+    // own IdP, so we cannot assume one encoding. A strict `=== true` silently
+    // treats a genuinely-verified account as unverified forever: it never gets
+    // promoted on login, and the moment REQUIRE_EMAIL_VERIFICATION is switched on
+    // that user is locked out of an account they did verify.
+    const emailVerifiedClaim =
+      userinfo.email_verified === true || userinfo.email_verified === 'true';
 
     try {
       // Check if user exists

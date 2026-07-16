@@ -349,10 +349,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     try {
       await this.startEmailVerificationForUser(user.id, user.email)
     } catch (err) {
+      // Constant format string + args: the email is attacker-chosen, so
+      // interpolating it INTO the format string lets a `%s` in an address forge
+      // log output (console.* applies util.format specifiers to the first arg).
       console.error(
-        `[security] signup email-verification dispatch failed for ${maskContact(
-          user.email,
-        )}:`,
+        '[security] signup email-verification dispatch failed for %s: %s',
+        maskContact(user.email),
         (err as Error).message,
       )
     }
@@ -655,13 +657,26 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // wired — auto-verify the local projection and log. Never strand the user on
     // an undeliverable challenge.
     if (!emailVerificationEnabled()) {
-      if (userId) {
-        await this.db('users').where({ id: userId }).update({ email_verified: true })
-      }
+      // Resolve by EMAIL when there is no token: the signup path calls this with
+      // an address and no session, so `userId` is null there. Gating the update
+      // on `userId` meant that path updated NOTHING while still logging
+      // "auto-verified" — the account stayed unverified and the log said
+      // otherwise. Harmless while the flag is off, but it strands exactly those
+      // accounts the moment REQUIRE_EMAIL_VERIFICATION is switched on.
+      const updated = userId
+        ? await this.db('users').where({ id: userId }).update({ email_verified: true })
+        : await this.db('users').where({ email: target }).update({ email_verified: true })
+
+      // Log what actually happened. `updated === 0` is legitimate (the user row
+      // may not be synced yet mid-signup) but it must not read as success.
       console.warn(
-        `[security] email verification degraded (auto-verified ${maskContact(
-          target,
-        )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`,
+        updated
+          ? `[security] email verification degraded (auto-verified ${maskContact(
+              target,
+            )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`
+          : `[security] email verification degraded and NO user row matched ${maskContact(
+              target,
+            )} — left unverified; it will be promoted on first login via the OIDC email_verified claim.`,
       )
       return
     }
