@@ -267,10 +267,16 @@ services:
       AUTHENTIK_BASE_URL: http://authentik-server:9000
       # Native IdP paths — no reverse-proxy prefix (matches the prod ingress).
       SECURITY_IDP_PROXY_PREFIX: ''
-      # Browser-facing social callback, on the APP origin: nginx routes
-      # /api/v1/security/ → this service. Path from
-      # providers/authentik/config.ts socialCallbackPath().
-      AUTHENTIK_REDIRECT_URI: http://localhost:4173/api/v1/security/social/callback
+      # MUST be a redirect_uri registered on the OIDC provider (matching_mode:
+      # strict), or Authentik rejects the authorize call and password login
+      # fails — password sign-in is a full authorize→code→exchange, not just a
+      # flow-executor call. It does NOT need to be browser-reachable: the server
+      # follows that 302 itself and lifts `code` out of the Location header.
+      # So we reuse the shared, registered /api/auth/oidc/callback — exactly what
+      # prod's security service does (values.authentik.oidc.redirectUri points at
+      # https://app.fuzefront.com/api/auth/oidc/callback). The registered set
+      # lives in authentik/blueprints/provider-oidc.yaml.
+      AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
     networks:
       - e2e
     depends_on:
