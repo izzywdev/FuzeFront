@@ -8,8 +8,14 @@
 # (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
 # and add the following Authorized redirect URIs to the matching Google OAuth client:
 #
-#   Production client:  https://auth.fuzefront.com/source/oauth/callback/google/
+#   Production client:  https://app.fuzefront.com/source/oauth/callback/google/
 #   Dev tunnel client:  https://auth-dev.fuzefront.com/source/oauth/callback/google/
+#
+# The production callback is on the APP host, not a dedicated IdP host: the
+# public auth.fuzefront.com ingress was removed so the browser only ever sees
+# app.fuzefront.com + accounts.google.com. There is no settable callback field
+# on an oauthsource — Authentik derives callback_url at runtime from the request
+# Host + X-Forwarded-Proto, which the IdP ingress pins to https/app.fuzefront.com.
 #
 # Use TWO SEPARATE Google OAuth clients — one for production, one for the dev
 # tunnel. Never share credentials between them. The dev client is used by

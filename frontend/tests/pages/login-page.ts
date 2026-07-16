@@ -34,8 +34,13 @@ export class LoginPage {
     await this.page.waitForLoadState('networkidle')
     
     // Click submit and wait for the request
+    // Login goes through the Security API (POST /api/v1/security/session);
+    // match the method so GET /session ("me") cannot satisfy the wait early.
     const responsePromise = this.page.waitForResponse(
-      response => response.url().includes('/api/auth/login') && response.status() !== 0,
+      response =>
+        response.url().includes('/api/v1/security/session') &&
+        response.request().method() === 'POST' &&
+        response.status() !== 0,
       { timeout: 10000 }
     )
     
