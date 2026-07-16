@@ -247,7 +247,26 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // Rewrite the absolute internal authorize URL to a SAME-HOST path under the
     // IdP reverse-proxy prefix, so the browser never sees the internal host.
     const authorize = new URL(url)
-    const redirectUrl = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+    const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+
+    // Launch the provider's SOURCE directly rather than sending the browser to
+    // the generic authorize endpoint. Authorize requires an authenticated
+    // session, so with none it falls back to the brand's authentication flow
+    // and renders the IdP's identification page (`/if/flow/...`) with a social
+    // button — stranding the user on the provider's own UI.
+    //
+    // The source-redirect view instead 302s straight to the social provider.
+    // It returns to /source/oauth/callback/<provider>/, the source flow runs
+    // (auto stages: silent enrollment first time, login when returning) and
+    // establishes the session, then `next` sends the browser to authorize,
+    // which now issues the code silently. Same cookie/state/PKCE round-trip —
+    // this only inserts one hop ahead of authorize, so no `/if/flow/` renders.
+    //
+    // The source slug tracks `provider` (guarded to `google` above) so widening
+    // that guard cannot silently route a new provider through Google's source.
+    const redirectUrl =
+      `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
+      `?next=${encodeURIComponent(authorizePath)}`
 
     this.socialStates.set(state, {
       codeVerifier,

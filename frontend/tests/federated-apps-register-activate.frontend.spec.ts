@@ -19,7 +19,7 @@ import { test, expect, type Page } from '@playwright/test'
  * DETERMINISM: the full live stack (Postgres + backend + Authentik + Permit +
  * a real Module-Federation remote) is not runnable in this sandbox, so this
  * spec MOCKS the contract surface via Playwright request interception:
- *   - auth   (/api/auth/user)          → an authenticated admin
+ *   - auth   (/api/v1/security/session) → an authenticated admin
  *   - orgs   (/api/organizations)      → a personal org (opens the provisioning gate)
  *   - registry (/api/v1/app-registry/*)→ stateful list/register/activate
  *
@@ -79,8 +79,10 @@ function activatedApp(): Record<string, unknown> {
  * AND activated, exactly like the real lifecycle.
  */
 async function installMocks(page: Page) {
-  // Authenticated as a provisioned admin (AuthWrapper -> GET /api/auth/user).
-  await page.route('**/api/auth/user', route =>
+  // Authenticated as a provisioned admin. The shell resolves "me" from the
+  // provider-agnostic Security API (GET /api/v1/security/session), not the
+  // deprecated /api/auth/user shim.
+  await page.route('**/api/v1/security/session', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',

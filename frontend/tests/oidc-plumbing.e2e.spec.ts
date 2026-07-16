@@ -57,12 +57,58 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   })
 
   // ── 2. Backend health + OIDC configured ────────────────────────────────
-  test('backend reports oidcConfigured:true', async ({ request }) => {
+  // NOTE: /api/auth/* is the DEPRECATED compatibility layer, kept mounted for
+  // one release. It is still asserted here so we notice if the shim breaks —
+  // but the SPA and all consumers use /api/v1/security/* (covered in 2c/2d).
+  test('backend reports oidcConfigured:true (deprecated /api/auth shim)', async ({ request }) => {
     const resp = await request.get(`${BACKEND_URL}/api/auth/method`)
     expect(resp.ok()).toBeTruthy()
     const body = await resp.json()
     expect(body.oidcConfigured).toBe(true)
     expect(body.methods).toContain('oidc')
+  })
+
+  // ── 2c. Security API capability descriptor (the surface the SPA reads) ──
+  // Provider-neutral by contract: a vendor name must never appear here.
+  test('Security API advertises neutral capabilities incl. Google social', async ({ request }) => {
+    const resp = await request.get(`${BACKEND_URL}/api/v1/security/methods`)
+    expect(resp.ok(), `GET /api/v1/security/methods -> ${resp.status()}`).toBeTruthy()
+    const body = await resp.json()
+    expect(body.password).toBe(true)
+    expect(body.social).toContain('google')
+    expect(body.mfa?.enabled).toBe(true)
+    // Boundary: the descriptor must not leak the identity provider.
+    expect(JSON.stringify(body)).not.toMatch(/authentik|permit/i)
+  })
+
+  // ── 2d. Password sign-in through the Security API (what the SPA calls) ──
+  test('Security API password sign-in returns a platform JWT session', async ({ request }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/v1/security/session`, {
+      data: { email: E2E_USER_EMAIL, password: E2E_USER_PASSWORD },
+    })
+    expect(
+      resp.status(),
+      `POST /api/v1/security/session -> ${resp.status()}: ${await resp.text().catch(() => '')}`
+    ).toBe(200)
+    const body = await resp.json()
+    // Either an authenticated session, or an mfa_required challenge if the
+    // account has step-up enabled — both are contract-valid; only the
+    // authenticated branch carries a token.
+    if (body.status === 'mfa_required') {
+      expect(body.challengeId ?? body.mfaToken ?? body.token).toBeTruthy()
+      return
+    }
+    expect(body.token, 'platform JWT returned').toBeTruthy()
+    expect(body.token.split('.')).toHaveLength(3)
+    expect(body.sessionId).toBeTruthy()
+    expect(body.user?.email?.toLowerCase()).toBe(E2E_USER_EMAIL.toLowerCase())
+  })
+
+  test('Security API rejects a wrong password with 401', async ({ request }) => {
+    const resp = await request.post(`${BACKEND_URL}/api/v1/security/session`, {
+      data: { email: E2E_USER_EMAIL, password: 'definitely-not-the-password' },
+    })
+    expect(resp.status()).toBe(401)
   })
 
   // ── 2b. Server-side password sign-in (flow-executor, no redirect) ───────
