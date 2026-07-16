@@ -2,8 +2,8 @@
 
 How a downstream product runs **on top of** the FuzeFront platform: register a
 micro-frontend into the host shell, consume the shared `@fuzefront/*` packages,
-sign users in via Authentik OIDC SSO, authorize with Permit scopes, and call the
-platform API.
+sign users in and authorize them through the **FuzeFront Security API**, and call
+the platform API.
 
 FuzeFront is a **Module-Federation host shell** ("runtime fabric"): a dark-default
 dashboard that discovers, mounts, and fuses remote micro-frontends ("apps") into
@@ -111,48 +111,56 @@ constant together.
 
 ---
 
-## 3. Authentik OIDC SSO
+## 3. Authentication (Security API)
 
-Identity is owned by **Authentik** (`auth.fuzefront.com` in prod). The platform
-backend brokers OIDC; your product gets SSO by sending users through the shell's
-auth, or by registering your own OIDC client in Authentik.
+Sign users in through the **FuzeFront Security API** (`/api/v1/security/*`,
+same-origin) and the `@fuzefront/security-client` types — never a vendor SDK or
+identity host. The platform brokers everything server-side; the browser only ever
+transits `app.fuzefront.com` and (for social login) the social provider's own
+consent host.
 
-Backend OIDC endpoints:
+Consumer AuthN endpoints:
 
-- `GET /api/auth/oidc/login` — starts the Authorization Code flow (redirects to
-  Authentik).
-- `GET /api/auth/oidc/callback` — exchange + session; the backend issues a JWT.
-- `POST /api/auth/login` — local JWT login (dev / non-SSO).
+- `GET /api/v1/security/methods` — capability descriptor (which sign-in methods
+  are available); replaces the legacy `oidcConfigured` boolean.
+- `POST /api/v1/security/session` — password login → `SessionResult`
+  (`authenticated` or `mfa_required`).
+- `GET /api/v1/security/social/{provider}/start` → provider consent →
+  `GET /api/v1/security/social/callback` returns a single-use `?code=`, which you
+  exchange at `POST /api/v1/security/session/exchange` (no token in the URL).
+- `POST /api/v1/security/signup` — server-brokered account creation.
+- `GET /api/v1/security/session` — the current stable `Identity` ("me");
+  `DELETE /api/v1/security/session` — logout.
 
-Prod OIDC config (from `values-prod.yaml`):
-
-- issuer: `https://auth.fuzefront.com/application/o/fuzefront/`
-- redirect: `https://app.fuzefront.com/api/auth/oidc/callback`
-- cookie domain: `fuzefront.com` (session shared across `*.fuzefront.com`)
-
-To SSO your own subdomain product, register an OIDC provider/application in
-Authentik with your redirect URI, and validate the issued JWT against the same
-issuer. Keep your cookie/JWT audience consistent so the shared session works
-across the apex.
+Resolve every caller to the stable `Identity`
+(`{ userId, tenantId, roles, authMode, … }`) via the Security API — **do not**
+parse the JWT or fetch a JWKS. `Identity` is invariant across the token-format
+migration. See
+[`docs/consumers/onboarding-authn-authz.md`](../consumers/onboarding-authn-authz.md)
+for the step-by-step recipe.
 
 ---
 
-## 4. Permit scopes (authorization)
+## 4. Authorization (Security API)
 
-Authorization is policy-based via **Permit.io** (a PDP runs in-cluster;
-`permit.enabled: true` in prod). The backend gates routes with a
-`requirePermission(resource, action)` middleware; the SDK degrades gracefully if
-no PDP is reachable (permission-gated routes deny).
+Authorize actions by asking the Security API for a decision — never a local role
+cache or a policy SDK. `POST /api/v1/security/authz/check` is authoritative and
+fail-closed (`{ allow: false }` on any error):
 
-To authorize your product's actions:
+1. `POST /api/v1/security/authz/check` with
+   `{ subject, tenant, resource: { type, key? }, action }` → `{ allow }`.
+   Batch with `/authz/bulk-check`; read effective grants with
+   `/authz/permissions?subject&tenant`.
+2. Manage roles/membership via `/authz/grants` (tenant-wide RBAC or
+   resource-scoped ReBAC) and `/tenants/*`.
+3. Multi-tenant: authorization is isolated **per tenant**; a role in one tenant
+   does not carry to another. If `identity.tenantId` is `null`, fail closed.
 
-1. Model your resources/actions/roles in the Permit schema (the chart's
-   `permit-schema-sync` Job applies the FuzeFront schema on upgrade; extend it
-   for your resources).
-2. Call the platform API with a JWT; the backend resolves the user + org context
-   and checks the PDP.
-3. Multi-tenant: permissions are isolated per **organization**; pass/inherit the
-   org context so checks are scoped to the right tenant.
+> **Status:** AuthN is live; the AuthZ endpoints (`/authz/*`, `/tenants/*`) are
+> contract-frozen and generated into the client but not yet wired in the Security
+> service — build against them now and gate behind a flag until the AuthZ rollout
+> lands. Full detail:
+> [`docs/consumers/authn-authz-integration.md`](../consumers/authn-authz-integration.md).
 
 ---
 
@@ -162,7 +170,8 @@ To authorize your product's actions:
   nginx proxies `/api` + `/socket.io` to the backend Services. The browser API
   base defaults to same-origin — never hardcode `http://…` (mixed-content under
   TLS).
-- **Auth**: `Authorization: Bearer <jwt>` from OIDC or local login.
+- **Auth**: `Authorization: Bearer <token>` — a FuzeFront-minted session or M2M
+  token from the Security API (§3). Consume the normalized `Identity`, not raw claims.
 - **Health**: `GET /api/health` → `{ status, database, ... }` (used by the prod
   smoke check).
 - **Client**: prefer `@izzywdev/fuzefront-api-client` over hand-rolled fetch — it
