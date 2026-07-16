@@ -284,6 +284,15 @@ services:
         condition: service_healthy
       authentik-server:
         condition: service_started
+      # Serialise migrations. This service runs the SAME 001-009 chain against
+      # the SAME `knex_migrations` table as the monolith (see
+      # backend/security/src/index.ts). Started concurrently, the two race for
+      # the migration lock and one dies — which is exactly what happened when
+      # this container was first added: `backend exited (1)` took the whole
+      # stack down with it. Waiting for backend to be healthy means the chain is
+      # already applied and this service's run is a no-op.
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3002/health']
       interval: 10s
