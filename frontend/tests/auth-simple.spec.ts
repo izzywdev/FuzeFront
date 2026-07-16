@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
 
+// Credentials come from the environment so this spec can run against the FULL
+// stack, where the account must exist in the identity provider. Sign-in is
+// brokered through that provider — a bcrypt row seeded straight into the
+// platform DB is NOT a credential it will accept, which is why the hardcoded
+// admin@fuzefront.dev default only works against a local-auth stack.
+const EMAIL = process.env.E2E_USER_EMAIL ?? 'admin@fuzefront.dev'
+const PASSWORD = process.env.E2E_USER_PASSWORD ?? 'admin123'
+
 test.describe('Authentication - Simple', () => {
   test('should successfully authenticate', async ({ page }) => {
     // Navigate to the app
@@ -11,8 +19,8 @@ test.describe('Authentication - Simple', () => {
     await expect(page.locator('input[type="password"]')).toBeVisible({ timeout: 10000 })
 
     // Fill credentials
-    await page.fill('input[type="email"]', 'admin@fuzefront.dev')
-    await page.fill('input[type="password"]', 'admin123')
+    await page.fill('input[type="email"]', EMAIL)
+    await page.fill('input[type="password"]', PASSWORD)
 
     // Wait for login response and submit.
     // The SPA logs in via the provider-agnostic Security API (POST
