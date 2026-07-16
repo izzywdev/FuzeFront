@@ -35,7 +35,13 @@ import { test, expect, type Page } from '@playwright/test'
 
 const AUTHENTIK_URL = process.env.AUTHENTIK_URL ?? 'http://authentik-server:9000'
 const FRONTEND_URL = process.env.BASE_URL ?? 'http://localhost:4173'
+// The MONOLITH. Serves the deprecated /api/auth/* shim — NOT /api/v1/security/*.
 const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:3001'
+// The Security API is reached the way the browser reaches it: through the app
+// origin, whose nginx path-routes /api/v1/security/ to the security service.
+// Do NOT point this at BACKEND_URL — the monolith 404s these routes, which is
+// exactly how these tests failed in ~11ms the first time round.
+const SECURITY_URL = process.env.SECURITY_URL ?? FRONTEND_URL
 const E2E_USER_EMAIL = process.env.E2E_USER_EMAIL ?? 'e2e@test.local'
 const E2E_USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? 'E2eP@ssw0rd123'
 
@@ -71,7 +77,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   // ── 2c. Security API capability descriptor (the surface the SPA reads) ──
   // Provider-neutral by contract: a vendor name must never appear here.
   test('Security API advertises neutral capabilities incl. Google social', async ({ request }) => {
-    const resp = await request.get(`${BACKEND_URL}/api/v1/security/methods`)
+    const resp = await request.get(`${SECURITY_URL}/api/v1/security/methods`)
     expect(resp.ok(), `GET /api/v1/security/methods -> ${resp.status()}`).toBeTruthy()
     const body = await resp.json()
     expect(body.password).toBe(true)
@@ -83,7 +89,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
 
   // ── 2d. Password sign-in through the Security API (what the SPA calls) ──
   test('Security API password sign-in returns a platform JWT session', async ({ request }) => {
-    const resp = await request.post(`${BACKEND_URL}/api/v1/security/session`, {
+    const resp = await request.post(`${SECURITY_URL}/api/v1/security/session`, {
       data: { email: E2E_USER_EMAIL, password: E2E_USER_PASSWORD },
     })
     expect(
@@ -105,7 +111,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   })
 
   test('Security API rejects a wrong password with 401', async ({ request }) => {
-    const resp = await request.post(`${BACKEND_URL}/api/v1/security/session`, {
+    const resp = await request.post(`${SECURITY_URL}/api/v1/security/session`, {
       data: { email: E2E_USER_EMAIL, password: 'definitely-not-the-password' },
     })
     expect(resp.status()).toBe(401)

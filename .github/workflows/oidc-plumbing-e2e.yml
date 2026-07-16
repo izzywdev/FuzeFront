@@ -509,6 +509,66 @@ jobs:
       - name: Add authentik-server to /etc/hosts
         run: echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
 
+      # Pre-seed the platform projection for the Authentik user: a users row plus
+      # a personal org + owner membership.
+      #
+      # The authenticated shell sits behind WorkspaceProvisioningGate, which only
+      # renders once the user has a personal org. A real login provisions that
+      # org asynchronously (fire-and-forget self-heal), but in CI Permit is a
+      # no-op and Kafka is absent, so that path cannot be relied on — the gate
+      # would spin and the sign-in spec would fail for reasons unrelated to auth.
+      #
+      # Seeding by EMAIL is what makes this work: syncUserToDatabase matches on
+      # email and generates its own uuid, so the row we insert here is adopted by
+      # the login rather than duplicated. (The password lives in Authentik — this
+      # row holds no credential.)
+      # Mirrors ensurePersonalOrg() — kept in step with the equivalent seed in
+      # .github/workflows/e2e.yml, which is the reference for these table/column
+      # names (organization_memberships, provisioning_state, joined_at, …).
+      # No password_hash: the credential lives in Authentik, not here.
+      - name: Seed platform projection (user + personal org) for the E2E user
+        run: |
+          docker compose -f docker-compose.e2e.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U e2e -d fuzefront_platform <<'SQL'
+          DO $$
+          DECLARE uid uuid;
+                  oid uuid := gen_random_uuid();
+          BEGIN
+            SELECT id INTO uid FROM users WHERE email = 'e2e@test.local';
+            IF uid IS NULL THEN
+              uid := gen_random_uuid();
+              INSERT INTO users (id, email, first_name, last_name, roles, created_at, updated_at)
+              VALUES (uid, 'e2e@test.local', 'E2E', 'Test', '["user"]'::jsonb, now(), now());
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM organizations WHERE owner_id = uid AND type = 'personal') THEN
+              INSERT INTO organizations (id, name, slug, parent_id, owner_id, type,
+                                         settings, metadata, is_active, provisioning_state)
+              VALUES (oid, 'Personal', 'personal-' || uid, NULL, uid, 'personal',
+                      '{}'::jsonb, '{"personal": true}'::jsonb, true, 'active');
+              INSERT INTO organization_memberships (id, user_id, organization_id, role, status,
+                                                    joined_at, permissions, metadata)
+              VALUES (gen_random_uuid(), uid, oid, 'owner', 'active',
+                      now(), '{}'::jsonb, '{}'::jsonb);
+            END IF;
+          END $$;
+          SQL
+          echo "seeded platform projection for e2e@test.local"
+
+      # Fail loudly here rather than let the sign-in spec fail opaquely at the
+      # provisioning gate — a missing org looks identical to broken auth.
+      - name: Verify the seed
+        run: |
+          docker compose -f docker-compose.e2e.yml exec -T postgres \
+            psql -tA -U e2e -d fuzefront_platform \
+            -c "SELECT o.type, o.provisioning_state, m.role, m.status
+                  FROM users u
+                  JOIN organizations o ON o.owner_id = u.id AND o.type='personal'
+                  JOIN organization_memberships m ON m.organization_id = o.id AND m.user_id = u.id
+                 WHERE u.email='e2e@test.local';" | tee /tmp/seed.out
+          grep -q 'personal|active|owner|active' /tmp/seed.out \
+            || { echo '::error::personal org/membership not seeded — the sign-in spec would hang on WorkspaceProvisioningGate'; exit 1; }
+
       # ── Run OIDC plumbing E2E tests ────────────────────────────────────────
       - name: Run OIDC plumbing E2E tests
         working-directory: frontend
@@ -522,6 +582,22 @@ jobs:
           # Run headless (Authentik login page has no bot detection).
           PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ''
         run: npx playwright test tests/oidc-plumbing.e2e.spec.ts --project=chromium --reporter=list,html --timeout 180000
+
+      # ── Real sign-in through the UI, against the REAL stack ────────────────
+      # This is the coverage that did not exist. The other sign-in job
+      # (.github/workflows/e2e.yml) runs the monolith with NO Authentik and seeds
+      # a local bcrypt row, so it cannot exercise the Security API path the SPA
+      # actually uses — it has been failing since the cutover for exactly that
+      # reason. Here the account exists in Authentik, the security service is in
+      # the stack (docker-compose.e2e.yml), and nginx routes /api/v1/security to
+      # it — so a pass means password sign-in genuinely works end to end.
+      - name: Run sign-in E2E (real Authentik user, via the Security API)
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:4173
+          E2E_USER_EMAIL: ${{ env.E2E_USER_EMAIL }}
+          E2E_USER_PASSWORD: ${{ env.E2E_USER_PASSWORD }}
+        run: npx playwright test tests/auth-simple.spec.ts --project=chromium --reporter=list --timeout 120000
 
       - name: Upload Playwright report
         if: always()
