@@ -14,9 +14,13 @@ test.describe('Authentication - Simple', () => {
     await page.fill('input[type="email"]', 'admin@fuzefront.dev')
     await page.fill('input[type="password"]', 'admin123')
 
-    // Wait for login response and submit
+    // Wait for login response and submit. The frontend calls the provider-neutral
+    // /api/v1/security/session endpoint (since PR #250 de-vendor migration).
     const responsePromise = page.waitForResponse(
-      response => response.url().includes('/api/auth/login') && response.status() === 200,
+      response =>
+        (response.url().includes('/api/v1/security/session') ||
+          response.url().includes('/api/auth/login')) &&
+        response.status() === 200,
       { timeout: 15000 }
     )
 

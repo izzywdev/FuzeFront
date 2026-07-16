@@ -27,9 +27,14 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
   await page.fill('input[type="email"]', 'admin@fuzefront.dev')
   await page.fill('input[type="password"]', 'admin123')
+  // The frontend calls the provider-neutral /api/v1/security/session endpoint
+  // (since PR #250 de-vendor migration); accept either the new or legacy URL.
   await Promise.all([
     page.waitForResponse(
-      r => r.url().includes('/api/auth/login') && r.status() === 200
+      r =>
+        (r.url().includes('/api/v1/security/session') ||
+          r.url().includes('/api/auth/login')) &&
+        r.status() === 200
     ),
     page.click('button[type="submit"]'),
   ])

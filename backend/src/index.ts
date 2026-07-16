@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityCompatRoutes from './routes/securityCompat'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,9 @@ try {
 }
 
 // Routes
+// Provider-neutral Security API — same logic as /api/auth but in the
+// SessionResult format the SPA expects since the de-vendor migration (PR #250).
+app.use('/api/v1/security', securityCompatRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
