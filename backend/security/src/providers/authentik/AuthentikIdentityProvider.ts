@@ -249,20 +249,23 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     const authorize = new URL(url)
     const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
 
-    // Launch the Google SOURCE directly rather than sending the browser to the
-    // generic authorize endpoint. Authorize requires an authenticated session,
-    // so with no session it falls back to the brand's authentication flow and
-    // renders Authentik's identification page (`/if/flow/...`) with a "Google"
-    // button — the user gets stranded on the IdP's own UI.
+    // Launch the provider's SOURCE directly rather than sending the browser to
+    // the generic authorize endpoint. Authorize requires an authenticated
+    // session, so with none it falls back to the brand's authentication flow
+    // and renders the IdP's identification page (`/if/flow/...`) with a social
+    // button — stranding the user on the provider's own UI.
     //
-    // The source-redirect view instead 302s straight to accounts.google.com.
-    // Google returns to /source/oauth/callback/google/, the source flow runs
+    // The source-redirect view instead 302s straight to the social provider.
+    // It returns to /source/oauth/callback/<provider>/, the source flow runs
     // (auto stages: silent enrollment first time, login when returning) and
     // establishes the session, then `next` sends the browser to authorize,
     // which now issues the code silently. Same cookie/state/PKCE round-trip —
     // this only inserts one hop ahead of authorize, so no `/if/flow/` renders.
+    //
+    // The source slug tracks `provider` (guarded to `google` above) so widening
+    // that guard cannot silently route a new provider through Google's source.
     const redirectUrl =
-      `${idpProxyPrefix()}/source/oauth/login/google/` +
+      `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
       `?next=${encodeURIComponent(authorizePath)}`
 
     this.socialStates.set(state, {
