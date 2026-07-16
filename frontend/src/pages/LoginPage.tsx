@@ -36,8 +36,12 @@ type FormMode = 'signin' | 'signup'
 function LoginPage() {
   const { t } = useLanguage()
   // Open in sign-up mode when the user arrived at /signup; sign-in otherwise.
+  // Anchored to the start of the path: `includes('signup')` also matched things
+  // like /apps/signup-widget. This only works because api.ts no longer redirects
+  // /signup -> /login on the boot probe's 401 (see AUTH_ROUTE_RE) — that
+  // redirect used to erase the path before this ever ran.
   const [mode, setMode] = useState<FormMode>(
-    window.location.pathname.includes('signup') ? 'signup' : 'signin'
+    /^\/signup\b/.test(window.location.pathname) ? 'signup' : 'signin'
   )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

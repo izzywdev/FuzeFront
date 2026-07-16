@@ -104,6 +104,14 @@ api.interceptors.request.use(
   }
 )
 
+/**
+ * Routes that ARE the auth surface. A 401 while already here is expected — it is
+ * the boot probe answering "no, you are not signed in" — so the interceptor must
+ * not redirect away from them. Keep this the single source of truth: LoginPage
+ * derives sign-in vs sign-up from the path, so silently rewriting it loses intent.
+ */
+const AUTH_ROUTE_RE = /^\/(login|signup)\b/
+
 // Enhanced response logging with timing
 api.interceptors.response.use(
   response => {
@@ -174,7 +182,19 @@ api.interceptors.response.use(
       console.log('🔐 Unauthorized - removing token and reloading')
       localStorage.removeItem('authToken')
       localStorage.removeItem('user')
-      if (!window.location.pathname.includes('/login')) {
+      // Never bounce a visitor who is ALREADY on an auth route.
+      //
+      // This guard knew about /login but not /signup, which broke sign-up
+      // entirely: an anonymous visitor lands on /signup, the shell's boot probe
+      // (AuthWrapper -> GET /session) 401s — the NORMAL answer for someone not
+      // signed in — and this redirect fired, replacing the path with /login.
+      // LoginPage derives its mode from window.location.pathname, so by the time
+      // it mounted the /signup intent was gone and it always rendered sign-in.
+      //
+      // A 401 here means two very different things: "your session expired, go
+      // re-authenticate" (redirect is right) and "you are simply not signed in
+      // yet" (redirect is wrong — you are already where you should be).
+      if (!AUTH_ROUTE_RE.test(window.location.pathname)) {
         window.location.href = '/login'
       }
     }
