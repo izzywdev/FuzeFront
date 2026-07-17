@@ -1,10 +1,11 @@
 {
+  // The package tsconfig pins `types: ["node"]` and includes only src/, which is
+  // right for the published build (no jest globals leak into the .d.ts) but left
+  // tests uncompilable. ts-jest uses THIS config instead.
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "rootDir": "..",
-    "outDir": "../dist-test",
-    "noEmit": true,
-    "types": ["jest", "node"]
+    "types": ["node", "jest"],
+    "noEmit": true
   },
-  "include": ["./**/*.ts", "../src/**/*.ts"]
+  "include": ["../src/**/*.ts", "./**/*.ts"]
 }

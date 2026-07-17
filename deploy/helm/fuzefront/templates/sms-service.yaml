@@ -36,7 +36,11 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.smsService.port | quote }}
-            {{- if .Values.secret.twilioAccountSid }}
+            # Gate on existingSecret TOO, not just the inline value: in prod
+            # secret.twilioAccountSid is empty by design (the real values live in
+            # the fuzefront-secrets SealedSecret), so an inline-only gate rendered
+            # a Twilio-less pod in exactly the environment that needs Twilio.
+            {{- if or .Values.secret.existingSecret .Values.secret.twilioAccountSid }}
             - name: TWILIO_ACCOUNT_SID
               valueFrom:
                 secretKeyRef:

@@ -169,6 +169,11 @@ securityService:
     tag: local
   port: 3002
   replicas: 1
+  # Enforce signup email verification. Default false: the code DEGRADES to
+  # auto-verifying every account when this is off, so turning it on is only safe
+  # once a working email path (email-service + a proven SMTP/SendGrid sender) is
+  # verified — otherwise every new signup is locked out at the door.
+  requireEmailVerification: false
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
   resources:

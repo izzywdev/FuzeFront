@@ -16,9 +16,15 @@ import {
   ConflictError,
   InvalidInputError,
   UnauthorizedError,
+  NotFoundError,
+  emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
-import type { BrokeredSession, BrokeredUser } from '../providers/IdentityProvider'
+import type {
+  BrokeredSession,
+  BrokeredUser,
+  SessionContext,
+} from '../providers/IdentityProvider'
 
 const router = express.Router()
 
@@ -28,6 +34,22 @@ function bearer(req: Request): string | null {
   if (!h || Array.isArray(h)) return null
   const [scheme, token] = h.split(' ')
   return scheme?.toLowerCase() === 'bearer' && token ? token : null
+}
+
+/**
+ * Capture the device/IP a session is being minted from, for manage-devices.
+ *
+ * Display-only — never an authorization input, so a spoofed user-agent or
+ * X-Forwarded-For can mislabel a row in the user's own device list but cannot
+ * grant access. `req.ip` honours Express's `trust proxy` setting, which is the
+ * right place to decide how far down the proxy chain to believe.
+ */
+function sessionContext(req: Request): SessionContext {
+  const ua = req.headers['user-agent']
+  return {
+    ip: req.ip ?? null,
+    userAgent: typeof ua === 'string' ? ua : null,
+  }
 }
 
 function toApiUser(u: BrokeredUser) {
@@ -58,6 +80,10 @@ function sendError(res: Response, err: unknown): void {
   }
   if (err instanceof ConflictError) {
     res.status(409).json({ error: err.message, code: 'CONFLICT' })
+    return
+  }
+  if (err instanceof NotFoundError) {
+    res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
     return
   }
   if (err instanceof UnauthorizedError) {
@@ -91,10 +117,13 @@ function requireBearer(req: Request, res: Response): string | null {
 // POST /v1/security/session — password login
 router.post('/session', async (req: Request, res: Response) => {
   try {
-    const session = await getIdentityProvider().passwordLogin({
-      email: req.body?.email,
-      password: req.body?.password,
-    })
+    const session = await getIdentityProvider().passwordLogin(
+      {
+        email: req.body?.email,
+        password: req.body?.password,
+      },
+      sessionContext(req)
+    )
     res.status(200).json(authenticatedSession(session))
   } catch (err) {
     if (err instanceof MfaRequiredError) {
@@ -146,6 +175,53 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
   }
 })
 
+// ── Self-service password reset ────────────────────────────────────────────
+// POST /v1/security/session/password/reset-request — ALWAYS 202
+router.post('/session/password/reset-request', async (req: Request, res: Response) => {
+  try {
+    if (!req.body?.email || typeof req.body.email !== 'string') {
+      // Only a MALFORMED body earns a 400; a well-formed unknown address does
+      // not — that distinction is the whole no-enumeration guarantee.
+      res.status(400).json({ error: 'email is required', code: 'MALFORMED' })
+      return
+    }
+    await getIdentityProvider().requestPasswordReset(req.body.email)
+  } catch (err) {
+    // Never surface a provider failure here: a 5xx for real accounts and a 202
+    // for unknown ones would be an enumeration oracle. Log and answer 202.
+    console.error('[security] password reset request failed:', err)
+  }
+  res.status(202).end()
+})
+
+// POST /v1/security/session/password/reset-confirm
+router.post('/session/password/reset-confirm', async (req: Request, res: Response) => {
+  try {
+    if (!req.body?.token || typeof req.body.token !== 'string') {
+      throw new InvalidInputError('token is required')
+    }
+    if (!req.body?.newPassword || typeof req.body.newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    await getIdentityProvider().confirmPasswordReset(req.body.token, req.body.newPassword)
+    res.status(200).json({ reset: true })
+  } catch (err) {
+    // Per contract this surface is 400-or-200: an invalid/expired/consumed token
+    // and a policy-rejected password are all fail-closed 400s.
+    const name = (err as Error)?.name
+    if (name === 'PasswordPolicyError') {
+      res.status(400).json({ error: (err as Error).message, code: 'MALFORMED' })
+      return
+    }
+    if (err instanceof InvalidInputError) {
+      res.status(400).json({ error: err.message, code: 'MALFORMED' })
+      return
+    }
+    console.error('[security] password reset confirm failed:', err)
+    res.status(400).json({ error: 'Password reset failed', code: 'MALFORMED' })
+  }
+})
+
 // ── Social login (server-brokered) ─────────────────────────────────────────
 // GET /v1/security/social/{provider}/start — 302 to the provider via same-host IdP path
 router.get('/social/:provider/start', async (req: Request, res: Response) => {
@@ -176,11 +252,15 @@ router.get('/social/callback', async (req: Request, res: Response) => {
     const code = typeof req.query.code === 'string' ? req.query.code : ''
     const state = typeof req.query.state === 'string' ? req.query.state : ''
     if (!code || !state) throw new InvalidInputError('code and state are required')
-    const result = await getIdentityProvider().brokerCallback({ code, state })
+    const result = await getIdentityProvider().brokerCallback({ code, state }, sessionContext(req))
     // Clear the state cookie; append the FuzeFront opaque code (never a token).
     res.setHeader('Set-Cookie', ['sec_social_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/'])
     const sep = result.redirectTo.includes('?') ? '&' : '?'
-    const dest = `${appBaseUrl()}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
+    // A LINK handshake mints no session, so there is no code to redeem — send
+    // the browser back with a neutral confirmation instead.
+    const dest = result.linked
+      ? `${appBaseUrl()}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
+      : `${appBaseUrl()}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
     res.redirect(302, dest)
   } catch (err) {
     // Fail-closed: send the browser back to the app with a neutral error.
@@ -192,13 +272,16 @@ router.get('/social/callback', async (req: Request, res: Response) => {
 // ── Signup ──────────────────────────────────────────────────────────────────
 router.post('/signup', async (req: Request, res: Response) => {
   try {
-    const session = await getIdentityProvider().signup({
-      email: req.body?.email,
-      password: req.body?.password,
-      firstName: req.body?.firstName,
-      lastName: req.body?.lastName,
-      tenantName: req.body?.tenantName,
-    })
+    const session = await getIdentityProvider().signup(
+      {
+        email: req.body?.email,
+        password: req.body?.password,
+        firstName: req.body?.firstName,
+        lastName: req.body?.lastName,
+        tenantName: req.body?.tenantName,
+      },
+      sessionContext(req)
+    )
     res.status(201).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
     sendError(res, err)
@@ -206,14 +289,44 @@ router.post('/signup', async (req: Request, res: Response) => {
 })
 
 // ── Capabilities ──────────────────────────────────────────────────────────
+/**
+ * The SMS transport is a two-condition gate like email's: an SMS path only
+ * exists when the family sms-service is reachable by Service DNS. Without
+ * `SMS_SERVICE_URL` the dispatcher has nowhere to send, so any SMS factor or
+ * phone-verification challenge would be minted but never delivered.
+ * Provider-neutral: no vendor is named.
+ */
+function smsTransportConfigured(): boolean {
+  return !!(process.env.SMS_SERVICE_URL && process.env.SMS_SERVICE_URL.trim())
+}
+
+/**
+ * Neutral capability descriptor, DERIVED from actual configuration.
+ *
+ * This descriptor is a promise the UI renders affordances from: every `true`
+ * here becomes a flow a user can start. Over-reporting is therefore worse than
+ * under-reporting — an unconfigured transport advertised as available dead-ends
+ * the user mid-way through securing their account. So each field reports only
+ * what can actually complete end-to-end, and anything unconfigured is reported
+ * as absent rather than assumed.
+ */
 router.get('/methods', (_req: Request, res: Response) => {
-  // Neutral capability descriptor. Provider config decides what is enabled.
   const social: Array<'google'> = process.env.SECURITY_SOCIAL_GOOGLE === 'false' ? [] : ['google']
+
+  const emailAvailable = emailVerificationEnabled()
+  const smsAvailable = smsTransportConfigured()
+
+  // `totp` is self-contained (shared secret + local clock), so it is always
+  // available; `sms`/`email` require their transport to be configured.
+  const mfaTypes: Array<'totp' | 'sms' | 'email'> = ['totp']
+  if (smsAvailable) mfaTypes.push('sms')
+  if (emailAvailable) mfaTypes.push('email')
+
   res.status(200).json({
     password: true,
     social,
-    mfa: { enabled: true, types: ['totp', 'sms', 'email'] },
-    verification: { email: true, sms: true },
+    mfa: { enabled: mfaTypes.length > 0, types: mfaTypes },
+    verification: { email: emailAvailable, sms: smsAvailable },
   })
 })
 
@@ -324,7 +437,12 @@ router.post('/mfa/verify', async (req: Request, res: Response) => {
     if (!req.body?.challengeId || !req.body?.factorId || !req.body?.code) {
       throw new InvalidInputError('challengeId, factorId and code are required')
     }
-    const session = await getIdentityProvider().verifyMfa(req.body.challengeId, req.body.factorId, req.body.code)
+    const session = await getIdentityProvider().verifyMfa(
+      req.body.challengeId,
+      req.body.factorId,
+      req.body.code,
+      sessionContext(req)
+    )
     res.status(200).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
   } catch (err) {
     sendError(res, err)
@@ -382,6 +500,110 @@ router.get('/verify/status', async (req: Request, res: Response) => {
   try {
     const status = await getIdentityProvider().getVerificationStatus(token)
     res.status(200).json(status)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// ── Manage devices (platform sessions) ────────────────────────────────────
+//
+// Note these are `/sessions` (plural) — the device-management collection —
+// distinct from the `/session` (singular) sign-in lifecycle above.
+
+// GET /v1/security/sessions — the caller's active sessions, current flagged
+router.get('/sessions', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const items = await getIdentityProvider().listSessions(token)
+    res.status(200).json({ items })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// DELETE /v1/security/sessions — revoke all OTHER sessions, keep the caller's
+router.delete('/sessions', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    await getIdentityProvider().revokeOtherSessions(token)
+    res.status(204).end()
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// DELETE /v1/security/sessions/{id} — revoke one session (idempotent)
+router.delete('/sessions/:id', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    await getIdentityProvider().revokeSession(token, req.params.id)
+    res.status(204).end()
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// ── Account sign-in connections ───────────────────────────────────────────
+// GET /v1/security/identity/connections — linked providers + password state
+router.get('/identity/connections', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const conns = await getIdentityProvider().getIdentityConnections(token)
+    res.status(200).json(conns)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/social/{provider}/link — begin linking for a signed-in user
+router.post('/social/:provider/link', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const { redirectUrl, state, codeVerifier } = await getIdentityProvider().startSocialLink(
+      token,
+      req.params.provider
+    )
+    // Same cookie contract as sign-in: the registered OIDC redirect_uri handler
+    // is replica-agnostic and reads state/PKCE from these HttpOnly cookies.
+    res.setHeader('Set-Cookie', [
+      `oidc_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+      `oidc_cv=${codeVerifier}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+      `sec_social_state=${state}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=/`,
+    ])
+    // 200 + { redirectUrl } (not a 302): the caller is the SPA via fetch with a
+    // bearer token, and a redirect chased by fetch would never reach the browser.
+    res.status(200).json({ redirectUrl })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// DELETE /v1/security/social/{provider}/link — unlink (409 if last method)
+router.delete('/social/:provider/link', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const conns = await getIdentityProvider().unlinkSocial(token, req.params.provider)
+    res.status(200).json(conns)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// ── Set password (social-only accounts) ───────────────────────────────────
+// POST /v1/security/password — add a password; 409 if one already exists
+router.post('/password', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    if (!req.body?.newPassword) throw new InvalidInputError('newPassword is required')
+    const conns = await getIdentityProvider().setPassword(token, req.body.newPassword)
+    res.status(200).json(conns)
   } catch (err) {
     sendError(res, err)
   }
