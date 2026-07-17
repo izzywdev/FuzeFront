@@ -49,14 +49,20 @@ securityService:
   # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
   # insert with the sealed FUZEFRONT_ADMIN_PASSWORD. See PR #213 (password reseal).
   adminEmail: admin@fuzefront.com
-  # Signup email verification (PR #275) — DELIBERATELY OFF.
-  # While false the code auto-verifies every new account, i.e. verification is
-  # effectively not enforced. That is the SAFE state right now: email-service is
-  # enabled but its SMTP sender is NOT yet proven end-to-end (no SMTP_HOST is
-  # wired; it defaults to a mailhog-style localhost:1025 and silently drops mail).
-  # Flipping this to true before a real sender is proven would bounce EVERY new
-  # signup — they would be created unverified and never receive the mail needed to
-  # verify. Sequence: prove the sender → then flip this to true via GitOps.
+  # Signup email verification (PR #275) — OFF until the sender is proven.
+  # While false the code auto-verifies every new account, i.e. verification is not
+  # enforced. That remains the SAFE state until a real SMTP sender is proven
+  # end-to-end: email-service is enabled and healthy, but with no SMTP host it
+  # falls back in-code to localhost:1025 and silently drops every message.
+  #
+  # This is no longer guarded by prose alone: the chart FAILS TO RENDER if this is
+  # true while emailService.email.smtp.host is empty, because flipping it without a
+  # deliverable sender locks out EVERY new signup (created unverified, never
+  # mailed). Go-live sequence — deploy/contabo/SEAL_PROD_SECRETS.md:
+  #   1. owner seals SMTP_USER + SMTP_PASS
+  #   2. set emailService.email.smtp.host below (GitOps)
+  #   3. PROVE a real message reaches a real inbox  ← password reset revives here
+  #   4. only then flip this to true, in a deploy window
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
@@ -102,9 +108,23 @@ emailService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
     tag: 1fbd206c5b2a
-  # Provider stays "smtp" (chart default) until a sender is proven end-to-end.
-  # NOTE: securityService.requireEmailVerification MUST stay false until then —
-  # see the security block below.
+  email:
+    provider: "smtp"
+    from: "noreply@fuzefront.com"
+    smtp:
+      # EMPTY = the service falls back in-code to localhost:1025 and SILENTLY
+      # DROPS every message. That fallback is why signup email-verification and
+      # password reset have both been live-dead in prod: pod healthy, /health
+      # green, zero delivery.
+      #
+      # Set this to the real relay (Zoho: smtp.zoho.com) ONLY once the owner has
+      # sealed SMTP_USER + SMTP_PASS — the chart mounts them as HARD secretKeyRefs
+      # on this path, so setting a host without sealing them CrashLoops the pod at
+      # start (loud) instead of dropping mail at runtime (silent). That trade is
+      # deliberate. See deploy/contabo/SEAL_PROD_SECRETS.md.
+      host: ""
+      port: 587
+      secure: false   # STARTTLS on 587; true for implicit TLS on 465
 
 # sms-service — Twilio Verify dispatcher behind phone 2FA (SMS/voice, PR #274).
 # Its image is built by release.yml, but its repository was likewise absent from
