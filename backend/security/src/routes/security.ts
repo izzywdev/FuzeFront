@@ -16,6 +16,7 @@ import {
   ConflictError,
   InvalidInputError,
   UnauthorizedError,
+  emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
 import type { BrokeredSession, BrokeredUser } from '../providers/IdentityProvider'
@@ -253,14 +254,44 @@ router.post('/signup', async (req: Request, res: Response) => {
 })
 
 // ── Capabilities ──────────────────────────────────────────────────────────
+/**
+ * The SMS transport is a two-condition gate like email's: an SMS path only
+ * exists when the family sms-service is reachable by Service DNS. Without
+ * `SMS_SERVICE_URL` the dispatcher has nowhere to send, so any SMS factor or
+ * phone-verification challenge would be minted but never delivered.
+ * Provider-neutral: no vendor is named.
+ */
+function smsTransportConfigured(): boolean {
+  return !!(process.env.SMS_SERVICE_URL && process.env.SMS_SERVICE_URL.trim())
+}
+
+/**
+ * Neutral capability descriptor, DERIVED from actual configuration.
+ *
+ * This descriptor is a promise the UI renders affordances from: every `true`
+ * here becomes a flow a user can start. Over-reporting is therefore worse than
+ * under-reporting — an unconfigured transport advertised as available dead-ends
+ * the user mid-way through securing their account. So each field reports only
+ * what can actually complete end-to-end, and anything unconfigured is reported
+ * as absent rather than assumed.
+ */
 router.get('/methods', (_req: Request, res: Response) => {
-  // Neutral capability descriptor. Provider config decides what is enabled.
   const social: Array<'google'> = process.env.SECURITY_SOCIAL_GOOGLE === 'false' ? [] : ['google']
+
+  const emailAvailable = emailVerificationEnabled()
+  const smsAvailable = smsTransportConfigured()
+
+  // `totp` is self-contained (shared secret + local clock), so it is always
+  // available; `sms`/`email` require their transport to be configured.
+  const mfaTypes: Array<'totp' | 'sms' | 'email'> = ['totp']
+  if (smsAvailable) mfaTypes.push('sms')
+  if (emailAvailable) mfaTypes.push('email')
+
   res.status(200).json({
     password: true,
     social,
-    mfa: { enabled: true, types: ['totp', 'sms', 'email'] },
-    verification: { email: true, sms: true },
+    mfa: { enabled: mfaTypes.length > 0, types: mfaTypes },
+    verification: { email: emailAvailable, sms: smsAvailable },
   })
 })
 
