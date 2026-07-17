@@ -64,19 +64,48 @@ router.post('/authz/check', async (req: Request, res: Response) => {
   res.status(200).json({ allow })
 })
 
+/**
+ * Bulk decisions, index-aligned with the request.
+ *
+ * The wire shape is dictated by the frozen contract (`AuthzBulkCheckRequest` /
+ * `AuthzBulkDecision` in packages/security/openapi.yaml): `checks` in,
+ * `decisions` out, each decision an OBJECT `{allow}` — not a bare boolean. This
+ * route originally shipped `queries`/`results`/`boolean[]`, which no consumer
+ * generated from the contract could talk to; `@fuzefront/auth`'s bulkCheck was
+ * built against the spec and fail-closed against it. The contract is the source
+ * of truth — it is what consumers were told to build against — so the route
+ * conforms, not the other way round.
+ */
+const BULK_MAX_CHECKS = 200 // contract: AuthzBulkCheckRequest.checks.maxItems
+
 router.post('/authz/bulk-check', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  const raw = Array.isArray(req.body?.queries) ? req.body.queries : null
-  if (!raw) return res.status(400).json({ error: 'Malformed queries', code: 'MALFORMED' })
-  const queries: AuthzQuery[] = []
+  const raw = Array.isArray(req.body?.checks) ? req.body.checks : null
+  if (!raw) return res.status(400).json({ error: 'Malformed checks', code: 'MALFORMED' })
+
+  // Bounds are enforced, not just documented. Unbounded input here fans out to
+  // one PDP call per element, so an oversized array is a cheap amplification
+  // vector against the policy engine — from an ALREADY-AUTHENTICATED caller,
+  // which makes it worse, not better.
+  if (raw.length < 1) {
+    return res.status(400).json({ error: 'checks must not be empty', code: 'MALFORMED' })
+  }
+  if (raw.length > BULK_MAX_CHECKS) {
+    return res.status(400).json({
+      error: `checks exceeds the maximum of ${BULK_MAX_CHECKS}`,
+      code: 'MALFORMED',
+    })
+  }
+
+  const checks: AuthzQuery[] = []
   for (const item of raw) {
     const q = toQuery(item, c.id)
-    if (!q) return res.status(400).json({ error: 'Malformed query in batch', code: 'MALFORMED' })
-    queries.push(q)
+    if (!q) return res.status(400).json({ error: 'Malformed check in batch', code: 'MALFORMED' })
+    checks.push(q)
   }
-  const results = await getAuthorizationProvider().bulkCheck(queries)
-  res.status(200).json({ results })
+  const allowed = await getAuthorizationProvider().bulkCheck(checks)
+  res.status(200).json({ decisions: allowed.map(allow => ({ allow })) })
 })
 
 router.get('/authz/permissions', async (req: Request, res: Response) => {
