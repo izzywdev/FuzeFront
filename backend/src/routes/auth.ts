@@ -700,6 +700,21 @@ router.post('/token-exchange', async (req, res) => {
 })
 
 /**
+ * Redeem a single-use OIDC exchange code.
+ * Exported so the /api/v1/security router can offer the same exchange at
+ * POST /api/v1/security/session/exchange without duplicating state.
+ */
+export function redeemExchangeCode(code: string): { token: string; sessionId: string } | null {
+  const pending = pendingCodes.get(code)
+  if (!pending || Date.now() > pending.expiresAt) {
+    pendingCodes.delete(code)
+    return null
+  }
+  pendingCodes.delete(code)
+  return { token: pending.token, sessionId: pending.sessionId }
+}
+
+/**
  * @swagger
  * /api/auth/method:
  *   get:
