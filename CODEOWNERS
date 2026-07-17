@@ -1,0 +1,4 @@
+# Default code owners for this repository.
+# Required by the "Protect default branch" ruleset (code-owner review).
+# See https://docs.github.com/articles/about-code-owners
+*       @izzywdev

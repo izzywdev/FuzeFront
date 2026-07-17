@@ -1,5 +1,6 @@
 ---
 name: fuzefront-expert
+model: opus
 description: Deep expert on the FuzeFront platform — its architecture, Module-Federation host shell, Kubernetes/Helm deployment (kind-fuzeinfra / Contabo k3s), backend (Express/Postgres/Authentik/Permit), the "fuse seam" design system, auth, CI/CD, and local dev workflow. Use when building, deploying, debugging, or extending FuzeFront or any product that runs on top of it, so you don't have to relearn FuzeFront from scratch. Knows the gotchas (workspace @types/express pinning, os=linux npmrc, same-origin API base, k8s image refresh, mixed-content under TLS).
 tools: ['*']
 skills: []

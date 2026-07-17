@@ -1,0 +1,100 @@
+name: Publish Expert Agent
+
+# Owner-published experts: this repo AUTHORS its own `<repo>-expert` agent (co-located with
+# the code it describes, so it updates in the SAME PR as an architecture change), and on
+# merge to main publishes it to the FuzeSDLC hub as a PR. FuzeSDLC's agent-sync-guard
+# verifies the PR only touches THIS repo's own files, then it merges — and governance-sync
+# re-propagates it to every consuming repo on their next PR.
+#
+# This is why no repo needs credentials to any OTHER repo, and FuzeSDLC needs none to us:
+# consumers pull from ONE hub with a read-only key; owners push proposals to that same hub
+# with a narrow propose-only token.
+#
+# It publishes ONLY the expert named in .fuze/manifest.json `expert` — never the advisor
+# copies (fuzefront-expert/fuzeinfra-expert/...) this repo merely consumes.
+#
+# Requires FUZESDLC_AGENT_PUSH_TOKEN: a fine-grained PAT scoped to izzywdev/FuzeSDLC ONLY
+# with Contents: read+write and Pull requests: read+write. Absent -> skips (never red).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - ".claude/agents/*-expert.md"
+      - ".fuze/manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — token + manifest present
+        id: guard
+        env:
+          TOKEN: ${{ secrets.FUZESDLC_AGENT_PUSH_TOKEN }}
+        run: |
+          if [ ! -f .fuze/manifest.json ]; then
+            echo "::notice::no .fuze/manifest.json — skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::FUZESDLC_AGENT_PUSH_TOKEN not set — skipping expert publish."; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          EXPERT=$(python3 -c "import json;print(json.load(open('.fuze/manifest.json')).get('expert',''))")
+          if [ -z "$EXPERT" ]; then
+            echo "::notice::manifest declares no expert — skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ ! -f ".claude/agents/${EXPERT}.md" ]; then
+            echo "::warning::manifest expert '${EXPERT}' has no .claude/agents/${EXPERT}.md — nothing to publish."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # slug = the expert name minus the trailing "-expert" (fuzeplan-expert -> fuzeplan)
+          SLUG="${EXPERT%-expert}"
+          echo "ok=true"        >> "$GITHUB_OUTPUT"
+          echo "expert=$EXPERT" >> "$GITHUB_OUTPUT"
+          echo "slug=$SLUG"     >> "$GITHUB_OUTPUT"
+          echo "Publishing '${EXPERT}' as agent-sync/${SLUG}"
+
+      - name: Open/update the agent-sync PR on FuzeSDLC
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FUZESDLC_AGENT_PUSH_TOKEN }}
+          EXPERT: ${{ steps.guard.outputs.expert }}
+          SLUG: ${{ steps.guard.outputs.slug }}
+          SRC_REPO: ${{ github.repository }}
+          SRC_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BRANCH="agent-sync/${SLUG}"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/izzywdev/FuzeSDLC.git" hub
+          cp ".claude/agents/${EXPERT}.md" "hub/agents/${EXPERT}.md"
+          cd hub
+          if git diff --quiet -- "agents/${EXPERT}.md"; then
+            echo "::notice::${EXPERT} already matches the hub — nothing to publish."; exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # ONLY our own expert file is ever staged — the guard on the hub enforces this too.
+          git add "agents/${EXPERT}.md"
+          git commit -m "chore(agents): sync ${EXPERT} from ${SRC_REPO}@${SRC_SHA}"
+          git push -f origin "$BRANCH"
+          if ! gh pr view "$BRANCH" -R izzywdev/FuzeSDLC --json number >/dev/null 2>&1; then
+            # Body via heredoc so every line stays inside this YAML block scalar.
+            cat > /tmp/pr-body.md <<EOF
+          Automated expert publish from \`${SRC_REPO}\` @ \`${SRC_SHA}\`.
+
+          \`${EXPERT}\` is **owned by ${SRC_REPO}** and authored there; this syncs the hub copy so \`governance-sync\` re-propagates it to every consuming repo on their next PR.
+
+          Scope is enforced by \`agent-sync-guard\`: this branch may only touch \`agents/${EXPERT}.md\` (+ \`skills/${SLUG}-*/**\`).
+          EOF
+            sed -i 's/^          //' /tmp/pr-body.md
+            gh pr create -R izzywdev/FuzeSDLC --base main --head "$BRANCH" \
+              --title "chore(agents): sync ${EXPERT} from ${SRC_REPO}" \
+              --body-file /tmp/pr-body.md
+          fi
+          echo "::notice::agent-sync PR open for ${EXPERT}."
