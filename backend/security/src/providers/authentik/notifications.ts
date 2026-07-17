@@ -16,6 +16,8 @@ export interface NotificationClient {
   checkSmsOtp(phone: string, code: string): Promise<boolean>
   /** Send an email verification message (link or code) to an address. */
   sendEmailVerification(email: string, token: string, code: string): Promise<void>
+  /** Send a self-service password-reset message carrying the single-use token. */
+  sendPasswordReset(email: string, token: string): Promise<void>
 }
 
 function smsServiceBase(): string {
@@ -112,6 +114,23 @@ export class HttpNotificationClient implements NotificationClient {
         to: email,
         template: 'verify-email',
         data: { token, code },
+      },
+      emailServiceToken()
+    )
+    if (!res.ok) {
+      throw new Error(`email-service /send returned HTTP ${res.status}`)
+    }
+  }
+
+  async sendPasswordReset(email: string, token: string): Promise<void> {
+    // Same `email.requested` intent as verification, different template. The raw
+    // token leaves the service ONLY here — the DB holds just its SHA-256.
+    const res = await postJson(
+      `${emailServiceBase()}/send`,
+      {
+        to: email,
+        template: 'password-reset',
+        data: { token },
       },
       emailServiceToken()
     )

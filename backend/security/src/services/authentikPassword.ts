@@ -454,3 +454,107 @@ export async function authentikSignup(input: AuthentikSignupInput): Promise<User
   // Enrollment auto-logged-in → complete OIDC + sync via the shared path.
   return completeOidcWithSession(base, jar)
 }
+
+/** Thrown when the identity store has no account for the address. */
+export class AuthentikUserNotFoundError extends Error {
+  constructor(message = 'No identity-store account for that address') {
+    super(message)
+    this.name = 'AuthentikUserNotFoundError'
+  }
+}
+
+/** Thrown when the new password is rejected by the identity store's policy. */
+export class PasswordPolicyError extends Error {
+  constructor(message = 'Password does not meet the password policy') {
+    super(message)
+    this.name = 'PasswordPolicyError'
+  }
+}
+
+function authentikAdminToken(): string {
+  const token = process.env.AUTHENTIK_ADMIN_TOKEN
+  if (!token) {
+    throw new AuthentikUnavailableError(
+      'AUTHENTIK_ADMIN_TOKEN is required to set an account password'
+    )
+  }
+  return token
+}
+
+/**
+ * Set an account's password IN THE IDENTITY STORE (Authentik) via the Admin API.
+ *
+ * Authentik is the sole credential store — FuzeFront never writes a local
+ * password hash, so a reset MUST land here or it has not happened. Resolves the
+ * account by email (`GET /api/v3/core/users/?email=`) then drives
+ * `POST /api/v3/core/users/{pk}/set_password/`.
+ *
+ * Fail-closed: an unresolvable account, a policy rejection, or any transport
+ * error throws — a caller never treats a non-2xx as "reset".
+ */
+export async function authentikSetPassword(
+  email: string,
+  newPassword: string
+): Promise<void> {
+  if (!email || !newPassword) {
+    throw new InvalidCredentialsError('email and newPassword are required')
+  }
+  const base = authentikBaseUrl()
+  const headers = {
+    Authorization: `Bearer ${authentikAdminToken()}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+
+  let lookup: Response
+  try {
+    lookup = await fetch(
+      `${base}/api/v3/core/users/?email=${encodeURIComponent(email)}`,
+      { headers }
+    )
+  } catch (err) {
+    throw new AuthentikUnavailableError(
+      `identity-store lookup failed: ${(err as Error).message}`
+    )
+  }
+  if (!lookup.ok) {
+    throw new AuthentikUnavailableError(
+      `identity-store user lookup returned HTTP ${lookup.status}`
+    )
+  }
+  const body = (await lookup.json().catch(() => ({}))) as {
+    results?: Array<{ pk: number | string; email?: string }>
+  }
+  // Match the address exactly (case-insensitively): the query is a filter, not
+  // an exact-match guarantee, and resetting the WRONG account is unacceptable.
+  const match = (body.results || []).find(
+    u => (u.email || '').toLowerCase() === email.toLowerCase()
+  )
+  if (!match) throw new AuthentikUserNotFoundError()
+
+  let res: Response
+  try {
+    res = await fetch(`${base}/api/v3/core/users/${match.pk}/set_password/`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ password: newPassword }),
+    })
+  } catch (err) {
+    throw new AuthentikUnavailableError(
+      `identity-store set_password failed: ${(err as Error).message}`
+    )
+  }
+  // 400 is the password-policy rejection; surface it distinctly so the API can
+  // answer 400 rather than a generic failure.
+  if (res.status === 400) {
+    const text = await res.text().catch(() => '')
+    throw new PasswordPolicyError(
+      text ? `Password rejected by policy: ${text}` : undefined
+    )
+  }
+  if (!res.ok) {
+    throw new AuthentikUnavailableError(
+      `identity-store set_password returned HTTP ${res.status}`
+    )
+  }
+}

@@ -259,6 +259,23 @@ export interface IdentityProvider {
   /** Verify a login-step-up challenge; on success returns an authenticated session. */
   verifyMfa(challengeId: string, factorId: string, code: string): Promise<BrokeredSession>;
 
+  // ── Self-service password reset ──
+
+  /**
+   * Begin a self-service password reset for `email`. NEVER reveals whether the
+   * address maps to an account — resolves silently and always fulfils, so the
+   * caller can answer an unconditional 202 (no user enumeration).
+   */
+  requestPasswordReset(email: string): Promise<void>;
+
+  /**
+   * Complete a password reset with the single-use token from the dispatched
+   * message. Sets the credential in the identity store and revokes every
+   * existing session for the account. Fail-closed on an unknown/expired/consumed
+   * token.
+   */
+  confirmPasswordReset(token: string, newPassword: string): Promise<void>;
+
   // ── Contact-ownership verification (distinct from MFA login step-up) ──
 
   /** Send an email verification link/code (current user, or a signup-scoped address). */
