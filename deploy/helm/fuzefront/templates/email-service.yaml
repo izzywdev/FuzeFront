@@ -43,12 +43,17 @@ spec:
               value: {{ .Values.emailService.email.provider | quote }}
             - name: EMAIL_FROM
               value: {{ .Values.emailService.email.from | quote }}
-            {{- if .Values.secret.sendgridApiKey }}
+            # Gate on existingSecret TOO (same reason as sms-service): in prod the
+            # inline value is empty and the real key lives in the SealedSecret.
+            # `optional: true` so the pod still starts on the SMTP provider path,
+            # where SENDGRID_API_KEY is legitimately absent from the secret.
+            {{- if or .Values.secret.existingSecret .Values.secret.sendgridApiKey }}
             - name: SENDGRID_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: SENDGRID_API_KEY
+                  optional: true
             {{- end }}
           readinessProbe:
             httpGet:

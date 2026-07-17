@@ -24,7 +24,11 @@ import { db as defaultDb } from '../../config/database'
 import { oidcService as defaultOidc } from '../../services/oidc'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
-import { authentikSignup as defaultSignup, EnrollmentConflictError } from '../../services/authentikPassword'
+import {
+  authentikSignup as defaultSignup,
+  EnrollmentConflictError,
+  authentikSetPassword as defaultSetPassword,
+} from '../../services/authentikPassword'
 import { putBrokerCode, takeBrokerCode } from '../../services/brokerCodes'
 import type {
   IdentityProvider,
@@ -155,6 +159,19 @@ const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google'])
 
 const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
+/** Reset tokens are short-lived — they are a credential-change capability. */
+const PASSWORD_RESET_TTL_MS = 30 * 60_000
+
+/**
+ * Password reset needs only a deliverable email channel — unlike registration
+ * verification it has no release flag, because a reset is always user-initiated
+ * and never blocks signup. With no `EMAIL_SERVICE_URL` we GRACEFULLY DEGRADE:
+ * mint nothing, log, and still resolve, so the route's unconditional 202 holds
+ * and no user is stranded on an undeliverable token.
+ */
+function passwordResetEnabled(): boolean {
+  return !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
+}
 
 /**
  * Registration-time email verification is a two-condition gate, kept a release
@@ -169,7 +186,7 @@ const EMAIL_VERIFY_TTL_MS = 30 * 60_000
  * — so signup/local dev/prod-without-SMTP never strands a user on an
  * undeliverable challenge. Provider-neutral: no vendor is named.
  */
-function emailVerificationEnabled(): boolean {
+export function emailVerificationEnabled(): boolean {
   return (
     process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
     !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
@@ -184,6 +201,8 @@ export interface AuthentikProviderDeps {
   signupFn: (input: SignupInput) => Promise<BrokeredUser>
   notifications: NotificationClient
   now: () => number
+  /** Sets the credential in the identity store (never a local hash). */
+  setPasswordFn: (email: string, newPassword: string) => Promise<void>
   /** Injected M2M provisioning (defaults to the absorbed machine-identity module). */
   provisionM2M?: (name: string, scopes: string[]) => Promise<M2MClient>
   issueM2M?: (input: M2MTokenInput) => Promise<M2MToken>
@@ -209,6 +228,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private signupFn: (input: SignupInput) => Promise<BrokeredUser>
   private notifications: NotificationClient
   private now: () => number
+  private setPasswordFn: (email: string, newPassword: string) => Promise<void>
   private provisionM2MFn?: (name: string, scopes: string[]) => Promise<M2MClient>
   private issueM2MFn?: (input: M2MTokenInput) => Promise<M2MToken>
   private introspectM2MFn?: (token: string) => Promise<TokenIntrospection>
@@ -239,6 +259,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       })
     this.notifications = deps.notifications ?? new HttpNotificationClient()
     this.now = deps.now ?? (() => Date.now())
+    this.setPasswordFn = deps.setPasswordFn ?? defaultSetPassword
     this.provisionM2MFn = deps.provisionM2M
     this.issueM2MFn = deps.issueM2M
     this.introspectM2MFn = deps.introspectM2M
@@ -758,6 +779,108 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     this.mfaChallenges.delete(challengeId)
     const user = await this.loadUser(ch.userId)
     return this.mintSession(user, ctx)
+  }
+
+  // ── Self-service password reset ───────────────────────────────────────────
+  /**
+   * Begin a reset. Unconditionally resolves — an unknown address, a disabled
+   * email channel, and a real dispatch are INDISTINGUISHABLE to the caller, so
+   * the route's 202 leaks nothing about account existence.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!email || typeof email !== 'string') {
+      throw new InvalidInputError('email is required')
+    }
+
+    // Degrade mode: no email channel wired — a reset token would be
+    // undeliverable, so mint nothing and log. Still resolves (no enumeration).
+    if (!passwordResetEnabled()) {
+      console.warn(
+        `[security] password reset requested for ${maskContact(email)} but no email ` +
+          'channel is configured — nothing dispatched. Set EMAIL_SERVICE_URL to enable.'
+      )
+      return
+    }
+
+    const user = await this.db('users').whereRaw('LOWER(email) = ?', [email.toLowerCase()]).first()
+    if (!user) {
+      // Unknown address: do the same nothing, tell the caller the same nothing.
+      console.warn(
+        `[security] password reset requested for unknown address ${maskContact(email)} — no-op.`
+      )
+      return
+    }
+
+    // Invalidate any outstanding challenge for this user, so a reset request
+    // supersedes its predecessors rather than leaving several live tokens.
+    await this.db('password_resets')
+      .where({ user_id: user.id, consumed: false })
+      .update({ consumed: true })
+
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    await this.db('password_resets').insert({
+      id: uuidv4(),
+      user_id: user.id,
+      email: user.email,
+      token_hash: sha256(resetToken),
+      expires_at: new Date(this.now() + PASSWORD_RESET_TTL_MS),
+      consumed: false,
+    })
+
+    try {
+      await this.notifications.sendPasswordReset(user.email, resetToken)
+    } catch (err) {
+      // Dispatch failure must not become an enumeration oracle (a 5xx for real
+      // accounts only). Burn the token and resolve; the user can retry.
+      await this.db('password_resets')
+        .where({ token_hash: sha256(resetToken) })
+        .update({ consumed: true })
+      console.error(
+        `[security] password reset dispatch failed for ${maskContact(user.email)}:`,
+        err
+      )
+    }
+  }
+
+  /**
+   * Complete a reset: validate the single-use token, set the credential in the
+   * identity store, consume the token, then REVOKE EVERY SESSION for the account
+   * — a password reset must not leave a pre-reset session alive (that is the
+   * whole point when the reset follows a compromise).
+   */
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    if (!token || typeof token !== 'string') {
+      throw new InvalidInputError('token is required')
+    }
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+
+    const row = await this.db('password_resets')
+      .where({ token_hash: sha256(token), consumed: false })
+      .first()
+    // Unknown, already-consumed, and expired all fail identically.
+    if (!row || new Date(row.expires_at).getTime() < this.now()) {
+      throw new InvalidInputError('invalid or expired reset token')
+    }
+
+    const user = await this.db('users').where({ id: row.user_id }).first()
+    if (!user) throw new InvalidInputError('invalid or expired reset token')
+
+    // Set the credential in the identity store FIRST. If this throws (policy
+    // rejection / store unavailable) the token stays live so a valid retry with
+    // a compliant password still works.
+    await this.setPasswordFn(user.email, newPassword)
+
+    await this.db('password_resets').where({ id: row.id }).update({ consumed: true })
+
+    // Revoke all sessions. `authenticateToken` enforces the sessions table, so
+    // deleting these genuinely signs the account out everywhere.
+    const revoked = await this.db('sessions').where({ user_id: user.id }).del()
+    console.warn(
+      `[security] password reset completed for ${maskContact(user.email)}; ` +
+        `revoked ${revoked} session(s).`
+    )
   }
 
   // ── Contact-ownership verification ────────────────────────────────────────

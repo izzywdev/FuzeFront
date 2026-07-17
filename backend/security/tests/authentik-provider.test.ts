@@ -79,6 +79,7 @@ const notifications: NotificationClient = {
   sendSmsOtp: jest.fn().mockResolvedValue(undefined),
   checkSmsOtp: jest.fn().mockResolvedValue(true),
   sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+  sendPasswordReset: jest.fn().mockResolvedValue(undefined),
 }
 
 jest.mock('../src/services/organizationProvisioning', () => ({

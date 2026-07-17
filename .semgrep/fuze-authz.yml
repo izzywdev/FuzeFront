@@ -25,6 +25,21 @@ rules:
     languages: [javascript, typescript, python]
     severity: WARNING
     message: "Minting an auth/session token locally? AuthN is provided by FuzeFront (Authentik OIDC SSO) — products VERIFY FuzeFront-issued tokens, they do not issue their own user tokens. If this signs a user/session JWT, replace it with FuzeFront token verification (@fuzefront/auth). Service-to-service tokens are exempt. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
+    # Tests are excluded: proving a verifier REJECTS a forged/expired/wrong-issuer
+    # token requires minting those tokens as fixtures — there is no other way to
+    # test it. Without this, @fuzefront/auth's own test-suite trips the rule 10x,
+    # and a rule that cries wolf on the verifier it points you to is one people
+    # learn to scroll past. The rule still covers all production code, which is
+    # where minting a user token actually matters.
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.js"
+        - "**/*.spec.ts"
+        - "**/*.spec.js"
+        - "**/tests/**"
+        - "**/__tests__/**"
+        - "**/test_*.py"
     pattern-either:
       - pattern: "jwt.sign(...)"
       - pattern: "jsonwebtoken.sign(...)"
