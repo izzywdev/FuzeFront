@@ -159,16 +159,85 @@ describe('POST /signup', () => {
 })
 
 describe('GET /methods', () => {
-  it('returns the neutral capability descriptor (no vendor names)', async () => {
-    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/methods')
+  // The descriptor is derived from process.env, so each case owns a clean slate.
+  const CAP_VARS = ['SMS_SERVICE_URL', 'EMAIL_SERVICE_URL', 'REQUIRE_EMAIL_VERIFICATION', 'SECURITY_SOCIAL_GOOGLE']
+  let saved: Record<string, string | undefined>
+
+  beforeEach(() => {
+    saved = Object.fromEntries(CAP_VARS.map(k => [k, process.env[k]]))
+    for (const k of CAP_VARS) delete process.env[k]
+  })
+  afterEach(() => {
+    for (const k of CAP_VARS) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k] as string
+    }
+  })
+
+  const methods = () => request(makeApp(fakeProvider())).get('/api/v1/security/methods')
+
+  it('nothing configured: only totp; email/sms verification reported OFF', async () => {
+    const res = await methods()
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({
       password: true,
-      social: ['google'],
-      mfa: { enabled: true, types: ['totp', 'sms', 'email'] },
-      verification: { email: true, sms: true },
+      mfa: { enabled: true, types: ['totp'] },
+      verification: { email: false, sms: false },
     })
+  })
+
+  it('SMS_SERVICE_URL configured: sms factor + sms verification appear', async () => {
+    process.env.SMS_SERVICE_URL = 'http://sms-service:3000'
+    const res = await methods()
+    expect(res.body.mfa.types).toEqual(['totp', 'sms'])
+    expect(res.body.verification.sms).toBe(true)
+    expect(res.body.verification.email).toBe(false)
+  })
+
+  it('blank SMS_SERVICE_URL is not "configured"', async () => {
+    process.env.SMS_SERVICE_URL = '   '
+    const res = await methods()
+    expect(res.body.mfa.types).toEqual(['totp'])
+    expect(res.body.verification.sms).toBe(false)
+  })
+
+  it('email verification enabled (both conditions): email factor + email verification appear', async () => {
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
+    process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+    const res = await methods()
+    expect(res.body.mfa.types).toEqual(['totp', 'email'])
+    expect(res.body.verification.email).toBe(true)
+  })
+
+  it('email transport without the switch stays OFF (degrade mode is not a capability)', async () => {
+    process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+    const res = await methods()
+    expect(res.body.mfa.types).toEqual(['totp'])
+    expect(res.body.verification.email).toBe(false)
+  })
+
+  it('the switch without a transport stays OFF', async () => {
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
+    const res = await methods()
+    expect(res.body.verification.email).toBe(false)
+  })
+
+  it('everything configured: all three factors', async () => {
+    process.env.SMS_SERVICE_URL = 'http://sms-service:3000'
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true'
+    process.env.EMAIL_SERVICE_URL = 'http://email-service:3000'
+    const res = await methods()
+    expect(res.body.mfa).toEqual({ enabled: true, types: ['totp', 'sms', 'email'] })
+    expect(res.body.verification).toEqual({ email: true, sms: true })
+  })
+
+  it('stays neutral (no vendor names) and honours the social switch', async () => {
+    const res = await methods()
+    expect(res.body.social).toEqual(['google'])
     expect(JSON.stringify(res.body).toLowerCase()).not.toMatch(/authentik/)
+
+    process.env.SECURITY_SOCIAL_GOOGLE = 'false'
+    expect((await methods()).body.social).toEqual([])
   })
 })
 
