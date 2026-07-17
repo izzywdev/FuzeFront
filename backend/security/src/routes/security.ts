@@ -146,6 +146,53 @@ router.post('/session/exchange', async (req: Request, res: Response) => {
   }
 })
 
+// ── Self-service password reset ────────────────────────────────────────────
+// POST /v1/security/session/password/reset-request — ALWAYS 202
+router.post('/session/password/reset-request', async (req: Request, res: Response) => {
+  try {
+    if (!req.body?.email || typeof req.body.email !== 'string') {
+      // Only a MALFORMED body earns a 400; a well-formed unknown address does
+      // not — that distinction is the whole no-enumeration guarantee.
+      res.status(400).json({ error: 'email is required', code: 'MALFORMED' })
+      return
+    }
+    await getIdentityProvider().requestPasswordReset(req.body.email)
+  } catch (err) {
+    // Never surface a provider failure here: a 5xx for real accounts and a 202
+    // for unknown ones would be an enumeration oracle. Log and answer 202.
+    console.error('[security] password reset request failed:', err)
+  }
+  res.status(202).end()
+})
+
+// POST /v1/security/session/password/reset-confirm
+router.post('/session/password/reset-confirm', async (req: Request, res: Response) => {
+  try {
+    if (!req.body?.token || typeof req.body.token !== 'string') {
+      throw new InvalidInputError('token is required')
+    }
+    if (!req.body?.newPassword || typeof req.body.newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    await getIdentityProvider().confirmPasswordReset(req.body.token, req.body.newPassword)
+    res.status(200).json({ reset: true })
+  } catch (err) {
+    // Per contract this surface is 400-or-200: an invalid/expired/consumed token
+    // and a policy-rejected password are all fail-closed 400s.
+    const name = (err as Error)?.name
+    if (name === 'PasswordPolicyError') {
+      res.status(400).json({ error: (err as Error).message, code: 'MALFORMED' })
+      return
+    }
+    if (err instanceof InvalidInputError) {
+      res.status(400).json({ error: err.message, code: 'MALFORMED' })
+      return
+    }
+    console.error('[security] password reset confirm failed:', err)
+    res.status(400).json({ error: 'Password reset failed', code: 'MALFORMED' })
+  }
+})
+
 // ── Social login (server-brokered) ─────────────────────────────────────────
 // GET /v1/security/social/{provider}/start — 302 to the provider via same-host IdP path
 router.get('/social/:provider/start', async (req: Request, res: Response) => {
