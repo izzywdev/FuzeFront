@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TEMPLATE — Frame</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 960px; margin: 0 auto; padding: var(--space-10) var(--space-8) var(--space-16); }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 64ch; }
+  .panel { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-6); position: relative; overflow: hidden; }
+  .panel::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .panel h2 { font-size: var(--text-lg); margin: 0 0 var(--space-4); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+    padding: var(--space-4) 0; border-bottom: 1px solid var(--border-color); }
+  .row:last-child { border-bottom: 0; }
+  .btn { font-family: var(--font-sans); font-size: var(--text-sm); background: var(--accent-color); color: #fff;
+    border: 0; border-radius: var(--radius-md); padding: var(--space-3) var(--space-5); cursor: pointer; }
+  .btn:hover { background: var(--accent-hover); }
+  .btn.secondary { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-strong); }
+  .pill { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs); padding: 2px 8px;
+    border-radius: var(--radius-pill); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .pill.success { color: var(--success-color); background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.35); }
+  .pill.error { color: var(--error-color); background: rgba(243,105,127,0.12); border: 1px solid rgba(243,105,127,0.35); }
+  .notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<!-- Every frame carries data-frame="<id>" matching its manifest frames[].id.
+     The data-* hooks below are the CONTRACT Playwright drives — they must match
+     the frame's manifest `testHooks` exactly. Renaming a hook here without
+     updating the manifest is drift; the manifest is the list QA reads. -->
+<div class="wrap" data-frame="01-example-flow">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame (a)</div>
+  <h1>Example flow</h1>
+  <p class="lead">Replace: what this frame shows and the decision it freezes.</p>
+
+  <section class="panel" data-panel="example">
+    <h2>Example panel</h2>
+    <div class="row" data-example-row="1">
+      <span>Replace with real, representative content — never lorem ipsum.</span>
+      <span class="pill success" data-status="ok">ok</span>
+    </div>
+    <div class="row" data-example-row="2">
+      <span>A second row showing the populated state.</span>
+      <span class="pill error" data-status="failed">failed</span>
+    </div>
+    <div class="row">
+      <button class="btn" data-action="submit">Primary action</button>
+      <button class="btn secondary" data-action="cancel">Cancel</button>
+    </div>
+  </section>
+
+  <p class="notes">
+    Test hooks: <code>[data-frame='01-example-flow']</code> · <code>[data-panel='example']</code> ·
+    <code>[data-action='submit']</code> — keep in sync with <code>manifest.json</code> → <code>frames[].testHooks</code>.<br />
+    Tokens only: no raw hex, spacing or type outside <code>tokens.css</code>.
+  </p>
+</div>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "feature": "TEMPLATE — replace with the feature name",
+  "description": "Replace: what these frames freeze, and what approving them commits to. Approving = approving the visual model AND the build inventory below.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "frames": [
+    {
+      "id": "01-example-flow",
+      "file": "01-example-flow.html",
+      "label": "(a) Example flow",
+      "route": "/example",
+      "summary": "Replace: what this frame shows — the populated, primary path of the flow.",
+      "acceptanceNotes": "Replace: the behavioural contract QA writes RED specs against. Name the real fail-closed cases, not just the happy path.",
+      "testHooks": [
+        "[data-frame='01-example-flow']",
+        "[data-panel='example']",
+        "[data-action='submit']"
+      ]
+    },
+    {
+      "id": "02-states",
+      "file": "02-states.html",
+      "label": "(b) States",
+      "route": "/example",
+      "summary": "Loading skeleton, empty state, error+retry, and the feature's fail-closed cases.",
+      "acceptanceNotes": "States are contract, not decoration. Frames showing only the happy path produce UI that only handles the happy path.",
+      "testHooks": [
+        "[data-frame='02-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']"
+      ]
+    }
+  ],
+  "contract": {
+    "openapi": "services/example-service/openapi.yaml",
+    "client": "@fuzefront/example-client",
+    "schemas": ["components.schemas.Example"],
+    "endpoints": ["GET /api/v1/example"],
+    "component": "@fuzefront/example-ui → ExamplePanel",
+    "featureFlag": "fuzefront.example.feature"
+  },
+  "build": {
+    "flows": [{ "id": "01-example-flow", "orchestrator": "ExampleFlow", "route": "/example" }],
+    "components": ["ExamplePanel", "ExampleRow"],
+    "packages": ["@fuzefront/example-ui"]
+  }
+}
