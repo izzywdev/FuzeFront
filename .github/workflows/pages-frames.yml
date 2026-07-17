@@ -1,0 +1,54 @@
+name: pages-frames
+
+# Publishes design/frames/** to GitHub Pages so every feature awaiting UX approval
+# has a real, clickable URL: https://izzywdev.github.io/FuzeFront/
+# The top-level index is DERIVED from the directories present under design/frames/
+# (scripts/build-frames-site.mjs) — never a hand-maintained list.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'design/frames/**'
+      - 'scripts/build-frames-site.mjs'
+      - '.github/workflows/pages-frames.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight deployment; Pages allows one at a time.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frames site (index derived from design/frames/*/)
+        run: node scripts/build-frames-site.mjs --out _site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
