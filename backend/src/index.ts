@@ -6,6 +6,7 @@ import { createServer } from 'http'
 import dotenv from 'dotenv'
 
 // Import routes
+import securityRoutes from './routes/security'
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import organizationsRoutes from './routes/organizations'
@@ -274,6 +275,7 @@ try {
 }
 
 // Routes
+app.use('/api/v1/security', securityRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
