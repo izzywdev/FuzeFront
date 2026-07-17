@@ -89,6 +89,62 @@ git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
 > is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
 > This recipe only SEALS the token feature-flags-engineer hands over.
 
+## Adding the Twilio keys (phone 2FA / `sms-service`) — REQUIRED before enabling SMS
+
+`smsService.enabled` is **false** in `values-prod.yaml` and **must stay false until
+these four keys are sealed**. Unlike `FEATURE_FLAGS_CLIENT_TOKEN` above, these are
+NOT optional: `templates/sms-service.yaml` mounts `SMS_AUTH_SECRET` via a hard
+`secretKeyRef` (no `optional: true`), so a missing key means the pod never starts —
+kubelet holds the container in `CreateContainerConfigError` / `CrashLoopBackOff`.
+
+Seal all four into the SAME `fuzefront-secrets` SealedSecret. The key names below
+are what the chart reads — they must match EXACTLY:
+
+| Key | Where to get it | Used by |
+|-----|-----------------|---------|
+| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info (starts `AC…`) | sms-service → Twilio Verify |
+| `TWILIO_AUTH_TOKEN` | Twilio console → Account Info (rotate-able) | sms-service → Twilio Verify |
+| `TWILIO_VERIFY_SERVICE_SID` | Twilio console → Verify → Services (starts `VA…`) | sms-service → Twilio Verify |
+| `SMS_AUTH_SECRET` | **Generate a fresh random value** — `openssl rand -hex 32` | Authentik + security-service authenticating TO sms-service |
+
+`SMS_AUTH_SECRET` is not issued by any vendor: it is an internal shared secret you
+mint yourself. It is consumed by the Authentik SMS stage blueprint
+(`deploy/helm/fuzefront/authentik/blueprints/stages-sms.yaml`), so the value sealed
+here must be the same one that stage uses.
+
+```bash
+# Seal each key in place (does not disturb the other keys in the manifest).
+for KEY in TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_VERIFY_SERVICE_SID; do
+  read -rsp "value for ${KEY}: " V; echo
+  printf '%s' "$V" | tr -d '[:space:]' > /tmp/sms-val.txt
+  deploy/scripts/seal-secret.sh "$KEY" \
+    --in /tmp/sms-val.txt \
+    --scope fuzefront/fuzefront-secrets \
+    --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+  rm -f /tmp/sms-val.txt
+done
+
+# SMS_AUTH_SECRET — minted here, not copied from a vendor.
+openssl rand -hex 32 | tr -d '\n' > /tmp/sms-auth.txt
+deploy/scripts/seal-secret.sh SMS_AUTH_SECRET \
+  --in /tmp/sms-auth.txt \
+  --scope fuzefront/fuzefront-secrets \
+  --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+rm -f /tmp/sms-auth.txt
+
+git add deploy/contabo/sealed/fuzefront-secrets.yaml
+git commit -m "secrets(prod): seal Twilio + SMS_AUTH_SECRET for phone 2FA"
+git push
+```
+
+Then, as a SEPARATE GitOps commit in a deploy window, flip
+`smsService.enabled: true` in `values-prod.yaml`. Keep the two steps apart so the
+secret is provably present before the Deployment renders.
+
+> Only the **owner** can perform this sealing — it needs the real Twilio credentials
+> and the cluster's sealing cert. Agents scaffold the wiring and the key names; they
+> never hold or commit the values.
+
 ## ⚠️ Resealing a single value (e.g. `AUTHENTIK_BOOTSTRAP_TOKEN`)
 
 To rotate or repair ONE key without retyping the rest, use the offline merge helper —

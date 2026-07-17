@@ -49,6 +49,15 @@ securityService:
   # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
   # insert with the sealed FUZEFRONT_ADMIN_PASSWORD. See PR #213 (password reseal).
   adminEmail: admin@fuzefront.com
+  # Signup email verification (PR #275) — DELIBERATELY OFF.
+  # While false the code auto-verifies every new account, i.e. verification is
+  # effectively not enforced. That is the SAFE state right now: email-service is
+  # enabled but its SMTP sender is NOT yet proven end-to-end (no SMTP_HOST is
+  # wired; it defaults to a mailhog-style localhost:1025 and silently drops mail).
+  # Flipping this to true before a real sender is proven would bounce EVERY new
+  # signup — they would be created unverified and never receive the mail needed to
+  # verify. Sequence: prove the sender → then flip this to true via GitOps.
+  requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
     tag: 215bd6a95f97
@@ -83,12 +92,39 @@ clockApp:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
     tag: 215bd6a95f97
 
+# email-service — transactional sender behind the signup email-verification flow
+# (PR #275). Its image IS built by release.yml on every release, but until this PR
+# its repository was missing from the bump step's anchor list, so the tag below sat
+# frozen at a stale SHA while the built image moved on. The anchor is now present,
+# so the next release rewrites this tag automatically — do not hand-pin it.
 emailService:
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
     tag: 1fbd206c5b2a
+  # Provider stays "smtp" (chart default) until a sender is proven end-to-end.
+  # NOTE: securityService.requireEmailVerification MUST stay false until then —
+  # see the security block below.
 
+# sms-service — Twilio Verify dispatcher behind phone 2FA (SMS/voice, PR #274).
+# Its image is built by release.yml, but its repository was likewise absent from
+# the bump anchor list, so this tag stayed "" — an EMPTY TAG, meaning the service
+# was never actually deployed in prod even though the security routes answered.
+# The anchor now exists, so the next release writes the real SHA here.
+#
+# STILL DISABLED, deliberately. Enabling it now would CrashLoop the pod: the
+# container requires SMS_AUTH_SECRET (a hard secretKeyRef, no `optional`) and the
+# Twilio credentials, and NONE of those keys exist in the fuzefront-secrets
+# SealedSecret yet (verified against deploy/contabo/sealed/fuzefront-secrets.yaml).
+# GO-LIVE for phone 2FA is exactly two steps, in this order:
+#   1. Owner seals the 4 keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
+#      (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID,
+#       SMS_AUTH_SECRET) into fuzefront-secrets.
+#   2. Flip `enabled` to true here via GitOps in a deploy window.
+# Until step 1 lands this MUST stay false — the empty tag hid a missing-secret
+# failure that would otherwise surface as a CrashLoopBackOff on the umbrella sync.
 smsService:
+  enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
     tag: ""  # CI's release sed writes the real image SHA here
