@@ -123,7 +123,7 @@ const EMAIL_VERIFY_TTL_MS = 30 * 60_000
  * — so signup/local dev/prod-without-SMTP never strands a user on an
  * undeliverable challenge. Provider-neutral: no vendor is named.
  */
-function emailVerificationEnabled(): boolean {
+export function emailVerificationEnabled(): boolean {
   return (
     process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
     !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
