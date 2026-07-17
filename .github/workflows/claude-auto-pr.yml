@@ -1,18 +1,41 @@
-name: Auto-PR from agent branches
+name: Stranded-branch detector (agent branches)
 
-# Closes the autonomy gap for ALL agent-created branch prefixes:
+# WHAT THIS CAN AND CANNOT DO — read before trusting it.
 #
-#   claude/**          — anthropics/claude-code-action (claude.yml, cloud sessions)
+# This workflow CANNOT open a pull request on this repo, and never has. The repo
+# setting `can_approve_pull_request_reviews` is false (verify:
+# `gh api repos/OWNER/REPO/actions/permissions/workflow`), so `gh pr create` from
+# a workflow fails with:
+#   "GitHub Actions is not permitted to create or approve pull requests"
+# That setting is deliberately OFF: GitHub bundles create-PR and approve-PR into
+# one toggle, and `master` here is deploy-on-push with required reviews, so
+# enabling it would give any workflow a self-approval path to production. The
+# review gate being un-bypassable is worth more than auto-PR convenience.
+#
+# It was previously named "Auto-PR" and claimed to close the autonomy gap. It did
+# not: every green run was the early-exit path ("PR already open") because the
+# agent had already opened its own PR. It only ever ran its create path when
+# genuinely needed — and failed. A check that passes when its work is already
+# done by someone else, and fails only when actually asked to work, is not
+# evidence of anything.
+#
+# THEREFORE: opening the PR is the AGENT'S job, not CI's (see CLAUDE.md, branch
+# lifecycle). This workflow's real and only job is to make a stranded branch —
+# commits pushed, no PR, e.g. the session died first — LOUD instead of silent, so
+# it gets salvaged rather than reaped by governance-nightly a week later.
+#
+# It still attempts `gh pr create` first: best-effort, so that if the permission
+# is ever granted (or a scoped PAT/App token is wired in) this starts working
+# with no edit. But it does not depend on it, and it reports honestly either way.
+#
+# Watches every agent-created prefix:
+#   claude/**            — anthropics/claude-code-action (claude.yml, cloud sessions)
 #   claude-auto-fix-ci-* — claude-ci-autofix.yml → izzywdev/AITools
-#   ds-propagate/**    — ds-propagate.yml multi-agent runs (3 per DS push)
-#   nightly-autofix-*  — nightly-integration.yml autofix job
+#   ds-propagate/**      — ds-propagate.yml multi-agent runs (3 per DS push)
+#   nightly-autofix-*    — nightly-integration.yml autofix job
 #
-# Gap 1 (draft PR never auto-merges): fixed by opening as ready-for-review + auto-merge label.
-# Gap 2 (no PR at all when session errors/times-out): fixed by watching all four prefixes.
-#
-# Flow: push → this workflow → non-draft PR + auto-merge label
-#       → auto-merge.yml enables gh pr merge --auto --squash --delete-branch
-#       → CI passes → GitHub merges + deletes branch automatically.
+# Happy path: agent opens a non-draft PR + auto-merge label → auto-merge.yml runs
+# `gh pr merge --auto --squash --delete-branch` → CI passes → GitHub merges.
 on:
   push:
     branches:
@@ -43,7 +66,7 @@ jobs:
         run: |
           gh label create "auto-merge" --color "#0052cc" --description "Enable squash auto-merge once CI passes" --force 2>/dev/null || true
 
-      - name: Open PR if none exists
+      - name: Detect stranded branch (and best-effort open a PR)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
@@ -51,13 +74,42 @@ jobs:
         run: |
           existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -n "$existing" ]; then
-            echo "PR #$existing already open for $BRANCH — nothing to do."
+            echo "PR #$existing already open for $BRANCH — the agent did its job. Nothing to do."
             exit 0
           fi
-          # Only open a PR if the branch actually diverges from base.
-          if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
-            gh pr create --base "$BASE" --head "$BRANCH" --fill --label "auto-merge" \
-              || { echo "::error::gh pr create failed for $BRANCH — branch will persist with no PR until governance-nightly retries"; exit 1; }
-          else
-            echo "No commits on $BRANCH ahead of $BASE — no PR opened."
+
+          # A branch with no commits ahead of base is not stranded — it is empty.
+          if ! git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
+            echo "No commits on $BRANCH ahead of $BASE — nothing to strand, no PR needed."
+            exit 0
           fi
+
+          # Commits exist with no PR. Best-effort create: succeeds only if this repo
+          # ever grants Actions the create-PR permission (it does not today).
+          if gh pr create --base "$BASE" --head "$BRANCH" --fill --label "auto-merge" 2>/tmp/pr-err; then
+            echo "Opened a PR for $BRANCH (Actions create-PR permission is available)."
+            exit 0
+          fi
+
+          # Expected path today. Report the ACTUAL remedy, not the raw API error —
+          # a stranded branch is an agent that pushed and died before opening its
+          # PR, and a human/orchestrator salvaging it needs to know that, not to go
+          # hunting for a permissions bug that is an intentional security choice.
+          cat /tmp/pr-err
+          {
+            echo "### ⚠️ Stranded agent branch: \`$BRANCH\`"
+            echo ""
+            echo "It has commits but **no pull request**, and CI cannot open one for it"
+            echo "(Actions lacks create-PR permission here **by design** — the toggle that"
+            echo "grants it would also let workflows approve PRs into a deploy-on-push"
+            echo "\`$BASE\`)."
+            echo ""
+            echo "**The agent that pushed this branch was supposed to open its own PR and"
+            echo "did not** — most likely it died mid-run. The work is safe on the remote"
+            echo "but invisible, and \`governance-nightly\` will reap the branch if it stays"
+            echo "that way."
+            echo ""
+            echo "**To salvage:** \`gh pr create --base $BASE --head $BRANCH --fill --label auto-merge\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::error::Stranded branch $BRANCH — commits pushed but no PR, and CI cannot open one. See the job summary to salvage."
+          exit 1
