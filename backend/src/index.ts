@@ -13,6 +13,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import securityCompatRoutes from './routes/security-compat'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -274,6 +275,12 @@ try {
 }
 
 // Routes
+// Security API compatibility shim — exposes /api/v1/security/* on the monolith
+// so the SPA and E2E tests work against a single-service stack without a
+// separate security-service process. When the real security-service IS running
+// (k8s / full-stack local), its ingress rule takes precedence before requests
+// reach the monolith, so both paths coexist safely.
+app.use('/api/v1/security', securityCompatRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
