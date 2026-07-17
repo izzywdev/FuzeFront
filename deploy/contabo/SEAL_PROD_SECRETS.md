@@ -89,6 +89,60 @@ git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
 > is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
 > This recipe only SEALS the token feature-flags-engineer hands over.
 
+## Adding the SMTP credentials (signup email-verification + password reset) — REQUIRED before enabling verification
+
+`email-service` is **enabled** in prod and its pod is **healthy — and it delivers
+nothing.** The service reads `SMTP_HOST` with an in-code fallback to
+`localhost:1025` (a dev mailhog). No host was wired, so every message — signup
+verification *and* password reset — was accepted and silently dropped. Green
+`/health`, zero delivery. Both features have been live-dead in prod since they
+shipped.
+
+The chart now wires SMTP from `emailService.email.smtp` (host/port/secure — NOT
+secret, they live in values) plus these two keys from the SealedSecret:
+
+| Key | Where to get it | Used by |
+|-----|-----------------|---------|
+| `SMTP_USER` | Zoho mailbox / app-specific user for the sending domain (e.g. `noreply@fuzefront.com`) | email-service → SMTP relay |
+| `SMTP_PASS` | Zoho **app-specific password** (not the account password; generate one per app) | email-service → SMTP relay |
+
+Both are mounted with **hard** `secretKeyRef`s (no `optional: true`) on the SMTP
+provider path — deliberately. An authenticated relay like Zoho rejects anonymous
+mail, so a missing credential must stop the pod at start rather than degrade back
+into silently dropping mail. Sealing these keys and setting the host go together.
+
+**The chart will not let you enable verification without a sender.** Setting
+`securityService.requireEmailVerification: true` while
+`emailService.email.smtp.host` is empty makes `helm template` **fail** — because
+turning verification on with no deliverable sender locks out *every* new signup
+(created unverified, never mailed). Verified in all three directions: off+no-host
+renders, on+no-host fails, on+host renders with SMTP env.
+
+```bash
+# Seal the two SMTP credentials in place (does not disturb other keys).
+for KEY in SMTP_USER SMTP_PASS; do
+  read -rsp "value for ${KEY}: " V; echo
+  printf '%s' "$V" | tr -d '[:space:]' > /tmp/smtp-val.txt
+  deploy/scripts/seal-secret.sh "$KEY" \
+    --from-file /tmp/smtp-val.txt \
+    --into deploy/contabo/sealed/fuzefront-secrets.yaml
+done
+rm -f /tmp/smtp-val.txt
+```
+
+**Go-live for email verification + password reset — in this order:**
+1. **Owner** seals `SMTP_USER` + `SMTP_PASS` (above).
+2. Set `emailService.email.smtp.host` (e.g. `smtp.zoho.com`), `port: 587`,
+   `secure: false` in `values-prod.yaml` via GitOps.
+3. **Prove the sender end-to-end** — a real message delivered to a real inbox.
+   Password reset starts working at this step (it needs no flag; it only needs
+   `EMAIL_SERVICE_URL`, which is already wired).
+4. Only then flip `securityService.requireEmailVerification: true` via GitOps in a
+   deploy window. Not before — step 3 is the proof the flag depends on.
+
+`SMTP_USER`/`SMTP_PASS` are credentials for a real mailbox and must be sealed by
+the **owner**; never paste them into values, a PR, or an issue.
+
 ## Adding the Twilio keys (phone 2FA / `sms-service`) — REQUIRED before enabling SMS
 
 `smsService.enabled` is **false** in `values-prod.yaml` and **must stay false until
