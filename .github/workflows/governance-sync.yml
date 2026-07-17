@@ -1,0 +1,108 @@
+name: Governance Sync
+
+# Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
+#
+# SELF-CONTAINED BY DESIGN — this deliberately does NOT `uses:` a reusable workflow from
+# FuzeSDLC. A cross-repo `uses:` against a PRIVATE FuzeSDLC fails to RESOLVE unless the hub's
+# Actions "access" setting allows it, and an unresolvable `uses:` fails the whole RUN before
+# any job (no `continue-on-error` can save it) => a red X on every PR in every repo. Fetching
+# the canonical with the read-only deploy key instead keeps the fleet independent of that org
+# setting. The RECONCILIATION LOGIC still lives in the hub (scripts/governance_sync.py,
+# fetched below) — only this thin shim is per-repo.
+#
+# Behaviour: fetch the FuzeSDLC canonical at this repo's baselineRef, reconcile the managed
+# files (the manifest's agent subset + the agent-templates FRAMEWORK), commit agent/framework
+# drift back to the PR branch, and fail-with-diff on drift the token cannot push
+# (.github/workflows/** or a fork PR). Concrete role/env/vault defs are never touched.
+#
+# No FUZESDLC_DEPLOY_KEY secret -> SKIPS with a notice (never red). Safe to land before the
+# key is distributed.
+
+on:
+  pull_request:
+
+permissions:
+  contents: write   # commit reconciled managed files back to the PR branch
+
+jobs:
+  governance-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Skip if not onboarded or key absent
+        id: guard
+        env:
+          KEY: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+        run: |
+          if [ ! -f .fuze/manifest.json ]; then
+            echo "::notice::no .fuze/manifest.json — repo not onboarded; skipping."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEY" ]; then
+            echo "::notice::FUZESDLC_DEPLOY_KEY not set — cannot fetch the canonical; skipping (set the read-only key to enable)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve baselineRef
+        id: ref
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          BR=$(python3 -c "import json;print(json.load(open('.fuze/manifest.json')).get('baselineRef','main'))")
+          echo "ref=${BR:-main}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch FuzeSDLC canonical (read-only key)
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: izzywdev/FuzeSDLC
+          ref: ${{ steps.ref.outputs.ref }}
+          ssh-key: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+          path: .fuzesdlc-canonical
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Reconcile managed files
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          python3 .fuzesdlc-canonical/scripts/governance_sync.py \
+            --canonical .fuzesdlc-canonical --repo . --write --report .governance-sync-report.json
+
+      - name: Commit-back or fail-with-diff
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          report=.governance-sync-report.json
+          get() { python3 -c "import json;print(len(json.load(open('$report'))['$1']))"; }
+          committable=$(get committable); workflows=$(get workflows); missing=$(get missing)
+          rm -f "$report"
+          rm -rf .fuzesdlc-canonical
+          if [ "$committable" != "0" ]; then
+            if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+              echo "::error::$committable managed file(s) drifted but this is a fork PR — cannot commit back. Run scripts/sdlc-bootstrap.sh and push."
+              git --no-pager diff; exit 1
+            fi
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }} [skip ci]"
+            git push origin "HEAD:${HEAD_REF}"
+            echo "::notice::Reconciled and pushed $committable managed file(s) to ${HEAD_REF}."
+          fi
+          if [ "$workflows" != "0" ] || [ "$missing" != "0" ]; then
+            echo "::error::Governance drift the token cannot auto-fix — $workflows workflow file(s), $missing missing file(s). Run scripts/sdlc-bootstrap.sh and open a PR."
+            git --no-pager diff; exit 1
+          fi
+          echo "Governance in sync with FuzeSDLC ${{ steps.ref.outputs.ref }}."
