@@ -64,7 +64,11 @@ entries:
       user_path_template: "goauthentik.io/sources/%(slug)s"
       # Show a "Sign in with Google" button on the login page
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
-      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+      # Points at FuzeFront's OWN non-interactive social enrollment flow (see
+      # flow-enrollment.yaml). The stock `default-source-enrollment` renders an
+      # Authentik-branded "select a username" prompt, which leaks the IdP to the
+      # browser and blocked first-time Google sign-up.
+      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-source-enrollment]]
 
   # ── Login surface wiring ─────────────────────────────────────────────────────
   # Creating flows/sources does NOT surface them on the login page — the
