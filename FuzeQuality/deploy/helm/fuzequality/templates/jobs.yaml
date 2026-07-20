@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzequality-migrations-{{ .Release.Revision }}
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: migrations } }
+    spec:
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrations
+          image: "{{ .Values.backendImage.repository }}:{{ .Values.backendImage.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["npm", "run", "migrate"]
+          env:
+            {{- include "fuzequality.env" . | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fuzequality-reconciler
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.config.reconcileSchedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: reconciler } }
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: reconcile
+              image: curlimages/curl:8.12.1
+              args:
+                - -fsS
+                - -X
+                - POST
+                - -H
+                - "Authorization: Bearer $(FUZEQUALITY_API_TOKEN)"
+                - -H
+                - "Content-Type: application/json"
+                - -d
+                - {{ printf "{\"scopeId\":\"default\",\"jql\":%q}" .Values.config.jiraJql | quote }}
+                - http://fuzequality-backend:{{ .Values.backend.port }}/api/v1/jira/sync
+              env:
+                - name: FUZEQUALITY_API_TOKEN
+                  valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: FUZEQUALITY_API_TOKEN } }
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
