@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Remove member — authz-admin frame (d)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="04-remove-member">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (d) · route /settings/access</div>
+  <h1>Remove member</h1>
+  <p class="lead">Removing someone revokes their access to the whole organization. Like demoting,
+    the one case that matters is the last admin: an organization can never be left with no one
+    able to administer it.</p>
+
+  <div class="state-block">
+    <div class="state-label">(d1) Ordinary removal — confirm</div>
+    <div class="modal" data-panel="remove-member" data-variant="ordinary">
+      <div class="modal-head"><h2>Remove linus@northwind.example?</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn">
+          <span>
+            <b>They lose access to Northwind immediately</b>
+            <p>Any active sessions end and their role assignment is deleted. You can add them
+              again later, but their role won't be restored automatically.</p>
+          </span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent btn-danger" data-action="confirm-remove-member" data-target="u_1003">Remove member</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-block">
+    <div class="state-label">(d2) Last admin — refused</div>
+    <div class="modal" data-panel="remove-member" data-variant="last-admin" data-state="blocked">
+      <div class="modal-head"><h2>Remove ada@northwind.example?</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-error" data-error-code="LAST_ADMIN">
+          <span>
+            <b>Northwind needs at least one admin</b>
+            <p>Ada is the only admin. Make someone else an admin first, then remove Ada.</p>
+          </span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent btn-danger" data-action="confirm-remove-member" data-target="u_1001" disabled>Remove member</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>DELETE /v1/security/tenants/{tenantId}/members/{userId}</code>
+    (idempotent → <code>204</code>). Removing an already-absent member still returns 204, so the
+    UI treats a 204 and a 404-then-refresh identically: the row is gone.
+    <br /><br />
+    <b>⚠ The last-admin refusal does not exist yet — this frame proposes it.</b> Today
+    <code>backend/security/src/routes/authz.ts</code> would delete the last admin and leave the org
+    unadministrable. Approving this frame commissions a <code>409 LAST_ADMIN</code> on this
+    operation AND the client-side pre-check that disables the button. <b>The disabled button is an
+    affordance, not the guard</b> — the server must refuse independently.
+    <br /><br />
+    <b>403 is not this.</b> A member without permission to remove others gets a
+    <code>403 FORBIDDEN</code> (frame (e)) — that is an authorization denial, shown in place, never
+    a sign-in redirect. The last-admin 409 is different: the caller <i>is</i> allowed, but the
+    <i>action</i> is refused to protect the org.
+  </p>
+
+  <nav class="pager"><a href="03-change-role.html">← Change role</a><a href="05-states.html">Next: States →</a></nav>
+</div>
+</body>
+</html>

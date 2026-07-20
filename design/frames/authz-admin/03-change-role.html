@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Change role — authz-admin frame (c)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="03-change-role">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (c) · route /settings/access</div>
+  <h1>Change role</h1>
+  <p class="lead">Two variants. The first is the ordinary change. The second is the one that
+    matters: the organization's last admin cannot be demoted.</p>
+
+  <div class="state-block">
+    <div class="state-label">(c1) Ordinary change</div>
+    <div class="modal" data-panel="change-role" data-variant="ordinary">
+      <div class="modal-head"><h2>Change role — linus@northwind.example</h2></div>
+      <div class="modal-body">
+        <label class="radio-row" data-role-option="admin">
+          <input type="radio" name="r1" value="admin" />
+          <span><span class="rl">Admin</span><span class="rd">Full access, including managing members and roles.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="editor" data-selected="true">
+          <input type="radio" name="r1" value="editor" checked />
+          <span><span class="rl">Editor</span><span class="rd">Create and change apps and content. Cannot manage members.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="viewer">
+          <input type="radio" name="r1" value="viewer" />
+          <span><span class="rl">Viewer</span><span class="rd">Read-only access.</span></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-change-role">Save role</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-block">
+    <div class="state-label">(c2) Last admin — refused</div>
+    <div class="modal" data-panel="change-role" data-variant="last-admin" data-state="blocked">
+      <div class="modal-head"><h2>Change role — ada@northwind.example</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn" data-error-code="LAST_ADMIN">
+          <span>
+            <b>Northwind needs at least one admin</b>
+            <p>Ada is the only admin. Make someone else an admin first, then change Ada's role.</p>
+          </span>
+        </div>
+        <label class="radio-row" data-role-option="admin" data-selected="true">
+          <input type="radio" name="r2" value="admin" checked />
+          <span><span class="rl">Admin</span><span class="rd">Full access, including managing members and roles.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="editor" data-disabled="true">
+          <input type="radio" name="r2" value="editor" disabled />
+          <span><span class="rl">Editor</span><span class="rd">Unavailable — would leave Northwind with no admin.</span></span>
+        </label>
+        <label class="radio-row" data-role-option="viewer" data-disabled="true">
+          <input type="radio" name="r2" value="viewer" disabled />
+          <span><span class="rl">Viewer</span><span class="rd">Unavailable — would leave Northwind with no admin.</span></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-change-role" disabled>Save role</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>PUT /v1/security/tenants/{tenantId}/members/{userId}/roles</code>
+    (<code>RoleAssignment</code> → <code>200 Member</code>). Replaces the member's assignment.
+    <br /><br />
+    <b>⚠ The last-admin refusal does not exist yet — this frame proposes it.</b> There is no
+    last-admin guard in <code>backend/security/src/routes/authz.ts</code> or in the contract today;
+    the call would succeed and leave the org unadministrable. Approving this frame commissions:
+    (1) a <code>409 LAST_ADMIN</code> response on this operation, and (2) a client-side pre-check so
+    the UI disables the option rather than letting the user discover the refusal by failing.
+    <b>The disabled control is an affordance, not the enforcement</b> — the server must refuse
+    independently, because a client-side guard is not a guard.
+    <br /><br />
+    <b>⚠ Role replacement is destructive today.</b> The provider implements "replace" as
+    remove-then-re-add, so a partial failure can leave a member with <i>no</i> roles. Until that is
+    atomic, a failed save must re-fetch and show the member's true current role — never assume
+    the prior value held.
+  </p>
+
+  <nav class="pager"><a href="02-add-member.html">← Add member</a><a href="04-remove-member.html">Next: Remove member →</a></nav>
+</div>
+</body>
+</html>
