@@ -7,7 +7,13 @@ import { test, expect } from '@playwright/test'
  * sidebar opens/closes, content area is full-width when sidebar is closed.
  *
  * Login is required — the authenticated layout renders the hamburger/sidebar.
+ *
+ * Credentials come from the environment, mirroring auth-simple.spec.ts: sign-in is
+ * brokered through the identity provider, so the account must exist in Authentik.
  */
+
+const EMAIL = process.env.E2E_USER_EMAIL ?? 'admin@fuzefront.dev'
+const PASSWORD = process.env.E2E_USER_PASSWORD ?? 'admin123'
 
 test.describe('Mobile layout', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,8 +21,8 @@ test.describe('Mobile layout', () => {
     await page.waitForLoadState('domcontentloaded')
 
     // Log in so the authenticated shell (with hamburger + sidebar) renders
-    await page.fill('input[type="email"]', 'admin@fuzefront.dev')
-    await page.fill('input[type="password"]', 'admin123')
+    await page.fill('input[type="email"]', EMAIL)
+    await page.fill('input[type="password"]', PASSWORD)
     await Promise.all([
       // Login goes through the Security API (POST /api/v1/security/session);
       // match the method so GET /session ("me") cannot satisfy the wait early.
