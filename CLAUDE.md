@@ -64,24 +64,25 @@ If you rotate the signing keystore or change the key alias, all four files must 
 - `frontend-engineer` — PWA manifest, icons (`frontend/public/`), and design-system non-mobile primitives
 - **Never commit `android/keystore/*.keystore`** — gitignored; stored only in `ANDROID_KEYSTORE_B64`.
 
-## Mobile design-review gate
+## Design-first gate — HTML frames are the source of truth (PenPot is parked)
 
-All mobile UI changes must pass a visual design-review gate **before any code is written**. This closes the SDLC gap that allows unverified CSS to ship to the Android TWA.
+**No UI is written before its design is approved.** This closes the SDLC gap that let unverified CSS ship, and — more importantly — that let six fully-built Security backends ship with **no UI at all** and nothing to catch it. Plan of record: `docs/planning/design-first-ui-pipeline.md`.
+
+**The authoritative design artifact is a set of navigable HTML frames in this repo** — `design/frames/<feature>/` (`index.html` entry + ordered `01-*.html` screens + `tokens.css` + `manifest.json`), published to GitHub Pages for review. Not PenPot. PenPot is **parked** by owner decision; it complicates the loop without earning it, and a design tool that is not in the repo cannot be gated by CI. Frames are code: they diff, they review, they enforce.
 
 ### Flow
-1. `mobile-frontend-engineer` (or `frontend-engineer` for shell-layout touches) creates PenPot frames via **PenPot MCP** (`mcp__penpot__*`).
-2. Agent opens a GitHub Issue in this repo labeled **`design-review`** with frame thumbnails and interaction notes.
-3. **`design-review-notify.yml`** fires automatically and sends a Telegram message to the product owner with a direct link to the issue.
-4. The product owner comments **`@claude approve`** (or `@claude reject: <reason>`) on the issue. `claude.yml` spawns a new cloud session to continue implementation.
-5. `frontend-test-engineer` retrieves the approved PenPot frames and screenshot-compares the implementation before reporting done.
+1. **`product-designer`** — the **sole** author of `design/frames/**` and the UX/UI owner — turns the product requirement/user story into frames. **Not `frontend-engineer`**: the implementer must not author the spec it is measured against, exactly as `contract-designer` (not `backend-engineer`) owns the API spec.
+2. **Frames are ALWAYS their own PR, and its only content.** CI on it enforces the UX/UI policy: `gate-ds-conformance`, `gate-frames-schema`, `gate-frames-stamped`.
+3. The frames declare the **build inventory** (flows / React components / npm packages) — rendered in `index.html`, mirrored in the manifest. Approving the design approves the architecture, so implementation cannot quietly invent a different one.
+4. The owner approves **per flow** — one ready flow never waits on an unready sibling. **Reject re-dispatches `product-designer`** for an improving iteration; it does not close the thread.
+5. **Merging an approved frames PR is the trigger**: UX QA agents write Playwright specs for each flow that are **ALL RED** first (TDD — the specs fail before an implementation exists), then `frontend-engineer`s build components → flow orchestrators → packages, until the specs go green.
+6. `frontend-test-engineer` verifies the built UI against the approved frames.
 
-### PenPot MCP
-- **Local config:** `~/.claude.json` under `mcpServers` → `"penpot": { "type": "sse", "url": "https://design.penpot.app/mcp/stream?userToken=<token>" }`. **Never commit the token.**
-- **GitHub Secret:** `PENPOT_MCP_URL` — the full SSE URL including token, for future CI use.
-- **Agent access:** `mobile-frontend-engineer`, `frontend-engineer`, and `frontend-test-engineer` all have `mcp__penpot__*` in their tool grants and treat PenPot as the design source of truth.
+### States are contract, not decoration
+Frames must show loading, empty, error, and the real fail-closed cases (reveal-once token; remove-last-2FA-factor → 409; demote-the-last-admin; `hasPassword: null` → "set a password first"). **Frames that show only the happy path produce UI that only handles the happy path.**
 
-### Fallback (PenPot unavailable)
-Render a static HTML mockup via the Artifact tool at 375 px width, embed a screenshot in the GitHub Issue labeled `design-review`, and follow the same approval flow.
+### Enforcement — the rule, not the etiquette
+`gate-frames-first` fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) without an approved `design/frames/<feature>/manifest.json` covering it. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
 
 ## UI runtime validation — the console-clean gate
 
