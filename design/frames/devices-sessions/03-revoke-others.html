@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign out everywhere else — Sessions frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 780px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); max-width: 480px; }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__seam.danger { background: var(--error-color); }
+  .card__body { padding: var(--space-6); }
+  .card h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .card p { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .keep { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    margin-bottom: var(--space-5); }
+  .keep .ico { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); font-size: var(--text-lg); }
+  .keep b { color: var(--text-primary); } .keep small { display:block; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .keep .this-badge { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--success-color);
+    border: 1px solid rgba(52,211,153,0.4); border-radius: var(--radius-pill); padding: 1px var(--space-2); }
+  .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+  .btn-danger { background: var(--error-color); color: var(--bg-primary); border: 1px solid transparent; }
+  .btn-danger:hover { filter: brightness(1.05); }
+  .success-ico { width: 44px; height: 44px; border-radius: var(--radius-pill); display: grid; place-items: center;
+    background: var(--success-soft); color: var(--success-color); font-size: var(--text-xl); margin-bottom: var(--space-4); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="03-revoke-others" data-route="/account/security/sessions">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item" href="#"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item active" href="01-sessions-list.html">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Sign out everywhere else</h1>
+      <p class="page-sub">Good if you've lost a device or shared a computer. You stay signed in here; every
+        other device is signed out.</p>
+
+      <!-- ═══ Confirm ═══ -->
+      <div class="state-label">State · confirm</div>
+      <div class="card" data-component="revoke-others-dialog" data-state="confirm" role="alertdialog" aria-labelledby="ro1">
+        <div class="card__seam danger"></div>
+        <div class="card__body">
+          <h3 id="ro1">Sign out everywhere else?</h3>
+          <p>This signs out <b style="color:var(--text-primary)">2 other sessions</b> right away. They'll need
+            to sign in again. This device stays signed in.</p>
+          <div class="keep" data-keep-current>
+            <span class="ico" aria-hidden="true">💻</span>
+            <span><b>Desktop · Chrome</b><small>Windows · London, UK</small></span>
+            <span class="this-badge">Kept · this device</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-danger" data-action="revoke-others-confirm">Sign out other devices</button>
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Cancel</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Done ═══ -->
+      <div class="state-label">State · done</div>
+      <div class="card" data-component="revoke-others-dialog" data-state="done">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="success-ico" aria-hidden="true">✓</div>
+          <h3>Signed out everywhere else</h3>
+          <p><b style="color:var(--text-primary)">2 other sessions</b> were signed out. You're still signed in
+            on this device.</p>
+          <div class="actions">
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Back to sessions</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Failed ═══ -->
+      <div class="state-label">State · couldn't complete</div>
+      <div class="card" data-component="revoke-others-dialog" data-state="error">
+        <div class="card__seam danger"></div>
+        <div class="card__body">
+          <h3>We couldn't sign the other devices out</h3>
+          <p>Something went wrong. Your sessions are unchanged — try again.</p>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="revoke-others-confirm">Try again</button>
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Cancel</a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>03 / 03</b> · Sign out everywhere else · <b>/account/security/sessions</b></span>
+    <span><a class="btn btn-ghost" href="02-revoke-session.html">← Sign out one</a> <a class="btn btn-primary" href="index.html" style="text-decoration:none">Back to all frames</a></span>
+  </div>
+</div>
+</body>
+</html>

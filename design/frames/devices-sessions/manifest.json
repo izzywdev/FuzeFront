@@ -1,0 +1,122 @@
+{
+  "name": "Sessions & devices — approval frames",
+  "description": "Contract-freeze UX artifacts for active-session/device management: list every signed-in device (browser, OS, location, last-seen, this-device flagged), sign out a single session (including the caller's own current session), and sign out everywhere else. Revocation is enforced server-side. Approving a flow approves its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. No provider name appears in any consumer surface.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "component": "@fuzefront/account-security-ui",
+    "featureFlag": "fuzefront.security.devices-sessions",
+    "schemas": [
+      "components.schemas.SessionDevice"
+    ],
+    "endpoints": [
+      "GET /v1/security/sessions",
+      "DELETE /v1/security/sessions/{id}",
+      "DELETE /v1/security/sessions"
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "sessions-list",
+        "orchestrator": "SessionsListFlow",
+        "route": "/account/security/sessions",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "revoke-session",
+        "orchestrator": "RevokeSessionFlow",
+        "route": "/account/security/sessions",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "revoke-others",
+        "orchestrator": "RevokeOthersFlow",
+        "route": "/account/security/sessions",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "SessionsPanel",
+      "SessionDeviceList",
+      "SessionDeviceRow",
+      "CurrentDeviceBadge",
+      "DeviceMeta",
+      "RelativeTime",
+      "RevokeSessionDialog",
+      "SelfRevokeNotice",
+      "RevokeOthersDialog",
+      "EmptyState"
+    ],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
+    "missingDesignSystemPrimitives": []
+  },
+  "frames": [
+    {
+      "id": "01-sessions-list",
+      "file": "01-sessions-list.html",
+      "label": "(01) Active sessions",
+      "route": "/account/security/sessions",
+      "flow": "sessions-list",
+      "summary": "List of active sessions from GET /sessions with the current session flagged, device/OS/geo/last-seen metadata. Includes only-this-device, loading, load-error, and null-metadata (unknown device) states.",
+      "acceptanceNotes": "Rows come from SessionDevice[]; current:true renders the This-device badge and no destructive default. Null device/browser/os/geo render honest fallbacks ('Unknown device', 'Location unavailable'). lastSeenAt formats via RelativeTime. 'Sign out everywhere else' is hidden when only the current session exists.",
+      "testHooks": [
+        "[data-frame='01-sessions-list']",
+        "[data-panel='sessions'][data-state='loaded']",
+        "[data-panel='sessions'][data-state='only-current']",
+        "[data-panel='sessions'][data-state='loading']",
+        "[data-panel='sessions'][data-state='error']",
+        "[data-session='sess_current'][data-current='true']",
+        "[data-current-badge]",
+        "[data-action='revoke-session']",
+        "[data-action='revoke-others']"
+      ]
+    },
+    {
+      "id": "02-revoke-session",
+      "file": "02-revoke-session.html",
+      "label": "(02) Sign out one device",
+      "route": "/account/security/sessions",
+      "flow": "revoke-session",
+      "summary": "Confirm revoking one session. Distinct path for revoking the caller's OWN current session (self-logout warning -> redirect to /login). Includes revoked-success and revoke-failed states.",
+      "acceptanceNotes": "DELETE /sessions/{id} (idempotent). Revoking a non-current session shows a success and refreshes the list. Revoking data-current='true' warns it ends the local session, then on confirm redirects to /login (SelfRevokeNotice).",
+      "testHooks": [
+        "[data-frame='02-revoke-session']",
+        "[data-component='revoke-session-dialog'][data-state='confirm']",
+        "[data-component='revoke-session-dialog'][data-state='confirm-current'][data-current='true']",
+        "[data-component='self-revoke-notice']",
+        "[data-action='revoke-confirm-self']",
+        "[data-component='revoke-session-dialog'][data-state='self-revoked'][data-redirect='/login']",
+        "[data-component='revoke-session-dialog'][data-state='error']"
+      ]
+    },
+    {
+      "id": "03-revoke-others",
+      "file": "03-revoke-others.html",
+      "label": "(03) Sign out everywhere else",
+      "route": "/account/security/sessions",
+      "flow": "revoke-others",
+      "summary": "Confirm revoking all other sessions while keeping the current one; success summary of how many were signed out; and a failed state.",
+      "acceptanceNotes": "DELETE /sessions (all others, idempotent). Confirm shows the kept current device explicitly. Done state reports the count of revoked sessions. The current session remains valid throughout.",
+      "testHooks": [
+        "[data-frame='03-revoke-others']",
+        "[data-component='revoke-others-dialog'][data-state='confirm']",
+        "[data-keep-current]",
+        "[data-action='revoke-others-confirm']",
+        "[data-component='revoke-others-dialog'][data-state='done']",
+        "[data-component='revoke-others-dialog'][data-state='error']"
+      ]
+    }
+  ],
+  "stamp": "sha256:63330704eae4b892c358a95c13490b5c916a6d050c2a2cc37baac3cb3ade68a8"
+}

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Account Security — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 920px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-6); background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-display); }
+  .inv dl { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+  .inv dt { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .inv dd { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px 8px; margin: 0 var(--space-1) var(--space-1) 0; color: var(--text-secondary); }
+  .chip.pkg { color: var(--accent-2); border-color: rgba(41,211,230,0.4); }
+  .chip.flow { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Account Security — Approval Frames</h1>
+  <p class="lead">The <b>security hub</b>: one place where a person sees their sign-in posture and
+    reaches every security surface — password, two-factor, devices &amp; sessions, API tokens, and
+    connected accounts. These frames freeze the hub's visual + interaction model before any UI is
+    built. Rendered in the fuse-seam design system (tokens only). No identity-vendor name ever
+    appears — the browser only ever sees <code>app.fuzefront.com</code> and, for a linked account,
+    <code>accounts.google.com</code>.</p>
+
+  <h2>Walk the flow</h2>
+  <div class="grid">
+    <a href="01-hub.html" class="frame-link" data-frame-link="01-hub">
+      <div class="seam"></div>
+      <div class="step">Frame (a) · route /account/security</div>
+      <h3>Security hub</h3>
+      <p>Posture summary + cards linking to password, two-factor, devices &amp; sessions, API tokens, connected accounts. Reads GET /identity/connections + /methods.</p>
+    </a>
+    <a href="02-states.html" class="frame-link" data-frame-link="02-states">
+      <div class="seam"></div>
+      <div class="step">Frame (b) · states</div>
+      <h3>States &amp; fail-closed</h3>
+      <p>Loading skeleton, load error + retry, social-only account (<code>hasPassword:false</code> → "Set a password first"), and the last-sign-in-method 409 guard on unlink.</p>
+    </a>
+  </div>
+
+  <h2>Build inventory <span style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-tertiary)">— approving these frames approves this plan</span></h2>
+  <div class="inv" data-build-inventory>
+    <h3>Flows</h3>
+    <dl>
+      <dt>account-security</dt>
+      <dd><span class="chip flow">AccountSecurityHub</span> route <code>/account/security</code> · approved: <b>false</b> (awaiting review)</dd>
+    </dl>
+    <h3 style="margin-top:var(--space-5)">React components</h3>
+    <dd style="margin:0">
+      <span class="chip">SecurityHub</span><span class="chip">SecurityPostureSummary</span>
+      <span class="chip">SecurityCard</span><span class="chip">SignInMethodsList</span>
+      <span class="chip">SetPasswordBanner</span><span class="chip">ConnectedAccountRow</span>
+      <span class="chip">SecurityCardGridSkeleton</span><span class="chip">LoadErrorRetry</span>
+    </dd>
+    <h3 style="margin-top:var(--space-5)">npm packages</h3>
+    <dd style="margin:0"><span class="chip pkg">@fuzefront/account-security-ui</span></dd>
+    <h3 style="margin-top:var(--space-5)">Design-system note</h3>
+    <dd style="margin:0">Composed entirely from <code>@fuzefront/design-system</code> (fuse-seam) tokens.
+      One primitive is <b>not yet in the base</b> and is named for <code>frontend-engineer</code> to add
+      as a foundation PR before implementation: a <b>StatusCallout</b> (soft-tinted inline banner with
+      icon + action) used by the "Set a password first" and error states. It is drawn here from tokens
+      only — not one-offed into feature code.</dd>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
+    Reads: <code>GET /v1/security/identity/connections</code>, <code>GET /v1/security/methods</code> ·
+    Sibling surfaces (designed in parallel): two-factor, devices &amp; sessions, API tokens.<br />
+    Approve per flow by setting <code>approved: true</code> (+ approver + date) in <code>manifest.json</code>,
+    or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

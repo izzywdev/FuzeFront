@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Password Reset — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 70ch; }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-2); }
+  .sub { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-4); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-4); margin-top: var(--space-4); }
+  @media (max-width: 760px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-5);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-md); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-6); background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-display); }
+  .inv h3.mt { margin-top: var(--space-5); }
+  .flowrow { display: grid; grid-template-columns: 150px 1fr; gap: var(--space-2) var(--space-4);
+    align-items: baseline; margin-bottom: var(--space-2); }
+  .flowrow .fid { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent-color); }
+  .flowrow .fdesc { color: var(--text-secondary); font-size: var(--text-sm); }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px 8px; margin: 0 var(--space-1) var(--space-1) 0; color: var(--text-secondary); }
+  .chip.pkg { color: var(--accent-2); border-color: rgba(41,211,230,0.4); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Password Reset &amp; Change — Approval Frames</h1>
+  <p class="lead">Three flows: self-service <b>reset</b> for a locked-out person (request → the same
+    "check your email" either way → token link → new password → done), signed-in <b>change password</b>,
+    and <b>set a password</b> for a Google-only account that never had one. The "email sent" screen is a
+    deliberate security property — it returns the <b>same 202 whether or not the address has an account</b>,
+    so it never reveals who has an account. Rendered in fuse-seam tokens; no identity-vendor name ever appears.</p>
+
+  <h2>Reset flow (unauthenticated)</h2>
+  <p class="sub">route <code>/reset</code> → <code>/reset/sent</code> → <code>/reset/confirm?token=…</code> → <code>/reset/done</code></p>
+  <div class="grid">
+    <a href="01-request.html" class="frame-link" data-frame-link="01-request">
+      <div class="seam"></div><div class="step">Step 1 · /reset</div>
+      <h3>Request a reset</h3><p>Enter your email. Submitting always continues — no hint whether the account exists.</p>
+    </a>
+    <a href="02-sent.html" class="frame-link" data-frame-link="02-sent">
+      <div class="seam"></div><div class="step">Step 2 · /reset/sent · 202</div>
+      <h3>Check your email</h3><p>Unconditional confirmation. Identical response either way (no enumeration).</p>
+    </a>
+    <a href="03-set-new.html" class="frame-link" data-frame-link="03-set-new">
+      <div class="seam"></div><div class="step">Step 3 · /reset/confirm</div>
+      <h3>Set a new password</h3><p>From the emailed link. New password + strength. Valid-token happy path.</p>
+    </a>
+    <a href="04-done.html" class="frame-link" data-frame-link="04-done">
+      <div class="seam"></div><div class="step">Step 4 · /reset/done</div>
+      <h3>Password updated</h3><p>Done. Sign in with the new password. Other sessions signed out.</p>
+    </a>
+  </div>
+
+  <h2>Signed-in (change / set)</h2>
+  <p class="sub">route <code>/account/security/password</code></p>
+  <div class="grid">
+    <a href="05-signed-in.html" class="frame-link" data-frame-link="05-signed-in">
+      <div class="seam"></div><div class="step">Signed-in · change &amp; set</div>
+      <h3>Change / set password</h3><p>Change an existing password, or set a first one on a Google-only account (<code>hasPassword:false</code>).</p>
+    </a>
+    <a href="06-states.html" class="frame-link" data-frame-link="06-states">
+      <div class="seam"></div><div class="step">States · fail-closed</div>
+      <h3>States &amp; errors</h3><p>Submitting, expired/invalid token, password-policy rejection, and generic failure.</p>
+    </a>
+  </div>
+
+  <h2>Build inventory <span style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-tertiary)">— approving each flow approves its slice of this plan</span></h2>
+  <div class="inv" data-build-inventory>
+    <h3>Flows (per-flow approval)</h3>
+    <div class="flowrow"><span class="fid">reset</span><span class="fdesc"><b>PasswordResetFlow</b> · <code>/reset</code> · approved: <b>false</b></span></div>
+    <div class="flowrow"><span class="fid">change-password</span><span class="fdesc"><b>ChangePasswordFlow</b> · <code>/account/security/password</code> · approved: <b>false</b></span></div>
+    <div class="flowrow"><span class="fid">set-password</span><span class="fdesc"><b>SetPasswordFlow</b> · <code>/account/security/password</code> (social-only) · approved: <b>false</b></span></div>
+
+    <h3 class="mt">React components</h3>
+    <div>
+      <span class="chip">ResetRequestForm</span><span class="chip">ResetSentNotice</span>
+      <span class="chip">NewPasswordForm</span><span class="chip">PasswordStrengthMeter</span>
+      <span class="chip">TokenInvalidNotice</span><span class="chip">ResetDoneNotice</span>
+      <span class="chip">ChangePasswordForm</span><span class="chip">SetPasswordForm</span>
+      <span class="chip">PasswordPolicyHints</span>
+    </div>
+
+    <h3 class="mt">npm packages</h3>
+    <div><span class="chip pkg">@fuzefront/account-security-ui</span></div>
+
+    <h3 class="mt">Design-system note</h3>
+    <div style="color:var(--text-secondary);font-size:var(--text-sm)">Composed from <code>@fuzefront/design-system</code>
+      (fuse-seam) tokens only. Two primitives are <b>not yet in the base</b> and are named for
+      <code>frontend-engineer</code> to add as a foundation PR: <b>PasswordStrengthMeter</b> (segmented
+      strength bar + policy hints) and the shared <b>StatusCallout</b> (also named by the account-security
+      frames). Drawn here from tokens only, never one-offed into feature code.</div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
+    Endpoints: <code>POST /v1/security/session/password/reset-request</code> (202),
+    <code>POST /v1/security/session/password/reset-confirm</code>,
+    <code>POST /v1/security/password</code> (set).<br />
+    Approve <b>per flow</b> by setting <code>approved: true</code> (+ approver + date) in <code>manifest.json</code>,
+    or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

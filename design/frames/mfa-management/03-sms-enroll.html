@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Add phone (text message) — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 720px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__body { padding: var(--space-6); }
+  .steps { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); font-size: var(--text-sm); }
+  .steps span { color: var(--text-tertiary); } .steps b { color: var(--accent-color); }
+  .field { margin-bottom: var(--space-4); }
+  .field label { display: block; font-weight: var(--weight-medium); margin-bottom: var(--space-2); }
+  .field input[type=tel] { width: 100%; height: 44px; padding: 0 var(--space-4); color: var(--text-primary);
+    background: var(--bg-secondary); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+    font-size: var(--text-md); font-family: var(--font-sans); }
+  .field input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .hint { color: var(--text-tertiary); font-size: var(--text-sm); margin-top: var(--space-2); }
+  .otp { display: flex; gap: var(--space-2); }
+  .otp input { width: 44px; height: 52px; text-align: center; font-family: var(--font-mono);
+    font-size: var(--text-xl); color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+  .otp input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .otp.is-error input { border-color: var(--error-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); margin-top: var(--space-3);
+    display: flex; align-items: center; gap: var(--space-2); }
+  .actions { margin-top: var(--space-6); display: flex; gap: var(--space-3); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+  /* ChannelUnavailableNotice — honest degrade when methods.mfa.types excludes 'sms' */
+  .unavail-card { border-color: rgba(245,185,80,0.35); }
+  .unavail-body { display: flex; gap: var(--space-4); padding: var(--space-6); align-items: flex-start; }
+  .unavail-body .ico { width: 40px; height: 40px; border-radius: var(--radius-md); flex: none; display: grid;
+    place-items: center; background: var(--warning-soft); color: var(--warning-color); font-size: var(--text-lg); }
+  .unavail-body h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .unavail-body p { margin: 0 0 var(--space-4); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .disabled-field { opacity: 0.55; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="03-sms-enroll" data-route="/account/security/mfa/add/phone">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item active" href="01-mfa-overview.html"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Add a phone for text-message codes</h1>
+      <p class="page-sub">We'll text a code to this number when you sign in. An authenticator app is more
+        reliable if you can use one.</p>
+
+      <!-- ═══ Channel UNAVAILABLE — the prod reality (text delivery not configured) ═══ -->
+      <div class="state-label">State · text-message codes unavailable (prod default)</div>
+      <div class="card unavail-card" data-component="channel-unavailable" data-state="channel-unavailable"
+           data-channel="sms" data-available="false">
+        <div class="card__seam"></div>
+        <div class="unavail-body">
+          <span class="ico" aria-hidden="true">💬</span>
+          <div>
+            <h3>Text-message codes aren't available right now</h3>
+            <p>This account can't receive sign-in codes by text yet. Use an authenticator app instead —
+              it's more secure and works without signal.</p>
+            <div class="actions" style="margin-top:0">
+              <a class="btn btn-primary" href="02-totp-enroll.html" style="text-decoration:none">Set up authenticator</a>
+              <a class="btn btn-ghost" href="01-mfa-overview.html" style="text-decoration:none">Back</a>
+            </div>
+          </div>
+        </div>
+        <div class="card__body disabled-field" aria-disabled="true">
+          <div class="field">
+            <label>Phone number</label>
+            <input type="tel" placeholder="+44 …" disabled />
+            <div class="hint">Disabled until text delivery is available.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Available: enter number ═══ -->
+      <div class="state-label">State · available · enter number</div>
+      <div class="card" data-component="sms-enroll" data-state="enter-phone" data-available="true">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="steps"><b>1 · Your number</b><span>›</span><span>2 · Confirm</span></div>
+          <div class="field">
+            <label for="phone">Phone number</label>
+            <input id="phone" type="tel" value="+44 7700 900471" data-field="phone" />
+            <div class="hint">Standard message rates may apply. We only use it for sign-in codes.</div>
+          </div>
+          <div class="actions" style="margin-top:0">
+            <button class="btn btn-primary" data-action="send-code">Send code</button>
+            <a class="btn btn-ghost" href="01-mfa-overview.html" style="text-decoration:none">Cancel</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Available: confirm code ═══ -->
+      <div class="state-label">State · available · confirm code</div>
+      <div class="card" data-component="sms-enroll" data-state="confirm-code" data-available="true">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="steps"><span>1 · Your number</span><span>›</span><b>2 · Confirm</b></div>
+          <label>Enter the code we texted to •••• •• 4471</label>
+          <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+            <input inputmode="numeric" maxlength="1" value="3" aria-label="digit 1" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 2" />
+            <input inputmode="numeric" maxlength="1" value="9" aria-label="digit 3" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 4" />
+            <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 5" />
+            <input inputmode="numeric" maxlength="1" value="8" aria-label="digit 6" />
+          </div>
+          <div class="hint">Didn't get it? <a href="#" data-action="resend-code">Resend</a> — check the number is right.</div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="activate-factor">Turn on</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Invalid code ═══ -->
+      <div class="state-label">State · wrong / expired code (fail-closed)</div>
+      <div class="card" data-component="sms-enroll" data-state="error-invalid" data-available="true">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="otp is-error" data-component="otp-input" role="group" aria-label="One-time code">
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 1" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 2" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 3" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 4" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 5" />
+            <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 6" />
+          </div>
+          <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>
+            That code is wrong or has expired. Request a new one and enter it within a few minutes.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>03 / 06</b> · Add phone · <b>…/mfa/add/phone</b></span>
+    <span><a class="btn btn-ghost" href="02-totp-enroll.html">← Authenticator</a> <a class="btn btn-primary" href="04-recovery-codes.html" style="text-decoration:none">Next: recovery codes →</a></span>
+  </div>
+</div>
+</body>
+</html>

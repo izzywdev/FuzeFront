@@ -1,0 +1,124 @@
+{
+  "name": "Access administration — approval frames",
+  "description": "Contract-freeze UX artifacts for the vendor-neutral tenant/org access-administration surface (members, roles, invite/add, change-role, remove) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": ["Member", "MemberCreate", "MemberPage", "Role", "RoleAssignment"],
+    "endpoints": [
+      "GET /v1/security/tenants/{tenantId}/members",
+      "POST /v1/security/tenants/{tenantId}/members",
+      "GET /v1/security/tenants/{tenantId}/roles",
+      "PUT /v1/security/tenants/{tenantId}/members/{userId}/roles",
+      "DELETE /v1/security/tenants/{tenantId}/members/{userId}"
+    ],
+    "commissionedByApproval": [
+      "409 LAST_ADMIN on demote (PUT .../members/{userId}/roles) — does not exist in the contract today",
+      "409 LAST_ADMIN on remove (DELETE .../members/{userId}) — does not exist in the contract today"
+    ],
+    "component": "@fuzefront/access-admin-ui → AccessAdminFlow",
+    "featureFlag": "fuzefront.security.access-admin"
+  },
+  "build": {
+    "flows": [
+      { "id": "access-admin", "orchestrator": "AccessAdminFlow", "route": "/settings/access", "approved": false, "approvedBy": null, "approvedAt": null }
+    ],
+    "components": [
+      "MemberList", "MemberRow", "RolePill", "AddMemberDialog",
+      "ChangeRoleDialog", "RemoveMemberDialog", "RolePicker", "AccessDeniedNotice"
+    ],
+    "packages": ["@fuzefront/access-admin-ui"]
+  },
+  "frames": [
+    {
+      "id": "01-members",
+      "file": "01-members.html",
+      "label": "(a) Members & roles",
+      "route": "/settings/access",
+      "flow": "access-admin",
+      "summary": "Member list for one org: person, role pill (from the tenant role catalogue), per-row change-role / remove, cursor 'Load more'.",
+      "acceptanceNotes": "Rows render from GET /members (MemberPage, cursor). Role pills key to GET /roles (Role.key → Role.name). A member with no roles renders no pill, never a blank cell. Self-row is tagged 'You'. No vendor name in the DOM.",
+      "testHooks": [
+        "[data-frame='01-members']",
+        "[data-panel='member-list']",
+        "[data-member='u_1001']",
+        "[data-role-pill='admin']",
+        "[data-action='add-member']",
+        "[data-action='change-role']",
+        "[data-action='remove-member']",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "02-add-member",
+      "file": "02-add-member.html",
+      "label": "(b) Add member",
+      "route": "/settings/access",
+      "flow": "access-admin",
+      "summary": "Email + required role in a single step. Role options rendered from the tenant role catalogue.",
+      "acceptanceNotes": "POST /members (MemberCreate → 201 Member). Role radios come from GET /roles, never hard-coded. Fail-closed: an empty role catalogue disables submit (see frame e4) rather than adding a person with no role.",
+      "testHooks": [
+        "[data-frame='02-add-member']",
+        "[data-panel='add-member']",
+        "[data-input='email']",
+        "[data-role-option='admin']",
+        "[data-action='submit-add-member']"
+      ]
+    },
+    {
+      "id": "03-change-role",
+      "file": "03-change-role.html",
+      "label": "(c) Change role",
+      "route": "/settings/access",
+      "flow": "access-admin",
+      "summary": "Ordinary role change (c1) plus the last-admin refusal (c2): the org's only admin cannot be demoted.",
+      "acceptanceNotes": "PUT /members/{userId}/roles (RoleAssignment → 200 Member). c2 proposes a 409 LAST_ADMIN + client pre-check that disables the demote options; the disabled control is an affordance, the server must refuse independently. A failed save re-fetches true current role (replace is non-atomic today).",
+      "testHooks": [
+        "[data-frame='03-change-role']",
+        "[data-panel='change-role']",
+        "[data-variant='last-admin']",
+        "[data-error-code='LAST_ADMIN']",
+        "[data-action='submit-change-role']"
+      ]
+    },
+    {
+      "id": "04-remove-member",
+      "file": "04-remove-member.html",
+      "label": "(d) Remove member",
+      "route": "/settings/access",
+      "flow": "access-admin",
+      "summary": "Confirm removal (d1) plus the last-admin refusal (d2): the org's only admin cannot be removed.",
+      "acceptanceNotes": "DELETE /members/{userId} (idempotent → 204). d2 proposes a 409 LAST_ADMIN + client pre-check disabling the button. 403 (no permission) is distinct — shown in place per frame e5, never a sign-in redirect.",
+      "testHooks": [
+        "[data-frame='04-remove-member']",
+        "[data-panel='remove-member']",
+        "[data-variant='last-admin']",
+        "[data-error-code='LAST_ADMIN']",
+        "[data-action='confirm-remove-member']"
+      ]
+    },
+    {
+      "id": "05-states",
+      "file": "05-states.html",
+      "label": "(e) States",
+      "route": "/settings/access",
+      "flow": "access-admin",
+      "summary": "Loading skeleton, single-member org empty state, load error+retry, empty role catalogue (add blocked), and 403 forbidden shown in place.",
+      "acceptanceNotes": "Loading = aria-busy skeleton for in-flight GET /members. Empty is a real state (a fresh org has one member). Error shows data-action='retry'. e4: GET /roles returning {items:[]} disables the add form. e5: a 403 is an AUTHORIZATION denial rendered in place — NEVER a redirect to sign-in (only a 401 re-authenticates).",
+      "testHooks": [
+        "[data-frame='05-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='no-roles']",
+        "[data-error-code='NO_ROLES']",
+        "[data-state='forbidden']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-http='403']"
+      ]
+    }
+  ]
+}
