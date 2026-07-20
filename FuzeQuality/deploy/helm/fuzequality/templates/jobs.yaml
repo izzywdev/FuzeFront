@@ -5,7 +5,11 @@ metadata:
   labels:
     {{- include "fuzequality.labels" . | nindent 4 }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    # CreateNamespace is processed before the Sync phase. A PreSync hook can
+    # otherwise race the first deployment because its target namespace does
+    # not exist yet.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
   backoffLimit: 3
