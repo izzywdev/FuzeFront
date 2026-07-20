@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sessions &amp; devices — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; }
+  .crumb { font-size: var(--text-sm); color: var(--text-tertiary); margin: var(--space-4) 0 0; }
+  .crumb b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 720px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .frame-link .states { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .tag { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 1px var(--space-2);
+    border-radius: var(--radius-pill); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .tag.warn { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .tag.err { color: var(--error-color); border-color: rgba(243,105,127,0.4); }
+  .inv { margin-top: var(--space-6); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--text-tertiary); }
+  .inv dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-3) var(--space-5); margin: 0; }
+  @media (max-width: 640px){ .inv dl { grid-template-columns: 1fr; gap: var(--space-1) 0; } }
+  .inv dt { color: var(--text-tertiary); font-size: var(--text-sm); padding-top: var(--space-1); }
+  .inv dd { margin: 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    padding: 2px var(--space-2); margin: 0 var(--space-1) var(--space-1) 0; border-radius: var(--radius-sm);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .chip.flow { color: var(--cyan-400); border-color: rgba(41,211,230,0.4); }
+  .chip.pkg { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="index" data-feature="devices-sessions">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Account security — Sessions &amp; devices · Approval Frames</h1>
+  <p class="lead">These frames demonstrate the <b>Sessions &amp; devices</b> experience before any feature UI
+    is implemented: see everywhere you're signed in (browser, OS, location, last-seen, with <b>this
+    device</b> flagged), sign out a single session, or sign out everywhere else. Revocation is enforced
+    server-side. Approving them freezes the visual + interaction contract the implementation and
+    <code>frontend-test-engineer</code>'s Playwright checks are verified against. Built in the fuse-seam
+    design system (tokens only). No provider name appears anywhere in the UI.</p>
+  <p class="crumb">Reached from the <b>Account security</b> hub (sibling feature) → <b>Sessions &amp; devices</b>.
+    Route <code>/account/security/sessions</code>.</p>
+
+  <h2>Walk the flow</h2>
+  <div class="grid">
+    <a href="01-sessions-list.html" class="frame-link" data-nav="01-sessions-list">
+      <div class="seam"></div>
+      <div class="step">Frame 01 · /account/security/sessions</div>
+      <h3>Active sessions</h3>
+      <p>Every signed-in device with this-device flagged, metadata, and revoke controls. Includes empty, loading, and error states.</p>
+      <div class="states"><span class="tag">populated</span><span class="tag">only this device</span><span class="tag warn">loading</span><span class="tag err">error</span></div>
+    </a>
+    <a href="02-revoke-session.html" class="frame-link" data-nav="02-revoke-session">
+      <div class="seam"></div>
+      <div class="step">Frame 02 · /account/security/sessions</div>
+      <h3>Sign out one device</h3>
+      <p>Confirm revoking a single session. <b>Special case:</b> revoking <b>this</b> device signs you out here — the UI warns and redirects to sign-in.</p>
+      <div class="states"><span class="tag">confirm (other)</span><span class="tag warn">this device → logout</span><span class="tag">revoked</span></div>
+    </a>
+    <a href="03-revoke-others.html" class="frame-link" data-nav="03-revoke-others">
+      <div class="seam"></div>
+      <div class="step">Frame 03 · /account/security/sessions</div>
+      <h3>Sign out everywhere else</h3>
+      <p>Revoke every other session and keep this one. Confirm, then a success summary of how many were signed out.</p>
+      <div class="states"><span class="tag">confirm</span><span class="tag">done (N signed out)</span><span class="tag err">failed</span></div>
+    </a>
+  </div>
+
+  <div class="inv" data-build-inventory>
+    <h3>Build inventory — what approving these frames approves</h3>
+    <dl>
+      <dt>Flows</dt>
+      <dd>
+        <span class="chip flow">SessionsListFlow · /account/security/sessions</span>
+        <span class="chip flow">RevokeSessionFlow · /account/security/sessions</span>
+        <span class="chip flow">RevokeOthersFlow · /account/security/sessions</span>
+      </dd>
+      <dt>Components</dt>
+      <dd>
+        <span class="chip">SessionsPanel</span><span class="chip">SessionDeviceList</span><span class="chip">SessionDeviceRow</span>
+        <span class="chip">CurrentDeviceBadge</span><span class="chip">DeviceMeta</span><span class="chip">RelativeTime</span>
+        <span class="chip">RevokeSessionDialog</span><span class="chip">SelfRevokeNotice</span><span class="chip">RevokeOthersDialog</span>
+        <span class="chip">EmptyState</span>
+      </dd>
+      <dt>Packages</dt>
+      <dd>
+        <span class="chip pkg">@fuzefront/account-security-ui</span>
+        <span class="chip pkg">@fuzefront/security-client (existing)</span>
+      </dd>
+      <dt>Missing DS primitive</dt>
+      <dd>None — composes from existing <code>@fuzefront/design-system</code> primitives
+        (list rows, badges, dialog, buttons). <code>RelativeTime</code> is a formatting util, not a styled primitive.</dd>
+    </dl>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
+    Package: <code>@fuzefront/account-security-ui</code> ·
+    Flag: <code>fuzefront.security.devices-sessions</code> (default OFF).<br />
+    Endpoints: <code>GET /v1/security/sessions</code>, <code>DELETE /v1/security/sessions/{id}</code>,
+    <code>DELETE /v1/security/sessions</code> (all others). Per-flow approval lives in
+    <code>manifest.json</code>; approve by setting a flow's <code>approved: true</code> (+ approver + date)
+    or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>
