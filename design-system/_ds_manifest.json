@@ -38,8 +38,32 @@
       "sourcePath": "components/data/DataTable.jsx"
     },
     {
+      "name": "StatGroup",
+      "sourcePath": "components/data/StatGroup.jsx"
+    },
+    {
+      "name": "Alert",
+      "sourcePath": "components/feedback/Alert.jsx"
+    },
+    {
+      "name": "EmptyState",
+      "sourcePath": "components/feedback/EmptyState.jsx"
+    },
+    {
+      "name": "Rating",
+      "sourcePath": "components/feedback/Rating.jsx"
+    },
+    {
       "name": "Skeleton",
       "sourcePath": "components/feedback/Skeleton.jsx"
+    },
+    {
+      "name": "Spinner",
+      "sourcePath": "components/feedback/Spinner.jsx"
+    },
+    {
+      "name": "StatusCallout",
+      "sourcePath": "components/feedback/StatusCallout.jsx"
     },
     {
       "name": "StatusPill",
@@ -66,6 +90,10 @@
       "sourcePath": "components/forms/Textarea.jsx"
     },
     {
+      "name": "Toggle",
+      "sourcePath": "components/forms/Toggle.jsx"
+    },
+    {
       "name": "AppCard",
       "sourcePath": "components/launcher/AppCard.jsx"
     },
@@ -76,6 +104,22 @@
     {
       "name": "IntegrationBadge",
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
+    },
+    {
+      "name": "CenteredCard",
+      "sourcePath": "components/layout/CenteredCard.jsx"
+    },
+    {
+      "name": "Eyebrow",
+      "sourcePath": "components/layout/Eyebrow.jsx"
+    },
+    {
+      "name": "InfoRow",
+      "sourcePath": "components/layout/InfoRow.jsx"
+    },
+    {
+      "name": "SectionHead",
+      "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
       "name": "BottomNav",
@@ -90,8 +134,16 @@
       "sourcePath": "components/mobile/Drawer.jsx"
     },
     {
+      "name": "Pagination",
+      "sourcePath": "components/navigation/Pagination.jsx"
+    },
+    {
       "name": "Modal",
       "sourcePath": "components/overlay/Modal.jsx"
+    },
+    {
+      "name": "AnnouncementBar",
+      "sourcePath": "components/shell/AnnouncementBar.jsx"
     },
     {
       "name": "MenuItem",
@@ -195,16 +247,16 @@
     {
       "path": "guidelines/mobile-layout.card.html",
       "group": "Mobile",
-      "viewport": "480x520",
-      "name": "Mobile Layout — BottomNav, Drawer, BottomSheet",
-      "subtitle": "xs/sm layout primitives: bottom nav, slide-in drawer, bottom sheet"
+      "viewport": "800x520",
+      "name": "Mobile layout",
+      "subtitle": "breakpoints, shell patterns, tokens"
     },
     {
       "path": "guidelines/motion.card.html",
       "group": "Motion",
-      "viewport": "720x300",
-      "name": "Motion — Easing & Duration",
-      "subtitle": "Standard, springy-seam, enter/exit timing"
+      "viewport": "800x480",
+      "name": "Motion",
+      "subtitle": "seam animations, easing, focus"
     },
     {
       "path": "guidelines/radii-shadows.card.html",
@@ -553,9 +605,33 @@
       "definedIn": "tokens/colors.css"
     },
     {
+      "name": "--success-soft",
+      "value": "rgba(52, 211, 153, 0.12)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--warning-soft",
+      "value": "rgba(245, 166, 35, 0.12)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--error-soft",
+      "value": "rgba(243, 105, 127, 0.12)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
       "name": "--shadow",
       "value": "rgba(0, 0, 0, 0.45)",
       "kind": "shadow",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--scrim",
+      "value": "rgba(0, 0, 0, 0.55)",
+      "kind": "color",
       "definedIn": "tokens/colors.css"
     },
     {
@@ -973,6 +1049,12 @@
       "definedIn": "tokens/spacing.css"
     },
     {
+      "name": "--space-7",
+      "value": "1.75rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
       "name": "--space-8",
       "value": "2rem",
       "kind": "spacing",
@@ -1075,6 +1157,60 @@
       "definedIn": "tokens/spacing.css"
     },
     {
+      "name": "--shadow-pop",
+      "value": "0 12px 32px -12px var(--shadow), 0 2px 8px -4px var(--shadow)",
+      "kind": "shadow",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-base",
+      "value": "0",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-raised",
+      "value": "10",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-sticky",
+      "value": "100",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-dropdown",
+      "value": "1000",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-overlay",
+      "value": "1100",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-modal",
+      "value": "1200",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-toast",
+      "value": "1300",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--z-tooltip",
+      "value": "1400",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
       "name": "--top-bar-height",
       "value": "60px",
       "kind": "spacing",
@@ -1105,6 +1241,60 @@
       "definedIn": "tokens/spacing.css"
     },
     {
+      "name": "--top-bar-height-mobile",
+      "value": "52px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--bottom-nav-height",
+      "value": "56px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--drawer-width",
+      "value": "280px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--sheet-max-h",
+      "value": "80dvh",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--touch-target",
+      "value": "44px",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--safe-area-top",
+      "value": "env(safe-area-inset-top,    0px)",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--safe-area-bottom",
+      "value": "env(safe-area-inset-bottom, 0px)",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--safe-area-left",
+      "value": "env(safe-area-inset-left,   0px)",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--safe-area-right",
+      "value": "env(safe-area-inset-right,  0px)",
+      "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
       "name": "--ease-standard",
       "value": "cubic-bezier(0.4, 0, 0.2, 1)",
       "kind": "other",
@@ -1114,6 +1304,12 @@
       "name": "--ease-out",
       "value": "cubic-bezier(0.16, 1, 0.3, 1)",
       "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--ease-seam",
+      "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "kind": "color",
       "definedIn": "tokens/spacing.css"
     },
     {
@@ -1149,55 +1345,7 @@
     {
       "name": "--duration-seam",
       "value": "400ms",
-      "kind": "other",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--ease-seam",
-      "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-      "kind": "other",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--space-7",
-      "value": "1.75rem",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--top-bar-height-mobile",
-      "value": "52px",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--bottom-nav-height",
-      "value": "56px",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--drawer-width",
-      "value": "280px",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--sheet-max-h",
-      "value": "80dvh",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--touch-target",
-      "value": "44px",
-      "kind": "spacing",
-      "definedIn": "tokens/spacing.css"
-    },
-    {
-      "name": "--shadow-pop",
-      "value": "0 12px 32px -12px var(--shadow), 0 2px 8px -4px var(--shadow)",
-      "kind": "shadow",
+      "kind": "color",
       "definedIn": "tokens/spacing.css"
     }
   ],

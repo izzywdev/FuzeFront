@@ -81,6 +81,10 @@
   --success-color: var(--mint-500);
   --warning-color: var(--amber-500);
   --error-color:   var(--coral-500);
+  /* status soft-tints — inline callout / banner fills (StatusCallout, posture summary) */
+  --success-soft:  rgba(52, 211, 153, 0.12);
+  --warning-soft:  rgba(245, 166, 35, 0.12);
+  --error-soft:    rgba(243, 105, 127, 0.12);
   /* elevation */
   --shadow: rgba(0, 0, 0, 0.45);
   /* modal / dialog scrim — dims the shell behind overlays */
@@ -129,6 +133,9 @@
   --success-color: var(--mint-600);
   --warning-color: var(--amber-600);
   --error-color:   var(--coral-600);
+  --success-soft:  rgba(16, 185, 129, 0.10);
+  --warning-soft:  rgba(217, 131, 19, 0.10);
+  --error-soft:    rgba(224, 85, 107, 0.10);
   --shadow: rgba(15, 23, 42, 0.12);
   --scrim: rgba(15, 23, 42, 0.32);
   --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
