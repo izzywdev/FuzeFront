@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Create token — api-tokens frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-create-token">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (b) · route /settings/tokens</div>
+  <h1>Create token</h1>
+  <p class="lead">Give the token a name you'll recognise later and grant only the scopes it needs.
+    Fewer scopes means less damage if it leaks. The secret appears on the next screen — once.</p>
+
+  <div class="modal" data-panel="create-token">
+    <div class="modal-head"><h2>Create a service token</h2></div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="label" for="name">Name</label>
+        <input class="input" id="name" data-input="name" type="text" value="CI deploy bot"
+          placeholder="e.g. CI deploy bot" />
+        <p class="hint">For your reference only. Name it after where it runs, so you can find it later.</p>
+      </div>
+
+      <div class="field">
+        <span class="label">Scopes</span>
+        <label class="check-row" data-scope-option="apps:read" data-selected="true">
+          <input type="checkbox" checked />
+          <span><span class="cl">apps:read</span><span class="cd">Read applications and their config.</span></span>
+        </label>
+        <label class="check-row" data-scope-option="apps:deploy" data-selected="true">
+          <input type="checkbox" checked />
+          <span><span class="cl">apps:deploy</span><span class="cd">Trigger deployments. Cannot delete apps.</span></span>
+        </label>
+        <label class="check-row" data-scope-option="metrics:read">
+          <input type="checkbox" />
+          <span><span class="cl">metrics:read</span><span class="cd">Read metrics and usage data.</span></span>
+        </label>
+        <label class="check-row" data-scope-option="storage:read">
+          <input type="checkbox" />
+          <span><span class="cl">storage:read</span><span class="cd">Read stored objects. Cannot write or delete.</span></span>
+        </label>
+        <p class="hint">At least one scope is required. A token with no scopes can't do anything.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="expiry">Expiry <span class="muted">(optional)</span></label>
+        <select class="select" id="expiry" data-input="expiry">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="365">1 year</option>
+          <option value="">No expiry</option>
+        </select>
+        <p class="hint">Short-lived tokens are safer. You can always create a new one.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+      <button class="btn btn-accent" data-action="submit-create-token">Create token</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>POST /api/organizations/{orgId}/tokens</code> with
+    <code>{ name, scopes[], expires_at? }</code> → <code>201</code> returning the token metadata
+    <b>plus the raw secret exactly once</b> (frame c). Scope options should be rendered from the
+    org's available scope catalogue rather than hard-coded; the four shown are illustrative
+    <code>Resource:action</code> strings.
+    <br /><br />
+    <b>Fail-closed.</b> Submit is disabled until a name is present and at least one scope is
+    checked — a zero-scope token is never created. Scopes are additive grants, never a bypass of
+    the org's own access rules.
+  </p>
+
+  <nav class="pager"><a href="01-tokens.html">← Tokens</a><a href="03-reveal-once.html">Next: Secret shown once →</a></nav>
+</div>
+</body>
+</html>

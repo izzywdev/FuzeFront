@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Service tokens — api-tokens frame (a)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="01-tokens">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (a) · route /settings/tokens</div>
+  <h1>Service tokens</h1>
+  <p class="lead">Machine-to-machine credentials that let your services and scripts call the API on
+    this organization's behalf. Each token carries only the scopes you choose. The secret is shown
+    once, when you create it — after that only its prefix is ever displayed.</p>
+
+  <div class="panel" data-panel="token-list">
+    <div class="panel-head">
+      <div>
+        <h2>Tokens</h2>
+        <p class="sub"><span data-count="tokens">3</span> active in Northwind</p>
+      </div>
+      <button class="btn btn-accent" data-action="create-token">Create token</button>
+    </div>
+
+    <table class="tbl">
+      <thead>
+        <tr><th>Name</th><th>Scopes</th><th>Created</th><th>Last used</th><th class="right">Actions</th></tr>
+      </thead>
+      <tbody>
+        <tr data-token="tok_1001" data-prefix="ff_tok_EXAMPLE1">
+          <td>
+            <div class="who">CI deploy bot</div>
+            <div class="muted mono" data-token-prefix>ff_tok_EXAMPLE1…</div>
+          </td>
+          <td><div class="chips">
+            <span class="chip" data-scope="apps:read">apps:read</span>
+            <span class="chip" data-scope="apps:deploy">apps:deploy</span>
+          </div></td>
+          <td class="muted stamp">14 Mar 2026</td>
+          <td class="muted stamp"><span class="dot-live"></span> 2 min ago</td>
+          <td class="right">
+            <button class="btn btn-ghost btn-danger" data-action="revoke-token" data-target="tok_1001">Revoke</button>
+          </td>
+        </tr>
+        <tr data-token="tok_1002" data-prefix="ff_tok_EXAMPLE2">
+          <td>
+            <div class="who">Metrics exporter</div>
+            <div class="muted mono" data-token-prefix>ff_tok_EXAMPLE2…</div>
+          </td>
+          <td><div class="chips">
+            <span class="chip" data-scope="metrics:read">metrics:read</span>
+          </div></td>
+          <td class="muted stamp">2 Feb 2026</td>
+          <td class="muted stamp">6 days ago</td>
+          <td class="right">
+            <button class="btn btn-ghost btn-danger" data-action="revoke-token" data-target="tok_1002">Revoke</button>
+          </td>
+        </tr>
+        <tr data-token="tok_1003" data-prefix="ff_tok_EXAMPLE3">
+          <td>
+            <div class="who">Backup script</div>
+            <div class="muted mono" data-token-prefix>ff_tok_EXAMPLE3…</div>
+          </td>
+          <td><div class="chips">
+            <span class="chip" data-scope="storage:read">storage:read</span>
+            <span class="chip more" data-scope-more>+2 more</span>
+          </div></td>
+          <td class="muted stamp">9 Jan 2026</td>
+          <td class="muted stamp">Never used</td>
+          <td class="right">
+            <button class="btn btn-ghost btn-danger" data-action="revoke-token" data-target="tok_1003">Revoke</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Rows come from <code>GET /api/organizations/{orgId}/tokens</code>
+    (<code>backend/security/src/routes/api-tokens.ts</code>). Each item exposes
+    <code>name</code>, <code>token_prefix</code>, <code>scopes</code>, <code>created_at</code>,
+    <code>expires_at</code> — the raw secret is never returned by list, only the prefix. Revoke is
+    <code>DELETE /api/organizations/{orgId}/tokens/{tokenId}</code>.
+    <br /><br />
+    <b>⚠ "Last used" is not backed yet — this frame proposes it.</b> The token record has no
+    <code>last_used_at</code> field today. Approving this frame commissions that field (updated on
+    introspection/use) so operators can spot dormant or leaked credentials. Until it exists the
+    column reads <i>"—"</i> for every token; it must not fabricate activity.
+    <br /><br />
+    <b>Neutral by contract.</b> No identity/authorization vendor is named anywhere — these are
+    FuzeFront service tokens, full stop.
+  </p>
+
+  <nav class="pager"><a href="index.html">Index</a><a href="02-create-token.html">Next: Create token →</a></nav>
+</div>
+</body>
+</html>

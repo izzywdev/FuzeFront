@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Revoke token — api-tokens frame (d)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="04-revoke">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (d) · route /settings/tokens</div>
+  <h1>Revoke token</h1>
+  <p class="lead">Revoking is immediate and permanent. Any service still using the token starts
+    failing right away — so the confirm is honest about what breaks, especially when the token is
+    in active use.</p>
+
+  <div class="state-block">
+    <div class="state-label">(d1) Revoke — confirm</div>
+    <div class="modal" data-panel="revoke-token" data-variant="ordinary">
+      <div class="modal-head"><h2>Revoke “Backup script”?</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn">
+          <span>
+            <b>This can't be undone</b>
+            <p>The token <code class="mono">ff_tok_EXAMPLE3…</code> stops working immediately.
+              Anything using it will get 401s until you issue a new token and update it.</p>
+          </span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent btn-danger" data-action="confirm-revoke" data-target="tok_1003">Revoke token</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-block">
+    <div class="state-label">(d2) Token in active use — type to confirm</div>
+    <div class="modal" data-panel="revoke-token" data-variant="in-use" data-state="active">
+      <div class="modal-head"><h2>Revoke “CI deploy bot”?</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-error" data-warning="in-use">
+          <span>
+            <b>This token was used 2 minutes ago</b>
+            <p>It's actively in use. Revoking it will break whatever depends on it right now —
+              deploys, jobs, or integrations may fail immediately. Make sure you've rotated it first.</p>
+          </span>
+        </div>
+        <div class="field">
+          <label class="label" for="confirm">Type the token name to confirm</label>
+          <input class="input" id="confirm" data-input="confirm-name" type="text" placeholder="CI deploy bot" />
+          <p class="hint">This extra step exists because the token is live. It prevents an accidental revoke.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent btn-danger" data-action="confirm-revoke" data-target="tok_1001" disabled data-requires-name-match>Revoke token</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>DELETE /api/organizations/{orgId}/tokens/{tokenId}</code> → <code>204</code>
+    (idempotent). Revocation is server-side and immediate; the row disappears from the list on success.
+    <br /><br />
+    <b>Interaction rules.</b> (d1) an ordinary token gets a single confirm. (d2) a token that shows
+    recent activity ("in active use") escalates to type-to-confirm — <code>Revoke</code> stays
+    disabled (<code>data-requires-name-match</code>) until the typed name matches, because revoking
+    a live credential is a foot-gun that deserves friction. "Active use" is derived from the same
+    last-used signal frame (a) commissions; until that field exists, treat every token as ordinary
+    (d1) rather than guessing.
+  </p>
+
+  <nav class="pager"><a href="03-reveal-once.html">← Secret shown once</a><a href="05-states.html">Next: States →</a></nav>
+</div>
+</body>
+</html>
