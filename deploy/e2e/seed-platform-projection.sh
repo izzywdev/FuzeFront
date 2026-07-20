@@ -67,7 +67,7 @@ $COMPOSE exec -T postgres \
         FROM users u
         JOIN organizations o ON o.owner_id = u.id AND o.type='personal'
         JOIN organization_memberships m ON m.organization_id = o.id AND m.user_id = u.id
-       WHERE u.email = :'email';" | tee /tmp/seed.out
+       WHERE u.email = '$E2E_USER_EMAIL';" | tee /tmp/seed.out
 
 grep -q 'personal|active|owner|active' /tmp/seed.out \
   || { echo "::error::personal org/membership not seeded — the sign-in spec would hang on WorkspaceProvisioningGate"; exit 1; }
