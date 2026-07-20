@@ -19,7 +19,8 @@
     "packages/feature-flags",
     "packages/security",
     "design-system",
-    "services/email-service"
+    "services/email-service",
+    "FuzeQuality"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

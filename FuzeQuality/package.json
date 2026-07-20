@@ -1,0 +1,52 @@
+{
+  "name": "@fuzefront/fuzequality",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch apps/api/src/index.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "build": "npm run type-check && npm run build:web",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "start:api": "tsx apps/api/src/index.ts",
+    "start:scanner": "tsx apps/workers/src/scanner.ts",
+    "start:intelligence": "tsx apps/workers/src/intelligence.ts",
+    "start:projector": "tsx apps/workers/src/projector.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "scan": "tsx scripts/scan.ts",
+    "check:chroma": "tsx scripts/check-chroma.ts"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^10.1.1",
+    "express": "^5.1.0",
+    "fast-glob": "^3.3.3",
+    "jose": "^6.1.0",
+    "kafkajs": "^2.2.4",
+    "lucide-react": "^0.468.0",
+    "pg": "^8.16.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.6.2",
+    "tsx": "^4.20.3",
+    "yaml": "^2.8.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.3",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^8.2.2",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vitest": "^3.2.4"
+  }
+}

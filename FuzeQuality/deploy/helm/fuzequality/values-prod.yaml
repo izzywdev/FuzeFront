@@ -1,0 +1,15 @@
+global:
+  imagePullPolicy: Always
+  imagePullSecrets:
+    - name: ghcr-pull
+
+backendImage:
+  repository: ghcr.io/izzywdev/fuzequality-backend
+  tag: latest
+frontendImage:
+  repository: ghcr.io/izzywdev/fuzequality-frontend
+  tag: latest
+
+ingress:
+  enabled: true
+  host: quality.fuzefront.com

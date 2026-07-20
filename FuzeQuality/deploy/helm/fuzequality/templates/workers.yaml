@@ -1,0 +1,57 @@
+{{- range $name, $worker := .Values.workers }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzequality-{{ $name }}
+  labels:
+    {{- include "fuzequality.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $worker.replicas }}
+  selector: { matchLabels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: {{ $name }} } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: {{ $name }} } }
+    spec:
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.backendImage.repository }}:{{ $.Values.backendImage.tag }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          command:
+            {{- toYaml $worker.command | nindent 12 }}
+          env:
+            {{- include "fuzequality.env" $ | nindent 12 }}
+            {{- if $worker.chromaRequired }}
+            - name: CHROMA_URL
+              value: {{ $.Values.config.chromaUrl | quote }}
+            - name: CHROMA_TENANT
+              value: {{ $.Values.chroma.tenant | quote }}
+            - name: CHROMA_DATABASE
+              value: {{ $.Values.chroma.database | quote }}
+            - name: CHROMA_READY_COLLECTION
+              value: {{ $.Values.chroma.readyCollection | quote }}
+            - name: CHROMA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.chroma.existingSecret }}
+                  key: {{ $.Values.chroma.secretKey }}
+            {{- end }}
+          {{- if $worker.chromaRequired }}
+          startupProbe:
+            exec: { command: ["npm", "run", "check:chroma"] }
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            exec: { command: ["npm", "run", "check:chroma"] }
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+          resources:
+            {{- toYaml $worker.resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
+---
+{{- end }}
