@@ -333,7 +333,18 @@ authentik:
 # bitnami tag was unpullable and froze the sync hook) and the broker
 # (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
 kafkaTopics:
-  enabled: true
+  # DISABLED: this Job is a helm post-upgrade hook with
+  # hook-delete-policy: before-hook-creation, so every Argo sync attempt
+  # deletes and recreates it, restarting it from zero. It creates topics at
+  # ~40s each against the shared Kafka, so it never finishes before the next
+  # attempt wipes it — and Argo blocks the WHOLE sync on it
+  # ('waiting for completion of hook batch/Job/fuzefront-kafka-topics').
+  # Net effect: no chart change could deploy at all. It blocked the Authentik
+  # sign-in fix (#320) from ever reaching the cluster.
+  # Topics fall back to broker auto-create meanwhile. Re-enable ONLY after the
+  # job is made non-blocking (drop the helm hook annotations, or bound it with
+  # activeDeadlineSeconds) so a slow Kafka can never wedge deploys again.
+  enabled: false
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The
