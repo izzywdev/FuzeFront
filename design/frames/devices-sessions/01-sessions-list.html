@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Active sessions — Sessions frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 780px; }
+  .panel { background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); overflow: hidden; margin-bottom: var(--space-6); }
+  .panel__seam { height: 2px; background: var(--seam); }
+  .panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-5) var(--space-5) var(--space-3); }
+  .panel__title { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+  .panel__hint { color: var(--text-tertiary); font-size: var(--text-sm); }
+  .row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center;
+    padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color); }
+  .row__ico { width: 40px; height: 40px; border-radius: var(--radius-md); display: grid; place-items: center;
+    background: var(--bg-quaternary); color: var(--text-secondary); font-size: var(--text-lg); }
+  .row.is-current .row__ico { background: var(--accent-soft); color: var(--accent-color); }
+  .row__main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+  .row__title { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .row__title b { color: var(--text-primary); font-weight: var(--weight-medium); }
+  .row__meta { color: var(--text-secondary); font-size: var(--text-sm); }
+  .row__meta .sep { color: var(--text-tertiary); margin: 0 var(--space-1); }
+  .this-badge { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--success-color); border: 1px solid rgba(52,211,153,0.4);
+    border-radius: var(--radius-pill); padding: 1px var(--space-2); }
+  .link-danger { background: transparent; border: 1px solid var(--border-color); color: var(--error-color);
+    font-family: var(--font-sans); font-size: var(--text-sm); border-radius: var(--radius-md);
+    padding: var(--space-1) var(--space-3); cursor: pointer; text-decoration: none; }
+  .link-danger:hover { border-color: var(--error-color); }
+  .panel__foot { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color);
+    display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .foot-note { color: var(--text-tertiary); font-size: var(--text-sm); }
+  .btn-danger-ghost { background: transparent; color: var(--error-color); border: 1px solid rgba(243,105,127,0.4);
+    font-family: var(--font-sans); font-size: var(--text-md); border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4); cursor: pointer; text-decoration: none; }
+  .btn-danger-ghost:hover { border-color: var(--error-color); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+  .skel-row { display: grid; grid-template-columns: 40px 1fr 72px; gap: var(--space-4); align-items: center;
+    padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color); }
+  .ffb-skel { height: 14px; border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: ffbsh 1.3s ease-in-out infinite; }
+  .ffb-skel.sq { height: 40px; width: 40px; border-radius: var(--radius-md); }
+  @keyframes ffbsh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .ffb-skel{ animation: none; } }
+  .msg { padding: var(--space-8) var(--space-5); text-align: center; color: var(--text-secondary); }
+  .msg h4 { margin: 0 0 var(--space-2); color: var(--text-primary); font-family: var(--font-display); }
+  .msg p { margin: 0 auto var(--space-4); max-width: 46ch; font-size: var(--text-sm); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="01-sessions-list" data-route="/account/security/sessions">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item" href="#"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item active" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Sessions &amp; devices</h1>
+      <p class="page-sub">Everywhere you're signed in. If you see something you don't recognise, sign it out —
+        it takes effect immediately.</p>
+
+      <!-- ═══ Populated ═══ -->
+      <div class="panel" data-panel="sessions" data-state="loaded">
+        <div class="panel__seam"></div>
+        <div class="panel__head">
+          <h2 class="panel__title">Active sessions</h2>
+          <span class="panel__hint">3 active</span>
+        </div>
+
+        <div class="row is-current" data-session="sess_current" data-current="true">
+          <div class="row__ico" aria-hidden="true">💻</div>
+          <div class="row__main">
+            <div class="row__title"><b>Desktop · Chrome</b> <span class="this-badge" data-current-badge>This device</span></div>
+            <div class="row__meta">Windows<span class="sep">·</span>London, UK<span class="sep">·</span>Active now</div>
+          </div>
+          <a class="link-danger" href="02-revoke-session.html" data-action="revoke-session" data-session-id="sess_current" data-current="true">Sign out</a>
+        </div>
+
+        <div class="row" data-session="sess_2" data-current="false">
+          <div class="row__ico" aria-hidden="true">📱</div>
+          <div class="row__main">
+            <div class="row__title"><b>iPhone · Safari</b></div>
+            <div class="row__meta">iOS<span class="sep">·</span>London, UK<span class="sep">·</span>Last active 2 hours ago</div>
+          </div>
+          <a class="link-danger" href="02-revoke-session.html" data-action="revoke-session" data-session-id="sess_2">Sign out</a>
+        </div>
+
+        <div class="row" data-session="sess_3" data-current="false">
+          <div class="row__ico" aria-hidden="true">🖥️</div>
+          <div class="row__main">
+            <div class="row__title"><b>Desktop · Firefox</b></div>
+            <div class="row__meta">macOS<span class="sep">·</span>Manchester, UK<span class="sep">·</span>Last active 3 days ago</div>
+          </div>
+          <a class="link-danger" href="02-revoke-session.html" data-action="revoke-session" data-session-id="sess_3">Sign out</a>
+        </div>
+
+        <div class="panel__foot">
+          <span class="foot-note">Signing out a device ends its session right away.</span>
+          <a class="btn-danger-ghost" href="03-revoke-others.html" data-action="revoke-others">Sign out everywhere else</a>
+        </div>
+      </div>
+
+      <!-- ═══ Only this device (nothing to revoke) ═══ -->
+      <div class="state-label">State · only this device</div>
+      <div class="panel" data-panel="sessions" data-state="only-current">
+        <div class="panel__seam"></div>
+        <div class="panel__head">
+          <h2 class="panel__title">Active sessions</h2>
+          <span class="panel__hint">1 active</span>
+        </div>
+        <div class="row is-current" data-session="sess_current" data-current="true">
+          <div class="row__ico" aria-hidden="true">💻</div>
+          <div class="row__main">
+            <div class="row__title"><b>Desktop · Chrome</b> <span class="this-badge">This device</span></div>
+            <div class="row__meta">Windows<span class="sep">·</span>London, UK<span class="sep">·</span>Active now</div>
+          </div>
+        </div>
+        <div class="panel__foot">
+          <span class="foot-note">You're only signed in here. Nothing else to sign out.</span>
+        </div>
+      </div>
+
+      <!-- ═══ Loading ═══ -->
+      <div class="state-label">State · loading</div>
+      <div class="panel" data-panel="sessions" data-state="loading" aria-busy="true">
+        <div class="panel__seam"></div>
+        <div class="skel-row"><span class="ffb-skel sq"></span><span class="ffb-skel" style="width:55%"></span><span class="ffb-skel" style="width:60px"></span></div>
+        <div class="skel-row"><span class="ffb-skel sq"></span><span class="ffb-skel" style="width:40%"></span><span class="ffb-skel" style="width:60px"></span></div>
+        <div class="skel-row"><span class="ffb-skel sq"></span><span class="ffb-skel" style="width:48%"></span><span class="ffb-skel" style="width:60px"></span></div>
+      </div>
+
+      <!-- ═══ Error ═══ -->
+      <div class="state-label">State · couldn't load</div>
+      <div class="panel" data-panel="sessions" data-state="error">
+        <div class="panel__seam"></div>
+        <div class="msg">
+          <h4>We couldn't load your sessions</h4>
+          <p>Something went wrong on our end. No sessions were changed.</p>
+          <button class="btn btn-ghost" data-action="retry">Try again</button>
+        </div>
+      </div>
+
+      <!-- ═══ Unknown metadata (null device/geo) — honest rendering ═══ -->
+      <div class="state-label">State · unknown device details (null fields)</div>
+      <div class="panel" data-panel="sessions" data-state="loaded-partial">
+        <div class="panel__seam"></div>
+        <div class="row" data-session="sess_4" data-current="false">
+          <div class="row__ico" aria-hidden="true">❔</div>
+          <div class="row__main">
+            <div class="row__title"><b>Unknown device</b></div>
+            <div class="row__meta">Location unavailable<span class="sep">·</span>Last active 5 days ago</div>
+          </div>
+          <a class="link-danger" href="02-revoke-session.html" data-action="revoke-session" data-session-id="sess_4">Sign out</a>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>01 / 03</b> · Active sessions · <b>/account/security/sessions</b></span>
+    <span><a class="btn btn-ghost" href="index.html">All frames</a> <a class="btn btn-primary" href="02-revoke-session.html" style="text-decoration:none">Next: sign out one →</a></span>
+  </div>
+</div>
+</body>
+</html>

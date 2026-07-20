@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign out one device — Sessions frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 780px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); max-width: 480px; }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__seam.danger { background: var(--error-color); }
+  .card__seam.warn { background: var(--warning-color); }
+  .card__body { padding: var(--space-6); }
+  .card h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .card p { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .target { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    margin-bottom: var(--space-5); }
+  .target .ico { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--bg-quaternary); color: var(--text-secondary); font-size: var(--text-lg); }
+  .target b { color: var(--text-primary); } .target small { display:block; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+  .btn-danger { background: var(--error-color); color: var(--bg-primary); border: 1px solid transparent; }
+  .btn-danger:hover { filter: brightness(1.05); }
+  .notice { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    border-radius: var(--radius-md); font-size: var(--text-sm); line-height: 1.55; margin-bottom: var(--space-5); }
+  .notice.warn { background: var(--warning-soft); color: var(--text-secondary); }
+  .notice.warn b { color: var(--text-primary); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+  .redirect { text-align: center; padding: var(--space-10) var(--space-6); }
+  .redirect .spin { width: 28px; height: 28px; margin: 0 auto var(--space-4); border-radius: var(--radius-pill);
+    border: 3px solid var(--border-color); border-top-color: var(--accent-color); animation: sp 0.9s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .redirect .spin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="02-revoke-session" data-route="/account/security/sessions">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item" href="#"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item active" href="01-sessions-list.html">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Sign out a device</h1>
+      <p class="page-sub">Ending a session takes effect immediately — that device will have to sign in again.</p>
+
+      <!-- ═══ Confirm — another device ═══ -->
+      <div class="state-label">State · confirm (another device)</div>
+      <div class="card" data-component="revoke-session-dialog" data-state="confirm" data-current="false"
+           role="alertdialog" aria-labelledby="rv1">
+        <div class="card__seam danger"></div>
+        <div class="card__body">
+          <h3 id="rv1">Sign out this device?</h3>
+          <div class="target" data-session-id="sess_2">
+            <span class="ico" aria-hidden="true">📱</span>
+            <span><b>iPhone · Safari</b><small>iOS · London, UK · Last active 2 hours ago</small></span>
+          </div>
+          <p>It will be signed out right away and need to sign in again to get back in.</p>
+          <div class="actions">
+            <button class="btn btn-danger" data-action="revoke-confirm">Sign out device</button>
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Cancel</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Confirm — THIS device (self logout) ═══ -->
+      <div class="state-label">State · this device → you'll be signed out here</div>
+      <div class="card" data-component="revoke-session-dialog" data-state="confirm-current" data-current="true"
+           role="alertdialog" aria-labelledby="rv2">
+        <div class="card__seam warn"></div>
+        <div class="card__body">
+          <h3 id="rv2">Sign out of this device?</h3>
+          <div class="target" data-session-id="sess_current">
+            <span class="ico" aria-hidden="true">💻</span>
+            <span><b>Desktop · Chrome</b><small>This device · Active now</small></span>
+          </div>
+          <div class="notice warn" data-component="self-revoke-notice" data-error="self-revoke">
+            <span aria-hidden="true">⚠</span>
+            <span><b>This is the device you're using.</b> Signing it out will end your session here and take
+              you back to sign-in.</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-danger" data-action="revoke-confirm-self">Sign out &amp; leave</button>
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Stay signed in</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Self-revoke in progress → redirect to login ═══ -->
+      <div class="state-label">State · signing you out (redirect to /login)</div>
+      <div class="card" data-component="revoke-session-dialog" data-state="self-revoked" data-redirect="/login">
+        <div class="card__seam"></div>
+        <div class="redirect">
+          <div class="spin" aria-hidden="true"></div>
+          <h3>Signing you out…</h3>
+          <p style="margin:var(--space-2) auto 0; max-width:38ch">You've been signed out of this device. Taking you to sign-in.</p>
+        </div>
+      </div>
+
+      <!-- ═══ Revoked (other device) success ═══ -->
+      <div class="state-label">State · device signed out</div>
+      <div class="card" data-component="revoke-session-dialog" data-state="revoked">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <h3>iPhone · Safari signed out</h3>
+          <p>That device's session has ended. It'll need to sign in again.</p>
+          <div class="actions">
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Back to sessions</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Revoke failed ═══ -->
+      <div class="state-label">State · couldn't sign it out</div>
+      <div class="card" data-component="revoke-session-dialog" data-state="error">
+        <div class="card__seam danger"></div>
+        <div class="card__body">
+          <h3>We couldn't sign that device out</h3>
+          <p>Something went wrong. The session is unchanged — try again.</p>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="revoke-confirm">Try again</button>
+            <a class="btn btn-ghost" href="01-sessions-list.html" style="text-decoration:none">Cancel</a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>02 / 03</b> · Sign out one device · <b>/account/security/sessions</b></span>
+    <span><a class="btn btn-ghost" href="01-sessions-list.html">← Sessions</a> <a class="btn btn-primary" href="03-revoke-others.html" style="text-decoration:none">Next: sign out everywhere else →</a></span>
+  </div>
+</div>
+</body>
+</html>
