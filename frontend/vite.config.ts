@@ -56,6 +56,13 @@ const appRegistryClientSrc = fileURLToPath(
 const securityClientSrc = fileURLToPath(
   new URL('../packages/security/src/index.ts', import.meta.url)
 )
+// @fuzefront/account-security-ui (packages/account-security-ui) is an unpublished
+// file: workspace package whose dist/ is not built in CI — resolve from SOURCE,
+// same as identity-ui. It is design-system-first and consumes only the generated
+// @fuzefront/security-client TYPES.
+const accountSecurityUiSrc = fileURLToPath(
+  new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
+)
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
 // reaches frontend/node_modules for those files. This resolver fills the gap: it
@@ -80,6 +87,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/account-security-ui': accountSecurityUiSrc,
       '@fuzefront/i18n': i18nSrc,
       // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.
       '@fuzefront/chat-ui/styles.css': chatUiStyles,
