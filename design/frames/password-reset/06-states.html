@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Password reset — states &amp; errors</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 900px; margin: 0 auto; padding: var(--space-10) var(--space-8) 96px; }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); font-size: var(--text-sm); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+  @media (max-width: 720px){ .grid { grid-template-columns: 1fr; } }
+  .state-block { }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--text-tertiary); margin: 0 0 var(--space-3); }
+  .card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-6); position: relative; overflow: hidden; }
+  .card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .field { width: 100%; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); color: var(--text-primary);
+    font-size: var(--text-md); margin-bottom: var(--space-3); }
+  .field.invalid { border-color: var(--error-color); box-shadow: 0 0 0 3px var(--error-soft); }
+  .btn-block { width: 100%; justify-content: center; display: flex; }
+  .spinner { width: 15px; height: 15px; border-radius: var(--radius-pill); border: 2px solid rgba(11,14,21,0.35);
+    border-top-color: #0b0e15; display: inline-block; margin-right: var(--space-2); animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .spinner { animation: none; } }
+
+  .callout { display: flex; gap: var(--space-3); align-items: flex-start; border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4); }
+  .callout__ico { width: 24px; height: 24px; border-radius: var(--radius-pill); flex: none; display: grid;
+    place-items: center; font-size: var(--text-sm); }
+  .callout__title { margin: 0 0 2px; font-weight: var(--weight-semibold); font-size: var(--text-sm); }
+  .callout__text { margin: 0; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.5; }
+  .callout--error { background: var(--error-soft); border: 1px solid rgba(243,105,127,0.4); }
+  .callout--error .callout__ico { background: rgba(243,105,127,0.18); color: var(--error-color); }
+  .callout--warn { background: var(--warning-soft); border: 1px solid rgba(245,185,80,0.4); }
+  .callout--warn .callout__ico { background: rgba(245,185,80,0.18); color: var(--warning-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-xs); margin: 0 0 var(--space-3); }
+  .actions { margin-top: var(--space-4); display: flex; gap: var(--space-3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Password reset — states &amp; errors</h1>
+  <p class="lead">Every one of these is contract: the UI must render each, not just the happy path. This is
+    how a reset that mailed into the void, and a policy rejection with no message, get designed out before build.</p>
+
+  <div class="grid">
+    <!-- SUBMITTING -->
+    <div class="state-block" data-state="submitting">
+      <p class="state-label">Submitting · request in flight</p>
+      <div class="card">
+        <div class="card__seam"></div>
+        <input class="field" value="jordan@example.com" disabled />
+        <button class="btn btn-primary btn-block" disabled data-action="send-reset" aria-busy="true">
+          <span class="spinner" aria-hidden="true"></span>Sending…
+        </button>
+      </div>
+    </div>
+
+    <!-- EXPIRED / INVALID TOKEN -->
+    <div class="state-block" data-state="token-invalid">
+      <p class="state-label">Expired or invalid token · <code class="mono">reset-confirm 400</code></p>
+      <div class="card" data-token-state="invalid">
+        <div class="card__seam"></div>
+        <div class="callout callout--error" role="alert">
+          <span class="callout__ico" aria-hidden="true">!</span>
+          <div>
+            <p class="callout__title">This reset link has expired</p>
+            <p class="callout__text">Links are single-use and expire after 30 minutes. Request a new one to continue.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="01-request.html" class="btn btn-primary" data-action="request-again">Request a new link</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- POLICY REJECTION -->
+    <div class="state-block" data-state="policy-rejected">
+      <p class="state-label">Password policy rejection · <code class="mono">400</code></p>
+      <div class="card" data-error="password-policy">
+        <div class="card__seam"></div>
+        <input class="field invalid" type="password" value="password" aria-invalid="true" data-input="new-password" />
+        <p class="field-error" data-field-error="new-password">
+          That password is too common. Use at least 12 characters and avoid words like "password".
+        </p>
+        <button class="btn btn-primary btn-block" data-action="set-new-password">Update password</button>
+      </div>
+    </div>
+
+    <!-- GENERIC FAILURE -->
+    <div class="state-block" data-state="error">
+      <p class="state-label">Something went wrong · retry</p>
+      <div class="card">
+        <div class="card__seam"></div>
+        <div class="callout callout--error" role="alert">
+          <span class="callout__ico" aria-hidden="true">!</span>
+          <div>
+            <p class="callout__title">We couldn't update your password</p>
+            <p class="callout__text">Something went wrong on our side. Your password is unchanged — try again.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="retry">Try again</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SET-PASSWORD BLOCKED: already has password (409) -->
+    <div class="state-block" data-state="already-has-password">
+      <p class="state-label">Set-password when one exists · <code class="mono">POST /password 409</code></p>
+      <div class="card" data-error="password-exists">
+        <div class="card__seam"></div>
+        <div class="callout callout--warn">
+          <span class="callout__ico" aria-hidden="true">🔑</span>
+          <div>
+            <p class="callout__title">You already have a password</p>
+            <p class="callout__text">Use "Change password" to update it, or reset it if you've forgotten it.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a href="05-signed-in.html" class="btn btn-primary" data-action="go-change">Change password</a>
+          <a href="01-request.html" class="btn btn-ghost" data-action="go-reset">Reset instead</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- WRONG CURRENT PASSWORD -->
+    <div class="state-block" data-state="wrong-current">
+      <p class="state-label">Change · wrong current password · <code class="mono">400 INVALID_CREDENTIALS</code></p>
+      <div class="card" data-error="wrong-current">
+        <div class="card__seam"></div>
+        <input class="field invalid" type="password" value="•••••••" aria-invalid="true" data-input="current-password" />
+        <p class="field-error" data-field-error="current-password">
+          That's not your current password. Check it, or reset your password instead.
+        </p>
+        <button class="btn btn-primary btn-block" data-action="change-password">Save new password</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>States</b> · submitting · expired token · policy rejection · failure · already-has-password (409) · wrong current</span>
+  <span>
+    <a href="05-signed-in.html" class="btn btn-ghost">← Change / set</a>
+    <a href="index.html" class="btn btn-primary">Overview ↩</a>
+  </span>
+</nav>
+</body>
+</html>
