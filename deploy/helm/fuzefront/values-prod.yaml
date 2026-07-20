@@ -67,7 +67,18 @@ securityService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
     tag: 169c843cad10
-  replicas: 2
+  # TEMPORARY MITIGATION: 1 replica.
+  # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
+  # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
+  # session affinity, /social/google/start stores state on pod A while the
+  # /api/auth/oidc/callback lands on pod B, which has no idea what that state is —
+  # observed live: start on ...66gfh, callback on ...pvhm2 -> authentication_failed.
+  # Roughly half of all sign-ins failed this way, independent of every other fix.
+  # Same flaw affects MFA challenges and broker codes (so 2FA breaks identically).
+  # Pinning to 1 replica removes the split; it costs HA for the auth path, so this
+  # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
+  # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
+  replicas: 1
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
