@@ -177,16 +177,32 @@ spec:
             {{- include "authentik.commonEnv" . | nindent 12 }}
           ports:
             - containerPort: 9000
+          # PROBE TIMEOUTS ARE EXPLICIT AND MUST STAY THAT WAY.
+          # k8s defaults timeoutSeconds to 1s. Authentik's health endpoints are
+          # Django views that hit Postgres+Redis and routinely take 200-700ms,
+          # spiking past 1s under any load. With the 1s default this readiness
+          # probe failed 4572 times in 4 days: each 3-strike run pulled the pod
+          # out of the Service, so Traefik answered "no available server" and
+          # in-flight auth died mid-flow ("context canceled: failed to proxy to
+          # backend"). That flapping — not a slow IdP — was the cause of the
+          # intermittent sign-in failures, 20s+ password timeouts, and the flow
+          # UI's "Unexpected end of JSON input" (its API call landed in a gap).
+          # Authentik was healthy the whole time; the probe was evicting it.
           startupProbe:
             httpGet: { path: /-/health/live/, port: 9000 }
             periodSeconds: 5
+            timeoutSeconds: 5
             failureThreshold: 60 # up to ~5min for first-boot migrations
           livenessProbe:
             httpGet: { path: /-/health/live/, port: 9000 }
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5   # never restart a merely-busy IdP
           readinessProbe:
             httpGet: { path: /-/health/ready/, port: 9000 }
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - { name: media,       mountPath: /media }
             - { name: blueprints,  mountPath: /blueprints/fuzefront, readOnly: true }
