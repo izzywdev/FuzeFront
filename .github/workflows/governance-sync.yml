@@ -101,8 +101,17 @@ jobs:
             git push origin "HEAD:${HEAD_REF}"
             echo "::notice::Reconciled and pushed $committable managed file(s) to ${HEAD_REF}."
           fi
-          if [ "$workflows" != "0" ] || [ "$missing" != "0" ]; then
-            echo "::error::Governance drift the token cannot auto-fix — $workflows workflow file(s), $missing missing file(s). Run scripts/sdlc-bootstrap.sh and open a PR."
-            git --no-pager diff; exit 1
+          # Workflow drift is ADVISORY, not blocking. The default GITHUB_TOKEN cannot push
+          # .github/workflows/**, and repos legitimately customise them (cron stagger, extra
+          # jobs) — so failing here would be permanently red AND unactionable by this workflow.
+          # The nightly governance sweep opens a fix PR for genuine staleness.
+          if [ "$workflows" != "0" ]; then
+            echo "::warning::$workflows workflow file(s) differ from the FuzeSDLC canonical (advisory — this job cannot push workflow changes). Run scripts/sdlc-bootstrap.sh if they are genuinely stale."
           fi
-          echo "Governance in sync with FuzeSDLC ${{ steps.ref.outputs.ref }}."
+          # A manifest-DECLARED agent missing from the repo IS blocking: real breakage, and
+          # scripts/sdlc-bootstrap.sh fixes it deterministically.
+          if [ "$missing" != "0" ]; then
+            echo "::error::$missing manifest-declared file(s) are MISSING from this repo. Run scripts/sdlc-bootstrap.sh and open a PR."
+            exit 1
+          fi
+          echo "Governance in sync with FuzeSDLC ${{ steps.ref.outputs.ref }} (workflow drift, if any, is advisory)."
