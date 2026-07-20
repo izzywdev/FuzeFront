@@ -31,6 +31,107 @@ const escapeHtml = (s) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
   );
 
+// Where approval decisions are recorded. A GitHub issue is the durable, auditable
+// record; the design-approval workflow (or a maintainer) reads it and flips the
+// per-flow `approved` in the manifest. Prefilled via plain query params — the only
+// form of issue prefill that is 100% reliable (dropdown prefill is not).
+const REPO_SLUG = 'izzywdev/FuzeFront';
+const PAGES_BASE = 'https://izzywdev.github.io/FuzeFront';
+
+/** The per-flow list is the source of truth for approval: `build.flows`. (Some
+ *  legacy manifests carried approvable entries under `frames`; fall back to that
+ *  only if `build.flows` is absent, so the two never disagree silently.) */
+function flowsOf(manifest) {
+  const bf = manifest?.build?.flows;
+  if (Array.isArray(bf) && bf.length) return bf;
+  const legacy = Array.isArray(manifest?.frames)
+    ? manifest.frames.filter((f) => typeof f.approved === 'boolean')
+    : [];
+  return legacy;
+}
+
+/** New-issue URL that records a decision for one flow. Approve and Reject differ
+ *  only in the prefilled `decision:` line, so the reviewer's click IS the record. */
+function approvalHref(slug, flow, decision, stamp) {
+  const flowId = flow.id ?? flow.orchestrator ?? 'flow';
+  const title = `design-approval: ${decision} ${slug} / ${flowId}`;
+  const body = [
+    '<!-- Submit to record your decision. To reject, keep decision: reject and add your reason below. -->',
+    '',
+    '```yaml',
+    `feature: ${slug}`,
+    `flow: ${flowId}`,
+    `route: ${flow.route ?? ''}`,
+    `decision: ${decision}`,
+    `stamp: ${stamp ?? ''}`,
+    '```',
+    '',
+    `Frames: ${PAGES_BASE}/${slug}/`,
+    '',
+    decision === 'reject' ? '**Reason for rejection (required):**' : '_Optional note:_',
+    '',
+  ].join('\n');
+  const q = new URLSearchParams({ title, body, labels: 'design-approval' });
+  return `https://github.com/${REPO_SLUG}/issues/new?${q.toString()}`;
+}
+
+/** Fixed approval bar injected into every published frame of a feature, so the
+ *  reviewer can approve/reject from wherever they are in the flow — not only the
+ *  index. Derived entirely from the manifest's flow list. */
+function renderApprovalBar(slug, manifest) {
+  const flows = flowsOf(manifest);
+  const stamp = manifest?.stamp ? String(manifest.stamp).slice(0, 12) : '';
+  if (!flows.length) {
+    return `<div class="ff-approve"><div class="ff-approve-in"><span class="ff-approve-warn">No flows declared in manifest.build.flows — nothing to approve.</span></div></div>`;
+  }
+  const rows = flows
+    .map((f) => {
+      const id = escapeHtml(f.id ?? f.orchestrator ?? 'flow');
+      const done = f.approved === true;
+      const state = done
+        ? `<span class="ff-approve-state ff-ok">approved${f.approvedBy ? ' · ' + escapeHtml(f.approvedBy) : ''}</span>`
+        : `<span class="ff-approve-state ff-pending">pending</span>`;
+      const actions = done
+        ? ''
+        : `<a class="ff-btn ff-approve-yes" target="_blank" rel="noopener" href="${escapeHtml(approvalHref(slug, f, 'approve', stamp))}">Approve</a>` +
+          `<a class="ff-btn ff-approve-no" target="_blank" rel="noopener" href="${escapeHtml(approvalHref(slug, f, 'reject', stamp))}">Reject</a>`;
+      return `<div class="ff-approve-row"><span class="ff-flow">${id}</span>${state}<span class="ff-actions">${actions}</span></div>`;
+    })
+    .join('');
+  return `<div class="ff-approve" data-ff-approve>
+  <details open>
+    <summary>Review · ${escapeHtml(slug)} <span class="ff-approve-hint">approve or reject each flow ↓</span></summary>
+    <div class="ff-approve-in">${rows}</div>
+  </details>
+</div>
+<style>
+  .ff-approve{position:fixed;left:0;right:0;bottom:0;z-index:2147483000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;background:#0c0f14ee;backdrop-filter:blur(8px);border-top:2px solid;border-image:linear-gradient(90deg,#4dd6e8,#7b6cf6) 1;box-shadow:0 -8px 24px #0008;color:#e8ecf3}
+  .ff-approve summary{cursor:pointer;list-style:none;padding:10px 20px;font-size:13px;font-weight:600;user-select:none}
+  .ff-approve summary::-webkit-details-marker{display:none}
+  .ff-approve-hint{font-weight:400;color:#6f7b8d;font-size:11px;margin-left:8px}
+  .ff-approve-in{padding:4px 20px 16px;display:flex;flex-direction:column;gap:8px;max-height:40vh;overflow:auto}
+  .ff-approve-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .ff-flow{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#a8b2c1;min-width:180px}
+  .ff-approve-state{font-family:ui-monospace,Menlo,monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:2px 8px;border-radius:999px;border:1px solid}
+  .ff-ok{color:#5fd08a;border-color:#5fd08a70}
+  .ff-pending{color:#f5b950;border-color:#f5b95070}
+  .ff-actions{display:flex;gap:8px;margin-left:auto}
+  .ff-btn{text-decoration:none;font-size:12px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid}
+  .ff-approve-yes{color:#0c0f14;background:#5fd08a;border-color:#5fd08a}
+  .ff-approve-no{color:#f5b950;background:transparent;border-color:#f5b95070}
+  .ff-approve-warn{color:#f5b950;font-size:12px;padding:12px 20px;display:block}
+  @media(max-width:640px){.ff-flow{min-width:0}.ff-actions{margin-left:0}}
+</style>`;
+}
+
+/** Inject the approval bar into an HTML document just before </body> (or append
+ *  if none). Idempotent-ish: skips if already present. */
+function injectApprovalBar(html, bar) {
+  if (html.includes('data-ff-approve')) return html;
+  if (html.includes('</body>')) return html.replace('</body>', `${bar}\n</body>`);
+  return html + bar;
+}
+
 /** Feature directories present on disk — the source of truth. `_`-prefixed dirs
  *  (e.g. `_template`) are scaffolding, not features awaiting review. */
 async function discoverFeatures() {
@@ -65,8 +166,9 @@ async function discoverFeatures() {
  *  model) or the legacy top-level `approved`. Reported, never asserted. */
 function approvalOf(manifest) {
   if (!manifest) return { label: 'no manifest', state: 'unknown' };
-  const flows = Array.isArray(manifest.frames) ? manifest.frames : [];
-  const perFlow = flows.filter((f) => typeof f.approved === 'boolean');
+  // Per-flow approval lives in build.flows (the source of truth); flowsOf falls
+  // back to the legacy `frames` shape so old and new manifests read consistently.
+  const perFlow = flowsOf(manifest).filter((f) => typeof f.approved === 'boolean');
   if (perFlow.length > 0) {
     const yes = perFlow.filter((f) => f.approved).length;
     if (yes === perFlow.length) return { label: `approved (${yes}/${perFlow.length} flows)`, state: 'approved' };
@@ -189,9 +291,19 @@ async function main() {
   }
   const features = await discoverFeatures();
   await mkdir(outDir, { recursive: true });
-  // Copy every feature directory verbatim (frames reference tokens.css relatively).
+  // Copy every feature directory, then inject the approval bar into each published
+  // .html so the reviewer can approve/reject any flow from wherever they are.
   for (const f of features) {
-    await cp(path.join(framesDir, f.slug), path.join(outDir, f.slug), { recursive: true });
+    const dest = path.join(outDir, f.slug);
+    await cp(path.join(framesDir, f.slug), dest, { recursive: true });
+    const bar = renderApprovalBar(f.slug, f.manifest);
+    const htmlFiles = (await readdir(dest, { withFileTypes: true }))
+      .filter((e) => e.isFile() && e.name.endsWith('.html'))
+      .map((e) => path.join(dest, e.name));
+    for (const file of htmlFiles) {
+      const html = await readFile(file, 'utf8');
+      await writeFile(file, injectApprovalBar(html, bar), 'utf8');
+    }
   }
   await writeFile(path.join(outDir, 'index.html'), renderIndex(features), 'utf8');
   // Jekyll would otherwise skip `_`-prefixed paths and mangle the output.
