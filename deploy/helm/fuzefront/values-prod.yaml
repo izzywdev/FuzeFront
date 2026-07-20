@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -66,14 +66,14 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
   replicas: 2
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -96,7 +96,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -107,7 +107,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -147,7 +147,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 5487d0aa0e81
+    tag: 6ec957cec0d9
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
