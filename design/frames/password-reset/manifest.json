@@ -60,7 +60,9 @@
       "SetPasswordForm",
       "PasswordPolicyHints"
     ],
-    "packages": ["@fuzefront/account-security-ui"],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
     "designSystemAdditions": [
       "PasswordStrengthMeter — segmented strength bar + policy hints; not yet in @fuzefront/design-system base. Named for frontend-engineer to add as a foundation PR; drawn from tokens only here.",
       "StatusCallout — shared soft-tinted inline banner (also named by the account-security frames); used by token-invalid / policy / 409 states. Foundation PR before implementation; never one-offed."
@@ -75,7 +77,12 @@
       "flow": "reset",
       "summary": "Unauthenticated email entry. Submitting always continues; a footnote states the same confirmation shows either way.",
       "acceptanceNotes": "POST /session/password/reset-request with { email }. Button data-action='send-reset'. No response detail is surfaced that could reveal account existence.",
-      "testHooks": ["[data-frame='01-request']", "[data-panel='reset-request']", "[data-input='email']", "[data-action='send-reset']"]
+      "testHooks": [
+        "[data-frame='01-request']",
+        "[data-panel='reset-request']",
+        "[data-input='email']",
+        "[data-action='send-reset']"
+      ]
     },
     {
       "id": "02-sent",
@@ -85,7 +92,13 @@
       "flow": "reset",
       "summary": "Unconditional 202 confirmation. The screen explicitly states it renders identically whether or not an account exists (no user enumeration).",
       "acceptanceNotes": "data-http='202'. Copy must never assert an account exists. data-security-note='no-enumeration' present. Resend + back-to-sign-in affordances.",
-      "testHooks": ["[data-frame='02-sent']", "[data-panel='reset-sent']", "[data-http='202']", "[data-security-note='no-enumeration']", "[data-action='resend']"]
+      "testHooks": [
+        "[data-frame='02-sent']",
+        "[data-panel='reset-sent']",
+        "[data-http='202']",
+        "[data-security-note='no-enumeration']",
+        "[data-action='resend']"
+      ]
     },
     {
       "id": "03-set-new",
@@ -95,7 +108,14 @@
       "flow": "reset",
       "summary": "From the emailed token link (valid). New password + confirm, live PasswordStrengthMeter and policy hints.",
       "acceptanceNotes": "POST /session/password/reset-confirm with { token, newPassword }. data-token-state='valid'. Strength meter (data-meter) + policy hints (data-policy-hints) render from the entered value.",
-      "testHooks": ["[data-frame='03-set-new']", "[data-panel='reset-confirm']", "[data-token-state='valid']", "[data-input='new-password']", "[data-meter]", "[data-action='set-new-password']"]
+      "testHooks": [
+        "[data-frame='03-set-new']",
+        "[data-panel='reset-confirm']",
+        "[data-token-state='valid']",
+        "[data-input='new-password']",
+        "[data-meter]",
+        "[data-action='set-new-password']"
+      ]
     },
     {
       "id": "04-done",
@@ -105,7 +125,12 @@
       "flow": "reset",
       "summary": "Success. States other sessions were revoked; CTA to sign in.",
       "acceptanceNotes": "Shown after 200 from reset-confirm. data-security-note='sessions-revoked'. data-action='go-sign-in'.",
-      "testHooks": ["[data-frame='04-done']", "[data-panel='reset-done']", "[data-security-note='sessions-revoked']", "[data-action='go-sign-in']"]
+      "testHooks": [
+        "[data-frame='04-done']",
+        "[data-panel='reset-done']",
+        "[data-security-note='sessions-revoked']",
+        "[data-action='go-sign-in']"
+      ]
     },
     {
       "id": "05-signed-in",
@@ -115,7 +140,16 @@
       "flow": "change-password",
       "summary": "Two variants: change an existing password (current + new + confirm), and set a first password on a Google-only account (no current field, hasPassword:false).",
       "acceptanceNotes": "Variant 'change' (data-has-password='true') posts reset-confirm-style change with current password; variant 'set' (data-has-password='false') posts POST /password. Forgot-current links to the reset flow.",
-      "testHooks": ["[data-frame='05-signed-in']", "[data-variant='change']", "[data-has-password='true']", "[data-input='current-password']", "[data-action='change-password']", "[data-variant='set']", "[data-has-password='false']", "[data-action='set-password']"]
+      "testHooks": [
+        "[data-frame='05-signed-in']",
+        "[data-variant='change']",
+        "[data-has-password='true']",
+        "[data-input='current-password']",
+        "[data-action='change-password']",
+        "[data-variant='set']",
+        "[data-has-password='false']",
+        "[data-action='set-password']"
+      ]
     },
     {
       "id": "06-states",
@@ -125,7 +159,20 @@
       "flow": "change-password",
       "summary": "Submitting, expired/invalid token, password-policy rejection, generic failure + retry, set-password-when-one-exists (409), wrong current password.",
       "acceptanceNotes": "Each state carries data-state; policy/token/409 use the StatusCallout or field-error. Expired token routes back to request; 409 routes to change/reset; wrong-current shows an inline field error.",
-      "testHooks": ["[data-frame='06-states']", "[data-state='submitting']", "[data-state='token-invalid']", "[data-token-state='invalid']", "[data-state='policy-rejected']", "[data-error='password-policy']", "[data-state='error']", "[data-action='retry']", "[data-state='already-has-password']", "[data-error='password-exists']", "[data-state='wrong-current']"]
+      "testHooks": [
+        "[data-frame='06-states']",
+        "[data-state='submitting']",
+        "[data-state='token-invalid']",
+        "[data-token-state='invalid']",
+        "[data-state='policy-rejected']",
+        "[data-error='password-policy']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='already-has-password']",
+        "[data-error='password-exists']",
+        "[data-state='wrong-current']"
+      ]
     }
-  ]
+  ],
+  "stamp": "c62d2eb9679ac64459ea6d171c9a146ff896b7f16d8ffc4e4ed626aa9e40e6fa"
 }
