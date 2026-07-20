@@ -45,7 +45,7 @@ workers:
 config:
   kafkaBrokers: kafka.fuzeinfra.svc.cluster.local:9092
   litellmUrl: http://litellm.fuzeinfra.svc.cluster.local:4000/v1
-  chromaUrl: http://chromadb.fuzeinfra.svc.cluster.local:8000
+  chromaUrl: http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000
   llmModel: quality-analysis
   jiraJql: project = FUZE ORDER BY updated DESC
   reconcileSchedule: "*/15 * * * *"
