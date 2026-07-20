@@ -1,0 +1,128 @@
+{
+  "name": "Service tokens (M2M) — approval frames",
+  "description": "Contract-freeze UX artifacts for the vendor-neutral machine-to-machine service-token surface (create-scoped → reveal-once secret → list → revoke) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. The reveal-once screen (03) is the most important in the flow.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "backingRouter": "backend/security/src/routes/api-tokens.ts",
+    "client": "@fuzefront/security-client",
+    "schemas": ["ApiToken", "ApiTokenCreate", "ApiTokenCreateResponse"],
+    "endpoints": [
+      "GET /api/organizations/{orgId}/tokens",
+      "POST /api/organizations/{orgId}/tokens",
+      "GET /api/organizations/{orgId}/tokens/{tokenId}",
+      "DELETE /api/organizations/{orgId}/tokens/{tokenId}"
+    ],
+    "commissionedByApproval": [
+      "last_used_at on the token record (frames a, d) — not backed today; column reads '—' until it exists",
+      "bring the token CRUD endpoints into the frozen packages/security/openapi.yaml (only POST /v1/security/tokens issue + introspect live there now)"
+    ],
+    "component": "@fuzefront/service-tokens-ui → ServiceTokensFlow",
+    "featureFlag": "fuzefront.security.service-tokens"
+  },
+  "build": {
+    "flows": [
+      { "id": "service-tokens", "orchestrator": "ServiceTokensFlow", "route": "/settings/tokens", "approved": false, "approvedBy": null, "approvedAt": null }
+    ],
+    "components": [
+      "TokenList", "TokenRow", "ScopeChips", "CreateTokenDialog", "ScopePicker",
+      "RevealOncePanel", "CopySecretButton", "RevokeTokenDialog", "AccessDeniedNotice"
+    ],
+    "packages": ["@fuzefront/service-tokens-ui"]
+  },
+  "frames": [
+    {
+      "id": "01-tokens",
+      "file": "01-tokens.html",
+      "label": "(a) Service tokens",
+      "route": "/settings/tokens",
+      "flow": "service-tokens",
+      "summary": "Token list: name + prefix, scope chips, created, last-used, per-row revoke.",
+      "acceptanceNotes": "Rows from GET /api/organizations/{orgId}/tokens exposing name, token_prefix, scopes, created_at, expires_at — never the raw secret. 'Last used' is not backed yet (no last_used_at field); it renders '—' until commissioned, never fabricated activity. No vendor name in the DOM.",
+      "testHooks": [
+        "[data-frame='01-tokens']",
+        "[data-panel='token-list']",
+        "[data-token='tok_1001']",
+        "[data-token-prefix]",
+        "[data-scope='apps:read']",
+        "[data-action='create-token']",
+        "[data-action='revoke-token']"
+      ]
+    },
+    {
+      "id": "02-create-token",
+      "file": "02-create-token.html",
+      "label": "(b) Create token",
+      "route": "/settings/tokens",
+      "flow": "service-tokens",
+      "summary": "Name + scope checkboxes + optional expiry. Submit disabled until a name and at least one scope are present.",
+      "acceptanceNotes": "POST /api/organizations/{orgId}/tokens with { name, scopes[], expires_at? } → 201 with the raw secret returned once (frame c). Scope options should render from the org scope catalogue; the four shown are illustrative Resource:action strings. Fail-closed: no zero-scope token can be created.",
+      "testHooks": [
+        "[data-frame='02-create-token']",
+        "[data-panel='create-token']",
+        "[data-input='name']",
+        "[data-scope-option='apps:read']",
+        "[data-input='expiry']",
+        "[data-action='submit-create-token']"
+      ]
+    },
+    {
+      "id": "03-reveal-once",
+      "file": "03-reveal-once.html",
+      "label": "(c) Secret shown once — MOST IMPORTANT",
+      "route": "/settings/tokens",
+      "flow": "service-tokens",
+      "summary": "The one-time reveal: full secret with copy affordance, an unrecoverable warning, and an explicit ack gating Done.",
+      "acceptanceNotes": "The raw secret is the 'token' field returned ONLY on the 201 create; the backend stores a hash and never returns it again. Copy writes to clipboard (data-action='copy-secret' → data-copy-status). Done stays disabled (data-requires-ack) until data-ack-checkbox is ticked. The displayed secret MUST be an obviously-fake placeholder (ff_tok_EXAMPLE_NOT_A_REAL_TOKEN); a real impl never logs or re-renders it and discards it on navigation.",
+      "testHooks": [
+        "[data-frame='03-reveal-once']",
+        "[data-panel='reveal-once']",
+        "[data-panel='secret']",
+        "[data-token-secret]",
+        "[data-action='copy-secret']",
+        "[data-copy-status]",
+        "[data-ack-checkbox]",
+        "[data-requires-ack]",
+        "[data-action='done']"
+      ]
+    },
+    {
+      "id": "04-revoke",
+      "file": "04-revoke.html",
+      "label": "(d) Revoke token",
+      "route": "/settings/tokens",
+      "flow": "service-tokens",
+      "summary": "Ordinary confirm (d1), plus type-to-confirm escalation when the token is in active use (d2).",
+      "acceptanceNotes": "DELETE /api/organizations/{orgId}/tokens/{tokenId} → 204 (idempotent), immediate. d2 gates Revoke behind a name match (data-requires-name-match) for a token showing recent use. 'Active use' derives from the same last-used signal frame (a) commissions; until it exists, treat every token as ordinary (d1).",
+      "testHooks": [
+        "[data-frame='04-revoke']",
+        "[data-panel='revoke-token']",
+        "[data-variant='in-use']",
+        "[data-warning='in-use']",
+        "[data-input='confirm-name']",
+        "[data-requires-name-match]",
+        "[data-action='confirm-revoke']"
+      ]
+    },
+    {
+      "id": "05-states",
+      "file": "05-states.html",
+      "label": "(e) States",
+      "route": "/settings/tokens",
+      "flow": "service-tokens",
+      "summary": "Loading skeleton, no-tokens invitation, load error+retry, and 403 forbidden shown in place.",
+      "acceptanceNotes": "Loading = aria-busy skeleton for in-flight GET tokens. Empty is the first-run invitation to create. Error shows data-action='retry'. A 403 is an AUTHORIZATION denial rendered in place — NEVER a redirect to sign-in (only a 401 re-authenticates).",
+      "testHooks": [
+        "[data-frame='05-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='forbidden']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-http='403']"
+      ]
+    }
+  ]
+}
