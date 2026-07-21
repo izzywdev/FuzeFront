@@ -33,3 +33,12 @@ export interface PasswordChecklistProps
 }
 
 export function PasswordChecklist(props: PasswordChecklistProps): JSX.Element;
+
+// Pure helpers surfaced as statics so feature code reaches them through the
+// package barrel (which only re-exports the component itself).
+export namespace PasswordChecklist {
+  /** True when `value` satisfies every rule — the client-side submit gate. */
+  function meetsPolicy(value: string, rules?: PasswordRule[]): boolean;
+  /** The default policy rules ({@link DEFAULT_PASSWORD_RULES}). */
+  const rules: PasswordRule[];
+}

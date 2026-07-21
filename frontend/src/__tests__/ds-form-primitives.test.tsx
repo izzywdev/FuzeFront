@@ -6,18 +6,14 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import {
-  PasswordChecklist,
-  passwordMeetsPolicy,
-  FieldStatus,
-} from '@fuzefront/design-system'
+import { PasswordChecklist, FieldStatus } from '@fuzefront/design-system'
 
-describe('passwordMeetsPolicy', () => {
+describe('PasswordChecklist.meetsPolicy', () => {
   it('requires 12+ chars, upper, lower, digit and symbol', () => {
-    expect(passwordMeetsPolicy('short1!A')).toBe(false) // < 12
-    expect(passwordMeetsPolicy('alllowercase1!')).toBe(false) // no upper
-    expect(passwordMeetsPolicy('NoSymbolHere12')).toBe(false) // no symbol
-    expect(passwordMeetsPolicy('Sup3rSecret!Pass')).toBe(true)
+    expect(PasswordChecklist.meetsPolicy('short1!A')).toBe(false) // < 12
+    expect(PasswordChecklist.meetsPolicy('alllowercase1!')).toBe(false) // no upper
+    expect(PasswordChecklist.meetsPolicy('NoSymbolHere12')).toBe(false) // no symbol
+    expect(PasswordChecklist.meetsPolicy('Sup3rSecret!Pass')).toBe(true)
   })
 })
 

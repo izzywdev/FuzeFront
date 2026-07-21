@@ -10,7 +10,6 @@ import {
   SeamDivider,
   FieldStatus,
   PasswordChecklist,
-  passwordMeetsPolicy,
 } from '@fuzefront/design-system'
 import type { FieldStatusState } from '@fuzefront/design-system'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
@@ -258,7 +257,8 @@ function LoginPage() {
   const passwordsMatch = password === confirmPassword
   const showConfirmMismatch =
     mode === 'signup' && confirmPassword.length > 0 && !passwordsMatch
-  const passwordValid = mode === 'signup' ? passwordMeetsPolicy(password) : true
+  const passwordValid =
+    mode === 'signup' ? PasswordChecklist.meetsPolicy(password) : true
   const signupBlocked =
     mode === 'signup' &&
     (!passwordValid || !passwordsMatch || confirmPassword.length === 0 || emailStatus === 'error')
