@@ -1,6 +1,6 @@
 {
-  "name": "Auth experience — approval frames",
-  "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — one approved flow unblocks that flow's implementation.",
+  "name": "Auth experience \u2014 approval frames",
+  "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval \u2014 one approved flow unblocks that flow's implementation.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "approved": false,
   "approvedBy": null,
@@ -29,11 +29,11 @@
       "GET /api/v1/security/methods",
       "GET /api/v1/security/signup/email-available"
     ],
-    "component": "@fuzefront/auth-experience-ui → SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
+    "component": "@fuzefront/auth-experience-ui \u2192 SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
     "featureFlag": "fuzefront.auth.experience",
     "deltas": [
-      "NEW endpoint GET /api/v1/security/signup/email-available?email= → { available: boolean } (debounced inline check; must fail-open on error so it never blocks submit; must NOT be an enumeration oracle beyond signup UX — rate-limit + captcha-gate it).",
-      "NEW field SignupRequest.turnstileToken (string, required when AuthMethods.captcha present) — Cloudflare Turnstile server-side verification.",
+      "NEW endpoint GET /api/v1/security/signup/email-available?email= \u2192 { available: boolean } (debounced inline check; must fail-open on error so it never blocks submit; must NOT be an enumeration oracle beyond signup UX \u2014 rate-limit + captcha-gate it).",
+      "NEW field SignupRequest.turnstileToken (string, required when AuthMethods.captcha present) \u2014 Cloudflare Turnstile server-side verification.",
       "NEW AuthMethods.captcha { provider: 'turnstile', siteKey } and AuthMethods.passwordPolicy { minLength: 12, requireUpper, requireLower, requireDigit, requireSymbol } so the strength meter reflects the authoritative policy rather than a hard-coded client copy."
     ]
   },
@@ -43,33 +43,33 @@
         "id": "signup",
         "orchestrator": "SignUpFlow",
         "route": "/signup",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
       },
       {
         "id": "signin",
         "orchestrator": "SignInFlow",
         "route": "/login",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
       },
       {
         "id": "verify-email",
         "orchestrator": "EmailVerificationFlow",
         "route": "/verify/email",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
       },
       {
         "id": "password-reset",
         "orchestrator": "PasswordResetFlow",
         "route": "/reset",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
       }
     ],
     "components": [
@@ -83,10 +83,10 @@
       "SocialButton"
     ],
     "designSystemPrimitives": [
-      "InlineValidatedInput (Input with a right-adornment slot + valid/invalid ring) — NET-NEW in @fuzefront/design-system",
-      "StrengthMeter (segmented bar + label tokens) — NET-NEW",
-      "TurnstileContainer (managed-widget shell with loading/verified/failed slots) — NET-NEW",
-      "Alert info/success variants — add if not already present"
+      "InlineValidatedInput (Input with a right-adornment slot + valid/invalid ring) \u2014 NET-NEW in @fuzefront/design-system",
+      "StrengthMeter (segmented bar + label tokens) \u2014 NET-NEW",
+      "TurnstileContainer (managed-widget shell with loading/verified/failed slots) \u2014 NET-NEW",
+      "Alert info/success variants \u2014 add if not already present"
     ],
     "packages": [
       "@fuzefront/auth-experience-ui"
@@ -123,7 +123,7 @@
       "label": "Create account",
       "route": "/signup",
       "flow": "signup",
-      "summary": "Signup form: first/last name, email with inline availability ✓, password + strength meter (12+ policy) with per-rule checklist, confirm-password with live match, Cloudflare Turnstile (verified), Google, terms.",
+      "summary": "Signup form: first/last name, email with inline availability \u2713, password + strength meter (12+ policy) with per-rule checklist, confirm-password with live match, Cloudflare Turnstile (verified), Google, terms.",
       "acceptanceNotes": "Availability adornment reflects data-avail; strength meter data-strength + per-rule data-met from the authoritative passwordPolicy; confirm shows match state; Turnstile token required before submit is enabled; Google gated on AuthMethods.social; no vendor identity-provider name in the DOM.",
       "testHooks": [
         "[data-frame='01-signup']",
@@ -163,7 +163,7 @@
       "route": "/signup/verify",
       "flow": "verify-email",
       "summary": "Post-signup 'we sent a link to <email>' screen with a resend button on a countdown cooldown and an edit-address path.",
-      "acceptanceNotes": "Renders the target email (data-value='email'); resend disabled during cooldown with a live counter, then re-enables (POST /verify/email/start → 202); explains the verify-to-continue gate.",
+      "acceptanceNotes": "Renders the target email (data-value='email'); resend disabled during cooldown with a live counter, then re-enables (POST /verify/email/start \u2192 202); explains the verify-to-continue gate.",
       "testHooks": [
         "[data-frame='03-check-inbox']",
         "[data-value='email']",
@@ -177,8 +177,8 @@
       "label": "Verify link landing",
       "route": "/verify/email",
       "flow": "verify-email",
-      "summary": "The verify-link landing state machine: verifying (spinner) → verified (continue) or expired/invalid (send a new link).",
-      "acceptanceNotes": "POST /verify/email/confirm with the link token; 200 VerificationStatus → verified (idempotent for already-verified); EXPIRED/INVALID_CODE → expired with resend; verifying is the transient default.",
+      "summary": "The verify-link landing state machine: verifying (spinner) \u2192 verified (continue) or expired/invalid (send a new link).",
+      "acceptanceNotes": "POST /verify/email/confirm with the link token; 200 VerificationStatus \u2192 verified (idempotent for already-verified); EXPIRED/INVALID_CODE \u2192 expired with resend; verifying is the transient default.",
       "testHooks": [
         "[data-frame='04-verify-landing']",
         "[data-state='verifying']",
@@ -194,7 +194,7 @@
       "label": "Password reset",
       "route": "/reset",
       "flow": "password-reset",
-      "summary": "Reset request (unconditional 202, identical copy whether or not the account exists) → sent → confirm new password (policy + strength + match) → expired-token.",
+      "summary": "Reset request (unconditional 202, identical copy whether or not the account exists) \u2192 sent \u2192 confirm new password (policy + strength + match) \u2192 expired-token.",
       "acceptanceNotes": "reset-request always 202 with the same 'check your email' copy (no enumeration); confirm enforces the 12+ policy and match; submit disabled while mismatched; invalid/expired token routes to request-a-new-link.",
       "testHooks": [
         "[data-frame='05-password-reset']",
