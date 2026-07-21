@@ -45,6 +45,44 @@ entries:
   # Link on verified email prevents duplicate accounts when the same address
   # is used across password + Google sign-in.
 
+  # ── Social authentication flow ───────────────────────────────────────────────
+  # FuzeFront's own source-authentication flow. Defined HERE, before the source
+  # entry, so the !Find below resolves in the same blueprint pass.
+  #
+  # WHY THIS EXISTS: the stock `default-source-authentication` is
+  # `require_unauthenticated`. The moment a returning user already held an
+  # Authentik session, the Google callback re-entered the source flow, the
+  # requirement failed, and Authentik raised FlowNonApplicableException —
+  # rendering its OWN "Permission denied" page. That both broke Google sign-in
+  # and leaked the IdP UI to the browser, violating the provider-agnostic
+  # boundary (the browser must only ever see FuzeFront + accounts.google.com).
+  #
+  # `authentication: none` makes the flow apply regardless of session state, so
+  # the callback proceeds to the login stage and lands on FuzeFront instead.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-source-authentication
+    attrs:
+      name: "FuzeFront Social Authentication"
+      slug: fuzefront-source-authentication
+      title: "Signing you in…"
+      designation: authentication
+      authentication: none
+      layout: stacked
+
+  # Single stage: reuse Authentik's EXISTING built-in source-login stage rather
+  # than creating a duplicate UserLoginStage.
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, fuzefront-source-authentication]]
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, default-source-authentication-login]]
+    attrs:
+      order: 0
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
   # ── Google OAuth source ───────────────────────────────────────────────────────
   - model: authentik_sources_oauth.oauthsource
     state: present
@@ -62,9 +100,17 @@ entries:
       # Link on verified email — merges accounts instead of creating duplicates
       user_matching_mode: email_link
       user_path_template: "goauthentik.io/sources/%(slug)s"
-      # Show a "Sign in with Google" button on the login page
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
-      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+      # Show a "Sign in with Google" button on the login page.
+      # Points at FuzeFront's OWN source-authentication flow (defined above) —
+      # the stock `default-source-authentication` is require_unauthenticated and
+      # threw FlowNonApplicableException ("Permission denied") for any user who
+      # already had an Authentik session.
+      authentication_flow: !Find [authentik_flows.flow, [slug, fuzefront-source-authentication]]
+      # Points at FuzeFront's OWN non-interactive social enrollment flow (see
+      # flow-enrollment.yaml). The stock `default-source-enrollment` renders an
+      # Authentik-branded "select a username" prompt, which leaks the IdP to the
+      # browser and blocked first-time Google sign-up.
+      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-source-enrollment]]
 
   # ── Login surface wiring ─────────────────────────────────────────────────────
   # Creating flows/sources does NOT surface them on the login page — the

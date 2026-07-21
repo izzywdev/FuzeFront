@@ -190,3 +190,87 @@ entries:
       order: 30
       evaluate_on_plan: true
       re_evaluate_policies: false
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # SOCIAL (Google) ENROLLMENT — separate, non-interactive flow
+  # ══════════════════════════════════════════════════════════════════════════════
+  # A user signing in with Google for the first time must NEVER see an
+  # Authentik-branded page (provider-agnostic boundary: the browser only ever
+  # sees app.fuzefront.com + accounts.google.com). Authentik's stock
+  # `default-source-enrollment` renders a "select a username" prompt, which both
+  # leaks the IdP and blocked account creation.
+  #
+  # This flow therefore has NO prompt stage — it writes the user and logs them
+  # in. Google supplies email/name but NOT username, so user-write would fail
+  # with "Aborting write to empty username"; the expression policy below derives
+  # username from email into prompt_data BEFORE the user-write stage runs.
+  #
+  # The write/login stages are the SAME objects used by `fuzefront-enrollment`
+  # (the interactive password sign-up flow) — reused, not duplicated. That flow
+  # is separate and keeps its prompt stage; do not merge the two.
+
+  # ── Derive username from email (Google gives no username) ────────────────────
+  - model: authentik_policies_expression.expressionpolicy
+    state: present
+    identifiers:
+      name: fuzefront-source-username-from-email
+    attrs:
+      name: fuzefront-source-username-from-email
+      execution_logging: false
+      expression: |
+        prompt_data = request.context.setdefault('prompt_data', {})
+        if not prompt_data.get('username'):
+            email = prompt_data.get('email') or ''
+            prompt_data['username'] = email
+        return bool(prompt_data.get('username'))
+
+  # ── Social enrollment flow ────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzefront-source-enrollment
+    attrs:
+      name: "FuzeFront Social Enrollment"
+      slug: fuzefront-source-enrollment
+      title: "Signing you in…"
+      designation: enrollment
+      authentication: none
+      layout: stacked
+
+  # ── Flow-stage bindings (no prompt stage — this flow is non-interactive) ──────
+  # `id:` is required so the PolicyBinding below can target this stage-binding
+  # via !KeyOf. For a PolicyBindingModel target, !KeyOf resolves to the entry's
+  # pbm_uuid (not its pk), which is exactly what PolicyBinding.target expects.
+  - id: ff-source-enroll-write-binding
+    model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, fuzefront-source-enrollment]]
+      stage: !Find [authentik_stages_user_write.userwritestage, [name, fuzefront-enroll-write]]
+    attrs:
+      order: 10
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
+  - model: authentik_flows.flowstagebinding
+    state: present
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, fuzefront-source-enrollment]]
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, fuzefront-enroll-login]]
+    attrs:
+      order: 20
+      evaluate_on_plan: true
+      re_evaluate_policies: false
+
+  # ── Bind the username-derivation policy to the user-write stage binding ───────
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !KeyOf ff-source-enroll-write-binding
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzefront-source-username-from-email]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
