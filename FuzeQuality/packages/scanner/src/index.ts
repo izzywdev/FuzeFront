@@ -7,6 +7,7 @@ import type {
   ApiOperation,
   FrontendSurface,
   Repository,
+  ScanDiagnostic,
   ScanResult,
   TestCase,
 } from '@fuzequality/contracts'
@@ -18,6 +19,8 @@ import {
 
 const digest = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
+
+const fingerprint = (content: string) => createHash('sha256').update(content).digest('hex')
 
 const normalize = (path: string) => path.split(sep).join('/')
 
@@ -203,11 +206,22 @@ async function scanFrontend(
 ) {
   const packageFiles = await fg('**/package.json', { cwd: root, ignore })
   const surfaces: FrontendSurface[] = []
+  const fingerprints: string[] = []
+  const diagnostics: ScanDiagnostic[] = []
   for (const packageFile of packageFiles) {
     let packageJson: Record<string, unknown>
     try {
-      packageJson = JSON.parse(await readText(root, packageFile))
-    } catch {
+      const packageContent = await readText(root, packageFile)
+      fingerprints.push(`${normalize(packageFile)}:${fingerprint(packageContent)}`)
+      packageJson = JSON.parse(packageContent)
+    } catch (error) {
+      diagnostics.push({
+        sourcePath: normalize(packageFile),
+        category: 'frontend',
+        severity: 'error',
+        code: 'invalid-package-manifest',
+        message: error instanceof Error ? error.message : String(error),
+      })
       continue
     }
     const packageRoot = normalize(packageFile.replace(/\/?package\.json$/, ''))
@@ -217,7 +231,20 @@ async function scanFrontend(
       ignore,
     })
     for (const file of sourceFiles) {
-      const source = await readText(root, file)
+      let source: string
+      try {
+        source = await readText(root, file)
+        fingerprints.push(`${normalize(file)}:${fingerprint(source)}`)
+      } catch (error) {
+        diagnostics.push({
+          sourcePath: normalize(file),
+          category: 'frontend',
+          severity: 'error',
+          code: 'unreadable-source',
+          message: error instanceof Error ? error.message : String(error),
+        })
+        continue
+      }
       const routeMatches = [
         ...source.matchAll(/(?:path|to)\s*[=:]\s*['"]([^'"]+)['"]/g),
       ]
@@ -259,7 +286,11 @@ async function scanFrontend(
       }
     }
   }
-  return [...new Map(surfaces.map(surface => [surface.id, surface])).values()]
+  return {
+    surfaces: [...new Map(surfaces.map(surface => [surface.id, surface])).values()],
+    fingerprints,
+    diagnostics,
+  }
 }
 
 export async function scanRepository(repository: Repository, rootPath: string): Promise<ScanResult> {
@@ -280,24 +311,60 @@ export async function scanRepository(repository: Repository, rootPath: string): 
   )
 
   const operations: ApiOperation[] = []
+  const diagnostics: ScanDiagnostic[] = []
+  const contentFingerprints: string[] = []
   for (const file of openApiFiles) {
     try {
-      operations.push(...parseOpenApi(repository, file, await readText(root, file)))
-    } catch {
-      // Invalid specifications become visible through a scan-run diagnostic in the API.
+      const content = await readText(root, file)
+      contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
+      operations.push(...parseOpenApi(repository, file, content))
+    } catch (error) {
+      diagnostics.push({
+        sourcePath: normalize(file),
+        category: 'openapi',
+        severity: 'error',
+        code: 'invalid-openapi-document',
+        message: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
   const tests: TestCase[] = []
   for (const file of testFiles) {
     try {
-      tests.push(...extractTests(repository, normalize(file), await readText(root, file)))
-    } catch {
-      // A single unreadable test file must not abort repository inventory.
+      const content = await readText(root, file)
+      contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
+      tests.push(...extractTests(repository, normalize(file), content))
+    } catch (error) {
+      diagnostics.push({
+        sourcePath: normalize(file),
+        category: 'test',
+        severity: 'error',
+        code: 'unreadable-test-source',
+        message: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
-  const surfaces = await scanFrontend(root, repository, ignore, storyFiles)
+  for (const file of storyFiles) {
+    try {
+      const content = await readText(root, file)
+      contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
+    } catch (error) {
+      diagnostics.push({
+        sourcePath: normalize(file),
+        category: 'storybook',
+        severity: 'error',
+        code: 'unreadable-story',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  const frontend = await scanFrontend(root, repository, ignore, storyFiles)
+  const surfaces = frontend.surfaces
+  contentFingerprints.push(...frontend.fingerprints)
+  diagnostics.push(...frontend.diagnostics)
   const expectations = [
     ...operations.flatMap(operation => buildApiExpectations(operation, tests)),
     ...surfaces.flatMap(surface => buildFrontendExpectations(surface, tests)),
@@ -305,9 +372,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
   const findings = buildFindings(repository.id, operations, surfaces, expectations)
   const revision = digest(
     repository.name,
-    ...openApiFiles.sort(),
-    ...testFiles.sort(),
-    ...[...storyFiles].sort()
+    ...contentFingerprints.sort()
   )
 
   return {
@@ -318,6 +383,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
     tests,
     expectations,
     findings,
+    diagnostics,
     scannedAt: new Date().toISOString(),
   }
 }

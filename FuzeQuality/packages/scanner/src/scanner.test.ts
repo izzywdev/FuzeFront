@@ -98,4 +98,29 @@ paths:
     expect(isCredentialFreeRepositoryUrl('https://github.com/fuze/sample')).toBe(true)
     expect(isCredentialFreeRepositoryUrl('https://token@github.com/fuze/sample')).toBe(false)
   })
+
+  it('changes the revision when inventory content changes without renaming files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-revision-'))
+    const spec = join(root, 'openapi.yaml')
+    await writeFile(spec, `openapi: 3.0.0\ninfo: { title: Sample, version: 1.0.0 }\npaths: {}`)
+    const first = await scanRepository(repository, root)
+    await writeFile(spec, `openapi: 3.0.0\ninfo: { title: Sample, version: 1.0.1 }\npaths: {}`)
+    const second = await scanRepository(repository, root)
+    expect(second.revision).not.toBe(first.revision)
+  })
+
+  it('reports malformed OpenAPI documents without aborting the repository scan', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-diagnostic-'))
+    await writeFile(join(root, 'openapi.yaml'), 'openapi: [not valid')
+    const result = await scanRepository(repository, root)
+    expect(result.operations).toHaveLength(0)
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        sourcePath: 'openapi.yaml',
+        category: 'openapi',
+        severity: 'error',
+        code: 'invalid-openapi-document',
+      }),
+    ])
+  })
 })
