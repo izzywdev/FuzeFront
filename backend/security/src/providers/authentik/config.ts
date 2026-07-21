@@ -36,6 +36,25 @@ export function socialCallbackPath(): string {
   return '/api/v1/security/social/callback'
 }
 
+/**
+ * Same-origin Google broker-callback path. Google redirects the browser HERE
+ * (not to Authentik's `/source/oauth/callback/google/`) after consent, so the
+ * security service can exchange the code with Google directly. This exact URL
+ * MUST be registered in the Google Cloud console's Authorized redirect URIs.
+ */
+export function googleCallbackPath(): string {
+  return '/api/v1/security/social/google/callback'
+}
+
+/**
+ * Whether the SERVER-BROKERED Google path is active (default ON). Set
+ * `SECURITY_GOOGLE_BROKERED=false` to fall back to the legacy Authentik
+ * `/source/oauth/*` source-redirect path while the brokered path is being proven.
+ */
+export function googleBrokeredEnabled(): boolean {
+  return process.env.SECURITY_GOOGLE_BROKERED !== 'false'
+}
+
 /** Session token lifetime (ms). */
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 

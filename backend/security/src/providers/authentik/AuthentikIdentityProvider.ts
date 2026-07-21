@@ -59,11 +59,19 @@ import type {
 } from '../IdentityProvider'
 import {
   findUserPk,
+  findOrCreateUserPk,
+  ensureOAuthConnection,
   listOAuthConnections,
   deleteOAuthConnection,
   setUserPassword,
   PasswordPolicyError,
 } from './accountApi'
+import {
+  googleOidcService as defaultGoogleClient,
+  type GoogleIdentity,
+} from '../../services/googleOidc'
+import { syncUserToDatabase as defaultSyncUser } from '../../services/oidc'
+import { googleBrokeredEnabled } from './config'
 import { parseUserAgent } from './userAgent'
 import {
   HttpNotificationClient,
@@ -132,6 +140,13 @@ interface SocialState {
   codeVerifier: string
   redirectTo: string
   expiresAt: number
+  /**
+   * How this handshake was launched — `brokered` exchanges the code with Google
+   * DIRECTLY (browser never sees Authentik); `source` is the legacy Authentik
+   * `/source/oauth/*` fallback, redeemed via the IdP OIDC client. TODO(redis):
+   * externalize for multi-replica — see [[Redis externalization]].
+   */
+  mode: 'brokered' | 'source'
 }
 interface MfaChallenge {
   userId: string
@@ -147,6 +162,8 @@ interface SocialLinkState {
   provider: string
   redirectTo: string
   expiresAt: number
+  /** Same brokered-vs-legacy-source semantics as SocialState.mode. */
+  mode: 'brokered' | 'source'
 }
 
 /**
@@ -207,6 +224,17 @@ export interface AuthentikProviderDeps {
   provisionM2M?: (name: string, scopes: string[]) => Promise<M2MClient>
   issueM2M?: (input: M2MTokenInput) => Promise<M2MToken>
   introspectM2M?: (token: string) => Promise<TokenIntrospection>
+  /** Server-brokered Google OAuth2/OIDC client (defaults to googleOidcService). */
+  googleClient: {
+    isInitialized(): boolean
+    initialize(): Promise<void>
+    generateAuthUrl(state: string): { url: string; codeVerifier: string }
+    handleCallback(code: string, state: string, codeVerifier: string): Promise<GoogleIdentity>
+  }
+  /** Projects validated social claims into the local `users` row (+ event). */
+  syncUser: (userinfo: any) => Promise<BrokeredUser>
+  /** Provisions/links the social account IN the identity store (find-or-create + connection). */
+  provisionSocialUser: (identity: GoogleIdentity, provider: string) => Promise<void>
 }
 
 function sha256(v: string): string {
@@ -232,6 +260,9 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private provisionM2MFn?: (name: string, scopes: string[]) => Promise<M2MClient>
   private issueM2MFn?: (input: M2MTokenInput) => Promise<M2MToken>
   private introspectM2MFn?: (token: string) => Promise<TokenIntrospection>
+  private googleClient: AuthentikProviderDeps['googleClient']
+  private syncUserFn: (userinfo: any) => Promise<BrokeredUser>
+  private provisionSocialUserFn: (identity: GoogleIdentity, provider: string) => Promise<void>
 
   private socialStates = new Map<string, SocialState>()
   private socialLinkStates = new Map<string, SocialLinkState>()
@@ -263,6 +294,21 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     this.provisionM2MFn = deps.provisionM2M
     this.issueM2MFn = deps.issueM2M
     this.introspectM2MFn = deps.introspectM2M
+    this.googleClient = deps.googleClient ?? defaultGoogleClient
+    this.syncUserFn =
+      deps.syncUser ??
+      (async (userinfo) => {
+        const user = await defaultSyncUser(userinfo)
+        return { ...user, roles: user.roles ?? [] } as BrokeredUser
+      })
+    this.provisionSocialUserFn =
+      deps.provisionSocialUser ??
+      (async (identity, provider) => {
+        // Provision/link IN the identity store so the IdP stays system-of-record
+        // and password+Google de-dupe to ONE account by email.
+        const pk = await findOrCreateUserPk(identity.email, identity.firstName, identity.lastName)
+        await ensureOAuthConnection(pk, provider, identity.sub)
+      })
   }
 
   // ── Session minting ───────────────────────────────────────────────────────
@@ -348,6 +394,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Social login (server-brokered; browser never sees an internal host) ────
+  //
+  // Dispatch: the DEFAULT path (`googleBrokeredEnabled()`) sends the browser
+  // STRAIGHT to accounts.google.com and exchanges the code with Google directly,
+  // so no Authentik `/if/*` UI is ever rendered. The legacy Authentik
+  // `/source/oauth/*` source-redirect path is kept as a fallback (flag off) until
+  // the brokered path is proven.
   async startSocialLogin(provider: string, redirectTo = '/'): Promise<SocialLoginStart> {
     if (provider !== 'google') {
       throw new InvalidInputError(`unsupported social provider: ${provider}`)
@@ -356,6 +408,38 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (/^https?:\/\//i.test(redirectTo) || redirectTo.startsWith('//')) {
       throw new InvalidInputError('redirectTo must be a same-origin path')
     }
+    if (googleBrokeredEnabled()) {
+      return this.startGoogleBrokered(redirectTo)
+    }
+    return this.startSocialLoginViaSource(provider, redirectTo)
+  }
+
+  /**
+   * SERVER-BROKERED start: 302 the browser DIRECTLY to accounts.google.com with
+   * FuzeFront's Google client_id, a server-generated state + PKCE code_verifier,
+   * and `redirect_uri = <app>/api/v1/security/social/google/callback`. The
+   * verifier is held in the process-local Map (single replica) —
+   * TODO(redis): externalize for multi-replica — see [[Redis externalization]].
+   */
+  private async startGoogleBrokered(redirectTo: string): Promise<SocialLoginStart> {
+    if (!this.googleClient.isInitialized()) {
+      await this.googleClient.initialize()
+    }
+    const state = crypto.randomBytes(24).toString('hex')
+    const { url, codeVerifier } = this.googleClient.generateAuthUrl(state)
+    this.socialStates.set(state, {
+      codeVerifier,
+      redirectTo,
+      expiresAt: this.now() + 10 * 60_000,
+      mode: 'brokered',
+    })
+    // `url` is the absolute accounts.google.com authorize URL — the ONLY external
+    // host the browser is allowed to see besides app.fuzefront.com.
+    return { redirectUrl: url, state, codeVerifier }
+  }
+
+  /** Legacy Authentik source-redirect start (fallback; browser transits `/if/*`). */
+  private async startSocialLoginViaSource(provider: string, redirectTo = '/'): Promise<SocialLoginStart> {
     if (!this.oidc.isInitialized()) {
       await this.oidc.initialize()
     }
@@ -390,6 +474,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       codeVerifier,
       redirectTo,
       expiresAt: this.now() + 10 * 60_000,
+      mode: 'source',
     })
     // codeVerifier is handed back so the route can persist it in an HttpOnly
     // cookie (`oidc_cv`) for the replica-agnostic OIDC callback.
@@ -417,11 +502,30 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
     this.socialStates.delete(input.state)
 
-    const user = (await this.oidc.handleCallback(
-      input.code,
-      input.state,
-      st.codeVerifier
-    )) as BrokeredUser
+    let user: BrokeredUser
+    if (st.mode === 'brokered') {
+      // Exchange the code with Google DIRECTLY (server-to-server), validate the
+      // id_token, provision/link in the identity store, then sync the local
+      // projection through the SAME path the OIDC callback uses.
+      const identity = await this.googleClient.handleCallback(
+        input.code,
+        input.state,
+        st.codeVerifier
+      )
+      await this.provisionSocialUserFn(identity, 'google')
+      user = await this.syncUserFn({
+        email: identity.email,
+        email_verified: identity.emailVerified,
+        given_name: identity.firstName,
+        family_name: identity.lastName,
+      })
+    } else {
+      user = (await this.oidc.handleCallback(
+        input.code,
+        input.state,
+        st.codeVerifier
+      )) as BrokeredUser
+    }
 
     // Mint the session now and hand back a single-use opaque code (never a token
     // in the URL). Social sign-in does not re-gate MFA at the browser hop.
@@ -1090,19 +1194,36 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       throw new ConflictError(`${provider} is already linked to this account`)
     }
 
-    if (!this.oidc.isInitialized()) {
-      await this.oidc.initialize()
-    }
     const state = crypto.randomBytes(24).toString('hex')
-    const { url, codeVerifier } = this.oidc.generateAuthUrl(state)
-    const authorize = new URL(url)
-    const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+    let redirectUrl: string
+    let codeVerifier: string
+    let mode: 'brokered' | 'source'
 
-    // Same same-host boundary rewrite as sign-in: the browser only ever transits
-    // the app host and the social provider's own consent host.
-    const redirectUrl =
-      `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
-      `?next=${encodeURIComponent(authorizePath)}`
+    if (googleBrokeredEnabled()) {
+      // Server-brokered LINK: same as sign-in, the browser only transits the app
+      // host and accounts.google.com — never Authentik's `/if/*` UI.
+      if (!this.googleClient.isInitialized()) {
+        await this.googleClient.initialize()
+      }
+      const gen = this.googleClient.generateAuthUrl(state)
+      redirectUrl = gen.url
+      codeVerifier = gen.codeVerifier
+      mode = 'brokered'
+    } else {
+      if (!this.oidc.isInitialized()) {
+        await this.oidc.initialize()
+      }
+      const { url, codeVerifier: cv } = this.oidc.generateAuthUrl(state)
+      const authorize = new URL(url)
+      const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+      // Same same-host boundary rewrite as sign-in: the browser only ever transits
+      // the app host and the social provider's own consent host.
+      redirectUrl =
+        `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
+        `?next=${encodeURIComponent(authorizePath)}`
+      codeVerifier = cv
+      mode = 'source'
+    }
 
     this.socialLinkStates.set(state, {
       codeVerifier,
@@ -1111,6 +1232,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       provider,
       redirectTo: '/account/security',
       expiresAt: this.now() + 10 * 60_000,
+      mode,
     })
     return { redirectUrl, state, codeVerifier }
   }
@@ -1138,17 +1260,33 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (link.expiresAt < this.now()) {
       throw new UnauthorizedError('invalid or expired state')
     }
-    const identity = (await this.oidc.handleCallback(
-      input.code,
-      input.state,
-      link.codeVerifier
-    )) as BrokeredUser
 
-    if (
-      !identity?.email ||
-      identity.email.toLowerCase() !== link.email.toLowerCase()
-    ) {
-      throw new UnauthorizedError('social identity does not match the signed-in account')
+    let identityEmail: string | undefined
+    if (link.mode === 'brokered') {
+      // Exchange with Google directly, then WE attach the connection (the browser
+      // no longer transited Authentik's source flow, so the store did not).
+      const identity = await this.googleClient.handleCallback(
+        input.code,
+        input.state,
+        link.codeVerifier
+      )
+      identityEmail = identity.email
+      // Safety: the returned identity must be the SAME account that started the
+      // handshake — otherwise binding it would be an account-takeover primitive.
+      if (!identityEmail || identityEmail.toLowerCase() !== link.email.toLowerCase()) {
+        throw new UnauthorizedError('social identity does not match the signed-in account')
+      }
+      await this.provisionSocialUserFn(identity, link.provider)
+    } else {
+      const identity = (await this.oidc.handleCallback(
+        input.code,
+        input.state,
+        link.codeVerifier
+      )) as BrokeredUser
+      identityEmail = identity?.email
+      if (!identityEmail || identityEmail.toLowerCase() !== link.email.toLowerCase()) {
+        throw new UnauthorizedError('social identity does not match the signed-in account')
+      }
     }
 
     // Confirm the store really did attach the connection — never report a link
