@@ -123,7 +123,7 @@ export async function findOrCreateUserPk(
     }),
   })
   if (res.ok) {
-    const created = await res.json()
+    const created = (await res.json()) as { pk?: number }
     if (typeof created?.pk === 'number') return created.pk
   }
   // A 400 "username/email already exists" means a racing create won — re-read.
