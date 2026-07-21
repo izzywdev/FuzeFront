@@ -16,6 +16,7 @@ function matchingEvidence(subject: ApiOperation | FrontendSurface, tests: TestCa
       ? [subject.operationId, subject.path, `${subject.method} ${subject.path}`]
       : [subject.name, subject.routePath, subject.sourcePath]
   return tests.filter(test =>
+    test.assertionCount > 0 &&
     tokens
       .filter((token): token is string => Boolean(token))
       .some(token =>
@@ -24,6 +25,33 @@ function matchingEvidence(subject: ApiOperation | FrontendSurface, tests: TestCa
           .includes(token.toLowerCase())
       )
   )
+}
+
+function scenarioEvidence(
+  tests: TestCase[],
+  keywords: string[],
+  options: { all?: boolean } = {}
+) {
+  const normalized = keywords.map(keyword => keyword.toLowerCase())
+  return tests
+    .filter(test => {
+      const text = `${test.title} ${test.targets.join(' ')}`.toLowerCase()
+      return options.all
+        ? normalized.every(keyword => text.includes(keyword))
+        : normalized.some(keyword => text.includes(keyword))
+    })
+    .map(test => test.id)
+}
+
+function qualifiedScenarioEvidence(tests: TestCase[], qualifier: string, keywords: string[]) {
+  const normalizedQualifier = qualifier.toLowerCase()
+  const normalizedKeywords = keywords.filter(Boolean).map(keyword => keyword.toLowerCase())
+  return tests
+    .filter(test => {
+      const text = `${test.title} ${test.targets.join(' ')}`.toLowerCase()
+      return text.includes(normalizedQualifier) && normalizedKeywords.some(keyword => text.includes(keyword))
+    })
+    .map(test => test.id)
 }
 
 function expectation(
@@ -49,7 +77,8 @@ function expectation(
 }
 
 export function buildApiExpectations(operation: ApiOperation, tests: TestCase[]) {
-  const evidence = matchingEvidence(operation, tests).map(test => test.id)
+  const matchedTests = matchingEvidence(operation, tests)
+  const evidence = matchedTests.map(test => test.id)
   const result = [
     expectation(
       'api-operation',
@@ -69,7 +98,7 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
         'authentication-missing',
         'Missing authentication is rejected',
         'api.security.authentication',
-        evidence
+        scenarioEvidence(matchedTests, ['unauthenticated', 'missing auth', 'without auth', '401'])
       ),
       expectation(
         'api-operation',
@@ -77,7 +106,7 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
         'authorization',
         'Insufficient privileges are rejected',
         'api.security.authorization',
-        evidence,
+        scenarioEvidence(matchedTests, ['unauthorized', 'forbidden', 'insufficient privilege', '403']),
         'recommended'
       )
     )
@@ -91,9 +120,35 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
         `missing-${parameter.location}-${parameter.name}`,
         `Required ${parameter.location} parameter “${parameter.name}” is validated`,
         'api.parameter.required',
-        evidence
+        scenarioEvidence(matchedTests, [parameter.name, 'missing'], { all: true })
       )
     )
+
+
+    const schema = parameter.schema ?? {}
+    const boundaryRules: Array<[string, string, string[]]> = [
+      ['minimum', 'minimum boundary', ['minimum', 'below minimum', 'too small']],
+      ['maximum', 'maximum boundary', ['maximum', 'above maximum', 'too large']],
+      ['minLength', 'minimum length boundary', ['minimum length', 'too short']],
+      ['maxLength', 'maximum length boundary', ['maximum length', 'too long']],
+      ['pattern', 'pattern constraint', ['pattern', 'invalid format']],
+      ['enum', 'allowed-value constraint', ['enum', 'unsupported value', 'invalid value']],
+      ['format', `${String(schema.format ?? 'declared')} format`, ['format', String(schema.format ?? '')]],
+    ]
+    for (const [keyword, label, evidenceKeywords] of boundaryRules) {
+      if (!(keyword in schema)) continue
+      result.push(
+        expectation(
+          'api-operation',
+          operation.id,
+          `parameter-${parameter.location}-${parameter.name}-${keyword.toLowerCase()}`,
+          `${parameter.name} enforces its ${label}`,
+          `api.parameter.${keyword}`,
+          qualifiedScenarioEvidence(matchedTests, parameter.name, evidenceKeywords),
+          'recommended'
+        )
+      )
+    }
   }
 
   const hasIdentifier = /\{[^}]*id[^}]*\}/i.test(operation.path)
@@ -105,7 +160,7 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
         'resource-not-found',
         'Unknown resource identifier returns a controlled response',
         'api.resource.not-found',
-        evidence,
+        scenarioEvidence(matchedTests, ['not found', 'unknown id', 'missing resource', '404']),
         'recommended'
       )
     )
@@ -119,8 +174,24 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
         'invalid-content-type',
         'Unsupported request content type is rejected',
         'api.content-type.invalid',
-        evidence,
+        scenarioEvidence(matchedTests, ['content type', '415', 'unsupported media']),
         'recommended'
+      )
+    )
+  }
+
+
+  for (const response of operation.responses) {
+    const successful = /^2\d\d$/.test(response)
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        `response-${response}`,
+        `Declared ${response} response is asserted`,
+        successful ? 'api.response.success' : 'api.response.error',
+        scenarioEvidence(matchedTests, [response, `status ${response}`]),
+        successful ? 'required' : 'recommended'
       )
     )
   }
