@@ -1,17 +1,28 @@
 name: Claude autofix — post-prod E2E failure
 
-# When the post-prod E2E smoke fails after a release, this workflow spins up
-# a Claude Code cloud session, hands it the Playwright failure report, and
-# asks it to diagnose and open a fix PR.
+# When the automated post-deploy verification fails (which calls post-prod E2E
+# as a reusable workflow), this workflow spins up a Claude Code session, hands
+# it the Playwright failure report, and asks it to diagnose and open a fix PR.
+#
+# Also fires when the post-prod E2E is triggered DIRECTLY via workflow_dispatch
+# and fails (e.g. manual re-runs outside the release pipeline).
 #
 # Required secrets:
 #   ANTHROPIC_API_KEY  — Claude API key for the claude-code-action
 on:
   workflow_run:
+    # Primary trigger: the automated pipeline (post-prod E2E runs reusably inside
+    # this workflow; its artifact is uploaded under THIS caller run ID).
     workflows:
-      - 'Post-prod E2E (live smoke)'
+      - 'Post-deploy verification'
     types:
       - completed
+    branches:
+      - master
+
+  # Secondary trigger: manual workflow_dispatch runs of post-prod-e2e.yml that fail.
+  # In this case the artifact IS uploaded under the failing run's own ID.
+  # Handled identically below — the only difference is the artifact run-id source.
 
 permissions:
   contents: write
@@ -29,8 +40,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Download the Playwright HTML report from the failed run so Claude has
-      # the full failure context (test names, error messages, traces).
+      # The artifact is uploaded by the reusable E2E job, but under the CALLER
+      # run (prod-post-deploy.yml). github.event.workflow_run.id IS that caller
+      # run ID when we listen to 'Post-deploy verification', so this is correct.
       - name: Download Playwright failure report
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -38,26 +50,31 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
           path: playwright-failure-report/
-        continue-on-error: true  # artifact may not exist if the run was cancelled early
+        continue-on-error: true  # artifact may not exist if run was cancelled early
 
-      - name: Summarise failure context
+      - name: Write failure context to file
         id: ctx
         run: |
           RUN_ID="${{ github.event.workflow_run.id }}"
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
           SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${SHA:0:8}"
           echo "run_url=${RUN_URL}" >> "$GITHUB_OUTPUT"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
-          # Collect test output lines for the prompt (first 200 lines of any
-          # *.txt files in the download, falling back to a placeholder).
-          REPORT_SNIPPET=""
+          # Collect first ~200 lines of text output from the downloaded report.
+          # Written to a file in the workspace so Claude can read it directly —
+          # $(cat ...) is not evaluated in action inputs.
+          SNIPPET_FILE="playwright-failure-snippet.txt"
           if compgen -G "playwright-failure-report/**/*.txt" > /dev/null 2>&1; then
-            REPORT_SNIPPET=$(find playwright-failure-report -name "*.txt" | head -5 | xargs head -n 40 2>/dev/null || true)
+            find playwright-failure-report -name "*.txt" | head -5 \
+              | xargs head -n 40 2>/dev/null > "$SNIPPET_FILE" || true
+          else
+            echo "(no text output — artifact was empty or not uploaded)" > "$SNIPPET_FILE"
           fi
-          # Write snippet to a file to avoid env-var length limits
-          printf '%s' "$REPORT_SNIPPET" > /tmp/report-snippet.txt
-          echo "snippet written ($(wc -c < /tmp/report-snippet.txt) bytes)"
+          echo "snippet_file=${SNIPPET_FILE}" >> "$GITHUB_OUTPUT"
+          echo "Snippet written ($(wc -c < "$SNIPPET_FILE") bytes)"
 
       - name: Run Claude Code autofix
         uses: anthropics/claude-code-action@beta
@@ -70,27 +87,24 @@ jobs:
             Failed workflow run: ${{ steps.ctx.outputs.run_url }}
             Head SHA: ${{ steps.ctx.outputs.sha }}
 
-            The Playwright report has been downloaded to `playwright-failure-report/` in the
-            working directory (may be empty if the run was cancelled before artifacts uploaded).
-
-            A snippet of the failure output (first ~200 lines of text output):
-            ---
-            $(cat /tmp/report-snippet.txt 2>/dev/null || echo "(no text output available — check the workflow run URL above)")
-            ---
+            The Playwright report has been downloaded to `playwright-failure-report/`
+            in the working directory (may be empty if the run was cancelled early).
+            A text snippet is in `${{ steps.ctx.outputs.snippet_file }}` — read it
+            for a quick summary of failures, then read the full report for details.
 
             Your task:
-            1. Diagnose the root cause from the test output and the code. Focus on
-               `frontend/e2e/post-prod/live-smoke.spec.ts` and the API/backend routes
-               it exercises.
-            2. If the failure is a genuine regression (not a transient network flake),
+            1. Read `${{ steps.ctx.outputs.snippet_file }}` and any relevant files
+               under `playwright-failure-report/` to understand what failed.
+            2. Examine `frontend/e2e/post-prod/live-smoke.spec.ts` and the API/backend
+               routes it exercises to diagnose the root cause.
+            3. If the failure is a genuine regression (not a transient network flake),
                implement the minimal fix.
-            3. Open a pull request targeting `master` with the fix. Title it
+            4. Open a pull request targeting `master` with the fix. Title it
                "fix(post-prod): <short description of what broke>".
-            4. If the failure looks like a transient/infrastructure flake (network
-               timeout, DNS, ArgoCD not fully converged), add a comment to that effect
-               in the PR description and mark it `draft` so a human can review before
-               merging.
+            5. If the failure looks like a transient/infrastructure flake (network
+               timeout, DNS, ArgoCD not fully converged), create the branch, commit
+               a comment-only explanation, and open a DRAFT PR so a human can review.
 
-            Branch name convention: `fix/post-prod-autofix-<first 8 chars of ${{ steps.ctx.outputs.sha }}>`.
+            Branch name: fix/post-prod-autofix-${{ steps.ctx.outputs.short_sha }}
 
             Do NOT push directly to master.
