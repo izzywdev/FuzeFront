@@ -75,6 +75,7 @@ export class MemoryCatalogStore implements CatalogStore {
     if (repository) {
       Object.assign(repository, result.repository, {
         lastScanAt: result.scannedAt,
+        lastScanRevision: result.revision,
         lastScanStatus: 'complete',
       })
     }
@@ -161,6 +162,7 @@ export class PostgresCatalogStore implements CatalogStore {
         jiraProjects: row.config?.jiraProjects ?? [],
         localPath: row.config?.localPath,
         lastScanAt: row.last_scan_at?.toISOString(),
+        lastScanRevision: row.last_scan_revision ?? undefined,
         lastScanStatus: row.last_scan_status,
       })),
       operations: operations.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, documentPath: row.document_path, operationId: row.operation_id ?? undefined, method: row.method, path: row.path, summary: row.summary, tags: row.tags, security: row.security, parameters: row.parameters, responses: row.responses })),
@@ -210,7 +212,7 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.findings) await client.query(`INSERT INTO fuzequality.findings (id,repository_id,subject_id,type,severity,title,detail,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status])
       await client.query('DELETE FROM fuzequality.scan_diagnostics WHERE repository_id=$1', [result.repository.id])
       for (const item of result.diagnostics) await client.query(`INSERT INTO fuzequality.scan_diagnostics (repository_id,revision,source_path,category,severity,code,message) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [result.repository.id,result.revision,item.sourcePath,item.category,item.severity,item.code,item.message])
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt])
+      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
