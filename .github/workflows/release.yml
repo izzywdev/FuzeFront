@@ -57,7 +57,7 @@ jobs:
         run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push backend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: backend/Dockerfile
@@ -69,7 +69,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: frontend/Dockerfile
@@ -95,7 +95,7 @@ jobs:
         # must NEVER block the core backend+frontend deploy — a failed build here
         # is non-fatal; the bump+deploy still proceeds.
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/email-service/Dockerfile
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build and push sms-service
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/sms-service/Dockerfile
@@ -121,7 +121,7 @@ jobs:
 
       - name: Build and push provisioning-service
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/provisioning-service/Dockerfile
@@ -134,7 +134,7 @@ jobs:
 
       - name: Build and push billing-service
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/billing-service/Dockerfile
@@ -147,7 +147,7 @@ jobs:
 
       - name: Build & push security-service
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: backend/security/Dockerfile
@@ -160,7 +160,7 @@ jobs:
 
       - name: Build & push applications-service
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: backend/applications/Dockerfile
@@ -175,7 +175,7 @@ jobs:
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: clock-app
           file: clock-app/Dockerfile
