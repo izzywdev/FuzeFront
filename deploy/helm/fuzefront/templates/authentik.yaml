@@ -228,9 +228,12 @@ spec:
           # limit is what capped Authentik at 2 workers. Average CPU looked idle
           # (21m/1000m) during the outage because workers were blocked on queued
           # requests, not computing — low utilisation was not spare headroom.
+          # 2026.5 (Python 3.14) with 4 gunicorn workers OOMKilled at 1Gi
+          # (Exit 137) → crashloop → PROVIDER_UNAVAILABLE / auth outage. 2024.12
+          # used ~475Mi; the newer runtime + worker set needs far more headroom.
           resources:
-            requests: { cpu: 200m, memory: 512Mi }
-            limits:   { cpu: "2",  memory: 1Gi }
+            requests: { cpu: 200m, memory: 1Gi }
+            limits:   { cpu: "2",  memory: 3Gi }
       volumes:
         - name: media
           emptyDir: {}
