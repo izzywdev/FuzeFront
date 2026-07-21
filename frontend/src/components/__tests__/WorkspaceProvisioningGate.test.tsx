@@ -55,9 +55,9 @@ describe('WorkspaceProvisioningGate', () => {
     renderGate()
 
     await waitFor(() => {
-      expect(screen.getByRole('status')).toBeInTheDocument()
+      expect(screen.getByText('Creating your workspace…')).toBeInTheDocument()
     }, { timeout: 3000 })
-    expect(screen.getByText('Creating your workspace…')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('App content')).not.toBeInTheDocument()
   })
 
