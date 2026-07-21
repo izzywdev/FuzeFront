@@ -139,7 +139,7 @@ emailService:
       # on this path, so setting a host without sealing them CrashLoops the pod at
       # start (loud) instead of dropping mail at runtime (silent). That trade is
       # deliberate. See deploy/contabo/SEAL_PROD_SECRETS.md.
-      host: ""
+      host: "smtp.zeptomail.com"
       port: 587
       secure: false   # STARTTLS on 587; true for implicit TLS on 465
 
