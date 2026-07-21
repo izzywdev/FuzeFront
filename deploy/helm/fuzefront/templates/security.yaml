@@ -159,6 +159,35 @@ spec:
               value: /etc/fuzefront-ca/ca.crt
             {{- end }}
             {{- end }}
+            # ---- Server-brokered Google sign-in (PR #329) ----
+            # googleOidc.ts talks to Google directly using these creds; the
+            # brokered flow 302s back to ${FRONTEND_URL}/dashboard on success
+            # (FRONTEND_URL is set above). GOOGLE_CLIENT_ID/SECRET reuse the SAME
+            # keys the Authentik pods consume from the fuzefront-secrets
+            # SealedSecret; optional:true so the pod still starts when Google is
+            # unconfigured in an env (then SECURITY_GOOGLE_BROKERED should be off).
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: GOOGLE_CLIENT_ID
+                  optional: true
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: GOOGLE_CLIENT_SECRET
+                  optional: true
+            # External browser-facing callback URL registered in the Google
+            # console. Prod = app host; dev overrides via securityService.googleRedirectUri.
+            - name: GOOGLE_REDIRECT_URI
+              value: {{ .Values.securityService.googleRedirectUri | default "https://app.fuzefront.com/api/v1/security/social/google/callback" | quote }}
+            # KILL-SWITCH: "true" = server-brokered Google (googleOidc.ts) is the
+            # source of truth; "false" = revert to the legacy Authentik Google
+            # source flow with NO rebuild — the instant rollback is flipping
+            # securityService.googleBrokered to "false" in values and re-syncing.
+            - name: SECURITY_GOOGLE_BROKERED
+              value: {{ .Values.securityService.googleBrokered | default "false" | quote }}
           readinessProbe:
             httpGet:
               path: /health

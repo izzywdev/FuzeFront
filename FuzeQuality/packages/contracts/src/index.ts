@@ -27,6 +27,7 @@ export type Repository = RepositoryInput & {
   canonicalUrl: string
   enabled: boolean
   lastScanAt?: string
+  lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
 }
 
@@ -150,6 +151,19 @@ export type Suggestion = {
   createdAt: string
 }
 
+export type ScanDiagnostic = {
+  sourcePath: string
+  category: 'openapi' | 'test' | 'frontend' | 'storybook'
+  severity: 'error' | 'warning'
+  code: string
+  message: string
+}
+
+export type CatalogScanDiagnostic = ScanDiagnostic & {
+  repositoryId: string
+  revision: string
+}
+
 export type ScanResult = {
   repository: Repository
   revision: string
@@ -158,6 +172,7 @@ export type ScanResult = {
   tests: TestCase[]
   expectations: TestExpectation[]
   findings: CatalogFinding[]
+  diagnostics: ScanDiagnostic[]
   scannedAt: string
 }
 
@@ -168,6 +183,7 @@ export type Portfolio = {
   tests: TestCase[]
   expectations: TestExpectation[]
   findings: CatalogFinding[]
+  diagnostics: CatalogScanDiagnostic[]
   requirements: Requirement[]
   flows: Flow[]
   suggestions: Suggestion[]

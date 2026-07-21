@@ -28,6 +28,7 @@ const emptyPortfolio = (): Portfolio => ({
   tests: [],
   expectations: [],
   findings: [],
+  diagnostics: [],
   requirements: [],
   flows: [],
   suggestions: [],
@@ -74,6 +75,7 @@ export class MemoryCatalogStore implements CatalogStore {
     if (repository) {
       Object.assign(repository, result.repository, {
         lastScanAt: result.scannedAt,
+        lastScanRevision: result.revision,
         lastScanStatus: 'complete',
       })
     }
@@ -93,6 +95,10 @@ export class MemoryCatalogStore implements CatalogStore {
     this.data.findings = [
       ...this.data.findings.filter(item => item.repositoryId !== result.repository.id),
       ...result.findings,
+    ]
+    this.data.diagnostics = [
+      ...this.data.diagnostics.filter(item => item.repositoryId !== result.repository.id),
+      ...result.diagnostics.map(item => ({ ...item, repositoryId: result.repository.id, revision: result.revision })),
     ]
   }
 
@@ -128,13 +134,14 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async portfolio(): Promise<Portfolio> {
-    const [repositories, operations, surfaces, tests, expectations, findings, requirements, flows, steps, suggestions] = await Promise.all([
+    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, flows, steps, suggestions] = await Promise.all([
       this.pool.query('SELECT * FROM fuzequality.repositories WHERE enabled = true ORDER BY name'),
       this.pool.query('SELECT * FROM fuzequality.api_operations WHERE active = true ORDER BY path, method'),
       this.pool.query('SELECT * FROM fuzequality.frontend_surfaces WHERE active = true ORDER BY package_name, name'),
       this.pool.query('SELECT * FROM fuzequality.test_cases WHERE active = true ORDER BY source_path, title'),
       this.pool.query('SELECT * FROM fuzequality.test_expectations WHERE active = true ORDER BY subject_id, kind'),
       this.pool.query('SELECT * FROM fuzequality.findings ORDER BY severity, title'),
+      this.pool.query('SELECT * FROM fuzequality.scan_diagnostics ORDER BY source_path, code'),
       this.pool.query('SELECT * FROM fuzequality.requirements WHERE active = true ORDER BY jira_key'),
       this.pool.query('SELECT * FROM fuzequality.flows WHERE status <> \'rejected\' ORDER BY updated_at DESC'),
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
@@ -155,6 +162,7 @@ export class PostgresCatalogStore implements CatalogStore {
         jiraProjects: row.config?.jiraProjects ?? [],
         localPath: row.config?.localPath,
         lastScanAt: row.last_scan_at?.toISOString(),
+        lastScanRevision: row.last_scan_revision ?? undefined,
         lastScanStatus: row.last_scan_status,
       })),
       operations: operations.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, documentPath: row.document_path, operationId: row.operation_id ?? undefined, method: row.method, path: row.path, summary: row.summary, tags: row.tags, security: row.security, parameters: row.parameters, responses: row.responses })),
@@ -162,6 +170,7 @@ export class PostgresCatalogStore implements CatalogStore {
       tests: tests.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, framework: row.framework, level: row.test_level, title: row.title, sourcePath: row.source_path, assertionCount: row.assertion_count, targets: row.targets })),
       expectations: expectations.rows.map(row => ({ id: row.id, subjectType: row.subject_type, subjectId: row.subject_id, kind: row.kind, label: row.label, priority: row.priority, rule: row.rule, coverage: row.coverage, evidenceIds: row.evidence_ids })),
       findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, status: row.status })),
+      diagnostics: diagnostics.rows.map(row => ({ repositoryId: row.repository_id, revision: row.revision, sourcePath: row.source_path, category: row.category, severity: row.severity, code: row.code, message: row.message })),
       requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString() })),
       flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
       suggestions: suggestions.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, type: row.type, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, payload: row.payload, state: row.state, createdAt: row.created_at.toISOString() })),
@@ -201,7 +210,9 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.expectations) await client.query(`INSERT INTO fuzequality.test_expectations (id,subject_type,subject_id,kind,label,priority,rule,coverage,evidence_ids) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET label=EXCLUDED.label,priority=EXCLUDED.priority,rule=EXCLUDED.rule,coverage=EXCLUDED.coverage,evidence_ids=EXCLUDED.evidence_ids,active=true,updated_at=now()`, [item.id,item.subjectType,item.subjectId,item.kind,item.label,item.priority,item.rule,item.coverage,JSON.stringify(item.evidenceIds)])
       await client.query('DELETE FROM fuzequality.findings WHERE repository_id=$1', [result.repository.id])
       for (const item of result.findings) await client.query(`INSERT INTO fuzequality.findings (id,repository_id,subject_id,type,severity,title,detail,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status])
-      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt])
+      await client.query('DELETE FROM fuzequality.scan_diagnostics WHERE repository_id=$1', [result.repository.id])
+      for (const item of result.diagnostics) await client.query(`INSERT INTO fuzequality.scan_diagnostics (repository_id,revision,source_path,category,severity,code,message) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [result.repository.id,result.revision,item.sourcePath,item.category,item.severity,item.code,item.message])
+      await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
@@ -330,6 +341,7 @@ export function demoPortfolio(): Partial<Portfolio> {
     tests,
     expectations,
     findings: buildFindings(repositoryId, operations, surfaces, expectations),
+    diagnostics: [],
     requirements: [
       {
         id: 'req-fuze-142',

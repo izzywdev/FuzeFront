@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -66,7 +66,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -79,12 +79,18 @@ securityService:
   # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
   # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
   replicas: 1
+  # Server-brokered Google sign-in (PR #329). "true" = enabled — owner has
+  # registered this callback in the Google console. Instant rollback: set to
+  # "false" to revert to the legacy Authentik Google source flow (no rebuild).
+  googleBrokered: "true"
+  # Prod browser-facing Google callback URL (app host, not auth-dev).
+  googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -107,7 +113,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -118,7 +124,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -158,7 +164,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: b6fd7cabe047
+    tag: a45d3a5e7d35
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.

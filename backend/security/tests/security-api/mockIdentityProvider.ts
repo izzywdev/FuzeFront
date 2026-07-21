@@ -232,6 +232,10 @@ export class MockIdentityProvider implements IdentityProvider {
     return this.mint(u)
   }
 
+  async emailExists(email: string): Promise<boolean> {
+    return this.users.has((email ?? '').trim().toLowerCase())
+  }
+
   async getUserInfo(
     token: string
   ): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
