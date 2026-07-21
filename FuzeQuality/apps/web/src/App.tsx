@@ -193,14 +193,16 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     <>
       <PageHeading eyebrow="Source control" title="Repository inventory" detail="Onboard read-only sources and inspect their latest deterministic scan." action={<button className="primary-button" onClick={() => setOpen(true)}><Plus size={16} /> Add repository</button>} />
       <section className="repo-cards">
-        {data.repositories.map(repository => (
-          <article className="repo-card" key={repository.id}>
+        {data.repositories.map(repository => {
+          const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id)
+          return <article className="repo-card" key={repository.id}>
             <div className="repo-card-top"><div className="repo-mark large">{repository.name.slice(0, 2).toUpperCase()}</div><span className={`scan-status scan-${repository.lastScanStatus}`}>{repository.lastScanStatus}</span></div>
             <h3>{repository.name}</h3><p>{repository.canonicalUrl}</p>
-            <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
+            <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Revision</dt><dd title={repository.lastScanRevision}>{repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
+            {diagnostics.length > 0 && <details className="scan-diagnostics"><summary><AlertTriangle size={14} /> {diagnostics.length} scan {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}</summary><div>{diagnostics.map(item => <article key={`${item.sourcePath}:${item.code}`}><span className={`diagnostic-severity diagnostic-${item.severity}`}>{item.severity}</span><code>{item.sourcePath}</code><strong>{item.code}</strong><p>{item.message}</p></article>)}</div></details>}
             <button className="secondary-button" disabled={busy} onClick={() => scan(repository.id, repository.localPath)}><RefreshCw size={15} /> Scan now</button>
           </article>
-        ))}
+        })}
       </section>
       {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div><label>Local path <small>(development only)</small><input value={form.localPath} onChange={event => setForm({ ...form, localPath: event.target.value })} placeholder="D:\source\FuzeService" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Adding…' : 'Add repository'}</button></div></form></div>}
     </>
