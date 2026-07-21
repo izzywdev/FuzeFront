@@ -36,3 +36,11 @@ unleash:
               - key: kubernetes.io/hostname
                 operator: In
                 values: ["fuzefront-node-2"]
+
+# Prod FuzeInfra Postgres DNS — the shared cluster's service is fuzeinfra-postgres
+# (the chart default postgres.fuzeinfra.svc… is the local/dev name and does not
+# resolve in prod, so the db-bootstrap Job failed with "Name or service not known").
+fuzeinfra:
+  postgres:
+    host: fuzeinfra-postgres.fuzeinfra.svc.cluster.local
+    port: 5432
