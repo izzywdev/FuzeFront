@@ -538,6 +538,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Redirect action; no collection.
+  /v1/security/social/google/callback:
+    get:
+      tags: [social]
+      summary: Server-brokered Google callback (302 back to app)
+      operationId: googleBrokerCallback
+      description: >-
+        SERVER-BROKERED Google sign-in callback. Google redirects the browser
+        here directly (never to an internal identity host). The security service
+        exchanges the authorization code with Google server-to-server, validates
+        the id_token, provisions/links the user in the identity store, mints a
+        single-use opaque code, and 302-redirects back to the app with
+        `?code=<opaque>` (or `?linked=<provider>` for a link handshake). On a
+        provider error or denied consent it redirects to `/?error=authentication_failed`.
+        No token is ever placed in the URL. The exact absolute form of this path
+        (`https://app.fuzefront.com/api/v1/security/social/google/callback`) MUST
+        be registered as an Authorized redirect URI on FuzeFront's Google OAuth
+        client, or Google rejects the handshake.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          description: Google authorization code (protocol-level; consumed server-side).
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          description: Opaque anti-forgery state issued at start.
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          description: Present when Google reports an error (e.g. access_denied).
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirect back to the app with an opaque `?code=`, `?linked=`, or `?error=`.
+          headers:
+            Location:
+              schema: { type: string }
+      x-pagination: exempt
+      x-pagination-reason: Redirect action; no collection.
   # ─────────────────────────────── AuthN: signup ────────────────────────────
   /v1/security/signup:
     post:

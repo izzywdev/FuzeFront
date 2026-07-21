@@ -269,6 +269,40 @@ router.get('/social/callback', async (req: Request, res: Response) => {
   }
 })
 
+// GET /v1/security/social/google/callback — SERVER-BROKERED Google callback.
+//
+// Google redirects the browser HERE (not to Authentik's
+// `/source/oauth/callback/google/`) after consent. The security service exchanges
+// the code with Google server-to-server, provisions/links the user in the
+// identity store, mints the FuzeFront session, and 302s back to the app with a
+// single-use opaque `?code=` (never a token, never an Authentik `/if/*` URL).
+// State + PKCE are held server-side in the provider's Map (single replica) — no
+// cookie round-trip needed for this path.
+router.get('/social/google/callback', async (req: Request, res: Response) => {
+  // Google can return an explicit error (e.g. the user denied consent). Never
+  // leak provider detail to the app — send a neutral error back.
+  if (typeof req.query.error === 'string' && req.query.error) {
+    res.redirect(302, `${appBaseUrl()}/?error=authentication_failed`)
+    return
+  }
+  try {
+    const code = typeof req.query.code === 'string' ? req.query.code : ''
+    const state = typeof req.query.state === 'string' ? req.query.state : ''
+    if (!code || !state) throw new InvalidInputError('code and state are required')
+    const result = await getIdentityProvider().brokerCallback({ code, state }, sessionContext(req))
+    const sep = result.redirectTo.includes('?') ? '&' : '?'
+    // A LINK handshake mints no session (no code to redeem) — return a neutral
+    // confirmation instead.
+    const dest = result.linked
+      ? `${appBaseUrl()}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
+      : `${appBaseUrl()}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
+    res.redirect(302, dest)
+  } catch (err) {
+    // Fail-closed: neutral error back to the app. Never surface tokens or vendor.
+    res.redirect(302, `${appBaseUrl()}/?error=authentication_failed`)
+  }
+})
+
 // ── Signup ──────────────────────────────────────────────────────────────────
 router.post('/signup', async (req: Request, res: Response) => {
   try {
