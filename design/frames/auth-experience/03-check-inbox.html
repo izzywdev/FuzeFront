@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Check your inbox — FuzeFront auth-experience frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="auth-stage" data-frame="03-check-inbox" data-flow="verify-email">
+  <section class="auth-card" role="region" aria-label="Check your inbox">
+    <div class="auth-card__seam"></div>
+    <div class="auth-card__body centered">
+      <div class="hero-icon" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><rect x="3" y="6" width="26" height="20" rx="3"
+          stroke="currentColor" stroke-width="2"/><path d="M4 8l12 9 12-9" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 class="auth-title">Check your inbox</h1>
+      <p class="auth-sub">We sent a verification link to</p>
+      <div class="email-chip" data-value="email">ada@lovelace.io</div>
+      <p class="auth-sub">Click the link in that email to activate your account. The link expires in 30 minutes.</p>
+
+      <!-- ResendCooldownButton: disabled during cooldown, counts down, then re-enables -->
+      <div style="margin-top:var(--space-4)">
+        <button type="button" class="resend" data-action="resend" data-state="cooldown" disabled>
+          <svg viewBox="0 0 20 20" fill="none" width="16" height="16" aria-hidden="true"><path
+            d="M4 10a6 6 0 1 1 1.8 4.3M4 10V6m0 4h4" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Resend email in <span class="count">0:44</span>
+        </button>
+      </div>
+      <p class="field__help" style="margin-top:var(--space-4)">Wrong address?
+        <a href="01-signup.html" style="color:var(--accent-color)">Go back and edit it</a>.</p>
+
+      <div class="alert alert--info" style="margin-top:var(--space-6);text-align:left">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 9v5M10 6.5h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span>Didn't get it? Check spam, or wait for the timer and resend. You can keep working —
+          we'll ask you to verify before inviting teammates or going live.</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="frame-nav" aria-label="Frame navigation">
+  <span class="caption"><b>03 · Check inbox</b> — POST /verify/email/start (202) · resend cooldown · "verify before invite" gate note</span>
+  <span>
+    <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
+    <a class="btn-ds btn-ds--primary" href="04-verify-landing.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Next: Verify link →</a>
+  </span>
+</nav>
+</body>
+</html>

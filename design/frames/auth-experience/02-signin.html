@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign in — FuzeFront auth-experience frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="auth-stage" data-frame="02-signin" data-flow="signin">
+  <section class="auth-card" role="region" aria-label="Sign in">
+    <div class="auth-card__seam"></div>
+    <div class="auth-card__body">
+      <div class="auth-brand">
+        <span class="mark">F</span>
+        <span class="auth-wordmark">Fuze<span class="fuse">Front</span></span>
+      </div>
+      <h1 class="auth-title">Sign in</h1>
+      <p class="auth-sub">Welcome back. Sign in to your workspace.</p>
+
+      <form data-form="signin" novalidate>
+        <div class="field">
+          <label class="field__label" for="email">Email</label>
+          <div class="input-wrap">
+            <input class="input" id="email" name="email" type="email"
+                   autocomplete="email" placeholder="you@company.com" value="" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="password">
+            <span>Password</span>
+            <a href="05-password-reset.html" data-nav="reset"
+               style="font-weight:var(--weight-medium);color:var(--accent-color);text-decoration:none">Forgot password?</a>
+          </label>
+          <div class="input-wrap">
+            <input class="input input--has-adornment" id="password" name="password"
+                   type="password" autocomplete="current-password" placeholder="••••••••••••" />
+            <button type="button" class="pw-toggle" aria-label="Show password">
+              <svg viewBox="0 0 20 20" fill="none" width="18" height="18"><path
+                d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10Z"
+                stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5"
+                stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Turnstile — idle/pre-interaction state on signin (managed widget renders here) -->
+        <div class="turnstile" data-state="idle" data-turnstile>
+          <div class="turnstile__box" data-state="idle">
+            <span class="turnstile__icon" aria-hidden="true">
+              <svg viewBox="0 0 26 26" fill="none"><rect x="4" y="4" width="18" height="18" rx="4"
+                stroke="var(--border-strong)" stroke-width="1.5"/></svg>
+            </span>
+            <span class="turnstile__text">Verifying you're human…</span>
+            <span class="turnstile__brand">Cloudflare Turnstile</span>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-ds btn-ds--primary" data-action="submit">Sign in</button>
+      </form>
+
+      <div class="seam-divider">or</div>
+      <button type="button" class="social-btn" data-action="social-google">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><!-- ds-conformance-allow: third-party brand mark -->
+          <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.7-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8Z"/>
+          <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.4v3.1C3.4 21.4 7.4 24 12 24Z"/>
+          <path fill="#FBBC05" d="M5.4 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4V6.5H1.4C.5 8.2 0 10 0 12s.5 3.8 1.4 5.5l4-3.1Z"/>
+          <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4C17.9 1.2 15.2 0 12 0 7.4 0 3.4 2.6 1.4 6.5l4 3.1C6.3 6.8 8.9 4.8 12 4.8Z"/>
+        </svg>
+        Continue with Google
+      </button>
+
+      <p class="auth-foot">New to FuzeFront? <a href="01-signup.html" data-nav="signup">Create an account</a></p>
+    </div>
+  </section>
+</main>
+
+<nav class="frame-nav" aria-label="Frame navigation">
+  <span class="caption"><b>02 · Sign in</b> — password + Turnstile + Google · forgot-password link · MFA challenge handoff in States</span>
+  <span>
+    <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
+    <a class="btn-ds btn-ds--primary" href="05-password-reset.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Next: Reset →</a>
+  </span>
+</nav>
+</body>
+</html>
