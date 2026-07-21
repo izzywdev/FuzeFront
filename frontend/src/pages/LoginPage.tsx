@@ -2,8 +2,17 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { AuthMethods, SessionResult } from '../services/api'
-import { Button, Input, Alert, SeamDivider } from '@fuzefront/design-system'
+import type { AuthMethods, SessionResult, EmailAvailability } from '../services/api'
+import {
+  Button,
+  Input,
+  Alert,
+  SeamDivider,
+  FieldStatus,
+  PasswordChecklist,
+  passwordMeetsPolicy,
+} from '@fuzefront/design-system'
+import type { FieldStatusState } from '@fuzefront/design-system'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 // Official Google "G" mark palette — these exact values are mandated by
@@ -45,8 +54,14 @@ function LoginPage() {
   )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  // Inline email-availability signal (signup only). `idle` = nothing to show yet;
+  // `checking` while debounced request is in flight; `success` = free to use;
+  // `error` = already taken. A failed/undeployed endpoint resolves to `idle`
+  // (fail-open) so it never blocks account creation.
+  const [emailStatus, setEmailStatus] = useState<FieldStatusState>('idle')
   const [pending, setPending] = useState<PendingAction>(null)
   const loading = pending !== null
   const [error, setError] = useState('')
@@ -112,6 +127,43 @@ function LoginPage() {
       setAuthMethods(FALLBACK_METHODS)
     }
   }
+
+  // Debounced inline email-availability check (signup only). Waits ~400ms after
+  // the last keystroke, skips obviously-incomplete addresses, and cancels the
+  // in-flight request when the email changes again. Any failure fails open
+  // (status → idle) so the check can ship before its backend endpoint deploys.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  useEffect(() => {
+    if (mode !== 'signup') {
+      setEmailStatus('idle')
+      return
+    }
+    if (!EMAIL_RE.test(email)) {
+      setEmailStatus('idle')
+      return
+    }
+    const controller = new AbortController()
+    const handle = setTimeout(() => {
+      setEmailStatus('checking')
+      authAPI
+        .checkEmailAvailability(email, controller.signal)
+        .then((res: EmailAvailability) => {
+          if (controller.signal.aborted) return
+          // null = unknown (fail-open) → show no signal, don't block.
+          setEmailStatus(
+            res.available === true ? 'success' : res.available === false ? 'error' : 'idle'
+          )
+        })
+        .catch(() => {
+          // Cancelled or failed — fail open.
+          if (!controller.signal.aborted) setEmailStatus('idle')
+        })
+    }, 400)
+    return () => {
+      clearTimeout(handle)
+      controller.abort()
+    }
+  }, [email, mode])
 
   // Credentials submit — password sign-in OR account creation, both brokered by
   // FuzeFront's own Security API. The user only ever sees FuzeFront-branded UI;
@@ -190,10 +242,26 @@ function LoginPage() {
     setMode(m => (m === 'signin' ? 'signup' : 'signin'))
     setError('')
     setNotice('')
+    // Confirm-password + availability signal are signup-only; clear them so a
+    // stale mismatch/taken state can't leak across a mode switch.
+    setConfirmPassword('')
+    setEmailStatus('idle')
   }
 
   const socialEnabled = Boolean(authMethods?.social?.includes('google'))
   const passwordEnabled = authMethods?.password !== false
+
+  // Signup-only validation. Confirm-password must match once the user has begun
+  // typing it; the password itself must satisfy the policy before submit. Email
+  // availability is a soft signal — `error` (taken) blocks, but `idle`/unknown
+  // never does (fail-open).
+  const passwordsMatch = password === confirmPassword
+  const showConfirmMismatch =
+    mode === 'signup' && confirmPassword.length > 0 && !passwordsMatch
+  const passwordValid = mode === 'signup' ? passwordMeetsPolicy(password) : true
+  const signupBlocked =
+    mode === 'signup' &&
+    (!passwordValid || !passwordsMatch || confirmPassword.length === 0 || emailStatus === 'error')
 
   return (
     <div className="auth-form">
@@ -262,8 +330,36 @@ function LoginPage() {
             value={email}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
             autoComplete="email"
+            aria-describedby="email-status"
             required
           />
+          {mode === 'signup' && (
+            <FieldStatus
+              id="email-status"
+              state={emailStatus}
+              message={
+                emailStatus === 'checking'
+                  ? 'Checking availability…'
+                  : emailStatus === 'success'
+                    ? 'This email is available'
+                    : emailStatus === 'error'
+                      ? 'An account already uses this email'
+                      : ''
+              }
+              action={
+                emailStatus === 'error' ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMode('signin')}
+                  >
+                    Sign in instead
+                  </Button>
+                ) : null
+              }
+            />
+          )}
 
           <Input
             id="password"
@@ -272,10 +368,36 @@ function LoginPage() {
             value={password}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            aria-describedby={mode === 'signup' ? 'password-policy' : undefined}
             required
           />
+          {mode === 'signup' && (
+            <PasswordChecklist id="password-policy" value={password} />
+          )}
 
-          <Button type="submit" variant="primary" fullWidth disabled={loading}>
+          {mode === 'signup' && (
+            <div style={{ marginBlockStart: 'var(--space-3)' }}>
+              <Input
+                id="confirmPassword"
+                label="Confirm password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setConfirmPassword(e.target.value)
+                }
+                autoComplete="new-password"
+                error={showConfirmMismatch ? 'Passwords do not match' : ''}
+                required
+              />
+            </div>
+          )}
+
+          <Button
+            type="submit"
+            variant="primary"
+            fullWidth
+            disabled={loading || signupBlocked}
+          >
             {pending === 'credentials'
               ? mode === 'signup'
                 ? 'Creating account…'
