@@ -63,7 +63,7 @@ securityService:
   #   2. set emailService.email.smtp.host below (GitOps)
   #   3. PROVE a real message reaches a real inbox  ← password reset revives here
   #   4. only then flip this to true, in a deploy window
-  requireEmailVerification: true
+  requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
     tag: b1c1216ea2df
