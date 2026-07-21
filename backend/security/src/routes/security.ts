@@ -10,6 +10,7 @@
  * are intentionally not implemented in this AuthN slice.
  */
 import express, { Request, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import { getIdentityProvider } from '../providers/factory'
 import {
   MfaRequiredError,
@@ -27,6 +28,29 @@ import type {
 } from '../providers/IdentityProvider'
 
 const router = express.Router()
+
+// ── Public email-availability rate limiter ───────────────────────────────────
+//
+// `/email-available` intentionally reveals whether an email is already
+// registered — product wants inline "available / already registered" feedback
+// on the signup form, which is impossible without disclosing existence. That
+// makes the endpoint an enumeration oracle by design, so per-IP rate limiting
+// is the deliberate mitigation: it keeps the interactive signup use fluid while
+// making bulk address harvesting impractical. 20 requests / minute / IP.
+// `req.ip` honours the service's `trust proxy` setting (see index.ts) so the
+// key is the real client behind the ingress, not the ingress hop.
+const emailAvailableRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later', code: 'RATE_LIMITED' },
+})
+
+// RFC-5322-lite: one @, no whitespace, a dotted domain. Deliberately simple —
+// the goal is to reject obvious garbage (400), not to fully validate deliver-
+// ability (that is the verification flow's job).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function bearer(req: Request): string | null {
@@ -317,6 +341,29 @@ router.post('/signup', async (req: Request, res: Response) => {
       sessionContext(req)
     )
     res.status(201).json({ token: session.token, sessionId: session.sessionId, user: toApiUser(session.user) })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// ── Public email availability ─────────────────────────────────────────────
+// GET /v1/security/email-available?email=<addr>
+//
+// Real-time signup feedback: is this email free to register? Checks the SAME
+// source of truth signup consults (`emailExists`), so the answer can never
+// disagree with what signup itself would do. Normalizes (trim + lowercase)
+// before checking and echoes the normalized address back. Rate-limited above —
+// the enumeration exposure is an accepted product tradeoff, not an oversight.
+router.get('/email-available', emailAvailableRateLimiter, async (req: Request, res: Response) => {
+  const raw = typeof req.query.email === 'string' ? req.query.email : ''
+  const email = raw.trim().toLowerCase()
+  if (!email || !EMAIL_RE.test(email)) {
+    res.status(400).json({ error: 'A valid email is required', code: 'MALFORMED' })
+    return
+  }
+  try {
+    const exists = await getIdentityProvider().emailExists(email)
+    res.status(200).json({ available: !exists, email })
   } catch (err) {
     sendError(res, err)
   }
