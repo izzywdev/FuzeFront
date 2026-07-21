@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Members &amp; roles — authz-admin frame (a)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="01-members">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (a) · route /settings/access</div>
+  <h1>Members &amp; roles</h1>
+  <p class="lead">The administration surface for one organization. Roles come from the tenant's
+    role catalogue — a bounded, policy-defined set, not free text.</p>
+
+  <div class="panel" data-panel="member-list">
+    <div class="panel-head">
+      <div>
+        <h2>Members</h2>
+        <p class="sub"><span data-count="members">4</span> people in Northwind</p>
+      </div>
+      <button class="btn btn-accent" data-action="add-member">Add member</button>
+    </div>
+
+    <table class="tbl">
+      <thead>
+        <tr><th>Person</th><th>Role</th><th class="right">Actions</th></tr>
+      </thead>
+      <tbody>
+        <tr data-member="u_1001" data-role="admin" data-self="true">
+          <td>
+            <div class="who">ada@northwind.example <span class="tag">You</span></div>
+          </td>
+          <td><span class="pill pill-accent" data-role-pill="admin">Admin</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_1001">Change role</button>
+            <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1001">Remove</button>
+          </td>
+        </tr>
+        <tr data-member="u_1002" data-role="admin">
+          <td><div class="who">grace@northwind.example</div></td>
+          <td><span class="pill pill-accent" data-role-pill="admin">Admin</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_1002">Change role</button>
+            <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1002">Remove</button>
+          </td>
+        </tr>
+        <tr data-member="u_1003" data-role="editor">
+          <td><div class="who">linus@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="editor">Editor</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_1003">Change role</button>
+            <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1003">Remove</button>
+          </td>
+        </tr>
+        <tr data-member="u_1004" data-role="viewer">
+          <td><div class="who">edsger@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="viewer">Viewer</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_1004">Change role</button>
+            <button class="btn btn-ghost btn-danger" data-action="remove-member" data-target="u_1004">Remove</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="panel-foot">
+      <button class="btn btn-ghost" data-action="load-more">Load more</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Rows come from <code>GET /v1/security/tenants/{tenantId}/members</code>
+    (<code>MemberPage</code> — cursor-paginated; "Load more" advances <code>page.cursor</code>).
+    Role pills are keyed to <code>GET /v1/security/tenants/{tenantId}/roles</code>
+    (<code>Role.key</code> → <code>Role.name</code>). A member with no roles renders no pill, never a blank cell.
+  </p>
+
+  <nav class="pager"><a href="index.html">Index</a><a href="02-add-member.html">Next: Add member →</a></nav>
+</div>
+</body>
+</html>

@@ -43,12 +43,59 @@ spec:
               value: {{ .Values.emailService.email.provider | quote }}
             - name: EMAIL_FROM
               value: {{ .Values.emailService.email.from | quote }}
-            {{- if .Values.secret.sendgridApiKey }}
+            {{- if eq .Values.emailService.email.provider "smtp" }}
+            {{- $smtp := .Values.emailService.email.smtp | default dict }}
+            {{- if $smtp.host }}
+            # SMTP transport. Wired ONLY when a host is configured, because the
+            # service's in-code default is localhost:1025 (a dev mailhog) and
+            # nodemailer will happily "succeed" against nothing: the pod stays
+            # healthy, /health stays green, and every message is silently dropped.
+            # That is precisely how signup email-verification and password-reset
+            # ran live-dead in prod — enabled, healthy, delivering nothing.
+            - name: SMTP_HOST
+              value: {{ $smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ $smtp.port | default 587 | quote }}
+            - name: SMTP_SECURE
+              value: {{ $smtp.secure | default false | quote }}
+            # Credentials come from the SealedSecret and are NEVER in values.
+            # Hard refs (no `optional`) — an authenticated relay like Zoho rejects
+            # anonymous mail, so a missing credential must CrashLoop the pod at
+            # start, loudly, rather than degrade into dropping mail at runtime.
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: SMTP_USER
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: SMTP_PASS
+            {{- else if .Values.securityService.requireEmailVerification }}
+            {{- /*
+              Derive the requirement from the SOURCE OF TRUTH, never restate it.
+              securityService.requireEmailVerification: true means every new signup
+              is blocked until it receives a verification mail. With no SMTP host,
+              that mail goes to the localhost:1025 fallback and vanishes — so the
+              flag would lock out EVERY new user while the chart renders happily.
+              values-prod.yaml documents this ordering in prose ("prove the sender →
+              then flip this to true"); prose is not a guard. This is.
+            */}}
+            {{- fail "securityService.requireEmailVerification is true but emailService.email.smtp.host is empty — verification mail would go to the localhost:1025 dev fallback and be silently dropped, locking out every new signup. Configure a real SMTP host (and seal SMTP_USER/SMTP_PASS) before enabling verification." }}
+            {{- end }}
+            {{- end }}
+            # Gate on existingSecret TOO (same reason as sms-service): in prod the
+            # inline value is empty and the real key lives in the SealedSecret.
+            # `optional: true` so the pod still starts on the SMTP provider path,
+            # where SENDGRID_API_KEY is legitimately absent from the secret.
+            {{- if or .Values.secret.existingSecret .Values.secret.sendgridApiKey }}
             - name: SENDGRID_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: SENDGRID_API_KEY
+                  optional: true
             {{- end }}
           readinessProbe:
             httpGet:

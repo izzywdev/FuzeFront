@@ -1,0 +1,87 @@
+{
+  "name": "Account Security hub \u2014 approval frames",
+  "description": "Contract-freeze UX artifacts for the account-security hub: the navigational spine linking password, two-factor, devices & sessions, API tokens, and connected accounts. Approving these frames approves the AccountSecurityHub visual + interaction model and its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": [
+      "components.schemas.IdentityConnections",
+      "components.schemas.SocialConnection",
+      "components.schemas.AuthMethods"
+    ],
+    "endpoints": [
+      "GET /v1/security/identity/connections",
+      "GET /v1/security/methods"
+    ],
+    "component": "@fuzefront/account-security-ui \u2192 AccountSecurityHub",
+    "featureFlag": "fuzefront.account-security.hub"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "account-security",
+        "orchestrator": "AccountSecurityHub",
+        "route": "/account/security",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-20T13:17:14Z"
+      }
+    ],
+    "components": [
+      "SecurityHub",
+      "SecurityPostureSummary",
+      "SecurityCard",
+      "SignInMethodsList",
+      "SetPasswordBanner",
+      "ConnectedAccountRow",
+      "SecurityCardGridSkeleton",
+      "LoadErrorRetry"
+    ],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
+    "designSystemAdditions": [
+      "StatusCallout \u2014 soft-tinted inline banner (icon + title + text + actions) for warn/error states; not yet in @fuzefront/design-system base. Named here for frontend-engineer to add as a foundation PR; drawn from tokens only in these frames, never one-offed into feature code."
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-hub",
+      "file": "01-hub.html",
+      "label": "(a) Security hub",
+      "route": "/account/security",
+      "summary": "Posture summary + cards linking to password, two-factor, devices & sessions, API tokens, connected accounts.",
+      "acceptanceNotes": "Posture summary derives from GET /identity/connections + /methods (no vendor names). Each card links to its sibling surface via data-route. Connected accounts card shows linked providers (Google) and password-enabled state.",
+      "testHooks": [
+        "[data-frame='01-hub']",
+        "[data-panel='security-hub']",
+        "[data-posture='good']",
+        "[data-card='password']",
+        "[data-card='two-factor']",
+        "[data-card='sessions']",
+        "[data-card='tokens']",
+        "[data-card='connected']"
+      ]
+    },
+    {
+      "id": "02-states",
+      "file": "02-states.html",
+      "label": "(b) States & fail-closed",
+      "route": "/account/security",
+      "summary": "Loading skeleton, load error + retry, social-only account (hasPassword:false \u2192 set a password first), and the last-sign-in-method 409 unlink guard.",
+      "acceptanceNotes": "loading shows skeleton summary + card grid; error shows the StatusCallout with data-action='retry'; no-password shows the set-password-first guard (data-guard='set-password-first', data-action='set-password'); last-method shows the 409 guard (data-guard='last-sign-in-method'). No identity-vendor name in the DOM.",
+      "testHooks": [
+        "[data-frame='02-states']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='no-password']",
+        "[data-guard='set-password-first']",
+        "[data-state='last-method']",
+        "[data-guard='last-sign-in-method']"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Change / set password · /account/security/password</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .maxw { max-width: 560px; }
+  .variant-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); }
+  .variant-tabs .tab { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); padding: var(--space-2) var(--space-3); border-radius: var(--radius-pill);
+    border: 1px solid var(--border-color); color: var(--text-tertiary); }
+  .variant-tabs .tab.on { color: var(--accent-color); border-color: rgba(110,92,255,0.4); background: var(--accent-soft); }
+  .form-card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-6); position: relative; overflow: hidden; margin-bottom: var(--space-6); }
+  .form-card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .form-card h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-1); }
+  .form-card .hint { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-5); }
+  label { display: block; font-size: var(--text-sm); font-weight: var(--weight-medium); margin: var(--space-4) 0 var(--space-2); }
+  .field { width: 100%; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); color: var(--text-primary);
+    font-family: var(--font-sans); font-size: var(--text-md); }
+  .field:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .row-actions { margin-top: var(--space-6); display: flex; gap: var(--space-3); }
+  .forgot { font-size: var(--text-xs); color: var(--accent-color); text-decoration: none; }
+  .meter__bars { display: flex; gap: var(--space-1); margin-top: var(--space-3); }
+  .meter__seg { flex: 1; height: 4px; border-radius: var(--radius-pill); background: var(--bg-quaternary); }
+  .meter__seg.on { background: var(--warning-color); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="avatar">JW</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">◔</span> Profile</a>
+      <a class="nav-item active" href="#"><span class="ico">🛡</span> Security</a>
+    </nav>
+    <main class="content" data-frame="05-signed-in">
+      <h1 class="page-title">Password</h1>
+      <p class="page-sub">Update the password you use to sign in.</p>
+
+      <div class="maxw">
+        <div class="variant-tabs" aria-hidden="true">
+          <span class="tab on">Has password → change</span>
+          <span class="tab">Google-only → set first</span>
+        </div>
+
+        <!-- VARIANT A: change existing (hasPassword: true) -->
+        <form class="form-card" data-variant="change" data-has-password="true" novalidate>
+          <div class="form-card__seam"></div>
+          <h2>Change password</h2>
+          <p class="hint">Enter your current password, then choose a new one.</p>
+
+          <label for="current">Current password</label>
+          <input class="field" id="current" type="password" autocomplete="current-password" data-input="current-password" />
+          <a href="01-request.html" class="forgot" data-nav="forgot">Forgot your current password?</a>
+
+          <label for="newpw">New password</label>
+          <input class="field" id="newpw" type="password" autocomplete="new-password" data-input="new-password" value="hunter2hunter2" />
+          <div class="meter__bars" data-meter="fair" aria-hidden="true">
+            <span class="meter__seg on"></span><span class="meter__seg on"></span>
+            <span class="meter__seg"></span><span class="meter__seg"></span>
+          </div>
+
+          <label for="confirmpw">Confirm new password</label>
+          <input class="field" id="confirmpw" type="password" autocomplete="new-password" data-input="confirm-password" value="hunter2hunter2" />
+
+          <div class="row-actions">
+            <button type="submit" class="btn btn-primary" data-action="change-password">Save new password</button>
+            <button type="button" class="btn btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </form>
+
+        <!-- VARIANT B: set first (hasPassword: false, social-only) -->
+        <form class="form-card" data-variant="set" data-has-password="false" novalidate>
+          <div class="form-card__seam"></div>
+          <h2>Set a password</h2>
+          <p class="hint">You sign in with Google, so there's no current password to enter — just choose a new one to enable password sign-in.</p>
+
+          <label for="setpw">New password</label>
+          <input class="field" id="setpw" type="password" autocomplete="new-password" data-input="set-password" />
+
+          <label for="setconfirm">Confirm new password</label>
+          <input class="field" id="setconfirm" type="password" autocomplete="new-password" data-input="set-confirm" />
+
+          <div class="row-actions">
+            <button type="submit" class="btn btn-primary" data-action="set-password">Set password</button>
+            <button type="button" class="btn btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </main>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Signed-in</b> · change (<code class="mono">reset-confirm</code> w/ current) &amp; set (<code class="mono">POST /password</code>, hasPassword:false)</span>
+  <span>
+    <a href="index.html" class="btn btn-ghost">↩ Overview</a>
+    <a href="06-states.html" class="btn btn-primary">States &amp; errors →</a>
+  </span>
+</nav>
+</body>
+</html>

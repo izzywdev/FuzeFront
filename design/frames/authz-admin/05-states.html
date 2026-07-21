@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>States — authz-admin frame (e)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="05-states">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (e) · route /settings/access</div>
+  <h1>States</h1>
+  <p class="lead">Every state a consumer must render is contract, not decoration. Loading, the
+    single-member org, a load failure, an empty role catalogue, and — the one that is most often
+    got wrong — an authorization denial that must never become a sign-in prompt.</p>
+
+  <!-- e1 loading -->
+  <div class="state-block">
+    <div class="state-label">(e1) Loading</div>
+    <div class="panel" data-panel="member-list" data-state="loading" aria-busy="true">
+      <div class="panel-head">
+        <div><h2>Members</h2><p class="sub">Loading…</p></div>
+      </div>
+      <table class="tbl"><tbody>
+        <tr><td><div class="skel" style="width: 60%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+        <tr><td><div class="skel" style="width: 50%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+        <tr><td><div class="skel" style="width: 55%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <!-- e2 empty / single-member -->
+  <div class="state-block">
+    <div class="state-label">(e2) Single-member org — it's just you</div>
+    <div class="panel" data-panel="member-list" data-state="empty">
+      <div class="panel-head">
+        <div><h2>Members</h2><p class="sub"><span data-count="members">1</span> person in Northwind</p></div>
+        <button class="btn btn-accent" data-action="add-member">Add member</button>
+      </div>
+      <div class="empty">
+        <h3>You're the only member</h3>
+        <p>You're the admin of Northwind. Invite teammates to collaborate — they'll get the role
+          you choose when you add them.</p>
+        <button class="btn btn-accent" data-action="add-member">Add your first teammate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e3 load error -->
+  <div class="state-block">
+    <div class="state-label">(e3) Couldn't load</div>
+    <div class="panel" data-panel="member-list" data-state="error">
+      <div class="panel-head"><div><h2>Members</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="LOAD_FAILED" style="text-align: left">
+          <span>
+            <b>We couldn't load the members</b>
+            <p>Something went wrong on our end. Your access hasn't changed — try again.</p>
+          </span>
+        </div>
+        <button class="btn" data-action="retry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e4 empty role catalogue -->
+  <div class="state-block">
+    <div class="state-label">(e4) No roles to assign — add-member blocked</div>
+    <div class="modal" data-panel="add-member" data-state="no-roles">
+      <div class="modal-head"><h2>Add member to Northwind</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn" data-error-code="NO_ROLES">
+          <span>
+            <b>No roles are available right now</b>
+            <p>We can't add someone without a role, so this is paused. This is usually temporary —
+              try again in a moment. If it persists, contact support.</p>
+          </span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-add-member" disabled>Add member</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e5 403 forbidden — NOT a login prompt -->
+  <div class="state-block">
+    <div class="state-label">(e5) Not allowed — 403, never a sign-in redirect</div>
+    <div class="panel" data-panel="member-list" data-state="forbidden">
+      <div class="panel-head"><div><h2>Members</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-info" data-error-code="FORBIDDEN" data-http="403" style="text-align: left">
+          <span>
+            <b>You don't have access to manage members</b>
+            <p>You're signed in, but your role in Northwind can't add, remove, or change members.
+              Ask an admin of Northwind if you need this.</p>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Loading covers the in-flight
+    <code>GET /v1/security/tenants/{tenantId}/members</code>. Empty is a real, common state — a
+    brand-new org has exactly one member. Error covers a non-2xx list response with
+    <code>data-action="retry"</code>. (e4) covers
+    <code>GET /v1/security/tenants/{tenantId}/roles</code> returning <code>{ items: [] }</code> —
+    the add/change forms must fail closed, never render a submittable form with zero roles.
+    <br /><br />
+    <b>⚠ (e5) is the rule this frame exists to enforce. A <code>403</code> is an authorization
+    denial, NOT an authentication failure.</b> The member is signed in; their token is valid; they
+    simply lack permission. The UI shows this denial <i>in place</i> and never redirects to
+    sign-in. Only a <code>401</code> (no/expired session) triggers re-authentication. Conflating
+    the two — bouncing a permission-denied user to a login page they'll sail straight back through —
+    is the exact failure this state is contract for.
+  </p>
+
+  <nav class="pager"><a href="04-remove-member.html">← Remove member</a><a href="index.html">Back to index →</a></nav>
+</div>
+</body>
+</html>

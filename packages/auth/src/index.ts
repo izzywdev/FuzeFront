@@ -34,3 +34,24 @@ export {
   requireTenant,
 } from './middleware';
 export type { RequireAuthOptions, AuthErrorBody } from './middleware';
+
+// ── Authorization (policy-backed, provider-neutral) ────────────────────────
+export { AUTHZ_CONTRACT_VERSION, AuthzError } from './authzTypes';
+export type {
+  AuthzCheck,
+  AuthzDecision,
+  AuthzClient,
+  AuthzClientOptions,
+  AuthzErrorCode,
+  ResourceRef,
+  FetchLike,
+} from './authzTypes';
+
+export { createAuthzClient } from './authzClient';
+
+export { requirePermission } from './authzMiddleware';
+export type {
+  RequirePermissionOptions,
+  AuthzErrorBody,
+  ValueOrResolver,
+} from './authzMiddleware';

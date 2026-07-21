@@ -1,7 +1,15 @@
-import { Issuer, Client, generators } from 'openid-client';
+import { Issuer, Client, generators, custom } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
+
+/**
+ * HTTP timeout for every server-side OIDC call (discovery, token grant, userinfo,
+ * jwks). openid-client defaults to 3500ms, which is BELOW Authentik's real p99 and
+ * broke Google sign-in outright — see the note in initialize(). Overridable via
+ * OIDC_HTTP_TIMEOUT_MS so it can be tuned per environment without a rebuild.
+ */
+const OIDC_HTTP_TIMEOUT_MS = Number(process.env.OIDC_HTTP_TIMEOUT_MS) || 15000;
 
 interface OIDCConfig {
   issuerUrl: string;
@@ -26,7 +34,19 @@ class OIDCService {
   async initialize(): Promise<void> {
     try {
       console.log('🔧 Initializing OIDC client...');
-      
+
+      // Raise openid-client's HTTP timeout. Its default is 3500ms, which is too
+      // short for Authentik's token endpoint and silently broke Google sign-in:
+      // the browser completed Google auth, the callback arrived with a valid code
+      // and state, and the code->token grant then died with
+      //   RPError: outgoing request timed out after 3500ms
+      // surfacing to the user as ?error=authentication_failed. Authentik averages
+      // ~1.3s per request with multi-second spikes, and the grant is several
+      // round-trips, so 3.5s is under the real p99. Applied via
+      // setHttpOptionsDefaults so it covers discovery, the token grant, userinfo
+      // and jwks — not just the one call that happened to fail first.
+      custom.setHttpOptionsDefaults({ timeout: OIDC_HTTP_TIMEOUT_MS });
+
       // Discover the issuer
       const issuer = await Issuer.discover(this.config.issuerUrl);
       console.log('✅ Discovered issuer:', issuer.metadata.issuer);
@@ -152,18 +172,35 @@ class OIDCService {
     const email = userinfo.email;
     const firstName = userinfo.given_name || userinfo.name?.split(' ')[0] || 'User';
     const lastName = userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || '';
+    // Project the provider's email-verification assertion into our local column.
+    // The enrollment email-verify stage (or a verified social login) sets the
+    // standard OIDC `email_verified` claim; we only ever flip FALSE->TRUE here so
+    // a stale/absent claim never un-verifies an already-verified account.
+    //
+    // Accept the STRING "true" as well as the boolean. The OIDC spec types this
+    // as a boolean, but real providers emit `"true"` — and this claim passes
+    // through from the upstream social provider (e.g. Google) as well as from our
+    // own IdP, so we cannot assume one encoding. A strict `=== true` silently
+    // treats a genuinely-verified account as unverified forever: it never gets
+    // promoted on login, and the moment REQUIRE_EMAIL_VERIFICATION is switched on
+    // that user is locked out of an account they did verify.
+    const emailVerifiedClaim =
+      userinfo.email_verified === true || userinfo.email_verified === 'true';
 
     try {
       // Check if user exists
       let userRow = await db('users').where('email', email).first();
 
       if (userRow) {
-        // Update existing user
+        // Update existing user. Only ever promote email_verified FALSE->TRUE.
         await db('users')
           .where('id', userRow.id)
           .update({
             first_name: firstName,
             last_name: lastName,
+            ...(emailVerifiedClaim && !userRow.email_verified
+              ? { email_verified: true }
+              : {}),
             updated_at: new Date(),
           });
 
@@ -179,6 +216,7 @@ class OIDCService {
           first_name: firstName,
           last_name: lastName,
           roles: JSON.stringify(['user']), // Default role
+          email_verified: emailVerifiedClaim,
           created_at: new Date(),
           updated_at: new Date(),
         };

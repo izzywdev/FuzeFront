@@ -89,6 +89,116 @@ git add deploy/contabo/sealed/fuzefront-secrets.yaml && git commit && git push
 > is owned by **feature-flags-engineer**; the Unleash DEPLOY (Helm/Argo) is devops.
 > This recipe only SEALS the token feature-flags-engineer hands over.
 
+## Adding the SMTP credentials (signup email-verification + password reset) — REQUIRED before enabling verification
+
+`email-service` is **enabled** in prod and its pod is **healthy — and it delivers
+nothing.** The service reads `SMTP_HOST` with an in-code fallback to
+`localhost:1025` (a dev mailhog). No host was wired, so every message — signup
+verification *and* password reset — was accepted and silently dropped. Green
+`/health`, zero delivery. Both features have been live-dead in prod since they
+shipped.
+
+The chart now wires SMTP from `emailService.email.smtp` (host/port/secure — NOT
+secret, they live in values) plus these two keys from the SealedSecret:
+
+| Key | Where to get it | Used by |
+|-----|-----------------|---------|
+| `SMTP_USER` | Zoho mailbox / app-specific user for the sending domain (e.g. `noreply@fuzefront.com`) | email-service → SMTP relay |
+| `SMTP_PASS` | Zoho **app-specific password** (not the account password; generate one per app) | email-service → SMTP relay |
+
+Both are mounted with **hard** `secretKeyRef`s (no `optional: true`) on the SMTP
+provider path — deliberately. An authenticated relay like Zoho rejects anonymous
+mail, so a missing credential must stop the pod at start rather than degrade back
+into silently dropping mail. Sealing these keys and setting the host go together.
+
+**The chart will not let you enable verification without a sender.** Setting
+`securityService.requireEmailVerification: true` while
+`emailService.email.smtp.host` is empty makes `helm template` **fail** — because
+turning verification on with no deliverable sender locks out *every* new signup
+(created unverified, never mailed). Verified in all three directions: off+no-host
+renders, on+no-host fails, on+host renders with SMTP env.
+
+```bash
+# Seal the two SMTP credentials in place (does not disturb other keys).
+for KEY in SMTP_USER SMTP_PASS; do
+  read -rsp "value for ${KEY}: " V; echo
+  printf '%s' "$V" | tr -d '[:space:]' > /tmp/smtp-val.txt
+  deploy/scripts/seal-secret.sh "$KEY" \
+    --from-file /tmp/smtp-val.txt \
+    --into deploy/contabo/sealed/fuzefront-secrets.yaml
+done
+rm -f /tmp/smtp-val.txt
+```
+
+**Go-live for email verification + password reset — in this order:**
+1. **Owner** seals `SMTP_USER` + `SMTP_PASS` (above).
+2. Set `emailService.email.smtp.host` (e.g. `smtp.zoho.com`), `port: 587`,
+   `secure: false` in `values-prod.yaml` via GitOps.
+3. **Prove the sender end-to-end** — a real message delivered to a real inbox.
+   Password reset starts working at this step (it needs no flag; it only needs
+   `EMAIL_SERVICE_URL`, which is already wired).
+4. Only then flip `securityService.requireEmailVerification: true` via GitOps in a
+   deploy window. Not before — step 3 is the proof the flag depends on.
+
+`SMTP_USER`/`SMTP_PASS` are credentials for a real mailbox and must be sealed by
+the **owner**; never paste them into values, a PR, or an issue.
+
+## Adding the Twilio keys (phone 2FA / `sms-service`) — REQUIRED before enabling SMS
+
+`smsService.enabled` is **false** in `values-prod.yaml` and **must stay false until
+these four keys are sealed**. Unlike `FEATURE_FLAGS_CLIENT_TOKEN` above, these are
+NOT optional: `templates/sms-service.yaml` mounts `SMS_AUTH_SECRET` via a hard
+`secretKeyRef` (no `optional: true`), so a missing key means the pod never starts —
+kubelet holds the container in `CreateContainerConfigError` / `CrashLoopBackOff`.
+
+Seal all four into the SAME `fuzefront-secrets` SealedSecret. The key names below
+are what the chart reads — they must match EXACTLY:
+
+| Key | Where to get it | Used by |
+|-----|-----------------|---------|
+| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info (starts `AC…`) | sms-service → Twilio Verify |
+| `TWILIO_AUTH_TOKEN` | Twilio console → Account Info (rotate-able) | sms-service → Twilio Verify |
+| `TWILIO_VERIFY_SERVICE_SID` | Twilio console → Verify → Services (starts `VA…`) | sms-service → Twilio Verify |
+| `SMS_AUTH_SECRET` | **Generate a fresh random value** — `openssl rand -hex 32` | Authentik + security-service authenticating TO sms-service |
+
+`SMS_AUTH_SECRET` is not issued by any vendor: it is an internal shared secret you
+mint yourself. It is consumed by the Authentik SMS stage blueprint
+(`deploy/helm/fuzefront/authentik/blueprints/stages-sms.yaml`), so the value sealed
+here must be the same one that stage uses.
+
+```bash
+# Seal each key in place (does not disturb the other keys in the manifest).
+for KEY in TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_VERIFY_SERVICE_SID; do
+  read -rsp "value for ${KEY}: " V; echo
+  printf '%s' "$V" | tr -d '[:space:]' > /tmp/sms-val.txt
+  deploy/scripts/seal-secret.sh "$KEY" \
+    --in /tmp/sms-val.txt \
+    --scope fuzefront/fuzefront-secrets \
+    --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+  rm -f /tmp/sms-val.txt
+done
+
+# SMS_AUTH_SECRET — minted here, not copied from a vendor.
+openssl rand -hex 32 | tr -d '\n' > /tmp/sms-auth.txt
+deploy/scripts/seal-secret.sh SMS_AUTH_SECRET \
+  --in /tmp/sms-auth.txt \
+  --scope fuzefront/fuzefront-secrets \
+  --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+rm -f /tmp/sms-auth.txt
+
+git add deploy/contabo/sealed/fuzefront-secrets.yaml
+git commit -m "secrets(prod): seal Twilio + SMS_AUTH_SECRET for phone 2FA"
+git push
+```
+
+Then, as a SEPARATE GitOps commit in a deploy window, flip
+`smsService.enabled: true` in `values-prod.yaml`. Keep the two steps apart so the
+secret is provably present before the Deployment renders.
+
+> Only the **owner** can perform this sealing — it needs the real Twilio credentials
+> and the cluster's sealing cert. Agents scaffold the wiring and the key names; they
+> never hold or commit the values.
+
 ## ⚠️ Resealing a single value (e.g. `AUTHENTIK_BOOTSTRAP_TOKEN`)
 
 To rotate or repair ONE key without retyping the rest, use the offline merge helper —

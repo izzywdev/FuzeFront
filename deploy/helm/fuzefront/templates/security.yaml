@@ -96,6 +96,28 @@ spec:
                   key: INTERNAL_PROVISION_SECRET
             - name: KAFKA_BROKERS
               value: {{ .Values.securityService.kafka.brokers | quote }}
+            # In-cluster dispatch targets for the verification flows. These MUST
+            # be set explicitly: the code's built-in fallbacks are
+            # http://email-service:3000 / http://sms-service:3000, which match
+            # NEITHER the real Service names (fuzefront-email-service /
+            # fuzefront-sms-service) NOR the real ports (3003 / 3004) — so the
+            # fallback silently never resolves. Rendered from the same values the
+            # Services are built from, so a port change cannot drift them apart.
+            {{- if .Values.emailService.enabled }}
+            - name: EMAIL_SERVICE_URL
+              value: "http://fuzefront-email-service:{{ .Values.emailService.port }}"
+            {{- end }}
+            {{- if .Values.smsService.enabled }}
+            - name: SMS_SERVICE_URL
+              value: "http://fuzefront-sms-service:{{ .Values.smsService.port }}"
+            {{- end }}
+            # Release/kill switch for signup email verification. The code reads
+            # the STRING "true" and additionally requires EMAIL_SERVICE_URL to be
+            # non-empty; if either is missing it DEGRADES to auto-verifying every
+            # account. That degrade is silent, which is why this is pinned from
+            # values per-env rather than left unset.
+            - name: REQUIRE_EMAIL_VERIFICATION
+              value: {{ .Values.securityService.requireEmailVerification | default false | quote }}
             {{- if .Values.authentik.oidc.enabled }}
             - name: AUTHENTIK_CLIENT_ID
               valueFrom:

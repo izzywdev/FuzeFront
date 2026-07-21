@@ -70,3 +70,7 @@ frontend/dist/
 task-manager-app/dist/
 .claude/worktrees/
 __pycache__/
+
+# design-frames Pages build output
+_site/
+_site_test/

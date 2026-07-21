@@ -79,6 +79,7 @@ const notifications: NotificationClient = {
   sendSmsOtp: jest.fn().mockResolvedValue(undefined),
   checkSmsOtp: jest.fn().mockResolvedValue(true),
   sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+  sendPasswordReset: jest.fn().mockResolvedValue(undefined),
 }
 
 jest.mock('../src/services/organizationProvisioning', () => ({
@@ -140,29 +141,41 @@ describe('passwordLogin', () => {
 })
 
 describe('social login boundary', () => {
-  it('rewrites the authorize URL to the same-host IdP proxy prefix when one is set', async () => {
+  it('launches the Google source (not authorize) under the same-host IdP proxy prefix when one is set', async () => {
     const p = newProvider()
     const { redirectUrl, state, codeVerifier } = await p.startSocialLogin('google', '/home')
-    expect(redirectUrl.startsWith('/api/auth/idp/application/o/authorize/')).toBe(true)
+    // Must hit the source-redirect view — that 302s straight to Google. Going
+    // to authorize with no session renders Authentik's `/if/flow/` UI instead.
+    expect(redirectUrl.startsWith('/api/auth/idp/source/oauth/login/google/')).toBe(true)
     expect(redirectUrl).not.toMatch(/auth\.internal\.example/)
+    // authorize is carried as the post-login `next`, not as the destination.
+    const next = new URLSearchParams(redirectUrl.split('?')[1]).get('next')
+    expect(next?.startsWith('/api/auth/idp/application/o/authorize/')).toBe(true)
     expect(state).toBeTruthy()
     // codeVerifier is surfaced so the route can set the oidc_cv cookie.
     expect(codeVerifier).toBe('cv')
   })
 
-  it('defaults to a NATIVE same-host authorize path (empty prefix, matching #256 ingress)', async () => {
+  it('defaults to a NATIVE same-host source path (empty prefix, matching #256 ingress)', async () => {
     const saved = process.env.SECURITY_IDP_PROXY_PREFIX
     delete process.env.SECURITY_IDP_PROXY_PREFIX
     try {
       const p = newProvider()
       const { redirectUrl } = await p.startSocialLogin('google', '/home')
       // Native path, no /api/auth/idp prefix, no double slash, no internal host.
-      expect(redirectUrl.startsWith('/application/o/authorize/')).toBe(true)
+      expect(redirectUrl.startsWith('/source/oauth/login/google/')).toBe(true)
       expect(redirectUrl.startsWith('//')).toBe(false)
       expect(redirectUrl).not.toMatch(/auth\.internal\.example/)
+      const next = new URLSearchParams(redirectUrl.split('?')[1]).get('next')
+      expect(next?.startsWith('/application/o/authorize/')).toBe(true)
     } finally {
       if (saved !== undefined) process.env.SECURITY_IDP_PROXY_PREFIX = saved
     }
+  })
+
+  it('never sends the browser to the Authentik flow UI (/if/)', async () => {
+    const { redirectUrl } = await newProvider().startSocialLogin('google', '/home')
+    expect(redirectUrl).not.toMatch(/\/if\//)
   })
   it('rejects an absolute redirectTo (open-redirect guard)', async () => {
     await expect(newProvider().startSocialLogin('google', 'https://evil.com')).rejects.toBeInstanceOf(InvalidInputError)

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reset — check your email · /reset/sent</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .auth { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8); }
+  .card { width: 100%; max-width: 400px; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl); padding: var(--space-8); position: relative; overflow: hidden;
+    box-shadow: var(--shadow-lg); text-align: center; }
+  .card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .brand { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-lg);
+    letter-spacing: var(--tracking-display); margin-bottom: var(--space-6); }
+  .brand .fuse { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .mail { width: 56px; height: 56px; margin: 0 auto var(--space-5); border-radius: var(--radius-pill);
+    display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-color); font-size: var(--text-xl); }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-3); letter-spacing: var(--tracking-display); }
+  .desc { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-2); line-height: 1.6; }
+  .email { color: var(--text-primary); font-weight: var(--weight-medium); }
+  .note { margin-top: var(--space-5); padding: var(--space-4); border-radius: var(--radius-md);
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-tertiary);
+    font-size: var(--text-xs); line-height: 1.6; text-align: left; }
+  .actions { margin-top: var(--space-6); display: flex; flex-direction: column; gap: var(--space-3); }
+  .resend { color: var(--text-tertiary); font-size: var(--text-sm); }
+  .resend a { color: var(--accent-color); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="auth">
+  <div class="card" data-frame="02-sent" data-panel="reset-sent" data-http="202">
+    <div class="card__seam"></div>
+    <div class="brand"><span class="fuse">Fuze</span>Front</div>
+    <div class="mail" aria-hidden="true">✉</div>
+    <h1>Check your email</h1>
+    <p class="desc">If <span class="email" data-echo="email">jordan@example.com</span> has an account,
+      a link to set a new password is on its way.</p>
+    <p class="desc">The link expires in 30 minutes and can be used once.</p>
+
+    <div class="note" data-security-note="no-enumeration">
+      We always show this screen after a reset request — even if there's no account for that email —
+      so no one can use this page to learn which addresses are registered.
+    </div>
+
+    <div class="actions">
+      <a href="03-set-new.html" class="btn btn-primary">Open the emailed link</a>
+      <span class="resend">Didn't get it? <a href="#" data-action="resend">Send again</a> or <a href="#" data-nav="sign-in">back to sign in</a></span>
+    </div>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Step 2</b> · Check your email · unconditional <code class="mono">202</code> — never reveals account existence</span>
+  <span>
+    <a href="01-request.html" class="btn btn-ghost">← Request</a>
+    <a href="03-set-new.html" class="btn btn-primary">Follow link →</a>
+  </span>
+</nav>
+</body>
+</html>

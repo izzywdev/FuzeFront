@@ -8,6 +8,14 @@ import { test, expect } from '@playwright/test'
 //
 // The menu card shows the manifest `menuLabel` ("Clock"); the remote's mounted
 // content shows its own heading ("🕒 FuzeClock") + a note unique to clock-app.
+//
+// Credentials come from the environment, mirroring auth-simple.spec.ts. Sign-in is
+// brokered through the identity provider, so the account must exist in Authentik.
+// The hardcoded admin@fuzefront.dev/admin123 these previously used only ever
+// worked against the local-password stack that no longer exists.
+const EMAIL = process.env.E2E_USER_EMAIL ?? 'admin@fuzefront.dev'
+const PASSWORD = process.env.E2E_USER_PASSWORD ?? 'admin123'
+
 test('Clock mounts from the launcher at runtime', async ({ page }) => {
   let dialogMessage = ''
   page.on('dialog', d => {
@@ -25,11 +33,16 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
   // --- sign in ---
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
-  await page.fill('input[type="email"]', 'admin@fuzefront.dev')
-  await page.fill('input[type="password"]', 'admin123')
+  await page.fill('input[type="email"]', EMAIL)
+  await page.fill('input[type="password"]', PASSWORD)
   await Promise.all([
+    // Login goes through the Security API (POST /api/v1/security/session);
+    // match the method so GET /session ("me") cannot satisfy the wait early.
     page.waitForResponse(
-      r => r.url().includes('/api/auth/login') && r.status() === 200
+      r =>
+        r.url().includes('/api/v1/security/session') &&
+        r.request().method() === 'POST' &&
+        r.status() === 200
     ),
     page.click('button[type="submit"]'),
   ])

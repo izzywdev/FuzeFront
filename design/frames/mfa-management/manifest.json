@@ -1,0 +1,216 @@
+{
+  "name": "MFA management — approval frames",
+  "description": "Contract-freeze UX artifacts for two-factor authentication management: enrol an authenticator (TOTP) or phone (text message), one-time recovery codes, remove a method, and the step-up challenge shown mid sign-in. Approving a flow approves its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. No provider name appears in any consumer surface.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "component": "@fuzefront/account-security-ui",
+    "featureFlag": "fuzefront.security.mfa-management",
+    "schemas": [
+      "components.schemas.MfaFactor",
+      "components.schemas.MfaEnrollRequest",
+      "components.schemas.MfaEnrollResult",
+      "components.schemas.MfaCodeRequest",
+      "components.schemas.RecoveryCodes",
+      "components.schemas.MfaChallengeRequest",
+      "components.schemas.MfaChallengeAck",
+      "components.schemas.MfaVerifyRequest",
+      "components.schemas.AuthMethods"
+    ],
+    "endpoints": [
+      "GET /v1/security/methods",
+      "GET /v1/security/mfa/factors",
+      "POST /v1/security/mfa/factors",
+      "POST /v1/security/mfa/factors/{factorId}/activate",
+      "DELETE /v1/security/mfa/factors/{factorId}",
+      "POST /v1/security/mfa/recovery-codes",
+      "POST /v1/security/mfa/challenge",
+      "POST /v1/security/mfa/verify"
+    ]
+  },
+  "honestDegrade": {
+    "signal": "GET /v1/security/methods -> mfa.types / verification.sms",
+    "rule": "Offer the text-message (SMS) factor ONLY when mfa.types includes 'sms'. In prod the delivery channel is deployed but disabled, so SMS renders as ChannelUnavailableNotice (disabled, with a reason) and TOTP is the primary path. Never present an enrol/challenge button that cannot deliver.",
+    "frames": [
+      "03-sms-enroll",
+      "05-step-up-challenge"
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "mfa-overview",
+        "orchestrator": "MfaOverviewFlow",
+        "route": "/account/security/mfa",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "totp-enroll",
+        "orchestrator": "TotpEnrollFlow",
+        "route": "/account/security/mfa/add/authenticator",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "sms-enroll",
+        "orchestrator": "SmsEnrollFlow",
+        "route": "/account/security/mfa/add/phone",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "recovery-codes",
+        "orchestrator": "RecoveryCodesFlow",
+        "route": "/account/security/mfa/recovery-codes",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "mfa-step-up",
+        "orchestrator": "MfaStepUpFlow",
+        "route": "/login/mfa",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "MfaOverviewPanel",
+      "MfaFactorList",
+      "MfaFactorRow",
+      "AddFactorMenu",
+      "TotpEnrollPanel",
+      "QrProvisioning",
+      "OtpInput",
+      "SmsEnrollPanel",
+      "ChannelUnavailableNotice",
+      "RecoveryCodesPanel",
+      "RemoveFactorDialog",
+      "MfaChallengeCard",
+      "FactorPicker"
+    ],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
+    "missingDesignSystemPrimitives": [
+      {
+        "name": "OtpInput",
+        "reason": "A segmented one-time-code input (6 cells, paste-aware, error state) is not yet in @fuzefront/design-system. frontend-engineer to add it as a foundation primitive; not styled one-off in feature code."
+      }
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-mfa-overview",
+      "file": "01-mfa-overview.html",
+      "label": "(01) Two-factor overview",
+      "route": "/account/security/mfa",
+      "flow": "mfa-overview",
+      "summary": "Enrolled methods list, add-a-method menu, recovery-codes status. Includes empty (no MFA), loading, and load-error states.",
+      "acceptanceNotes": "Renders factors from GET /mfa/factors with neutral labels (masked phone/email, never a provider name). Add-menu offers SMS only when methods.mfa.types includes 'sms'. Empty state invites first enrolment; error state offers retry.",
+      "testHooks": [
+        "[data-frame='01-mfa-overview']",
+        "[data-panel='mfa-overview'][data-state='loaded']",
+        "[data-panel='mfa-overview'][data-state='empty']",
+        "[data-panel='mfa-overview'][data-state='loading']",
+        "[data-panel='mfa-overview'][data-state='error']",
+        "[data-factor='totp']",
+        "[data-add='sms']",
+        "[data-action='remove-factor']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "02-totp-enroll",
+      "file": "02-totp-enroll.html",
+      "label": "(02) Add an authenticator app",
+      "route": "/account/security/mfa/add/authenticator",
+      "flow": "totp-enroll",
+      "summary": "QR + copyable setup key from MfaEnrollResult, then a 6-digit OtpInput to activate. Includes invalid-code and expired-code fail-closed states.",
+      "acceptanceNotes": "provisioningUri/secret come from POST /mfa/factors (type=totp). Activation via POST /mfa/factors/{factorId}/activate; a wrong/expired code shows an inline error and does not activate.",
+      "testHooks": [
+        "[data-frame='02-totp-enroll']",
+        "[data-component='totp-enroll'][data-state='scan']",
+        "[data-component='otp-input']",
+        "[data-action='activate-factor']",
+        "[data-state='error-invalid']",
+        "[data-state='error-expired']"
+      ]
+    },
+    {
+      "id": "03-sms-enroll",
+      "file": "03-sms-enroll.html",
+      "label": "(03) Add a phone (text message)",
+      "route": "/account/security/mfa/add/phone",
+      "flow": "sms-enroll",
+      "summary": "Enter phone -> confirm code. LEADS with the channel-unavailable state (prod reality: text delivery not configured); shows available enter/confirm and invalid-code states too.",
+      "acceptanceNotes": "Gate the entire flow on methods.mfa.types including 'sms'. When absent, render ChannelUnavailableNotice with a disabled field and route the user to TOTP. Never send a code that cannot be delivered.",
+      "testHooks": [
+        "[data-frame='03-sms-enroll']",
+        "[data-component='channel-unavailable'][data-available='false']",
+        "[data-component='sms-enroll'][data-state='enter-phone']",
+        "[data-component='sms-enroll'][data-state='confirm-code']",
+        "[data-action='send-code']",
+        "[data-state='error-invalid']"
+      ]
+    },
+    {
+      "id": "04-recovery-codes",
+      "file": "04-recovery-codes.html",
+      "label": "(04) Recovery codes",
+      "route": "/account/security/mfa/recovery-codes",
+      "flow": "recovery-codes",
+      "summary": "Shown-once reveal (copy/download/print), returning status with codes hidden, and a regenerate confirm that invalidates the prior set.",
+      "acceptanceNotes": "Codes from POST /mfa/recovery-codes are rendered once and never re-fetched. Regenerate requires an explicit acknowledgement that old codes stop working.",
+      "testHooks": [
+        "[data-frame='04-recovery-codes']",
+        "[data-component='recovery-codes'][data-state='shown-once']",
+        "[data-codes]",
+        "[data-action='download-codes']",
+        "[data-state='regenerate-confirm']",
+        "[data-action='regenerate-confirm']"
+      ]
+    },
+    {
+      "id": "05-step-up-challenge",
+      "file": "05-step-up-challenge.html",
+      "label": "(05) Step-up challenge (mid sign-in)",
+      "route": "/login/mfa",
+      "flow": "mfa-step-up",
+      "summary": "TOTP prompt, factor picker (from MfaRequiredChallenge.factors), invalid/expired fail-closed, and an SMS delivery-failure fallback.",
+      "acceptanceNotes": "Driven by an mfa_required SessionResult (challengeId + factors). Verify via POST /mfa/verify; bad/expired codes fail closed. SMS delivery failure surfaces and offers other factors.",
+      "testHooks": [
+        "[data-frame='05-step-up-challenge']",
+        "[data-component='mfa-challenge'][data-state='totp-prompt']",
+        "[data-component='factor-picker']",
+        "[data-action='verify-mfa']",
+        "[data-state='error-invalid']",
+        "[data-state='error-delivery']"
+      ]
+    },
+    {
+      "id": "06-remove-factor",
+      "file": "06-remove-factor.html",
+      "label": "(06) Remove a method",
+      "route": "/account/security/mfa",
+      "flow": "mfa-overview",
+      "summary": "Confirm removal when another factor remains; remove-last BLOCKED (409) when two-factor is required; and the removed success state.",
+      "acceptanceNotes": "DELETE /mfa/factors/{factorId}. When it would remove the caller's only active factor under an enforced-MFA policy, the server returns 409 and the UI blocks removal, routing the user to add another method first.",
+      "testHooks": [
+        "[data-frame='06-remove-factor']",
+        "[data-component='remove-factor-dialog'][data-state='confirm']",
+        "[data-component='remove-factor-dialog'][data-state='remove-last-blocked'][data-http-status='409']",
+        "[data-action='remove-confirm']",
+        "[data-error='remove-last']"
+      ]
+    }
+  ],
+  "stamp": "sha256:958ca1ab9d9c44d6f08926502c8bbd7261ef41e37b1736384cf66bd32bab0446"
+}

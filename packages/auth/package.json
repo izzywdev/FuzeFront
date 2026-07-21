@@ -1,7 +1,7 @@
 {
   "name": "@fuzefront/auth",
-  "version": "0.1.0",
-  "description": "Consumable authN/authZ client for the FuzeFront family — stable Identity shape with a pluggable token verifier (legacy-hs256 today, oidc-jwks target). Fail-closed. Never mints tokens.",
+  "version": "0.2.0",
+  "description": "Consumable authN/authZ middleware for the FuzeFront family \u2014 stable Identity shape with a pluggable, fail-closed token verifier (legacy-hs256 today, federated-jwks target). Verifies only; never mints tokens.",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,7 +27,7 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "express": "^4.17.21"
+    "express": "^4.22.2"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -35,13 +35,13 @@
     }
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.12",
-    "@types/node": "18.19.0",
-    "jest": "29.7.0",
-    "ts-jest": "29.1.1",
+    "@types/express": "^4.17.25",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^18.19.130",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.11",
     "tsup": "^8.0.2",
-    "typescript": "5.1.6"
+    "typescript": "^5.9.3"
   },
   "exports": {
     ".": {
@@ -49,5 +49,8 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
+  },
+  "dependencies": {
+    "jose": "^5.10.0"
   }
 }

@@ -98,10 +98,17 @@ export interface SocialCallbackInput {
  * the browser to. No token is ever placed in the redirect URL.
  */
 export interface SocialCallbackResult {
-  /** FuzeFront-minted single-use opaque code. */
+  /**
+   * FuzeFront-minted single-use opaque code. Empty for a LINK handshake, which
+   * attaches a provider to an already-signed-in account and mints no session.
+   */
   code: string;
   /** Same-origin app path to redirect the browser back to. */
   redirectTo: string;
+  /** True when this callback completed a LINK (not a sign-in) handshake. */
+  linked?: boolean;
+  /** For a link handshake, the neutral provider slug that was linked. */
+  provider?: string;
 }
 
 export interface M2MClientProvisionInput {
@@ -194,6 +201,72 @@ export interface VerificationStatus {
   phone?: string;
 }
 
+// ── Manage devices (platform sessions) ──
+
+/**
+ * One active platform session, as shown in "manage devices" (mirrors the API
+ * `SessionDevice` schema).
+ *
+ * `device`/`browser`/`os`/`ip`/`geo` are best-effort DISPLAY hints derived from
+ * what was recorded when the session was minted — they help a human recognise a
+ * session and are never inputs to an authorization decision. Any of them may be
+ * null.
+ *
+ * The platform session is the browser-facing truth: these are FuzeFront's own
+ * sessions, NOT any vendor's session objects.
+ */
+export interface SessionDevice {
+  /** Session id; pass to `revokeSession`. */
+  id: string;
+  device?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  ip?: string | null;
+  geo?: string | null;
+  /** Epoch millis of the session's most recent observed activity. */
+  lastSeenAt?: number;
+  /** True for the session that made the request. */
+  current: boolean;
+}
+
+/** Context recorded when a session is minted, for the device list. */
+export interface SessionContext {
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+// ── Account sign-in connections (social links + password) ──
+
+/** A linked social sign-in connection (mirrors the API `SocialConnection`). */
+export interface SocialConnection {
+  /** Neutral provider slug (e.g. `google`) — never a vendor/IdP name. */
+  provider: string;
+  /** Epoch millis when the provider was linked. */
+  linkedAt?: number;
+}
+
+/**
+ * The account's sign-in methods (mirrors the API `IdentityConnections`).
+ *
+ * `hasPassword` is false when a password is known-absent OR unknown — callers
+ * must treat it as "no password proven", which is the fail-closed reading for
+ * the last-sign-in-method guard.
+ */
+export interface IdentityConnections {
+  providers: SocialConnection[];
+  hasPassword: boolean;
+}
+
+/** The outcome of beginning a social-LINK handshake for a signed-in user. */
+export interface SocialLinkStart {
+  /** Same-host URL to navigate the browser to. Never an internal identity host. */
+  redirectUrl: string;
+  /** Opaque anti-forgery state the callback must echo. */
+  state: string;
+  /** PKCE code_verifier, persisted by the route in an HttpOnly cookie. */
+  codeVerifier: string;
+}
+
 /**
  * The AuthN swap contract. Shaped from the current server-brokered behavior in
  * `backend/security/src/routes/auth.ts` (`/oidc/password` :520, `/oidc/login`
@@ -201,20 +274,23 @@ export interface VerificationStatus {
  * `services/*`. Providers are swappable behind it.
  */
 export interface IdentityProvider {
-  /** Password login (server-brokered). Rejects on bad credentials. */
-  passwordLogin(input: PasswordLoginInput): Promise<BrokeredSession>;
+  /**
+   * Password login (server-brokered). Rejects on bad credentials.
+   * `ctx` records the device/IP the session was minted from, for manage-devices.
+   */
+  passwordLogin(input: PasswordLoginInput, ctx?: SessionContext): Promise<BrokeredSession>;
 
   /** Begin a social login; returns where to 302 the browser + anti-forgery state. */
   startSocialLogin(provider: string, redirectTo?: string): Promise<SocialLoginStart>;
 
   /** Complete the social handshake; returns a single-use opaque code + return path. */
-  brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult>;
+  brokerCallback(input: SocialCallbackInput, ctx?: SessionContext): Promise<SocialCallbackResult>;
 
   /** Exchange a single-use opaque code for a session. Rejects on unknown/expired code. */
   exchangeCode(code: string): Promise<BrokeredSession>;
 
   /** Server-brokered account creation. Rejects with CONFLICT if the email exists. */
-  signup(input: SignupInput): Promise<BrokeredSession>;
+  signup(input: SignupInput, ctx?: SessionContext): Promise<BrokeredSession>;
 
   /** Normalized identity + user for a presented session token ("me"). */
   getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
@@ -257,7 +333,29 @@ export interface IdentityProvider {
   challengeMfa(challengeId: string, factorId: string): Promise<MfaChallengeAck>;
 
   /** Verify a login-step-up challenge; on success returns an authenticated session. */
-  verifyMfa(challengeId: string, factorId: string, code: string): Promise<BrokeredSession>;
+  verifyMfa(
+    challengeId: string,
+    factorId: string,
+    code: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession>;
+
+  // ── Self-service password reset ──
+
+  /**
+   * Begin a self-service password reset for `email`. NEVER reveals whether the
+   * address maps to an account — resolves silently and always fulfils, so the
+   * caller can answer an unconditional 202 (no user enumeration).
+   */
+  requestPasswordReset(email: string): Promise<void>;
+
+  /**
+   * Complete a password reset with the single-use token from the dispatched
+   * message. Sets the credential in the identity store and revokes every
+   * existing session for the account. Fail-closed on an unknown/expired/consumed
+   * token.
+   */
+  confirmPasswordReset(token: string, newPassword: string): Promise<void>;
 
   // ── Contact-ownership verification (distinct from MFA login step-up) ──
 
@@ -275,4 +373,46 @@ export interface IdentityProvider {
 
   /** Current contact-verification status for the user. */
   getVerificationStatus(token: string): Promise<VerificationStatus>;
+
+  // ── Manage devices (platform sessions) ──
+  //
+  // These operate on FuzeFront's OWN session store — the source of truth that
+  // `authenticateToken` enforces — so revocation is REAL: a revoked session's
+  // token stops authenticating immediately. A vendor's own session objects are
+  // never exposed here; that would leak the provider across the boundary.
+
+  /** List the user's active sessions, flagging the caller's own. Bounded per user. */
+  listSessions(token: string): Promise<SessionDevice[]>;
+
+  /** Revoke one session belonging to the caller. Idempotent. */
+  revokeSession(token: string, sessionId: string): Promise<void>;
+
+  /** Revoke every session for the caller EXCEPT the one presenting `token`. Idempotent. */
+  revokeOtherSessions(token: string): Promise<void>;
+
+  // ── Account sign-in connections ──
+
+  /** The account's linked social providers + whether a password method exists. */
+  getIdentityConnections(token: string): Promise<IdentityConnections>;
+
+  /**
+   * Begin linking a social provider to the ALREADY-SIGNED-IN account.
+   * Rejects with CONFLICT when the provider is already linked.
+   */
+  startSocialLink(token: string, provider: string): Promise<SocialLinkStart>;
+
+  /**
+   * Unlink a social provider. Fail-closed: rejects with CONFLICT when it would
+   * leave the account with NO sign-in method (no password AND no other social)
+   * — an account must always retain at least one way back in.
+   */
+  unlinkSocial(token: string, provider: string): Promise<IdentityConnections>;
+
+  /**
+   * Set a password on an account that has none (e.g. social-only). Rejects with
+   * CONFLICT when a password sign-in method already exists — changing an
+   * existing password goes through the reset flow. The password is set in the
+   * identity store; FuzeFront never stores one.
+   */
+  setPassword(token: string, newPassword: string): Promise<IdentityConnections>;
 }

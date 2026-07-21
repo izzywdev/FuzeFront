@@ -24,7 +24,11 @@ import { db as defaultDb } from '../../config/database'
 import { oidcService as defaultOidc } from '../../services/oidc'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
-import { authentikSignup as defaultSignup, EnrollmentConflictError } from '../../services/authentikPassword'
+import {
+  authentikSignup as defaultSignup,
+  EnrollmentConflictError,
+  authentikSetPassword as defaultSetPassword,
+} from '../../services/authentikPassword'
 import { putBrokerCode, takeBrokerCode } from '../../services/brokerCodes'
 import type {
   IdentityProvider,
@@ -47,7 +51,20 @@ import type {
   MfaEnrollResult,
   MfaChallengeAck,
   VerificationStatus,
+  SessionContext,
+  SessionDevice,
+  SocialConnection,
+  IdentityConnections,
+  SocialLinkStart,
 } from '../IdentityProvider'
+import {
+  findUserPk,
+  listOAuthConnections,
+  deleteOAuthConnection,
+  setUserPassword,
+  PasswordPolicyError,
+} from './accountApi'
+import { parseUserAgent } from './userAgent'
 import {
   HttpNotificationClient,
   type NotificationClient,
@@ -95,6 +112,20 @@ export class UnauthorizedError extends Error {
   }
 }
 
+/**
+ * Thrown when an addressed resource does not exist for the CALLER (maps to 404).
+ *
+ * Only used where the contract specifies 404 and the existence of the resource
+ * is not itself sensitive — e.g. unlinking a provider the account has not
+ * linked. Never used to distinguish another account's resources.
+ */
+export class NotFoundError extends Error {
+  constructor(message = 'Not found') {
+    super(message)
+    this.name = 'NotFoundError'
+  }
+}
+
 type Db = typeof defaultDb
 
 interface SocialState {
@@ -106,9 +137,61 @@ interface MfaChallenge {
   userId: string
   expiresAt: number
 }
+/** An in-flight LINK handshake, bound to the account that started it. */
+interface SocialLinkState {
+  codeVerifier: string
+  /** The signed-in account the provider will be attached to. */
+  userId: string
+  /** That account's email at start — the identity the callback must return. */
+  email: string
+  provider: string
+  redirectTo: string
+  expiresAt: number
+}
+
+/**
+ * The social providers FuzeFront exposes. Neutral slugs; they happen to match
+ * the identity store's source slugs, which is why `startSocialLogin` can build a
+ * source path from one — so this guard is also what stops a new provider being
+ * silently routed through another's source.
+ */
+const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google'])
 
 const CHALLENGE_TTL_MS = 5 * 60_000
 const EMAIL_VERIFY_TTL_MS = 30 * 60_000
+/** Reset tokens are short-lived — they are a credential-change capability. */
+const PASSWORD_RESET_TTL_MS = 30 * 60_000
+
+/**
+ * Password reset needs only a deliverable email channel — unlike registration
+ * verification it has no release flag, because a reset is always user-initiated
+ * and never blocks signup. With no `EMAIL_SERVICE_URL` we GRACEFULLY DEGRADE:
+ * mint nothing, log, and still resolve, so the route's unconditional 202 holds
+ * and no user is stranded on an undeliverable token.
+ */
+function passwordResetEnabled(): boolean {
+  return !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
+}
+
+/**
+ * Registration-time email verification is a two-condition gate, kept a release
+ * flag (default OFF) until prod SMTP is wired:
+ *
+ *   - `REQUIRE_EMAIL_VERIFICATION` (default `false`) is the release/kill switch.
+ *   - `EMAIL_SERVICE_URL` must be configured (the family email-service reachable
+ *     by Service DNS) for a real message to be deliverable.
+ *
+ * When BOTH hold, verification is REQUIRED: we mint a link token + OTP and
+ * dispatch it. Otherwise we GRACEFULLY DEGRADE — auto-verify the address and log
+ * — so signup/local dev/prod-without-SMTP never strands a user on an
+ * undeliverable challenge. Provider-neutral: no vendor is named.
+ */
+export function emailVerificationEnabled(): boolean {
+  return (
+    process.env.REQUIRE_EMAIL_VERIFICATION === 'true' &&
+    !!(process.env.EMAIL_SERVICE_URL && process.env.EMAIL_SERVICE_URL.trim())
+  )
+}
 
 export interface AuthentikProviderDeps {
   db: Db
@@ -118,6 +201,8 @@ export interface AuthentikProviderDeps {
   signupFn: (input: SignupInput) => Promise<BrokeredUser>
   notifications: NotificationClient
   now: () => number
+  /** Sets the credential in the identity store (never a local hash). */
+  setPasswordFn: (email: string, newPassword: string) => Promise<void>
   /** Injected M2M provisioning (defaults to the absorbed machine-identity module). */
   provisionM2M?: (name: string, scopes: string[]) => Promise<M2MClient>
   issueM2M?: (input: M2MTokenInput) => Promise<M2MToken>
@@ -143,11 +228,13 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private signupFn: (input: SignupInput) => Promise<BrokeredUser>
   private notifications: NotificationClient
   private now: () => number
+  private setPasswordFn: (email: string, newPassword: string) => Promise<void>
   private provisionM2MFn?: (name: string, scopes: string[]) => Promise<M2MClient>
   private issueM2MFn?: (input: M2MTokenInput) => Promise<M2MToken>
   private introspectM2MFn?: (token: string) => Promise<TokenIntrospection>
 
   private socialStates = new Map<string, SocialState>()
+  private socialLinkStates = new Map<string, SocialLinkState>()
   private mfaChallenges = new Map<string, MfaChallenge>()
 
   constructor(deps: Partial<AuthentikProviderDeps> = {}) {
@@ -172,13 +259,14 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       })
     this.notifications = deps.notifications ?? new HttpNotificationClient()
     this.now = deps.now ?? (() => Date.now())
+    this.setPasswordFn = deps.setPasswordFn ?? defaultSetPassword
     this.provisionM2MFn = deps.provisionM2M
     this.issueM2MFn = deps.issueM2M
     this.introspectM2MFn = deps.introspectM2M
   }
 
   // ── Session minting ───────────────────────────────────────────────────────
-  private async mintSession(user: BrokeredUser): Promise<BrokeredSession> {
+  private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
     const sessionId = uuidv4()
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
     const token = jwt.sign({ userId: user.id, sessionId }, jwtSecret(), {
@@ -188,6 +276,13 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
+      // Device telemetry for manage-devices. Recorded once, at mint time: it
+      // describes where the session was ESTABLISHED from, which is what makes a
+      // session recognisable to its owner. Truncated because the user-agent is
+      // caller-controlled and otherwise unbounded.
+      ip: ctx?.ip ? String(ctx.ip).slice(0, 64) : null,
+      user_agent: ctx?.userAgent ? String(ctx.userAgent).slice(0, 512) : null,
+      last_seen_at: new Date(this.now()),
     })
     // Self-heal provisioning in the background — never blocks/fails the response.
     runInternalProvision(user.id).catch(err =>
@@ -204,7 +299,10 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   /** Gate a freshly-authenticated user through MFA step-up when factors exist. */
-  private async sessionOrChallenge(user: BrokeredUser): Promise<BrokeredSession> {
+  private async sessionOrChallenge(
+    user: BrokeredUser,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession> {
     const factors = await this.loadActiveFactors(user.id)
     if (factors.length > 0) {
       const challengeId = crypto.randomBytes(24).toString('hex')
@@ -217,16 +315,36 @@ export class AuthentikIdentityProvider implements IdentityProvider {
         factors.map(f => ({ factorId: f.factorId, type: f.type }))
       )
     }
-    return this.mintSession(user)
+    return this.mintSession(user, ctx)
   }
 
   // ── Password login ────────────────────────────────────────────────────────
-  async passwordLogin(input: PasswordLoginInput): Promise<BrokeredSession> {
+  async passwordLogin(input: PasswordLoginInput, ctx?: SessionContext): Promise<BrokeredSession> {
     if (!input?.email || !input?.password) {
       throw new InvalidInputError('email and password are required')
     }
     const user = await this.passwordLoginFn(input.email, input.password)
-    return this.sessionOrChallenge(user)
+    // A successful password login PROVES a password sign-in method exists —
+    // the one truthful signal available for legacy rows whose has_password is
+    // still unknown (the identity store exposes no read path for it).
+    await this.markHasPassword(user.id, true)
+    return this.sessionOrChallenge(user, ctx)
+  }
+
+  /**
+   * Record known password state on the local projection.
+   *
+   * Only ever called where we have PROOF (a successful password login, an
+   * enrollment we drove, a set-password we performed) — never a guess. See
+   * migration 013 for why NULL/unknown exists and how it is resolved.
+   */
+  private async markHasPassword(userId: string, value: boolean): Promise<void> {
+    try {
+      await this.db('users').where({ id: userId }).update({ has_password: value })
+    } catch (err) {
+      // Never fail a sign-in over a projection write.
+      console.error('[security] has_password projection update failed: %s', (err as Error).message)
+    }
   }
 
   // ── Social login (server-brokered; browser never sees an internal host) ────
@@ -247,7 +365,26 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // Rewrite the absolute internal authorize URL to a SAME-HOST path under the
     // IdP reverse-proxy prefix, so the browser never sees the internal host.
     const authorize = new URL(url)
-    const redirectUrl = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+    const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+
+    // Launch the provider's SOURCE directly rather than sending the browser to
+    // the generic authorize endpoint. Authorize requires an authenticated
+    // session, so with none it falls back to the brand's authentication flow
+    // and renders the IdP's identification page (`/if/flow/...`) with a social
+    // button — stranding the user on the provider's own UI.
+    //
+    // The source-redirect view instead 302s straight to the social provider.
+    // It returns to /source/oauth/callback/<provider>/, the source flow runs
+    // (auto stages: silent enrollment first time, login when returning) and
+    // establishes the session, then `next` sends the browser to authorize,
+    // which now issues the code silently. Same cookie/state/PKCE round-trip —
+    // this only inserts one hop ahead of authorize, so no `/if/flow/` renders.
+    //
+    // The source slug tracks `provider` (guarded to `google` above) so widening
+    // that guard cannot silently route a new provider through Google's source.
+    const redirectUrl =
+      `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
+      `?next=${encodeURIComponent(authorizePath)}`
 
     this.socialStates.set(state, {
       codeVerifier,
@@ -259,7 +396,20 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return { redirectUrl, state, codeVerifier }
   }
 
-  async brokerCallback(input: SocialCallbackInput): Promise<SocialCallbackResult> {
+  async brokerCallback(
+    input: SocialCallbackInput,
+    ctx?: SessionContext
+  ): Promise<SocialCallbackResult> {
+    // A LINK handshake (started by a signed-in user via startSocialLink) shares
+    // this callback but must NOT mint a session — it attaches a provider to the
+    // account that is already signed in. Checked first so a link state can never
+    // fall through into the sign-in path.
+    const link = this.socialLinkStates.get(input.state)
+    if (link) {
+      this.socialLinkStates.delete(input.state)
+      return this.completeSocialLink(input, link)
+    }
+
     const st = this.socialStates.get(input.state)
     if (!st || st.expiresAt < this.now()) {
       this.socialStates.delete(input.state)
@@ -275,7 +425,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
     // Mint the session now and hand back a single-use opaque code (never a token
     // in the URL). Social sign-in does not re-gate MFA at the browser hop.
-    const session = await this.mintSession(user)
+    const session = await this.mintSession(user, ctx)
     const code = crypto.randomBytes(32).toString('hex')
     // Shared store: a code minted here OR by the legacy /api/auth/oidc/callback
     // is redeemable by the SPA's /api/v1/security/session/exchange.
@@ -306,7 +456,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   // outbox row + event). There is NO local bcrypt user — that split-brain (a
   // local user Authentik never knew about, thus unable to log in) is the bug this
   // replaces.
-  async signup(input: SignupInput): Promise<BrokeredSession> {
+  async signup(input: SignupInput, ctx?: SessionContext): Promise<BrokeredSession> {
     if (!input?.email || !input?.password) {
       throw new InvalidInputError('email and password are required')
     }
@@ -322,9 +472,59 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       if (err instanceof EnrollmentConflictError) throw new ConflictError()
       throw err
     }
+    // Kick off contact-ownership verification for the freshly-enrolled address.
+    // Best-effort: a delivery/transport failure must NOT fail the signup — the
+    // user can re-request via /verify/email/start. In degrade mode this simply
+    // auto-verifies + logs. Uses the user id directly (no bearer needed yet).
+    try {
+      await this.startEmailVerificationForUser(user.id, user.email)
+    } catch (err) {
+      // Constant format string + args: the email is attacker-chosen, so
+      // interpolating it INTO the format string lets a `%s` in an address forge
+      // log output (console.* applies util.format specifiers to the first arg).
+      console.error(
+        '[security] signup email-verification dispatch failed for %s: %s',
+        maskContact(user.email),
+        (err as Error).message,
+      )
+    }
+
+    // Enrollment always sets a password, so this account demonstrably HAS a
+    // password sign-in method — record it (this is proof, not a guess).
+    await this.markHasPassword(user.id, true)
+
     // Gate through MFA step-up if the (rare, freshly-enrolled) account already
     // has active factors — otherwise mint the session directly.
-    return this.sessionOrChallenge(user)
+    return this.sessionOrChallenge(user, ctx)
+  }
+
+  /**
+   * Internal variant of startEmailVerification keyed by a known user id (used at
+   * signup, before any bearer exists). Honours the same degrade gate.
+   */
+  private async startEmailVerificationForUser(userId: string, email: string): Promise<void> {
+    if (!email) return
+    if (!emailVerificationEnabled()) {
+      await this.db('users').where({ id: userId }).update({ email_verified: true })
+      console.warn(
+        `[security] email verification degraded at signup (auto-verified ${maskContact(
+          email,
+        )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`,
+      )
+      return
+    }
+    const linkToken = crypto.randomBytes(32).toString('hex')
+    const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+    await this.db('email_verifications').insert({
+      id: uuidv4(),
+      user_id: userId,
+      email,
+      token_hash: sha256(linkToken),
+      code_hash: sha256(code),
+      expires_at: new Date(this.now() + EMAIL_VERIFY_TTL_MS),
+      consumed: false,
+    })
+    await this.notifications.sendEmailVerification(email, linkToken, code)
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
@@ -559,7 +759,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     return { challengeId, factorId, delivered: false }
   }
 
-  async verifyMfa(challengeId: string, factorId: string, code: string): Promise<BrokeredSession> {
+  async verifyMfa(
+    challengeId: string,
+    factorId: string,
+    code: string,
+    ctx?: SessionContext
+  ): Promise<BrokeredSession> {
     const ch = this.mfaChallenges.get(challengeId)
     if (!ch || ch.expiresAt < this.now()) {
       this.mfaChallenges.delete(challengeId)
@@ -573,7 +778,109 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     if (!ok) throw new UnauthorizedError('invalid code')
     this.mfaChallenges.delete(challengeId)
     const user = await this.loadUser(ch.userId)
-    return this.mintSession(user)
+    return this.mintSession(user, ctx)
+  }
+
+  // ── Self-service password reset ───────────────────────────────────────────
+  /**
+   * Begin a reset. Unconditionally resolves — an unknown address, a disabled
+   * email channel, and a real dispatch are INDISTINGUISHABLE to the caller, so
+   * the route's 202 leaks nothing about account existence.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!email || typeof email !== 'string') {
+      throw new InvalidInputError('email is required')
+    }
+
+    // Degrade mode: no email channel wired — a reset token would be
+    // undeliverable, so mint nothing and log. Still resolves (no enumeration).
+    if (!passwordResetEnabled()) {
+      console.warn(
+        `[security] password reset requested for ${maskContact(email)} but no email ` +
+          'channel is configured — nothing dispatched. Set EMAIL_SERVICE_URL to enable.'
+      )
+      return
+    }
+
+    const user = await this.db('users').whereRaw('LOWER(email) = ?', [email.toLowerCase()]).first()
+    if (!user) {
+      // Unknown address: do the same nothing, tell the caller the same nothing.
+      console.warn(
+        `[security] password reset requested for unknown address ${maskContact(email)} — no-op.`
+      )
+      return
+    }
+
+    // Invalidate any outstanding challenge for this user, so a reset request
+    // supersedes its predecessors rather than leaving several live tokens.
+    await this.db('password_resets')
+      .where({ user_id: user.id, consumed: false })
+      .update({ consumed: true })
+
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    await this.db('password_resets').insert({
+      id: uuidv4(),
+      user_id: user.id,
+      email: user.email,
+      token_hash: sha256(resetToken),
+      expires_at: new Date(this.now() + PASSWORD_RESET_TTL_MS),
+      consumed: false,
+    })
+
+    try {
+      await this.notifications.sendPasswordReset(user.email, resetToken)
+    } catch (err) {
+      // Dispatch failure must not become an enumeration oracle (a 5xx for real
+      // accounts only). Burn the token and resolve; the user can retry.
+      await this.db('password_resets')
+        .where({ token_hash: sha256(resetToken) })
+        .update({ consumed: true })
+      console.error(
+        `[security] password reset dispatch failed for ${maskContact(user.email)}:`,
+        err
+      )
+    }
+  }
+
+  /**
+   * Complete a reset: validate the single-use token, set the credential in the
+   * identity store, consume the token, then REVOKE EVERY SESSION for the account
+   * — a password reset must not leave a pre-reset session alive (that is the
+   * whole point when the reset follows a compromise).
+   */
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    if (!token || typeof token !== 'string') {
+      throw new InvalidInputError('token is required')
+    }
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+
+    const row = await this.db('password_resets')
+      .where({ token_hash: sha256(token), consumed: false })
+      .first()
+    // Unknown, already-consumed, and expired all fail identically.
+    if (!row || new Date(row.expires_at).getTime() < this.now()) {
+      throw new InvalidInputError('invalid or expired reset token')
+    }
+
+    const user = await this.db('users').where({ id: row.user_id }).first()
+    if (!user) throw new InvalidInputError('invalid or expired reset token')
+
+    // Set the credential in the identity store FIRST. If this throws (policy
+    // rejection / store unavailable) the token stays live so a valid retry with
+    // a compliant password still works.
+    await this.setPasswordFn(user.email, newPassword)
+
+    await this.db('password_resets').where({ id: row.id }).update({ consumed: true })
+
+    // Revoke all sessions. `authenticateToken` enforces the sessions table, so
+    // deleting these genuinely signs the account out everywhere.
+    const revoked = await this.db('sessions').where({ user_id: user.id }).del()
+    console.warn(
+      `[security] password reset completed for ${maskContact(user.email)}; ` +
+        `revoked ${revoked} session(s).`
+    )
   }
 
   // ── Contact-ownership verification ────────────────────────────────────────
@@ -586,6 +893,35 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       target = target || user.email
     }
     if (!target) throw new InvalidInputError('email is required')
+
+    // Degrade mode: verification not required (flag off) or no email-service
+    // wired — auto-verify the local projection and log. Never strand the user on
+    // an undeliverable challenge.
+    if (!emailVerificationEnabled()) {
+      // Resolve by EMAIL when there is no token: the signup path calls this with
+      // an address and no session, so `userId` is null there. Gating the update
+      // on `userId` meant that path updated NOTHING while still logging
+      // "auto-verified" — the account stayed unverified and the log said
+      // otherwise. Harmless while the flag is off, but it strands exactly those
+      // accounts the moment REQUIRE_EMAIL_VERIFICATION is switched on.
+      const updated = userId
+        ? await this.db('users').where({ id: userId }).update({ email_verified: true })
+        : await this.db('users').where({ email: target }).update({ email_verified: true })
+
+      // Log what actually happened. `updated === 0` is legitimate (the user row
+      // may not be synced yet mid-signup) but it must not read as success.
+      console.warn(
+        updated
+          ? `[security] email verification degraded (auto-verified ${maskContact(
+              target,
+            )}); set REQUIRE_EMAIL_VERIFICATION=true + EMAIL_SERVICE_URL to enforce.`
+          : `[security] email verification degraded and NO user row matched ${maskContact(
+              target,
+            )} — left unverified; it will be promoted on first login via the OIDC email_verified claim.`,
+      )
+      return
+    }
+
     const linkToken = crypto.randomBytes(32).toString('hex')
     const code = ('' + crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     await this.db('email_verifications').insert({
@@ -639,6 +975,251 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       phoneVerified: !!row.phone_verified,
       phone: row.phone || undefined,
     }
+  }
+
+  // ── Manage devices (platform sessions) ────────────────────────────────────
+  //
+  // These read/write FuzeFront's OWN `sessions` table — the store that
+  // `authenticateToken` checks on every request. That is what makes revocation
+  // REAL rather than cosmetic: deleting the row invalidates the token on its
+  // next use, with no waiting for the JWT to expire.
+  //
+  // The identity vendor's own session objects are deliberately NOT surfaced:
+  // the platform session is the browser-facing truth, and exposing the vendor's
+  // would leak it across the provider boundary.
+
+  async listSessions(token: string): Promise<SessionDevice[]> {
+    // getUserInfo enforces that the CALLER's own session is still live, so a
+    // revoked token cannot enumerate the account's devices.
+    const { user } = await this.getUserInfo(token)
+    const decoded = this.verifySessionToken(token)
+
+    const rows = await this.db('sessions').where({ user_id: user.id }).select('*')
+    const nowMs = this.now()
+    return rows
+      // Expired-but-not-yet-reaped rows are not "active" — showing them would
+      // invite a user to revoke a session that already carries no access.
+      .filter(r => !r.expires_at || new Date(r.expires_at).getTime() > nowMs)
+      .map(r => {
+        const ua = parseUserAgent(r.user_agent)
+        return {
+          id: r.id,
+          device: ua.device,
+          browser: ua.browser,
+          os: ua.os,
+          ip: r.ip ?? null,
+          // Coarse geolocation needs a geo-IP source we do not deploy; the
+          // contract types it nullable, so report null rather than invent one.
+          geo: null,
+          lastSeenAt: r.last_seen_at
+            ? new Date(r.last_seen_at).getTime()
+            : r.created_at
+              ? new Date(r.created_at).getTime()
+              : undefined,
+          current: r.id === decoded.sessionId,
+        }
+      })
+      .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0))
+  }
+
+  async revokeSession(token: string, sessionId: string): Promise<void> {
+    const { user } = await this.getUserInfo(token)
+    // Scoped to the caller's own user_id: this is the object-level authorization
+    // check. Without it any signed-in user could revoke anyone's session by id.
+    // A non-matching id deletes nothing — idempotent, and it does not disclose
+    // whether that session exists on another account.
+    await this.db('sessions').where({ id: sessionId, user_id: user.id }).del()
+  }
+
+  async revokeOtherSessions(token: string): Promise<void> {
+    const { user } = await this.getUserInfo(token)
+    const decoded = this.verifySessionToken(token)
+    const q = this.db('sessions').where({ user_id: user.id })
+    if (decoded.sessionId) {
+      // Keep the caller's own session — "sign out everywhere else" must not sign
+      // the caller out.
+      q.whereNot({ id: decoded.sessionId })
+    }
+    await q.del()
+  }
+
+  // ── Account sign-in connections ───────────────────────────────────────────
+
+  /** Map identity-store source slugs to neutral provider slugs (unknown → dropped). */
+  private toNeutralConnections(
+    conns: Array<{ sourceSlug: string; createdAt?: number }>
+  ): SocialConnection[] {
+    return conns
+      .filter(c => SUPPORTED_SOCIAL_PROVIDERS.has(c.sourceSlug))
+      .map(c => ({ provider: c.sourceSlug, linkedAt: c.createdAt }))
+  }
+
+  /**
+   * Read the account's sign-in methods.
+   *
+   * Social links come from the identity store (authoritative). `hasPassword`
+   * comes from our local projection because the store exposes NO read path for
+   * password state — see migration 013. Unknown (NULL) reports FALSE: the safe
+   * reading, since it drives the UI to offer "set a password" and makes the
+   * unlink guard refuse rather than risk a lockout.
+   */
+  async getIdentityConnections(token: string): Promise<IdentityConnections> {
+    const { user } = await this.getUserInfo(token)
+    return this.connectionsForUser(user)
+  }
+
+  private async connectionsForUser(user: BrokeredUser): Promise<IdentityConnections> {
+    const pk = await findUserPk(user.email)
+    const conns = await listOAuthConnections(pk)
+    const row = await this.db('users').where({ id: user.id }).first()
+    return {
+      providers: this.toNeutralConnections(conns),
+      hasPassword: row?.has_password === true,
+    }
+  }
+
+  async startSocialLink(token: string, provider: string): Promise<SocialLinkStart> {
+    if (!SUPPORTED_SOCIAL_PROVIDERS.has(provider)) {
+      throw new InvalidInputError(`unsupported social provider: ${provider}`)
+    }
+    const { user } = await this.getUserInfo(token)
+
+    // Already linked ⇒ CONFLICT, per the contract.
+    const current = await this.connectionsForUser(user)
+    if (current.providers.some(p => p.provider === provider)) {
+      throw new ConflictError(`${provider} is already linked to this account`)
+    }
+
+    if (!this.oidc.isInitialized()) {
+      await this.oidc.initialize()
+    }
+    const state = crypto.randomBytes(24).toString('hex')
+    const { url, codeVerifier } = this.oidc.generateAuthUrl(state)
+    const authorize = new URL(url)
+    const authorizePath = `${idpProxyPrefix()}${authorize.pathname}${authorize.search}`
+
+    // Same same-host boundary rewrite as sign-in: the browser only ever transits
+    // the app host and the social provider's own consent host.
+    const redirectUrl =
+      `${idpProxyPrefix()}/source/oauth/login/${provider}/` +
+      `?next=${encodeURIComponent(authorizePath)}`
+
+    this.socialLinkStates.set(state, {
+      codeVerifier,
+      userId: user.id,
+      email: user.email,
+      provider,
+      redirectTo: '/account/security',
+      expiresAt: this.now() + 10 * 60_000,
+    })
+    return { redirectUrl, state, codeVerifier }
+  }
+
+  /**
+   * Finish a LINK handshake.
+   *
+   * The identity store performs the actual attachment when its source flow runs.
+   * Our job is the SAFETY check the store cannot make for us: that the identity
+   * that came back is the same account that started the handshake. Without this
+   * equality check, completing the flow while signed in as someone else would
+   * bind a stranger's social identity to this account (or this one to theirs) —
+   * an account-takeover primitive. Mismatch fails closed.
+   *
+   * Known limitation: because the browser transits the store's source flow, the
+   * store may have already matched/created its own account for that social
+   * identity before we can object. We reject the LINK (no session is minted, and
+   * nothing is attached to the caller's account), but we do not attempt to undo
+   * the store's own bookkeeping.
+   */
+  private async completeSocialLink(
+    input: SocialCallbackInput,
+    link: SocialLinkState
+  ): Promise<SocialCallbackResult> {
+    if (link.expiresAt < this.now()) {
+      throw new UnauthorizedError('invalid or expired state')
+    }
+    const identity = (await this.oidc.handleCallback(
+      input.code,
+      input.state,
+      link.codeVerifier
+    )) as BrokeredUser
+
+    if (
+      !identity?.email ||
+      identity.email.toLowerCase() !== link.email.toLowerCase()
+    ) {
+      throw new UnauthorizedError('social identity does not match the signed-in account')
+    }
+
+    // Confirm the store really did attach the connection — never report a link
+    // we cannot see.
+    const pk = await findUserPk(link.email)
+    const conns = await listOAuthConnections(pk)
+    if (!conns.some(c => c.sourceSlug === link.provider)) {
+      throw new UnauthorizedError('link did not complete')
+    }
+    return { code: '', redirectTo: link.redirectTo, linked: true, provider: link.provider }
+  }
+
+  async unlinkSocial(token: string, provider: string): Promise<IdentityConnections> {
+    if (!SUPPORTED_SOCIAL_PROVIDERS.has(provider)) {
+      throw new InvalidInputError(`unsupported social provider: ${provider}`)
+    }
+    const { user } = await this.getUserInfo(token)
+    const pk = await findUserPk(user.email)
+    const conns = await listOAuthConnections(pk)
+    const target = conns.find(c => c.sourceSlug === provider)
+    if (!target) throw new NotFoundError(`${provider} is not linked to this account`)
+
+    const row = await this.db('users').where({ id: user.id }).first()
+    const hasPassword = row?.has_password === true
+    const otherSocial = this.toNeutralConnections(conns).filter(c => c.provider !== provider)
+
+    // THE lockout guard. Fail-closed: an unknown (NULL) has_password counts as
+    // NO password, so an unproven account is told to set one first rather than
+    // being allowed to remove its last way back in.
+    if (!hasPassword && otherSocial.length === 0) {
+      throw new ConflictError(
+        'Unlinking would leave the account with no sign-in method. Set a password or link another provider first.'
+      )
+    }
+
+    await deleteOAuthConnection(target.pk)
+    return { providers: otherSocial, hasPassword }
+  }
+
+  // ── Set password (social-only accounts) ───────────────────────────────────
+  //
+  // The password is set IN THE IDENTITY STORE, which is the sole authority for
+  // credentials. FuzeFront deliberately stores no password hash of its own —
+  // a local hash would be a second, divergent credential the store never knows
+  // about (exactly the split-brain that server-brokered signup replaced).
+  async setPassword(token: string, newPassword: string): Promise<IdentityConnections> {
+    if (!newPassword || typeof newPassword !== 'string') {
+      throw new InvalidInputError('newPassword is required')
+    }
+    const { user } = await this.getUserInfo(token)
+    const row = await this.db('users').where({ id: user.id }).first()
+
+    // CONFLICT only on PROVEN existing password. An unknown (NULL) legacy row is
+    // allowed through: this endpoint adds a first password, and letting an
+    // already-authenticated owner set one converges the row to a known state.
+    // Changing a KNOWN password goes through the reset flow instead.
+    if (row?.has_password === true) {
+      throw new ConflictError('A password sign-in method already exists on this account')
+    }
+
+    const pk = await findUserPk(user.email)
+    try {
+      await setUserPassword(pk, newPassword)
+    } catch (err) {
+      if (err instanceof PasswordPolicyError) {
+        throw new InvalidInputError(`password rejected: ${err.message}`)
+      }
+      throw err
+    }
+    await this.markHasPassword(user.id, true)
+    return this.connectionsForUser(user)
   }
 }
 

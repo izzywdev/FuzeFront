@@ -64,24 +64,25 @@ If you rotate the signing keystore or change the key alias, all four files must 
 - `frontend-engineer` — PWA manifest, icons (`frontend/public/`), and design-system non-mobile primitives
 - **Never commit `android/keystore/*.keystore`** — gitignored; stored only in `ANDROID_KEYSTORE_B64`.
 
-## Mobile design-review gate
+## Design-first gate — HTML frames are the source of truth (PenPot is parked)
 
-All mobile UI changes must pass a visual design-review gate **before any code is written**. This closes the SDLC gap that allows unverified CSS to ship to the Android TWA.
+**No UI is written before its design is approved.** This closes the SDLC gap that let unverified CSS ship, and — more importantly — that let six fully-built Security backends ship with **no UI at all** and nothing to catch it. Plan of record: `docs/planning/design-first-ui-pipeline.md`.
+
+**The authoritative design artifact is a set of navigable HTML frames in this repo** — `design/frames/<feature>/` (`index.html` entry + ordered `01-*.html` screens + `tokens.css` + `manifest.json`), published to GitHub Pages for review. Not PenPot. PenPot is **parked** by owner decision; it complicates the loop without earning it, and a design tool that is not in the repo cannot be gated by CI. Frames are code: they diff, they review, they enforce.
 
 ### Flow
-1. `mobile-frontend-engineer` (or `frontend-engineer` for shell-layout touches) creates PenPot frames via **PenPot MCP** (`mcp__penpot__*`).
-2. Agent opens a GitHub Issue in this repo labeled **`design-review`** with frame thumbnails and interaction notes.
-3. **`design-review-notify.yml`** fires automatically and sends a Telegram message to the product owner with a direct link to the issue.
-4. The product owner comments **`@claude approve`** (or `@claude reject: <reason>`) on the issue. `claude.yml` spawns a new cloud session to continue implementation.
-5. `frontend-test-engineer` retrieves the approved PenPot frames and screenshot-compares the implementation before reporting done.
+1. **`product-designer`** — the **sole** author of `design/frames/**` and the UX/UI owner — turns the product requirement/user story into frames. **Not `frontend-engineer`**: the implementer must not author the spec it is measured against, exactly as `contract-designer` (not `backend-engineer`) owns the API spec.
+2. **Frames are ALWAYS their own PR, and its only content.** CI on it enforces the UX/UI policy: `gate-ds-conformance`, `gate-frames-schema`, `gate-frames-stamped`.
+3. The frames declare the **build inventory** (flows / React components / npm packages) — rendered in `index.html`, mirrored in the manifest. Approving the design approves the architecture, so implementation cannot quietly invent a different one.
+4. The owner approves **per flow** — one ready flow never waits on an unready sibling. **Reject re-dispatches `product-designer`** for an improving iteration; it does not close the thread.
+5. **Merging an approved frames PR is the trigger**: UX QA agents write Playwright specs for each flow that are **ALL RED** first (TDD — the specs fail before an implementation exists), then `frontend-engineer`s build components → flow orchestrators → packages, until the specs go green.
+6. `frontend-test-engineer` verifies the built UI against the approved frames.
 
-### PenPot MCP
-- **Local config:** `~/.claude.json` under `mcpServers` → `"penpot": { "type": "sse", "url": "https://design.penpot.app/mcp/stream?userToken=<token>" }`. **Never commit the token.**
-- **GitHub Secret:** `PENPOT_MCP_URL` — the full SSE URL including token, for future CI use.
-- **Agent access:** `mobile-frontend-engineer`, `frontend-engineer`, and `frontend-test-engineer` all have `mcp__penpot__*` in their tool grants and treat PenPot as the design source of truth.
+### States are contract, not decoration
+Frames must show loading, empty, error, and the real fail-closed cases (reveal-once token; remove-last-2FA-factor → 409; demote-the-last-admin; `hasPassword: null` → "set a password first"). **Frames that show only the happy path produce UI that only handles the happy path.**
 
-### Fallback (PenPot unavailable)
-Render a static HTML mockup via the Artifact tool at 375 px width, embed a screenshot in the GitHub Issue labeled `design-review`, and follow the same approval flow.
+### Enforcement — the rule, not the etiquette
+`gate-frames-first` fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) without an approved `design/frames/<feature>/manifest.json` covering it. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
 
 ## UI runtime validation — the console-clean gate
 
@@ -94,6 +95,19 @@ Design-review checks how the UI *looks*; this gate checks how it *runs*. A UI ch
 - **`test-engineer`** (API/service) is excluded — it is browser-less by design.
 
 The procedure, the FuzeFront gotchas (same-origin API base / no mixed-content under TLS, Module-Federation load), the full MCP capability map (console, network, Lighthouse/perf, a11y, device emulation, heap snapshots), and the DONE-report wording live in the **`ui-runtime-validation`** skill (`.claude/skills/ui-runtime-validation/`). The plugin must be installed in the session (`claude plugin marketplace add ChromeDevTools/chrome-devtools-mcp` → `claude plugin install chrome-devtools-mcp@chrome-devtools-plugins`); it is user/environment-scoped, not committed repo config.
+
+## Agent worktree lifecycle — reap them, or agents stop launching
+
+The Agent tool auto-removes an isolated worktree **only if it is unchanged**. Agents exist to change files, so in practice **every productive agent — and every agent killed mid-run** (API error, usage cap, timeout) — leaks its worktree and its `worktree-agent-*` branch. Nothing reaps them by default.
+
+This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_modules` if the agent installed). Past **~50** the repo gets slow enough that `git worktree add` exceeds the launcher's timeout and **no agent can start at all** — a self-inflicted DoS. This has already happened here: a fan-out session reached 100+ worktrees and every subsequent launch failed with `Failed to create worktree` until they were reaped. On Windows the leak is worse to clean up — `node_modules` carries read-only attributes, so plain `rm -rf` fails with "Permission denied" and each `git worktree remove` can take minutes.
+
+- **`scripts/reap-agent-worktrees.sh`** reclaims them. It runs automatically via the **`SessionStart` hook** in `.claude/settings.json`, so a fresh session self-heals; run it by hand any time launches start failing.
+- **Safety contract: work is never destroyed.** A worktree is reaped only if it has **no uncommitted changes** AND **no unpushed commits**. Anything dirty or unpushed is reported under `KEPT` and skipped so it can be salvaged. There is deliberately no `--force`.
+- `--dry-run` reports without changing anything.
+- This is the local counterpart to the branch policy below: `governance-nightly` reaps stale *branches* on the remote; the reaper reaps stale *worktrees* on the developer's disk. Neither covers the other.
+
+**This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
 
 ## Branch lifecycle policy
 
@@ -109,9 +123,15 @@ Every agent-created branch must reach one of these terminal states — never lef
 
 `governance-nightly` enforces this daily: closes stale draft PRs (no new commits in 7 days) and deletes branchless branches whose commits are fully reachable from master.
 
-**Agent branch → auto-merge path** (enforced by `claude-auto-pr.yml`):
+**Agent branch → auto-merge path — the agent opens its own PR. CI cannot.**
 
-All four agent-branch prefixes (`claude/**`, `claude-auto-fix-ci-*`, `ds-propagate/**`, `nightly-autofix-*`) trigger an automatic non-draft PR with the `auto-merge` label the moment they are pushed to. `auto-merge.yml` then calls `gh pr merge --auto --squash --delete-branch`, so the branch self-resolves once all CI gates pass — no human required for routine agent work.
+**Every agent MUST open its own non-draft PR with the `auto-merge` label.** This is not optional and there is no safety net that does it for you. `auto-merge.yml` then calls `gh pr merge --auto --squash --delete-branch`, so the branch self-resolves once all CI gates pass — no human required for routine agent work.
+
+**CI cannot open a PR here, by design.** `can_approve_pull_request_reviews` is `false` on this repo (`gh api repos/izzywdev/FuzeFront/actions/permissions/workflow`), so `gh pr create` from any workflow fails with *"GitHub Actions is not permitted to create or approve pull requests"*. GitHub bundles create-PR and approve-PR into a single toggle, and `master` is deploy-on-push with required reviews — enabling it would hand every workflow a self-approval path to production. An un-bypassable review gate is worth more than auto-PR convenience. If auto-PR is ever genuinely needed, wire a scoped PAT/GitHub App token rather than flipping the toggle.
+
+`claude-auto-pr.yml` (workflow name: *Stranded-branch detector*) therefore does **not** create PRs — it detects a branch that has commits but no PR and **fails loudly** so the work gets salvaged rather than silently reaped by `governance-nightly` a week later.
+
+> **This section previously claimed all four prefixes auto-PR "the moment they are pushed to".** That was false for the life of the workflow: it can never create a PR, and every green run was the early-exit path (*"PR already open"*) because the agent had already opened one. It ran its create path only when actually needed — and failed. A check that passes when its job is already done by someone else, and fails only when asked to work, is not evidence of anything. Assume nothing here is verified because a check is green; verify the deliverable (baseline: *verify the deliverable, not the "finished" claim*).
 
 Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold`, or `blocked`.
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>States — api-tokens frame (e)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="05-states">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (e) · route /settings/tokens</div>
+  <h1>States</h1>
+  <p class="lead">Every state a consumer must render is contract, not decoration. Loading, the
+    no-tokens invitation, a load failure, and the authorization denial that must never become a
+    sign-in prompt.</p>
+
+  <!-- e1 loading -->
+  <div class="state-block">
+    <div class="state-label">(e1) Loading</div>
+    <div class="panel" data-panel="token-list" data-state="loading" aria-busy="true">
+      <div class="panel-head"><div><h2>Tokens</h2><p class="sub">Loading…</p></div></div>
+      <table class="tbl"><tbody>
+        <tr><td><div class="skel" style="width: 55%"></div></td><td><div class="skel" style="width: 70%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+        <tr><td><div class="skel" style="width: 45%"></div></td><td><div class="skel" style="width: 50%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <!-- e2 empty -->
+  <div class="state-block">
+    <div class="state-label">(e2) No tokens yet</div>
+    <div class="panel" data-panel="token-list" data-state="empty">
+      <div class="panel-head">
+        <div><h2>Tokens</h2><p class="sub"><span data-count="tokens">0</span> in Northwind</p></div>
+        <button class="btn btn-accent" data-action="create-token">Create token</button>
+      </div>
+      <div class="empty">
+        <h3>No service tokens yet</h3>
+        <p>Create a token to let a service, CI job, or script call the API for Northwind. You choose
+          exactly what it can do, and you'll see the secret once.</p>
+        <button class="btn btn-accent" data-action="create-token">Create your first token</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e3 error -->
+  <div class="state-block">
+    <div class="state-label">(e3) Couldn't load</div>
+    <div class="panel" data-panel="token-list" data-state="error">
+      <div class="panel-head"><div><h2>Tokens</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="LOAD_FAILED" style="text-align: left">
+          <span>
+            <b>We couldn't load your tokens</b>
+            <p>Something went wrong on our end. Your existing tokens still work — try again.</p>
+          </span>
+        </div>
+        <button class="btn" data-action="retry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- e4 403 forbidden -->
+  <div class="state-block">
+    <div class="state-label">(e4) Not allowed — 403, never a sign-in redirect</div>
+    <div class="panel" data-panel="token-list" data-state="forbidden">
+      <div class="panel-head"><div><h2>Tokens</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-info" data-error-code="FORBIDDEN" data-http="403" style="text-align: left">
+          <span>
+            <b>You don't have access to manage tokens</b>
+            <p>You're signed in, but your role in Northwind can't view or manage service tokens.
+              Ask an admin of Northwind if you need this.</p>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Loading covers the in-flight <code>GET /api/organizations/{orgId}/tokens</code>.
+    Empty is the first-run state — a new org has no tokens, and the invitation is to create one.
+    Error covers a non-2xx list response with <code>data-action="retry"</code>.
+    <br /><br />
+    <b>⚠ (e4) is the rule this frame exists to enforce. A <code>403</code> is an authorization
+    denial, NOT an authentication failure.</b> The caller is signed in and their session is valid;
+    they simply lack the role to manage tokens. Render the denial in place — never redirect to
+    sign-in. Only a <code>401</code> (no/expired session) triggers re-authentication. Bouncing a
+    permission-denied user to a login page they'll pass straight through is the exact failure this
+    state is contract for.
+  </p>
+
+  <nav class="pager"><a href="04-revoke.html">← Revoke</a><a href="index.html">Back to index →</a></nav>
+</div>
+</body>
+</html>

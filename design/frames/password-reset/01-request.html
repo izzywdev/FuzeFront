@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reset — request · /reset</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .auth { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8); }
+  .card { width: 100%; max-width: 400px; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl); padding: var(--space-8); position: relative; overflow: hidden;
+    box-shadow: var(--shadow-lg); }
+  .card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .brand { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-lg);
+    letter-spacing: var(--tracking-display); margin-bottom: var(--space-6); }
+  .brand .fuse { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-2); letter-spacing: var(--tracking-display); }
+  .desc { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-6); }
+  label { display: block; font-size: var(--text-sm); font-weight: var(--weight-medium); margin-bottom: var(--space-2); }
+  .field { width: 100%; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); color: var(--text-primary);
+    font-family: var(--font-sans); font-size: var(--text-md); }
+  .field:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn-block { width: 100%; margin-top: var(--space-5); justify-content: center; display: flex; }
+  .alt { margin-top: var(--space-5); text-align: center; font-size: var(--text-sm); color: var(--text-tertiary); }
+  .alt a { color: var(--accent-color); text-decoration: none; }
+  .footnote { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="auth">
+  <form class="card" data-frame="01-request" data-panel="reset-request" novalidate>
+    <div class="card__seam"></div>
+    <div class="brand"><span class="fuse">Fuze</span>Front</div>
+    <h1>Reset your password</h1>
+    <p class="desc">Enter the email for your account and we'll send a link to set a new password.</p>
+
+    <label for="email">Email</label>
+    <input class="field" id="email" name="email" type="email" placeholder="you@example.com"
+           autocomplete="email" data-input="email" value="jordan@example.com" />
+
+    <button type="submit" class="btn btn-primary btn-block" data-action="send-reset">Send reset link</button>
+
+    <p class="alt">Remembered it? <a href="#" data-nav="sign-in">Back to sign in</a></p>
+    <p class="footnote">For your security, we send the same confirmation whether or not an account exists for this email.</p>
+  </form>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Step 1</b> · Request a reset · <code class="mono">POST /session/password/reset-request</code></span>
+  <span>
+    <a href="index.html" class="btn btn-ghost">↩ Overview</a>
+    <a href="02-sent.html" class="btn btn-primary">Send →</a>
+  </span>
+</nav>
+</body>
+</html>

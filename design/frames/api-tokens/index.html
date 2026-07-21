@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Service tokens — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link.key { border-color: var(--accent-color); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam, .frame-link.key .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-10); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+  .inv .lead2 { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-5); }
+  .inv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-5); }
+  @media (max-width: 720px){ .inv-grid { grid-template-columns: 1fr; } }
+  .inv-col h4 { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin: 0 0 var(--space-3); }
+  .inv-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .inv-col li { font-size: var(--text-sm); color: var(--text-secondary); }
+  .inv-col code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); }
+  .flowrow { display: flex; align-items: baseline; gap: var(--space-2); }
+  .flowrow .rt { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid var(--border-color); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Service tokens · Approval Frames</h1>
+  <p class="lead">The consumer surface for machine-to-machine credentials: create a scoped service
+    token, copy its secret the one time it's shown, list active tokens by prefix, and revoke.
+    Backed by FuzeFront's own Security API — no identity or authorization vendor is named anywhere.
+    Reached from the account-security area, alongside access administration. Walk each frame below;
+    the reveal-once screen (c) is the one that matters most.</p>
+
+  <div class="grid" data-nav="frames">
+    <a href="01-tokens.html" class="frame-link" data-frame-link="01-tokens">
+      <div class="seam"></div><div class="step">Frame (a) · /settings/tokens</div>
+      <h3>Service tokens</h3>
+      <p>The list: name, prefix, scope chips, created, last-used, revoke.</p>
+    </a>
+    <a href="02-create-token.html" class="frame-link" data-frame-link="02-create-token">
+      <div class="seam"></div><div class="step">Frame (b) · /settings/tokens</div>
+      <h3>Create token</h3>
+      <p>Name + scope checkboxes + optional expiry. At least one scope required.</p>
+    </a>
+    <a href="03-reveal-once.html" class="frame-link key" data-frame-link="03-reveal-once">
+      <div class="seam"></div><div class="step">Frame (c) · /settings/tokens · MOST IMPORTANT</div>
+      <h3>Secret shown once</h3>
+      <p>Copy affordance, explicit "I've saved it" ack, honest unrecoverable warning.</p>
+    </a>
+    <a href="04-revoke.html" class="frame-link" data-frame-link="04-revoke">
+      <div class="seam"></div><div class="step">Frame (d) · /settings/tokens</div>
+      <h3>Revoke token</h3>
+      <p>Ordinary confirm, plus type-to-confirm when the token is in active use.</p>
+    </a>
+    <a href="05-states.html" class="frame-link" data-frame-link="05-states">
+      <div class="seam"></div><div class="step">Frame (e) · /settings/tokens</div>
+      <h3>States</h3>
+      <p>Loading, no-tokens invitation, load error+retry, and 403 (never a sign-in redirect).</p>
+    </a>
+  </div>
+
+  <div class="inv" data-panel="build-inventory">
+    <h2>Build inventory</h2>
+    <p class="lead2">Approving these frames approves this component/package plan. Implementation
+      cannot quietly invent a different architecture. Mirrored in <code>manifest.json</code> →
+      <code>build</code>.</p>
+    <div class="inv-grid">
+      <div class="inv-col" data-inv="flows">
+        <h4>Flows</h4>
+        <ul>
+          <li data-flow="service-tokens">
+            <div class="flowrow"><code>ServiceTokensFlow</code></div>
+            <div class="rt">route /settings/tokens · approved: false</div>
+          </li>
+        </ul>
+      </div>
+      <div class="inv-col" data-inv="components">
+        <h4>Components</h4>
+        <ul>
+          <li><code>TokenList</code></li>
+          <li><code>TokenRow</code></li>
+          <li><code>ScopeChips</code></li>
+          <li><code>CreateTokenDialog</code></li>
+          <li><code>ScopePicker</code></li>
+          <li><code>RevealOncePanel</code></li>
+          <li><code>CopySecretButton</code></li>
+          <li><code>RevokeTokenDialog</code></li>
+          <li><code>AccessDeniedNotice</code></li>
+        </ul>
+      </div>
+      <div class="inv-col" data-inv="packages">
+        <h4>Packages</h4>
+        <ul>
+          <li><code>@fuzefront/service-tokens-ui</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — per flow</span>
+
+  <p class="note">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only) ·
+    Contract: <code>backend/security/src/routes/api-tokens.ts</code> → <code>@fuzefront/security-client</code> ·
+    Component: <code>@fuzefront/service-tokens-ui → ServiceTokensFlow</code>.<br />
+    <b>Commissioned by approval:</b> (1) a <code>last_used_at</code> field on the token record
+    (frames a, d) — not backed today; (2) bringing the token CRUD endpoints into the frozen
+    <code>packages/security/openapi.yaml</code> (only issue + introspect live there now). The raw
+    secret shown is a deliberately-fake placeholder. Approve per-flow by setting
+    <code>approved: true</code> in <code>manifest.json</code>, or reply <code>@claude approve</code>
+    / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

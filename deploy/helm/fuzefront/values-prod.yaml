@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: a586880989ca
+    tag: 89e3ac7c5bec
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: a586880989ca
+    tag: 89e3ac7c5bec
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -49,16 +49,42 @@ securityService:
   # Fresh address (absent in prod) so the idempotent seed-admin hook does a clean
   # insert with the sealed FUZEFRONT_ADMIN_PASSWORD. See PR #213 (password reseal).
   adminEmail: admin@fuzefront.com
+  # Signup email verification (PR #275) — OFF until the sender is proven.
+  # While false the code auto-verifies every new account, i.e. verification is not
+  # enforced. That remains the SAFE state until a real SMTP sender is proven
+  # end-to-end: email-service is enabled and healthy, but with no SMTP host it
+  # falls back in-code to localhost:1025 and silently drops every message.
+  #
+  # This is no longer guarded by prose alone: the chart FAILS TO RENDER if this is
+  # true while emailService.email.smtp.host is empty, because flipping it without a
+  # deliverable sender locks out EVERY new signup (created unverified, never
+  # mailed). Go-live sequence — deploy/contabo/SEAL_PROD_SECRETS.md:
+  #   1. owner seals SMTP_USER + SMTP_PASS
+  #   2. set emailService.email.smtp.host below (GitOps)
+  #   3. PROVE a real message reaches a real inbox  ← password reset revives here
+  #   4. only then flip this to true, in a deploy window
+  requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: a586880989ca
-  replicas: 2
+    tag: 89e3ac7c5bec
+  # TEMPORARY MITIGATION: 1 replica.
+  # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
+  # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
+  # session affinity, /social/google/start stores state on pod A while the
+  # /api/auth/oidc/callback lands on pod B, which has no idea what that state is —
+  # observed live: start on ...66gfh, callback on ...pvhm2 -> authentication_failed.
+  # Roughly half of all sign-ins failed this way, independent of every other fix.
+  # Same flaw affects MFA challenges and broker codes (so 2FA breaks identically).
+  # Pinning to 1 replica removes the split; it costs HA for the auth path, so this
+  # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
+  # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
+  replicas: 1
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: a586880989ca
+    tag: 89e3ac7c5bec
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -81,17 +107,58 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: a586880989ca
+    tag: 89e3ac7c5bec
 
+# email-service — transactional sender behind the signup email-verification flow
+# (PR #275). Its image IS built by release.yml on every release, but until this PR
+# its repository was missing from the bump step's anchor list, so the tag below sat
+# frozen at a stale SHA while the built image moved on. The anchor is now present,
+# so the next release rewrites this tag automatically — do not hand-pin it.
 emailService:
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 1fbd206c5b2a
+    tag: 89e3ac7c5bec
+  email:
+    provider: "smtp"
+    from: "noreply@fuzefront.com"
+    smtp:
+      # EMPTY = the service falls back in-code to localhost:1025 and SILENTLY
+      # DROPS every message. That fallback is why signup email-verification and
+      # password reset have both been live-dead in prod: pod healthy, /health
+      # green, zero delivery.
+      #
+      # Set this to the real relay (Zoho: smtp.zoho.com) ONLY once the owner has
+      # sealed SMTP_USER + SMTP_PASS — the chart mounts them as HARD secretKeyRefs
+      # on this path, so setting a host without sealing them CrashLoops the pod at
+      # start (loud) instead of dropping mail at runtime (silent). That trade is
+      # deliberate. See deploy/contabo/SEAL_PROD_SECRETS.md.
+      host: ""
+      port: 587
+      secure: false   # STARTTLS on 587; true for implicit TLS on 465
 
+# sms-service — Twilio Verify dispatcher behind phone 2FA (SMS/voice, PR #274).
+# Its image is built by release.yml, but its repository was likewise absent from
+# the bump anchor list, so this tag stayed "" — an EMPTY TAG, meaning the service
+# was never actually deployed in prod even though the security routes answered.
+# The anchor now exists, so the next release writes the real SHA here.
+#
+# STILL DISABLED, deliberately. Enabling it now would CrashLoop the pod: the
+# container requires SMS_AUTH_SECRET (a hard secretKeyRef, no `optional`) and the
+# Twilio credentials, and NONE of those keys exist in the fuzefront-secrets
+# SealedSecret yet (verified against deploy/contabo/sealed/fuzefront-secrets.yaml).
+# GO-LIVE for phone 2FA is exactly two steps, in this order:
+#   1. Owner seals the 4 keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
+#      (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID,
+#       SMS_AUTH_SECRET) into fuzefront-secrets.
+#   2. Flip `enabled` to true here via GitOps in a deploy window.
+# Until step 1 lands this MUST stay false — the empty tag hid a missing-secret
+# failure that would otherwise surface as a CrashLoopBackOff on the umbrella sync.
 smsService:
+  enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: ""  # CI's release sed writes the real image SHA here
+    tag: 89e3ac7c5bec
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -277,7 +344,18 @@ authentik:
 # bitnami tag was unpullable and froze the sync hook) and the broker
 # (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
 kafkaTopics:
-  enabled: true
+  # DISABLED: this Job is a helm post-upgrade hook with
+  # hook-delete-policy: before-hook-creation, so every Argo sync attempt
+  # deletes and recreates it, restarting it from zero. It creates topics at
+  # ~40s each against the shared Kafka, so it never finishes before the next
+  # attempt wipes it — and Argo blocks the WHOLE sync on it
+  # ('waiting for completion of hook batch/Job/fuzefront-kafka-topics').
+  # Net effect: no chart change could deploy at all. It blocked the Authentik
+  # sign-in fix (#320) from ever reaching the cluster.
+  # Topics fall back to broker auto-create meanwhile. Re-enable ONLY after the
+  # job is made non-blocking (drop the helm hook annotations, or bound it with
+  # activeDeadlineSeconds) so a slow Kafka can never wedge deploys again.
+  enabled: false
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The

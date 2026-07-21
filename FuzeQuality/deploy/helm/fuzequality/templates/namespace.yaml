@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fuzequality
+    app.kubernetes.io/part-of: fuzequality
+  annotations:
+    # Sync hooks are evaluated before Argo's implicit CreateNamespace action.
+    # Explicit ownership at wave -2 guarantees the migration hook at wave -1
+    # always has a namespace on the first deployment.
+    argocd.argoproj.io/sync-wave: "-2"
