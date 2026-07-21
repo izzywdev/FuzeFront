@@ -70,12 +70,20 @@
       "sourcePath": "components/feedback/Toast.jsx"
     },
     {
+      "name": "FieldStatus",
+      "sourcePath": "components/forms/FieldStatus.jsx"
+    },
+    {
       "name": "FileDropZone",
       "sourcePath": "components/forms/FileDropZone.jsx"
     },
     {
       "name": "Input",
       "sourcePath": "components/forms/Input.jsx"
+    },
+    {
+      "name": "PasswordChecklist",
+      "sourcePath": "components/forms/PasswordChecklist.jsx"
     },
     {
       "name": "Select",
