@@ -1,0 +1,96 @@
+name: Claude autofix — post-prod E2E failure
+
+# When the post-prod E2E smoke fails after a release, this workflow spins up
+# a Claude Code cloud session, hands it the Playwright failure report, and
+# asks it to diagnose and open a fix PR.
+#
+# Required secrets:
+#   ANTHROPIC_API_KEY  — Claude API key for the claude-code-action
+on:
+  workflow_run:
+    workflows:
+      - 'Post-prod E2E (live smoke)'
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  autofix:
+    # Only react to failures; skip success / cancelled / skipped
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      # Download the Playwright HTML report from the failed run so Claude has
+      # the full failure context (test names, error messages, traces).
+      - name: Download Playwright failure report
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: post-prod-playwright-report
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: playwright-failure-report/
+        continue-on-error: true  # artifact may not exist if the run was cancelled early
+
+      - name: Summarise failure context
+        id: ctx
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "run_url=${RUN_URL}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+          # Collect test output lines for the prompt (first 200 lines of any
+          # *.txt files in the download, falling back to a placeholder).
+          REPORT_SNIPPET=""
+          if compgen -G "playwright-failure-report/**/*.txt" > /dev/null 2>&1; then
+            REPORT_SNIPPET=$(find playwright-failure-report -name "*.txt" | head -5 | xargs head -n 40 2>/dev/null || true)
+          fi
+          # Write snippet to a file to avoid env-var length limits
+          printf '%s' "$REPORT_SNIPPET" > /tmp/report-snippet.txt
+          echo "snippet written ($(wc -c < /tmp/report-snippet.txt) bytes)"
+
+      - name: Run Claude Code autofix
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_tools: 'Bash,Read,Edit,Write,Glob,Grep'
+          direct_prompt: |
+            The post-production E2E smoke suite just failed on master.
+
+            Failed workflow run: ${{ steps.ctx.outputs.run_url }}
+            Head SHA: ${{ steps.ctx.outputs.sha }}
+
+            The Playwright report has been downloaded to `playwright-failure-report/` in the
+            working directory (may be empty if the run was cancelled before artifacts uploaded).
+
+            A snippet of the failure output (first ~200 lines of text output):
+            ---
+            $(cat /tmp/report-snippet.txt 2>/dev/null || echo "(no text output available — check the workflow run URL above)")
+            ---
+
+            Your task:
+            1. Diagnose the root cause from the test output and the code. Focus on
+               `frontend/e2e/post-prod/live-smoke.spec.ts` and the API/backend routes
+               it exercises.
+            2. If the failure is a genuine regression (not a transient network flake),
+               implement the minimal fix.
+            3. Open a pull request targeting `master` with the fix. Title it
+               "fix(post-prod): <short description of what broke>".
+            4. If the failure looks like a transient/infrastructure flake (network
+               timeout, DNS, ArgoCD not fully converged), add a comment to that effect
+               in the PR description and mark it `draft` so a human can review before
+               merging.
+
+            Branch name convention: `fix/post-prod-autofix-<first 8 chars of ${{ steps.ctx.outputs.sha }}>`.
+
+            Do NOT push directly to master.
