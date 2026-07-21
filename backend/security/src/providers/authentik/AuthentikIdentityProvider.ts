@@ -603,6 +603,21 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   /**
+   * Existence check against the SAME source of truth `signup` consults — the
+   * synced `users` projection (see signup's fast-path conflict at :569). Matched
+   * case-insensitively so a differently-cased address resolves to the same
+   * account. Returns only a boolean; it never loads or leaks the account row.
+   */
+  async emailExists(email: string): Promise<boolean> {
+    const normalized = (email ?? '').trim().toLowerCase()
+    if (!normalized) return false
+    const existing = await this.db('users')
+      .whereRaw('LOWER(email) = ?', [normalized])
+      .first()
+    return !!existing
+  }
+
+  /**
    * Internal variant of startEmailVerification keyed by a known user id (used at
    * signup, before any bearer exists). Honours the same degrade gate.
    */
