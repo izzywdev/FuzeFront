@@ -7,7 +7,11 @@
     "openapi": "packages/security/openapi.yaml",
     "backingRouter": "backend/security/src/routes/api-tokens.ts",
     "client": "@fuzefront/security-client",
-    "schemas": ["ApiToken", "ApiTokenCreate", "ApiTokenCreateResponse"],
+    "schemas": [
+      "ApiToken",
+      "ApiTokenCreate",
+      "ApiTokenCreateResponse"
+    ],
     "endpoints": [
       "GET /api/organizations/{orgId}/tokens",
       "POST /api/organizations/{orgId}/tokens",
@@ -23,13 +27,29 @@
   },
   "build": {
     "flows": [
-      { "id": "service-tokens", "orchestrator": "ServiceTokensFlow", "route": "/settings/tokens", "approved": false, "approvedBy": null, "approvedAt": null }
+      {
+        "id": "service-tokens",
+        "orchestrator": "ServiceTokensFlow",
+        "route": "/settings/tokens",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
     ],
     "components": [
-      "TokenList", "TokenRow", "ScopeChips", "CreateTokenDialog", "ScopePicker",
-      "RevealOncePanel", "CopySecretButton", "RevokeTokenDialog", "AccessDeniedNotice"
+      "TokenList",
+      "TokenRow",
+      "ScopeChips",
+      "CreateTokenDialog",
+      "ScopePicker",
+      "RevealOncePanel",
+      "CopySecretButton",
+      "RevokeTokenDialog",
+      "AccessDeniedNotice"
     ],
-    "packages": ["@fuzefront/service-tokens-ui"]
+    "packages": [
+      "@fuzefront/service-tokens-ui"
+    ]
   },
   "frames": [
     {
@@ -124,5 +144,6 @@
         "[data-http='403']"
       ]
     }
-  ]
+  ],
+  "stamp": "e62cc20f911134d329ade006aae9d8183979208fad812ae493de892781dfa6d4"
 }

@@ -14,33 +14,58 @@
       "id": "01-app-menu",
       "file": "01-app-menu.html",
       "label": "(a) Application menu",
-      "capabilities": [1, 4],
+      "capabilities": [
+        1,
+        4
+      ],
       "summary": "App menu + launcher with built-in Clock and newly-registered Market.",
-      "testHooks": ["[data-frame='01-app-menu']", "[data-app='clock']", "[data-app='market']"]
+      "testHooks": [
+        "[data-frame='01-app-menu']",
+        "[data-app='clock']",
+        "[data-app='market']"
+      ]
     },
     {
       "id": "02-register-activate",
       "file": "02-register-activate.html",
       "label": "(b) Register -> Activate",
-      "capabilities": [1],
+      "capabilities": [
+        1
+      ],
       "summary": "Add-application form (manifest fields) -> registered -> activate -> visible.",
-      "testHooks": ["[data-frame='02-register-activate']", "[data-action='activate']"]
+      "testHooks": [
+        "[data-frame='02-register-activate']",
+        "[data-action='activate']"
+      ]
     },
     {
       "id": "03-menu-substitution",
       "file": "03-menu-substitution.html",
       "label": "(c) Menu substitution",
-      "capabilities": [2],
+      "capabilities": [
+        2
+      ],
       "summary": "Studio app substitutes the portal side menu; host keeps return-to-portal.",
-      "testHooks": ["[data-frame='03-menu-substitution']", "[data-substituted='true']", "[data-app='__host_return']"]
+      "testHooks": [
+        "[data-frame='03-menu-substitution']",
+        "[data-substituted='true']",
+        "[data-app='__host_return']"
+      ]
     },
     {
       "id": "04-standalone",
       "file": "04-standalone.html",
       "label": "(d) Standalone app",
-      "capabilities": [3],
+      "capabilities": [
+        3
+      ],
       "summary": "Standalone non-portal landing page: FuzeFront infra, no portal chrome.",
-      "testHooks": ["[data-frame='04-standalone']", "[data-mode='standalone']", "[data-chrome='none']"]
+      "testHooks": [
+        "[data-frame='04-standalone']",
+        "[data-mode='standalone']",
+        "[data-chrome='none']"
+      ]
     }
-  ]
+  ],
+  "stamp": "644fa5fa6e8760dc794a8887cd37ffeeabd2b5d34343b08d92f924521bb55a76"
 }
