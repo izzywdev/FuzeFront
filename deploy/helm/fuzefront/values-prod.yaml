@@ -79,6 +79,12 @@ securityService:
   # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
   # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
   replicas: 1
+  # Server-brokered Google sign-in (PR #329). "true" = enabled — owner has
+  # registered this callback in the Google console. Instant rollback: set to
+  # "false" to revert to the legacy Authentik Google source flow (no rebuild).
+  googleBrokered: "true"
+  # Prod browser-facing Google callback URL (app host, not auth-dev).
+  googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
