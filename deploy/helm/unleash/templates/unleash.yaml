@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   name: fuzefront-unleash
   labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
+    {{- include "unleash.labels" . | nindent 4 }}
     app.kubernetes.io/component: unleash
 spec:
   replicas: {{ .Values.unleash.replicas }}
@@ -15,19 +15,20 @@ spec:
     metadata:
       labels:
         app: fuzefront-unleash
-        {{- include "fuzefront.labels" . | nindent 8 }}
+        {{- include "unleash.labels" . | nindent 8 }}
       annotations:
-        {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.unleash.port "root" .) | nindent 8 }}
+        {{- include "unleash.metricsAnnotations" (dict "port" .Values.unleash.port "root" .) | nindent 8 }}
     spec:
-      {{- include "fuzefront.scheduling" (dict "svc" .Values.unleash "root" .) | nindent 6 }}
-      {{- with .Values.imagePullSecrets }}
+      {{- include "unleash.scheduling" (dict "svc" .Values.unleash "root" .) | nindent 6 }}
+      {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: unleash
-          # EXTERNAL upstream image (unleashorg/unleash-server) — NOT built by
-          # release.yml. Pinned to a concrete tag in values (never :latest).
+          # EXTERNAL upstream image (unleashorg/unleash-server) — independently
+          # lifecycled from FuzeFront's own release/CI image matrix. Pinned to a
+          # concrete tag in values (never :latest); bump deliberately.
           image: "{{ .Values.unleash.image.repository }}:{{ .Values.unleash.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           ports:
@@ -46,8 +47,9 @@ spec:
             # DB connection: Unleash runs as the least-privilege unleash_svc role
             # which OWNS the dedicated `unleash` database (created by the
             # unleash-db-bootstrap Job) and self-migrates its schema on boot.
-            # UNLEASH_DB_PASSWORD comes from the per-service unleash-secrets Secret;
-            # assembled into DATABASE_URL via $(VAR) interpolation.
+            # UNLEASH_DB_PASSWORD comes from the per-service unleash-secrets
+            # Secret (already sealed in deploy/contabo/sealed/unleash-secrets.yaml
+            # — reused as-is); assembled into DATABASE_URL via $(VAR) interpolation.
             - name: UNLEASH_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -56,16 +58,17 @@ spec:
             - name: DATABASE_URL
               value: "postgresql://{{ .Values.unleash.dbUser }}:$(UNLEASH_DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.unleash.dbName }}"
             # Bootstrap tokens. Always rendered when Unleash is enabled — the
-            # per-service unleash-secrets SealedSecret provides these at runtime (the
-            # pod stays pending until the keys are sealed). No Helm-values gate.
+            # per-service unleash-secrets SealedSecret provides these at runtime
+            # (the pod stays pending until the keys are sealed). No Helm-values gate.
             # INIT_ADMIN_API_TOKENS: admin/bootstrap token (format `*:*.<hex>`).
             - name: INIT_ADMIN_API_TOKENS
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.unleash.secretName | default "unleash-secrets" }}
                   key: INIT_ADMIN_API_TOKENS
-            # INIT_CLIENT_API_TOKENS: the client/SDK token the @fuzefront/feature-flags
-            # package uses (format `default:development.<hex>` / `[project]:[env].<hex>`).
+            # INIT_CLIENT_API_TOKENS: the client/SDK token the
+            # @fuzefront/feature-flags package uses (format
+            # `default:development.<hex>` / `[project]:[env].<hex>`).
             - name: INIT_CLIENT_API_TOKENS
               valueFrom:
                 secretKeyRef:
@@ -92,11 +95,12 @@ kind: Service
 metadata:
   name: fuzefront-unleash
   labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
+    {{- include "unleash.labels" . | nindent 4 }}
     app.kubernetes.io/component: unleash
 spec:
-  # Cluster-internal ONLY. The admin UI is NOT publicly exposed (see README +
-  # the optional unleash.ingress stub). Clients connect to:
+  # Cluster-internal ONLY. The admin UI is NOT publicly exposed (see this
+  # chart's README + the optional unleash.ingress stub). Clients (and the
+  # @fuzefront/feature-flags package) connect to:
   #   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
   selector:
     app: fuzefront-unleash
@@ -109,14 +113,14 @@ spec:
 # This does NOT make Unleash public: the host MUST sit under the
 # *.prod.fuzefront.com Cloudflare-Access zone (admin Zero-Trust). The CF tunnel
 # ingress rule (<host> -> traefik.kube-system:80) + the proxied CNAME are
-# FuzeInfra-owned (Terraform) — this Ingress only host-matches once FuzeInfra has
-# wired that. See deploy/helm/fuzefront/README.md (Unleash admin access).
+# FuzeInfra-owned (Terraform) — this Ingress only host-matches once FuzeInfra
+# has wired that (delegated @claude item — NOT done by this chart).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: fuzefront-unleash
   labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
+    {{- include "unleash.labels" . | nindent 4 }}
     app.kubernetes.io/component: unleash
   {{- with .Values.unleash.ingress.annotations }}
   annotations:
