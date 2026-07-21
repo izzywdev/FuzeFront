@@ -6,8 +6,9 @@
  *   2. Debounced inline email-availability (idle → checking → available/taken),
  *      failing OPEN when the endpoint errors so it never blocks account creation.
  *
- * Also asserts the password-policy hints surface. All UI is design-system-first
- * (FieldStatus + PasswordChecklist from @fuzefront/design-system).
+ * Uses REAL timers (like LoginPage.signup-route.test.tsx): testing-library's
+ * async waitFor + the mount-time getAuthMethods promise are unreliable under
+ * global fake timers, and the ~400ms debounce is short enough to await directly.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -34,15 +35,15 @@ function setPath(path: string) {
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
-    value: { ...window.location, pathname: path, href: `https://app.fuzefront.com${path}` },
+    value: { ...window.location, pathname: path, href: `https://app.fuzefront.com${path}`, search: '' },
   })
 }
 
 const STRONG = 'Sup3rSecret!Pass'
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 describe('signup — confirm-password + email availability', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
     vi.mocked(sharedMock.useCurrentUser).mockReturnValue({
       user: null,
       currentUser: null,
@@ -59,15 +60,12 @@ describe('signup — confirm-password + email availability', () => {
   })
 
   afterEach(() => {
-    vi.runOnlyPendingTimers()
-    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
   async function renderSignup() {
     render(<LoginPage />)
-    // getAuthMethods resolves the credentials form.
-    await vi.waitFor(() => expect(screen.queryByLabelText(/first name/i)).toBeTruthy())
+    await waitFor(() => expect(screen.queryByLabelText(/first name/i)).toBeTruthy())
   }
 
   it('shows the password-policy hints in signup mode', async () => {
@@ -105,11 +103,12 @@ describe('signup — confirm-password + email availability', () => {
     fireEvent.change(screen.getByLabelText(/confirm password/i), { target: { value: STRONG } })
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'taken@b.com' } })
 
-    // Not called before the debounce window elapses.
+    // Not fired synchronously — the debounce timer hasn't elapsed yet.
     expect(authAPI.checkEmailAvailability).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(450)
-    expect(authAPI.checkEmailAvailability).toHaveBeenCalledWith('taken@b.com', expect.anything())
 
+    await waitFor(() =>
+      expect(authAPI.checkEmailAvailability).toHaveBeenCalledWith('taken@b.com', expect.anything())
+    )
     await waitFor(() =>
       expect(screen.getByText(/already uses this email/i)).toBeTruthy()
     )
@@ -127,8 +126,8 @@ describe('signup — confirm-password + email availability', () => {
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: STRONG } })
     fireEvent.change(screen.getByLabelText(/confirm password/i), { target: { value: STRONG } })
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'x@b.com' } })
-    await vi.advanceTimersByTimeAsync(450)
 
+    await waitFor(() => expect(authAPI.checkEmailAvailability).toHaveBeenCalled())
     const submit = screen.getByRole('button', { name: /create account/i }) as HTMLButtonElement
     await waitFor(() => expect(submit.disabled).toBe(false))
   })
@@ -138,7 +137,7 @@ describe('signup — confirm-password + email availability', () => {
     render(<LoginPage />)
     await waitFor(() => expect(authAPI.getAuthMethods).toHaveBeenCalled())
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'a@b.com' } })
-    await vi.advanceTimersByTimeAsync(500)
+    await delay(600) // well past the debounce window
     expect(authAPI.checkEmailAvailability).not.toHaveBeenCalled()
     expect(screen.queryByLabelText(/confirm password/i)).toBeNull()
   })
