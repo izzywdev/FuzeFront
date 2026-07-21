@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Create account — FuzeFront auth-experience frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="auth-stage" data-frame="01-signup" data-flow="signup">
+  <section class="auth-card" role="region" aria-label="Create your account">
+    <div class="auth-card__seam"></div>
+    <div class="auth-card__body">
+      <div class="auth-brand">
+        <span class="mark">F</span>
+        <span class="auth-wordmark">Fuze<span class="fuse">Front</span></span>
+      </div>
+      <h1 class="auth-title">Create your account</h1>
+      <p class="auth-sub">Start your workspace in a minute. No credit card required.</p>
+
+      <form data-form="signup" novalidate>
+        <div class="field__row">
+          <div class="field">
+            <label class="field__label" for="firstName">First name</label>
+            <div class="input-wrap">
+              <input class="input" id="firstName" name="firstName" type="text"
+                     autocomplete="given-name" value="Ada" />
+            </div>
+          </div>
+          <div class="field">
+            <label class="field__label" for="lastName">Last name</label>
+            <div class="input-wrap">
+              <input class="input" id="lastName" name="lastName" type="text"
+                     autocomplete="family-name" value="Lovelace" />
+            </div>
+          </div>
+        </div>
+
+        <!-- email + inline availability (GET /v1/security/signup/email-available) -->
+        <div class="field">
+          <label class="field__label" for="email">
+            <span>Work email</span>
+            <span class="avail avail--available" data-avail="available" role="status" aria-live="polite">
+              <svg viewBox="0 0 20 20" fill="none" width="14" height="14" aria-hidden="true">
+                <path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Available
+            </span>
+          </label>
+          <div class="input-wrap">
+            <input class="input input--has-adornment input--valid" id="email" name="email"
+                   type="email" autocomplete="email" value="ada@lovelace.io"
+                   aria-describedby="email-help" />
+            <span class="input-adornment" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9"
+                fill="var(--success-soft)"/><path d="M6 10.5 9 13.5 14 7"
+                stroke="var(--success-color)" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round"/></svg>
+            </span>
+          </div>
+          <p class="field__help" id="email-help">We check this as you type. See taken / checking states in
+            <a href="06-states.html" style="color:var(--accent-color)">States</a>.</p>
+        </div>
+
+        <!-- password + strength meter (policy: 12+, upper/lower/digit/symbol) -->
+        <div class="field">
+          <label class="field__label" for="password">Password</label>
+          <div class="input-wrap">
+            <input class="input input--has-adornment" id="password" name="password"
+                   type="password" autocomplete="new-password" value="Corr3ct-Horse!Batt"
+                   aria-describedby="pw-meter" />
+            <button type="button" class="pw-toggle" aria-label="Show password">
+              <svg viewBox="0 0 20 20" fill="none" width="18" height="18"><path
+                d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10Z"
+                stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5"
+                stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+          </div>
+          <div class="pwmeter" id="pw-meter" data-strength="strong" data-pwmeter aria-live="polite">
+            <div class="pwmeter__bars" aria-hidden="true">
+              <span class="pwmeter__bar pwmeter__bar--on"></span>
+              <span class="pwmeter__bar pwmeter__bar--on"></span>
+              <span class="pwmeter__bar pwmeter__bar--on"></span>
+              <span class="pwmeter__bar pwmeter__bar--on"></span>
+            </div>
+            <div class="pwmeter__label"><span>Password strength</span><b>Strong</b></div>
+            <ul class="pwreq">
+              <li data-met="true" data-req="length"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>12+ characters</li>
+              <li data-met="true" data-req="upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Uppercase letter</li>
+              <li data-met="true" data-req="lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Lowercase letter</li>
+              <li data-met="true" data-req="digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Number</li>
+              <li data-met="true" data-req="symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Symbol</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- confirm password + live match -->
+        <div class="field">
+          <label class="field__label" for="confirm">Confirm password</label>
+          <div class="input-wrap">
+            <input class="input input--has-adornment input--valid" id="confirm" name="confirm"
+                   type="password" autocomplete="new-password" value="Corr3ct-Horse!Batt"
+                   data-match="true" aria-describedby="confirm-help" />
+            <span class="input-adornment" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5"
+                stroke="var(--success-color)" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round"/></svg>
+            </span>
+          </div>
+          <p class="field__help" id="confirm-help">Passwords match.</p>
+        </div>
+
+        <!-- Cloudflare Turnstile (verified state shown; other states in 06-states) -->
+        <div class="turnstile" data-state="verified" data-turnstile>
+          <div class="turnstile__box" data-state="verified">
+            <span class="turnstile__icon" aria-hidden="true">
+              <svg viewBox="0 0 26 26" fill="none"><circle cx="13" cy="13" r="12"
+                fill="var(--success-soft)"/><path d="M8 13.5 11.5 17 18 9.5"
+                stroke="var(--success-color)" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round"/></svg>
+            </span>
+            <span class="turnstile__text"><b>Verified — you're human</b></span>
+            <span class="turnstile__brand">Cloudflare Turnstile</span>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-ds btn-ds--primary" data-action="submit">Create account</button>
+      </form>
+
+      <div class="seam-divider">or</div>
+      <button type="button" class="social-btn" data-action="social-google">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><!-- ds-conformance-allow: third-party brand mark -->
+          <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.7-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8Z"/>
+          <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.4v3.1C3.4 21.4 7.4 24 12 24Z"/>
+          <path fill="#FBBC05" d="M5.4 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4V6.5H1.4C.5 8.2 0 10 0 12s.5 3.8 1.4 5.5l4-3.1Z"/>
+          <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4C17.9 1.2 15.2 0 12 0 7.4 0 3.4 2.6 1.4 6.5l4 3.1C6.3 6.8 8.9 4.8 12 4.8Z"/>
+        </svg>
+        Continue with Google
+      </button>
+
+      <p class="auth-foot">Already have an account? <a href="02-signin.html" data-nav="signin">Sign in</a></p>
+      <p class="legal">By creating an account you agree to our <a href="#">Terms</a> and
+        <a href="#">Privacy Policy</a>.</p>
+    </div>
+  </section>
+</main>
+
+<nav class="frame-nav" aria-label="Frame navigation">
+  <span class="caption"><b>01 · Create account</b> — email availability ✓, strength meter, confirm-match, Turnstile, Google</span>
+  <span>
+    <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
+    <a class="btn-ds btn-ds--primary" href="03-check-inbox.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Next: Check inbox →</a>
+  </span>
+</nav>
+</body>
+</html>
