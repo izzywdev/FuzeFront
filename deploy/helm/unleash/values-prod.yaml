@@ -22,7 +22,7 @@ unleash:
   # pre-install unleash-db-bootstrap hook render, so Unleash adds ZERO sync
   # surface to this Argo Application. GO-LIVE = flip this to true (after
   # confirming the real unleash-secrets values are sealed).
-  enabled: false
+  enabled: true
   image:
     repository: unleashorg/unleash-server
     tag: "5.12.0"
