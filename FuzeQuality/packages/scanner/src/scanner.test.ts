@@ -35,7 +35,7 @@ paths:
       operationId: getUser
       security: [{ bearerAuth: [] }]
       parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string, minLength: 4, pattern: '^[a-z0-9]+$' } }
       responses: { '200': { description: ok }, '404': { description: missing } }
 `
     )
@@ -55,6 +55,43 @@ paths:
     expect(result.surfaces.some(surface => surface.name === 'UserPage')).toBe(true)
     expect(result.tests.some(test => test.framework === 'supertest')).toBe(true)
     expect(result.expectations.some(item => item.kind === 'authentication-missing')).toBe(true)
+    expect(result.expectations.find(item => item.kind === 'happy-path')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'authentication-missing')?.coverage).toBe('gap')
+    expect(result.expectations.find(item => item.kind === 'missing-path-id')?.coverage).toBe('gap')
+    expect(result.expectations.some(item => item.kind === 'parameter-path-id-minlength')).toBe(true)
+    expect(result.expectations.some(item => item.kind === 'parameter-path-id-pattern')).toBe(true)
+    expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
+  })
+
+  it('credits scenario coverage only to assertion-bearing tests that name the scenario', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-evidence-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    await writeFile(
+      join(root, 'openapi.yaml'),
+      `openapi: 3.0.0
+info: { title: Sample, version: 1.0.0 }
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: ok }, '401': { description: unauthenticated }, '404': { description: missing } }
+`
+    )
+    await writeFile(
+      join(root, 'tests', 'users.test.ts'),
+      `test('getUser returns status 200', () => { expect(true).toBe(true) })
+       test('getUser rejects missing auth with 401', () => { expect(true).toBe(true) })
+       test('getUser handles 404 not found', () => { expect(true).toBe(true) })`
+    )
+
+    const result = await scanRepository(repository, root)
+    expect(result.expectations.find(item => item.kind === 'authentication-missing')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'response-404')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'missing-path-id')?.coverage).toBe('gap')
   })
 
   it('rejects credentials embedded in repository URLs', () => {

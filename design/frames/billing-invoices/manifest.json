@@ -8,8 +8,14 @@
   "contract": {
     "openapi": "services/billing-service/openapi.yaml",
     "client": "@fuzefront/billing-client",
-    "schemas": ["components.schemas.BillingInvoice", "components.schemas.InvoiceListResponse"],
-    "endpoints": ["GET /api/v1/billing/invoices", "POST /api/v1/billing/invoices/sync"],
+    "schemas": [
+      "components.schemas.BillingInvoice",
+      "components.schemas.InvoiceListResponse"
+    ],
+    "endpoints": [
+      "GET /api/v1/billing/invoices",
+      "POST /api/v1/billing/invoices/sync"
+    ],
     "component": "@fuzefront/billing-ui → InvoiceHistoryPanel",
     "featureFlag": "fuzefront.billing.invoice-history"
   },
@@ -47,5 +53,6 @@
         "[data-status='uncollectible']"
       ]
     }
-  ]
+  ],
+  "stamp": "b8077a647c64b27298ec9bc2c564dd5b2bc0ea1cf574bcc15c6f5331eb7c150d"
 }
