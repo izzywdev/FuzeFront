@@ -4,13 +4,15 @@ kind: Job
 metadata:
   name: fuzefront-unleash-db-bootstrap
   labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
+    {{- include "unleash.labels" . | nindent 4 }}
     app.kubernetes.io/component: unleash-db-bootstrap
   annotations:
     # Idempotent, privileged provisioning of the least-privilege unleash_svc role
     # and a DEDICATED `unleash` database it OWNS. Runs BEFORE the Unleash server
-    # starts (Unleash self-migrates its own schema on boot as unleash_svc). Runs as
-    # the FuzeInfra Postgres superuser — the only place that has CREATEROLE/CREATEDB.
+    # starts (Unleash self-migrates its own schema on boot as unleash_svc). Runs
+    # as the FuzeInfra Postgres superuser, whose password is read from the
+    # umbrella chart's existing `fuzefront-secrets` Secret in this namespace —
+    # NOT re-declared or re-sealed by this chart.
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-4"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -24,7 +26,7 @@ spec:
         app.kubernetes.io/component: unleash-db-bootstrap
     spec:
       restartPolicy: Never
-      {{- with .Values.imagePullSecrets }}
+      {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -36,13 +38,13 @@ spec:
             - |
               export PGPASSWORD="$DB_SUPERUSER_PASSWORD"
               # --- Step 1: role -----------------------------------------------------
-              # Connect to the superuser's MAINTENANCE db ($DB_NAME / postgres) to
-              # ensure the unleash_svc LOGIN role. The password is passed via a psql
-              # ':var' (plain SQL → psql substitutes), stashed into a session GUC, then
-              # read back inside the DO block via current_setting()+format(%L): psql
-              # ':var' interpolation does NOT work inside a dollar-quoted ($do$...$do$)
-              # body, so we must round-trip it through the GUC. (Same pattern as
-              # billing-db-bootstrap — copy it exactly.)
+              # Connect to the superuser's MAINTENANCE db to ensure the unleash_svc
+              # LOGIN role. The password is passed via a psql ':var' (plain SQL ->
+              # psql substitutes), stashed into a session GUC, then read back inside
+              # the DO block via current_setting()+format(%L): psql ':var'
+              # interpolation does NOT work inside a dollar-quoted ($do$...$do$)
+              # body, so we must round-trip it through the GUC. (Same pattern as the
+              # umbrella chart's billing/unleash bootstrap Jobs — copied exactly.)
               psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
                 -v ON_ERROR_STOP=1 -v unleash_pw="$UNLEASH_DB_PASSWORD" <<'SQL'
               SET fuzefront.unleash_pw TO :'unleash_pw';
@@ -60,26 +62,25 @@ spec:
               # CREATE DATABASE cannot run inside a DO block / transaction and is not
               # idempotent, so guard it with the SELECT ... WHERE NOT EXISTS + \gexec
               # idiom (psql executes the generated statement only when the row is
-              # absent → no-op on pre-upgrade re-run). Connect to the maintenance db.
+              # absent -> no-op on pre-upgrade re-run). Connect to the maintenance db.
               psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
                 -v ON_ERROR_STOP=1 <<'SQL'
               SELECT 'CREATE DATABASE unleash OWNER unleash_svc'
               WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'unleash')\gexec
               SQL
               # --- Step 3: privileges ----------------------------------------------
-              # unleash_svc OWNS the `unleash` database, so it can run ALL of Unleash's
-              # own migrations (CREATE TABLE/EXTENSION/etc.). Re-affirm full DB-level
-              # privileges + ownership of the public schema inside `unleash` so a
-              # pre-existing db (e.g. created by hand before this Job) is also correct.
-              # Idempotent and safe on pre-upgrade re-run.
+              # unleash_svc OWNS the `unleash` database, so it can run ALL of
+              # Unleash's own migrations (CREATE TABLE/EXTENSION/etc.). Re-affirm
+              # full DB-level privileges + ownership of the public schema inside
+              # `unleash` so a pre-existing db is also correct. Idempotent.
               psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
                 -v ON_ERROR_STOP=1 <<'SQL'
               GRANT ALL PRIVILEGES ON DATABASE unleash TO unleash_svc;
               ALTER DATABASE unleash OWNER TO unleash_svc;
               SQL
               # Re-own the public schema INSIDE the unleash db (connect to it). On
-              # PG15 the public schema is no longer world-writable; making unleash_svc
-              # its owner lets Unleash create its tables there.
+              # PG15 the public schema is no longer world-writable; making
+              # unleash_svc its owner lets Unleash create its tables there.
               psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "unleash" \
                 -v ON_ERROR_STOP=1 <<'SQL'
               ALTER SCHEMA public OWNER TO unleash_svc;
@@ -93,14 +94,18 @@ spec:
               value: {{ .Values.fuzeinfra.postgres.port | quote }}
             # Superuser maintenance DB (CREATE DATABASE / role ops connect here).
             - name: DB_NAME
-              value: {{ .Values.database.name | default "postgres" | quote }}
+              value: {{ .Values.unleash.dbBootstrap.superuser.maintenanceDb | default "postgres" | quote }}
             - name: DB_SUPERUSER
-              value: {{ .Values.database.bootstrap.superuser.username | quote }}
+              value: {{ .Values.unleash.dbBootstrap.superuser.username | quote }}
             - name: DB_SUPERUSER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
-                  key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+                  # Cross-service reference: the umbrella `fuzefront` chart's
+                  # Secret (fuzefront-secrets) already holds the shared FuzeInfra
+                  # Postgres superuser password in this namespace. This chart does
+                  # NOT create or own that Secret — it only reads it.
+                  name: {{ .Values.unleash.dbBootstrap.superuser.secretName }}
+                  key: {{ .Values.unleash.dbBootstrap.superuser.secretKey }}
             # unleash_svc's own password — lives in the per-service unleash-secrets.
             - name: UNLEASH_DB_PASSWORD
               valueFrom:

@@ -181,7 +181,12 @@ spec:
         # restart == immediate re-apply instead of the hourly discovery cycle.
         checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
     spec:
-      {{- include "fuzefront.scheduling" (dict "svc" .Values.authentik "root" .) | nindent 6 }}
+      # Pin authentik-server onto the DB node (vmi3383846) so its Postgres/Redis
+      # round-trips are same-node. Cross-node over the flannel/WireGuard overlay made
+      # a full login ~45-60s (FuzeInfra#318). Server only; the worker tolerates cross-node.
+      # vmi3383846 taint is PreferNoSchedule (soft) so no toleration is needed.
+      nodeSelector:
+        kubernetes.io/hostname: vmi3383846
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -232,7 +237,7 @@ spec:
           # (Exit 137) → crashloop → PROVIDER_UNAVAILABLE / auth outage. 2024.12
           # used ~475Mi; the newer runtime + worker set needs far more headroom.
           resources:
-            requests: { cpu: 200m, memory: 1Gi }
+            requests: { cpu: 200m, memory: 320Mi }
             limits:   { cpu: "2",  memory: 3Gi }
       volumes:
         - name: media

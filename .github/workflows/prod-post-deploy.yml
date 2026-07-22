@@ -1,0 +1,39 @@
+name: Post-deploy verification
+
+# Triggered automatically after a successful release (images + GitOps bump).
+# Waits for ArgoCD to sync (~6 min) then calls the post-prod E2E as a
+# reusable workflow. A failure there triggers claude-autofix-post-prod.yml.
+on:
+  workflow_run:
+    workflows:
+      - 'Release (images + GitOps bump)'
+    types:
+      - completed
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    # Only fire when the release actually succeeded (skip on failure/cancel)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for ArgoCD sync (~6 min)
+        run: |
+          echo "Release concluded at: $(date -u)"
+          echo "Waiting 6 minutes for ArgoCD to detect the GitOps bump and roll out..."
+          sleep 360
+          echo "Wait complete at: $(date -u)"
+
+  e2e:
+    needs: gate
+    uses: ./.github/workflows/post-prod-e2e.yml
+    with:
+      base_url: 'https://app.fuzefront.com'
+      run_authn_boundary: false
+    secrets:
+      POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
+      POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}

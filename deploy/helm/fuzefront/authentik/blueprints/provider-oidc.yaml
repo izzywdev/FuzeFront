@@ -39,9 +39,11 @@ entries:
       slug: fuzefront-authorization-implicit-consent
       designation: authorization
       title: FuzeFront Sign In
-      # require_authenticated: user must already be logged in to run this flow.
-      # all + 0 policy bindings = vacuous truth → flow is always accessible.
-      authentication: require_authenticated
+      # none: Authentik's OAuth2 provider view handles the authentication redirect
+      # (unauthenticated users are sent to the login flow, then back here).
+      # require_authenticated would cause Authentik to return access_denied
+      # immediately instead of redirecting to login — breaking the OIDC flow.
+      authentication: none
       policy_engine_mode: all
 
   # ── Scope mappings (inline — no system-blueprint dependency) ─────────────────
