@@ -6,6 +6,9 @@ metadata:
     {{- include "fuzequality.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
   selector: { matchLabels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend } }
   template:
     metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend } }
