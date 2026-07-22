@@ -31,7 +31,7 @@
  *   echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
  *   cd frontend && npx playwright test tests/oidc-plumbing.e2e.spec.ts
  */
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
 const AUTHENTIK_URL = process.env.AUTHENTIK_URL ?? 'http://authentik-server:9000'
 const FRONTEND_URL = process.env.BASE_URL ?? 'http://localhost:4173'
@@ -148,51 +148,42 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     ).toBe(401)
   })
 
-  // ── 3. Full OIDC sign-in flow ───────────────────────────────────────────
-  test('full OIDC sign-in flow with local user lands on dashboard with a real JWT', async ({
+  // ── 3. Social sign-in button initiates the server-brokered redirect ─────
+  // The dedicated "Sign in with Authentik" button was removed when the auth UI
+  // migrated to the Security API; the only redirect-based entry point is now the
+  // "Sign in with Google" button, which navigates to the FuzeFront-owned social
+  // start endpoint (`/api/v1/security/social/google/start`). The server brokers
+  // the provider hand-off from there.
+  //
+  // This job runs in NO-GOOGLE mode (docker-compose.e2e.yml leaves
+  // GOOGLE_CLIENT_ID/SECRET empty — "inert when empty"), so a full interactive
+  // Authentik round-trip through this button is not reachable here. Driving one
+  // would assert behaviour the app no longer exposes in this environment. The
+  // REAL server-side OIDC token exchange against Authentik is still covered end
+  // to end by the API-level test "password sign-in against Authentik (no
+  // redirect) returns a platform JWT" above; here we assert the button is wired
+  // to the correct server-brokered entry point.
+  test('Google sign-in button initiates the server-brokered social login', async ({
     page,
   }) => {
-    // The provider uses implicit-consent (first-party app — no manual consent step).
-    // Flow: identification → password → Authentik redirects to backend callback →
-    // backend validates PKCE + exchanges token → redirects frontend with exchange code
-    // → frontend POSTs /api/auth/token-exchange → JWT in localStorage → /dashboard.
-    // Timeout covers: pwField gate (60s) + redirect chain + dashboard nav (30s) = 90s.
-    test.setTimeout(240_000)
+    test.setTimeout(60_000)
 
-    // Step 1: Open FuzeFront
     await page.goto(FRONTEND_URL)
     await expect(page).toHaveTitle(/FuzeFront|Sign in/i, { timeout: 15_000 })
 
-    // Step 2: the redirect entry point is now the Google button (the dedicated
-    // "Sign in with Authentik" button was replaced by the native credentials
-    // form). This e2e Authentik has no Google source, so the button lands on
-    // Authentik's own identification flow — exactly what we want to drive.
-    const oidcButton = page.getByRole('button', { name: /sign in with google/i })
-    await expect(oidcButton).toBeVisible({ timeout: 15_000 })
-    await oidcButton.click()
+    const googleButton = page.getByRole('button', { name: /sign in with google/i })
+    await expect(googleButton).toBeVisible({ timeout: 15_000 })
 
-    // Step 3: Browser redirects to Authentik authorization endpoint
-    await page.waitForURL(`${AUTHENTIK_URL}/**`, { timeout: 25_000 })
-
-    // Step 4: Fill in local Authentik credentials (no Google, no bot detection)
-    await fillAuthentikLogin(page, E2E_USER_EMAIL, E2E_USER_PASSWORD)
-
-    // Step 5: Wait for the complete OIDC redirect chain to land on the dashboard.
-    // With implicit-consent the backend callback + frontend exchange happen fast;
-    // waiting for intermediate URLs risks a race if the chain completes before
-    // waitForURL is called. Waiting directly for /dashboard is reliable — the
-    // frontend navigates there only after localStorage.setItem('authToken', ...).
-    await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 90_000 })
-
-    // Assert a real, well-formed JWT was stored (three base64url parts)
-    const authToken = await page.evaluate(() => localStorage.getItem('authToken'))
-    expect(authToken).toBeTruthy()
-    expect(authToken!.split('.').length).toBe(3)
-
-    // Decode payload (no signature verification needed — we just check the claims exist)
-    const payload = JSON.parse(Buffer.from(authToken!.split('.')[1], 'base64url').toString())
-    expect(payload.sub).toBeTruthy()
-    expect(payload.email).toBeTruthy()
+    // The click sets window.location to the social start endpoint — capture the
+    // navigation request rather than a settled URL (the server 302-redirects
+    // onward immediately).
+    const socialStart = page.waitForRequest(
+      r => r.url().includes('/api/v1/security/social/google/start'),
+      { timeout: 15_000 }
+    )
+    await googleButton.click()
+    const req = await socialStart
+    expect(req.url()).toContain('/api/v1/security/social/google/start')
   })
 
   // ── 3b. Native credentials form drives the Authentik-backed login ──────
@@ -208,15 +199,18 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     await emailField.fill(E2E_USER_EMAIL)
     await page.locator('input[type="password"]').fill(E2E_USER_PASSWORD)
 
+    // The native credentials form posts to FuzeFront's Security API
+    // (POST /api/v1/security/session) — the server brokers the Authentik
+    // exchange, so the browser never leaves the app origin.
     const loginResp = page.waitForResponse(
-      r => r.url().includes('/api/auth/oidc/password'),
+      r => r.url().includes('/api/v1/security/session') && r.request().method() === 'POST',
       { timeout: 30_000 }
     )
     await page.getByRole('button', { name: /^sign in$/i }).click()
     const resp = await loginResp
     expect(
       resp.status(),
-      `POST /api/auth/oidc/password -> ${resp.status()}`
+      `POST /api/v1/security/session -> ${resp.status()}`
     ).toBe(200)
 
     // The page never navigated to Authentik — the whole exchange was server-side.
@@ -230,124 +224,11 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   test('OIDC error from Authentik is displayed on the login page', async ({ page }) => {
     // Simulate what happens when Authentik redirects back with an error
     await page.goto(`${FRONTEND_URL}/?error=oidc_error&message=access_denied`)
-    // The frontend must show some error indication
+    // The frontend must show some error indication. The error surfaces in more
+    // than one place (e.g. an inline banner and the humanised message), so scope
+    // to the first match — asserting the error is shown, not that it is unique.
     await expect(
-      page.locator('text=/authentication error|access.denied|sign in failed/i')
+      page.locator('text=/authentication error|access.denied|sign in failed/i').first()
     ).toBeVisible({ timeout: 10_000 })
   })
 })
-
-// ── Helper: drive through Authentik's multi-stage login UI ────────────────────
-// Authentik renders stages as custom elements (Lit) with shadow DOM.
-// Playwright automatically pierces open shadow roots for attribute selectors.
-// The provider uses implicit-consent so only identification + password are needed.
-
-async function fillAuthentikLogin(page: Page, email: string, password: string): Promise<void> {
-  // ── Stage 1: Identification (username / email) ─────────────────────────
-  // 'input[name="uidField"]' pierces shadow DOM to the actual <input> (not the
-  // outer <ak-form-element-horizontal name="uidField"> host, which also carries
-  // the attribute). press('Enter') on the actual <input> fires the shadow-DOM
-  // form's @submit, which Authentik's Lit handler intercepts for a fetch POST.
-  // Using 'button[type="submit"]' is unreliable at the password stage because
-  // Lit may leave the identification stage's button in the shadow tree; .first()
-  // then clicks the stale/wrong button and no POST is sent to the executor.
-  const uidField = page.locator('input[name="uidField"]')
-  await expect(uidField).toBeVisible({ timeout: 15_000 })
-  await uidField.fill(email)
-  await uidField.press('Enter')
-
-  // ── Stage 2: Password ──────────────────────────────────────────────────
-  // Authentik's password stage is a Lit custom element (<ak-stage-password>) rendered
-  // inside <ak-flow-executor>'s shadow root.  Several approaches all fail:
-  //   • pwField.press('Enter'): the <input> is in a different shadow tree from the
-  //     <form>, so native form-submission across shadow boundaries never fires.
-  //   • ak-stage-password button[type="submit"] .click(): Playwright's synthetic CDP
-  //     click doesn't reliably reach Lit's @click handler through 3 shadow layers.
-  //   • form.requestSubmit(): may silently skip submission if HTML5 constraint
-  //     validation doesn't see the cross-shadow-root input as form-associated.
-  // Most reliable: call submitForm() directly on the ak-stage-password element.
-  // It is a Lit custom element so its class methods are live on the DOM node.
-  // submitForm() calls this.host.submit(data) which POSTs to the flow executor.
-  //
-  // Critical: submitForm() reads this.passwordInput which uses @query() —
-  // that calls this.shadowRoot.querySelector('input[type="password"]').
-  // If the <input> lives inside ak-form-element-horizontal's OWN shadow root
-  // (not as a slotted child), this.passwordInput is null → empty password sent
-  // → Authentik returns 200 with the password stage again (auth rejected).
-  // Fix: deep-search all nested shadow roots to find the input, then force-set
-  // its value via the native HTMLInputElement setter before calling submitForm().
-  const pwField = page.locator('input[type="password"]')
-  await expect(pwField).toBeVisible({ timeout: 60_000 })
-  await pwField.fill(password)
-
-  // page.locator() pierces shadow roots (Playwright's selector engine).
-  // Native DOM APIs inside evaluate() do NOT pierce shadow roots, so we pass
-  // the password as a parameter and do a recursive shadow-root search to find
-  // and force-set the input before submitting.
-  const stageResult = await page.locator('ak-stage-password').evaluate((el: any, pw: string) => {
-    // Recursively search all shadow roots for a matching element.
-    function deepQuery(root: any, sel: string): Element | null {
-      const direct = root.querySelector?.(sel) as Element | null
-      if (direct) return direct
-      for (const child of Array.from<Element>(root.querySelectorAll?.('*') ?? [])) {
-        const sr = (child as any).shadowRoot
-        if (sr) {
-          const found = deepQuery(sr, sel)
-          if (found) return found
-        }
-      }
-      return null
-    }
-
-    const pwInput = deepQuery(el.shadowRoot ?? el, 'input[type="password"]') as HTMLInputElement | null
-
-    const info = {
-      hasSubmitForm: typeof el.submitForm === 'function',
-      hostTag: el.host?.tagName ?? 'null',
-      hostHasSubmit: typeof el.host?.submit === 'function',
-      hasShadowRoot: !!el.shadowRoot,
-      hasForm: !!(el.shadowRoot?.querySelector('form')),
-      pwInputFound: !!pwInput,
-      pwValueBefore: pwInput?.value?.length ?? -1,
-      pwValueAfter: -1,
-      method: 'none' as string,
-    }
-
-    // Force-set the password via the native setter so no Lit/custom-element
-    // override can intercept it, then fire input+change for reactive updates.
-    if (pwInput) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-      nativeSetter?.call(pwInput, pw)
-      pwInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
-      pwInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-      info.pwValueAfter = pwInput.value.length
-    }
-
-    if (typeof el.submitForm === 'function') {
-      el.submitForm(new Event('submit', { cancelable: true }))
-      info.method = 'submitForm'
-    } else {
-      // Fallback: call callAction on the spinner button (found via deep search)
-      const spinnerBtn = deepQuery(el.shadowRoot ?? el, 'ak-spinner-button') as any
-      if (typeof spinnerBtn?.callAction === 'function') {
-        spinnerBtn.callAction()
-        info.method = 'callAction'
-      } else {
-        const btn = deepQuery(el.shadowRoot ?? el, 'button[type="submit"]') as HTMLButtonElement | null
-        if (btn) {
-          btn.click()
-          info.method = 'button-click'
-        }
-      }
-    }
-    return info
-  }, password)
-  // Logged here so CI output shows pwValueBefore/After and method used
-  console.log('[fillAuthentikLogin] password stage submit:', JSON.stringify(stageResult))
-
-  // Wait for the password form to disappear (Authentik navigates away after auth).
-  // Authentik can take up to 60 s under CI resource pressure.
-  await pwField.waitFor({ state: 'hidden', timeout: 90_000 }).catch(() => {
-    // Field still visible (timeout) or already detached (navigated) — proceed.
-  })
-}
