@@ -11,6 +11,10 @@ spec:
   template:
     metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: {{ $name }} } }
     spec:
+      securityContext: { fsGroup: 1000, fsGroupChangePolicy: OnRootMismatch }
+      volumes:
+        - name: runtime-tmp
+          emptyDir: { sizeLimit: 64Mi }
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -38,6 +42,8 @@ spec:
                   name: {{ $.Values.chroma.existingSecret }}
                   key: {{ $.Values.chroma.secretKey }}
             {{- end }}
+          volumeMounts:
+            - { name: runtime-tmp, mountPath: /tmp }
           {{- if $worker.chromaRequired }}
           startupProbe:
             exec: { command: ["npm", "run", "check:chroma"] }

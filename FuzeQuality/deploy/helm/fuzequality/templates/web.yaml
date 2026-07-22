@@ -10,6 +10,12 @@ spec:
   template:
     metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend } }
     spec:
+      securityContext: { fsGroup: 101, fsGroupChangePolicy: OnRootMismatch }
+      volumes:
+        - name: nginx-cache
+          emptyDir: { sizeLimit: 64Mi }
+        - name: nginx-run
+          emptyDir: { sizeLimit: 8Mi }
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -19,6 +25,9 @@ spec:
           image: "{{ .Values.frontendImage.repository }}:{{ .Values.frontendImage.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           ports: [{ name: http, containerPort: {{ .Values.frontend.port }} }]
+          volumeMounts:
+            - { name: nginx-cache, mountPath: /var/cache/nginx }
+            - { name: nginx-run, mountPath: /var/run }
           readinessProbe: { httpGet: { path: /, port: http }, initialDelaySeconds: 3 }
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
