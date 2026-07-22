@@ -12,9 +12,9 @@ import type {
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 
 export interface CatalogStore {
-  portfolio(): Promise<Portfolio>
-  repository(id: string): Promise<Repository | undefined>
-  addRepository(input: RepositoryInput): Promise<Repository>
+  portfolio(tenantId?: string): Promise<Portfolio>
+  repository(id: string, tenantId?: string): Promise<Repository | undefined>
+  addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
   saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
@@ -41,22 +41,42 @@ export class MemoryCatalogStore implements CatalogStore {
     this.data = { ...this.data, ...seed }
   }
 
-  async portfolio() {
-    return structuredClone(this.data)
+  async portfolio(tenantId?: string) {
+    const result = structuredClone(this.data)
+    if (!tenantId) return result
+    const repositories = result.repositories.filter(repository => repository.tenantId === tenantId)
+    const repositoryIds = new Set(repositories.map(repository => repository.id))
+    const operations = result.operations.filter(item => repositoryIds.has(item.repositoryId))
+    const surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
+    const subjectIds = new Set([...operations.map(item => item.id), ...surfaces.map(item => item.id)])
+    return {
+      ...result,
+      repositories,
+      operations,
+      surfaces,
+      tests: result.tests.filter(item => repositoryIds.has(item.repositoryId)),
+      expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
+      findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
+      diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
+    }
   }
 
-  async repository(id: string) {
-    return this.data.repositories.find(repository => repository.id === id)
+  async repository(id: string, tenantId?: string) {
+    return this.data.repositories.find(repository => repository.id === id && (!tenantId || repository.tenantId === tenantId))
   }
 
-  async addRepository(input: RepositoryInput) {
+  async addRepository(input: RepositoryInput, tenantId = 'legacy') {
     const duplicate = this.data.repositories.find(
-      item => item.owner.toLowerCase() === input.owner.toLowerCase() && item.name.toLowerCase() === input.name.toLowerCase()
+      item => item.tenantId === tenantId && item.owner.toLowerCase() === input.owner.toLowerCase() && item.name.toLowerCase() === input.name.toLowerCase()
     )
-    if (duplicate) return duplicate
+    if (duplicate) {
+      Object.assign(duplicate, input)
+      return duplicate
+    }
     const repository: Repository = {
       ...input,
       id: randomUUID(),
+      tenantId,
       canonicalUrl: `https://github.com/${input.owner}/${input.name}`,
       enabled: true,
       lastScanStatus: 'never',
@@ -133,7 +153,7 @@ export class PostgresCatalogStore implements CatalogStore {
     this.pool = new pg.Pool({ connectionString })
   }
 
-  async portfolio(): Promise<Portfolio> {
+  async portfolio(tenantId?: string): Promise<Portfolio> {
     const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, flows, steps, suggestions] = await Promise.all([
       this.pool.query('SELECT * FROM fuzequality.repositories WHERE enabled = true ORDER BY name'),
       this.pool.query('SELECT * FROM fuzequality.api_operations WHERE active = true ORDER BY path, method'),
@@ -147,9 +167,10 @@ export class PostgresCatalogStore implements CatalogStore {
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
       this.pool.query('SELECT * FROM fuzequality.suggestions ORDER BY created_at DESC'),
     ])
-    return {
-      repositories: repositories.rows.map(row => ({
+    const result = {
+      repositories: repositories.rows.filter(row => !tenantId || row.tenant_id === tenantId).map(row => ({
         id: row.id,
+        tenantId: row.tenant_id,
         owner: row.owner,
         name: row.name,
         canonicalUrl: row.canonical_url,
@@ -160,6 +181,8 @@ export class PostgresCatalogStore implements CatalogStore {
         includeGlobs: row.config?.includeGlobs ?? [],
         excludeGlobs: row.config?.excludeGlobs ?? [],
         jiraProjects: row.config?.jiraProjects ?? [],
+        jiraBindings: row.config?.jiraBindings ?? [],
+        ownership: row.config?.ownership,
         localPath: row.config?.localPath,
         lastScanAt: row.last_scan_at?.toISOString(),
         lastScanRevision: row.last_scan_revision ?? undefined,
@@ -175,22 +198,32 @@ export class PostgresCatalogStore implements CatalogStore {
       flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
       suggestions: suggestions.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, type: row.type, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, payload: row.payload, state: row.state, createdAt: row.created_at.toISOString() })),
     } as Portfolio
+    const repositoryIds = new Set(result.repositories.map(repository => repository.id))
+    if (!tenantId) return result
+    result.operations = result.operations.filter(item => repositoryIds.has(item.repositoryId))
+    result.surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
+    result.tests = result.tests.filter(item => repositoryIds.has(item.repositoryId))
+    const subjectIds = new Set([...result.operations.map(item => item.id), ...result.surfaces.map(item => item.id)])
+    result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
+    result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
+    result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
+    return result
   }
 
-  async repository(id: string) {
-    return (await this.portfolio()).repositories.find(item => item.id === id)
+  async repository(id: string, tenantId?: string) {
+    return (await this.portfolio(tenantId)).repositories.find(item => item.id === id)
   }
 
-  async addRepository(input: RepositoryInput) {
+  async addRepository(input: RepositoryInput, tenantId = 'legacy') {
     const canonicalUrl = `https://github.com/${input.owner}/${input.name}`
     const result = await this.pool.query(
-      `INSERT INTO fuzequality.repositories (owner, name, canonical_url, default_branch, kind, installation_id, config)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (provider, owner, name) DO UPDATE SET default_branch=EXCLUDED.default_branch, kind=EXCLUDED.kind, installation_id=EXCLUDED.installation_id, config=EXCLUDED.config, updated_at=now()
+      `INSERT INTO fuzequality.repositories (tenant_id, owner, name, canonical_url, default_branch, kind, installation_id, config)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (tenant_id, provider, lower(owner), lower(name)) DO UPDATE SET default_branch=EXCLUDED.default_branch, kind=EXCLUDED.kind, installation_id=EXCLUDED.installation_id, config=EXCLUDED.config, updated_at=now()
        RETURNING id`,
-      [input.owner, input.name, canonicalUrl, input.defaultBranch, input.kind, input.installationId, input]
+      [tenantId, input.owner, input.name, canonicalUrl, input.defaultBranch, input.kind, input.installationId, input]
     )
-    return (await this.repository(result.rows[0].id))!
+    return (await this.repository(result.rows[0].id, tenantId))!
   }
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
@@ -332,6 +365,7 @@ export function demoPortfolio(): Partial<Portfolio> {
         includeGlobs: [],
         excludeGlobs: [],
         jiraProjects: ['FUZE'],
+        jiraBindings: [],
         lastScanStatus: 'complete',
         lastScanAt: new Date().toISOString(),
       },

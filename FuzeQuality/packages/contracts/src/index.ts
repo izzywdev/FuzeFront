@@ -9,21 +9,36 @@ export const repositoryKindSchema = z.enum([
 ])
 
 export const repositoryInputSchema = z.object({
-  owner: z.string().min(1),
-  name: z.string().min(1),
-  defaultBranch: z.string().min(1).default('main'),
+  owner: z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/),
+  name: z.string().trim().regex(/^[A-Za-z0-9_.-]{1,100}$/),
+  defaultBranch: z.string().trim().min(1).max(255).default('main'),
   kind: repositoryKindSchema.default('mixed'),
-  installationId: z.string().optional(),
+  installationId: z.string().regex(/^\d+$/).optional(),
   localPath: z.string().optional(),
-  includeGlobs: z.array(z.string()).default([]),
-  excludeGlobs: z.array(z.string()).default([]),
-  jiraProjects: z.array(z.string()).default([]),
+  includeGlobs: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
+  excludeGlobs: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
+  jiraProjects: z.array(z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,19}$/)).max(50).default([]),
+  jiraBindings: z.array(z.object({
+    project: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,19}$/),
+    component: z.string().trim().min(1).max(255).optional(),
+  })).max(100).default([]),
+  ownership: z.object({
+    team: z.string().trim().min(1).max(100),
+    contact: z.string().trim().email().optional(),
+  }).optional(),
+}).superRefine((value, context) => {
+  for (const glob of [...value.includeGlobs, ...value.excludeGlobs]) {
+    if (glob.includes('..') || glob.includes('://') || /[\r\n]/.test(glob)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Globs cannot contain traversal, URLs, or line breaks' })
+    }
+  }
 })
 
 export type RepositoryInput = z.infer<typeof repositoryInputSchema>
 
 export type Repository = RepositoryInput & {
   id: string
+  tenantId?: string
   canonicalUrl: string
   enabled: boolean
   lastScanAt?: string

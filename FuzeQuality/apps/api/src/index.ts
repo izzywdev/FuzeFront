@@ -15,11 +15,17 @@ import {
   verifyGithubWebhook,
   webhookScanCommands,
 } from '@fuzequality/github-app'
+import { githubInstallationToken } from '../../workers/src/github'
+import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
+import { requestIdentity, requirePlatformPermission } from './platform-authorization'
 
 const app = express()
 const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
+const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
+const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 'read')
+const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
 
 app.use(express.json({
   limit: '2mb',
@@ -60,19 +66,46 @@ app.get('/metrics', async (_request, response) => {
 })
 
 app.get('/api/v1/portfolio', async (_request, response) => response.json(await store.portfolio()))
-app.get('/api/v1/repositories', async (_request, response) =>
-  response.json((await store.portfolio()).repositories)
+app.get('/api/v1/repositories', mayReadRepositories, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).repositories)
 )
-app.get('/api/v1/repositories/:id', async (request, response) => {
-  const repository = await store.repository(request.params.id)
+app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId, requestIdentity(request)!.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
 })
-app.post('/api/v1/repositories', async (request, response) => {
+app.post('/api/v1/repositories/verify', mayManageRepositories, async (request, response) => {
   const parsed = repositoryInputSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
-  const repository = await store.addRepository(parsed.data)
-  response.status(201).json(repository)
+  if (!parsed.data.installationId) return response.status(400).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  try {
+    const access = await repositoryAccess.verify(parsed.data)
+    response.json({ accessible: true, repository: access })
+  } catch (error) {
+    const result = publicAccessError(error)
+    response.status(result.status).json(result.body)
+  }
+})
+app.post('/api/v1/repositories', mayManageRepositories, async (request, response) => {
+  const parsed = repositoryInputSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  if (!parsed.data.installationId) return response.status(400).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  if (process.env.NODE_ENV === 'production' && parsed.data.localPath) {
+    return response.status(400).json({ error: 'Local paths are not accepted in production', code: 'LOCAL_PATH_FORBIDDEN' })
+  }
+  const tenantId = requestIdentity(request)!.tenantId
+  const existing = (await store.portfolio(tenantId)).repositories.find(item =>
+    item.owner.toLowerCase() === parsed.data.owner.toLowerCase() && item.name.toLowerCase() === parsed.data.name.toLowerCase()
+  )
+  try {
+    await repositoryAccess.verify(parsed.data)
+    const repository = await store.addRepository(parsed.data, tenantId)
+    response.status(existing ? 200 : 201).json(repository)
+  } catch (error) {
+    const result = publicAccessError(error)
+    response.status(result.status).json(result.body)
+  }
 })
 app.post('/api/v1/repositories/:id/scans', async (request, response) => {
   const repository = await store.repository(request.params.id)
