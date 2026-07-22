@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import {
   TOPICS,
@@ -11,6 +10,11 @@ import {
   createEventBus,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
+import {
+  githubWebhookHeadersSchema,
+  verifyGithubWebhook,
+  webhookScanCommands,
+} from '@fuzequality/github-app'
 
 const app = express()
 const store = createCatalogStore()
@@ -162,27 +166,25 @@ app.post('/api/v1/jira/sync', async (request, response) => {
   response.status(202).json({ status: 'queued' })
 })
 
-function verifyWebhook(payload: Buffer, signature: string | undefined, secret: string | undefined) {
-  if (!secret) return true
-  if (!signature?.startsWith('sha256=')) return false
-  const actual = Buffer.from(signature.slice(7), 'hex')
-  const expected = createHmac('sha256', secret).update(payload).digest()
-  return actual.length === expected.length && timingSafeEqual(actual, expected)
-}
-
 app.post('/api/v1/webhooks/github', async (request, response) => {
   const raw = (request as express.Request & { rawBody?: Buffer }).rawBody
   if (!raw) return response.status(400).json({ error: 'Webhook payload is unavailable' })
-  if (!verifyWebhook(raw, request.header('x-hub-signature-256'), process.env.GITHUB_WEBHOOK_SECRET)) {
+  const headers = githubWebhookHeadersSchema.safeParse({
+    event: request.header('x-github-event'),
+    delivery: request.header('x-github-delivery'),
+    signature: request.header('x-hub-signature-256'),
+  })
+  if (!headers.success) return response.status(400).json({ error: 'Invalid GitHub webhook headers' })
+  const secret = process.env.GITHUB_WEBHOOK_SECRET ?? ''
+  if (!verifyGithubWebhook(raw, headers.data.signature, secret)) {
     return response.status(401).json({ error: 'Invalid webhook signature' })
   }
-  const body = request.body as { repository?: { full_name?: string }; after?: string }
   const repositories = (await store.portfolio()).repositories
-  const repository = repositories.find(item => `${item.owner}/${item.name}` === body.repository?.full_name)
-  if (repository) {
-    await events.publish(TOPICS.REPOSITORY_SCAN_REQUESTED, { repositoryId: repository.id, commitSha: body.after, trigger: 'push' }, repository.id)
+  const commands = webhookScanCommands(headers.data.event, request.body, repositories)
+  for (const command of commands) {
+    await events.publish(TOPICS.REPOSITORY_SCAN_REQUESTED, command, command.repositoryId)
   }
-  response.status(202).json({ accepted: true })
+  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length })
 })
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
