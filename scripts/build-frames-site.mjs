@@ -80,7 +80,11 @@ function approvalHref(slug, flow, decision, stamp) {
  *  index. Derived entirely from the manifest's flow list. */
 function renderApprovalBar(slug, manifest) {
   const flows = flowsOf(manifest);
-  const stamp = manifest?.stamp ? String(manifest.stamp).slice(0, 12) : '';
+  // FULL stamp — the approve/reject links carry this into the design-approval
+  // issue, where design-approval.yml compares it EXACTLY against the recomputed
+  // 64-char stamp. Truncating here made every click fail as "frames changed".
+  // (Display elsewhere may truncate for readability; the link must not.)
+  const stamp = manifest?.stamp ? String(manifest.stamp) : '';
   if (!flows.length) {
     return `<div class="ff-approve"><div class="ff-approve-in"><span class="ff-approve-warn">No flows declared in manifest.build.flows — nothing to approve.</span></div></div>`;
   }
