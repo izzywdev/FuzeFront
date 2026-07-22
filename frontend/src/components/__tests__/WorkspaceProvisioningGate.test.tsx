@@ -54,10 +54,14 @@ describe('WorkspaceProvisioningGate', () => {
 
     renderGate()
 
+    // Both the initial `checking` state and the `provisioning` state render the
+    // loading spinner (role="status"), so wait for the provisioning-specific copy
+    // to confirm the gate has transitioned past the initial check — not merely
+    // that a spinner is on screen.
     await waitFor(() => {
-      expect(screen.getByRole('status')).toBeInTheDocument()
+      expect(screen.getByText('Creating your workspace…')).toBeInTheDocument()
     }, { timeout: 3000 })
-    expect(screen.getByText('Creating your workspace…')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('App content')).not.toBeInTheDocument()
   })
 
