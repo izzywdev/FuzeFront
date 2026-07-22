@@ -149,10 +149,25 @@ export default defineConfig({
       // NetworkFirst so the shell always fetches fresh federation assets.
       globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
-        // Exclude /api/* from the SPA navigation fallback so full-page navigations
-        // to backend redirect endpoints (e.g. /api/auth/oidc/signup → 302) are not
-        // intercepted by the SW and silently served as index.html instead.
-        navigateFallbackDenylist: [/^\/api\//],
+        // Exclude server-owned paths from the SPA navigation fallback so full-page
+        // navigations to them are NOT intercepted by the SW and silently served as
+        // index.html. Two families must be excluded:
+        //   1. /api/* — backend redirect endpoints (e.g. /api/auth/oidc/* → 302).
+        //   2. Authentik's NATIVE paths, which the app Ingress reverse-proxies to
+        //      the IdP (see values-prod authentik.oidc comment): /source/*,
+        //      /application/*, /if/*, /outpost.goauthentik.io/*, /-/*. Social
+        //      sign-in navigates the browser to /source/oauth/login/<provider>/;
+        //      without these entries the SW served the cached SPA shell instead of
+        //      letting the redirect reach Authentik → the "login just flickers"
+        //      bug. This denylist MUST track the Ingress's Authentik path list.
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/source\//,
+          /^\/application\//,
+          /^\/if\//,
+          /^\/outpost\.goauthentik\.io\//,
+          /^\/-\//,
+        ],
         runtimeCaching: [
           {
             // API + WebSocket upgrade paths — never cache

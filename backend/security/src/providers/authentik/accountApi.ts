@@ -89,6 +89,73 @@ export async function findUserPk(email: string): Promise<number> {
   return hit.pk
 }
 
+/**
+ * Resolve the identity-store user pk from email, CREATING the user if absent.
+ *
+ * Used by the SERVER-BROKERED Google path: after we validate Google's id_token we
+ * provision (or find) the account IN AUTHENTIK so the IdP stays the system of
+ * record and a later password/Google sign-in de-dupes to ONE account by email.
+ * Idempotent: a concurrent create that loses the race is recovered by re-reading.
+ */
+export async function findOrCreateUserPk(
+  email: string,
+  firstName?: string,
+  lastName?: string
+): Promise<number> {
+  try {
+    return await findUserPk(email)
+  } catch {
+    // Not found — create. Any other transport error would have thrown a
+    // different message but findUserPk only throws "not found" on a clean 200
+    // with no match; a real transport failure re-throws below via the create call.
+  }
+  const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email
+  const res = await call('/api/v3/core/users/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: email,
+      email,
+      name,
+      is_active: true,
+      // `internal` service-account-free human account; Authentik defaults path.
+      type: 'internal',
+    }),
+  })
+  if (res.ok) {
+    const created = (await res.json()) as { pk?: number }
+    if (typeof created?.pk === 'number') return created.pk
+  }
+  // A 400 "username/email already exists" means a racing create won — re-read.
+  return findUserPk(email)
+}
+
+/**
+ * Ensure the user's OAuth source connection exists for `sourceSlug` (idempotent).
+ *
+ * This is what makes `getIdentityConnections` show Google as linked and what the
+ * unlink guard reads. Because the browser no longer transits Authentik's source
+ * flow in the brokered path, WE must record the connection ourselves.
+ */
+export async function ensureOAuthConnection(
+  userPk: number,
+  sourceSlug: string,
+  identifier: string
+): Promise<void> {
+  const existing = await listOAuthConnections(userPk)
+  if (existing.some(c => c.sourceSlug === sourceSlug)) return
+  const res = await call('/api/v3/sources/user_connections/oauth/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: userPk, source: sourceSlug, identifier }),
+  })
+  // 400 on a racing duplicate is fine — the connection now exists either way.
+  if (!res.ok && res.status !== 400) {
+    const body = (await res.text().catch(() => '')).slice(0, 300)
+    throw new Error(`identity store link-connection failed: HTTP ${res.status} ${body}`)
+  }
+}
+
 /** List the user's OAuth source connections. */
 export async function listOAuthConnections(userPk: number): Promise<OAuthConnection[]> {
   const res = await call(`/api/v3/sources/user_connections/oauth/?user=${userPk}`)

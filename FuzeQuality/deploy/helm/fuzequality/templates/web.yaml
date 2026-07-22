@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzequality-frontend
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector: { matchLabels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend } }
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontendImage.repository }}:{{ .Values.frontendImage.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports: [{ name: http, containerPort: {{ .Values.frontend.port }} }]
+          readinessProbe: { httpGet: { path: /, port: http }, initialDelaySeconds: 3 }
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzequality-frontend
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: frontend }
+  ports: [{ name: http, port: 80, targetPort: http }]

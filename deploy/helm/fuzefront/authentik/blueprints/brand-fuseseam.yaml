@@ -40,6 +40,10 @@ entries:
       name: "FuzeFront"
       domain: "fuzefront.com"
       default: true
+      # NOTE: this brand's `default_application` (the post-login landing target)
+      # is set in provider-oidc.yaml, immediately after the Application it
+      # references — a cross-file !Find from here would race, since Authentik
+      # applies blueprint files concurrently and this file sorts first.
       branding_title: "FuzeFront"
       # Inline SVG: a simple "seam" flame icon — safe across pod restarts
       # (no dependency on /media, which is emptyDir and wiped on restart).

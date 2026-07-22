@@ -14,10 +14,11 @@ function rowToRegistryApp(row: any) {
 
   const integration: Record<string, unknown> = { type: row.integration_type }
   if (row.integration_type === 'module-federation') {
-    // `remote_url` in the legacy table is the base dir (e.g. ".../assets").
-    // The registry schema expects the full remoteEntry URL.
-    const base = (row.remote_url as string).replace(/\/$/, '')
-    integration.remoteEntry = `${base}/remoteEntry.js`
+    // `remote_url` may hold a full remoteEntry URL (stored by the applications
+    // service as `manifest.integration.remoteEntry`) OR a legacy base directory.
+    // Append /remoteEntry.js only when it is not already a .js file URL.
+    const raw = (row.remote_url as string).replace(/\/$/, '')
+    integration.remoteEntry = raw.endsWith('.js') ? raw : `${raw}/remoteEntry.js`
     integration.scope = row.scope
     integration.module = row.module
   } else {

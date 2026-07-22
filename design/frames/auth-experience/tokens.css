@@ -1,0 +1,73 @@
+/* fuse-seam design-system tokens (subset), inlined so these approval frames are
+   self-contained / portable. Mirrors design-system/tokens/*.css. These frames are
+   contract-freeze UX artifacts — approve the frames = approve the model. */
+:root {
+  /* brand / accent */
+  --indigo-500: #6e5cff;
+  --cyan-400: #29d3e6;
+  --accent-color: var(--indigo-500);
+  --accent-hover: #5a48e6;
+  --accent-soft: rgba(110, 92, 255, 0.14);
+  --accent-2: var(--cyan-400);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  /* graphite surfaces (dark default) */
+  --bg-primary: #0f131c;
+  --bg-secondary: #11161f;
+  --bg-tertiary: #141a26;
+  --bg-quaternary: #1b2230;
+  --border-color: #232b3a;
+  --border-strong: #313b4d;
+
+  --text-primary: #e7ebf2;
+  --text-secondary: #aab3c2;
+  --text-tertiary: #6b7585;
+
+  --success-color: #34d399;
+  --warning-color: #f5b950;
+  --error-color: #f3697f;
+
+  /* type */
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --tracking-wide: 0.04em;
+  --tracking-display: -0.01em;
+
+  /* spacing / radii / shadow */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 28px; --space-8: 32px;
+  --space-10: 40px; --space-12: 48px; --space-16: 64px;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px;
+  --radius-pill: 999px;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 6px 20px rgba(0,0,0,0.4);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+  --shadow-accent: 0 8px 24px rgba(110,92,255,0.35);
+
+  --top-bar-height: 60px;
+  --side-panel-width: 240px;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+.mono { font-family: var(--font-mono); }

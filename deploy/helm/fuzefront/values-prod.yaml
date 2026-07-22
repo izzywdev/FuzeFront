@@ -32,13 +32,13 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
   replicas: 2
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -66,14 +66,31 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 65e28f098b13
-  replicas: 2
+    tag: f18f4ed388d7
+  # TEMPORARY MITIGATION: 1 replica.
+  # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
+  # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
+  # session affinity, /social/google/start stores state on pod A while the
+  # /api/auth/oidc/callback lands on pod B, which has no idea what that state is —
+  # observed live: start on ...66gfh, callback on ...pvhm2 -> authentication_failed.
+  # Roughly half of all sign-ins failed this way, independent of every other fix.
+  # Same flaw affects MFA challenges and broker codes (so 2FA breaks identically).
+  # Pinning to 1 replica removes the split; it costs HA for the auth path, so this
+  # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
+  # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
+  replicas: 1
+  # Server-brokered Google sign-in (PR #329). "true" = enabled — owner has
+  # registered this callback in the Google console. Instant rollback: set to
+  # "false" to revert to the legacy Authentik Google source flow (no rebuild).
+  googleBrokered: "true"
+  # Prod browser-facing Google callback URL (app host, not auth-dev).
+  googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -96,7 +113,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -107,7 +124,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -147,7 +164,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 65e28f098b13
+    tag: f18f4ed388d7
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -333,7 +350,18 @@ authentik:
 # bitnami tag was unpullable and froze the sync hook) and the broker
 # (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
 kafkaTopics:
-  enabled: true
+  # DISABLED: this Job is a helm post-upgrade hook with
+  # hook-delete-policy: before-hook-creation, so every Argo sync attempt
+  # deletes and recreates it, restarting it from zero. It creates topics at
+  # ~40s each against the shared Kafka, so it never finishes before the next
+  # attempt wipes it — and Argo blocks the WHOLE sync on it
+  # ('waiting for completion of hook batch/Job/fuzefront-kafka-topics').
+  # Net effect: no chart change could deploy at all. It blocked the Authentik
+  # sign-in fix (#320) from ever reaching the cluster.
+  # Topics fall back to broker auto-create meanwhile. Re-enable ONLY after the
+  # job is made non-blocking (drop the helm hook annotations, or bound it with
+  # activeDeadlineSeconds) so a slow Kafka can never wedge deploys again.
+  enabled: false
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The

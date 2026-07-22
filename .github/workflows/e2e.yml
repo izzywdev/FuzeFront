@@ -1,7 +1,26 @@
 name: E2E (sign-in)
 
-# PR check: brings up Postgres + backend + frontend, creates an admin user,
-# and runs the Playwright sign-in flow (frontend/tests/auth-simple.spec.ts).
+# Real sign-in + federated-app + mobile-layout e2e against the FULL stack.
+#
+# The stack is stood up from docker-compose.e2e.yml via the ./.github/actions/e2e-stack
+# composite action — the SINGLE definition of the e2e stack. This workflow used to
+# hand-roll its own stale stack instead, and that drift is precisely why it was red
+# for 30+ consecutive runs:
+#
+#   * it started Postgres + backend + frontend but NEVER the security service, and
+#   * it seeded a local bcrypt row into `users.password_hash` for admin@fuzefront.dev.
+#
+# The SPA had already cut over to the provider-agnostic Security API — it signs in
+# with POST /api/v1/security/session, which ONLY the security service serves and
+# which brokers the credential through Authentik. So the login POST 404'd, no 200
+# ever arrived, and auth-simple.spec.ts / clock-load.spec.ts both timed out in
+# waitForResponse. The bcrypt seed could never have worked: FuzeFront stores no
+# passwords, and a password_hash row is not a credential Authentik will accept.
+#
+# Now: the account is created IN AUTHENTIK, the security service is in the stack,
+# and nginx routes /api/v1/security same-origin to it — so a pass here means
+# password sign-in genuinely works end to end, exactly as in prod.
+
 on:
   pull_request:
     branches: [master]
@@ -9,46 +28,23 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  group: e2e-signin-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   signin:
     name: Playwright sign-in flow
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: fuzeinfra
-          POSTGRES_PASSWORD: fuzeinfra_secure_password
-          # Pre-create the app DB: the backend no longer auto-creates it
-          # (the bootstrap/runtime split removed CREATE DATABASE from startup).
-          POSTGRES_DB: fuzefront_platform
-        options: >-
-          --health-cmd "pg_isready -U fuzeinfra -d postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    timeout-minutes: 45
 
     env:
-      # Backend -> Postgres (connects as the superuser, creates its own DB)
-      NODE_ENV: production
-      USE_POSTGRES: 'true'
-      DB_HOST: localhost
-      DB_PORT: '5432'
-      DB_NAME: fuzefront_platform
-      DB_USER: fuzeinfra
-      DB_PASSWORD: fuzeinfra_secure_password
-      JWT_SECRET: ci-e2e-secret
-      SESSION_SECRET: ci-e2e-session
-      PERMIT_API_KEY: ci-noop
-      PERMIT_PDP_URL: http://localhost:7766
-      PORT: '3001'
-      FRONTEND_URL: http://localhost:4173
-      # Browser-facing API base (cross-origin to the previewed frontend; CORS
-      # is allowed via FRONTEND_URL above).
-      VITE_API_URL: http://localhost:3001
+      # The account lives in Authentik (created by the e2e-stack action), NOT in
+      # the platform DB. The specs read these two vars.
+      E2E_USER_EMAIL: e2e@test.local
+      E2E_USER_PASSWORD: E2eP@ssw0rd123
+      # Same-origin: every API call goes through the frontend container's nginx,
+      # which path-routes /api/v1/security/ → security:3002 and /api/ → backend:3001.
       BASE_URL: http://localhost:4173
 
     steps:
@@ -57,191 +53,87 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: 'npm'
 
-      # Postgres creates the `fuzefront_platform` database (POSTGRES_DB) but NOT
-      # a database named after the user (`fuzeinfra`). Some pg clients default to
-      # connecting to a database matching the username when no database is given.
-      # Pre-create `fuzeinfra` so any such implicit connection succeeds.
-      - name: Create fuzeinfra default database
-        run: |
-          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER \
-            -d $DB_NAME \
-            -c "CREATE DATABASE fuzeinfra OWNER fuzeinfra;" \
-            || true  # idempotent: ignore "already exists" error
+      # ── Bring up the whole stack (compose + Authentik provisioning + user) ──
+      - name: Start and provision the E2E stack
+        uses: ./.github/actions/e2e-stack
+        with:
+          e2e-user-email: ${{ env.E2E_USER_EMAIL }}
+          e2e-user-password: ${{ env.E2E_USER_PASSWORD }}
 
-      # ---- Backend: build, start, migrate, wait ----
-      # Install from the workspace ROOT so the root package.json `overrides`
-      # (pinning @types/express* to v4) apply — a child `cd backend && npm ci`
-      # ignores them and resolves @types/express@5, breaking the tsc build.
-      - name: Build & start backend
-        run: |
-          npm ci --include=dev   # job NODE_ENV=production would otherwise omit devDeps (tsc)
-          npm run build -w backend
-          cd backend
-          node dist/index.js > /tmp/backend.log 2>&1 &
-          echo "Waiting for backend /health..."
-          for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "backend up"; exit 0; fi
-            sleep 2
-          done
-          echo "backend failed to start"; cat /tmp/backend.log; exit 1
-
-      # Seed a FULLY-PROVISIONED admin: user + personal org + active owner
-      # membership. The authenticated shell sits behind WorkspaceProvisioningGate
-      # (frontend/src/components/WorkspaceProvisioningGate.tsx), which only renders
-      # the app layout once the user has a personal org. Real logins provision that
-      # org asynchronously (fire-and-forget self-heal on login); seeding it directly
-      # makes the gate open immediately, so the e2e is deterministic instead of
-      # racing a background job (and tolerant of Permit/Kafka being absent in CI).
-      - name: Create admin user (provisioned with personal org)
-        working-directory: backend
-        run: |
-          node -e '
-            const bcrypt = require("bcrypt");
-            const crypto = require("crypto");
-            const knex = require("knex")({
-              client: "pg",
-              connection: { host: process.env.DB_HOST, port: +process.env.DB_PORT,
-                database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD },
-            });
-            (async () => {
-              const password_hash = await bcrypt.hash("admin123", 10);
-              const [u] = await knex("users").insert({ email: "admin@fuzefront.dev", password_hash,
-                first_name: "Admin", last_name: "User", roles: JSON.stringify(["admin","user"]) })
-                .onConflict("email").merge({ password_hash }).returning("id");
-              const userId = u.id || u;
-              console.log("admin user ready", userId);
-
-              // Mirror ensurePersonalOrg(): one active personal org owned by the user.
-              const existing = await knex("organizations")
-                .where({ owner_id: userId, type: "personal" }).first();
-              if (!existing) {
-                const orgId = crypto.randomUUID();
-                await knex.transaction(async trx => {
-                  await trx("organizations").insert({ id: orgId, name: "Personal",
-                    slug: "personal-" + userId, parent_id: null, owner_id: userId,
-                    type: "personal", settings: JSON.stringify({}),
-                    metadata: JSON.stringify({ personal: true }), is_active: true,
-                    provisioning_state: "active" });
-                  await trx("organization_memberships").insert({ id: crypto.randomUUID(),
-                    user_id: userId, organization_id: orgId, role: "owner", status: "active",
-                    joined_at: new Date(), permissions: JSON.stringify({}),
-                    metadata: JSON.stringify({}) });
-                });
-                console.log("personal org provisioned", orgId);
-              } else {
-                console.log("personal org already present", existing.id);
-              }
-              await knex.destroy();
-            })().catch(e => { console.error(e); process.exit(1); });
-          '
-
-      # Diagnostic: verify the org API returns the seeded personal org before
-      # running Playwright. This makes DB/query failures visible in CI logs.
-      - name: Verify org API returns personal org
-        run: |
-          ADMIN_EMAIL=$(PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -c "SELECT email FROM users LIMIT 1" | tr -d ' \n')
-          echo "Checking org API for seeded user (email length: ${#ADMIN_EMAIL})..."
-          LOGIN_RESP=$(curl -s -X POST http://localhost:3001/api/auth/login \
-            -H 'Content-Type: application/json' \
-            -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"admin123\"}" 2>&1) || true
-          echo "Login response: $LOGIN_RESP"
-          TOKEN=$(echo "$LOGIN_RESP" | python3 -c \
-            "import sys,json; d=json.load(sys.stdin); print(d.get('token',''))" 2>/dev/null || echo "")
-          echo "Login token acquired: ${TOKEN:0:30}..."
-          ORGS=$(curl -fsS http://localhost:3001/api/organizations \
-            -H "Authorization: Bearer $TOKEN")
-          echo "GET /api/organizations response: $ORGS"
-          echo "$ORGS" | python3 -c \
-            "import sys,json; d=json.load(sys.stdin); orgs=d.get('organizations',[]); personal=[o for o in orgs if o.get('type')=='personal']; print('personal org count:',len(personal)); exit(0 if personal else 1)" \
-            || (echo 'ERROR: No personal org returned by API — test will fail at WorkspaceProvisioningGate' && exit 1)
-
-      # Dump DB state so we can confirm the seed data is intact before Playwright
-      - name: Dump DB tables before Playwright
-        run: |
-          echo "=== organizations ==="
-          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-            -c "SELECT id, name, type, is_active, provisioning_state, owner_id FROM organizations;"
-          echo "=== organization_memberships ==="
-          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-            -c "SELECT id, user_id, organization_id, status, role FROM organization_memberships;"
-          echo "=== Raw JOIN SQL (same logic as Knex query) ==="
-          USER_ID=$(PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-            -t -c "SELECT id FROM users LIMIT 1" | tr -d ' \n')
-          echo "User ID: $USER_ID"
-          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "
-            SELECT o.id, o.name, o.type, o.is_active, om.id AS membership_id, om.user_id, om.status
-            FROM organizations o
-            LEFT JOIN organization_memberships om
-              ON o.id = om.organization_id
-              AND om.user_id = '$USER_ID'
-              AND om.status = 'active'
-            WHERE (om.id IS NOT NULL OR o.type = 'platform')
-              AND o.is_active = true;"
-
-      # ---- Frontend: build & preview ----
-      - name: Build & preview frontend
-        working-directory: frontend
-        run: |
-          npm ci --include=dev   # need vite/@playwright (devDeps) despite NODE_ENV=production
-          npm run build
-          npx vite preview --port 4173 --host 127.0.0.1 > /tmp/frontend.log 2>&1 &
-          for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:4173 >/dev/null 2>&1; then echo "frontend up"; exit 0; fi
-            sleep 2
-          done
-          echo "frontend failed to start"; cat /tmp/frontend.log; exit 1
-
-      # ---- Example remote: build, serve (vite preview w/ CORS), register ----
+      # ── Example federated remote: build, serve, register ────────────────────
+      # clock-app is not part of the compose stack; it is served on the host and
+      # loaded cross-origin by the browser, which is what clock-load.spec.ts
+      # exercises. The `apps` row is seeded directly because /api/apps/register
+      # goes through requireAppPermission('create') → the Permit PDP, which is
+      # absent in CI (ci-noop key).
       - name: Build, serve & register clock-app
-        working-directory: clock-app
         run: |
-          npm install --include=dev   # need vite (devDep) despite NODE_ENV=production
+          cd clock-app
+          npm install --include=dev
           VITE_HUB_API_URL=http://localhost:3001 VITE_PUBLIC_URL=http://localhost:4174 npm run build
           npx vite preview --port 4174 --host 0.0.0.0 > /tmp/clock.log 2>&1 &
           clock_up=false
           for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:4174/apps/clock/remoteEntry.js >/dev/null 2>&1; then echo "clock-app up"; clock_up=true; break; fi
+            if curl -fsS http://localhost:4174/apps/clock/remoteEntry.js >/dev/null 2>&1; then
+              echo "clock-app up"; clock_up=true; break
+            fi
             sleep 2
           done
-          if [ "$clock_up" = "false" ]; then echo "clock-app NEVER became accessible"; cat /tmp/clock.log; exit 1; fi
-          # Verify remoteEntry.js is really JS, not an HTML SPA-fallback (which vite preview
-          # returns for any unrecognised path — a 200 HTML response silently fools curl -fsS).
+          if [ "$clock_up" = "false" ]; then
+            echo "::error::clock-app never became accessible"; cat /tmp/clock.log; exit 1
+          fi
+          # vite preview serves the SPA fallback (200 HTML) for any unrecognised
+          # path, which silently fools `curl -fsS`. Assert it is really JS.
           content_type=$(curl -fsS -I http://localhost:4174/apps/clock/remoteEntry.js | grep -i "content-type" || echo "MISSING")
           echo "Content-Type: ${content_type}"
-          echo "$content_type" | grep -qi "javascript" || { echo "FATAL: remoteEntry.js returned non-JS content (HTML SPA fallback?)"; cat /tmp/clock.log; exit 1; }
-          # Verify CORS header present (required for cross-origin MF load)
+          echo "$content_type" | grep -qi "javascript" || {
+            echo "::error::remoteEntry.js returned non-JS content (HTML SPA fallback?)"; cat /tmp/clock.log; exit 1; }
           cors_header=$(curl -fsS -I -H "Origin: http://localhost:4173" http://localhost:4174/apps/clock/remoteEntry.js 2>&1 | grep -i "access-control-allow-origin" || true)
           echo "CORS header: ${cors_header:-MISSING}"
-          # /api/apps/register goes through requireAppPermission('create') which calls
-          # the Permit.io PDP - unavailable in E2E CI (no PDP container, ci-noop key).
-          # Seed the row directly into Postgres to bypass the permission middleware.
-          PGPASSWORD=fuzeinfra_secure_password psql -h localhost -U fuzeinfra -d fuzefront_platform -c "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active) VALUES ('Clock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true) ON CONFLICT (name) DO NOTHING;"
-          echo 'clock-app seeded into DB'
 
-      # ---- Playwright: sign-in + runtime federated load ----
+      - name: Seed the clock-app registration
+        run: |
+          docker compose -f docker-compose.e2e.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U e2e -d fuzefront_platform -c \
+            "INSERT INTO apps (name, url, remote_url, scope, module, integration_type, description, is_active)
+             VALUES ('Clock','http://localhost:4174','http://localhost:4174/apps/clock','clockApp','./ClockApp','module-federation','on-the-fly clock',true)
+             ON CONFLICT (name) DO NOTHING;"
+          echo 'clock-app seeded into the platform DB'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # ── Playwright: sign-in + runtime federated load ────────────────────────
       - name: Run Playwright e2e (sign-in + FuzeClock load)
         working-directory: frontend
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts --project=chromium
+          npx playwright test tests/auth-simple.spec.ts tests/clock-load.spec.ts \
+            --project=chromium --reporter=list
 
-      # ---- Playwright: mobile layout ----
+      # ── Playwright: mobile layout ───────────────────────────────────────────
       - name: Run Playwright e2e (mobile layout)
         working-directory: frontend
         run: |
           npx playwright install --with-deps webkit
-          npx playwright test tests/mobile-layout.spec.ts --project=mobile
+          npx playwright test tests/mobile-layout.spec.ts --project=mobile --reporter=list
 
-      - name: Dump backend log (always, for diagnosis)
+      - name: Dump stack logs (always, for diagnosis)
         if: always()
         run: |
-          echo "=== BACKEND LOG (last 200 lines) ==="
-          tail -200 /tmp/backend.log || echo "(no backend log)"
-          echo "=== NETWORK: GET /api/organizations hits ==="
-          grep -i "organizations" /tmp/backend.log | tail -30 || echo "(none)"
-          echo "=== CLOCK-APP LOG (last 100 lines) ==="
-          tail -100 /tmp/clock.log || echo "(no clock-app log)"
+          echo "=== security (last 120 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs security | tail -120 || true
+          echo "=== backend (last 120 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs backend | tail -120 || true
+          echo "=== frontend/nginx (last 60 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs frontend | tail -60 || true
+          echo "=== authentik-server (last 60 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60 || true
+          echo "=== clock-app (last 60 lines) ==="
+          tail -60 /tmp/clock.log || echo "(no clock-app log)"
 
       - name: Upload Playwright report
         if: failure()
@@ -251,5 +143,6 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
-
-
+      - name: Tear down E2E stack
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auth experience — approval frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="gallery" data-frame="index" data-flow="index">
+  <div class="auth-brand" style="margin-bottom:var(--space-6)">
+    <span class="mark" style="width:34px;height:34px;border-radius:var(--radius-md);background:var(--seam);display:grid;place-items:center;color:#0b0e15;font-family:var(--font-display);font-weight:var(--weight-semibold)">F</span>
+    <span class="auth-wordmark">Fuze<span class="fuse">Front</span></span>
+  </div>
+  <p class="gallery__eyebrow">Approval frames · feature: auth-experience</p>
+  <h1 class="gallery__title">A professional sign-up &amp; sign-in</h1>
+  <p class="gallery__lede">The complete authentication experience, frozen as navigable frames before any UI
+    is built. Walk the flow below in order, then open <b>States</b> to see every loading, empty, error,
+    and fail-closed case the implementation must render. Approving these frames approves the component
+    &amp; package plan in the inventory at the bottom.</p>
+
+  <div class="flow-steps">
+    <a class="flow-card" href="01-signup.html" data-nav="01-signup">
+      <span class="flow-card__step">STEP 01 · /signup</span>
+      <h2 class="flow-card__title">Create account</h2>
+      <p class="flow-card__desc">Name, inline email availability (✓ / taken), password + strength meter
+        (12+ upper/lower/digit/symbol), confirm-match, Cloudflare Turnstile, Google.</p>
+    </a>
+    <a class="flow-card" href="02-signin.html" data-nav="02-signin">
+      <span class="flow-card__step">STEP 02 · /login</span>
+      <h2 class="flow-card__title">Sign in</h2>
+      <p class="flow-card__desc">Email + password, show/hide, forgot-password, Turnstile, Google. Hands
+        off to the MFA challenge when a factor is required.</p>
+    </a>
+    <a class="flow-card" href="03-check-inbox.html" data-nav="03-check-inbox">
+      <span class="flow-card__step">STEP 03 · /signup/verify</span>
+      <h2 class="flow-card__title">Check your inbox</h2>
+      <p class="flow-card__desc">Post-signup "we sent a link" screen with a resend button on a cooldown
+        timer. Ready for when SMTP is wired.</p>
+    </a>
+    <a class="flow-card" href="04-verify-landing.html" data-nav="04-verify-landing">
+      <span class="flow-card__step">STEP 04 · /verify/email</span>
+      <h2 class="flow-card__title">Verify link landing</h2>
+      <p class="flow-card__desc">The one route, three outcomes state machine: verifying → verified, or
+        expired/invalid with a "send a new link" path.</p>
+    </a>
+    <a class="flow-card" href="05-password-reset.html" data-nav="05-password-reset">
+      <span class="flow-card__step">STEP 05 · /reset</span>
+      <h2 class="flow-card__title">Password reset</h2>
+      <p class="flow-card__desc">Request (unconditional 202, no account enumeration) → confirm new
+        password with the same policy + match validation. Expired-token path.</p>
+    </a>
+    <a class="flow-card" href="06-states.html" data-nav="06-states">
+      <span class="flow-card__step">REF · states</span>
+      <h2 class="flow-card__title">All states</h2>
+      <p class="flow-card__desc">Availability idle/checking/available/taken/error, strength weak→strong,
+        confirm mismatch, Turnstile loading/verified/failed, submit-in-flight, form errors, MFA, verify-gate.</p>
+    </a>
+  </div>
+
+  <!-- BUILD INVENTORY — approving these frames approves this plan (mirrors manifest.build) -->
+  <section class="inv" data-inventory>
+    <h2>Build inventory <span class="chip">approve = approve this plan</span></h2>
+    <div class="inv__grid">
+      <div class="inv__col">
+        <h3>Flows (orchestrators)</h3>
+        <ul>
+          <li><code>SignUpFlow</code> → /signup</li>
+          <li><code>SignInFlow</code> → /login</li>
+          <li><code>EmailVerificationFlow</code> → /verify/email</li>
+          <li><code>PasswordResetFlow</code> → /reset</li>
+        </ul>
+      </div>
+      <div class="inv__col">
+        <h3>Components</h3>
+        <ul>
+          <li><code>AuthCard</code></li>
+          <li><code>InlineAvailabilityField</code> <span class="chip chip--new">new</span></li>
+          <li><code>PasswordStrengthMeter</code> <span class="chip chip--new">new</span></li>
+          <li><code>PasswordConfirmField</code> <span class="chip chip--new">new</span></li>
+          <li><code>TurnstileField</code> <span class="chip chip--new">new</span></li>
+          <li><code>ResendCooldownButton</code> <span class="chip chip--new">new</span></li>
+          <li><code>VerifyStatusPanel</code> <span class="chip chip--new">new</span></li>
+          <li><code>SocialButton</code> (Google)</li>
+        </ul>
+      </div>
+      <div class="inv__col">
+        <h3>Packages</h3>
+        <ul>
+          <li><code>@fuzefront/auth-experience-ui</code></li>
+          <li>consumes <code>@fuzefront/security-client</code></li>
+          <li>consumes <code>@marsidev/react-turnstile</code></li>
+        </ul>
+      </div>
+      <div class="inv__col">
+        <h3>DS primitives to add first <span class="chip">frontend-engineer</span></h3>
+        <ul>
+          <li><code>InlineValidatedInput</code> (adornment slot)</li>
+          <li><code>StrengthMeter</code> tokens/segments</li>
+          <li><code>TurnstileContainer</code> shell</li>
+          <li>Alert <code>info/success</code> variants (if missing)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="pill-row">
+      <span class="chip chip--new">contract Δ: GET /v1/security/signup/email-available</span>
+      <span class="chip chip--new">contract Δ: SignupRequest.turnstileToken</span>
+      <span class="chip chip--new">contract Δ: AuthMethods.captcha + passwordPolicy descriptor</span>
+    </div>
+  </section>
+
+  <section class="inv" data-contract>
+    <h2>Contract binding</h2>
+    <div class="inv__col">
+      <ul>
+        <li>OpenAPI: <code>packages/security/openapi.yaml</code></li>
+        <li>Client: <code>@fuzefront/security-client</code></li>
+        <li>Feature flag: <code>fuzefront.auth.experience</code> (default OFF)</li>
+        <li>Endpoints: <code>POST /signup</code>, <code>POST /session</code>,
+          <code>POST /session/password/reset-request</code>, <code>POST /session/password/reset-confirm</code>,
+          <code>POST /verify/email/start</code>, <code>POST /verify/email/confirm</code>,
+          <code>GET /methods</code>, <code>GET /signup/email-available</code> (new)</li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="legal" style="text-align:left">Status: <b>awaiting review</b> — per-flow <code>approved: false</code>.
+    No UI, tests, or deploy exist yet; merging the approved frames is the gate that fans those out.</p>
+</main>
+</body>
+</html>

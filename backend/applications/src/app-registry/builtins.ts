@@ -12,6 +12,25 @@ import { appManifestSchema, AppManifest } from './manifest.schema'
 const BUILTIN_MANIFESTS: unknown[] = [
   {
     manifestVersion: '1',
+    slug: 'fuzesocial',
+    name: 'FuzeSocial',
+    menuLabel: 'Social',
+    description:
+      'Social media automation, scheduling, and cross-platform publishing — Facebook, Instagram, TikTok, YouTube, Reddit, X, and WhatsApp.',
+    icon: { kind: 'emoji', value: '📱' },
+    mode: 'portal',
+    builtin: true,
+    integration: {
+      type: 'iframe',
+      url: 'https://social.prod.fuzefront.com',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/app/fuzesocial' },
+    visibility: 'organization',
+    roles: [],
+  },
+  {
+    manifestVersion: '1',
     slug: 'fuzeagent',
     name: 'FuzeAgent',
     menuLabel: 'Agents',

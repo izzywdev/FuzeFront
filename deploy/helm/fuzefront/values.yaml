@@ -184,6 +184,10 @@ securityService:
   tolerations: []
   # security-service owns auth; keep it co-located with the DB-heavy node-1 by
   # default (no-op here, set in values-prod if desired).
+  # Server-brokered Google sign-in (PR #329). OFF by default; prod enables it.
+  googleBrokered: "false"
+  # Browser-facing Google callback URL. Dev default here; prod overrides in values-prod.
+  googleRedirectUri: "https://auth-dev.fuzefront.com/api/v1/security/social/google/callback"
 
 applicationsService:
   enabled: false
@@ -541,7 +545,7 @@ authentik:
   enabled: true
   image:
     repository: ghcr.io/goauthentik/server
-    tag: "2024.12.3"
+    tag: "2026.5.5"
   host: auth.fuzefront.dev.local
   dbName: authentik # must pre-exist in the FuzeInfra Postgres
   cookieDomain: fuzefront.dev.local

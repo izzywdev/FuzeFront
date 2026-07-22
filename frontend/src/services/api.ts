@@ -231,6 +231,16 @@ export interface SignupCredentials {
   tenantName?: string
 }
 
+// Result of the signup email-availability probe. `available: null` means the
+// check could not be resolved (endpoint missing / network / server error) —
+// the UI shows no signal and MUST NOT block submit on it (fail-open). This
+// shape is not yet in the frozen security contract; move it to
+// @fuzefront/security-client once the endpoint is added there.
+export interface EmailAvailability {
+  email: string
+  available: boolean | null
+}
+
 // Persist a freshly authenticated session so it survives the post-login page
 // reload and is attached to subsequent requests by the axios interceptor.
 function persistSession(token?: string, sessionId?: string): void {
@@ -285,6 +295,34 @@ export const authAPI = {
     )
     persistSession(response.data?.token, response.data?.sessionId)
     return response.data
+  },
+
+  // Inline email-availability check for the signup form. Hits the same-origin
+  // Security API; returns `{ available, email }`. Built defensively: this is a
+  // convenience hint, NOT an authz gate, and the endpoint may not be deployed
+  // yet — so ANY failure (404, network, 5xx) FAILS OPEN by returning
+  // `available: null`, meaning "unknown, don't block submit". The UI treats
+  // `null` as no-signal (idle) and never disables the form on it.
+  async checkEmailAvailability(
+    email: string,
+    signal?: AbortSignal
+  ): Promise<EmailAvailability> {
+    try {
+      const response = await api.get<EmailAvailability>(
+        `${SECURITY_BASE}/email-available`,
+        { params: { email }, signal }
+      )
+      const data = response.data
+      return {
+        email: data?.email ?? email,
+        available: typeof data?.available === 'boolean' ? data.available : null,
+      }
+    } catch (err: any) {
+      // A cancelled request is not a failure — propagate so the caller ignores it.
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') throw err
+      // Fail open: unknown availability, never block the user.
+      return { email, available: null }
+    }
   },
 
   // Begin a server-brokered social login. 302-redirects the browser to the
