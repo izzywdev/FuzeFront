@@ -215,7 +215,7 @@ export const eventEnvelopeSchema = <T extends z.ZodTypeAny>(payload: T) =>
 
 export const scanRequestedSchema = z.object({
   repositoryId: z.string().uuid(),
-  commitSha: z.string().min(7).optional(),
+  commitSha: z.string().regex(/^[0-9a-f]{40}$/i, 'An immutable 40-character commit SHA is required').optional(),
   trigger: z.enum(['manual', 'push', 'reconcile']),
 })
 
