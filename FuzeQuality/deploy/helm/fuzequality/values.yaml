@@ -13,7 +13,7 @@ backend:
   replicas: 1
   port: 4180
   resources:
-    requests: { cpu: 100m, memory: 192Mi }
+    requests: { cpu: 75m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }
 frontend:
   replicas: 1
@@ -26,24 +26,24 @@ workers:
     replicas: 1
     command: ["npm", "run", "start:scanner"]
     resources:
-      requests: { cpu: 200m, memory: 384Mi }
+      requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: "2", memory: 2Gi }
   intelligence:
     replicas: 1
     command: ["npm", "run", "start:intelligence"]
     chromaRequired: true
     resources:
-      requests: { cpu: 100m, memory: 256Mi }
+      requests: { cpu: 75m, memory: 128Mi }
       limits: { cpu: "1", memory: 1Gi }
   projector:
     replicas: 1
     command: ["npm", "run", "start:projector"]
     resources:
-      requests: { cpu: 50m, memory: 128Mi }
+      requests: { cpu: 25m, memory: 64Mi }
       limits: { cpu: 500m, memory: 512Mi }
 
 config:
-  kafkaBrokers: kafka.fuzeinfra.svc.cluster.local:9092
+  kafkaBrokers: fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092
   litellmUrl: http://litellm.fuzeinfra.svc.cluster.local:4000/v1
   chromaUrl: http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000
   llmModel: quality-analysis

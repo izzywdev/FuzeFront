@@ -86,6 +86,9 @@ jobs:
           e2e-user-password: ${{ env.E2E_USER_PASSWORD }}
           authentik-oidc-client-secret: ${{ env.AUTHENTIK_OIDC_CLIENT_SECRET }}
 
+      - name: Map authentik-server to localhost for Playwright
+        run: echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
+
       - name: Wait for backend OIDC login to be ready
         run: |
           echo "Waiting for backend OIDC login endpoint (up to 90s)..."

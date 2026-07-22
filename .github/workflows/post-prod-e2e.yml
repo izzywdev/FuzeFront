@@ -21,6 +21,25 @@ on:
         required: false
         default: false
 
+  # Called as a reusable workflow by prod-post-deploy.yml after each release
+  workflow_call:
+    inputs:
+      base_url:
+        description: 'Target base URL'
+        type: string
+        required: false
+        default: 'https://app.fuzefront.com'
+      run_authn_boundary:
+        description: 'Also run the AuthN provider-boundary smoke'
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      POST_PROD_EMAIL:
+        required: false
+      POST_PROD_PASSWORD:
+        required: false
+
 permissions:
   contents: read
 
