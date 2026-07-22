@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Badge, Button, StatusCallout } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import { ConnectedAccountRow } from './ConnectedAccountRow'

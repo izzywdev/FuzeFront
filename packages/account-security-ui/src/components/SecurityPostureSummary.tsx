@@ -1,4 +1,3 @@
-import React from 'react'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import type { PostureLevel, SecurityOverview } from '../types'
 

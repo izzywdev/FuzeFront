@@ -1,4 +1,3 @@
-import React from 'react'
 import { Badge } from '@fuzefront/design-system'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import { SecurityPostureSummary } from './SecurityPostureSummary'
