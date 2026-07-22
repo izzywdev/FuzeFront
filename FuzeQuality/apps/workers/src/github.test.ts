@@ -2,6 +2,7 @@ import { access, mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { scanRequestedSchema } from '@fuzequality/contracts'
 import { checkoutRepository, type CheckoutOptions } from './github'
 
 const sha = '0123456789abcdef0123456789abcdef01234567'
@@ -29,6 +30,18 @@ function harness(overrides: Partial<CheckoutOptions> = {}) {
 }
 
 describe('secure GitHub checkout', () => {
+  it('requires every queued remote scan to identify an immutable revision', () => {
+    expect(scanRequestedSchema.safeParse({
+      repositoryId: '8a87e83d-bc25-4de7-b5b7-b0e96e990810',
+      trigger: 'manual',
+    }).success).toBe(false)
+    expect(scanRequestedSchema.parse({
+      repositoryId: '8a87e83d-bc25-4de7-b5b7-b0e96e990810',
+      commitSha: sha,
+      trigger: 'manual',
+    }).commitSha).toBe(sha)
+  })
+
   it('fetches only the requested SHA without persisting the credential', async () => {
     const { calls, options } = harness()
     const directory = await checkoutRepository(options)

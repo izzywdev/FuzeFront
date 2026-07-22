@@ -10,7 +10,7 @@ describe('FQ-18 repository access verification', () => {
         html_url: 'https://github.com/izzywdev/FuzeOne',
         default_branch: 'master', private: true, permissions: { pull: true },
       }), { status: 200 }))
-      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: 'a'.repeat(40) } }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const verifier = createGitHubAccessVerifier(async () => 'installation-token-for-test')
 
@@ -18,6 +18,7 @@ describe('FQ-18 repository access verification', () => {
 
     expect(result).toEqual({
       canonicalUrl: 'https://github.com/izzywdev/FuzeOne', defaultBranch: 'master', private: true,
+      commitSha: 'a'.repeat(40),
       permissions: { contents: 'read', metadata: 'read' },
     })
     expect(JSON.stringify(result)).not.toContain('installation-token-for-test')

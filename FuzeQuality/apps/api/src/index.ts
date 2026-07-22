@@ -26,6 +26,7 @@ const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
 const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 'read')
 const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
+const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
 
 app.use(express.json({
   limit: '2mb',
@@ -80,7 +81,12 @@ app.post('/api/v1/repositories/verify', mayManageRepositories, async (request, r
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   if (!parsed.data.installationId) return response.status(400).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    const access = await repositoryAccess.verify(parsed.data)
+    const access = await repositoryAccess.verify({
+      owner: parsed.data.owner,
+      name: parsed.data.name,
+      defaultBranch: parsed.data.defaultBranch,
+      installationId: parsed.data.installationId,
+    })
     response.json({ accessible: true, repository: access })
   } catch (error) {
     const result = publicAccessError(error)
@@ -99,7 +105,12 @@ app.post('/api/v1/repositories', mayManageRepositories, async (request, response
     item.owner.toLowerCase() === parsed.data.owner.toLowerCase() && item.name.toLowerCase() === parsed.data.name.toLowerCase()
   )
   try {
-    await repositoryAccess.verify(parsed.data)
+    await repositoryAccess.verify({
+      owner: parsed.data.owner,
+      name: parsed.data.name,
+      defaultBranch: parsed.data.defaultBranch,
+      installationId: parsed.data.installationId,
+    })
     const repository = await store.addRepository(parsed.data, tenantId)
     response.status(existing ? 200 : 201).json(repository)
   } catch (error) {
@@ -107,8 +118,10 @@ app.post('/api/v1/repositories', mayManageRepositories, async (request, response
     response.status(result.status).json(result.body)
   }
 })
-app.post('/api/v1/repositories/:id/scans', async (request, response) => {
-  const repository = await store.repository(request.params.id)
+app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, response) => {
+  const tenantId = requestIdentity(request)!.tenantId
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   await store.setRepositoryStatus(repository.id, 'queued')
   const localPath = typeof request.body?.localPath === 'string' ? request.body.localPath : repository.localPath
@@ -123,12 +136,28 @@ app.post('/api/v1/repositories/:id/scans', async (request, response) => {
       return response.status(422).json({ error: error instanceof Error ? error.message : String(error) })
     }
   }
-  await events.publish(
-    TOPICS.REPOSITORY_SCAN_REQUESTED,
-    { repositoryId: repository.id, trigger: 'manual' },
-    repository.id
-  )
-  response.status(202).json({ status: 'queued' })
+  if (!repository.installationId) {
+    await store.setRepositoryStatus(repository.id, 'failed')
+    return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  }
+  try {
+    const access = await repositoryAccess.verify({
+      owner: repository.owner,
+      name: repository.name,
+      defaultBranch: repository.defaultBranch,
+      installationId: repository.installationId,
+    })
+    await events.publish(
+      TOPICS.REPOSITORY_SCAN_REQUESTED,
+      { repositoryId: repository.id, commitSha: access.commitSha, trigger: 'manual' },
+      repository.id
+    )
+    response.status(202).json({ status: 'queued', commitSha: access.commitSha })
+  } catch (error) {
+    await store.setRepositoryStatus(repository.id, 'failed')
+    const result = publicAccessError(error)
+    response.status(result.status).json(result.body)
+  }
 })
 
 app.get('/api/v1/catalog/apis', async (_request, response) =>
@@ -215,7 +244,23 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   const repositories = (await store.portfolio()).repositories
   const commands = webhookScanCommands(headers.data.event, request.body, repositories)
   for (const command of commands) {
-    await events.publish(TOPICS.REPOSITORY_SCAN_REQUESTED, command, command.repositoryId)
+    let commitSha = command.commitSha
+    if (!commitSha) {
+      const repository = repositories.find(item => item.id === command.repositoryId)
+      if (!repository?.installationId) continue
+      const access = await repositoryAccess.verify({
+        owner: repository.owner,
+        name: repository.name,
+        defaultBranch: repository.defaultBranch,
+        installationId: repository.installationId,
+      })
+      commitSha = access.commitSha
+    }
+    await events.publish(
+      TOPICS.REPOSITORY_SCAN_REQUESTED,
+      { ...command, commitSha },
+      command.repositoryId
+    )
   }
   response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length })
 })

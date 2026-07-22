@@ -117,6 +117,6 @@ export function redactGithubDiagnostic(value: unknown): string {
   const message = value instanceof Error ? value.message : String(value)
   return message
     .replace(/https:\/\/x-access-token:[^@\s]+@github\.com/gi, 'https://github.com')
-    .replace(/(?:token|authorization|secret|private[_ -]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(/(token|authorization|secret|private[_ -]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
     .slice(0, 1000)
 }

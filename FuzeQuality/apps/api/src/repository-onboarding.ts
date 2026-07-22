@@ -3,6 +3,7 @@ import type { RepositoryInput } from '@fuzequality/contracts'
 export interface RepositoryAccess {
   canonicalUrl: string
   defaultBranch: string
+  commitSha: string
   private: boolean
   permissions: { contents: 'read' | 'write' | 'admin'; metadata: 'read' }
 }
@@ -56,10 +57,16 @@ export function createGitHubAccessVerifier(tokenForInstallation: (installationId
       }
       if (branchResponse.status === 404) throw new RepositoryAccessError('BRANCH_NOT_FOUND')
       if (!branchResponse.ok) throw new RepositoryAccessError('UPSTREAM_UNAVAILABLE')
+      const branch = await branchResponse.json() as { commit?: { sha?: string } }
+      const commitSha = branch.commit?.sha
+      if (!commitSha || !/^[0-9a-f]{40}$/i.test(commitSha)) {
+        throw new RepositoryAccessError('UPSTREAM_UNAVAILABLE')
+      }
       if (!repository.permissions?.pull) throw new RepositoryAccessError('NOT_ACCESSIBLE')
       return {
         canonicalUrl: repository.html_url ?? `https://github.com/${input.owner}/${input.name}`,
         defaultBranch: repository.default_branch ?? input.defaultBranch,
+        commitSha,
         private: repository.private ?? true,
         permissions: {
           contents: repository.permissions.admin ? 'admin' : repository.permissions.push ? 'write' : 'read',
