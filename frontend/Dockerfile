@@ -42,10 +42,15 @@ WORKDIR /app/frontend
 # the CF-edge/same-origin prod model.
 ARG VITE_API_URL=
 ARG VITE_APP_TITLE="FuzeFront Platform"
+# account-security hub release flag (fuzefront.account-security.hub), default OFF —
+# e2e/CI can flip it ON at build time to exercise the gated route; prod stays OFF
+# until the Unleash-backed client replaces this build-time override.
+ARG VITE_FF_ACCOUNT_SECURITY_HUB=false
 
 # Set environment variables for build
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
+ENV VITE_FF_ACCOUNT_SECURITY_HUB=$VITE_FF_ACCOUNT_SECURITY_HUB
 
 RUN rm -f package-lock.json && npm install
 

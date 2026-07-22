@@ -323,6 +323,10 @@ services:
         # never hard-code an absolute API host") and is what prod does, so this
         # keeps the e2e faithful to prod instead of testing a shape we never ship.
         VITE_API_URL: ''
+        # Flip the account-security hub release flag ON for this e2e run so the
+        # pre-prod RED specs (feature/account-security-red-e2e) can exercise the
+        # gated /account/security route; prod build stays default OFF.
+        VITE_FF_ACCOUNT_SECURITY_HUB: 'true'
     ports:
       - '4173:8080'
     # Override the baked-in nginx.conf with the E2E variant that routes all

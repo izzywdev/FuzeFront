@@ -19,6 +19,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@fuzefront/identity-ui": ["../packages/identity-ui/dist/index.d.ts"],
+      "@fuzefront/account-security-ui": ["../packages/account-security-ui/src/index.ts"],
       "@fuzefront/i18n": ["../packages/i18n/dist/index.d.ts"],
       "@fuzefront/chat-ui": ["../packages/chat-ui/dist/index.d.ts"],
       "@fuzefront/chat-client": ["../packages/chat-client/dist/index.d.ts"],
