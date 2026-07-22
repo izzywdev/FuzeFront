@@ -94,6 +94,17 @@ runs:
         E2E_USER_USERNAME: ${{ inputs.e2e-user-username }}
       run: ./deploy/e2e/create-authentik-user.sh
 
+    # The backend starts at the same time as Authentik (docker compose up -d)
+    # and attempts OIDC discovery on boot. Authentik takes several minutes to
+    # run migrations, so the backend's OIDC client init fails with ECONNREFUSED
+    # and the backend falls back to local-auth-only. Restarting the backend now
+    # (after Authentik is fully provisioned) lets it re-discover OIDC correctly.
+    - name: Restart backend to re-initialize OIDC against live Authentik
+      shell: bash
+      run: |
+        docker compose -f docker-compose.e2e.yml restart backend
+        echo "Backend restarted — waiting for it to be healthy..."
+
     - name: Wait for backend health
       shell: bash
       run: |
