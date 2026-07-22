@@ -22,7 +22,7 @@ spec:
           readinessProbe: { httpGet: { path: /, port: http }, initialDelaySeconds: 3 }
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
-          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 101, runAsGroup: 101 }
 ---
 apiVersion: v1
 kind: Service

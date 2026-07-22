@@ -29,7 +29,7 @@ spec:
           livenessProbe: { httpGet: { path: /health/live, port: http }, initialDelaySeconds: 15 }
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
 ---
 apiVersion: v1
 kind: Service

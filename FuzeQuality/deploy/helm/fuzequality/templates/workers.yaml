@@ -52,6 +52,6 @@ spec:
           {{- end }}
           resources:
             {{- toYaml $worker.resources | nindent 12 }}
-          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
 ---
 {{- end }}
