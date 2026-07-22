@@ -13,6 +13,7 @@ const goodOverviewClient = (): AccountSecurityClient => ({
     verification: { email: true, sms: false },
   })),
   getActiveSessionCount: vi.fn(async () => 2),
+  unlinkProvider: vi.fn(async () => {}),
 })
 
 describe('AccountSecurityHub', () => {
@@ -40,6 +41,7 @@ describe('AccountSecurityHub', () => {
         mfa: { enabled: false, types: [] },
         verification: { email: false, sms: false },
       })),
+      unlinkProvider: vi.fn(async () => {}),
     }
     render(<AccountSecurityHub client={failing} />)
     const retry = await screen.findByRole('button', { name: /try again/i })
@@ -59,6 +61,7 @@ describe('AccountSecurityHub', () => {
         mfa: { enabled: false, types: [] },
         verification: { email: false, sms: false },
       })),
+      unlinkProvider: vi.fn(async () => {}),
     }
     const onSetPassword = vi.fn()
     render(<AccountSecurityHub client={socialOnly} onSetPassword={onSetPassword} />)

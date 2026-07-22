@@ -4,8 +4,9 @@ import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import { SecurityPostureSummary } from './SecurityPostureSummary'
 import { SecurityCard } from './SecurityCard'
 import { SetPasswordBanner } from './SetPasswordBanner'
+import { SignInMethodsList } from './SignInMethodsList'
 import { providerDisplayName } from './providers'
-import type { SecurityOverview } from '../types'
+import type { SecurityOverview, SocialConnection } from '../types'
 
 export interface SecurityHubRoutes {
   password: string
@@ -26,8 +27,16 @@ const DEFAULT_ROUTES: SecurityHubRoutes = {
 export interface SecurityHubProps {
   overview: SecurityOverview
   onNavigate?: (route: string) => void
-  /** Set a password (from the social-only guard). */
+  /** Set a password (from the social-only guard, and from the last-method guard). */
   onSetPassword?: () => void
+  /**
+   * Unlink a social provider. Should reject with an HttpError(409) when it is
+   * the account's last sign-in method — SignInMethodsList then renders the
+   * fail-closed last-sign-in-method guard instead of removing the row.
+   */
+  onUnlink?: (provider: SocialConnection['provider']) => Promise<void>
+  /** Link another provider (offered by the last-method guard). */
+  onLinkProvider?: () => void
   routes?: Partial<SecurityHubRoutes>
 }
 
@@ -40,6 +49,8 @@ export function SecurityHub({
   overview,
   onNavigate,
   onSetPassword,
+  onUnlink,
+  onLinkProvider,
   routes,
 }: SecurityHubProps) {
   const { messages: m, t } = useAccountSecurityI18n()
@@ -151,6 +162,15 @@ export function SecurityHub({
               )}
             </>
           }
+        />
+      </div>
+
+      <div style={{ marginTop: 'var(--space-6)' }}>
+        <SignInMethodsList
+          connections={connections}
+          onUnlink={onUnlink}
+          onSetPassword={onSetPassword}
+          onLinkProvider={onLinkProvider}
         />
       </div>
     </div>

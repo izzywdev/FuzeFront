@@ -18,6 +18,8 @@ export interface AccountSecurityHubProps {
   locale?: AccountSecurityLocale
   onNavigate?: (route: string) => void
   onSetPassword?: () => void
+  /** Link another provider (offered by the last-sign-in-method guard). */
+  onLinkProvider?: () => void
   routes?: Partial<SecurityHubRoutes>
 }
 
@@ -47,6 +49,7 @@ function AccountSecurityHubInner({
   getToken,
   onNavigate,
   onSetPassword,
+  onLinkProvider,
   routes,
 }: AccountSecurityHubProps) {
   const { messages: m, dir } = useAccountSecurityI18n()
@@ -117,6 +120,8 @@ function AccountSecurityHubInner({
           overview={state.overview}
           onNavigate={onNavigate}
           onSetPassword={onSetPassword}
+          onUnlink={(provider) => api.unlinkProvider(provider)}
+          onLinkProvider={onLinkProvider}
           routes={routes}
         />
       )}

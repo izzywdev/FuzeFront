@@ -27,5 +27,11 @@ export function createAccountSecurityClient(
       const res = await http.get<SessionsResponse>(`${BASE}/sessions`)
       return Array.isArray(res?.items) ? res.items.length : 0
     },
+    async unlinkProvider(provider) {
+      // Contract: DELETE /v1/security/social/{provider}/link (packages/security/openapi.yaml).
+      // Fail-closed: rejects with HttpError(status 409) when this is the account's
+      // last sign-in method — SignInMethodsList surfaces the last-method guard.
+      await http.delete(`${BASE}/social/${provider}/link`)
+    },
   }
 }

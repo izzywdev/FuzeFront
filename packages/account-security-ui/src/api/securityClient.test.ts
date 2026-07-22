@@ -37,4 +37,22 @@ describe('createAccountSecurityClient', () => {
       code: 'CONFLICT',
     })
   })
+
+  it('unlinks a provider via DELETE /social/{provider}/link', async () => {
+    const fetchImpl = mockFetch(200, { providers: [], hasPassword: true })
+    const client = createAccountSecurityClient({ fetchImpl, getToken: () => 'tok' })
+    await client.unlinkProvider('google')
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('/api/v1/security/social/google/link')
+    expect((call[1] as RequestInit).method).toBe('DELETE')
+  })
+
+  it('surfaces the last-sign-in-method 409 as an HttpError from unlinkProvider', async () => {
+    const fetchImpl = mockFetch(409, { error: 'last method', code: 'last_sign_in_method' })
+    const client = createAccountSecurityClient({ fetchImpl })
+    await expect(client.unlinkProvider('google')).rejects.toMatchObject({
+      constructor: HttpError,
+      status: 409,
+    })
+  })
 })

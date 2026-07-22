@@ -82,4 +82,10 @@ export interface AccountSecurityClient {
   getMethods(): Promise<AuthMethods>
   /** Optional: active-session count for the devices card. */
   getActiveSessionCount?(): Promise<number>
+  /**
+   * Unlink a social provider. Fail-closed: unlinking the account's LAST
+   * sign-in method rejects with an HttpError(409) rather than succeeding —
+   * callers (SignInMethodsList) surface the last-sign-in-method guard.
+   */
+  unlinkProvider(provider: SocialConnection['provider']): Promise<void>
 }
