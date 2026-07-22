@@ -27,6 +27,7 @@ export type Repository = RepositoryInput & {
   canonicalUrl: string
   enabled: boolean
   lastScanAt?: string
+  lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
 }
 

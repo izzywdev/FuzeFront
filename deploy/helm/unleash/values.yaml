@@ -1,0 +1,71 @@
+# Default (local/kind) values. Prod overrides live in values-prod.yaml.
+global:
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # Default pod placement (per-service values below override these).
+  scheduling:
+    nodeSelector: {}
+    affinity: {}
+    tolerations: []
+
+observability:
+  metrics:
+    enabled: false
+    path: /metrics
+
+# Shared FuzeInfra Postgres this chart connects to (NOT provisioned here).
+fuzeinfra:
+  namespace: fuzeinfra
+  postgres:
+    host: postgres.fuzeinfra.svc.cluster.local
+    port: 5432
+
+unleash:
+  enabled: false
+  image:
+    repository: unleashorg/unleash-server
+    # Concrete, widely-published OSS tag (verified-available fallback per #116).
+    # Bump deliberately in a deploy window (external image — not auto-bumped by CI).
+    tag: "5.12.0"
+  port: 4242
+  replicas: 1
+  # Least-privilege DB role created by the unleash-db-bootstrap Job (NOT the
+  # shared fuzefront_user). Its password is UNLEASH_DB_PASSWORD in unleash-secrets.
+  dbUser: unleash_svc
+  # Dedicated database OWNED by unleash_svc (Unleash self-migrates into it).
+  dbName: unleash
+  # Per-service secret (unleash-only keys): UNLEASH_DB_PASSWORD,
+  # INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN. Already sealed in
+  # deploy/contabo/sealed/unleash-secrets.yaml — reused as-is, not re-sealed here.
+  secretName: unleash-secrets
+  # Pre-install Job that creates the unleash_svc role + `unleash` database. Runs
+  # as the FuzeInfra Postgres superuser, whose password is read from an
+  # existing Secret in this namespace (default: the umbrella chart's
+  # fuzefront-secrets, which already holds it) — never re-declared here.
+  dbBootstrap:
+    enabled: true
+    superuser:
+      username: fuzeinfra
+      # Maintenance DB the superuser connects to for CREATE ROLE/DATABASE.
+      maintenanceDb: postgres
+      secretName: fuzefront-secrets
+      secretKey: DB_SUPERUSER_PASSWORD
+  # Unleash needs headroom for its Node runtime + in-memory flag cache.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  # OPTIONAL admin-gated ingress for the admin UI (default OFF). Requires the
+  # host to sit under the *.prod.fuzefront.com Cloudflare-Access zone; the CF
+  # tunnel rule + CNAME are FuzeInfra-owned (delegated) — see this chart's
+  # README before enabling.
+  ingress:
+    enabled: false
+    className: ""        # defaults to ingress.className when empty
+    host: ""              # e.g. unleash.prod.fuzefront.com (CF-Access gated)
+    annotations: {}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+ingress:
+  className: ""

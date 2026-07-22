@@ -1,0 +1,234 @@
+{
+  "name": "Auth experience \u2014 approval frames",
+  "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval \u2014 one approved flow unblocks that flow's implementation.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "approved": false,
+  "approvedBy": null,
+  "approvedAt": null,
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": [
+      "components.schemas.SignupRequest",
+      "components.schemas.LoginRequest",
+      "components.schemas.SessionResult",
+      "components.schemas.PasswordResetRequest",
+      "components.schemas.PasswordResetConfirmRequest",
+      "components.schemas.VerifyConfirmRequest",
+      "components.schemas.VerificationStatus",
+      "components.schemas.AuthMethods",
+      "components.schemas.ErrorBody"
+    ],
+    "endpoints": [
+      "POST /api/v1/security/signup",
+      "POST /api/v1/security/session",
+      "POST /api/v1/security/session/password/reset-request",
+      "POST /api/v1/security/session/password/reset-confirm",
+      "POST /api/v1/security/verify/email/start",
+      "POST /api/v1/security/verify/email/confirm",
+      "GET /api/v1/security/methods",
+      "GET /api/v1/security/signup/email-available"
+    ],
+    "component": "@fuzefront/auth-experience-ui \u2192 SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
+    "featureFlag": "fuzefront.auth.experience",
+    "deltas": [
+      "NEW endpoint GET /api/v1/security/signup/email-available?email= \u2192 { available: boolean } (debounced inline check; must fail-open on error so it never blocks submit; must NOT be an enumeration oracle beyond signup UX \u2014 rate-limit + captcha-gate it).",
+      "NEW field SignupRequest.turnstileToken (string, required when AuthMethods.captcha present) \u2014 Cloudflare Turnstile server-side verification.",
+      "NEW AuthMethods.captcha { provider: 'turnstile', siteKey } and AuthMethods.passwordPolicy { minLength: 12, requireUpper, requireLower, requireDigit, requireSymbol } so the strength meter reflects the authoritative policy rather than a hard-coded client copy."
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "signup",
+        "orchestrator": "SignUpFlow",
+        "route": "/signup",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
+      },
+      {
+        "id": "signin",
+        "orchestrator": "SignInFlow",
+        "route": "/login",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
+      },
+      {
+        "id": "verify-email",
+        "orchestrator": "EmailVerificationFlow",
+        "route": "/verify/email",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
+      },
+      {
+        "id": "password-reset",
+        "orchestrator": "PasswordResetFlow",
+        "route": "/reset",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-21T20:14:27Z"
+      }
+    ],
+    "components": [
+      "AuthCard",
+      "InlineAvailabilityField",
+      "PasswordStrengthMeter",
+      "PasswordConfirmField",
+      "TurnstileField",
+      "ResendCooldownButton",
+      "VerifyStatusPanel",
+      "SocialButton"
+    ],
+    "designSystemPrimitives": [
+      "InlineValidatedInput (Input with a right-adornment slot + valid/invalid ring) \u2014 NET-NEW in @fuzefront/design-system",
+      "StrengthMeter (segmented bar + label tokens) \u2014 NET-NEW",
+      "TurnstileContainer (managed-widget shell with loading/verified/failed slots) \u2014 NET-NEW",
+      "Alert info/success variants \u2014 add if not already present"
+    ],
+    "packages": [
+      "@fuzefront/auth-experience-ui"
+    ],
+    "externalPackages": [
+      "@marsidev/react-turnstile (Cloudflare Turnstile React wrapper; keys owner-gated)"
+    ]
+  },
+  "entry": "index.html",
+  "frames": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "label": "Index",
+      "route": "/",
+      "flow": "index",
+      "summary": "Flow walker + build inventory: 5 ordered flow cards, the components/packages/DS-primitive plan, and the three contract deltas.",
+      "acceptanceNotes": "index links to every frame in order; the build inventory mirrors manifest.build 1:1; every named flow card resolves to its screen.",
+      "testHooks": [
+        "[data-frame='index']",
+        "[data-inventory]",
+        "[data-contract]",
+        "[data-nav='01-signup']",
+        "[data-nav='02-signin']",
+        "[data-nav='03-check-inbox']",
+        "[data-nav='04-verify-landing']",
+        "[data-nav='05-password-reset']",
+        "[data-nav='06-states']"
+      ]
+    },
+    {
+      "id": "01-signup",
+      "file": "01-signup.html",
+      "label": "Create account",
+      "route": "/signup",
+      "flow": "signup",
+      "summary": "Signup form: first/last name, email with inline availability \u2713, password + strength meter (12+ policy) with per-rule checklist, confirm-password with live match, Cloudflare Turnstile (verified), Google, terms.",
+      "acceptanceNotes": "Availability adornment reflects data-avail; strength meter data-strength + per-rule data-met from the authoritative passwordPolicy; confirm shows match state; Turnstile token required before submit is enabled; Google gated on AuthMethods.social; no vendor identity-provider name in the DOM.",
+      "testHooks": [
+        "[data-frame='01-signup']",
+        "[data-form='signup']",
+        "[data-avail='available']",
+        "[data-pwmeter]",
+        "[data-req='length']",
+        "[data-match='true']",
+        "[data-turnstile]",
+        "[data-action='social-google']",
+        "[data-action='submit']",
+        "[data-nav='signin']"
+      ]
+    },
+    {
+      "id": "02-signin",
+      "file": "02-signin.html",
+      "label": "Sign in",
+      "route": "/login",
+      "flow": "signin",
+      "summary": "Sign-in form: email, password with show/hide, forgot-password link, Turnstile, Google, link to signup.",
+      "acceptanceNotes": "POST /session; mfa_required response hands off to the MFA challenge (see States); forgot-password routes to reset; Turnstile present; Google gated on AuthMethods.social.",
+      "testHooks": [
+        "[data-frame='02-signin']",
+        "[data-form='signin']",
+        "[data-turnstile]",
+        "[data-action='social-google']",
+        "[data-action='submit']",
+        "[data-nav='reset']",
+        "[data-nav='signup']"
+      ]
+    },
+    {
+      "id": "03-check-inbox",
+      "file": "03-check-inbox.html",
+      "label": "Check your inbox",
+      "route": "/signup/verify",
+      "flow": "verify-email",
+      "summary": "Post-signup 'we sent a link to <email>' screen with a resend button on a countdown cooldown and an edit-address path.",
+      "acceptanceNotes": "Renders the target email (data-value='email'); resend disabled during cooldown with a live counter, then re-enables (POST /verify/email/start \u2192 202); explains the verify-to-continue gate.",
+      "testHooks": [
+        "[data-frame='03-check-inbox']",
+        "[data-value='email']",
+        "[data-action='resend']",
+        "[data-state='cooldown']"
+      ]
+    },
+    {
+      "id": "04-verify-landing",
+      "file": "04-verify-landing.html",
+      "label": "Verify link landing",
+      "route": "/verify/email",
+      "flow": "verify-email",
+      "summary": "The verify-link landing state machine: verifying (spinner) \u2192 verified (continue) or expired/invalid (send a new link).",
+      "acceptanceNotes": "POST /verify/email/confirm with the link token; 200 VerificationStatus \u2192 verified (idempotent for already-verified); EXPIRED/INVALID_CODE \u2192 expired with resend; verifying is the transient default.",
+      "testHooks": [
+        "[data-frame='04-verify-landing']",
+        "[data-state='verifying']",
+        "[data-state='verified']",
+        "[data-state='expired']",
+        "[data-action='continue']",
+        "[data-action='resend']"
+      ]
+    },
+    {
+      "id": "05-password-reset",
+      "file": "05-password-reset.html",
+      "label": "Password reset",
+      "route": "/reset",
+      "flow": "password-reset",
+      "summary": "Reset request (unconditional 202, identical copy whether or not the account exists) \u2192 sent \u2192 confirm new password (policy + strength + match) \u2192 expired-token.",
+      "acceptanceNotes": "reset-request always 202 with the same 'check your email' copy (no enumeration); confirm enforces the 12+ policy and match; submit disabled while mismatched; invalid/expired token routes to request-a-new-link.",
+      "testHooks": [
+        "[data-frame='05-password-reset']",
+        "[data-form='reset-request']",
+        "[data-step='request-sent']",
+        "[data-form='reset-confirm']",
+        "[data-match='false']",
+        "[data-step='confirm-expired']",
+        "[data-action='submit']"
+      ]
+    },
+    {
+      "id": "06-states",
+      "file": "06-states.html",
+      "label": "States",
+      "route": "/signup",
+      "flow": "states",
+      "summary": "Every contract state: email availability idle/checking/available/taken/error, password weak/strong, confirm mismatch, Turnstile loading/verified/failed, submit-in-flight, form errors (invalid credentials, 409 conflict, provider unavailable), MFA-required handoff, verify-to-continue gate.",
+      "acceptanceNotes": "Each card is addressable by data-state; availability 'taken' offers 'sign in instead'; availability 'error' fails open; Turnstile 'failed' shows the 'please complete the challenge' message; in-flight button is disabled with a spinner.",
+      "testHooks": [
+        "[data-frame='06-states']",
+        "[data-state='email-checking']",
+        "[data-state='email-taken']",
+        "[data-state='email-check-error']",
+        "[data-state='pw-weak']",
+        "[data-state='confirm-mismatch']",
+        "[data-state='turnstile-failed']",
+        "[data-state='submit-inflight']",
+        "[data-state='form-error']",
+        "[data-state='signup-conflict']",
+        "[data-state='mfa-required']",
+        "[data-state='unverified-gate']"
+      ]
+    }
+  ],
+  "stamp": "a882f48b5f9747a5f7a10d831940e0670453815950d1cd8cac099aef07f044f4"
+}
