@@ -1,10 +1,21 @@
 # FuzeQuality: End-to-End Quality Planning, Coverage, and Execution Platform
 
-**Status:** Proposed — implementation requires explicit approval  
-**Date:** 2026-07-17  
-**Branch:** `codex/fuzequality-initial-work`  
-**Repository location:** `FuzeQuality/`  
+**Status:** Approved; V1 implementation and production rollout are in progress
+**Date:** 2026-07-17
+**Last updated:** 2026-07-23
+**Repository location:** `FuzeQuality/`
 **Decision owners:** FuzeFront product, QA, platform, and security owners
+
+This document is the long-term product plan. The approved catalog-first V1,
+its current implementation status, and the cloud-session handoff are maintained
+in:
+
+- [`docs/V1_IMPLEMENTATION_PLAN.md`](docs/V1_IMPLEMENTATION_PLAN.md)
+- [`docs/DELIVERY_STATUS.md`](docs/DELIVERY_STATUS.md)
+
+Kiwi TCMS, ReportPortal, historical execution health, Storybook hosting, and
+enforced CI gates remain V1.1 scope. The deployed V1 first proves repository,
+OpenAPI, frontend, test, Jira, and reviewed AI-flow coverage intelligence.
 
 ## 1. Executive summary
 
