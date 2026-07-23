@@ -1,5 +1,5 @@
-import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import type { Mock } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { AppRegistryClient } from '@fuzefront/app-registry-client'
 import { AppRegistryProvider, useAppRegistry } from '../appRegistry'
@@ -46,7 +46,7 @@ describe('AppRegistryProvider auth gating', () => {
       await Promise.resolve()
     })
 
-    const instance = (AppRegistryClient as unknown as vi.Mock).mock.results[0]
+    const instance = (AppRegistryClient as unknown as Mock).mock.results[0]
       ?.value
     expect(instance.listApps).not.toHaveBeenCalled()
   })
@@ -69,7 +69,7 @@ describe('AppRegistryProvider auth gating', () => {
     )
 
     await waitFor(() => {
-      const instance = (AppRegistryClient as unknown as vi.Mock).mock.results[0]
+      const instance = (AppRegistryClient as unknown as Mock).mock.results[0]
         ?.value
       expect(instance.listApps).toHaveBeenCalledWith({ status: 'activated' })
     })
