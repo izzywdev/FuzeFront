@@ -9,6 +9,7 @@ import {
   defaultEventPublisher,
 } from './eventPublisher'
 import type { Knex } from 'knex'
+import { logger } from '../lib/logger'
 
 /**
  * Plan B — tenant provisioning that is correct, idempotent, and self-healing.
@@ -107,7 +108,11 @@ export async function ensurePersonalOrg(
   const existing = await db('organizations')
     .where({ owner_id: userId, type: 'personal' })
     .first()
-  if (existing) return rowToOrganization(existing)
+  if (existing) {
+    logger.debug({ userId, orgId: existing.id }, 'organizationProvisioning: personal org already exists')
+    return rowToOrganization(existing)
+  }
+  logger.info({ userId }, 'organizationProvisioning: creating personal org')
 
   const user = await db('users').where({ id: userId }).first()
   if (!user) throw new Error(`Cannot create personal org: user ${userId} not found`)
@@ -148,10 +153,15 @@ export async function ensurePersonalOrg(
     const raced = await db('organizations')
       .where({ owner_id: userId, type: 'personal' })
       .first()
-    if (raced) return rowToOrganization(raced)
+    if (raced) {
+      logger.info({ userId, orgId: raced.id }, 'organizationProvisioning: personal org create raced — using winner')
+      return rowToOrganization(raced)
+    }
+    logger.error({ userId, err: error?.message }, 'organizationProvisioning: personal org create failed')
     throw error
   }
 
+  logger.info({ userId, orgId }, 'organizationProvisioning: personal org created')
   const created = await db('organizations').where({ id: orgId }).first()
   return rowToOrganization(created)
 }
@@ -244,6 +254,8 @@ export async function reconcileOrganizationProvisioning(
 ): Promise<'active' | 'pending' | 'failed'> {
   const deps = getDeps(overrides)
   const { db } = deps
+  const reconcileStart = Date.now()
+  logger.info({ orgId }, 'organizationProvisioning: reconcile start')
 
   // I2 — serialize concurrent reconciles of the same org with a Postgres
   // advisory transaction lock so two concurrent callers never both execute the
@@ -280,8 +292,13 @@ export async function reconcileOrganizationProvisioning(
             last_error: null,
             updated_at: new Date(),
           })
+        logger.debug({ orgId, step }, 'organizationProvisioning: step done')
       } catch (error: any) {
         anyFailed = true
+        logger.error(
+          { orgId, step, attempts: (row?.attempts || 0) + 1, err: String(error?.message ?? error) },
+          'organizationProvisioning: step failed'
+        )
         await trx('organization_provisioning')
           .where({ organization_id: orgId, step })
           .update({
@@ -312,6 +329,10 @@ export async function reconcileOrganizationProvisioning(
       .where({ id: orgId })
       .update({ provisioning_state: newState, updated_at: new Date() })
 
+    logger.info(
+      { orgId, newState, elapsedMs: Date.now() - reconcileStart },
+      'organizationProvisioning: reconcile end'
+    )
     return newState
   })
 }

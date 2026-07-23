@@ -24,6 +24,7 @@
 import { generators } from 'openid-client'
 import { oidcService } from './oidc'
 import { User } from '../types/shared'
+import { logger } from '../lib/logger'
 
 /**
  * Hard per-fetch timeout (ms) for EVERY server-side Authentik HTTP hop driven in
@@ -62,8 +63,9 @@ async function fetchWithTimeout(
   } catch (err) {
     const e = err as Error
     if (e.name === 'AbortError') {
-      console.error(
-        `[authentikPassword] ${label} TIMEOUT after ${since(started)}ms (limit ${timeoutMs}ms) url=${url}`
+      logger.error(
+        { label, elapsedMs: since(started), timeoutMs, url },
+        'authentikPassword: hop timed out'
       )
       throw new AuthentikUnavailableError(
         `${label} timed out after ${timeoutMs}ms`
@@ -207,8 +209,9 @@ export async function flowRequest(
         `Authentik unreachable at ${base}: ${(err as Error).message}`
       )
     }
-    console.log(
-      `[authentikPassword] flow.step slug=${slug} hop=${hop} ${method} -> ${res.status} in ${since(stepStart)}ms`
+    logger.debug(
+      { slug, hop, method, status: res.status, elapsedMs: since(stepStart) },
+      'authentikPassword: flow.step'
     )
     jar.absorb(res)
 
@@ -269,6 +272,33 @@ function challengeHasCredentialErrors(challenge: FlowChallenge): boolean {
  * UnsupportedFlowStageError.
  */
 export async function authentikPasswordLogin(
+  email: string,
+  password: string
+): Promise<User> {
+  const loginStart = Date.now()
+  logger.info({ email }, 'authentikPassword: login start')
+  try {
+    const user = await authentikPasswordLoginInner(email, password)
+    logger.info(
+      { email, elapsedMs: since(loginStart) },
+      'authentikPassword: login succeeded'
+    )
+    return user
+  } catch (err) {
+    logger.error(
+      {
+        email,
+        elapsedMs: since(loginStart),
+        errName: (err as Error).name,
+        err: (err as Error).message,
+      },
+      'authentikPassword: login failed'
+    )
+    throw err
+  }
+}
+
+async function authentikPasswordLoginInner(
   email: string,
   password: string
 ): Promise<User> {
@@ -333,6 +363,31 @@ export async function authentikPasswordLogin(
  * same session). Token exchange + user sync is identical to the redirect
  * callback path — Authentik stays the SOLE identity authority.
  */
+/**
+ * Rewrite the (browser-facing, EXTERNAL) authorize URL onto the internal
+ * Authentik base — protocol+host only, path/query untouched — so this
+ * server-side hop stays in-cluster instead of hairpinning out through
+ * Cloudflare/ingress. Safe because:
+ *   - `redirect_uri`/`state`/PKCE params are unchanged, so token validation
+ *     (handleCallback) still matches.
+ *   - Authentik's issuer_mode is `per_provider`, so `iss` is fixed to the
+ *     external issuer regardless of request host (see oidc.ts).
+ * Measured impact: authorize.hop ~6.5s (external, via Cloudflare) -> ~0.2s
+ * (internal service DNS). `base` already resolves to AUTHENTIK_BASE_URL when
+ * set (see authentikBaseUrl()); this is a no-op when it is not.
+ */
+function toInternalAuthorizeUrl(externalUrl: string, base: string): string {
+  try {
+    const u = new URL(externalUrl)
+    const b = new URL(base)
+    u.protocol = b.protocol
+    u.host = b.host
+    return u.toString()
+  } catch {
+    return externalUrl
+  }
+}
+
 export async function completeOidcWithSession(
   base: string,
   jar: CookieJar
@@ -341,7 +396,7 @@ export async function completeOidcWithSession(
   const { url: authorizeUrl, codeVerifier } = oidcService.generateAuthUrl(state)
   const target = redirectUri()
 
-  let location = authorizeUrl
+  let location = toInternalAuthorizeUrl(authorizeUrl, base)
   let code: string | null = null
   let returnedState: string | null = null
   const oidcStart = Date.now()
@@ -365,8 +420,9 @@ export async function completeOidcWithSession(
         `Authorize request failed: ${(err as Error).message}`
       )
     }
-    console.log(
-      `[authentikPassword] authorize.hop hop=${hop} -> ${res.status} in ${since(hopStart)}ms`
+    logger.debug(
+      { hop, status: res.status, elapsedMs: since(hopStart) },
+      'authentikPassword: authorize.hop'
     )
     jar.absorb(res)
 
@@ -406,8 +462,9 @@ export async function completeOidcWithSession(
     )
   }
 
-  console.log(
-    `[authentikPassword] authorize chain resolved to code in ${since(oidcStart)}ms; entering token exchange`
+  logger.info(
+    { elapsedMs: since(oidcStart) },
+    'authentikPassword: authorize chain resolved to code; entering token exchange'
   )
   // Token exchange + user sync — identical to the redirect callback path.
   return oidcService.handleCallback(code, returnedState || state, codeVerifier)
@@ -443,6 +500,30 @@ export interface AuthentikSignupInput {
  * (e.g. an email-verification stage) fails closed as unsupported server-side.
  */
 export async function authentikSignup(input: AuthentikSignupInput): Promise<User> {
+  const signupStart = Date.now()
+  logger.info({ email: input.email }, 'authentikPassword: signup start')
+  try {
+    const user = await authentikSignupInner(input)
+    logger.info(
+      { email: input.email, elapsedMs: since(signupStart) },
+      'authentikPassword: signup succeeded'
+    )
+    return user
+  } catch (err) {
+    logger.error(
+      {
+        email: input.email,
+        elapsedMs: since(signupStart),
+        errName: (err as Error).name,
+        err: (err as Error).message,
+      },
+      'authentikPassword: signup failed'
+    )
+    throw err
+  }
+}
+
+async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> {
   if (!oidcService.isConfigured() || !oidcService.isInitialized()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
   }

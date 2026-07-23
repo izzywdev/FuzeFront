@@ -14,6 +14,7 @@
  * Nothing above the `IdentityProvider` boundary sees a vendor name.
  */
 import { Issuer, Client, generators, custom } from 'openid-client'
+import { logger } from '../lib/logger'
 
 /**
  * HTTP timeout for every server-side Google call (discovery, token grant,
@@ -73,21 +74,33 @@ export class GoogleOidcService {
   }
 
   async initialize(): Promise<void> {
+    const start = Date.now()
     if (!this.isConfigured()) {
       // Fail-closed: without client credentials there is no Google broker.
+      logger.info('googleOidc: not configured — Google sign-in disabled')
       throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured')
     }
-    custom.setHttpOptionsDefaults({ timeout: HTTP_TIMEOUT_MS })
-    const issuer = await Issuer.discover(GOOGLE_ISSUER)
-    this.client = new issuer.Client({
-      client_id: this.config.clientId,
-      client_secret: this.config.clientSecret,
-      redirect_uris: [this.config.redirectUri],
-      response_types: ['code'],
-      grant_types: ['authorization_code'],
-      // Google signs id_tokens with RS256; openid-client validates the signature
-      // against Google's JWKS automatically on callback.
-    })
+    logger.info('googleOidc: initialize start')
+    try {
+      custom.setHttpOptionsDefaults({ timeout: HTTP_TIMEOUT_MS })
+      const issuer = await Issuer.discover(GOOGLE_ISSUER)
+      this.client = new issuer.Client({
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+        redirect_uris: [this.config.redirectUri],
+        response_types: ['code'],
+        grant_types: ['authorization_code'],
+        // Google signs id_tokens with RS256; openid-client validates the signature
+        // against Google's JWKS automatically on callback.
+      })
+      logger.info({ elapsedMs: Date.now() - start }, 'googleOidc: initialize succeeded')
+    } catch (err) {
+      logger.error(
+        { elapsedMs: Date.now() - start, err: (err as Error).message },
+        'googleOidc: initialize failed'
+      )
+      throw err
+    }
   }
 
   /** Build the absolute `accounts.google.com` authorize URL + this flow's PKCE verifier. */
@@ -112,24 +125,39 @@ export class GoogleOidcService {
    * Never logs tokens. Throws on any protocol/validation failure (fail-closed).
    */
   async handleCallback(code: string, state: string, codeVerifier: string): Promise<GoogleIdentity> {
-    if (!this.client) throw new Error('Google OIDC client not initialized')
-    if (!codeVerifier) throw new Error('code_verifier missing for Google callback')
-    const tokenSet = await this.client.callback(
-      this.config.redirectUri,
-      { code, state },
-      { code_verifier: codeVerifier, state }
-    )
-    const claims = tokenSet.claims()
-    const email = claims.email
-    if (!email || typeof email !== 'string') {
-      throw new Error('Google id_token did not include an email claim')
-    }
-    return {
-      email,
-      emailVerified: claims.email_verified === true || (claims as any).email_verified === 'true',
-      firstName: (claims.given_name as string | undefined) ?? undefined,
-      lastName: (claims.family_name as string | undefined) ?? undefined,
-      sub: claims.sub,
+    const start = Date.now()
+    logger.info('googleOidc: callback start')
+    try {
+      if (!this.client) throw new Error('Google OIDC client not initialized')
+      if (!codeVerifier) throw new Error('code_verifier missing for Google callback')
+      const tokenSet = await this.client.callback(
+        this.config.redirectUri,
+        { code, state },
+        { code_verifier: codeVerifier, state }
+      )
+      const claims = tokenSet.claims()
+      const email = claims.email
+      if (!email || typeof email !== 'string') {
+        throw new Error('Google id_token did not include an email claim')
+      }
+      logger.info(
+        { elapsedMs: Date.now() - start },
+        'googleOidc: callback succeeded'
+      )
+      return {
+        email,
+        emailVerified: claims.email_verified === true || (claims as any).email_verified === 'true',
+        firstName: (claims.given_name as string | undefined) ?? undefined,
+        lastName: (claims.family_name as string | undefined) ?? undefined,
+        sub: claims.sub,
+      }
+    } catch (err) {
+      // Never log `code`/tokens — only the error message, which never carries them.
+      logger.error(
+        { elapsedMs: Date.now() - start, err: (err as Error).message },
+        'googleOidc: callback failed'
+      )
+      throw err
     }
   }
 }
