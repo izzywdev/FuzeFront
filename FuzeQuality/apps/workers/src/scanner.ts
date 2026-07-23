@@ -24,11 +24,25 @@ await runConsumer(
       temporary = true
     }
     try {
-      const result = await scanRepository(repository, root, { onProgress: heartbeat })
-      await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
-        method: 'POST',
-        body: JSON.stringify(result),
-      })
+      const heartbeatTimer = setInterval(() => {
+        void heartbeat().catch(error => {
+          console.warn(JSON.stringify({
+            event: 'repository_scan_heartbeat',
+            outcome: 'failed',
+            repository: `${repository.owner}/${repository.name}`,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+        })
+      }, 3_000)
+      try {
+        const result = await scanRepository(repository, root, { onProgress: heartbeat })
+        await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
+          method: 'POST',
+          body: JSON.stringify(result),
+        })
+      } finally {
+        clearInterval(heartbeatTimer)
+      }
     } finally {
       if (temporary) await rm(root, { recursive: true, force: true })
     }
