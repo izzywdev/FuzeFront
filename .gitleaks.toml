@@ -20,6 +20,9 @@ paths = [
   # Helm template for the Cloudflare CF cache-purge SealedSecret — kubesealed blob,
   # designed to be committed.
   '''deploy/helm/fuzefront/templates/sealed-secret''',
+  # FuzeQuality application credentials are asymmetrically encrypted by
+  # Sealed Secrets and cannot be decrypted outside the target cluster.
+  '''FuzeQuality/deploy/helm/fuzequality/templates/bootstrap-sealed-secret\.yaml''',
   # Historical prod values file that had a Cloudflare CF SealedSecret inlined at
   # commit 7cfe0429; the kubesealed blob is asymmetrically encrypted and safe to commit.
   '''deploy/helm/fuzefront/values-prod\.yaml''',

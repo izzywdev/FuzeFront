@@ -62,14 +62,17 @@ export function createGitHubAccessVerifier(tokenForInstallation: (installationId
       if (!commitSha || !/^[0-9a-f]{40}$/i.test(commitSha)) {
         throw new RepositoryAccessError('UPSTREAM_UNAVAILABLE')
       }
-      if (!repository.permissions?.pull) throw new RepositoryAccessError('NOT_ACCESSIBLE')
+      // GitHub App installation tokens can report every legacy repository
+      // permission flag as false even when the app has read-only Contents
+      // access. Successful repository and branch reads are the authoritative
+      // access proof; the token was already minted with read-only permissions.
       return {
         canonicalUrl: repository.html_url ?? `https://github.com/${input.owner}/${input.name}`,
         defaultBranch: repository.default_branch ?? input.defaultBranch,
         commitSha,
         private: repository.private ?? true,
         permissions: {
-          contents: repository.permissions.admin ? 'admin' : repository.permissions.push ? 'write' : 'read',
+          contents: repository.permissions?.admin ? 'admin' : repository.permissions?.push ? 'write' : 'read',
           metadata: 'read',
         },
       }

@@ -9,7 +9,7 @@ await runConsumer(
   [TOPICS.REPOSITORY_SCAN_REQUESTED],
   async (_topic, payload) => {
     const command = scanRequestedSchema.parse(payload)
-    const repository = await apiRequest<Repository>(`/api/v1/repositories/${command.repositoryId}`)
+    const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${command.repositoryId}`)
     let root = repository.localPath
     let temporary = false
     if (!root) {
