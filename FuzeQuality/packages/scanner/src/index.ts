@@ -345,7 +345,23 @@ export async function scanRepository(repository: Repository, rootPath: string): 
     ...operations.flatMap(operation => buildApiExpectations(operation, tests)),
     ...surfaces.flatMap(surface => buildFrontendExpectations(surface, tests)),
   ]
-  const findings = buildFindings(repository.id, operations, surfaces, expectations)
+  const owner = repository.ownership?.team
+  const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
+  for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {
+    findings.push({
+      id: `finding:${repository.name}:${digest(diagnostic.sourcePath, diagnostic.code)}`,
+      repositoryId: repository.id,
+      type: diagnostic.code,
+      severity: diagnostic.severity === 'error' ? 'high' : 'medium',
+      title: `${diagnostic.code}: ${diagnostic.sourcePath}`,
+      detail: diagnostic.message,
+      owner,
+      remediation: diagnostic.code.includes('ref')
+        ? 'Repair or internalize the referenced schema path and rescan.'
+        : 'Correct the OpenAPI document so it validates without executing repository code.',
+      status: 'open',
+    })
+  }
   const revision = digest(
     repository.name,
     ...contentFingerprints.sort()
