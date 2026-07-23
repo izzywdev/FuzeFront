@@ -1,4 +1,5 @@
 FROM node:22-alpine AS dependencies
+RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
 COPY FuzeQuality/package.json ./
 RUN npm install --ignore-scripts --no-audit --no-fund

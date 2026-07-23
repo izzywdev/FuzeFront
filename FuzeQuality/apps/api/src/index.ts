@@ -69,6 +69,12 @@ app.get('/metrics', async (_request, response) => {
 })
 
 app.get('/api/v1/portfolio', async (_request, response) => response.json(await store.portfolio()))
+app.get('/api/v1/internal/repositories/:id', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(repository)
+})
 app.get('/api/v1/repositories', mayReadRepositories, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).repositories)
 )

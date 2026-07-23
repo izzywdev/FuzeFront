@@ -39,4 +39,26 @@ describe('FQ-18 repository access verification', () => {
     })
     expect(JSON.stringify(publicAccessError(failure))).not.toContain('redaction-test-token')
   })
+
+  it('accepts successful read-only GitHub App responses with false legacy permission flags', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        html_url: 'https://github.com/izzywdev/FuzeFront',
+        default_branch: 'master',
+        private: false,
+        permissions: { admin: false, push: false, pull: false },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: 'b'.repeat(40) } }), { status: 200 })))
+    const verifier = createGitHubAccessVerifier(async () => 'read-only-installation-token')
+
+    await expect(verifier.verify({
+      installationId: '42',
+      owner: 'izzywdev',
+      name: 'FuzeFront',
+      defaultBranch: 'master',
+    })).resolves.toMatchObject({
+      commitSha: 'b'.repeat(40),
+      permissions: { contents: 'read', metadata: 'read' },
+    })
+  })
 })
