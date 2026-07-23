@@ -222,6 +222,60 @@ function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio
   return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} /></>
 }
 
+function ApiCatalogPage({ data }: { data: Portfolio }) {
+  const [repositoryId, setRepositoryId] = useState('')
+  const [tag, setTag] = useState('')
+  const [coverage, setCoverage] = useState<CoverageState | ''>('')
+  const apiExpectations = data.expectations.filter(item => item.subjectType === 'api-operation')
+  const tags = [...new Set(data.operations.flatMap(operation => operation.tags))].sort()
+  const operations = data.operations.filter(operation => {
+    const expectations = apiExpectations.filter(item => item.subjectId === operation.id)
+    return (!repositoryId || operation.repositoryId === repositoryId) &&
+      (!tag || operation.tags.includes(tag)) &&
+      (!coverage || expectations.some(item => item.coverage === coverage))
+  })
+  const visibleIds = new Set(operations.map(operation => operation.id))
+  const expectations = apiExpectations.filter(item => visibleIds.has(item.subjectId))
+  const findings = data.findings.filter(item =>
+    item.status === 'open' &&
+    (visibleIds.has(item.subjectId ?? '') || (!item.subjectId && operations.some(operation => operation.repositoryId === item.repositoryId)))
+  )
+  const summary = coverageSummary(expectations)
+  return <>
+    <PageHeading
+      eyebrow="Contract inventory / authoritative snapshot"
+      title="API coverage matrix"
+      detail="Every operation measured against schema-derived expectations, accepted test evidence, and actionable contract findings."
+      action={<div className="header-badge"><Braces /> {operations.length} operations</div>}
+    />
+    <section className="stats-grid compact-stats" aria-label="API coverage totals">
+      <Stat label="Coverage" value={`${summary.percent}%`} detail={`${summary.covered} of ${summary.total} expectations`} />
+      <Stat label="Required gaps" value={summary.gaps} detail="without accepted evidence" tone="danger" />
+      <Stat label="Open findings" value={findings.length} detail="contract and coverage actions" tone={findings.length ? 'danger' : 'neutral'} />
+      <Stat label="Revision set" value={data.repositories.filter(repository => repository.lastScanRevision).length} detail="scanned repositories represented" />
+    </section>
+    <div className="catalog-filters" aria-label="API catalog filters">
+      <label>Repository<select value={repositoryId} onChange={event => setRepositoryId(event.target.value)}><option value="">All repositories</option>{data.repositories.map(repository => <option key={repository.id} value={repository.id}>{repository.name}</option>)}</select></label>
+      <label>Tag<select value={tag} onChange={event => setTag(event.target.value)}><option value="">All tags</option>{tags.map(value => <option key={value}>{value}</option>)}</select></label>
+      <label>Coverage<select value={coverage} onChange={event => setCoverage(event.target.value as CoverageState | '')}><option value="">All states</option>{Object.entries(coverageLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <div className="snapshot-stamp"><span>Policy</span><strong>api-coverage-v1</strong><small>{data.repositories.filter(repository => repository.lastScanAt).length} fresh scan snapshots</small></div>
+    </div>
+    <CoverageRail expectations={expectations} />
+    <Matrix items={operations} expectations={expectations} kind="api" />
+    <section className="panel catalog-findings">
+      <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
+      <div className="finding-list">
+        {findings.map(finding => <article className="finding-row finding-action" key={finding.id}>
+          <AlertTriangle size={17} />
+          <div><strong>{finding.title}</strong><small>{finding.detail}</small>{finding.remediation && <p><b>Next:</b> {finding.remediation}</p>}</div>
+          <div className="finding-owner"><span className={`severity severity-${finding.severity}`}>{finding.severity}</span><small>{finding.owner ?? 'Unassigned'}</small></div>
+        </article>)}
+        {!findings.length && <div className="empty-state"><ShieldCheck /><strong>No findings in this view</strong><span>Adjust filters or scan another repository.</span></div>}
+      </div>
+    </section>
+  </>
+}
+
 function Requirements({ data }: { data: Portfolio }) {
   return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." /><div className="requirements-grid">{data.requirements.map(requirement => { const flows = data.flows.filter(flow => flow.requirementId === requirement.id); const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed'); return <article className="requirement-card" key={requirement.id}><div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span><h3>{requirement.summary}</h3><p>{requirement.description}</p><div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span></div></article>})}</div></>
 }
@@ -242,5 +296,5 @@ export function App() {
   async function reload() { setLoading(true); try { setData(await api.portfolio()); setError(undefined) } catch (value) { setError(value instanceof Error ? value.message : String(value)) } finally { setLoading(false) } }
   useEffect(() => { void reload() }, [])
   const active = useMemo(() => navigation.find(item => item.id === view), [view])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{navigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <CatalogPage type="api" data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}</>}</div></main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{navigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}</>}</div></main></div>
 }
