@@ -72,7 +72,7 @@ export function createGitHubAccessVerifier(tokenForInstallation: (installationId
         commitSha,
         private: repository.private ?? true,
         permissions: {
-          contents: repository.permissions.admin ? 'admin' : repository.permissions.push ? 'write' : 'read',
+          contents: repository.permissions?.admin ? 'admin' : repository.permissions?.push ? 'write' : 'read',
           metadata: 'read',
         },
       }
