@@ -40,13 +40,27 @@ const hasFlag = (name) => process.argv.includes(name);
 const framesDir = path.resolve(arg('--frames', path.join(repoRoot, 'design', 'frames')));
 const onlyFeature = arg('--feature', null);
 
-/** Deterministic JSON: object keys sorted recursively, arrays order-preserved.
+/** Approval bookkeeping keys. These record the DECISION, not the DESIGN, and are
+ *  stripped from the manifest before hashing so the stamp fingerprints the frames
+ *  a reviewer saw — never the approval state itself. Critical for per-flow
+ *  approval: flipping `build.flows[].approved` to true (or approving flows one at
+ *  a time) must NOT change the stamp, or every approval would invalidate the
+ *  stamp its own frame links carry and the next click would falsely read as
+ *  "the frames changed since you viewed them". (This is why a manually-approved
+ *  manifest drifted from its stored stamp under the old, approval-inclusive hash.) */
+const APPROVAL_KEYS = new Set(['approved', 'approvedBy', 'approvedAt']);
+
+/** Deterministic JSON: object keys sorted recursively, arrays order-preserved,
+ *  approval-bookkeeping keys removed at every level.
  *  Two logically-equal manifests serialize identically regardless of key order. */
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
     const out = {};
-    for (const key of Object.keys(value).sort()) out[key] = canonicalize(value[key]);
+    for (const key of Object.keys(value).sort()) {
+      if (APPROVAL_KEYS.has(key)) continue;
+      out[key] = canonicalize(value[key]);
+    }
     return out;
   }
   return value;

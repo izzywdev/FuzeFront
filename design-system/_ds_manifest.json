@@ -62,6 +62,10 @@
       "sourcePath": "components/feedback/Spinner.jsx"
     },
     {
+      "name": "StatusCallout",
+      "sourcePath": "components/feedback/StatusCallout.jsx"
+    },
+    {
       "name": "StatusPill",
       "sourcePath": "components/feedback/StatusPill.jsx"
     },
@@ -609,6 +613,24 @@
     {
       "name": "--error-color",
       "value": "var(--coral-500)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--success-soft",
+      "value": "rgba(52, 211, 153, 0.12)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--warning-soft",
+      "value": "rgba(245, 166, 35, 0.12)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--error-soft",
+      "value": "rgba(243, 105, 127, 0.12)",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },

@@ -10,9 +10,19 @@ name: design-approval
 #   2. Staleness    — recompute the feature's current stamp (scripts/stamp-frames.mjs)
 #      and compare to the issue's stamp. Mismatch (or empty) → do NOT flip.
 #   3. Idempotency  — if the flow is already approved at this stamp → "already recorded".
-#   4. Write        — on approve, flip build.flows[<flow>].approved via the Contents
-#      API (server-side commits are signed → satisfies required_signatures) on master.
+#   4. Write        — on approve, flip build.flows[<flow>].approved on master via a
+#      DEPLOY KEY (RELEASE_BUMP_SSH_KEY), the SAME write path release.yml uses.
+#      This is deliberate: the "Protect Master" ruleset has a pull_request rule and
+#      GitHub refuses to add the github-actions app as a bypass actor on a
+#      user-owned repo, so a Contents-API commit under GITHUB_TOKEN is REJECTED
+#      ("Repository rule violations found") — that is exactly what blocked this
+#      workflow. The deploy key is a registered DeployKey bypass_actor on that
+#      ruleset, so its push clears the PR rule AND required_signatures.
 #      On reject, comment and leave the issue open for the designer to iterate.
+#
+# Approval bookkeeping (approved/approvedBy/approvedAt) is EXCLUDED from the stamp
+# (scripts/stamp-frames.mjs), so flipping a flow to approved does not change the
+# stamp — sibling flows keep the same valid stamp and per-flow approval works.
 #
 # on: issues:[opened] ONLY — edits can't re-fire (avoids double-trigger). Every
 # expectation is DERIVED from a source of truth (stamp from files, flip target from
@@ -45,6 +55,7 @@ jobs:
           node-version: '20'
 
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        id: decide
         with:
           script: |
             const fs = require('fs');
@@ -176,24 +187,99 @@ jobs:
               return;
             }
 
-            // ---- 4. Write — flip approved via the Contents API (signed), on master. ----
-            flow.approved = true;
-            flow.approvedBy = author;
-            flow.approvedAt = new Date().toISOString();
-            const newContent = JSON.stringify(manifest, null, 2) + '\n';
+            // ---- 4. Write — hand the flip to the deploy-key push step. ----
+            // The actual master write CANNOT go through the Contents API here (the
+            // "Protect Master" ruleset rejects github-actions commits — see header).
+            // We only decide + authorize; the next step performs a race-safe flip
+            // against fresh master over the DeployKey bypass and pushes. The final
+            // comment + close then run only after that push actually succeeds.
+            core.setOutput('flip', 'true');
+            core.setOutput('feature', feature);
+            core.setOutput('flow', flowId);
+            core.setOutput('author', author);
+            core.setOutput('stamp', computedStamp);
+            core.setOutput('manifest_path', manifestPath);
 
-            // Get the current sha of the file on master to update in place.
-            const cur = await github.rest.repos.getContent({ owner, repo, path: manifestPath, ref: 'master' });
-            const sha = cur.data.sha;
-            const commitMsg =
-              `design(approve): ${feature}/${flowId} approved by @${author} (stamp ${computedStamp.slice(0, 12)})\n\n` +
-              `Recorded from design-approval issue #${issueNumber}.`;
+      # The master write path — a DEPLOY KEY, identical to release.yml's tag bump.
+      # The "Protect Master" ruleset has a pull_request rule and refuses the
+      # github-actions app as a bypass actor, so a Contents-API/GITHUB_TOKEN commit
+      # is rejected with "Repository rule violations found" (the reported bug). The
+      # deploy key IS a registered DeployKey bypass_actor, so its push clears both
+      # the PR rule and required_signatures. If this starts failing with a rule
+      # violation, the DeployKey bypass entry or the deploy key was removed.
+      - name: Flip approved on master (deploy key)
+        if: steps.decide.outputs.flip == 'true'
+        env:
+          SSH_KEY: ${{ secrets.RELEASE_BUMP_SSH_KEY }}
+          FEATURE: ${{ steps.decide.outputs.feature }}
+          FLOW: ${{ steps.decide.outputs.flow }}
+          AUTHOR: ${{ steps.decide.outputs.author }}
+          STAMP: ${{ steps.decide.outputs.stamp }}
+          MANIFEST: ${{ steps.decide.outputs.manifest_path }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
+          chmod 600 ~/.ssh/release_bump
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_bump -o IdentitiesOnly=yes"
+          git config user.name  "fuzefront-design"
+          git config user.email "design-approve@users.noreply.github.com"
+          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          # Read-modify-write against CURRENT master, not this job's checkout: an
+          # approval landing between our fetch and push just retries on a fresh base.
+          for attempt in 1 2 3; do
+            git fetch origin master
+            git checkout --detach --force FETCH_HEAD
+            # Idempotent flip of exactly the named flow. If it's already approved on
+            # fresh master (a concurrent duplicate won the race) this is a no-op and
+            # we exit success — a double-submit is not a second approval.
+            if ! node -e '
+              const fs = require("fs");
+              const p = process.env.MANIFEST;
+              const m = JSON.parse(fs.readFileSync(p, "utf8"));
+              const flow = (m.build && m.build.flows || []).find(f => f.id === process.env.FLOW);
+              if (!flow) { console.error("flow gone on fresh master: " + process.env.FLOW); process.exit(3); }
+              if (flow.approved === true) { console.log("noop"); process.exit(0); }
+              flow.approved = true;
+              flow.approvedBy = process.env.AUTHOR;
+              flow.approvedAt = new Date().toISOString();
+              fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");
+              console.log("flipped");
+            '; then
+              echo "::error::could not flip ${FLOW} in ${MANIFEST}"
+              exit 1
+            fi
+            if git diff --quiet -- "$MANIFEST"; then
+              echo "already approved on master — nothing to push"
+              exit 0
+            fi
+            git commit \
+              -m "design(approve): ${FEATURE}/${FLOW} approved by @${AUTHOR} (stamp ${STAMP:0:12}) [skip ci]" \
+              -m "Recorded from design-approval issue #${ISSUE}." \
+              -- "$MANIFEST"
+            if git push origin HEAD:master; then
+              echo "flipped via commit $(git rev-parse HEAD)"
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}) — refetching master and retrying"
+          done
+          echo "::error::could not push the approval after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
+          exit 1
 
-            await github.rest.repos.createOrUpdateFileContents({
-              owner, repo, path: manifestPath, message: commitMsg,
-              content: Buffer.from(newContent, 'utf8').toString('base64'),
-              sha, branch: 'master',
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        if: steps.decide.outputs.flip == 'true'
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = context.payload.issue.number;
+            const feature = ${{ toJSON(steps.decide.outputs.feature) }};
+            const flowId = ${{ toJSON(steps.decide.outputs.flow) }};
+            const author = ${{ toJSON(steps.decide.outputs.author) }};
+            const stamp = ${{ toJSON(steps.decide.outputs.stamp) }};
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issueNumber,
+              body: `Approved: flow \`${flowId}\` of \`${feature}\` is now recorded \`approved: true\` (by @${author}, stamp \`${stamp}\`). Committed to \`master\` via the deploy-key bypass. Closing this approval request.`,
             });
-
-            await comment(`Approved: flow \`${flowId}\` of \`${feature}\` is now recorded \`approved: true\` (by @${author}, stamp \`${computedStamp}\`). Committed to \`master\` via the Contents API (signed). Closing this approval request.`);
             await github.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' });
