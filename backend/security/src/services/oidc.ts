@@ -2,6 +2,7 @@ import { Issuer, Client, generators, custom } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
+import { logger } from '../lib/logger';
 
 /**
  * HTTP timeout for every server-side OIDC call (discovery, token grant, userinfo,
@@ -33,7 +34,7 @@ class OIDCService {
 
   async initialize(): Promise<void> {
     try {
-      console.log('🔧 Initializing OIDC client...');
+      logger.info('oidc: initializing client');
 
       // Raise openid-client's HTTP timeout. Its default is 3500ms, which is too
       // short for Authentik's token endpoint and silently broke Google sign-in:
@@ -49,7 +50,7 @@ class OIDCService {
 
       // Discover the issuer
       const issuer = await Issuer.discover(this.config.issuerUrl);
-      console.log('✅ Discovered issuer:', issuer.metadata.issuer);
+      logger.info({ issuer: issuer.metadata.issuer }, 'oidc: discovered issuer');
 
       // Route the SERVER-SIDE OIDC calls (token / userinfo / jwks) over in-cluster
       // DNS instead of hairpinning out to app.fuzefront.com via Cloudflare (which
@@ -86,7 +87,7 @@ class OIDCService {
           introspection_endpoint: toInternal(issuer.metadata.introspection_endpoint as string | undefined),
           revocation_endpoint: toInternal(issuer.metadata.revocation_endpoint as string | undefined),
         });
-        console.log('✅ OIDC server-side endpoints routed in-cluster via', internalBase);
+        logger.info({ internalBase }, 'oidc: server-side endpoints routed in-cluster');
       }
 
       // Create the client
@@ -101,9 +102,9 @@ class OIDCService {
         id_token_signed_response_alg: 'HS256',
       });
 
-      console.log('✅ OIDC client initialized successfully');
+      logger.info('oidc: client initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize OIDC client:', error);
+      logger.error({ err: (error as Error).message }, 'oidc: failed to initialize client');
       throw error;
     }
   }
@@ -156,27 +157,30 @@ class OIDCService {
         { code, state },
         { code_verifier: codeVerifier, state }
       );
-      console.log(
-        `✅ oidc.token exchange completed in ${Math.round(Date.now() - tokenStart)}ms`
+      logger.info(
+        { elapsedMs: Math.round(Date.now() - tokenStart) },
+        'oidc: token exchange completed'
       );
 
       // Get user info
       const userinfoStart = Date.now();
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log(
-        `✅ oidc.userinfo retrieved in ${Math.round(Date.now() - userinfoStart)}ms for ${userinfo.email}`
+      logger.info(
+        { elapsedMs: Math.round(Date.now() - userinfoStart), email: userinfo.email },
+        'oidc: userinfo retrieved'
       );
 
       // Sync user to local database
       const syncStart = Date.now();
       const user = await this.syncUserToDatabase(userinfo);
-      console.log(
-        `✅ user.sync completed in ${Math.round(Date.now() - syncStart)}ms`
+      logger.info(
+        { elapsedMs: Math.round(Date.now() - syncStart) },
+        'oidc: user sync completed'
       );
 
       return user;
     } catch (error) {
-      console.error('❌ OIDC callback error:', error);
+      logger.error({ err: (error as Error).message }, 'oidc: callback error');
       throw error;
     }
   }
@@ -240,7 +244,7 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
             updated_at: new Date(),
           });
 
-        console.log(`✅ Updated existing user: ${email}`);
+        logger.debug({ email }, 'oidc: updated existing user');
       } else {
         // Create new user. The local `id` is ALWAYS a generated uuid — never the
         // OIDC `sub`, which Authentik sets to the email/username (not a uuid) and
@@ -280,7 +284,7 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
         });
         userRow = newUser;
 
-        console.log(`✅ Created new user: ${email}`);
+        logger.info({ email, userId: newUser.id }, 'oidc: created new user');
 
         // Best-effort publish; failure leaves the outbox row 'pending' for replay.
         try {
@@ -298,7 +302,10 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
             .where({ correlation_id: correlationId })
             .update({ status: 'sent', attempts: 1, sent_at: new Date() });
         } catch (pubErr) {
-          console.error('⚠️ identity.user.created publish failed (outbox retains it):', pubErr);
+          logger.error(
+            { email, userId: newUser.id, correlationId, err: (pubErr as Error).message },
+            'oidc: identity.user.created publish failed (outbox retains it)'
+          );
         }
       }
 
@@ -319,7 +326,7 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
 
       return user;
     } catch (error) {
-      console.error('❌ Error syncing user to database:', error);
+      logger.error({ err: (error as Error).message }, 'oidc: error syncing user to database');
       throw error;
     }
 }
