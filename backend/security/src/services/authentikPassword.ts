@@ -25,6 +25,56 @@ import { generators } from 'openid-client'
 import { oidcService } from './oidc'
 import { User } from '../types/shared'
 
+/**
+ * Hard per-fetch timeout (ms) for EVERY server-side Authentik HTTP hop driven in
+ * this module — the flow-executor requests, the OIDC authorize→code redirect
+ * chain, and the Admin-API set_password calls. Without it a single stuck hop
+ * (e.g. the authorize hairpin out to app.fuzefront.com via Cloudflare) hangs the
+ * whole login request forever, so the client only fails after its own ~60s
+ * timeout with no server log pointing at the culprit. A bounded AbortController
+ * turns that into a fast, labelled AuthentikUnavailableError instead.
+ * Overridable via AUTHENTIK_FLOW_TIMEOUT_MS without a rebuild.
+ */
+const AUTHENTIK_FLOW_TIMEOUT_MS =
+  Number(process.env.AUTHENTIK_FLOW_TIMEOUT_MS) || 10000
+
+/** Monotonic-ish elapsed helper for the per-step timing logs. */
+function since(startMs: number): number {
+  return Math.round(Date.now() - startMs)
+}
+
+/**
+ * `fetch` with a hard AbortController deadline. On timeout the AbortError is
+ * normalised to a labelled AuthentikUnavailableError carrying the elapsed time
+ * and the target, so prod logs pinpoint exactly which hop stalled.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  label: string,
+  timeoutMs: number = AUTHENTIK_FLOW_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  const started = Date.now()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    const e = err as Error
+    if (e.name === 'AbortError') {
+      console.error(
+        `[authentikPassword] ${label} TIMEOUT after ${since(started)}ms (limit ${timeoutMs}ms) url=${url}`
+      )
+      throw new AuthentikUnavailableError(
+        `${label} timed out after ${timeoutMs}ms`
+      )
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export class InvalidCredentialsError extends Error {
   constructor(message = 'Invalid credentials') {
     super(message)
@@ -144,18 +194,22 @@ export async function flowRequest(
     }
 
     let res: Response
+    const stepStart = Date.now()
     try {
-      res = await fetch(url, {
-        method,
-        headers,
-        body: payload,
-        redirect: 'manual',
-      })
+      res = await fetchWithTimeout(
+        url,
+        { method, headers, body: payload, redirect: 'manual' },
+        `flow.step slug=${slug} hop=${hop} ${method}`
+      )
     } catch (err) {
+      if (err instanceof AuthentikUnavailableError) throw err
       throw new AuthentikUnavailableError(
         `Authentik unreachable at ${base}: ${(err as Error).message}`
       )
     }
+    console.log(
+      `[authentikPassword] flow.step slug=${slug} hop=${hop} ${method} -> ${res.status} in ${since(stepStart)}ms`
+    )
     jar.absorb(res)
 
     const loc = res.headers.get('location')
@@ -290,20 +344,30 @@ export async function completeOidcWithSession(
   let location = authorizeUrl
   let code: string | null = null
   let returnedState: string | null = null
+  const oidcStart = Date.now()
 
   for (let hop = 0; hop < 10; hop++) {
     let res: Response
+    const hopStart = Date.now()
     try {
-      res = await fetch(location, {
-        method: 'GET',
-        headers: { Cookie: jar.header(), Accept: 'application/json' },
-        redirect: 'manual',
-      })
+      res = await fetchWithTimeout(
+        location,
+        {
+          method: 'GET',
+          headers: { Cookie: jar.header(), Accept: 'application/json' },
+          redirect: 'manual',
+        },
+        `authorize.hop hop=${hop}`
+      )
     } catch (err) {
+      if (err instanceof AuthentikUnavailableError) throw err
       throw new AuthentikUnavailableError(
         `Authorize request failed: ${(err as Error).message}`
       )
     }
+    console.log(
+      `[authentikPassword] authorize.hop hop=${hop} -> ${res.status} in ${since(hopStart)}ms`
+    )
     jar.absorb(res)
 
     const next = res.headers.get('location')
@@ -342,6 +406,9 @@ export async function completeOidcWithSession(
     )
   }
 
+  console.log(
+    `[authentikPassword] authorize chain resolved to code in ${since(oidcStart)}ms; entering token exchange`
+  )
   // Token exchange + user sync — identical to the redirect callback path.
   return oidcService.handleCallback(code, returnedState || state, codeVerifier)
 }
@@ -508,11 +575,13 @@ export async function authentikSetPassword(
 
   let lookup: Response
   try {
-    lookup = await fetch(
+    lookup = await fetchWithTimeout(
       `${base}/api/v3/core/users/?email=${encodeURIComponent(email)}`,
-      { headers }
+      { headers },
+      'setPassword.lookup'
     )
   } catch (err) {
+    if (err instanceof AuthentikUnavailableError) throw err
     throw new AuthentikUnavailableError(
       `identity-store lookup failed: ${(err as Error).message}`
     )
@@ -534,12 +603,17 @@ export async function authentikSetPassword(
 
   let res: Response
   try {
-    res = await fetch(`${base}/api/v3/core/users/${match.pk}/set_password/`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ password: newPassword }),
-    })
+    res = await fetchWithTimeout(
+      `${base}/api/v3/core/users/${match.pk}/set_password/`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ password: newPassword }),
+      },
+      'setPassword.set'
+    )
   } catch (err) {
+    if (err instanceof AuthentikUnavailableError) throw err
     throw new AuthentikUnavailableError(
       `identity-store set_password failed: ${(err as Error).message}`
     )
