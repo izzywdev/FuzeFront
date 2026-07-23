@@ -10,21 +10,42 @@ import type {
 const id = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
 
+function normalizeRoute(value: string) {
+  return `/${value}`.replace(/\/+/g, '/').replace(/:[^/]+|\{[^}]+\}/g, '{}').replace(/\/$/, '') || '/'
+}
+
+export type EvidenceMethod = 'explicit' | 'operation-id' | 'method-route' | 'title'
+
+export function mappingMethod(subject: ApiOperation | FrontendSurface, test: TestCase): EvidenceMethod | undefined {
+  if (test.assertionCount <= 0) return undefined
+  const explicit = test.explicitTargets ?? []
+  if (explicit.some(target => target === subject.id || ('operationId' in subject && target === subject.operationId))) {
+    return 'explicit'
+  }
+  if ('method' in subject) {
+    if (subject.operationId && (test.operationIds ?? []).includes(subject.operationId)) return 'operation-id'
+    if ((test.routes ?? []).some(route =>
+      (!route.method || route.method.toLowerCase() === subject.method.toLowerCase()) &&
+      normalizeRoute(route.path) === normalizeRoute(subject.path)
+    )) return 'method-route'
+    if (subject.operationId && test.title.toLowerCase().includes(subject.operationId.toLowerCase())) return 'title'
+    return undefined
+  }
+  const title = test.title.toLowerCase()
+  return [subject.name, subject.routePath, subject.sourcePath]
+    .filter((token): token is string => Boolean(token))
+    .some(token => title.includes(token.toLowerCase())) ? 'title' : undefined
+}
+
 function matchingEvidence(subject: ApiOperation | FrontendSurface, tests: TestCase[]) {
-  const tokens =
-    'method' in subject
-      ? [subject.operationId, subject.path, `${subject.method} ${subject.path}`]
-      : [subject.name, subject.routePath, subject.sourcePath]
-  return tests.filter(test =>
-    test.assertionCount > 0 &&
-    tokens
-      .filter((token): token is string => Boolean(token))
-      .some(token =>
-        `${test.title} ${test.targets.join(' ')}`
-          .toLowerCase()
-          .includes(token.toLowerCase())
-      )
-  )
+  return tests
+    .map(test => ({ test, method: mappingMethod(subject, test) }))
+    .filter((candidate): candidate is { test: TestCase; method: EvidenceMethod } => Boolean(candidate.method))
+    .sort((a, b) =>
+      ['explicit', 'operation-id', 'method-route', 'title'].indexOf(a.method) -
+      ['explicit', 'operation-id', 'method-route', 'title'].indexOf(b.method)
+    )
+    .map(candidate => candidate.test)
 }
 
 function scenarioEvidence(
@@ -112,6 +133,19 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
     )
   }
 
+  if ((operation.securitySchemes ?? []).some(scheme => /oauth|scope|role|permission/i.test(scheme))) {
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        'authorization-variation',
+        'Declared roles or scopes have permitted and denied cases',
+        'api.security.role-variation',
+        scenarioEvidence(matchedTests, ['role', 'scope', 'permission', '403'])
+      )
+    )
+  }
+
   for (const parameter of operation.parameters.filter(item => item.required)) {
     result.push(
       expectation(
@@ -180,6 +214,60 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
     )
   }
 
+  if ((operation.requestContentTypes ?? []).length > 0) {
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        'request-content-type',
+        'Every declared request content type is exercised',
+        'api.content-type.request',
+        scenarioEvidence(matchedTests, operation.requestContentTypes ?? []),
+        'recommended'
+      )
+    )
+  }
+
+  if ((operation.responseContentTypes ?? []).length > 0) {
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        'response-content-type',
+        'Declared response media types and schemas are asserted',
+        'api.content-type.response',
+        scenarioEvidence(matchedTests, operation.responseContentTypes ?? []),
+        'recommended'
+      )
+    )
+  }
+
+  if (operation.idempotencyHeader) {
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        'idempotency-replay',
+        `${operation.idempotencyHeader} replay does not duplicate the operation`,
+        'api.idempotency.replay',
+        scenarioEvidence(matchedTests, ['idempotent', 'replay', operation.idempotencyHeader])
+      )
+    )
+  }
+
+  if (operation.supportsCrudSequence) {
+    result.push(
+      expectation(
+        'api-operation',
+        operation.id,
+        'crud-sequence',
+        'The operation participates in a stateful resource lifecycle',
+        'api.resource.crud-sequence',
+        scenarioEvidence(matchedTests, ['crud', 'lifecycle', 'create read update delete']),
+        'recommended'
+      )
+    )
+  }
 
   for (const response of operation.responses) {
     const successful = /^2\d\d$/.test(response)
@@ -259,6 +347,29 @@ export function buildFindings(
       detail: 'Add a stable operationId so coverage history survives route refactors.',
       status: 'open',
     })
+  }
+
+  const duplicateOperationIds = new Map<string, ApiOperation[]>()
+  for (const operation of operations) {
+    if (!operation.operationId) continue
+    const matches = duplicateOperationIds.get(operation.operationId) ?? []
+    matches.push(operation)
+    duplicateOperationIds.set(operation.operationId, matches)
+  }
+  for (const [operationId, duplicates] of duplicateOperationIds) {
+    if (duplicates.length < 2) continue
+    for (const operation of duplicates) {
+      findings.push({
+        id: id(operation.id, 'duplicate-operation-id'),
+        repositoryId,
+        subjectId: operation.id,
+        type: 'duplicate-operation-id',
+        severity: 'high',
+        title: `operationId “${operationId}” is duplicated`,
+        detail: `The identifier is shared by ${duplicates.length} operations and cannot provide an unambiguous coverage identity.`,
+        status: 'open',
+      })
+    }
   }
 
   for (const surface of surfaces.filter(item => item.kind === 'component' && !item.hasStory)) {
