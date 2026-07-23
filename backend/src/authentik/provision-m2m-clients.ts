@@ -26,161 +26,20 @@
  */
 
 import axios from 'axios'
-
-const AUTHENTIK_TIMEOUT_MS = 10_000
-
-// ---------------------------------------------------------------------------
-// Config helpers (mirrors machine-identity.ts conventions)
-// ---------------------------------------------------------------------------
-
-function getAuthentikBaseUrl(): string {
-  return (
-    process.env.AUTHENTIK_BASE_URL ||
-    process.env.AUTHENTIK_ISSUER_URL?.replace(/\/application\/o\/.*$/, '') ||
-    'http://localhost:9000'
-  )
-}
-
-function getAuthentikAdminToken(): string | undefined {
-  return process.env.AUTHENTIK_ADMIN_TOKEN
-}
-
-function buildHeaders(token: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pagination helper
-// ---------------------------------------------------------------------------
-
-/**
- * Fetches all items from a paginated Authentik list endpoint, following
- * `data.next` links until exhausted, then returns the first item matching
- * the predicate — or undefined if none is found.
- *
- * Server-side filter params are passed as hints (Authentik may ignore them),
- * so client-side matching via `predicate` is the authoritative filter.
- */
-async function findAcrossPages<T>(
-  url: string,
-  params: Record<string, string>,
-  headers: Record<string, string>,
-  predicate: (item: T) => boolean
-): Promise<T | undefined> {
-  // Authentik paginates via { pagination: { next: <page_number|0> }, results: [] }
-  // `pagination.next` is the next page number, or 0/falsy when on the last page.
-  let page = 1
-  let hasMore = true
-  while (hasMore) {
-    const res = await axios.get(url, {
-      headers,
-      params: { ...params, page },
-      timeout: AUTHENTIK_TIMEOUT_MS,
-    })
-    const items: T[] = res.data.results || []
-    const match = items.find(predicate)
-    if (match) return match
-    const nextPage: number = res.data.pagination?.next ?? 0
-    if (!nextPage) {
-      hasMore = false
-    } else {
-      page = nextPage
-    }
-  }
-  return undefined
-}
+import {
+  AUTHENTIK_TIMEOUT_MS,
+  buildHeaders,
+  ensureScopeMapping,
+  findAcrossPages,
+  getAuthentikAdminToken,
+  getAuthentikBaseUrl,
+  resolveAuthorizationFlow,
+  resolveInvalidationFlow,
+} from './authentik-admin'
 
 // ---------------------------------------------------------------------------
 // Step helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Resolves (or creates) the "fuzefront:apps" scope mapping.
- * Returns the pk (number) of the mapping.
- */
-async function ensureScopeMapping(
-  baseUrl: string,
-  headers: Record<string, string>
-): Promise<number> {
-  const scopeName = 'fuzefront:apps'
-
-  // Check existence across all pages; scope_name param is a hint only.
-  // NB: scope property mappings live under /propertymappings/provider/scope/ on
-  // Authentik 2024.x (the older /propertymappings/scope/ path 404s).
-  const found = await findAcrossPages<{ pk: number; scope_name: string }>(
-    `${baseUrl}/api/v3/propertymappings/provider/scope/`,
-    { scope_name: scopeName },
-    headers,
-    m => m.scope_name === scopeName
-  )
-  if (found) {
-    console.log(`[provision-m2m] Scope mapping "${scopeName}" already exists (pk=${found.pk})`)
-    return found.pk
-  }
-
-  // Create
-  const createRes = await axios.post(
-    `${baseUrl}/api/v3/propertymappings/provider/scope/`,
-    {
-      name: scopeName,
-      scope_name: scopeName,
-      expression: 'return {}',
-    },
-    { headers, timeout: AUTHENTIK_TIMEOUT_MS }
-  )
-  console.log(`[provision-m2m] Created scope mapping "${scopeName}" (pk=${createRes.data.pk})`)
-  return createRes.data.pk as number
-}
-
-/**
- * Resolves the pk of the default authorization flow.
- * Reuses the same pattern as machine-identity.ts.
- */
-async function resolveAuthorizationFlow(
-  baseUrl: string,
-  headers: Record<string, string>
-): Promise<string> {
-  try {
-    const res = await axios.get(`${baseUrl}/api/v3/flows/instances/`, {
-      headers,
-      params: { designation: 'authorization' },
-      timeout: AUTHENTIK_TIMEOUT_MS,
-    })
-    const flows: Array<{ slug: string; pk: string }> = res.data.results || []
-    const defaultFlow = flows.find(
-      f => f.slug.includes('implicit-consent') || f.slug.includes('authorization')
-    )
-    return defaultFlow?.pk || flows[0]?.pk || ''
-  } catch {
-    return ''
-  }
-}
-
-/**
- * Resolves the pk of an invalidation flow. Authentik 2024.x requires
- * `invalidation_flow` on OAuth2 provider creation; prefer the built-in
- * default-provider-invalidation-flow, else any invalidation-designated flow.
- */
-async function resolveInvalidationFlow(
-  baseUrl: string,
-  headers: Record<string, string>
-): Promise<string> {
-  try {
-    const res = await axios.get(`${baseUrl}/api/v3/flows/instances/`, {
-      headers,
-      params: { designation: 'invalidation' },
-      timeout: AUTHENTIK_TIMEOUT_MS,
-    })
-    const flows: Array<{ slug: string; pk: string }> = res.data.results || []
-    const preferred = flows.find(f => f.slug === 'default-provider-invalidation-flow')
-    return preferred?.pk || flows[0]?.pk || ''
-  } catch {
-    return ''
-  }
-}
 
 /**
  * Resolves (or creates) the "FuzeSocial Registration" OAuth2 provider.
@@ -341,7 +200,11 @@ export async function provisionM2MClients(): Promise<void> {
   console.log(`[provision-m2m] Provisioning Authentik M2M clients against ${baseUrl}`)
 
   try {
-    const scopePk = await ensureScopeMapping(baseUrl, headers)
+    const scopePk = await ensureScopeMapping(baseUrl, headers, {
+      name: 'fuzefront:apps',
+      scopeName: 'fuzefront:apps',
+      expression: 'return {}',
+    })
     const providerPk = await ensureOAuth2Provider(baseUrl, headers, scopePk)
     await ensureApplication(baseUrl, headers, providerPk)
     await logCredentials(baseUrl, headers, providerPk)
