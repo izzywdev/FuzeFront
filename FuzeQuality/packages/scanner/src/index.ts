@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import fg from 'fast-glob'
-import YAML from 'yaml'
 import type {
   ApiOperation,
   FrontendSurface,
@@ -16,6 +15,7 @@ import {
   buildFindings,
   buildFrontendExpectations,
 } from '@fuzequality/core'
+import { parseOpenApiDocument, referencedOpenApiPaths } from './openapi'
 
 const digest = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
@@ -42,6 +42,11 @@ const OPENAPI_GLOBS = [
   '**/*swagger*.{yaml,yml,json}',
 ]
 
+const OPENAPI_CONFIG_GLOBS = [
+  '**/*openapi*.{ts,js,mjs,cjs}',
+  '**/*swagger*.{ts,js,mjs,cjs}',
+]
+
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
   '**/tests/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -62,74 +67,6 @@ async function readText(root: string, file: string) {
   return value
 }
 
-function operationSecurity(document: Record<string, unknown>, value: Record<string, unknown>) {
-  if ('security' in value) return Array.isArray(value.security) && value.security.length > 0
-  return Array.isArray(document.security) && document.security.length > 0
-}
-
-function parseParameters(value: unknown) {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter(item => item && typeof item === 'object' && !('$ref' in item))
-    .map(item => {
-      const parameter = item as Record<string, unknown>
-      return {
-        name: String(parameter.name ?? 'unnamed'),
-        location: String(parameter.in ?? 'unknown'),
-        required: Boolean(parameter.required),
-        schema:
-          parameter.schema && typeof parameter.schema === 'object'
-            ? (parameter.schema as Record<string, unknown>)
-            : undefined,
-      }
-    })
-}
-
-function parseOpenApi(
-  repository: Repository,
-  file: string,
-  content: string
-): ApiOperation[] {
-  const parsed = file.endsWith('.json') ? JSON.parse(content) : YAML.parse(content)
-  if (!parsed || typeof parsed !== 'object') return []
-  const document = parsed as Record<string, unknown>
-  const paths = document.paths
-  if (!paths || typeof paths !== 'object') return []
-  const operations: ApiOperation[] = []
-  const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'])
-
-  for (const [path, rawPath] of Object.entries(paths as Record<string, unknown>)) {
-    if (!rawPath || typeof rawPath !== 'object') continue
-    const pathItem = rawPath as Record<string, unknown>
-    for (const [method, rawOperation] of Object.entries(pathItem)) {
-      if (!methods.has(method.toLowerCase()) || !rawOperation || typeof rawOperation !== 'object') continue
-      const operation = rawOperation as Record<string, unknown>
-      const operationId = typeof operation.operationId === 'string' ? operation.operationId : undefined
-      const stablePart = operationId ?? `${method.toUpperCase()}:${path}`
-      operations.push({
-        id: `api:${repository.name}:${digest(file)}:${stablePart}`,
-        repositoryId: repository.id,
-        documentPath: normalize(file),
-        operationId,
-        method: method.toLowerCase(),
-        path,
-        summary: String(operation.summary ?? operation.description ?? stablePart),
-        tags: Array.isArray(operation.tags) ? operation.tags.map(String) : [],
-        security: operationSecurity(document, operation),
-        parameters: [
-          ...parseParameters(pathItem.parameters),
-          ...parseParameters(operation.parameters),
-        ],
-        responses:
-          operation.responses && typeof operation.responses === 'object'
-            ? Object.keys(operation.responses)
-            : [],
-      })
-    }
-  }
-  return operations
-}
-
 function frameworkFor(file: string, source: string) {
   if (file.endsWith('.py')) return source.includes('schemathesis') ? 'schemathesis' : 'pytest'
   if (source.includes('@playwright/test')) return 'playwright'
@@ -148,17 +85,31 @@ function levelFor(file: string, source: string): TestCase['level'] {
 function extractTests(repository: Repository, file: string, source: string): TestCase[] {
   const cases: TestCase[] = []
   const titlePattern = /\b(?:it|test)\s*\(\s*(['"`])([^\n]+?)\1/g
-  const targets = [
-    ...source.matchAll(/(?:get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\1/gi),
-    ...source.matchAll(/(?:page\.goto|request\.(?:get|post|put|patch|delete))\s*\(\s*(['"`])([^'"`]+)\1/gi),
-  ].map(match => match[2])
-  const annotations = [...source.matchAll(/(?:api|flow|jira)['"]?\s*[,):]\s*(?:description:\s*)?['"]([^'"]+)['"]/gi)].map(
-    match => match[1]
-  )
-  const assertionCount = (source.match(/\bexpect\s*\(/g) ?? []).length + (source.match(/\bassert\b/g) ?? []).length
-  let match: RegExpExecArray | null
-  while ((match = titlePattern.exec(source))) {
+  const titleMatches = [...source.matchAll(titlePattern)]
+  const metadata = (segment: string) => {
+    const routeMatches = [
+      ...segment.matchAll(/\b(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\2/gi),
+      ...segment.matchAll(/\brequest\.(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\2/gi),
+    ]
+    const routes = routeMatches.map(match => ({ method: match[1].toLowerCase(), path: match[3] }))
+    const explicitTargets = [...segment.matchAll(/@fuzequality\s+(?:api|target)\s+([^\s*]+)/gi)].map(match => match[1])
+    const annotations = [...segment.matchAll(/(?:api|flow|jira)['"]?\s*[,):]\s*(?:description:\s*)?['"]([^'"]+)['"]/gi)].map(
+      match => match[1]
+    )
+    const operationIds = [...segment.matchAll(/\boperationId\s*[:=]\s*['"]([^'"]+)['"]/gi)].map(match => match[1])
+    return {
+      routes,
+      explicitTargets,
+      operationIds,
+      assertionCount: (segment.match(/\bexpect\s*\(/g) ?? []).length + (segment.match(/\bassert\b/g) ?? []).length,
+      targets: [...new Set([...routes.map(route => route.path), ...annotations, ...explicitTargets, ...operationIds])],
+    }
+  }
+  for (const [index, match] of titleMatches.entries()) {
     const title = match[2].trim()
+    const start = match.index ?? 0
+    const end = titleMatches[index + 1]?.index ?? source.length
+    const evidence = metadata(source.slice(start, end))
     cases.push({
       id: `test:${repository.name}:${digest(file, title)}`,
       repositoryId: repository.id,
@@ -166,11 +117,15 @@ function extractTests(repository: Repository, file: string, source: string): Tes
       level: levelFor(file, source),
       title,
       sourcePath: normalize(file),
-      assertionCount,
-      targets: [...new Set([...targets, ...annotations])],
+      assertionCount: evidence.assertionCount,
+      targets: evidence.targets,
+      explicitTargets: evidence.explicitTargets,
+      operationIds: evidence.operationIds,
+      routes: evidence.routes,
     })
   }
   if (!cases.length) {
+    const evidence = metadata(source)
     cases.push({
       id: `test:${repository.name}:${digest(file)}`,
       repositoryId: repository.id,
@@ -178,8 +133,11 @@ function extractTests(repository: Repository, file: string, source: string): Tes
       level: levelFor(file, source),
       title: file.split('/').at(-1) ?? file,
       sourcePath: normalize(file),
-      assertionCount,
-      targets: [...new Set([...targets, ...annotations])],
+      assertionCount: evidence.assertionCount,
+      targets: evidence.targets,
+      explicitTargets: evidence.explicitTargets,
+      operationIds: evidence.operationIds,
+      routes: evidence.routes,
     })
   }
   return cases
@@ -296,10 +254,26 @@ async function scanFrontend(
 export async function scanRepository(repository: Repository, rootPath: string): Promise<ScanResult> {
   const root = safeRoot(rootPath)
   const ignore = [...DEFAULT_IGNORES, ...repository.excludeGlobs]
-  const openApiFiles = await fg(
-    repository.includeGlobs.length ? repository.includeGlobs : OPENAPI_GLOBS,
+  const configuredOpenApiGlobs = repository.includeGlobs.length ? repository.includeGlobs : OPENAPI_GLOBS
+  const directOpenApiFiles = await fg(
+    configuredOpenApiGlobs,
     { cwd: root, ignore, onlyFiles: true, followSymbolicLinks: false }
   )
+  const configFiles = await fg(OPENAPI_CONFIG_GLOBS, {
+    cwd: root, ignore, onlyFiles: true, followSymbolicLinks: false,
+  })
+  const referencedFiles: string[] = []
+  for (const configFile of configFiles) {
+    try {
+      const source = await readText(root, configFile)
+      for (const referenced of referencedOpenApiPaths(source)) {
+        referencedFiles.push(normalize(relative(root, resolve(root, dirname(configFile), referenced))))
+      }
+    } catch {
+      // Config parsing is best-effort; candidate documents still receive diagnostics below.
+    }
+  }
+  const openApiFiles = [...new Set([...directOpenApiFiles, ...referencedFiles])]
   const testFiles = await fg(TEST_GLOBS, { cwd: root, ignore, onlyFiles: true, followSymbolicLinks: false })
   const storyFiles = new Set(
     await fg('**/*.stories.{ts,tsx,js,jsx,mdx}', {
@@ -317,7 +291,9 @@ export async function scanRepository(repository: Repository, rootPath: string): 
     try {
       const content = await readText(root, file)
       contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
-      operations.push(...parseOpenApi(repository, file, content))
+      const parsed = await parseOpenApiDocument(root, repository, file, content)
+      operations.push(...parsed.operations)
+      diagnostics.push(...parsed.diagnostics)
     } catch (error) {
       diagnostics.push({
         sourcePath: normalize(file),
