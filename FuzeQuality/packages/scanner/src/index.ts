@@ -9,6 +9,7 @@ import type {
   ScanDiagnostic,
   ScanResult,
   TestCase,
+  TestExpectation,
 } from '@fuzequality/contracts'
 import {
   buildApiExpectations,
@@ -160,13 +161,15 @@ async function scanFrontend(
   root: string,
   repository: Repository,
   ignore: string[],
-  storyFiles: Set<string>
+  storyFiles: Set<string>,
+  onProgress: () => Promise<void>
 ) {
   const packageFiles = await fg('**/package.json', { cwd: root, ignore })
   const surfaces: FrontendSurface[] = []
   const fingerprints: string[] = []
   const diagnostics: ScanDiagnostic[] = []
   for (const packageFile of packageFiles) {
+    await onProgress()
     let packageJson: Record<string, unknown>
     try {
       const packageContent = await readText(root, packageFile)
@@ -189,6 +192,7 @@ async function scanFrontend(
       ignore,
     })
     for (const file of sourceFiles) {
+      await onProgress()
       let source: string
       try {
         source = await readText(root, file)
@@ -251,8 +255,13 @@ async function scanFrontend(
   }
 }
 
-export async function scanRepository(repository: Repository, rootPath: string): Promise<ScanResult> {
+export async function scanRepository(
+  repository: Repository,
+  rootPath: string,
+  options: { onProgress?: () => Promise<void> } = {}
+): Promise<ScanResult> {
   const root = safeRoot(rootPath)
+  const onProgress = options.onProgress ?? (async () => {})
   const ignore = [...DEFAULT_IGNORES, ...repository.excludeGlobs]
   const configuredOpenApiGlobs = repository.includeGlobs.length ? repository.includeGlobs : OPENAPI_GLOBS
   const directOpenApiFiles = await fg(
@@ -264,6 +273,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
   })
   const referencedFiles: string[] = []
   for (const configFile of configFiles) {
+    await onProgress()
     try {
       const source = await readText(root, configFile)
       for (const referenced of referencedOpenApiPaths(source)) {
@@ -288,6 +298,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
   const diagnostics: ScanDiagnostic[] = []
   const contentFingerprints: string[] = []
   for (const file of openApiFiles) {
+    await onProgress()
     try {
       const content = await readText(root, file)
       contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
@@ -307,6 +318,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
 
   const tests: TestCase[] = []
   for (const file of testFiles) {
+    await onProgress()
     try {
       const content = await readText(root, file)
       contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
@@ -323,6 +335,7 @@ export async function scanRepository(repository: Repository, rootPath: string): 
   }
 
   for (const file of storyFiles) {
+    await onProgress()
     try {
       const content = await readText(root, file)
       contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
@@ -337,14 +350,19 @@ export async function scanRepository(repository: Repository, rootPath: string): 
     }
   }
 
-  const frontend = await scanFrontend(root, repository, ignore, storyFiles)
+  const frontend = await scanFrontend(root, repository, ignore, storyFiles, onProgress)
   const surfaces = frontend.surfaces
   contentFingerprints.push(...frontend.fingerprints)
   diagnostics.push(...frontend.diagnostics)
-  const expectations = [
-    ...operations.flatMap(operation => buildApiExpectations(operation, tests)),
-    ...surfaces.flatMap(surface => buildFrontendExpectations(surface, tests)),
-  ]
+  const expectations: TestExpectation[] = []
+  for (const operation of operations) {
+    await onProgress()
+    expectations.push(...buildApiExpectations(operation, tests))
+  }
+  for (const surface of surfaces) {
+    await onProgress()
+    expectations.push(...buildFrontendExpectations(surface, tests))
+  }
   const owner = repository.ownership?.team
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {

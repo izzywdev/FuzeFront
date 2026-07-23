@@ -12,7 +12,12 @@ const envelopeSchema = z.object({
 export async function runConsumer(
   groupId: string,
   topics: string[],
-  handler: (topic: string, payload: unknown, correlationId: string) => Promise<void>
+  handler: (
+    topic: string,
+    payload: unknown,
+    correlationId: string,
+    controls: { heartbeat: () => Promise<void> }
+  ) => Promise<void>
 ) {
   const brokers = process.env.KAFKA_BROKERS?.split(',').filter(Boolean)
   if (!brokers?.length) throw new Error('KAFKA_BROKERS is required for worker processes')
@@ -24,12 +29,12 @@ export async function runConsumer(
   for (const topic of topics) await consumer.subscribe({ topic })
 
   await consumer.run({
-    eachMessage: async ({ topic, message }: EachMessagePayload) => {
+    eachMessage: async ({ topic, message, heartbeat }: EachMessagePayload) => {
       const raw = message.value?.toString()
       if (!raw) return
       try {
         const envelope = envelopeSchema.parse(JSON.parse(raw))
-        await handler(topic, envelope.payload, envelope.correlationId)
+        await handler(topic, envelope.payload, envelope.correlationId, { heartbeat })
       } catch (error) {
         await producer.send({
           topic: `${topic}.dlq`,

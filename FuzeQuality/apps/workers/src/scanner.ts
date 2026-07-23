@@ -7,7 +7,7 @@ import { checkoutRepository } from './github'
 await runConsumer(
   'fuzequality-scanner-v1',
   [TOPICS.REPOSITORY_SCAN_REQUESTED],
-  async (_topic, payload) => {
+  async (_topic, payload, _correlationId, { heartbeat }) => {
     const command = scanRequestedSchema.parse(payload)
     const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${command.repositoryId}`)
     let root = repository.localPath
@@ -24,7 +24,7 @@ await runConsumer(
       temporary = true
     }
     try {
-      const result = await scanRepository(repository, root)
+      const result = await scanRepository(repository, root, { onProgress: heartbeat })
       await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
         method: 'POST',
         body: JSON.stringify(result),
