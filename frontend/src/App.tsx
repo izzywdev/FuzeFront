@@ -22,6 +22,7 @@ import { WorkspaceProvisioningGate } from './components/WorkspaceProvisioningGat
 import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
+import AccountSecurityPage from './pages/AccountSecurityPage'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -225,6 +226,7 @@ function AppContent() {
           <Route path="/organizations" element={<OrganizationPage />} />
           <Route path="/organizations/new" element={<CreateOrganizationPage />} />
           <Route path="/profile" element={<UserProfileManagement />} />
+          <Route path="/account/security" element={<AccountSecurityPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/invoices" element={<BillingPage />} />
           <Route path="/billing/payments" element={<BillingPage />} />

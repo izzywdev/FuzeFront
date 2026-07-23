@@ -34,6 +34,24 @@
   value: "true"
 - name: AUTHENTIK_ERROR_REPORTING__ENABLED
   value: "false"
+# Disable the embedded (proxy) outpost. FuzeFront uses OAuth2/OIDC providers
+# only — verified in prod: 3 oauth2 providers, 0 proxy providers, and the
+# "authentik Embedded Outpost" had 0 providers attached, i.e. it served nothing.
+# Despite that it ran an ak-api-controller poll loop hitting /api/v3/outposts/
+# every 3s, and every call failed ("invalid header field value for
+# Authorization"). Measured on a live pod: 40 failed outpost polls per 2 min vs
+# 14 real requests — roughly 3x the genuine traffic, all of it waste, against
+# only 2 gunicorn workers. That starved real auth requests (avg 1522ms, tail
+# 20-37s) and is why sign-in intermittently timed out. Turning it off removes
+# the load entirely; re-enable ONLY if a proxy/forward-auth provider is added.
+- name: AUTHENTIK_OUTPOSTS__DISABLE_EMBEDDED_OUTPOST
+  value: "true"
+# Size the web worker pool explicitly. Authentik derives it from visible CPU,
+# which under the container's 1-CPU limit yielded just 2 workers — too few to
+# absorb a burst of concurrent auth flows, so requests queued and clients timed
+# out. Pin it so the pool never silently shrinks with a limit change.
+- name: AUTHENTIK_WEB__WORKERS
+  value: {{ .Values.authentik.webWorkers | default 4 | quote }}
 - name: AUTHENTIK_COOKIE_DOMAIN
   value: {{ .Values.authentik.cookieDomain | quote }}
 # Bootstrap the akadmin user with a known password/token so the initial-setup
@@ -163,7 +181,12 @@ spec:
         # restart == immediate re-apply instead of the hourly discovery cycle.
         checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
     spec:
-      {{- include "fuzefront.scheduling" (dict "svc" .Values.authentik "root" .) | nindent 6 }}
+      # Pin authentik-server onto the DB node (vmi3383846) so its Postgres/Redis
+      # round-trips are same-node. Cross-node over the flannel/WireGuard overlay made
+      # a full login ~45-60s (FuzeInfra#318). Server only; the worker tolerates cross-node.
+      # vmi3383846 taint is PreferNoSchedule (soft) so no toleration is needed.
+      nodeSelector:
+        kubernetes.io/hostname: vmi3383846
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -177,22 +200,45 @@ spec:
             {{- include "authentik.commonEnv" . | nindent 12 }}
           ports:
             - containerPort: 9000
+          # PROBE TIMEOUTS ARE EXPLICIT AND MUST STAY THAT WAY.
+          # k8s defaults timeoutSeconds to 1s. Authentik's health endpoints are
+          # Django views that hit Postgres+Redis and routinely take 200-700ms,
+          # spiking past 1s under any load. With the 1s default this readiness
+          # probe failed 4572 times in 4 days: each 3-strike run pulled the pod
+          # out of the Service, so Traefik answered "no available server" and
+          # in-flight auth died mid-flow ("context canceled: failed to proxy to
+          # backend"). That flapping — not a slow IdP — was the cause of the
+          # intermittent sign-in failures, 20s+ password timeouts, and the flow
+          # UI's "Unexpected end of JSON input" (its API call landed in a gap).
+          # Authentik was healthy the whole time; the probe was evicting it.
           startupProbe:
             httpGet: { path: /-/health/live/, port: 9000 }
             periodSeconds: 5
+            timeoutSeconds: 5
             failureThreshold: 60 # up to ~5min for first-boot migrations
           livenessProbe:
             httpGet: { path: /-/health/live/, port: 9000 }
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5   # never restart a merely-busy IdP
           readinessProbe:
             httpGet: { path: /-/health/ready/, port: 9000 }
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - { name: media,       mountPath: /media }
             - { name: blueprints,  mountPath: /blueprints/fuzefront, readOnly: true }
+          # 2 CPU so the 4 pinned web workers have somewhere to run; the 1-CPU
+          # limit is what capped Authentik at 2 workers. Average CPU looked idle
+          # (21m/1000m) during the outage because workers were blocked on queued
+          # requests, not computing — low utilisation was not spare headroom.
+          # 2026.5 (Python 3.14) with 4 gunicorn workers OOMKilled at 1Gi
+          # (Exit 137) → crashloop → PROVIDER_UNAVAILABLE / auth outage. 2024.12
+          # used ~475Mi; the newer runtime + worker set needs far more headroom.
           resources:
-            requests: { cpu: 100m, memory: 384Mi }
-            limits:   { cpu: "1",  memory: 768Mi }
+            requests: { cpu: 200m, memory: 320Mi }
+            limits:   { cpu: "2",  memory: 3Gi }
       volumes:
         - name: media
           emptyDir: {}

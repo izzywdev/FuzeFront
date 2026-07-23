@@ -6,7 +6,13 @@
   "contract": {
     "openapi": "packages/security/openapi.yaml",
     "client": "@fuzefront/security-client",
-    "schemas": ["Member", "MemberCreate", "MemberPage", "Role", "RoleAssignment"],
+    "schemas": [
+      "Member",
+      "MemberCreate",
+      "MemberPage",
+      "Role",
+      "RoleAssignment"
+    ],
     "endpoints": [
       "GET /v1/security/tenants/{tenantId}/members",
       "POST /v1/security/tenants/{tenantId}/members",
@@ -23,13 +29,28 @@
   },
   "build": {
     "flows": [
-      { "id": "access-admin", "orchestrator": "AccessAdminFlow", "route": "/settings/access", "approved": false, "approvedBy": null, "approvedAt": null }
+      {
+        "id": "access-admin",
+        "orchestrator": "AccessAdminFlow",
+        "route": "/settings/access",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
     ],
     "components": [
-      "MemberList", "MemberRow", "RolePill", "AddMemberDialog",
-      "ChangeRoleDialog", "RemoveMemberDialog", "RolePicker", "AccessDeniedNotice"
+      "MemberList",
+      "MemberRow",
+      "RolePill",
+      "AddMemberDialog",
+      "ChangeRoleDialog",
+      "RemoveMemberDialog",
+      "RolePicker",
+      "AccessDeniedNotice"
     ],
-    "packages": ["@fuzefront/access-admin-ui"]
+    "packages": [
+      "@fuzefront/access-admin-ui"
+    ]
   },
   "frames": [
     {
@@ -120,5 +141,6 @@
         "[data-http='403']"
       ]
     }
-  ]
+  ],
+  "stamp": "95b85336bf686f9808f9894c7b40ee5524790556ff7aed9d6b34910acaf0a93b"
 }

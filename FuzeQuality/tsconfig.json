@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@fuzequality/contracts": ["packages/contracts/src/index.ts"],
+      "@fuzequality/core": ["packages/core/src/index.ts"],
+      "@fuzequality/github-app": ["packages/github-app/src/index.ts"],
+      "@fuzequality/scanner": ["packages/scanner/src/index.ts"]
+    }
+  },
+  "include": ["apps", "packages", "scripts", "vitest.config.ts"]
+}

@@ -39,9 +39,11 @@ entries:
       slug: fuzefront-authorization-implicit-consent
       designation: authorization
       title: FuzeFront Sign In
-      # require_authenticated: user must already be logged in to run this flow.
-      # all + 0 policy bindings = vacuous truth → flow is always accessible.
-      authentication: require_authenticated
+      # none: Authentik's OAuth2 provider view handles the authentication redirect
+      # (unauthenticated users are sent to the login flow, then back here).
+      # require_authenticated would cause Authentik to return access_denied
+      # immediately instead of redirecting to login — breaking the OIDC flow.
+      authentication: none
       policy_engine_mode: all
 
   # ── Scope mappings (inline — no system-blueprint dependency) ─────────────────
@@ -135,9 +137,40 @@ entries:
       name: FuzeFront
       slug: fuzefront
       provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeFront]]
-      meta_launch_url: "https://fuzefront.dev.local/"
+      # Post-login landing target. MUST be the production app host — this was
+      # a DEV url (https://fuzefront.dev.local/) in production, so Authentik
+      # could not send the user anywhere valid and fell back to its own library
+      # page (authentik_core:if-user → /if/user/#/library), leaking the IdP UI.
+      #
+      # This endpoint 302s to the OIDC authorize URL with a fresh state + PKCE
+      # challenge, so landing here completes a clean login round-trip rather
+      # than replaying a stale authorization request.
+      meta_launch_url: "https://app.fuzefront.com/api/auth/oidc/login"
       meta_description: "FuzeFront runtime microfrontend platform"
       # all + 0 policy bindings = vacuous truth → all authenticated users are
       # granted access. No policy binding entries needed.
       policy_engine_mode: all
       open_in_new_tab: false
+
+  # ── Brand default application ────────────────────────────────────────────────
+  # The second half of the "Authentik landed the user on its own library page"
+  # fix. Even with a correct meta_launch_url, a brand with no default_application
+  # falls back to `authentik_core:if-user` (/if/user/#/library) after login.
+  # Pointing the brand at the FuzeFront Application makes that redirect land on
+  # the FuzeFront dashboard instead.
+  #
+  # Defined HERE rather than in brand-fuseseam.yaml on purpose: the !Find needs
+  # the Application above to already be committed. Authentik's Celery runner
+  # applies blueprint files CONCURRENTLY, so a cross-file !Find can silently
+  # abort the entry (see the DESIGN note at the top of this file) — and
+  # brand-fuseseam.yaml sorts alphabetically first, making the race likely.
+  # Same file + after the Application entry = resolved in one ordered pass.
+  #
+  # Only `default_application` is set; identifiers match the existing brand row
+  # by domain, so all branding attrs in brand-fuseseam.yaml are left untouched.
+  - model: authentik_brands.brand
+    state: present
+    identifiers:
+      domain: "fuzefront.com"
+    attrs:
+      default_application: !Find [authentik_core.application, [slug, fuzefront]]

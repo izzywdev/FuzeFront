@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Verify email — FuzeFront auth-experience frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="auth-stage" data-frame="04-verify-landing" data-flow="verify-email"
+      style="display:block;place-items:unset">
+  <div style="max-width:960px;margin:0 auto;padding-top:var(--space-6)">
+    <p class="gallery__eyebrow">/verify/email — the verify-link landing state machine (GET token → POST /verify/email/confirm)</p>
+    <h1 class="gallery__title" style="margin-bottom:var(--space-8)">One route, three outcomes</h1>
+
+    <div class="states-grid">
+      <!-- verifying -->
+      <div class="auth-card" data-state="verifying">
+        <div class="auth-card__seam"></div>
+        <div class="auth-card__body centered">
+          <div class="verify-spinner" aria-hidden="true"></div>
+          <h2 class="auth-title" style="font-size:var(--text-xl)">Verifying your email…</h2>
+          <p class="auth-sub" role="status" aria-live="polite">One moment while we confirm your link.</p>
+        </div>
+      </div>
+
+      <!-- verified -->
+      <div class="auth-card" data-state="verified">
+        <div class="auth-card__seam"></div>
+        <div class="auth-card__body centered">
+          <div class="hero-icon hero-icon--success" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor"
+              stroke-width="2"/><path d="M10 16.5 14.5 21 23 11" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h2 class="auth-title" style="font-size:var(--text-xl)">Email verified</h2>
+          <p class="auth-sub">Your account is fully active. You're all set.</p>
+          <button type="button" class="btn-ds btn-ds--primary" data-action="continue">Continue to FuzeFront</button>
+        </div>
+      </div>
+
+      <!-- expired / invalid token -->
+      <div class="auth-card" data-state="expired">
+        <div class="auth-card__seam"></div>
+        <div class="auth-card__body centered">
+          <div class="hero-icon hero-icon--error" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor"
+              stroke-width="2"/><path d="M16 9v8M16 21h.01" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round"/></svg>
+          </div>
+          <h2 class="auth-title" style="font-size:var(--text-xl)">This link has expired</h2>
+          <p class="auth-sub">Verification links are good for 30 minutes. Request a fresh one and we'll
+            send it right over.</p>
+          <button type="button" class="btn-ds btn-ds--primary" data-action="resend">Send a new link</button>
+          <p class="auth-foot"><a href="02-signin.html">Back to sign in</a></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert--info" style="max-width:960px;margin:var(--space-8) auto 0">
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+        stroke-width="1.6"/><path d="M10 9v5M10 6.5h.01" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round"/></svg>
+      <span>The API returns <b>200 VerificationStatus</b> on success and an <b>EXPIRED</b> / <b>INVALID_CODE</b>
+        error code otherwise — the landing decides which of these three it shows from that single response.
+        An already-verified token also lands on <b>verified</b> (idempotent), never an error.</span>
+    </div>
+  </div>
+</main>
+
+<nav class="frame-nav" aria-label="Frame navigation">
+  <span class="caption"><b>04 · Verify landing</b> — verifying · verified · expired/invalid — all reachable from one link</span>
+  <span>
+    <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
+    <a class="btn-ds btn-ds--primary" href="05-password-reset.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Next: Reset →</a>
+  </span>
+</nav>
+</body>
+</html>

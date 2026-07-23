@@ -1,0 +1,46 @@
+# Prod overlay for the standalone Unleash chart/Argo Application.
+#
+# Unleash serves only once `unleash-secrets` holds UNLEASH_DB_PASSWORD,
+# INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN (already sealed and committed at
+# deploy/contabo/sealed/unleash-secrets.yaml, applied via the fuzefront-sealed
+# Argo Application — reused as-is, NOT re-sealed by this chart). The
+# unleash_svc role + the `unleash` database are provisioned by the pre-install
+# unleash-db-bootstrap Job, which reads the shared Postgres superuser password
+# from the umbrella chart's `fuzefront-secrets` Secret (same namespace).
+#
+# Admin UI is NOT public (port-forward, or a future CF-Access-gated host via
+# unleash.ingress — FuzeInfra-owned tunnel wiring, delegated).
+#
+# NEVER hand-deploy — a human flips `enabled` to true via GitOps in a deploy
+# window, after confirming unleash-secrets holds real (not placeholder) values.
+observability:
+  metrics:
+    enabled: true
+
+unleash:
+  # First-light: DISABLED. While false, neither the Unleash Deployment nor the
+  # pre-install unleash-db-bootstrap hook render, so Unleash adds ZERO sync
+  # surface to this Argo Application. GO-LIVE = flip this to true (after
+  # confirming the real unleash-secrets values are sealed).
+  enabled: true
+  image:
+    repository: unleashorg/unleash-server
+    tag: "5.12.0"
+  # Steer onto node-2 (keep flag-server load off the DB-heavy node-1).
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["fuzefront-node-2"]
+
+# Prod FuzeInfra Postgres DNS — the shared cluster's service is fuzeinfra-postgres
+# (the chart default postgres.fuzeinfra.svc… is the local/dev name and does not
+# resolve in prod, so the db-bootstrap Job failed with "Name or service not known").
+fuzeinfra:
+  postgres:
+    host: fuzeinfra-postgres.fuzeinfra.svc.cluster.local
+    port: 5432

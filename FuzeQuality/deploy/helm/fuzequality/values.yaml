@@ -1,0 +1,75 @@
+global:
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+backendImage:
+  repository: ghcr.io/izzywdev/fuzequality-backend
+  tag: latest
+frontendImage:
+  repository: ghcr.io/izzywdev/fuzequality-frontend
+  tag: latest
+
+backend:
+  replicas: 1
+  port: 4180
+  resources:
+    requests: { cpu: 75m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+frontend:
+  replicas: 1
+  port: 8080
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+workers:
+  scanner:
+    replicas: 1
+    command: ["npm", "run", "start:scanner"]
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: "2", memory: 2Gi }
+  intelligence:
+    replicas: 1
+    command: ["npm", "run", "start:intelligence"]
+    chromaRequired: true
+    resources:
+      requests: { cpu: 75m, memory: 128Mi }
+      limits: { cpu: "1", memory: 1Gi }
+  projector:
+    replicas: 1
+    command: ["npm", "run", "start:projector"]
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+config:
+  kafkaBrokers: fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092
+  litellmUrl: http://litellm.fuzeinfra.svc.cluster.local:4000/v1
+  chromaUrl: http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000
+  llmModel: quality-analysis
+  jiraJql: project = FUZE ORDER BY updated DESC
+  reconcileSchedule: "*/15 * * * *"
+
+secret:
+  existingSecret: fuzequality-secrets
+
+chroma:
+  existingSecret: fuzequality-chroma-credentials
+  secretKey: token
+  tenant: fuzequality
+  database: fuzequality
+  readyCollection: fuzequality_ready
+
+ingress:
+  enabled: false
+  className: nginx
+  host: quality.fuzefront.com
+  tlsSecret: fuzequality-tls
+  clusterIssuer: letsencrypt-prod
+
+kafkaTopics:
+  enabled: true
+  image: apache/kafka:3.9.1
+  partitions: 3
+  replicationFactor: 1
+  retentionMs: "604800000"

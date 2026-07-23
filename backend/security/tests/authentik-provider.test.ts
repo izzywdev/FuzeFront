@@ -96,10 +96,20 @@ const fakeOidc: any = {
   handleCallback: jest.fn().mockResolvedValue({ id: 'social1', email: 's@e.com', roles: ['user'] }),
 }
 
+const fakeGoogleClient: any = {
+  isInitialized: () => true,
+  initialize: jest.fn().mockResolvedValue(undefined),
+  generateAuthUrl: (state: string) => ({ url: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}&scope=openid`, codeVerifier: 'gcv' }),
+  handleCallback: jest.fn().mockResolvedValue({ email: 's@e.com', emailVerified: true, firstName: 'S', lastName: 'E', sub: 'google-sub-1' }),
+}
+
 function newProvider(db = makeFakeDb(), overrides: any = {}) {
   return new AuthentikIdentityProvider({
     db,
     oidc: fakeOidc,
+    googleClient: fakeGoogleClient,
+    syncUser: jest.fn().mockResolvedValue({ id: 'social1', email: 's@e.com', roles: ['user'] }),
+    provisionSocialUser: jest.fn().mockResolvedValue(undefined),
     notifications,
     passwordLoginFn: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', roles: ['user'] }),
     // Default signupFn simulates Authentik enrollment + OIDC sync: the synced
@@ -140,7 +150,12 @@ describe('passwordLogin', () => {
   })
 })
 
-describe('social login boundary', () => {
+describe('social login boundary (legacy source-redirect fallback)', () => {
+  // These assert the LEGACY Authentik /source/oauth/* path, retained behind the
+  // flag as a fallback while the server-brokered Google path is proven.
+  beforeAll(() => { process.env.SECURITY_GOOGLE_BROKERED = 'false' })
+  afterAll(() => { delete process.env.SECURITY_GOOGLE_BROKERED })
+
   it('launches the Google source (not authorize) under the same-host IdP proxy prefix when one is set', async () => {
     const p = newProvider()
     const { redirectUrl, state, codeVerifier } = await p.startSocialLogin('google', '/home')

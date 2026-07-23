@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { App } from '@fuzefront/app-registry-client'
-import { AppCard } from '@fuzefront/design-system'
+import { AppTile } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useRegisteredApps } from '../platform/appRegistry'
 import {
@@ -12,10 +12,11 @@ import {
 } from '../platform/appManifest'
 
 /**
- * The top-bar app launcher. Renders activated apps from the app-registry
- * (manifest icon + menuLabel) using the design-system <AppCard>, matching
- * frame 01-app-menu. Clicking an app navigates to its surface (portal mount or
- * standalone surface), per the manifest.
+ * The top-bar app launcher (the 9-dots menu). Renders activated apps from the
+ * app-registry (manifest icon + menuLabel) as a compact icon+name grid using
+ * the design-system <AppTile> — Google-launcher style, no per-app details.
+ * Clicking an app navigates to its surface (portal mount or standalone
+ * surface), per the manifest.
  */
 function AppSelector() {
   const { t } = useLanguage()
@@ -158,17 +159,16 @@ function AppSelector() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: 'var(--space-3)',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 'var(--space-2)',
                   maxHeight: '320px',
                   overflowY: 'auto',
                 }}
               >
                 {apps.map(app => (
-                  <AppCard
+                  <AppTile
                     key={app.slug}
                     name={app.manifest.menuLabel}
-                    description={app.manifest.description}
                     integrationType={integrationTypeOf(app)}
                     iconUrl={iconImageUrl(app.manifest.icon)}
                     iconGlyph={iconGlyph(app.manifest.icon) ?? undefined}

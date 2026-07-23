@@ -1,0 +1,170 @@
+name: 'E2E stack'
+description: >-
+  Stands up the full FuzeFront E2E stack from docker-compose.e2e.yml (Postgres,
+  Redis, Authentik, backend, security, frontend), provisions the FuzeFront OIDC
+  provider/application in Authentik, creates a real password user IN AUTHENTIK,
+  and seeds that user's platform projection (users row + personal org).
+
+  This is the SINGLE definition of "the e2e stack + how it is provisioned".
+  Both .github/workflows/e2e.yml and .github/workflows/oidc-plumbing-e2e.yml
+  consume it, so the two can no longer drift. The previous drift is exactly what
+  broke `E2E (sign-in)`: e2e.yml hand-rolled a stale stack with NO security
+  service and a bcrypt row seeded straight into Postgres, while the SPA had
+  already cut over to the Security API (POST /api/v1/security/session).
+
+  FuzeFront stores NO passwords: the credential this action creates lives in
+  Authentik and is exercised through the real Security API sign-in path.
+
+inputs:
+  e2e-user-email:
+    description: 'Email of the Authentik user to create for the tests'
+    required: false
+    default: 'e2e@test.local'
+  e2e-user-password:
+    description: 'Password of the Authentik user to create for the tests'
+    required: false
+    default: 'E2eP@ssw0rd123'
+  e2e-user-username:
+    description: 'Authentik username for the test user'
+    required: false
+    default: 'e2e-test'
+  authentik-oidc-client-secret:
+    description: 'Shared secret between the OIDC provider and the backend/security services'
+    required: false
+    default: 'e2e-oidc-client-secret'
+
+runs:
+  using: composite
+  steps:
+    # Authentik's OIDC metadata (authorization_endpoint) uses the docker service
+    # name. Mapping it to 127.0.0.1 makes the SAME url reachable from the browser
+    # (via the published port) and from inside docker (via docker DNS), so issuer
+    # validation passes on both sides without a tunnel.
+    - name: Map authentik-server to localhost in /etc/hosts
+      shell: bash
+      run: |
+        grep -q 'authentik-server' /etc/hosts \
+          || echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
+
+    - name: Start E2E stack
+      shell: bash
+      env:
+        AUTHENTIK_EXTERNAL_URL: http://authentik-server:9000
+        AUTHENTIK_ISSUER_URL: http://authentik-server:9000/application/o/fuzefront/
+        AUTHENTIK_COOKIE_DOMAIN: authentik-server
+        AUTHENTIK_OIDC_CLIENT_SECRET: ${{ inputs.authentik-oidc-client-secret }}
+      run: docker compose -f docker-compose.e2e.yml up -d --build
+
+    # Authentik on a fresh DB runs 100+ Django migrations before serving anything.
+    # Poll the REST API with the bootstrap token: a 200 means migrations are done
+    # AND the token is active.
+    - name: Wait for Authentik API to become healthy
+      shell: bash
+      run: |
+        echo "Waiting for Authentik API (migrations + bootstrap token, up to 20 minutes)..."
+        for i in $(seq 1 240); do
+          STATUS=$(curl -o /dev/null -w "%{http_code}" -s \
+            -H "Authorization: Bearer e2e-bootstrap-token" \
+            "http://authentik-server:9000/api/v3/core/users/" 2>/dev/null || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "Authentik API ready after $((i * 5))s"
+            break
+          fi
+          if [ "$i" -eq 240 ]; then
+            echo "::error::Authentik API did not become available in 20 minutes"
+            docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
+            docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -200
+            exit 1
+          fi
+          if [ $((i % 12)) -eq 0 ]; then echo "Still waiting... $((i * 5))s (last: $STATUS)"; fi
+          sleep 5
+        done
+
+    - name: Provision FuzeFront OIDC provider and application
+      shell: bash
+      env:
+        AUTHENTIK_OIDC_CLIENT_SECRET: ${{ inputs.authentik-oidc-client-secret }}
+      run: ./deploy/e2e/provision-authentik-oidc.sh
+
+    - name: Create the E2E test user in Authentik
+      shell: bash
+      env:
+        E2E_USER_EMAIL: ${{ inputs.e2e-user-email }}
+        E2E_USER_PASSWORD: ${{ inputs.e2e-user-password }}
+        E2E_USER_USERNAME: ${{ inputs.e2e-user-username }}
+      run: ./deploy/e2e/create-authentik-user.sh
+
+    # The backend starts at the same time as Authentik (docker compose up -d)
+    # and attempts OIDC discovery on boot. Authentik takes several minutes to
+    # run migrations, so the backend's OIDC client init fails with ECONNREFUSED
+    # and the backend falls back to local-auth-only. Restarting the backend now
+    # (after Authentik is fully provisioned) lets it re-discover OIDC correctly.
+    - name: Restart backend to re-initialize OIDC against live Authentik
+      shell: bash
+      run: |
+        docker compose -f docker-compose.e2e.yml restart backend
+        echo "Backend restarted — waiting for it to be healthy..."
+
+    - name: Wait for backend health
+      shell: bash
+      run: |
+        for i in $(seq 1 18); do
+          if curl -fsS http://localhost:3001/health >/dev/null 2>&1; then echo "Backend ready"; break; fi
+          if [ "$i" -eq 18 ]; then
+            echo "::error::Backend did not become ready"
+            docker compose -f docker-compose.e2e.yml logs backend | tail -60
+            exit 1
+          fi
+          sleep 5
+        done
+
+    # The SPA signs in through the security service; if it is not serving, the
+    # sign-in specs fail with an opaque waitForResponse timeout. Fail loudly here
+    # instead — this is the precise gap that made `E2E (sign-in)` red.
+    - name: Wait for security service health
+      shell: bash
+      run: |
+        for i in $(seq 1 18); do
+          if curl -fsS http://localhost:3002/health >/dev/null 2>&1; then echo "Security service ready"; break; fi
+          if [ "$i" -eq 18 ]; then
+            echo "::error::Security service did not become ready — sign-in cannot work"
+            docker compose -f docker-compose.e2e.yml logs security | tail -80
+            exit 1
+          fi
+          sleep 5
+        done
+
+    - name: Wait for frontend health
+      shell: bash
+      run: |
+        for i in $(seq 1 12); do
+          if curl -fsS http://localhost:4173 >/dev/null 2>&1; then echo "Frontend ready"; break; fi
+          if [ "$i" -eq 12 ]; then
+            echo "::error::Frontend did not become ready in 60s"
+            docker compose -f docker-compose.e2e.yml logs frontend | tail -60
+            exit 1
+          fi
+          sleep 5
+        done
+
+    # Verify the SPA's sign-in route is actually served through nginx BEFORE the
+    # specs run. A 404 here means /api/v1/security/ is not routed and every
+    # sign-in spec would time out waiting for a response that cannot arrive.
+    - name: Verify the Security API is routed same-origin through the frontend
+      shell: bash
+      run: |
+        STATUS=$(curl -o /tmp/methods.json -w "%{http_code}" -s http://localhost:4173/api/v1/security/methods)
+        echo "GET /api/v1/security/methods -> HTTP $STATUS"
+        cat /tmp/methods.json || true
+        if [ "$STATUS" != "200" ]; then
+          echo "::error::Security API not reachable same-origin (HTTP $STATUS) — sign-in specs cannot pass"
+          docker compose -f docker-compose.e2e.yml logs frontend | tail -40
+          docker compose -f docker-compose.e2e.yml logs security | tail -80
+          exit 1
+        fi
+
+    - name: Seed the platform projection (user + personal org) for the E2E user
+      shell: bash
+      env:
+        E2E_USER_EMAIL: ${{ inputs.e2e-user-email }}
+      run: ./deploy/e2e/seed-platform-projection.sh

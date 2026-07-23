@@ -1,7 +1,15 @@
-import { Issuer, Client, generators } from 'openid-client';
+import { Issuer, Client, generators, custom } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
+
+/**
+ * HTTP timeout for every server-side OIDC call (discovery, token grant, userinfo,
+ * jwks). openid-client defaults to 3500ms, which is BELOW Authentik's real p99 and
+ * broke Google sign-in outright — see the note in initialize(). Overridable via
+ * OIDC_HTTP_TIMEOUT_MS so it can be tuned per environment without a rebuild.
+ */
+const OIDC_HTTP_TIMEOUT_MS = Number(process.env.OIDC_HTTP_TIMEOUT_MS) || 15000;
 
 interface OIDCConfig {
   issuerUrl: string;
@@ -26,7 +34,19 @@ class OIDCService {
   async initialize(): Promise<void> {
     try {
       console.log('🔧 Initializing OIDC client...');
-      
+
+      // Raise openid-client's HTTP timeout. Its default is 3500ms, which is too
+      // short for Authentik's token endpoint and silently broke Google sign-in:
+      // the browser completed Google auth, the callback arrived with a valid code
+      // and state, and the code->token grant then died with
+      //   RPError: outgoing request timed out after 3500ms
+      // surfacing to the user as ?error=authentication_failed. Authentik averages
+      // ~1.3s per request with multi-second spikes, and the grant is several
+      // round-trips, so 3.5s is under the real p99. Applied via
+      // setHttpOptionsDefaults so it covers discovery, the token grant, userinfo
+      // and jwks — not just the one call that happened to fail first.
+      custom.setHttpOptionsDefaults({ timeout: OIDC_HTTP_TIMEOUT_MS });
+
       // Discover the issuer
       const issuer = await Issuer.discover(this.config.issuerUrl);
       console.log('✅ Discovered issuer:', issuer.metadata.issuer);
@@ -125,21 +145,34 @@ class OIDCService {
     }
 
     try {
-      // Exchange code for tokens (PKCE: code_verifier comes from the cookie)
+      // Exchange code for tokens (PKCE: code_verifier comes from the cookie).
+      // Timed individually: openid-client honours the global
+      // custom.setHttpOptionsDefaults({ timeout }) set in initialize(), so a
+      // stuck token/userinfo call fails at OIDC_HTTP_TIMEOUT_MS rather than
+      // hanging — the elapsed logs pinpoint which of the two stalled.
+      const tokenStart = Date.now();
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
         { code_verifier: codeVerifier, state }
       );
-
-      console.log('✅ Received tokens from Authentik');
+      console.log(
+        `✅ oidc.token exchange completed in ${Math.round(Date.now() - tokenStart)}ms`
+      );
 
       // Get user info
+      const userinfoStart = Date.now();
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log('✅ Retrieved user info:', userinfo);
+      console.log(
+        `✅ oidc.userinfo retrieved in ${Math.round(Date.now() - userinfoStart)}ms for ${userinfo.email}`
+      );
 
       // Sync user to local database
+      const syncStart = Date.now();
       const user = await this.syncUserToDatabase(userinfo);
+      console.log(
+        `✅ user.sync completed in ${Math.round(Date.now() - syncStart)}ms`
+      );
 
       return user;
     } catch (error) {
@@ -149,6 +182,29 @@ class OIDCService {
   }
 
   private async syncUserToDatabase(userinfo: any): Promise<User> {
+    return syncUserToDatabase(userinfo);
+  }
+
+  isConfigured(): boolean {
+    return !!(this.config.clientId && this.config.clientSecret);
+  }
+
+  isInitialized(): boolean {
+    return this.client !== null;
+  }
+}
+
+/**
+ * Project an OIDC/social `userinfo` (or validated id_token claims) into the local
+ * `users` table, emitting `identity.user.created` for a fresh account.
+ *
+ * Extracted from the OIDC callback so the SERVER-BROKERED Google path
+ * (`googleOidcService` → `AuthentikIdentityProvider.brokerCallback`) creates the
+ * SAME synced projection and emits the SAME event as the classic OIDC callback —
+ * one code path, no divergence. `email`, `given_name`/`family_name`/`name`, and
+ * `email_verified` follow the standard OIDC claim shapes Google also emits.
+ */
+export async function syncUserToDatabase(userinfo: any): Promise<User> {
     const email = userinfo.email;
     const firstName = userinfo.given_name || userinfo.name?.split(' ')[0] || 'User';
     const lastName = userinfo.family_name || userinfo.name?.split(' ').slice(1).join(' ') || '';
@@ -266,15 +322,6 @@ class OIDCService {
       console.error('❌ Error syncing user to database:', error);
       throw error;
     }
-  }
-
-  isConfigured(): boolean {
-    return !!(this.config.clientId && this.config.clientSecret);
-  }
-
-  isInitialized(): boolean {
-    return this.client !== null;
-  }
 }
 
-export const oidcService = new OIDCService(); 
+export const oidcService = new OIDCService();
