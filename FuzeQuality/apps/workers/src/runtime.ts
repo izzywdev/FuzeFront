@@ -22,7 +22,11 @@ export async function runConsumer(
   const brokers = process.env.KAFKA_BROKERS?.split(',').filter(Boolean)
   if (!brokers?.length) throw new Error('KAFKA_BROKERS is required for worker processes')
   const kafka = new Kafka({ clientId: groupId, brokers })
-  const consumer = kafka.consumer({ groupId })
+  const consumer = kafka.consumer({
+    groupId,
+    sessionTimeout: 240_000,
+    heartbeatInterval: 3_000,
+  })
   const producer = kafka.producer()
   await consumer.connect()
   await producer.connect()
