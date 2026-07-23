@@ -65,7 +65,13 @@ function LoginPage() {
   const loading = pending !== null
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [authMethods, setAuthMethods] = useState<AuthMethods | null>(null)
+  // Start from the password-only fallback so the sign-in form is ALWAYS
+  // rendered immediately — never gated on the auth-methods fetch. `getAuthMethods`
+  // is progressive enhancement: when it resolves it upgrades this to advertise
+  // Google/MFA. Previously this was `null` and the whole form was hidden until the
+  // fetch resolved; when that request HUNG (its 30s timeout, not a rejection, so
+  // the catch never ran) the login page rendered blank and was unusable.
+  const [authMethods, setAuthMethods] = useState<AuthMethods>(FALLBACK_METHODS)
   const { setUser } = useCurrentUser()
 
   // Route an authenticated Security-API session into the app: hydrate the
@@ -300,7 +306,7 @@ function LoginPage() {
       {/* Credentials form — the DEFAULT sign-in/sign-up UI, brokered entirely by
           FuzeFront's own Security API (same-origin /api/v1/security). No identity
           provider is named or contacted by the browser. */}
-      {authMethods && passwordEnabled && (
+      {passwordEnabled && (
         <form onSubmit={handleCredentialsSubmit}>
           {mode === 'signup' && (
             <div style={{ display: 'flex', gap: 'var(--space-3, 12px)' }}>
