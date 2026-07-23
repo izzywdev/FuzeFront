@@ -59,6 +59,9 @@ GitHub App permissions are read-only `Metadata`, `Contents`, and `Pull requests`
 Subscribe it to push, repository, installation, and default-branch events. Never
 store a PAT or installation token in a repository URL.
 
+The complete registration, webhook, rotation, and verification contract is in
+[`docs/github-app.md`](docs/github-app.md).
+
 ## Data and safety rules
 
 - PostgreSQL is authoritative; Kafka is asynchronous transport and ChromaDB is a

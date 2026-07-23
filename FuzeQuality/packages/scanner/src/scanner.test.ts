@@ -16,6 +16,7 @@ const repository: Repository = {
   includeGlobs: [],
   excludeGlobs: [],
   jiraProjects: [],
+  jiraBindings: [],
   lastScanStatus: 'never',
 }
 

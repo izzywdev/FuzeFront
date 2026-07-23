@@ -16,6 +16,7 @@ const result = await scanRepository(
     includeGlobs: [],
     excludeGlobs: [],
     jiraProjects: [],
+    jiraBindings: [],
     lastScanStatus: 'running',
   },
   root

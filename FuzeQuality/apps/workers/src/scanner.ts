@@ -17,9 +17,9 @@ await runConsumer(
       root = await checkoutRepository({
         owner: repository.owner,
         name: repository.name,
-        branch: repository.defaultBranch,
-        commitSha: command.commitSha,
+        commitSha: command.commitSha ?? '',
         installationId: repository.installationId,
+        onMetrics: metrics => console.info(JSON.stringify({ event: 'repository_checkout', ...metrics })),
       })
       temporary = true
     }

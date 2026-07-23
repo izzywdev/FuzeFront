@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@fuzequality/contracts': `${root}packages/contracts/src/index.ts`,
       '@fuzequality/core': `${root}packages/core/src/index.ts`,
+      '@fuzequality/github-app': `${root}packages/github-app/src/index.ts`,
       '@fuzequality/scanner': `${root}packages/scanner/src/index.ts`,
     },
   },
