@@ -343,6 +343,18 @@ authentik:
     # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
     backendHostAliasIP: ""
     caConfigMap: ""
+  # Enable the authentik-server ingress NetworkPolicy in prod so the fuzeagent A2A
+  # server can fetch JWKS/discovery in-cluster (avoids the Cloudflare-tunnel hairpin
+  # that caused 17-34s timeouts). The policy is additive: it also lists Traefik
+  # (kube-system) and intra-fuzefront traffic, so login and in-namespace OIDC keep
+  # working once k3s flips authentik-server to policy-selected. Origin: FuzeInfra#372;
+  # unblocks FuzeAgent#93's in-cluster JWKS fetch.
+  #
+  # DEPLOY-WINDOW VERIFY after this syncs:
+  #   from a fuzeagent pod: curl -s http://authentik-server.fuzefront.svc.cluster.local:9000/-/health/live/
+  #   and confirm the Authentik login UI (Traefik→authentik) still works.
+  networkPolicy:
+    enabled: true
 
 # Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
 # overlay). Avoids relying on broker auto-create for the prefixed topics.

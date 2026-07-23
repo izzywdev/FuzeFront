@@ -526,6 +526,29 @@ authentik:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Ingress NetworkPolicy for authentik-server (port 9000).
+  #
+  # CORRECTNESS: this repo ships NO default-deny NetworkPolicy, so authentik-server
+  # currently accepts ALL ingress. k3s enforces NetworkPolicy via its built-in
+  # controller, so the MOMENT any policy selects authentik-server, that pod flips to
+  # "deny everything except what this policy allows". A lone fuzeagent allow-rule
+  # would therefore silently break Traefik→Authentik (login UI) and intra-namespace
+  # traffic. This policy is authored WITH all existing allowances so enabling it is
+  # additive, not restrictive:
+  #   - Traefik (kube-system): the app.fuzefront.com/api/auth/idp/* reverse-proxy path
+  #   - intra-fuzefront pods:  e.g. security-service OIDC discovery to authentik-server:9000
+  #   - fuzeagent namespace:   in-cluster JWKS/discovery fetch (the reason this exists)
+  #
+  # Default OFF so a chart bump alone can never flip the policy on unverified. Enable
+  # in a deploy window and verify BOTH (a) a fuzeagent pod can curl authentik-server
+  # and (b) the Authentik login UI via the tunnel still works. See values-prod.yaml.
+  networkPolicy:
+    enabled: false
+    port: 9000
+    # Namespace where Traefik (k3s ingress) runs — source of the login-UI proxy path.
+    ingressControllerNamespace: kube-system
+    # Namespace whose pods may reach authentik-server in-cluster (A2A JWKS fetch).
+    fuzeagentNamespace: fuzeagent
 
 ingress:
   enabled: true

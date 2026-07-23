@@ -1,0 +1,62 @@
+{{- /*
+  Ingress NetworkPolicy for authentik-server (port 9000).
+
+  WHY THIS POLICY LISTS MORE THAN THE fuzeagent RULE
+  --------------------------------------------------
+  FuzeFront ships no default-deny NetworkPolicy, so authentik-server currently
+  accepts ALL ingress. k3s enforces NetworkPolicy via its built-in controller,
+  so as soon as ANY policy's podSelector matches authentik-server, that pod flips
+  to "deny all ingress except what this policy's rules allow". A standalone
+  fuzeagent→9000 allow-rule would therefore silently break:
+    - Traefik→Authentik  (the login UI, reverse-proxied via app.fuzefront.com/api/auth/idp/*)
+    - intra-fuzefront     (e.g. security-service OIDC discovery to authentik-server:9000)
+  So the fuzeagent rule is authored ALONGSIDE those existing allowances — enabling
+  this policy is additive to who can already reach Authentik, not a lockdown.
+
+  Origin: FuzeInfra#372 hand-off (A2A rollout). The policy MUST live in the
+  fuzefront namespace because a NetworkPolicy podSelector only matches pods in its
+  own namespace, and the fuzeinfra AppProject cannot target fuzefront. Unblocks
+  FuzeAgent#93's in-cluster JWKS fetch:
+    http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/<slug>/.well-known/openid-configuration
+*/}}
+{{- if and .Values.authentik.enabled .Values.authentik.networkPolicy.enabled }}
+{{- $np := .Values.authentik.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: authentik-server-ingress
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik-server
+spec:
+  podSelector:
+    matchLabels:
+      app: authentik-server
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik (k3s ingress controller) → the login UI reverse-proxy path.
+    # kube-system carries the kubernetes.io/metadata.name label (k8s >= 1.21 / k3s).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # Intra-fuzefront: any pod in this namespace (backend/security OIDC discovery, etc.).
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # NEW — the reason this policy exists: fuzeagent A2A pods fetch JWKS/discovery
+    # in-cluster (avoids the Cloudflare-tunnel hairpin timeout).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.fuzeagentNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+{{- end }}
