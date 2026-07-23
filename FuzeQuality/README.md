@@ -4,6 +4,15 @@ FuzeQuality builds an evidence graph across repositories, OpenAPI contracts,
 frontend surfaces, automated tests, Jira requirements, and reviewed AI flow
 suggestions.
 
+## Product and delivery documentation
+
+- [Long-term product plan](PLANNING.md)
+- [Approved catalog-first V1 implementation plan](docs/V1_IMPLEMENTATION_PLAN.md)
+- [Current delivery status and cloud-session handoff](docs/DELIVERY_STATUS.md)
+- [Interactive architecture diagram](architecture.html)
+- [GitHub App operations](docs/github-app.md)
+- [Repository onboarding contract](docs/FQ-18-repository-onboarding.md)
+
 ## Local development
 
 ```powershell
