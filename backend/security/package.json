@@ -28,7 +28,8 @@
     "permitio": "^2.7.4",
     "pg": "^8.11.5",
     "uuid": "^9.0.1",
-    "zod": "3.22.4"
+    "zod": "3.22.4",
+    "pino": "^9.5.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",

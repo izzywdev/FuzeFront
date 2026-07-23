@@ -17,6 +17,7 @@
  * In-memory + single-use + short TTL; a code is redeemed at most once.
  */
 import type { BrokeredUser } from '../providers/IdentityProvider'
+import { logger } from '../lib/logger'
 
 export interface BrokerCodeEntry {
   token: string
@@ -30,20 +31,40 @@ const store = new Map<string, BrokerCodeEntry>()
 
 export function putBrokerCode(code: string, entry: BrokerCodeEntry): void {
   store.set(code, entry)
+  // Never log the code/token themselves (pino redaction also strips these
+  // keys if it ever changes shape) — only correlation metadata.
+  logger.debug(
+    { sessionId: entry.sessionId, expiresAt: entry.expiresAt },
+    'brokerCodes: code issued'
+  )
 }
 
 /** Redeem a code exactly once; returns null when unknown/expired. */
 export function takeBrokerCode(code: string, now = Date.now()): BrokerCodeEntry | null {
   const entry = store.get(code)
-  if (!entry) return null
+  if (!entry) {
+    logger.debug('brokerCodes: redeem miss — unknown code')
+    return null
+  }
   store.delete(code) // single-use
-  if (entry.expiresAt < now) return null
+  if (entry.expiresAt < now) {
+    logger.info({ sessionId: entry.sessionId }, 'brokerCodes: redeem miss — expired code')
+    return null
+  }
+  logger.debug({ sessionId: entry.sessionId }, 'brokerCodes: redeemed')
   return entry
 }
 
 /** Sweep never-redeemed expired codes. */
 export function sweepBrokerCodes(now = Date.now()): void {
+  let swept = 0
   for (const [code, entry] of store) {
-    if (entry.expiresAt < now) store.delete(code)
+    if (entry.expiresAt < now) {
+      store.delete(code)
+      swept++
+    }
+  }
+  if (swept > 0) {
+    logger.debug({ swept }, 'brokerCodes: swept expired codes')
   }
 }

@@ -13,6 +13,7 @@ import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
 import { getAuthorizationProvider } from '../providers/authzFactory'
 import type { AuthzQuery } from '../providers/AuthorizationProvider'
+import { withReqId } from '../lib/logger'
 
 const router = express.Router()
 
@@ -25,12 +26,21 @@ function bearer(req: Request): string | null {
 
 /** Resolve the caller from the bearer token, or null (→ 401). */
 async function caller(req: Request): Promise<{ id: string } | null> {
+  const log = withReqId((req as any).requestId)
   const token = bearer(req)
-  if (!token) return null
+  if (!token) {
+    log.debug('authz: caller resolution failed — no bearer token')
+    return null
+  }
   try {
     const { user } = await getIdentityProvider().getUserInfo(token)
-    return user?.id ? { id: user.id } : null
-  } catch {
+    if (!user?.id) {
+      log.warn('authz: caller resolution failed — token valid but no user id')
+      return null
+    }
+    return { id: user.id }
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'authz: caller resolution failed — token validation error')
     return null
   }
 }
@@ -56,12 +66,27 @@ function toQuery(body: any, callerId: string): AuthzQuery | null {
 // ── Decisions ─────────────────────────────────────────────────────────────
 
 router.post('/authz/check', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   const q = toQuery(req.body, c.id)
   if (!q) return res.status(400).json({ error: 'Malformed query', code: 'MALFORMED' })
-  const allow = await getAuthorizationProvider().check(q)
-  res.status(200).json({ allow })
+  const start = Date.now()
+  try {
+    const allow = await getAuthorizationProvider().check(q)
+    log.info(
+      { subject: q.subject, tenant: q.tenant, resourceType: q.resource.type, action: q.action, allow, elapsedMs: Date.now() - start },
+      'authz: check decided'
+    )
+    res.status(200).json({ allow })
+  } catch (err) {
+    // Fail-closed: provider errors never grant. Logged with context for triage.
+    log.error(
+      { subject: q.subject, tenant: q.tenant, action: q.action, err: (err as Error).message },
+      'authz: check errored — denying'
+    )
+    throw err
+  }
 })
 
 /**

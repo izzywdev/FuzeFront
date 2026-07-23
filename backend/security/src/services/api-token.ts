@@ -19,6 +19,7 @@
 import crypto from 'crypto'
 import { db as defaultDb } from '../config/database'
 import { permitSchema } from '../permit/schema'
+import { logger } from '../lib/logger'
 import type { Knex } from 'knex'
 
 // ---------------------------------------------------------------------------
@@ -194,6 +195,18 @@ export async function createToken(
     .insert(row)
     .returning(['id', 'token_prefix', 'name', 'scopes', 'expires_at', 'created_at'])
 
+  // token_prefix is explicitly SAFE to log (see file header); raw/hash never are.
+  logger.info(
+    {
+      tokenId: inserted.id,
+      tokenPrefix: inserted.token_prefix,
+      ownerType: params.ownerType,
+      ownerId: params.ownerId,
+      scopes: params.scopes,
+    },
+    'api-token: token created'
+  )
+
   return {
     id: inserted.id,
     token: raw, // raw returned ONCE; never stored
@@ -218,7 +231,10 @@ export async function verifyToken(
   dbInstance: Knex = defaultDb as unknown as Knex
 ): Promise<VerifyResult> {
   const parts = extractParts(rawToken)
-  if (!parts) return { status: 'invalid' }
+  if (!parts) {
+    logger.debug('api-token: verify invalid — unparseable token shape')
+    return { status: 'invalid' }
+  }
 
   const { prefix, body } = parts
 
@@ -226,11 +242,20 @@ export async function verifyToken(
     .where({ token_prefix: prefix })
     .first()
 
-  if (!row) return { status: 'invalid' }
+  if (!row) {
+    logger.debug({ tokenPrefix: prefix }, 'api-token: verify invalid — unknown prefix')
+    return { status: 'invalid' }
+  }
 
-  if (row.revoked_at != null) return { status: 'revoked' }
+  if (row.revoked_at != null) {
+    logger.info({ tokenPrefix: prefix, tokenId: row.id }, 'api-token: verify rejected — revoked')
+    return { status: 'revoked' }
+  }
 
-  if (row.expires_at != null && row.expires_at <= new Date()) return { status: 'expired' }
+  if (row.expires_at != null && row.expires_at <= new Date()) {
+    logger.info({ tokenPrefix: prefix, tokenId: row.id }, 'api-token: verify rejected — expired')
+    return { status: 'expired' }
+  }
 
   // Constant-time hash comparison.
   // Both hashes are always 64-hex chars (256-bit SHA-256), so lengths are equal.
@@ -239,6 +264,7 @@ export async function verifyToken(
   const computedHash = hashToken(`${prefix}.${body}`)
 
   if (storedHash.length !== computedHash.length) {
+    logger.error({ tokenPrefix: prefix }, 'api-token: verify invalid — hash length mismatch')
     return { status: 'invalid' }
   }
 
@@ -247,7 +273,12 @@ export async function verifyToken(
     Buffer.from(computedHash, 'hex')
   )
 
-  if (!match) return { status: 'invalid' }
+  if (!match) {
+    logger.info({ tokenPrefix: prefix }, 'api-token: verify invalid — hash mismatch')
+    return { status: 'invalid' }
+  }
+
+  logger.debug({ tokenPrefix: prefix, tokenId: row.id }, 'api-token: verify valid')
 
   // Return the row without token_hash exposed; parse scopes from jsonb string
   const { token_hash: _omit, ...safeRow } = row as any
@@ -269,6 +300,7 @@ export async function revokeToken(
     .whereNull('revoked_at')
     .update({ revoked_at: new Date() })
 
+  logger.info({ tokenId, revoked: count > 0 }, 'api-token: revoke')
   return count > 0
 }
 
