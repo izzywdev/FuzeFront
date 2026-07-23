@@ -207,6 +207,40 @@ paths:
       'invalid-content-type', 'request-content-type', 'response-content-type',
       'idempotency-replay', 'crud-sequence', 'response-200', 'response-404',
     ]))
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'required-test-gap',
+        remediation: expect.stringContaining('assertion-bearing test'),
+      }),
+    ]))
+  })
+
+  it('turns OpenAPI diagnostics and undocumented errors into owned remediation findings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-findings-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Findings, version: 1.0.0 }
+paths:
+  /health:
+    get:
+      operationId: health
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: './missing.yaml' } } } }
+`)
+    const result = await scanRepository({
+      ...repository,
+      ownership: { team: 'Platform QA' },
+    }, root)
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'unresolved-openapi-ref',
+        owner: 'Platform QA',
+        remediation: expect.any(String),
+      }),
+      expect.objectContaining({
+        type: 'undocumented-error-response',
+        owner: 'Platform QA',
+      }),
+    ]))
   })
 
 })

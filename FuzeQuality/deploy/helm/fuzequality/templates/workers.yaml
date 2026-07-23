@@ -49,14 +49,14 @@ spec:
             - { name: runtime-tmp, mountPath: /tmp }
           {{- if $worker.chromaRequired }}
           startupProbe:
-            exec: { command: ["npm", "run", "check:chroma"] }
+            exec: { command: ["node", "node_modules/tsx/dist/cli.mjs", "scripts/check-chroma.ts"] }
             periodSeconds: 5
-            timeoutSeconds: 5
+            timeoutSeconds: 15
             failureThreshold: 24
           readinessProbe:
-            exec: { command: ["npm", "run", "check:chroma"] }
-            periodSeconds: 15
-            timeoutSeconds: 5
+            exec: { command: ["node", "node_modules/tsx/dist/cli.mjs", "scripts/check-chroma.ts"] }
+            periodSeconds: 30
+            timeoutSeconds: 15
             failureThreshold: 3
           {{- end }}
           resources:
