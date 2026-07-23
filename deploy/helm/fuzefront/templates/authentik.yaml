@@ -34,6 +34,16 @@
   value: "true"
 - name: AUTHENTIK_ERROR_REPORTING__ENABLED
   value: "false"
+# Avatars: the default is "gravatar,initials", which performs live gravatar.com
+# DNS + HTTPS lookups inside request handling. Cluster DNS intermittently
+# stalls 5-10s (single CoreDNS replica reached over the node overlay — measured
+# in-pod: gravatar.com resolution 79ms -> 5086ms -> 10101ms), and those stalls
+# landed inside login flows: the security service's 10s flow-hop timeout then
+# turned them into 401s on VALID credentials. "initials" is computed locally —
+# zero egress and zero DNS in the auth path. Do not re-enable gravatar without
+# NodeLocal DNSCache (or equivalent) in place.
+- name: AUTHENTIK_AVATARS
+  value: "initials"
 # Disable the embedded (proxy) outpost. FuzeFront uses OAuth2/OIDC providers
 # only — verified in prod: 3 oauth2 providers, 0 proxy providers, and the
 # "authentik Embedded Outpost" had 0 providers attached, i.e. it served nothing.
@@ -187,6 +197,19 @@ spec:
       # vmi3383846 taint is PreferNoSchedule (soft) so no toleration is needed.
       nodeSelector:
         kubernetes.io/hostname: vmi3383846
+      # Bound DNS stalls. The cluster runs a single CoreDNS replica on another
+      # node; intermittent loss on that path produced 5s/10s resolver-retry
+      # stalls (glibc timeout defaults) measured from this pod, which blocked
+      # login flows. timeout:1/attempts:2 caps any DNS hiccup at ~2s, and
+      # ndots:1 stops the ndots:5 search-domain amplification for dotted names.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: timeout
+            value: "1"
+          - name: attempts
+            value: "2"
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
