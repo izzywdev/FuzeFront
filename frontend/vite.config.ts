@@ -149,6 +149,16 @@ export default defineConfig({
       // NetworkFirst so the shell always fetches fresh federation assets.
       globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
+        // registerType 'autoUpdate' only re-checks for a new SW; it does NOT
+        // by itself make a waiting worker activate. Without these two flags a
+        // freshly-installed SW sits in `waiting` (observed live: old SW
+        // `active`, new SW `waiting`, never activating) after rapid
+        // consecutive deploys, and every client keeps being served the stale
+        // cached shell/bundles until every tab is closed. skipWaiting lets
+        // the new worker activate immediately; clientsClaim lets it take
+        // control of already-open clients without a reload race.
+        skipWaiting: true,
+        clientsClaim: true,
         // Exclude server-owned paths from the SPA navigation fallback so full-page
         // navigations to them are NOT intercepted by the SW and silently served as
         // index.html. Two families must be excluded:

@@ -174,11 +174,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthWrapper>
-      {/* Bind the app-registry client (same-origin /api/v1/app-registry) once,
-          above all routes that read or mutate the registry. */}
-      <AppRegistryProvider>
-        <AppContent />
-      </AppRegistryProvider>
+      <AppContent />
     </AuthWrapper>
   )
 }
@@ -199,8 +195,18 @@ function AppContent() {
     })
   }
 
+  // Bind the app-registry client (same-origin /api/v1/app-registry) once,
+  // above all authenticated routes that read or mutate the registry. It is
+  // gated on `isAuthenticated` so the /login surface never issues the
+  // (auth-required) app-registry request pre-auth — that request could only
+  // ever fail, and running it here blocked first paint of the login page for
+  // up to its 10s axios timeout while React re-rendered on every retry tick.
   if (!isAuthenticated) {
-    return <LoginPage />
+    return (
+      <AppRegistryProvider enabled={false}>
+        <LoginPage />
+      </AppRegistryProvider>
+    )
   }
 
   // Standalone apps (mode = "standalone") render WITHOUT any portal chrome —
@@ -209,36 +215,40 @@ function AppContent() {
   if (currentPath.startsWith('/standalone/')) {
     const slug = decodeURIComponent(currentPath.replace('/standalone/', '').split('/')[0])
     return (
-      <WorkspaceProvisioningGate>
-        <StandaloneAppSurface slug={slug} />
-      </WorkspaceProvisioningGate>
+      <AppRegistryProvider>
+        <WorkspaceProvisioningGate>
+          <StandaloneAppSurface slug={slug} />
+        </WorkspaceProvisioningGate>
+      </AppRegistryProvider>
     )
   }
 
   return (
-    <WorkspaceProvisioningGate>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/applications" element={<ApplicationsPage />} />
-          <Route path="/applications/new" element={<AddApplicationPage />} />
-          <Route path="/organizations" element={<OrganizationPage />} />
-          <Route path="/organizations/new" element={<CreateOrganizationPage />} />
-          <Route path="/profile" element={<UserProfileManagement />} />
-          <Route path="/account/security" element={<AccountSecurityPage />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/billing/invoices" element={<BillingPage />} />
-          <Route path="/billing/payments" element={<BillingPage />} />
-          <Route path="/app/:appId" element={<AppRoute />} />
-          <Route path="/admin" element={<AdminRoute />} />
-          <Route path="/help" element={<HelpPage />} />
-          <Route path="/status" element={<StatusPage />} />
-          <Route path="/test" element={<TestPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Layout>
-    </WorkspaceProvisioningGate>
+    <AppRegistryProvider>
+      <WorkspaceProvisioningGate>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/applications" element={<ApplicationsPage />} />
+            <Route path="/applications/new" element={<AddApplicationPage />} />
+            <Route path="/organizations" element={<OrganizationPage />} />
+            <Route path="/organizations/new" element={<CreateOrganizationPage />} />
+            <Route path="/profile" element={<UserProfileManagement />} />
+            <Route path="/account/security" element={<AccountSecurityPage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/billing/invoices" element={<BillingPage />} />
+            <Route path="/billing/payments" element={<BillingPage />} />
+            <Route path="/app/:appId" element={<AppRoute />} />
+            <Route path="/admin" element={<AdminRoute />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/status" element={<StatusPage />} />
+            <Route path="/test" element={<TestPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Layout>
+      </WorkspaceProvisioningGate>
+    </AppRegistryProvider>
   )
 }
 
