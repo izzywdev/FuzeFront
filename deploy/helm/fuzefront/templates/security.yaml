@@ -21,6 +21,18 @@ spec:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.securityService.port "root" .) | nindent 8 }}
     spec:
       {{- include "fuzefront.scheduling" (dict "svc" .Values.securityService "root" .) | nindent 6 }}
+      # Bound DNS stalls (same rationale as authentik-server): single CoreDNS
+      # replica over the overlay intermittently stalls lookups in 5s/10s retry
+      # multiples; this service resolves authentik-server on every auth flow.
+      # timeout:1/attempts:2 caps a DNS hiccup at ~2s instead of 5-10s.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+          - name: timeout
+            value: "1"
+          - name: attempts
+            value: "2"
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
