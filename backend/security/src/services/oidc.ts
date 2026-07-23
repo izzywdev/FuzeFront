@@ -145,21 +145,34 @@ class OIDCService {
     }
 
     try {
-      // Exchange code for tokens (PKCE: code_verifier comes from the cookie)
+      // Exchange code for tokens (PKCE: code_verifier comes from the cookie).
+      // Timed individually: openid-client honours the global
+      // custom.setHttpOptionsDefaults({ timeout }) set in initialize(), so a
+      // stuck token/userinfo call fails at OIDC_HTTP_TIMEOUT_MS rather than
+      // hanging — the elapsed logs pinpoint which of the two stalled.
+      const tokenStart = Date.now();
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
         { code, state },
         { code_verifier: codeVerifier, state }
       );
-
-      console.log('✅ Received tokens from Authentik');
+      console.log(
+        `✅ oidc.token exchange completed in ${Math.round(Date.now() - tokenStart)}ms`
+      );
 
       // Get user info
+      const userinfoStart = Date.now();
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log('✅ Retrieved user info:', userinfo);
+      console.log(
+        `✅ oidc.userinfo retrieved in ${Math.round(Date.now() - userinfoStart)}ms for ${userinfo.email}`
+      );
 
       // Sync user to local database
+      const syncStart = Date.now();
       const user = await this.syncUserToDatabase(userinfo);
+      console.log(
+        `✅ user.sync completed in ${Math.round(Date.now() - syncStart)}ms`
+      );
 
       return user;
     } catch (error) {
