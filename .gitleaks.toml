@@ -20,6 +20,9 @@ paths = [
   # Helm template for the Cloudflare CF cache-purge SealedSecret — kubesealed blob,
   # designed to be committed.
   '''deploy/helm/fuzefront/templates/sealed-secret''',
+  # FuzeQuality Helm SealedSecret template — kubesealed blobs (GitHub App credentials),
+  # designed to be committed.
+  '''FuzeQuality/deploy/helm/fuzequality/templates/''',
   # Historical prod values file that had a Cloudflare CF SealedSecret inlined at
   # commit 7cfe0429; the kubesealed blob is asymmetrically encrypted and safe to commit.
   '''deploy/helm/fuzefront/values-prod\.yaml''',
