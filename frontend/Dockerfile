@@ -29,7 +29,10 @@ COPY . .
 # and is exactly what broke the prod frontend image. Drop the host (Windows)
 # lockfile so linux-native optional deps (e.g. @tailwindcss/oxide) re-resolve
 # (npm optional-deps bug npm/cli#4828).
-RUN rm -f package-lock.json && npm install
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-factor 2 && \
+    npm config set fetch-retry-mintimeout 5000 && \
+    rm -f package-lock.json && npm install
 
 # Frontend is NOT a workspace member — install its own deps (incl. the chat-*
 # file: packages) and build. vite resolves the aliased package SOURCES from
