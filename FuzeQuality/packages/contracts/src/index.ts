@@ -66,6 +66,7 @@ export type ApiOperation = {
   summary: string
   tags: string[]
   security: boolean
+  securitySchemes?: string[]
   parameters: Array<{
     name: string
     location: string
@@ -73,6 +74,10 @@ export type ApiOperation = {
     schema?: Record<string, unknown>
   }>
   responses: string[]
+  requestContentTypes?: string[]
+  responseContentTypes?: string[]
+  idempotencyHeader?: string
+  supportsCrudSequence?: boolean
 }
 
 export type FrontendSurface = {
@@ -97,6 +102,9 @@ export type TestCase = {
   sourcePath: string
   assertionCount: number
   targets: string[]
+  explicitTargets?: string[]
+  operationIds?: string[]
+  routes?: Array<{ method?: string; path: string }>
 }
 
 export type TestExpectation = {

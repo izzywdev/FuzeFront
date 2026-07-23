@@ -124,4 +124,89 @@ paths:
       }),
     ])
   })
+
+  it.each([
+    ['Swagger 2.0', `swagger: '2.0'\ninfo: { title: Legacy, version: 1.0.0 }\npaths: { /health: { get: { responses: { '200': { description: ok } } } } }`],
+    ['OpenAPI 3.0', `openapi: 3.0.3\ninfo: { title: Current, version: 1.0.0 }\npaths: { /health: { get: { responses: { '200': { description: ok } } } } }`],
+    ['OpenAPI 3.1', `openapi: 3.1.1\ninfo: { title: Modern, version: 1.0.0 }\npaths: { /health: { get: { responses: { '200': { description: ok } } } } }`],
+  ])('discovers and validates %s documents', async (_label, document) => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-versions-'))
+    await writeFile(join(root, 'swagger.yaml'), document)
+    const result = await scanRepository(repository, root)
+    expect(result.operations).toHaveLength(1)
+    expect(result.diagnostics).toHaveLength(0)
+  })
+
+  it('discovers a statically referenced specification without executing its config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-static-ref-'))
+    await mkdir(join(root, 'config'), { recursive: true })
+    await mkdir(join(root, 'specs'), { recursive: true })
+    await writeFile(join(root, 'config', 'swagger.config.ts'), `throw new Error('must not execute'); export const spec = '../specs/service.yaml'`)
+    await writeFile(join(root, 'specs', 'service.yaml'), `openapi: 3.1.0\ninfo: { title: Service, version: 1.0.0 }\npaths: { /ready: { get: { operationId: readiness, responses: { '200': { description: ok } } } } }`)
+    const result = await scanRepository(repository, root)
+    expect(result.operations.map(operation => operation.operationId)).toContain('readiness')
+  })
+
+  it('isolates unresolved and escaping references as findings without losing valid operations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-refs-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Refs, version: 1.0.0 }
+paths:
+  /safe:
+    get:
+      operationId: safe
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { $ref: './missing.yaml#/Thing' } } } }
+  /escape:
+    get:
+      responses:
+        '200': { description: no, content: { application/json: { schema: { $ref: '../secret.yaml' } } } }
+`)
+    const result = await scanRepository(repository, root)
+    expect(result.operations).toHaveLength(2)
+    expect(result.diagnostics.map(diagnostic => diagnostic.code)).toEqual(
+      expect.arrayContaining(['unresolved-openapi-ref', 'openapi-ref-outside-repository'])
+    )
+  })
+
+  it('normalizes fallback identities and reports missing and duplicate operation identifiers', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-identities-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0
+info: { title: Identities, version: 1.0.0 }
+paths:
+  /users/{userId}/:
+    get: { responses: { '200': { description: ok } } }
+    post: { operationId: duplicate, responses: { '201': { description: ok } } }
+  /groups:
+    get: { operationId: duplicate, responses: { '200': { description: ok } } }
+`)
+    const result = await scanRepository(repository, root)
+    expect(result.operations.find(operation => !operation.operationId)?.id).toContain('GET:/users/{}')
+    expect(result.findings.filter(finding => finding.type === 'duplicate-operation-id')).toHaveLength(2)
+    expect(result.findings.some(finding => finding.type === 'missing-operation-id')).toBe(true)
+  })
+
+  it('creates deterministic content, idempotency, response, and lifecycle expectations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-policy-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0
+info: { title: Policy, version: 1.0.0 }
+paths:
+  /orders/{id}:
+    put:
+      operationId: replaceOrder
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses:
+        '200': { description: ok, content: { application/json: { schema: { type: object } } } }
+        '404': { description: missing }
+`)
+    const result = await scanRepository(repository, root)
+    const kinds = result.expectations.map(expectation => expectation.kind)
+    expect(kinds).toEqual(expect.arrayContaining([
+      'invalid-content-type', 'request-content-type', 'response-content-type',
+      'idempotency-replay', 'crud-sequence', 'response-200', 'response-404',
+    ]))
+  })
+
 })
