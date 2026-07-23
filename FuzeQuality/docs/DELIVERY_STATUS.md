@@ -32,28 +32,44 @@
   - `FuzeAgent`;
   - `FuzeService`.
 
-Merged delivery PRs relevant to the current production rollout include #363,
-#372, #374, #375, and the FQ-11 schema PR #305.
+Merged delivery PRs relevant to the production rollout include #363, #372,
+#374, #375, #377, the FQ-11 schema PR #305, and documentation handoff #376.
 
 ## Current rollout state
 
-The image containing cooperative scanner heartbeats was merged in PR #375 and
-is moving through the `fuzequality-release.yml` image/GitOps pipeline. After
-Argo sync:
+PR #377 is deployed as backend/scanner image `df4fde2bddb8`. It combines a
+four-minute Kafka session window, background handler heartbeats, and cooperative
+heartbeats throughout discovery, parsing, and expectation projection.
 
-1. verify scanner image/tag and rollout health;
-2. republish valid `trigger: "manual"` scan commands for all five repositories;
-3. confirm every repository persists a revision instead of remaining queued;
-4. record counts for API operations, frontend surfaces, tests, expectations,
-   findings, requirements, and flows;
-5. validate portfolio/API/frontend pages with real data;
-6. update and transition Jira FQ-17, FQ-26, FQ-27, FQ-81, and FQ-82 from live
-   evidence rather than deployment-only evidence.
+All five pilot repositories now have persisted complete revisions:
 
-The earlier production worker repeatedly scanned FuzeFront because its
-CPU-intensive scan exceeded Kafka group heartbeat timing. PR #375 adds
-cooperative heartbeats throughout discovery, parsing, and expectation
-projection.
+| Repository | Catalog revision |
+|---|---|
+| FuzeFront | `f1135e3d7cef01c33c186f7c` |
+| FuzeInfra | `24dc823f4535535af6d2a800` |
+| FuzePlan | `01b75f58bd579ad229d94a0f` |
+| FuzeAgent | `0bd120c929ac39cc50f5e5f1` |
+| FuzeService | `d1f896ee785f6125edd4db60` |
+
+The first successful five-repository projection contains:
+
+| Catalog entity | Count |
+|---|---:|
+| API operations | 192 |
+| Frontend surfaces | 372 |
+| Test cases | 1,950 |
+| Test expectations | 3,256 |
+| Findings | 1,457 |
+
+Next cloud actions:
+
+1. validate portfolio/API/frontend pages against these real counts;
+2. inspect high-severity findings and scanner diagnostics for false positives;
+3. update and transition Jira FQ-17, FQ-26, FQ-27, FQ-81, and FQ-82 from this
+   live evidence;
+4. provision the Jira/LiteLLM credentials below;
+5. execute the first Jira synchronization, AI review decision, and coverage
+   snapshot rebuild.
 
 ## Configuration still required
 
@@ -86,12 +102,11 @@ scan status and catalog counts. Do not print database URLs or secret values.
 
 ## Product truth at handoff
 
-The application and persistence plane are deployed. GitHub repository access is
-working. Exact-commit checkout is working. A populated, measurable portfolio
-must not be claimed until the post-#375 scans persist revisions and catalog
-counts. Jira/AI flow intelligence must not be claimed operational until the
-four missing credentials above are provisioned and a reviewed suggestion
-successfully rebuilds a coverage snapshot.
+The application and persistence plane are deployed. GitHub repository access,
+exact-commit checkout, deterministic inventory, and a populated measurable
+five-repository portfolio are working. Jira/AI flow intelligence must not be
+claimed operational until the four missing credentials above are provisioned
+and a reviewed suggestion successfully rebuilds a coverage snapshot.
 
 ## V1.1 backlog
 
