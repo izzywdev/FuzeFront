@@ -29,9 +29,21 @@
       "workflow": ".github/workflows/ds-propagate.yml",
       "trigger": "push:master:design-system/**",
       "agents": [
-        { "role": "frontend-engineer", "job": "propagate-frontend", "branch": "ds-propagate/frontend-{run}" },
-        { "role": "mobile-frontend-engineer", "job": "propagate-mobile", "branch": "ds-propagate/mobile-{run}" },
-        { "role": "frontend-test-engineer", "job": "ui-tests", "branch": "ds-propagate/e2e-{run}" }
+        {
+          "role": "frontend-engineer",
+          "job": "propagate-frontend",
+          "branch": "ds-propagate/frontend-{run}"
+        },
+        {
+          "role": "mobile-frontend-engineer",
+          "job": "propagate-mobile",
+          "branch": "ds-propagate/mobile-{run}"
+        },
+        {
+          "role": "frontend-test-engineer",
+          "job": "ui-tests",
+          "branch": "ds-propagate/e2e-{run}"
+        }
       ]
     }
   },
@@ -39,5 +51,32 @@
     "ruleset": true,
     "requireSignatures": true,
     "deployOnPush": true
-  }
+  },
+  "providesTo": [
+    "FuzeAgent",
+    "FuzeBI",
+    "FuzeCall",
+    "FuzeContact",
+    "FuzeDeploy",
+    "FuzeExecutive",
+    "FuzeHub",
+    "FuzeKeys",
+    "FuzeMarket",
+    "FuzeMerchandize",
+    "FuzePicker",
+    "FuzePlan",
+    "FuzeSales",
+    "FuzeService",
+    "FuzeSocial",
+    "FuzeX",
+    "MendysRobotics",
+    "MendysRoboticsWP"
+  ],
+  "dependsOn": [
+    "FuzeAgent",
+    "FuzeBI",
+    "FuzeDeploy",
+    "FuzeKeys",
+    "FuzePlan"
+  ]
 }
