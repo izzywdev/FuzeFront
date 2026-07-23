@@ -127,7 +127,51 @@ export type CatalogFinding = {
   severity: 'critical' | 'high' | 'medium' | 'low'
   title: string
   detail: string
+  owner?: string
+  remediation?: string
+  sourceRevision?: string
   status: 'open' | 'resolved' | 'suppressed'
+}
+
+export type ApiCoverageQuery = {
+  repositoryId?: string
+  tag?: string
+  path?: string
+  coverage?: CoverageState
+  findingType?: string
+}
+
+export type ApiCoverageRow = ApiOperation & {
+  repositoryName: string
+  expectations: TestExpectation[]
+  findings: CatalogFinding[]
+  coverageSummary: {
+    total: number
+    covered: number
+    gaps: number
+    percent: number
+  }
+}
+
+export type ApiCoverageResponse = {
+  rows: ApiCoverageRow[]
+  totals: {
+    operations: number
+    expectations: number
+    covered: number
+    gaps: number
+    findings: number
+    percent: number
+  }
+  filters: {
+    repositories: Array<{ id: string; name: string }>
+    tags: string[]
+    coverageStates: CoverageState[]
+    findingTypes: string[]
+  }
+  revisionSet: Array<{ repositoryId: string; revision?: string; scannedAt?: string }>
+  policyVersion: string
+  generatedAt: string
 }
 
 export type Requirement = {

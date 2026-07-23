@@ -5,6 +5,7 @@ import {
   reviewDecisionSchema,
 } from '@fuzequality/contracts'
 import {
+  apiCoverageCatalog,
   coverageSummary,
   createCatalogStore,
   createEventBus,
@@ -27,6 +28,7 @@ const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
 const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 'read')
 const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
 const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
+const mayReadCatalog = requirePlatformPermission('fuzequality.catalog', 'read')
 
 app.use(express.json({
   limit: '2mb',
@@ -160,17 +162,29 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
   }
 })
 
-app.get('/api/v1/catalog/apis', async (_request, response) =>
-  response.json((await store.portfolio()).operations)
+app.get('/api/v1/catalog/apis', mayReadCatalog, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).operations)
 )
-app.get('/api/v1/catalog/frontend', async (_request, response) =>
-  response.json((await store.portfolio()).surfaces)
+app.get('/api/v1/catalog/apis/:id', mayReadCatalog, async (request, response) => {
+  const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
+  const operation = portfolio.operations.find(item => item.id === request.params.id)
+  if (!operation) return response.status(404).json({ error: 'API operation not found', code: 'OPERATION_NOT_FOUND' })
+  response.json({
+    operation,
+    expectations: portfolio.expectations.filter(item => item.subjectId === operation.id),
+    findings: portfolio.findings.filter(item => item.subjectId === operation.id),
+    revision: portfolio.repositories.find(item => item.id === operation.repositoryId)?.lastScanRevision,
+    policyVersion: 'api-coverage-v1',
+  })
+})
+app.get('/api/v1/catalog/frontend', mayReadCatalog, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).surfaces)
 )
-app.get('/api/v1/catalog/tests', async (_request, response) =>
-  response.json((await store.portfolio()).tests)
+app.get('/api/v1/catalog/tests', mayReadCatalog, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).tests)
 )
-app.get('/api/v1/coverage/portfolio', async (_request, response) => {
-  const portfolio = await store.portfolio()
+app.get('/api/v1/coverage/portfolio', mayReadCatalog, async (request, response) => {
+  const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
   response.json({
     summary: coverageSummary(portfolio.expectations),
     expectations: portfolio.expectations,
@@ -178,12 +192,22 @@ app.get('/api/v1/coverage/portfolio', async (_request, response) => {
     policyVersion: 'v1',
   })
 })
-app.get('/api/v1/coverage/apis', async (_request, response) => {
-  const portfolio = await store.portfolio()
-  response.json({ operations: portfolio.operations, expectations: portfolio.expectations.filter(item => item.subjectType === 'api-operation') })
+app.get('/api/v1/coverage/apis', mayReadCatalog, async (request, response) => {
+  const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
+  const value = (name: string) => {
+    const raw = request.query[name]
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined
+  }
+  response.json(apiCoverageCatalog(portfolio, {
+    repositoryId: value('repositoryId'),
+    tag: value('tag'),
+    path: value('path'),
+    coverage: value('coverage') as import('@fuzequality/contracts').CoverageState | undefined,
+    findingType: value('findingType'),
+  }))
 })
-app.get('/api/v1/coverage/frontend', async (_request, response) => {
-  const portfolio = await store.portfolio()
+app.get('/api/v1/coverage/frontend', mayReadCatalog, async (request, response) => {
+  const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
   response.json({ surfaces: portfolio.surfaces, expectations: portfolio.expectations.filter(item => item.subjectType === 'frontend-surface') })
 })
 app.get('/api/v1/requirements', async (_request, response) =>
@@ -201,7 +225,9 @@ app.post('/api/v1/suggestions/:id/decision', async (request, response) => {
   await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
 })
-app.get('/api/v1/findings', async (_request, response) => response.json((await store.portfolio()).findings))
+app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
+)
 
 app.post('/api/v1/internal/scans/results', async (request, response) => {
   await store.saveScan(request.body)

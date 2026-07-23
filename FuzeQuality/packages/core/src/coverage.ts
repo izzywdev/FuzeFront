@@ -332,7 +332,8 @@ export function buildFindings(
   repositoryId: string,
   operations: ApiOperation[],
   surfaces: FrontendSurface[],
-  expectations: TestExpectation[]
+  expectations: TestExpectation[],
+  owner?: string
 ): CatalogFinding[] {
   const findings: CatalogFinding[] = []
 
@@ -345,6 +346,8 @@ export function buildFindings(
       severity: 'medium',
       title: `${operation.method.toUpperCase()} ${operation.path} has no operationId`,
       detail: 'Add a stable operationId so coverage history survives route refactors.',
+      owner,
+      remediation: 'Add a unique operationId to the OpenAPI operation and rescan the repository.',
       status: 'open',
     })
   }
@@ -367,6 +370,8 @@ export function buildFindings(
         severity: 'high',
         title: `operationId “${operationId}” is duplicated`,
         detail: `The identifier is shared by ${duplicates.length} operations and cannot provide an unambiguous coverage identity.`,
+        owner,
+        remediation: 'Rename each duplicate operationId to a unique, stable identifier.',
         status: 'open',
       })
     }
@@ -381,6 +386,8 @@ export function buildFindings(
       severity: 'low',
       title: `${surface.name} is not represented in Storybook`,
       detail: 'The component is implemented but has no independently reviewable state catalog.',
+      owner,
+      remediation: 'Add Storybook stories for the public component states or approve a documented exclusion.',
       status: 'open',
     })
   }
@@ -396,6 +403,25 @@ export function buildFindings(
       severity: 'high',
       title: item.label,
       detail: `No accepted test evidence satisfies ${item.rule}.`,
+      owner,
+      remediation: `Add an assertion-bearing test for ${item.rule}, map existing evidence explicitly, or approve a time-bound exclusion.`,
+      status: 'open',
+    })
+  }
+
+  for (const operation of operations.filter(item =>
+    !item.responses.some(response => /^4|^5|default$/i.test(response))
+  )) {
+    findings.push({
+      id: id(operation.id, 'undocumented-error-response'),
+      repositoryId,
+      subjectId: operation.id,
+      type: 'undocumented-error-response',
+      severity: 'medium',
+      title: `${operation.method.toUpperCase()} ${operation.path} declares no error response`,
+      detail: 'The contract exposes no 4xx, 5xx, or default response for consumers and test planning.',
+      owner,
+      remediation: 'Document expected client/server failure responses and add corresponding expectation evidence.',
       status: 'open',
     })
   }
