@@ -12,4 +12,5 @@ frontendImage:
 
 ingress:
   enabled: true
-  host: quality.fuzefront.com
+  className: traefik
+  host: quality.prod.fuzefront.com
