@@ -65,6 +65,15 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 })
 
+// Dedicated, SHORTER timeout for the login/signup submit path. Prod reality:
+// the auth chain normally answers in ~5.5s, but an intermittent slow hop can
+// stretch it to 16-30s before the shared 30s client timeout ever trips — that
+// entire window the submit button sat on "Signing in…" with zero feedback.
+// Bounding just this call lets a slow attempt fail fast with a clear message
+// instead of hanging to the full 30s. Env-overridable for tuning without a
+// redeploy of the timeout value itself.
+const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 15000
+
 // Add request timing and enhanced logging
 api.interceptors.request.use(
   config => {
@@ -274,9 +283,13 @@ export const authAPI = {
   // `mfa_required` challenge the caller completes via `mfaAPI`. On the
   // authenticated branch the session is persisted here.
   async login(credentials: LoginCredentials): Promise<SessionResult> {
+    // Bounded with LOGIN_TIMEOUT_MS (not the shared 30s default) so a slow
+    // auth hop fails fast with a clear error instead of leaving the submit
+    // button stuck on "Signing in…" for up to 30s.
     const response = await api.post<SessionResult>(
       `${SECURITY_BASE}/session`,
-      credentials
+      credentials,
+      { timeout: LOGIN_TIMEOUT_MS }
     )
     const result = response.data
     if (result.status === 'authenticated') {
@@ -289,9 +302,12 @@ export const authAPI = {
   // UI — never a provider's raw enrollment page. On success a session is
   // established directly and persisted.
   async signup(credentials: SignupCredentials): Promise<LoginResponse> {
+    // Same fail-fast bound as login() — account creation drives the same
+    // auth-chain hop and can hit the same intermittent slow path.
     const response = await api.post<LoginResponse>(
       `${SECURITY_BASE}/signup`,
-      credentials
+      credentials,
+      { timeout: LOGIN_TIMEOUT_MS }
     )
     persistSession(response.data?.token, response.data?.sessionId)
     return response.data

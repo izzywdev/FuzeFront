@@ -65,6 +65,12 @@ function LoginPage() {
   const loading = pending !== null
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  // Subtle "still working…" hint shown once a credentials submit has been in
+  // flight for a while, so a slow-but-succeeding sign-in (occasionally well
+  // past the ~5.5s fast path) doesn't read as frozen before the bounded
+  // timeout in api.ts either resolves or fails it.
+  const [showStillWorking, setShowStillWorking] = useState(false)
+  const stillWorkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Start from the password-only fallback so the sign-in form is ALWAYS
   // rendered immediately — never gated on the auth-methods fetch. `getAuthMethods`
   // is progressive enhancement: when it resolves it upgrades this to advertise
@@ -178,6 +184,14 @@ function LoginPage() {
     setPending('credentials')
     setError('')
     setNotice('')
+    setShowStillWorking(false)
+
+    // Show a quiet "still working…" hint if the request is still in flight
+    // after 8s — the fast path (~5.5s) never sees this; a slow-but-succeeding
+    // attempt gets reassurance instead of looking frozen before the bounded
+    // LOGIN_TIMEOUT_MS in api.ts resolves it either way.
+    if (stillWorkingTimer.current) clearTimeout(stillWorkingTimer.current)
+    stillWorkingTimer.current = setTimeout(() => setShowStillWorking(true), 8000)
 
     try {
       if (mode === 'signup') {
@@ -200,15 +214,43 @@ function LoginPage() {
       await completeSession(result)
     } catch (err: any) {
       console.error('Authentication error:', err)
-      let errorMessage =
-        err.response?.data?.error || err.message || 'Authentication failed'
-      if (err.code === 'NETWORK_ERROR' || !err.response) {
-        errorMessage += ' (Network connection failed — check if the service is running)'
-      } else if (err.response?.status === 500) {
-        errorMessage += ' (Server error — please try again shortly)'
+      const isTimeout = err.code === 'ECONNABORTED' || err.name === 'CanceledError'
+      const isNetworkError = !isTimeout && (err.code === 'NETWORK_ERROR' || !err.response)
+      const status = err.response?.status
+
+      let errorMessage: string
+      if (isTimeout) {
+        // The sign-in request was bounded and did not answer in time — this is
+        // NOT "you typed the wrong password"; word it as a service condition.
+        errorMessage =
+          'Sign-in is taking longer than expected — the service may be busy. Please try again.'
+      } else if (status === 401) {
+        // A 401 here is genuinely ambiguous: real bad credentials OR a slow
+        // auth hop that got cut short server-side. Don't wrongly accuse the
+        // user of a typo when it may be a transient service blip.
+        errorMessage =
+          'Incorrect email or password, or the sign-in service is temporarily unavailable. Please try again.'
+      } else if (isNetworkError) {
+        errorMessage =
+          (err.message || 'Authentication failed') +
+          ' (Network connection failed — check if the service is running)'
+      } else if (status === 500) {
+        errorMessage =
+          (err.response?.data?.error || err.message || 'Authentication failed') +
+          ' (Server error — please try again shortly)'
+      } else {
+        errorMessage =
+          err.response?.data?.error || err.message || 'Authentication failed'
       }
       setError(errorMessage)
     } finally {
+      if (stillWorkingTimer.current) {
+        clearTimeout(stillWorkingTimer.current)
+        stillWorkingTimer.current = null
+      }
+      setShowStillWorking(false)
+      // Always un-stick the button — this runs on every exit path (success
+      // return, thrown error, timeout) so "Signing in…" never persists.
       setPending(null)
     }
   }
@@ -220,6 +262,7 @@ function LoginPage() {
   useEffect(() => {
     return () => {
       if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
+      if (stillWorkingTimer.current) clearTimeout(stillWorkingTimer.current)
     }
   }, [])
 
@@ -412,6 +455,19 @@ function LoginPage() {
                 ? 'Create account'
                 : 'Sign In'}
           </Button>
+          {pending === 'credentials' && showStillWorking && (
+            <p
+              role="status"
+              style={{
+                marginBlockStart: 'var(--space-2, 8px)',
+                color: 'var(--text-tertiary)',
+                fontSize: 'var(--text-sm, 14px)',
+                textAlign: 'center',
+              }}
+            >
+              Still working — the sign-in service is taking a little longer than usual…
+            </p>
+          )}
         </form>
       )}
 
