@@ -20,7 +20,8 @@
     "feature-flags-engineer",
     "security",
     "fuzefront-expert",
-    "fuzeinfra-expert"
+    "fuzeinfra-expert",
+    "a2a-maintainer"
   ],
   "designSystem": {
     "base": "@fuzefront/design-system",
