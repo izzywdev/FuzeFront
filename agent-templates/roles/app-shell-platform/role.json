@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schema/role-manifest.schema.json",
+  "role": "app-shell-platform",
+  "extends": "_base",
+  "name": "FuzeFront app-shell-platform",
+  "description": "Serves FuzeFront's shared application layer — the runtime Module-Federation host shell that consumer products mount into, plus shared authentication, app registration/discovery, health/heartbeat, and the cross-app shell surface (navigation, app launcher, theming). A caller asks it to accomplish an app-platform outcome — e.g. register or resolve a product's remote micro-frontend, expose or query a shared shell capability, or check a mounted app's health — and it returns the result. It holds its own tooling and credentials and returns outcomes, never how they were produced.",
+  "model": "claude-opus-4-8",
+  "skills": [],
+  "services": { "github": "none", "k8s": "none", "cloud": "none" },
+  "a2a": {
+    "examples": [
+      "Register a product's remote micro-frontend so the host shell can load it at runtime.",
+      "Resolve the currently discoverable apps and their health status from the app registry.",
+      "Expose a shared shell capability (navigation entry, app-launcher tile) for a consumer product.",
+      "Report whether a given mounted micro-frontend is healthy according to its heartbeat."
+    ],
+    "tags": ["app-shell", "module-federation", "frontend-platform", "app-registry", "host-shell"]
+  },
+  "metadata": {
+    "managed_by": "agent-templates",
+    "starter": true,
+    "note": "Starter serving role establishing FuzeFront as an A2A tenant; card SHAPE only. Real skill capability (backing each example with an actual served action) is a follow-up owned by backend-engineer/a2a-maintainer."
+  }
+}
