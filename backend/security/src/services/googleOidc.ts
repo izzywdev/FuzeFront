@@ -124,7 +124,7 @@ export class GoogleOidcService {
    * Exchange the code SERVER-TO-SERVER and return the VALIDATED identity claims.
    * Never logs tokens. Throws on any protocol/validation failure (fail-closed).
    */
-  async handleCallback(code: string, state: string, codeVerifier: string): Promise<GoogleIdentity> {
+  async handleCallback(code: string, state: string, codeVerifier: string, iss?: string): Promise<GoogleIdentity> {
     const start = Date.now()
     logger.info('googleOidc: callback start')
     try {
@@ -132,7 +132,10 @@ export class GoogleOidcService {
       if (!codeVerifier) throw new Error('code_verifier missing for Google callback')
       const tokenSet = await this.client.callback(
         this.config.redirectUri,
-        { code, state },
+        // Google sends `iss` in the redirect (RFC 9207) and openid-client
+        // REQUIRES it when discovery advertises the parameter — dropping it
+        // fails the callback with "iss missing from the response".
+        { code, state, ...(iss ? { iss } : {}) },
         { code_verifier: codeVerifier, state }
       )
       const claims = tokenSet.claims()

@@ -275,8 +275,11 @@ router.get('/social/callback', async (req: Request, res: Response) => {
   try {
     const code = typeof req.query.code === 'string' ? req.query.code : ''
     const state = typeof req.query.state === 'string' ? req.query.state : ''
+    // Google echoes its issuer in the redirect (RFC 9207); the OIDC client
+    // validates it, so it must survive the trip through the broker input.
+    const iss = typeof req.query.iss === 'string' ? req.query.iss : undefined
     if (!code || !state) throw new InvalidInputError('code and state are required')
-    const result = await getIdentityProvider().brokerCallback({ code, state }, sessionContext(req))
+    const result = await getIdentityProvider().brokerCallback({ code, state, iss }, sessionContext(req))
     // Clear the state cookie; append the FuzeFront opaque code (never a token).
     res.setHeader('Set-Cookie', ['sec_social_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/'])
     const sep = result.redirectTo.includes('?') ? '&' : '?'
@@ -312,8 +315,11 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
   try {
     const code = typeof req.query.code === 'string' ? req.query.code : ''
     const state = typeof req.query.state === 'string' ? req.query.state : ''
+    // Google echoes its issuer in the redirect (RFC 9207); the OIDC client
+    // validates it, so it must survive the trip through the broker input.
+    const iss = typeof req.query.iss === 'string' ? req.query.iss : undefined
     if (!code || !state) throw new InvalidInputError('code and state are required')
-    const result = await getIdentityProvider().brokerCallback({ code, state }, sessionContext(req))
+    const result = await getIdentityProvider().brokerCallback({ code, state, iss }, sessionContext(req))
     const sep = result.redirectTo.includes('?') ? '&' : '?'
     // A LINK handshake mints no session (no code to redeem) — return a neutral
     // confirmation instead.

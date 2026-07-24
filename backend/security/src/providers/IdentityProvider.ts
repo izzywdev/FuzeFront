@@ -90,6 +90,8 @@ export interface SocialCallbackInput {
   code: string;
   /** Anti-forgery state issued at start. */
   state: string;
+  /** RFC 9207 issuer identifier echoed by the provider (Google sends it; required by the client). */
+  iss?: string;
 }
 
 /**

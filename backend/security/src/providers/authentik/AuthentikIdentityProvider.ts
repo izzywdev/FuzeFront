@@ -510,7 +510,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const identity = await this.googleClient.handleCallback(
         input.code,
         input.state,
-        st.codeVerifier
+        st.codeVerifier,
+        input.iss
       )
       await this.provisionSocialUserFn(identity, 'google')
       user = await this.syncUserFn({
@@ -1283,7 +1284,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const identity = await this.googleClient.handleCallback(
         input.code,
         input.state,
-        link.codeVerifier
+        link.codeVerifier,
+        input.iss
       )
       identityEmail = identity.email
       // Safety: the returned identity must be the SAME account that started the
