@@ -90,7 +90,7 @@ jobs:
           pip install -q semgrep
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
@@ -160,7 +160,7 @@ jobs:
             echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
             echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         continue-on-error: true
         if: always()
         with:
@@ -184,7 +184,7 @@ jobs:
           [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
           semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         if: always()
         continue-on-error: true
         with:
