@@ -54,7 +54,21 @@ function readAuthToken(): string | undefined {
   }
 }
 
-export function AppRegistryProvider({ children }: { children: React.ReactNode }) {
+export function AppRegistryProvider({
+  children,
+  /**
+   * Gate the registry fetch on an authenticated session. Defaults to true
+   * (existing behavior) so nothing else that mounts this provider changes,
+   * but the host explicitly passes `false` while rendering the pre-auth
+   * /login surface: the app-registry endpoint requires a session and, run
+   * pre-auth, the request only ever times out (10s axios timeout) — it
+   * never succeeds and never needs to run before the user is signed in.
+   */
+  enabled = true,
+}: {
+  children: React.ReactNode
+  enabled?: boolean
+}) {
   // The token can change after login; rebuild the client when it does so the
   // Authorization header stays current. We read it lazily on mount + on focus.
   const [token, setToken] = useState<string | undefined>(() => readAuthToken())
@@ -79,6 +93,9 @@ export function AppRegistryProvider({ children }: { children: React.ReactNode })
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -91,11 +108,16 @@ export function AppRegistryProvider({ children }: { children: React.ReactNode })
     } finally {
       setLoading(false)
     }
-  }, [client])
+  }, [client, enabled])
 
   useEffect(() => {
+    if (!enabled) {
+      // Pre-auth (e.g. /login): nothing to load and no session to call with.
+      setLoading(false)
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [refresh, enabled])
 
   const registerAndActivate = useCallback(
     async (body: RegisterAppRequest): Promise<App> => {
