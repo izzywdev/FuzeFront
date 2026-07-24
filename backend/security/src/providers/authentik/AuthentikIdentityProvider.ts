@@ -229,7 +229,7 @@ export interface AuthentikProviderDeps {
     isInitialized(): boolean
     initialize(): Promise<void>
     generateAuthUrl(state: string): { url: string; codeVerifier: string }
-    handleCallback(code: string, state: string, codeVerifier: string): Promise<GoogleIdentity>
+    handleCallback(code: string, state: string, codeVerifier: string, iss?: string): Promise<GoogleIdentity>
   }
   /** Projects validated social claims into the local `users` row (+ event). */
   syncUser: (userinfo: any) => Promise<BrokeredUser>
@@ -510,7 +510,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const identity = await this.googleClient.handleCallback(
         input.code,
         input.state,
-        st.codeVerifier
+        st.codeVerifier,
+        input.iss
       )
       await this.provisionSocialUserFn(identity, 'google')
       user = await this.syncUserFn({
@@ -1283,7 +1284,8 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       const identity = await this.googleClient.handleCallback(
         input.code,
         input.state,
-        link.codeVerifier
+        link.codeVerifier,
+        input.iss
       )
       identityEmail = identity.email
       // Safety: the returned identity must be the SAME account that started the
