@@ -53,6 +53,11 @@
     "requireSignatures": true,
     "deployOnPush": true
   },
+  "a2a": {
+    "enabled": true,
+    "servingRoles": ["app-shell-platform"],
+    "entryRole": "app-shell-platform"
+  },
   "providesTo": [
     "FuzeAgent",
     "FuzeBI",
