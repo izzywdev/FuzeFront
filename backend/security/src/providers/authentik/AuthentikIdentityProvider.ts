@@ -229,7 +229,7 @@ export interface AuthentikProviderDeps {
     isInitialized(): boolean
     initialize(): Promise<void>
     generateAuthUrl(state: string): { url: string; codeVerifier: string }
-    handleCallback(code: string, state: string, codeVerifier: string): Promise<GoogleIdentity>
+    handleCallback(code: string, state: string, codeVerifier: string, iss?: string): Promise<GoogleIdentity>
   }
   /** Projects validated social claims into the local `users` row (+ event). */
   syncUser: (userinfo: any) => Promise<BrokeredUser>
