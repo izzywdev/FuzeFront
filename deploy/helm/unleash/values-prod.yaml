@@ -37,6 +37,23 @@ unleash:
                 operator: In
                 values: ["fuzefront-node-2"]
 
+  # Admin-UI ingress for the Cloudflare-Access-gated host. Pre-wired here so
+  # GO-LIVE is a one-character diff (enabled: false -> true) in a deploy window.
+  #
+  # Kept `enabled: false` on purpose: while false the Ingress does not render, so
+  # merging this is INERT (zero exposure). Flip to `true` ONLY AFTER FuzeInfra has
+  # provisioned, for `host` below: (1) the CF tunnel public-hostname route, (2) the
+  # proxied CNAME, and (3) a Cloudflare Access *Application* with "Show in App
+  # Launcher" ON — step (3) is what places the tile in fuzefront.cloudflareaccess.com.
+  # See docs/runbooks/unleash-launcher-and-developer-flags.md for the exact steps
+  # and the FuzeInfra @claude delegation. Enabling before Access gates the host
+  # would expose the Unleash admin UI unauthenticated — so ordering is mandatory.
+  ingress:
+    enabled: false
+    className: ""       # empty -> inherits the cluster-default ingress.className
+    host: "unleash.prod.fuzefront.com"   # under the *.prod.fuzefront.com CF-Access zone
+    annotations: {}     # Access gates at the CF edge; the Ingress only host-routes
+
 # Prod FuzeInfra Postgres DNS — the shared cluster's service is fuzeinfra-postgres
 # (the chart default postgres.fuzeinfra.svc… is the local/dev name and does not
 # resolve in prod, so the db-bootstrap Job failed with "Name or service not known").
