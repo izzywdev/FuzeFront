@@ -20,7 +20,7 @@ import {
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformPermission } from './platform-authorization'
-import { isPublicRequest } from './authentication'
+import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 
 const app = express()
 const store = createCatalogStore()
@@ -41,10 +41,15 @@ app.use(express.json({
 
 app.use((request, response, next) => {
   const configuredToken = process.env.FUZEQUALITY_API_TOKEN
+  const authorization = request.headers.authorization
   if (
     !configuredToken ||
     isPublicRequest(request.method, request.path) ||
-    request.headers.authorization === `Bearer ${configuredToken}`
+    authorization === `Bearer ${configuredToken}` ||
+    (
+      authorization?.startsWith('Bearer ') &&
+      isPlatformAuthenticatedRequest(request.method, request.path)
+    )
   ) {
     next()
     return

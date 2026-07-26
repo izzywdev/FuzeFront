@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPublicRequest } from './authentication'
+import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 
 describe('FuzeQuality API authentication allowlist', () => {
   it('allows the read-only portfolio used by the Cloudflare-protected web application', () => {
@@ -11,5 +11,18 @@ describe('FuzeQuality API authentication allowlist', () => {
     expect(isPublicRequest('GET', '/api/v1/repositories')).toBe(false)
     expect(isPublicRequest('POST', '/api/v1/repositories')).toBe(false)
     expect(isPublicRequest('POST', '/api/v1/repositories/id/scans')).toBe(false)
+  })
+})
+
+describe('FuzeQuality platform-authenticated request allowlist', () => {
+  it('passes repository requests to FuzeFront Security authorization', () => {
+    expect(isPlatformAuthenticatedRequest('GET', '/api/v1/repositories')).toBe(true)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/repositories/verify')).toBe(true)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/repositories/id/scans')).toBe(true)
+  })
+
+  it('does not admit internal worker or unrelated unguarded routes', () => {
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/internal/scans/results')).toBe(false)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/suggestions/id/decision')).toBe(false)
   })
 })
