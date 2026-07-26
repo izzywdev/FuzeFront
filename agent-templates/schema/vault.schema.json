@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/agent-templates/vault.schema.json",
+  "title": "Managed-Agents vault + credentials template",
+  "description": "A vault (POST /v1/vaults) and its credentials (POST /v1/vaults/{id}/credentials). Secret values MUST be ${ENV_VAR} references expanded at sync time — never literal.",
+  "type": "object",
+  "required": ["display_name", "credentials"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "display_name": { "type": "string" },
+    "metadata": { "type": "object" },
+    "credentials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["display_name", "auth"],
+        "additionalProperties": false,
+        "properties": {
+          "display_name": { "type": "string" },
+          "auth": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "enum": ["static_bearer", "mcp_oauth", "environment_variable"] },
+              "mcp_server_url": { "type": "string" },
+              "token": { "type": "string" },
+              "access_token": { "type": "string" },
+              "expires_at": { "type": "string" },
+              "refresh": { "type": "object" },
+              "secret_name": { "type": "string" },
+              "secret_value": { "type": "string" },
+              "networking": { "type": "object" },
+              "injection_location": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
