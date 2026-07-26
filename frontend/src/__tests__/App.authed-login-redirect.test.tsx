@@ -22,6 +22,13 @@ vi.mock('../lib/shared', async () => {
   return {
     ...actual,
     useCurrentUser: vi.fn(),
+    // AuthWrapper calls useAppContext() directly; there is no AppProvider in this
+    // test's render tree (AppProvider lives in main.tsx, outside <App>), so we
+    // stub it with a no-op dispatch and empty state to avoid the context error.
+    useAppContext: vi.fn().mockReturnValue({
+      state: { apps: [], user: null, organizations: [], activeOrganizationId: null },
+      dispatch: vi.fn(),
+    }),
   }
 })
 
