@@ -94,6 +94,69 @@ those defaults, not a change to them. This is runtime config in the live Unleash
 instance (there is no flag/segment config-as-code in this repo); it is owned by
 `feature-flags-engineer`.
 
+### EXECUTED — 2026-07-26
+
+| What | Value |
+|---|---|
+| Segment | `developers`, **id `1`** |
+| Constraint | context field `userId` **IN** `[<owner users.id UUID>]` |
+| Environment touched | **`production`** only (`development` and `default` untouched) |
+| Flags given the developer strategy | 3 release flags (below) |
+| Kill-switches given the developer strategy | **0 — deliberately excluded**, see note |
+
+> **Correction to the "fast path" text below:** the value to constrain on is the
+> owner's **`users.id` UUID**, *not* their email. `@fuzefront/feature-flags` maps
+> `userId` → OpenFeature `targetingKey` → the Unleash built-in `userId` context
+> field (`packages/feature-flags/src/context.ts`), and `users.id` is a UUID
+> (`shared/src/kafka/schemas/identity.session.issued.ts` types it `z.string().uuid()`).
+> A segment keyed on an email would never match.
+
+**Kill-switches are excluded from the segment on purpose.** An `ops-kill-switch`
+is already ON for everyone, so a developer strategy adds nothing — and during a
+break-glass incident it would keep the killed path **ON for developers** while OFF
+for everyone else, defeating the switch. Kill-switches get a plain 100% strategy
+with no segment.
+
+#### Verified (Unleash `/api/frontend` server-side evaluation, production env)
+
+| Flag | type | owner (developer) | other real user | non-existent user |
+|---|---|---|---|---|
+| `fuzefront.app-registry.v1-registry-write` | release | **ON** | OFF | OFF |
+| `fuzefront.account-security.hub` | release | **ON** | OFF | OFF |
+| `fuzefront.billing.invoice-history` | release | **ON** | OFF | OFF |
+| `fuzefront.app-registry.kafka-events-kill-switch` | kill-switch | ON | ON | ON |
+
+Non-developer behaviour is unchanged in every case. Verification used a temporary
+`frontend`-type API token, **revoked immediately afterwards**.
+
+### ⚠ This targeting layer is currently INERT at runtime — three blockers
+
+The segment is correct and verified *inside Unleash*, but no running service can
+observe it yet. Until these are fixed, developers will **not** see flags flip:
+
+1. **The flag client is not installed in any running service.** `@fuzefront/feature-flags`,
+   `unleash-openfeature-provider-server`, and `unleash-client` are all absent from
+   `fuzefront-backend`, `fuzefront-applications`, and `fuzefront-security`. Every
+   server-side read therefore falls through to the in-code fail-safe default.
+2. **`@fuzefront/feature-flags` does not export `getClient`.** `backend/applications/src/app-registry/flags.ts`
+   resolves the client via `require('@fuzefront/feature-flags').getClient()`, but
+   `packages/feature-flags/src/index.ts` exports only `init`/`setContext`/`getBoolean`/
+   `getString`/`getNumber`/`close`. Even once installed, `resolveClient()` returns
+   `null` and flags always take their default. (Owner: `backend-engineer`.)
+3. **The two frontend flags are build-time constants, not Unleash reads.**
+   `AccountSecurityPage.tsx` and `BillingPage.tsx` read `import.meta.env.VITE_FF_*`,
+   which is baked at build time and identical for every user — no per-user segment
+   can ever affect them. They must be switched to the web client before the
+   developer cohort has any effect. (Owner: `frontend-engineer`.)
+
+Also missing: **no `frontend`-type Unleash API token exists** (only a `client` and an
+`admin` token). The browser path will need one, provisioned as a SealedSecret by
+`devops-engineer` — not the `client` token, which must never reach the browser.
+
+Also note `flags.ts` builds its context with `organizationId`, while the client's
+context contract (`packages/feature-flags/src/types.ts`) specifies **`orgId`**; any
+future org-targeted constraint would silently miss. (Owner: `backend-engineer`.)
+
 ### Step 1. Create a `developers` segment
 
 Unleash → **Configure → Segments → New segment**, name `developers`. Populate the
@@ -146,8 +209,14 @@ rollout. Both states remain covered by the flag tests
 |---|---|---|
 | Unleash prod ingress (`enabled: true`, CF-Access host) | `deploy/helm/unleash/values-prod.yaml` | **Done on `master`** |
 | CF tunnel route + CNAME + **Access Application** (the launcher tile) | Cloudflare / FuzeInfra | **Delegated** — Part 1, Step 2 |
-| `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Owner / feature-flags-engineer** — Part 2 |
-| Owner's user id / dev group membership | Unleash / Authentik | **Owner input needed** — Part 2, Step 3 |
+| `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Done** — segment id 1, 3 release flags, production env (2026-07-26) |
+| Owner's user id / dev group membership | Unleash / Authentik | **Done** — owner `users.id` UUID in the segment constraint |
+| `developers`-segment step in the flag-creation checklist | `.claude/skills/feature-flags/SKILL.md` | **Done** |
+| Flag client installed in running services | `fuzefront-backend` / `-applications` / `-security` | **BLOCKER** — absent, all reads hit in-code defaults |
+| `getClient` export on `@fuzefront/feature-flags` | `packages/feature-flags/src/index.ts` | **BLOCKER** — `backend-engineer` |
+| Frontend flags read Unleash (not `VITE_FF_*`) | `frontend/src/pages/{AccountSecurity,Billing}Page.tsx` | **BLOCKER** — `frontend-engineer` |
+| `frontend`-type Unleash token (SealedSecret) | Unleash / `deploy/contabo/sealed` | **TODO** — `devops-engineer` |
 
-The single input needed to unblock Part 2 immediately is the owner's stable
-**user id** (the value passed as `userId` in the flag evaluation context).
+Part 2 is complete **within Unleash** and verified there. It has **no runtime effect
+yet** — see the three blockers above; the flag layer is not wired into any running
+service, so developers will not observe flipped flags until those are closed.
