@@ -18,6 +18,13 @@ const billingUiSrc = fileURLToPath(
 const billingClientSrc = fileURLToPath(
   new URL('../billing-client/src/index.ts', import.meta.url)
 )
+// app-registry-client (apps-client/) is an unpublished file: workspace package
+// whose dist/ is not built in CI — resolve from SOURCE, mirroring vite.config.ts.
+// Without this, tests doing a real `import { AppRegistryClient } from
+// '@fuzefront/app-registry-client'` (e.g. appRegistry.test.tsx) fail to resolve.
+const appRegistryClientSrc = fileURLToPath(
+  new URL('../apps-client/src/index.ts', import.meta.url)
+)
 
 // Intercept ALL .css imports (including out-of-root ones like billing-ui.css that
 // BillingPage imports) and return an empty module BEFORE vite:css runs. This stops
@@ -55,6 +62,7 @@ export default defineConfig({
       // (package.json main points to an unbuilt dist).
       '@fuzefront/billing-ui': billingUiSrc,
       '@fuzefront/billing-client': billingClientSrc,
+      '@fuzefront/app-registry-client': appRegistryClientSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe

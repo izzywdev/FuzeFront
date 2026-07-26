@@ -26,6 +26,27 @@ is executed by the domain agents (`backend-engineer`, `frontend-engineer`, `bill
 | [FF-EPIC-07](epics/EPIC-07-platform-hardening-residual.md) | Platform hardening residual | [#94](https://github.com/izzywdev/FuzeFront/issues/94) | DevOps / Security | High | Ready |
 | [FF-EPIC-08](epics/EPIC-08-sdlc-quality-gates.md) | SDLC quality gates | [#108](https://github.com/izzywdev/FuzeFront/issues/108) | Governance / CI | Medium | In progress (PR rebase pending) |
 
+### Multi-Tenant Portal initiative (FF-EPIC-09 … 16)
+
+Turns FuzeFront into a multi-tenant **portal-within-portal** platform: tenant-scoped identity,
+white-label tenant portals, per-portal app catalogs, reseller billing (Stripe Connect), and
+tenant domains. Target Jira project: **company-managed Scrum `FFRNT` (FuzeFront SCRUM)** running the
+FuzePlan workflow scheme (see `../planning/jira-scrum-provisioning.md`). 8 epics · 37 stories · 422 pts.
+
+| Epic Key | Title | GitHub | Domain | Priority | Effort |
+|----------|-------|--------|--------|----------|--------|
+| [FF-EPIC-09](epics/EPIC-09-portal-core.md) | Portal core: provisioning & master-admin management | TBD | Platform | Critical | L |
+| [FF-EPIC-10](epics/EPIC-10-portal-context-resolution.md) | Portal context resolution & boot | TBD | Platform | Critical | M |
+| [FF-EPIC-11](epics/EPIC-11-tenant-scoped-identity.md) | Tenant-scoped identity | TBD | Identity / Security | Critical | XL |
+| [FF-EPIC-12](epics/EPIC-12-per-portal-app-catalog.md) | Per-portal app catalog | TBD | Platform | High | M |
+| [FF-EPIC-13](epics/EPIC-13-white-label-shell-branding.md) | White-label shell branding | TBD | Frontend / Design | High | L |
+| [FF-EPIC-14](epics/EPIC-14-admin-consoles-ui.md) | Admin consoles UI (master-admin + portal-admin) | TBD | Frontend / Platform | High | L |
+| [FF-EPIC-15](epics/EPIC-15-reseller-billing-stripe-connect.md) | Reseller billing (Stripe Connect) | TBD | Billing | High | XL |
+| [FF-EPIC-16](epics/EPIC-16-self-service-custom-domains.md) | Self-service custom domains | TBD | Platform / DevOps | Medium | M |
+
+**Dependency order:** 09 → 10 → {11, 12} → {13, 14} ; 15 depends on 09/10 ; 16 depends on 10 + the
+FuzeInfra wildcard/custom-hostname delegation. All capabilities ship behind default-OFF feature flags.
+
 ---
 
 ## How these map to Jira (import contract)
