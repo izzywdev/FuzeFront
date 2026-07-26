@@ -6,6 +6,7 @@ import type {
   ApiOperation,
   FrontendSurface,
   Repository,
+  RepositoryScanCandidate,
   ScanDiagnostic,
   ScanResult,
   TestCase,
@@ -47,6 +48,8 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*openapi*.{ts,js,mjs,cjs}',
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
+
+export const SCANNER_VERSION = '1.1.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -250,6 +253,7 @@ async function scanFrontend(
   }
   return {
     surfaces: [...new Map(surfaces.map(surface => [surface.id, surface])).values()],
+    packageFiles: packageFiles.map(normalize),
     fingerprints,
     diagnostics,
   }
@@ -258,7 +262,7 @@ async function scanFrontend(
 export async function scanRepository(
   repository: Repository,
   rootPath: string,
-  options: { onProgress?: () => Promise<void> } = {}
+  options: { onProgress?: () => Promise<void>; sourceRevision?: string } = {}
 ): Promise<ScanResult> {
   const root = safeRoot(rootPath)
   const onProgress = options.onProgress ?? (async () => {})
@@ -384,6 +388,32 @@ export async function scanRepository(
     repository.name,
     ...contentFingerprints.sort()
   )
+  const candidate = (
+    sourcePath: string,
+    kind: RepositoryScanCandidate['kind']
+  ): RepositoryScanCandidate => {
+    const candidateDiagnostics = diagnostics.filter(item => item.sourcePath === normalize(sourcePath))
+    return {
+      sourcePath: normalize(sourcePath),
+      kind,
+      status: candidateDiagnostics.some(item => item.severity === 'error')
+        ? (operations.some(item => item.documentPath === normalize(sourcePath)) ? 'partial' : 'invalid')
+        : kind === 'openapi-config' ? 'discovered' : 'parsed',
+      diagnosticCodes: [...new Set(candidateDiagnostics.map(item => item.code))].sort(),
+    }
+  }
+  const candidates = [
+    ...openApiFiles.map(file => candidate(file, 'openapi-document')),
+    ...configFiles.map(file => candidate(file, 'openapi-config')),
+    ...testFiles.map(file => candidate(file, 'test')),
+    ...[...storyFiles].map(file => candidate(file, 'storybook')),
+    ...frontend.packageFiles.map(file => candidate(file, 'package')),
+  ].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
+  const configVersion = digest(JSON.stringify({
+    includeGlobs: repository.includeGlobs,
+    excludeGlobs: repository.excludeGlobs,
+    kind: repository.kind,
+  }))
 
   return {
     repository,
@@ -394,6 +424,21 @@ export async function scanRepository(
     expectations,
     findings,
     diagnostics,
+    scanDetails: {
+      sourceRevision: options.sourceRevision,
+      catalogRevision: revision,
+      scannerVersion: SCANNER_VERSION,
+      configVersion,
+      partial: diagnostics.some(item => item.severity === 'error'),
+      candidates,
+      counts: {
+        candidates: candidates.length,
+        operations: operations.length,
+        frontendSurfaces: surfaces.length,
+        tests: tests.length,
+        diagnostics: diagnostics.length,
+      },
+    },
     scannedAt: new Date().toISOString(),
   }
 }

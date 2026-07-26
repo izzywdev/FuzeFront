@@ -302,8 +302,18 @@ async function authentikPasswordLoginInner(
   email: string,
   password: string
 ): Promise<User> {
-  if (!oidcService.isConfigured() || !oidcService.isInitialized()) {
+  if (!oidcService.isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
+  }
+  if (!oidcService.isInitialized()) {
+    // Lazy re-init: dedupes concurrent callers onto one in-flight attempt and
+    // fails fast during the post-failure cooldown (see oidc.ts). Preserves
+    // the original error type/message on failure.
+    try {
+      await oidcService.ensureInitialized()
+    } catch {
+      throw new AuthentikUnavailableError('OIDC is not configured/initialized')
+    }
   }
 
   const base = authentikBaseUrl()
@@ -524,8 +534,15 @@ export async function authentikSignup(input: AuthentikSignupInput): Promise<User
 }
 
 async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> {
-  if (!oidcService.isConfigured() || !oidcService.isInitialized()) {
+  if (!oidcService.isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
+  }
+  if (!oidcService.isInitialized()) {
+    try {
+      await oidcService.ensureInitialized()
+    } catch {
+      throw new AuthentikUnavailableError('OIDC is not configured/initialized')
+    }
   }
   if (!input.email || !input.password) {
     throw new InvalidCredentialsError('email and password are required')

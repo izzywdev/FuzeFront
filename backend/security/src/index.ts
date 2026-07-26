@@ -109,28 +109,20 @@ async function startServer() {
     }
 
     // If OIDC is configured but the initial discovery failed (e.g. Authentik
-    // blueprints not yet applied at startup), retry in the background every
-    // 10 seconds for up to 5 minutes. This makes the E2E stack reliable:
-    // the backend starts before OIDC is ready, but self-heals once it is.
+    // blueprints not yet applied at startup, or Authentik briefly down), keep
+    // retrying in the background for the LIFE OF THE PROCESS with capped
+    // exponential backoff (1s -> 60s) — not a bounded window. A bounded retry
+    // (previously 30 attempts / 5 min) meant that if Authentik was still down
+    // 5 minutes after boot, OIDC init failed PERMANENTLY: every subsequent
+    // signup/login 401'd with "OIDC is not configured/initialized" until a
+    // human ran `kubectl rollout restart`. This self-heals on its own once
+    // Authentik comes back, with zero request traffic required. Requests
+    // arriving in the meantime also get a lazy re-init attempt via
+    // oidcService.ensureInitialized() (see routes/auth.ts, authentikPassword.ts,
+    // AuthentikIdentityProvider.ts) — both paths share the same in-flight
+    // promise + cooldown so they never double-fire against Authentik.
     if (oidcService.isConfigured() && !oidcService.isInitialized()) {
-      const oidcRetry = async () => {
-        const MAX_ATTEMPTS = 30 // 30 × 10s = 5 min
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-          await new Promise(resolve => setTimeout(resolve, 10_000))
-          try {
-            await oidcService.initialize()
-            console.log(`✅ OIDC service initialized on retry (attempt ${attempt})`)
-            return
-          } catch {
-            if (attempt < MAX_ATTEMPTS) {
-              console.log(`⚠️  OIDC retry ${attempt}/${MAX_ATTEMPTS} failed — will try again`)
-            } else {
-              console.error('❌ OIDC service failed to initialize after all retries')
-            }
-          }
-        }
-      }
-      oidcRetry() // fire-and-forget; server is already listening
+      oidcService.startBackgroundRetry()
     }
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT

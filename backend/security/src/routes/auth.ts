@@ -380,6 +380,10 @@ router.get('/oidc/login', async (req, res) => {
       })
     }
 
+    if (!oidcService.isInitialized()) {
+      await oidcService.ensureInitialized()
+    }
+
     const state = uuidv4()
     const { url, codeVerifier } = oidcService.generateAuthUrl(state)
 
@@ -434,6 +438,10 @@ router.get('/oidc/signup', signupRedirectRateLimiter, async (req, res) => {
       return res.status(500).json({
         error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
       })
+    }
+
+    if (!oidcService.isInitialized()) {
+      await oidcService.ensureInitialized()
     }
 
     const state = uuidv4()
@@ -536,7 +544,10 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
     // 503ing until an SSO request happens to re-initialize the client.
     if (!oidcService.isInitialized()) {
       try {
-        await oidcService.initialize()
+        // ensureInitialized() dedupes concurrent callers onto one in-flight
+        // attempt and fails fast during the post-failure cooldown, instead
+        // of firing a fresh discovery call per request.
+        await oidcService.ensureInitialized()
       } catch (initErr) {
         console.error('❌ OIDC lazy init failed', JSON.stringify({ requestId, message: (initErr as Error).message?.replace(/[\r\n]+/g, ' ') }))
         return res
