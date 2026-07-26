@@ -9,6 +9,7 @@ import {
   coverageSummary,
   createCatalogStore,
   createEventBus,
+  repositoryCatalogStatus,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
 import {
@@ -82,6 +83,18 @@ app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, respons
   const repository = await store.repository(repositoryId, requestIdentity(request)!.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
+})
+app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
+  const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const status = repositoryCatalogStatus(
+    portfolio,
+    repositoryId,
+    new Date(),
+    Number(process.env.FUZEQUALITY_STALE_AFTER_MS ?? 86_400_000)
+  )
+  if (!status) return response.status(404).json({ error: 'Repository not found' })
+  response.json(status)
 })
 app.post('/api/v1/repositories/verify', mayManageRepositories, async (request, response) => {
   const parsed = repositoryInputSchema.safeParse(request.body)
