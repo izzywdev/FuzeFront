@@ -26,6 +26,14 @@ unleash:
   image:
     repository: unleashorg/unleash-server
     tag: "5.12.0"
+  # Admin UI exposed ONLY under the *.prod.fuzefront.com Cloudflare-Access zone,
+  # so it lands in the CF App Launcher alongside the other admin tools. This
+  # Ingress only host-matches; the CF tunnel ingress rule (host -> traefik),
+  # the proxied CNAME, the Access application/policy and the App Launcher entry
+  # are FuzeInfra-owned (Terraform) — delegated, see FuzeInfra issue.
+  ingress:
+    enabled: true
+    host: unleash.prod.fuzefront.com
   # Steer onto node-2 (keep flag-server load off the DB-heavy node-1).
   affinity:
     nodeAffinity:
