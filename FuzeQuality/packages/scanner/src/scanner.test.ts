@@ -137,6 +137,30 @@ paths:
     expect(result.diagnostics).toHaveLength(0)
   })
 
+  it('retains operations and reports structurally invalid OpenAPI documents', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-structural-validation-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.3
+info:
+  title: Missing version
+paths:
+  /health:
+    get:
+      operationId: health
+      responses: { '200': { description: ok } }
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(['health'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourcePath: 'openapi.yaml',
+        code: 'openapi-structural-validation',
+      }),
+    ]))
+    expect(result.diagnostics.every(diagnostic => !diagnostic.message.includes(root))).toBe(true)
+  })
+
   it('discovers a statically referenced specification without executing its config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-static-ref-'))
     await mkdir(join(root, 'config'), { recursive: true })
