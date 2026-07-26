@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/agent-templates/environment.schema.json",
+  "title": "Managed-Agents environment",
+  "description": "A POST /v1/environments payload. type=cloud runs in an Anthropic sandbox (packages + networking); type=self_hosted is a work queue drained by our own worker (worker/ image carries the tools + credentials).",
+  "type": "object",
+  "required": ["name", "config"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": {
+      "type": "string",
+      "description": "Unique, descriptive environment name; sync matches existing environments by this name."
+    },
+    "config": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["cloud", "self_hosted"] },
+        "packages": {
+          "type": "object",
+          "description": "cloud only. Pre-installed before the agent starts; cached per environment.",
+          "additionalProperties": false,
+          "properties": {
+            "apt": { "type": "array", "items": { "type": "string" } },
+            "cargo": { "type": "array", "items": { "type": "string" } },
+            "gem": { "type": "array", "items": { "type": "string" } },
+            "go": { "type": "array", "items": { "type": "string" } },
+            "npm": { "type": "array", "items": { "type": "string" } },
+            "pip": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "networking": {
+          "type": "object",
+          "description": "cloud only. Default is unrestricted; prefer limited with an explicit allowed_hosts list.",
+          "properties": {
+            "type": { "enum": ["unrestricted", "limited"] },
+            "allowed_hosts": { "type": "array", "items": { "type": "string" } },
+            "allow_mcp_servers": { "type": "boolean" },
+            "allow_package_managers": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}
