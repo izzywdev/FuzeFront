@@ -137,6 +137,30 @@ paths:
     expect(result.diagnostics).toHaveLength(0)
   })
 
+  it('retains operations and reports structurally invalid OpenAPI documents', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-structural-validation-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.3
+info:
+  title: Missing version
+paths:
+  /health:
+    get:
+      operationId: health
+      responses: { '200': { description: ok } }
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(['health'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourcePath: 'openapi.yaml',
+        code: 'openapi-structural-validation',
+      }),
+    ]))
+    expect(result.diagnostics.every(diagnostic => !diagnostic.message.includes(root))).toBe(true)
+  })
+
   it('discovers a statically referenced specification without executing its config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-static-ref-'))
     await mkdir(join(root, 'config'), { recursive: true })
@@ -167,6 +191,197 @@ paths:
     expect(result.diagnostics.map(diagnostic => diagnostic.code)).toEqual(
       expect.arrayContaining(['unresolved-openapi-ref', 'openapi-ref-outside-repository'])
     )
+  })
+
+  it('bundles referenced path items, parameters, request bodies, and responses with provenance', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-bundled-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await mkdir(join(root, 'components'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Bundled Service, version: 2.4.0 }
+servers: [{ url: https://api.example.test }]
+paths:
+  /orders/{id}:
+    $ref: './paths/orders.yaml#/order'
+`)
+    await writeFile(join(root, 'paths', 'orders.yaml'), `order:
+  get:
+    operationId: getOrder
+    parameters:
+      - $ref: '../components/common.yaml#/parameters/OrderId'
+    responses:
+      '200':
+        $ref: '../components/common.yaml#/responses/Order'
+  put:
+    operationId: replaceOrder
+    requestBody:
+      $ref: '../components/common.yaml#/requestBodies/Order'
+    responses:
+      '200':
+        $ref: '../components/common.yaml#/responses/Order'
+`)
+    await writeFile(join(root, 'components', 'common.yaml'), `parameters:
+  OrderId: { name: id, in: path, required: true, schema: { type: string, minLength: 3 } }
+requestBodies:
+  Order:
+    required: true
+    content:
+      application/json: { schema: { type: object } }
+responses:
+  Order:
+    description: ok
+    content:
+      application/json: { schema: { type: object } }
+`)
+
+    const result = await scanRepository(repository, root)
+    const getOrder = result.operations.find(operation => operation.operationId === 'getOrder')
+    const replaceOrder = result.operations.find(operation => operation.operationId === 'replaceOrder')
+
+    expect(getOrder).toEqual(expect.objectContaining({
+      specificationVersion: '3.1.0',
+      documentTitle: 'Bundled Service',
+      documentVersion: '2.4.0',
+      servers: ['https://api.example.test'],
+      responseContentTypes: ['application/json'],
+    }))
+    expect(getOrder?.parameters).toEqual([
+      expect.objectContaining({ name: 'id', location: 'path', required: true }),
+    ])
+    expect(getOrder?.sourcePaths).toEqual(expect.arrayContaining([
+      'openapi.yaml',
+      'paths/orders.yaml',
+      'components/common.yaml',
+    ]))
+    expect(replaceOrder).toEqual(expect.objectContaining({
+      requestBodyRequired: true,
+      requestContentTypes: ['application/json'],
+      responseContentTypes: ['application/json'],
+    }))
+    expect(result.diagnostics).toHaveLength(0)
+  })
+
+  it('rejects remote OpenAPI references without fetching them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-remote-ref-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Remote, version: 1.0.0 }
+paths:
+  /remote:
+    $ref: 'https://untrusted.example.test/path.yaml'
+`)
+    const result = await scanRepository(repository, root)
+    expect(result.operations).toHaveLength(0)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'openapi-ref-outside-repository' }),
+    ]))
+  })
+
+  it('isolates an invalid split contract without losing operations from another document', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-isolated-split-'))
+    await mkdir(join(root, 'contracts'), { recursive: true })
+    await writeFile(join(root, 'contracts', 'valid.openapi.yaml'), `openapi: 3.1.0
+info: { title: Valid, version: 1.0.0 }
+paths:
+  /health:
+    get:
+      operationId: health
+      responses: { '200': { description: ok } }
+`)
+    await writeFile(join(root, 'contracts', 'invalid.openapi.yaml'), `openapi: 3.1.0
+info: { title: Invalid, version: 1.0.0 }
+paths:
+  /orders:
+    $ref: './missing-path.yaml#/orders'
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(['health'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourcePath: 'contracts/invalid.openapi.yaml',
+        code: 'unresolved-openapi-ref',
+      }),
+    ]))
+  })
+
+  it('reports missing reference fragments without aborting sibling operations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-missing-fragment-'))
+    await mkdir(join(root, 'components'), { recursive: true })
+    await writeFile(join(root, 'components', 'responses.yaml'), `responses:
+  Found: { description: found }
+`)
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Fragment, version: 1.0.0 }
+paths:
+  /safe:
+    get:
+      operationId: safe
+      responses: { '200': { description: ok } }
+  /missing:
+    get:
+      operationId: missingFragment
+      responses:
+        '404': { $ref: './components/responses.yaml#/responses/Absent' }
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(
+      expect.arrayContaining(['safe', 'missingFragment'])
+    )
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'unresolved-openapi-ref' }),
+    ]))
+  })
+
+  it('terminates cyclic catalog-entity references with a redacted diagnostic', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-cyclic-ref-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Cyclic, version: 1.0.0 }
+paths:
+  /cycle:
+    $ref: './paths/a.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'a.yaml'), `path:
+  $ref: './b.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'b.yaml'), `path:
+  $ref: './a.yaml#/path'
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations).toHaveLength(0)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'cyclic-openapi-ref' }),
+    ]))
+    expect(result.diagnostics.every(diagnostic => !diagnostic.message.includes(root))).toBe(true)
+  })
+
+  it('produces identical catalog evidence when the same split revision is scanned twice', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-split-idempotency-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Stable, version: 1.0.0 }
+paths:
+  /stable:
+    $ref: './paths/stable.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'stable.yaml'), `path:
+  get:
+    operationId: stable
+    responses: { '200': { description: ok } }
+`)
+
+    const first = await scanRepository(repository, root)
+    const second = await scanRepository(repository, root)
+
+    expect(second.revision).toBe(first.revision)
+    expect(second.operations).toEqual(first.operations)
+    expect(second.expectations).toEqual(first.expectations)
+    expect(second.diagnostics).toEqual(first.diagnostics)
   })
 
   it('normalizes fallback identities and reports missing and duplicate operation identifiers', async () => {

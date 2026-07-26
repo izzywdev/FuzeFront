@@ -36,7 +36,7 @@ entries:
       from_address: "noreply@fuzefront.dev"
       subject: "Reset your FuzeFront password"
       template: email/password_reset.html
-      token_expiry: 30  # minutes
+      token_expiry: minutes=30
       activate_user_on_success: false
 
   # ── New-password prompt fields ────────────────────────────────────────────────

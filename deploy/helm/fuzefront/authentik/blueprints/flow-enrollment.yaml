@@ -126,7 +126,7 @@ entries:
       from_address: "noreply@fuzefront.dev"
       subject: "Verify your FuzeFront account"
       template: email/account_confirmation.html
-      token_expiry: 30  # minutes
+      token_expiry: minutes=30
 
   # ── User-write stage ─────────────────────────────────────────────────────────
   - model: authentik_stages_user_write.userwritestage

@@ -96,6 +96,11 @@ entries:
     attrs:
       name: MendysRobotics Datasets
       client_type: confidential
+      # Required since Authentik 2026.x: fresh providers default to NO allowed
+      # grant types and reject every authorize request ("Invalid grant_type").
+      grant_types:
+        - authorization_code
+        - refresh_token
       # client_id is public/non-sensitive — kept as a deterministic literal.
       # client_secret is resolved at apply time from the worker pod env var
       # AUTHENTIK_MENDYS_DATASETS_CLIENT_SECRET (sourced from the chart

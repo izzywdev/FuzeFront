@@ -38,6 +38,9 @@ entries:
       name: fuzefront-mfa-sms-setup
       friendly_name: "FuzeFront SMS"
       provider: generic
+      # Required since Authentik 2025.x for the generic provider; actual auth is
+      # injected via mapping_expression, this is a non-empty placeholder.
+      auth: !Env [AUTHENTIK_SMS_AUTH_SECRET, "unused-placeholder"]
       # Send URL: Authentik POSTs {"phone_number": "<phone>"} to this endpoint
       account_sid: !Env [AUTHENTIK_SMS_SEND_URL, "http://fuzefront-sms-service:3004/sms/send"]
       # Verify URL: Authentik POSTs {"phone_number": "<phone>", "token": "<code>"} to this endpoint

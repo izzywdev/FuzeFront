@@ -84,7 +84,7 @@ entries:
             "given_name": request.user.name,
             "preferred_username": request.user.username,
             "nickname": request.user.username,
-            "groups": [g.name for g in request.user.ak_groups.all()],
+            "groups": [g.name for g in request.user.groups.all()],
         }
 
   # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
@@ -127,6 +127,13 @@ entries:
       # Reference the flow defined above. !Find resolves within the same
       # blueprint run — the flow entry is applied before this provider entry.
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
+      # Required since Authentik 2025.x — provider must declare its invalidation flow.
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # Required since Authentik 2026.x: fresh providers default to NO allowed
+      # grant types and reject every authorize request ("Invalid grant_type").
+      grant_types:
+        - authorization_code
+        - refresh_token
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application

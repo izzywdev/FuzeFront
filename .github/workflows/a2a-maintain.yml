@@ -1,0 +1,98 @@
+name: A2A Maintain
+
+# Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
+# runs the `a2a-maintainer` agent to check whether anything changed that requires the
+# repo's A2A onboarding to be BUILT (first time) or UPDATED (drift) — the manifest a2a
+# block + providesTo, the serving role(s) and their card projection, and (platform repo)
+# the tenant registration. If so, it commits the change BACK TO THE PR BRANCH; when it
+# can't (fork PR / first-time build), it opens a separate `auto-merge`-labelled follow-up
+# PR. It never fabricates a role's product behaviour, never handles creds, never deploys.
+#
+# Requires repo secret ANTHROPIC_API_KEY. No key -> SKIPS (never red). The `a2a-maintainer`
+# agent def is stamped by sdlc-bootstrap into .claude/agents/ and reconciled by
+# governance-sync; this workflow just invokes it.
+
+on:
+  pull_request:
+
+permissions:
+  contents: write          # commit the reconciled A2A surface back to the PR branch
+  pull-requests: write      # open a follow-up PR when a push-back isn't possible
+  id-token: write          # claude-code-action fetches an OIDC token (required)
+  actions: read
+
+concurrency:
+  group: a2a-maintain-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  a2a-maintain:
+    # Loop guard: never run on our own maintenance branches.
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if key absent or repo not onboarded
+        id: guard
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ ! -f .fuze/manifest.json ] 2>/dev/null; then :; fi
+          if [ -z "$KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY not set — A2A maintain skipped (set it to enable)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR head (writable, same-repo only)
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Skip on last-commit marker
+        id: marker
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[skip a2a\]'; then
+            echo "::notice::last commit marked [skip a2a] — skipping to avoid a self-trigger loop."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run a2a-maintainer
+        if: steps.guard.outputs.ok == 'true' && steps.marker.outputs.run == 'true'
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the **a2a-maintainer** for this repo (follow `.claude/agents/a2a-maintainer.md`
+            exactly — same scope, boundaries, and done-contract). This is an automated CI run on
+            PR #${{ github.event.pull_request.number }} (head `${{ github.event.pull_request.head.ref }}`).
+
+            TASK: assess whether this PR changed anything that requires the repo's A2A surface to be
+            built (first time) or updated (drift) — the `.fuze/manifest.json` a2a block + `providesTo`,
+            the serving role(s) under `agent-templates/roles/` and their card projection against the
+            frozen A2A contract, contract-version currency, and (platform repo only) the shared-server
+            `tenants` registration. If the surface is already in sync, DO NOTHING and say so.
+
+            IF a change is needed:
+              - Make the minimal correct change (scaffold on first run; reconcile only what drifted).
+              - COMMIT IT BACK TO THIS PR BRANCH: `chore(a2a-maintain): <what> [skip a2a]` and push to
+                `${{ github.event.pull_request.head.ref }}`. The trailing `[skip a2a]` is REQUIRED so you
+                do not re-trigger yourself.
+              - If you cannot push to the PR branch (this is a fork PR), instead open a follow-up PR from
+                an `a2a-maintain/pr-${{ github.event.pull_request.number }}` branch, add the `auto-merge`
+                label, and comment the link on this PR.
+
+            HARD BOUNDARIES: never fabricate a role's product/domain behaviour (scaffold a card-valid
+            skeleton and TODO-flag the real behaviour), never handle secrets/creds or run `register-a2a-cli`,
+            never `kubectl`/deploy, never flip a tenant/role to `enabled: true` whose card can't yet project,
+            never edit the frozen `contracts/a2a/v1/**`. Verify any card you touch projects schema-valid.
+
+            End with the done-contract line from your agent def
+            (`A2A SURFACE: <in-sync|scaffolded|reconciled>` + what landed + `NEEDS PRODUCT/OPERATOR:` if any).
+          claude_args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'
