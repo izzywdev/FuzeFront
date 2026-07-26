@@ -11,6 +11,14 @@ describe('FQ-18 repository access verification', () => {
         default_branch: 'master', private: true, permissions: { pull: true },
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: 'a'.repeat(40) } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        truncated: false,
+        tree: [
+          { type: 'blob', path: 'services/auth/openapi.yaml' },
+          { type: 'blob', path: 'src/index.ts' },
+          { type: 'blob', path: 'config/swagger.config.ts' },
+        ],
+      }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const verifier = createGitHubAccessVerifier(async () => 'installation-token-for-test')
 
@@ -20,9 +28,12 @@ describe('FQ-18 repository access verification', () => {
       canonicalUrl: 'https://github.com/izzywdev/FuzeOne', defaultBranch: 'master', private: true,
       commitSha: 'a'.repeat(40),
       permissions: { contents: 'read', metadata: 'read' },
+      openApiCandidates: ['config/swagger.config.ts', 'services/auth/openapi.yaml'],
+      candidatePreviewComplete: true,
     })
     expect(JSON.stringify(result)).not.toContain('installation-token-for-test')
     expect(fetchMock.mock.calls[1][0]).toContain('/branches/master')
+    expect(fetchMock.mock.calls[2][0]).toContain(`/git/trees/${'a'.repeat(40)}?recursive=1`)
   })
 
   it('returns a redacted access error for a missing branch', async () => {
