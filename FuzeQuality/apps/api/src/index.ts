@@ -19,6 +19,7 @@ import {
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformPermission } from './platform-authorization'
+import { isPublicRequest } from './authentication'
 
 const app = express()
 const store = createCatalogStore()
@@ -41,9 +42,7 @@ app.use((request, response, next) => {
   const configuredToken = process.env.FUZEQUALITY_API_TOKEN
   if (
     !configuredToken ||
-    request.path.startsWith('/health/') ||
-    request.path === '/metrics' ||
-    request.path.startsWith('/api/v1/webhooks/') ||
+    isPublicRequest(request.method, request.path) ||
     request.headers.authorization === `Bearer ${configuredToken}`
   ) {
     next()
