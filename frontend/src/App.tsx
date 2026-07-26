@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import {
   useCurrentUser,
   useAppContext,
@@ -187,7 +187,7 @@ function App() {
 
 function AppContent() {
   const { isAuthenticated, user } = useCurrentUser()
-  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  const { pathname: currentPath } = useLocation()
 
   // Public route: invitation accept page — handle before auth check
   if (currentPath.startsWith('/invitations/')) {
