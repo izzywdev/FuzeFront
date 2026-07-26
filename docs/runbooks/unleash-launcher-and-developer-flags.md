@@ -129,33 +129,75 @@ with no segment.
 Non-developer behaviour is unchanged in every case. Verification used a temporary
 `frontend`-type API token, **revoked immediately afterwards**.
 
-### ⚠ This targeting layer is currently INERT at runtime — three blockers
+### Making the segment actually reach runtime — what was broken
 
-The segment is correct and verified *inside Unleash*, but no running service can
-observe it yet. Until these are fixed, developers will **not** see flags flip:
+The segment was correct inside Unleash but observable by nothing. Five defects
+stood between it and a running service; all are fixed in the same PR.
 
-1. **The flag client is not installed in any running service.** `@fuzefront/feature-flags`,
-   `unleash-openfeature-provider-server`, and `unleash-client` are all absent from
-   `fuzefront-backend`, `fuzefront-applications`, and `fuzefront-security`. Every
-   server-side read therefore falls through to the in-code fail-safe default.
-2. **`@fuzefront/feature-flags` does not export `getClient`.** `backend/applications/src/app-registry/flags.ts`
-   resolves the client via `require('@fuzefront/feature-flags').getClient()`, but
-   `packages/feature-flags/src/index.ts` exports only `init`/`setContext`/`getBoolean`/
-   `getString`/`getNumber`/`close`. Even once installed, `resolveClient()` returns
-   `null` and flags always take their default. (Owner: `backend-engineer`.)
-3. **The two frontend flags are build-time constants, not Unleash reads.**
-   `AccountSecurityPage.tsx` and `BillingPage.tsx` read `import.meta.env.VITE_FF_*`,
-   which is baked at build time and identical for every user — no per-user segment
-   can ever affect them. They must be switched to the web client before the
-   developer cohort has any effect. (Owner: `frontend-engineer`.)
+**0. The provider package did not exist.** `packages/feature-flags/src/server.ts`
+dynamically imported `unleash-openfeature-provider-server` — **not a package on
+npm**, and never a declared dependency. The import therefore *always* threw, the
+`catch` degraded to OpenFeature's no-op default provider, and every server-side
+flag silently resolved to its in-code default. No Unleash targeting was ever
+applied, and nothing logged an error. This was the root cause; the rest are the
+reasons it was never noticed.
 
-Also missing: **no `frontend`-type Unleash API token exists** (only a `client` and an
-`admin` token). The browser path will need one, provisioned as a SealedSecret by
-`devops-engineer` — not the `client` token, which must never reach the browser.
+Fixed by an in-repo OpenFeature `Provider` over the stable, Unleash-maintained
+`unleash-client` (`src/unleash-provider.ts`). The only published Unleash
+OpenFeature Node provider is `@unleash/openfeature-node-provider@0.1.0-alpha`,
+which is not fit for a production path. OpenFeature stays the public surface, so
+Unleash remains swappable.
 
-Also note `flags.ts` builds its context with `organizationId`, while the client's
-context contract (`packages/feature-flags/src/types.ts`) specifies **`orgId`**; any
-future org-targeted constraint would silently miss. (Owner: `backend-engineer`.)
+**1. The client was in no image.** `packages/feature-flags` was absent from every
+Dockerfile, so the workspace symlink resolved to a package with no `dist/`.
+Fixed: added to the build + production stages of `backend/Dockerfile` and
+`backend/applications/Dockerfile`, declared as a dependency of both services, and
+initialized at startup.
+
+**2. `getClient` was never exported.** `backend/applications/src/app-registry/flags.ts`
+resolves the client via `require('@fuzefront/feature-flags').getClient()`, but the
+package exported only `init`/`setContext`/`getBoolean`/`getString`/`getNumber`/
+`close`. `resolveClient()` therefore returned `null` and flags always took their
+default. Fixed: `getClient()` added and pinned by tests.
+
+**3. The chart read a key that exists in no Secret.** The env block was gated on
+`applicationsService.featureFlags.unleashUrl`, which was `""` in prod so nothing
+rendered; and it sourced the token from `fuzefront-secrets` under
+`FEATURE_FLAGS_CLIENT_TOKEN`, a key present in neither Secret. Fixed: prod values
+set the in-cluster URL and point at `unleash-secrets` / `UNLEASH_CLIENT_TOKEN` —
+the token the Unleash chart already seals, so nothing needs re-sealing. The same
+block was added to the backend, which had none.
+
+**4. The frontend flags were build-time constants.** `AccountSecurityPage.tsx`
+and `BillingPage.tsx` read `import.meta.env.VITE_FF_*`, baked into the bundle and
+identical for every user, so no per-user segment could ever affect them. Fixed:
+both read `useFlag(...)` from `frontend/src/platform/featureFlags.tsx`, which
+fetches `GET /api/flags` once per session.
+
+### Why the browser does NOT talk to Unleash directly
+
+A frontend token + the Unleash frontend API was the obvious route. It is the
+wrong one here: **Unleash's frontend API takes its evaluation context from
+client-supplied query params**, so any user could pass the platform owner's
+`userId` and enrol themselves into the `developers` segment. Flags gate
+visibility rather than authorization (Permit still owns authz), so the blast
+radius is bounded — but a cohort anyone can join is not a cohort.
+
+Instead the backend serves `GET /api/flags`, evaluating the catalog against the
+**authenticated session**. This also means no Unleash token reaches the browser,
+no `frontend`-type token has to be minted and sealed, and no new public host or
+Cloudflare Access carve-out is needed — `/api/*` is already same-origin routed.
+Only `WEB_EXPOSED_FLAGS` are returned, so server-only flags are never disclosed.
+
+**5. `packages/**` did not trigger a release.** The images compile the flag
+client, yet `release.yml` only watched `backend/**`, `shared/**`, `frontend/**`,
+… — a change confined to `packages/**` would merge green and ship nothing. Path
+added.
+
+Local/e2e stacks have no Unleash to target, so the backend accepts
+`FLAGS_FORCE_ON=<comma-separated keys>`, **hard-gated to non-production** so a
+stray env var can never light up dark features in prod. `docker-compose.e2e.yml`
+uses it in place of the removed `VITE_FF_ACCOUNT_SECURITY_HUB` build arg.
 
 ### Step 1. Create a `developers` segment
 
@@ -212,11 +254,14 @@ rollout. Both states remain covered by the flag tests
 | `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Done** — segment id 1, 3 release flags, production env (2026-07-26) |
 | Owner's user id / dev group membership | Unleash / Authentik | **Done** — owner `users.id` UUID in the segment constraint |
 | `developers`-segment step in the flag-creation checklist | `.claude/skills/feature-flags/SKILL.md` | **Done** |
-| Flag client installed in running services | `fuzefront-backend` / `-applications` / `-security` | **BLOCKER** — absent, all reads hit in-code defaults |
-| `getClient` export on `@fuzefront/feature-flags` | `packages/feature-flags/src/index.ts` | **BLOCKER** — `backend-engineer` |
-| Frontend flags read Unleash (not `VITE_FF_*`) | `frontend/src/pages/{AccountSecurity,Billing}Page.tsx` | **BLOCKER** — `frontend-engineer` |
-| `frontend`-type Unleash token (SealedSecret) | Unleash / `deploy/contabo/sealed` | **TODO** — `devops-engineer` |
+| Real OpenFeature provider (phantom package replaced) | `packages/feature-flags/src/unleash-provider.ts` | **Done** |
+| Flag client built into the images + declared dep | `backend/Dockerfile`, `backend/applications/Dockerfile` | **Done** |
+| `getClient` export | `packages/feature-flags/src/index.ts` | **Done** |
+| Helm env: URL + CLIENT token from `unleash-secrets` | `deploy/helm/fuzefront/**` | **Done** |
+| Frontend flags read per-user (`GET /api/flags`) | `frontend/src/platform/featureFlags.tsx` | **Done** |
+| `packages/**` triggers a release build | `.github/workflows/release.yml` | **Done** |
+| `frontend`-type Unleash token (SealedSecret) | — | **Not needed** — the browser never talks to Unleash |
 
-Part 2 is complete **within Unleash** and verified there. It has **no runtime effect
-yet** — see the three blockers above; the flag layer is not wired into any running
-service, so developers will not observe flipped flags until those are closed.
+Part 2 is complete within Unleash **and** wired end-to-end in code. Runtime effect
+lands when the images build and Argo syncs; verify in-cluster after the deploy
+(merging is not deploying — check the running pods, not the merge).

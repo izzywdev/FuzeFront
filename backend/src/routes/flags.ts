@@ -61,7 +61,11 @@ router.get('/', authenticateToken, async (req: any, res: Response) => {
     // `developers` segment constrains. Taken from the verified session, never
     // from the request body/query.
     userId: req.user?.id,
-    orgId: req.user?.organizationId ?? req.user?.defaultOrganizationId ?? undefined,
+    // NOTE: no `orgId` yet — the authenticated session User (middleware/auth.ts)
+    // carries no organization, so emitting one here would always be undefined.
+    // Add it (and only then) when org-scoped Unleash constraints are needed;
+    // the context key must be `orgId`, per the client's contract in
+    // packages/feature-flags/src/types.ts.
   }
 
   // Local/e2e escape hatch: force specific flags ON where there is no Unleash
