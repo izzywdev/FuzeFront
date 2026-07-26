@@ -1,5 +1,7 @@
 import { dirname, extname, isAbsolute, join, normalize as normalizePath, relative, resolve, sep } from 'node:path'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import SwaggerParser from '@apidevtools/swagger-parser'
 import YAML from 'yaml'
 import type { ApiOperation, Repository, ScanDiagnostic } from '@fuzequality/contracts'
 
@@ -230,6 +232,58 @@ function securityNames(document: Record<string, unknown>, operation: Record<stri
   return [...new Set(security.flatMap(item => Object.keys(asRecord(item) ?? {})))]
 }
 
+async function validateStructure(
+  root: string,
+  file: string,
+  _document: Record<string, unknown>,
+  diagnostics: ScanDiagnostic[]
+) {
+  const resolvedRoot = resolve(root)
+  const localPath = (url: string) => {
+    const target = url.startsWith('file:') ? fileURLToPath(url) : url
+    return resolve(target)
+  }
+  try {
+    await SwaggerParser.validate(resolve(resolvedRoot, file), {
+      resolve: {
+        http: false,
+        file: {
+          order: 1,
+          canRead: candidate => {
+            try {
+              return within(resolvedRoot, localPath(candidate.url))
+            } catch {
+              return false
+            }
+          },
+          read: async candidate => {
+            const target = localPath(candidate.url)
+            if (!within(resolvedRoot, target)) {
+              throw new Error('OpenAPI reference is outside the repository')
+            }
+            return readFile(target)
+          },
+        },
+      },
+      validate: { schema: true, spec: true },
+    })
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error)
+    const message = rawMessage
+      .replaceAll(resolve(root), '<repository>')
+      .replaceAll(root, '<repository>')
+      .replace(/\r?\n[\s\S]*/g, '')
+      .slice(0, 500)
+    diagnostics.push({
+      sourcePath: digestPath(file),
+      category: 'openapi',
+      severity: 'error',
+      code: 'openapi-structural-validation',
+      message: `OpenAPI structure is invalid: ${message}`,
+    })
+  }
+}
+
 export async function parseOpenApiDocument(
   root: string,
   repository: Repository,
@@ -249,6 +303,7 @@ export async function parseOpenApiDocument(
   const paths = asRecord(document.paths)
   if (!paths) throw new Error('OpenAPI document has no paths object')
   await validateRefs(root, file, document, diagnostics)
+  await validateStructure(root, file, document, diagnostics)
   const resolver = new RepositoryReferenceResolver(root, file, document, diagnostics)
   const info = asRecord(document.info)
   const documentTitle = typeof info?.title === 'string' ? info.title : undefined
