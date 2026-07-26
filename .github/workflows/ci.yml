@@ -192,6 +192,42 @@ jobs:
             sdk/dist/
             task-manager-app/dist/
 
+  chat-service-tests:
+    name: Chat service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # chat-service IS a root workspace, so `npm ci` installs its deps and links
+      # @fuzefront/shared — no manual symlink needed (unlike the email-service job
+      # below, which predates that). Its Dockerfile relies on the same workspace
+      # membership via `npm ci --workspace=services/chat-service`.
+      - name: Install workspace
+        run: npm ci
+
+      - name: Build @fuzefront/shared
+        # chat-service imports the Kafka client + billing.llm.usage schema from
+        # shared, and tsc resolves it through shared/dist.
+        run: npm run -w @fuzefront/shared build
+
+      - name: Type-check chat-service
+        run: npm run -w @fuzefront/chat-service build
+
+      - name: Run chat-service unit tests
+        # Covers the RAG pipeline, agent loop + tools, Permit gating, repos
+        # (incl. the continuous-thread resolution), routes, and the db-migrate
+        # Job entrypoint. These had never run in CI before.
+        run: npm run -w @fuzefront/chat-service test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest

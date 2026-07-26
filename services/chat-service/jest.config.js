@@ -13,12 +13,17 @@ module.exports = {
   },
   // Map @fuzefront/shared to the kafka sub-barrel (TypeScript source) so ts-jest can compile it.
   // shared dist is ESM (module: esnext); chat-service tests run in CommonJS via ts-jest.
-  // The shared kafka source imports kafkajs + zod; shared has no node_modules of its own, so
-  // pin those to chat-service's copies (resolvable for both ts-jest type-checking and runtime).
+  // The shared kafka source imports kafkajs + zod, and shared has no node_modules of its own,
+  // so those must resolve from here.
+  //
+  // require.resolve rather than a hard-coded '<rootDir>/node_modules/...': chat-service is now a
+  // root workspace, so npm hoists its deps to the repo-root node_modules and the local path does
+  // not exist. require.resolve walks up from this config and finds the package wherever npm put
+  // it, so this holds under both hoisted and nested installs.
   moduleNameMapper: {
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
-    '^kafkajs$': '<rootDir>/node_modules/kafkajs',
-    '^zod$': '<rootDir>/node_modules/zod',
+    '^kafkajs$': require.resolve('kafkajs'),
+    '^zod$': require.resolve('zod'),
   },
   testTimeout: 60000,
 };
