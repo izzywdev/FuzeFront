@@ -84,7 +84,7 @@ entries:
             "given_name": request.user.name,
             "preferred_username": request.user.username,
             "nickname": request.user.username,
-            "groups": [g.name for g in request.user.ak_groups.all()],
+            "groups": [g.name for g in request.user.groups.all()],
         }
 
   # ── OIDC / OAuth2 provider ────────────────────────────────────────────────────
