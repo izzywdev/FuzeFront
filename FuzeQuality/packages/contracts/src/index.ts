@@ -60,6 +60,11 @@ export type ApiOperation = {
   id: string
   repositoryId: string
   documentPath: string
+  specificationVersion?: string
+  documentTitle?: string
+  documentVersion?: string
+  sourcePaths?: string[]
+  servers?: string[]
   operationId?: string
   method: string
   path: string
@@ -75,6 +80,7 @@ export type ApiOperation = {
   }>
   responses: string[]
   requestContentTypes?: string[]
+  requestBodyRequired?: boolean
   responseContentTypes?: string[]
   idempotencyHeader?: string
   supportsCrudSequence?: boolean
