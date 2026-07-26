@@ -252,6 +252,114 @@ paths:
     ]))
   })
 
+  it('isolates an invalid split contract without losing operations from another document', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-isolated-split-'))
+    await mkdir(join(root, 'contracts'), { recursive: true })
+    await writeFile(join(root, 'contracts', 'valid.openapi.yaml'), `openapi: 3.1.0
+info: { title: Valid, version: 1.0.0 }
+paths:
+  /health:
+    get:
+      operationId: health
+      responses: { '200': { description: ok } }
+`)
+    await writeFile(join(root, 'contracts', 'invalid.openapi.yaml'), `openapi: 3.1.0
+info: { title: Invalid, version: 1.0.0 }
+paths:
+  /orders:
+    $ref: './missing-path.yaml#/orders'
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(['health'])
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourcePath: 'contracts/invalid.openapi.yaml',
+        code: 'unresolved-openapi-ref',
+      }),
+    ]))
+  })
+
+  it('reports missing reference fragments without aborting sibling operations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-missing-fragment-'))
+    await mkdir(join(root, 'components'), { recursive: true })
+    await writeFile(join(root, 'components', 'responses.yaml'), `responses:
+  Found: { description: found }
+`)
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Fragment, version: 1.0.0 }
+paths:
+  /safe:
+    get:
+      operationId: safe
+      responses: { '200': { description: ok } }
+  /missing:
+    get:
+      operationId: missingFragment
+      responses:
+        '404': { $ref: './components/responses.yaml#/responses/Absent' }
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations.map(operation => operation.operationId)).toEqual(
+      expect.arrayContaining(['safe', 'missingFragment'])
+    )
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'unresolved-openapi-ref' }),
+    ]))
+  })
+
+  it('terminates cyclic catalog-entity references with a redacted diagnostic', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-cyclic-ref-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Cyclic, version: 1.0.0 }
+paths:
+  /cycle:
+    $ref: './paths/a.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'a.yaml'), `path:
+  $ref: './b.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'b.yaml'), `path:
+  $ref: './a.yaml#/path'
+`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.operations).toHaveLength(0)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'cyclic-openapi-ref' }),
+    ]))
+    expect(result.diagnostics.every(diagnostic => !diagnostic.message.includes(root))).toBe(true)
+  })
+
+  it('produces identical catalog evidence when the same split revision is scanned twice', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-split-idempotency-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Stable, version: 1.0.0 }
+paths:
+  /stable:
+    $ref: './paths/stable.yaml#/path'
+`)
+    await writeFile(join(root, 'paths', 'stable.yaml'), `path:
+  get:
+    operationId: stable
+    responses: { '200': { description: ok } }
+`)
+
+    const first = await scanRepository(repository, root)
+    const second = await scanRepository(repository, root)
+
+    expect(second.revision).toBe(first.revision)
+    expect(second.operations).toEqual(first.operations)
+    expect(second.expectations).toEqual(first.expectations)
+    expect(second.diagnostics).toEqual(first.diagnostics)
+  })
+
   it('normalizes fallback identities and reports missing and duplicate operation identifiers', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-identities-'))
     await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0
