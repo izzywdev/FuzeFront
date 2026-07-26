@@ -22,13 +22,6 @@ vi.mock('../lib/shared', async () => {
   return {
     ...actual,
     useCurrentUser: vi.fn(),
-    // AuthWrapper calls useAppContext() directly; there is no AppProvider in this
-    // test's render tree (AppProvider lives in main.tsx, outside <App>), so we
-    // stub it with a no-op dispatch and empty state to avoid the context error.
-    useAppContext: vi.fn().mockReturnValue({
-      state: { apps: [], user: null, organizations: [], activeOrganizationId: null },
-      dispatch: vi.fn(),
-    }),
   }
 })
 
@@ -84,6 +77,7 @@ vi.mock('../pages/LoginPage', () => ({
 
 import App from '../App'
 import * as sharedMock from '../lib/shared'
+import { AppProvider } from '../lib/shared'
 
 /** Point window.location.pathname at `path` without navigating jsdom. */
 function setPath(path: string) {
@@ -112,9 +106,11 @@ describe('BUG 1 — authenticated /login and /signup redirect to /dashboard', ()
   it('redirects an authenticated user from /login to /dashboard', async () => {
     setPath('/login')
     render(
-      <MemoryRouter initialEntries={['/login']}>
-        <App />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter initialEntries={['/login']}>
+          <App />
+        </MemoryRouter>
+      </AppProvider>
     )
     await waitFor(() =>
       expect(screen.getByTestId('dashboard-page')).toBeTruthy()
@@ -125,9 +121,11 @@ describe('BUG 1 — authenticated /login and /signup redirect to /dashboard', ()
   it('redirects an authenticated user from /signup to /dashboard', async () => {
     setPath('/signup')
     render(
-      <MemoryRouter initialEntries={['/signup']}>
-        <App />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter initialEntries={['/signup']}>
+          <App />
+        </MemoryRouter>
+      </AppProvider>
     )
     await waitFor(() =>
       expect(screen.getByTestId('dashboard-page')).toBeTruthy()
@@ -138,9 +136,11 @@ describe('BUG 1 — authenticated /login and /signup redirect to /dashboard', ()
   it('still renders /dashboard directly (no regression on the normal path)', async () => {
     setPath('/dashboard')
     render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <App />
-      </MemoryRouter>
+      <AppProvider>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <App />
+        </MemoryRouter>
+      </AppProvider>
     )
     await waitFor(() =>
       expect(screen.getByTestId('dashboard-page')).toBeTruthy()
