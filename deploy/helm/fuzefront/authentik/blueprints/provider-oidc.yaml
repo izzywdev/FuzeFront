@@ -129,6 +129,11 @@ entries:
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzefront-authorization-implicit-consent]]
       # Required since Authentik 2025.x — provider must declare its invalidation flow.
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # Required since Authentik 2026.x: fresh providers default to NO allowed
+      # grant types and reject every authorize request ("Invalid grant_type").
+      grant_types:
+        - authorization_code
+        - refresh_token
 
   # ── Application ───────────────────────────────────────────────────────────────
   - model: authentik_core.application
