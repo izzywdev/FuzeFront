@@ -9,7 +9,7 @@ const router = express.Router()
  * existing backend apps are discoverable by the AppRegistryClient / AppSelector
  * without a separate app-registry microservice.
  */
-function rowToRegistryApp(row: any, reqOrigin?: string) {
+function rowToRegistryApp(row: any) {
   const slug = (row.name as string).toLowerCase().replace(/[^a-z0-9-]/g, '-')
 
   const integration: Record<string, unknown> = { type: row.integration_type }
