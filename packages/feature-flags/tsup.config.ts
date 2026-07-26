@@ -12,14 +12,18 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  // Never bundle the SDKs/providers. The Unleash providers are optional + lazily
-  // `import()`-ed inside init(), so they must stay external: the package builds
-  // even when a provider isn't installed, and the dynamic import degrades to
-  // defaults at runtime if it can't be resolved.
+  // Never bundle the SDKs/providers. `unleash-client` is lazily `import()`-ed
+  // inside the provider's initialize() and the web provider inside web init(),
+  // so they stay external: the package builds even when they are not installed,
+  // and an unresolvable import degrades to caller-supplied defaults at runtime.
+  //
+  // NOTE: this list previously externalized `unleash-openfeature-provider-server`
+  // — a package that does not exist on npm. It has been replaced by the real,
+  // Unleash-maintained `unleash-client` that the in-repo provider wraps.
   external: [
     '@openfeature/server-sdk',
     '@openfeature/web-sdk',
-    'unleash-openfeature-provider-server',
+    'unleash-client',
     '@openfeature/unleash-web-provider',
   ],
   outExtension({ format }) {
