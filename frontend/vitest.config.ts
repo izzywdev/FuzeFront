@@ -32,6 +32,27 @@ const appRegistryClientSrc = fileURLToPath(
 // @tailwindcss/postcss → @tailwindcss/oxide (a native binary absent in CI), which
 // otherwise crashes the test file during transform. jsdom tests assert DOM/logic,
 // not visual output, so stubbing CSS is correct. Runs before @vitejs/plugin-react.
+// Stub the virtual:__federation__ module that @originjs/vite-plugin-federation
+// provides at build time — vitest does not load that plugin, so imports of
+// loadFederatedApp.ts (which does `import ... from 'virtual:__federation__'`)
+// fail to resolve. The stub exposes the three exports the loader uses.
+const FEDERATION_STUB_ID = '\0federation-stub.js'
+const stubFederation = {
+  name: 'stub-federation-virtual',
+  enforce: 'pre' as const,
+  resolveId(id: string) {
+    return id === 'virtual:__federation__' ? FEDERATION_STUB_ID : null
+  },
+  load(id: string) {
+    if (id !== FEDERATION_STUB_ID) return null
+    return `
+      export const __federation_method_setRemote = () => {};
+      export const __federation_method_getRemote = async () => ({});
+      export const __federation_method_unwrapDefault = async (m) => m;
+    `
+  },
+}
+
 const CSS_STUB_ID = '\0css-stub.js'
 const stubCss = {
   name: 'stub-css-imports',
@@ -50,7 +71,7 @@ const stubCss = {
 }
 
 export default defineConfig({
-  plugins: [stubCss, react()],
+  plugins: [stubCss, stubFederation, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
