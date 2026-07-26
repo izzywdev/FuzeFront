@@ -1,0 +1,151 @@
+<!-- @dsCard group="White-label portal" viewport="1280x900" name="(5) States (contract)" subtitle="Loading (no-flash), error, suspended, unknown-host fallback, cross-portal rejection" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>White-label portal — (5) States</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .page { max-width: 1040px; margin: 0 auto; padding: var(--space-12) var(--space-8) 96px; }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--accent-2); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 70ch; }
+  .states { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+  @media (max-width: 820px) { .states { grid-template-columns: 1fr; } }
+  .state {
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    background: var(--bg-tertiary); overflow: hidden; display: flex; flex-direction: column;
+  }
+  .state .st-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+    padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+  }
+  .state .st-head .st-name { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+  .state .st-canvas { padding: var(--space-6); flex: 1; display: flex; flex-direction: column; gap: var(--space-4); min-height: 180px; justify-content: center; }
+  .center { text-align: center; }
+  .st-title { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-1); }
+  .st-copy { color: var(--text-secondary); font-size: var(--text-sm); margin: 0; }
+  .spinner {
+    width: 26px; height: 26px; border-radius: var(--radius-pill); margin: 0 auto var(--space-3);
+    border: 3px solid var(--border-strong); border-top-color: var(--accent-color); animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .skel-topbar { display: flex; align-items: center; gap: var(--space-3); }
+  .skel-row { display: flex; gap: var(--space-3); }
+  .big-ico { font-size: 30px; }
+</style>
+</head>
+<body data-frame="05-states">
+<div class="page">
+  <div class="eyebrow">FF-EPIC-13-S1 AC3/AC4 · FF-EPIC-10 fail-closed</div>
+  <h1>States are contract — the shell must handle every one</h1>
+  <p class="lead">
+    Branding resolves from <code>GET /api/v1/portal/context</code>, which can be pending, fail, or
+    fail closed. Each state below is a named surface (<code>data-state</code>) the implementation and
+    Playwright specs are measured against. A frame that showed only the happy path would produce a
+    shell that only handled the happy path.
+  </p>
+
+  <div class="states">
+    <!-- LOADING — no flash of FuzeFront branding -->
+    <div class="state" data-state="loading">
+      <div class="st-head"><span class="st-name">data-state="loading"</span><span class="badge">boot</span></div>
+      <div class="st-canvas">
+        <div class="skel-topbar">
+          <div class="skel" style="width:30px;height:30px;border-radius:var(--radius-md)"></div>
+          <div class="skel" style="width:120px;height:14px"></div>
+          <div style="flex:1"></div>
+          <div class="skel" style="width:32px;height:32px;border-radius:var(--radius-pill)"></div>
+        </div>
+        <div class="skel-row">
+          <div class="skel" style="width:70px;height:120px"></div>
+          <div class="skel" style="flex:1;height:120px"></div>
+        </div>
+        <p class="st-copy">Neutral skeleton until branding resolves — <b>no flash of default FuzeFront branding</b> before the tenant's paints (FF-EPIC-10-S2 AC3).</p>
+      </div>
+    </div>
+
+    <!-- ERROR + RETRY -->
+    <div class="state" data-state="error">
+      <div class="st-head"><span class="st-name">data-state="error"</span><span class="badge err">context failed</span></div>
+      <div class="st-canvas center">
+        <div class="big-ico" aria-hidden="true">⚠️</div>
+        <div>
+          <p class="st-title">We couldn't load this workspace</p>
+          <p class="st-copy">The portal context request failed or timed out. We won't guess your branding.</p>
+        </div>
+        <div><button class="btn btn-primary" data-action="retry">Try again</button></div>
+      </div>
+    </div>
+
+    <!-- SUSPENDED PORTAL (fail-closed 403) -->
+    <div class="state" data-state="suspended" data-http="403">
+      <div class="st-head"><span class="st-name">data-state="suspended"</span><span class="badge err">HTTP 403</span></div>
+      <div class="st-canvas center">
+        <div class="big-ico" aria-hidden="true">⛔</div>
+        <div>
+          <p class="st-title">This portal is unavailable</p>
+          <p class="st-copy">This workspace has been suspended. Contact your administrator if you think this is a mistake.</p>
+        </div>
+        <p class="st-copy mono" style="opacity:.7">resolvePortalContext → suspended → 403 (FF-EPIC-10-S1 AC4)</p>
+      </div>
+    </div>
+
+    <!-- UNKNOWN HOST → ROOT FALLBACK -->
+    <div class="state" data-state="unknown-host" data-portal="root">
+      <div class="st-head"><span class="st-name">data-state="unknown-host"</span><span class="badge warn">root fallback</span></div>
+      <div class="st-canvas">
+        <div class="skel-topbar">
+          <span class="brand-glyph seam" aria-hidden="true">F</span>
+          <span class="brand-name">FuzeFront</span>
+          <div style="flex:1"></div>
+          <span class="badge accent">portal · root</span>
+        </div>
+        <p class="st-copy">An unrecognized host doesn't leak another tenant's identity — it falls
+          back to the <b>root FuzeFront portal</b> for shell/UI routes (API routes needing an explicit
+          portal get 404). Fail-closed, never fail-open (FF-EPIC-10-S1 AC3).</p>
+      </div>
+    </div>
+
+    <!-- CROSS-PORTAL LOGIN REJECTION -->
+    <div class="state" data-state="cross-portal-reject" data-portal="corpabc" data-http="403" style="grid-column: 1 / -1">
+      <div class="st-head"><span class="st-name">data-state="cross-portal-reject"</span><span class="badge err">wrong portal</span></div>
+      <div class="st-canvas">
+        <div class="notice err" data-region="auth-error">
+          <span class="notice-ico" aria-hidden="true">🚫</span>
+          <span>
+            <b>This account isn't part of CorpABC.</b>
+            The email you entered belongs to a different portal. Sign in on your own portal's address,
+            or ask a CorpABC admin to invite you.
+            <div style="margin-top:var(--space-3); display:flex; gap:var(--space-2); flex-wrap:wrap">
+              <button class="btn btn-primary" data-action="retry-login">Use a different account</button>
+              <button class="btn btn-ghost" data-action="go-home-portal">Go to my portal</button>
+            </div>
+          </span>
+        </div>
+        <p class="st-copy mono" style="opacity:.7; margin-top:var(--space-3)">
+          token <code>portal_id</code> ≠ resolved-host portal → reject, re-auth required
+          (FF-EPIC-10-S3 AC3) · scoping is token-derived, never a URL param.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="reviewer-note">
+    design-review note · five contract states, each addressable by <code>data-state</code> for the RED
+    Playwright specs. Loading proves the no-flash requirement; suspended + unknown-host + cross-portal
+    prove fail-closed. Error offers retry, never a silent unbranded fallback.
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption">Frame <b>5 / 5</b> · States (contract)</span>
+  <span>
+    <a class="btn btn-ghost" href="04-theme-layers.html">← Theming</a>
+    <a class="btn btn-primary" href="index.html" data-nav="index">Back to index →</a>
+  </span>
+</nav>
+</body>
+</html>
