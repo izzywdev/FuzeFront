@@ -169,6 +169,89 @@ paths:
     )
   })
 
+  it('bundles referenced path items, parameters, request bodies, and responses with provenance', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-bundled-'))
+    await mkdir(join(root, 'paths'), { recursive: true })
+    await mkdir(join(root, 'components'), { recursive: true })
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Bundled Service, version: 2.4.0 }
+servers: [{ url: https://api.example.test }]
+paths:
+  /orders/{id}:
+    $ref: './paths/orders.yaml#/order'
+`)
+    await writeFile(join(root, 'paths', 'orders.yaml'), `order:
+  get:
+    operationId: getOrder
+    parameters:
+      - $ref: '../components/common.yaml#/parameters/OrderId'
+    responses:
+      '200':
+        $ref: '../components/common.yaml#/responses/Order'
+  put:
+    operationId: replaceOrder
+    requestBody:
+      $ref: '../components/common.yaml#/requestBodies/Order'
+    responses:
+      '200':
+        $ref: '../components/common.yaml#/responses/Order'
+`)
+    await writeFile(join(root, 'components', 'common.yaml'), `parameters:
+  OrderId: { name: id, in: path, required: true, schema: { type: string, minLength: 3 } }
+requestBodies:
+  Order:
+    required: true
+    content:
+      application/json: { schema: { type: object } }
+responses:
+  Order:
+    description: ok
+    content:
+      application/json: { schema: { type: object } }
+`)
+
+    const result = await scanRepository(repository, root)
+    const getOrder = result.operations.find(operation => operation.operationId === 'getOrder')
+    const replaceOrder = result.operations.find(operation => operation.operationId === 'replaceOrder')
+
+    expect(getOrder).toEqual(expect.objectContaining({
+      specificationVersion: '3.1.0',
+      documentTitle: 'Bundled Service',
+      documentVersion: '2.4.0',
+      servers: ['https://api.example.test'],
+      responseContentTypes: ['application/json'],
+    }))
+    expect(getOrder?.parameters).toEqual([
+      expect.objectContaining({ name: 'id', location: 'path', required: true }),
+    ])
+    expect(getOrder?.sourcePaths).toEqual(expect.arrayContaining([
+      'openapi.yaml',
+      'paths/orders.yaml',
+      'components/common.yaml',
+    ]))
+    expect(replaceOrder).toEqual(expect.objectContaining({
+      requestBodyRequired: true,
+      requestContentTypes: ['application/json'],
+      responseContentTypes: ['application/json'],
+    }))
+    expect(result.diagnostics).toHaveLength(0)
+  })
+
+  it('rejects remote OpenAPI references without fetching them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-remote-ref-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.1.0
+info: { title: Remote, version: 1.0.0 }
+paths:
+  /remote:
+    $ref: 'https://untrusted.example.test/path.yaml'
+`)
+    const result = await scanRepository(repository, root)
+    expect(result.operations).toHaveLength(0)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'openapi-ref-outside-repository' }),
+    ]))
+  })
+
   it('normalizes fallback identities and reports missing and duplicate operation identifiers', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-identities-'))
     await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0
