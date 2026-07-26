@@ -1,5 +1,6 @@
 ---
 name: fuzeinfra-expert
+model: opus
 description: Deep expert on the FuzeInfra repo — the shared, containerized infrastructure platform (Postgres/Mongo/Redis/Neo4j/Elasticsearch/ChromaDB, Kafka/RabbitMQ, Prometheus/Grafana/Loki, Airflow, dnsmasq DNS, Consul, nginx, Cloudflare tunnel). Knows both deployment models: legacy docker-compose for local and the Helm chart (helm/fuzeinfra) deployed via ArgoCD to kind (local), EKS (AWS), and Contabo k3s (prod). Use when building, deploying, debugging, or extending FuzeInfra itself, or wiring an app onto the shared FuzeInfra network — so you don't relearn the platform from scratch. Knows the gotchas (GitOps prod / never kubectl-patch under selfHeal, Traefik→ClusterIP to force CF-tunnel-only ingress, Neo4j Browser thread-pool fix, kubeconform -ignore-missing-schemas, alphanumeric-only CI passwords, Grafana v13 table-panel schema migration).
 tools: ['*']
 skills: []
