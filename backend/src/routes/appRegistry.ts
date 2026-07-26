@@ -9,16 +9,35 @@ const router = express.Router()
  * existing backend apps are discoverable by the AppRegistryClient / AppSelector
  * without a separate app-registry microservice.
  */
-function rowToRegistryApp(row: any) {
+function rowToRegistryApp(row: any, reqOrigin?: string) {
   const slug = (row.name as string).toLowerCase().replace(/[^a-z0-9-]/g, '-')
 
   const integration: Record<string, unknown> = { type: row.integration_type }
   if (row.integration_type === 'module-federation') {
-    // `remote_url` may hold a full remoteEntry URL (stored by the applications
-    // service as `manifest.integration.remoteEntry`) OR a legacy base directory.
-    // Append /remoteEntry.js only when it is not already a .js file URL.
-    const raw = (row.remote_url as string).replace(/\/$/, '')
-    integration.remoteEntry = raw.endsWith('.js') ? raw : `${raw}/remoteEntry.js`
+    // `remote_url` may be:
+    //   1. A same-origin relative path  (/apps/slug/remoteEntry.js)  — stored this
+    //      way for apps deployed in-cluster. The browser resolves it against the
+    //      page origin; no WAN hairpin, no cross-origin fetch.
+    //   2. A full URL (https://…/remoteEntry.js or http://host:port/…) — legacy
+    //      format. Append /remoteEntry.js only when not already a .js URL.
+    //
+    // Relative paths are returned verbatim so the browser resolves them against
+    // the app origin (same nginx that served the shell → in-cluster pod via
+    // /apps/<slug>/ ingress). Full URLs are returned unchanged.
+    const raw = (row.remote_url as string | null | undefined)?.replace(/\/$/, '') ?? ''
+    let remoteEntry: string
+    if (raw.startsWith('/')) {
+      // Relative path — return as-is; the browser will resolve against origin.
+      remoteEntry = raw.endsWith('.js') ? raw : `${raw}/remoteEntry.js`
+    } else if (raw) {
+      // Absolute URL — use verbatim (or append /remoteEntry.js for base URLs).
+      remoteEntry = raw.endsWith('.js') ? raw : `${raw}/remoteEntry.js`
+    } else {
+      // Fallback: derive a same-origin path from the slug so the app at least
+      // has a plausible URL rather than an empty string that crashes the loader.
+      remoteEntry = `/apps/${slug}/remoteEntry.js`
+    }
+    integration.remoteEntry = remoteEntry
     integration.scope = row.scope
     integration.module = row.module
   } else {
