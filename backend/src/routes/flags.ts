@@ -64,8 +64,25 @@ router.get('/', authenticateToken, async (req: any, res: Response) => {
     orgId: req.user?.organizationId ?? req.user?.defaultOrganizationId ?? undefined,
   }
 
+  // Local/e2e escape hatch: force specific flags ON where there is no Unleash
+  // to target (comma-separated flag keys). Hard-gated to NON-production so a
+  // stray env var can never light up dark features in prod — prod targeting is
+  // done in Unleash, never by env.
+  const forcedOn = new Set(
+    process.env.NODE_ENV === 'production'
+      ? []
+      : (process.env.FLAGS_FORCE_ON || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+  )
+
   const flags: Record<string, boolean> = {}
   for (const descriptor of catalog) {
+    if (forcedOn.has(descriptor.key)) {
+      flags[descriptor.key] = true
+      continue
+    }
     if (!client) {
       flags[descriptor.key] = descriptor.default
       continue
