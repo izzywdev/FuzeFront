@@ -441,7 +441,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   /** Legacy Authentik source-redirect start (fallback; browser transits `/if/*`). */
   private async startSocialLoginViaSource(provider: string, redirectTo = '/'): Promise<SocialLoginStart> {
     if (!this.oidc.isInitialized()) {
-      await this.oidc.initialize()
+      await this.oidc.ensureInitialized()
     }
     const state = crypto.randomBytes(24).toString('hex')
     const { url, codeVerifier } = this.oidc.generateAuthUrl(state)
@@ -1227,7 +1227,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       mode = 'brokered'
     } else {
       if (!this.oidc.isInitialized()) {
-        await this.oidc.initialize()
+        await this.oidc.ensureInitialized()
       }
       const { url, codeVerifier: cv } = this.oidc.generateAuthUrl(state)
       const authorize = new URL(url)
