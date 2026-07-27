@@ -150,11 +150,15 @@ export default defineConfig({
       // injecting its own <script> registration into index.html.
       injectRegister: false,
       devOptions: { enabled: false },
-      // Don't precache JS bundles — MFE remotes change independently and stale
-      // cached JS would break federation. Let Workbox runtime-cache JS with
-      // NetworkFirst so the shell always fetches fresh federation assets.
-      globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
+        // Don't precache JS bundles — MFE remotes change independently and
+        // stale cached JS would break federation. Let Workbox runtime-cache
+        // JS with NetworkFirst so the shell always fetches fresh federation
+        // assets. (Moved here from a top-level `globPatterns:` sibling of
+        // `workbox` — VitePWAOptions has no such top-level field, only
+        // `workbox.globPatterns` via GenerateSWOptions, so the prior
+        // placement silently had no effect on the actual precache manifest.)
+        globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
         // registerType 'autoUpdate' only re-checks for a new SW; it does NOT
         // by itself make a waiting worker activate. Without these two flags a
         // freshly-installed SW sits in `waiting` (observed live: old SW
