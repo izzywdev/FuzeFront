@@ -46,7 +46,6 @@ function makeCtx(overrides: any = {}) {
       subscriptionChanged: jest.fn(),
       paymentCompleted: jest.fn().mockResolvedValue(undefined),
     },
-    writePlanCache: jest.fn(),
     ...overrides,
   } as any;
 }

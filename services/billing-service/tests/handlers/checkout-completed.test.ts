@@ -32,7 +32,6 @@ function makeCtx(overrides: any = {}) {
     plans: { findByPriceId: jest.fn().mockResolvedValue({ tierName: 'basic' }) },
     permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
     emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
-    writePlanCache: jest.fn().mockResolvedValue(undefined),
     retrieveSubscription: jest.fn().mockResolvedValue(makeSubscription()),
     ...overrides,
   } as any;
@@ -76,9 +75,6 @@ describe('handleCheckoutCompleted', () => {
     );
     expect(ctx.permit.syncPlanToPermit).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'organization', entityId: 'org-1', planTier: 'basic', status: 'active' }),
-    );
-    expect(ctx.writePlanCache).toHaveBeenCalledWith(
-      expect.objectContaining({ planTier: 'basic', status: 'active' }),
     );
     expect(ctx.emitter.subscriptionChanged).toHaveBeenCalledWith(
       expect.objectContaining({ planTier: 'basic', status: 'active', stripeSubscriptionId: 'sub_test123' }),

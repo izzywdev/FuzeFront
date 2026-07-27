@@ -78,7 +78,7 @@ export async function startBillingProjection(): Promise<void> {
     await consumer.connect()
     await consumer.subscribe(TOPICS.BILLING_SUBSCRIPTION_CHANGED)
     // Run the loop in the background; the handler projects each event.
-    void consumer.run(async event => {
+    void consumer.run(async (event: { payload: BillingSubscriptionChangedPayloadV1 }) => {
       try {
         const rows = await applySubscriptionChanged(event.payload)
         if (rows === 0) {

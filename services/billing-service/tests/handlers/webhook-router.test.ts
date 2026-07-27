@@ -51,7 +51,6 @@ function makeCtx() {
       subscriptionChanged: jest.fn().mockResolvedValue(undefined),
       paymentCompleted: jest.fn().mockResolvedValue(undefined),
     },
-    writePlanCache: jest.fn().mockResolvedValue(undefined),
     retrieveSubscription: jest.fn().mockResolvedValue({
       id: 'sub_test123',
       customer: 'cus_1',
