@@ -117,6 +117,26 @@ secret:
   # supply via --set / a gitignored values file / the prod SealedSecret.
   # NEVER commit a real secret.
   mendysDatasetsClientSecret: ""
+  # OIDC client secret for the mendys-platform provider (client_id
+  # mendys-platform-oidc-client) — the shared `mendys-backend` behind both
+  # live.mendysrobotics.com and marketplace.mendysrobotics.com.
+  # Must equal MENDYS_AUTHENTIK_CLIENT_SECRET in the mendys-prod
+  # `mendys-secrets` sealed secret. Same rules as above: NEVER commit a real
+  # secret; supply via --set / a gitignored values file / the prod SealedSecret.
+  mendysPlatformClientSecret: ""
+  # ── Credentials for the separate MendysRobotics Authentik instance ──────────
+  # Only consumed when authentikMendys.enabled is true. Each MUST be distinct
+  # from its FuzeFront counterpart — a shared secret key would let either
+  # instance validate the other's sessions and destroy the account boundary.
+  authentikMendysSecretKey: ""
+  authentikMendysBootstrapPassword: ""
+  authentikMendysBootstrapToken: ""
+  # Password of the `authentik_mendys_user` Postgres role, provisioned by
+  # FuzeInfra (serviceDatabases entry `authentik-mendys`). The identical value
+  # must be sealed as `authentik-mendys-db-credentials` (key `password`) into
+  # the `fuzeinfra` namespace, or the provisioning Job will set a password the
+  # Authentik pods do not know.
+  authentikMendysDbPassword: ""
   sendgridApiKey: ""
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
@@ -589,6 +609,80 @@ authentik:
     ingressControllerNamespace: kube-system
     # Namespace whose pods may reach authentik-server in-cluster (A2A JWKS fetch).
     fuzeagentNamespace: fuzeagent
+
+# ── MendysRobotics identity silo — a SECOND, fully separate Authentik ─────────
+#
+# WHY A SECOND INSTANCE AND NOT A BRAND: authentik has no realm. One instance
+# is one user directory; `authentik_brands.brand` controls branding + default
+# flows only ("all objects like applications and providers are still global"),
+# so a Mendys brand on the FuzeFront instance would still share every account.
+# authentik's hard tenancy (a Postgres SCHEMA per tenant, 2024.2+) does give
+# real separation, but it is Enterprise-only, still alpha, needs a license per
+# tenant, and is created only through the API — i.e. it cannot be expressed as
+# a blueprint in git, which is how every other authentik object here is
+# managed. A second instance on its own DATABASE gives the same isolation for
+# free and stays declarative.
+#
+# The boundary this buys: MendysRobotics accounts exist only in this instance.
+# A FuzeFront account cannot sign in to the Mendys apps, a Mendys account
+# cannot sign in to FuzeFront, and the same email address may exist
+# independently on both sides as two unrelated accounts.
+#
+# The only applications in this silo are the two MendysRobotics products:
+# the platform backend (mendys-platform) and the datasets marketplace
+# (mendys-datasets).
+authentikMendys:
+  enabled: false
+  # Image is deliberately pinned separately from the FuzeFront instance so the
+  # two can be upgraded independently (one IdP at a time), but defaults to the
+  # same tested tag.
+  image:
+    repository: ghcr.io/goauthentik/server
+    tag: "2026.5.5"
+  # Postgres: same shared FuzeInfra server (fuzeinfra.postgres.*), different
+  # DATABASE and different ROLE. Provisioned by FuzeInfra's
+  # `fuzeinfra-service-db-provision` Job — values entry `authentik-mendys` in
+  # helm/fuzeinfra/values.yaml. Must exist before this instance starts.
+  dbName: authentik_mendys
+  dbUser: authentik_mendys_user
+  # Redis: same shared instance, DIFFERENT logical DB index. Authentik keeps
+  # cache + sessions in Redis; two instances sharing index 0 would collide on
+  # identical key names and leak session state across the silo boundary.
+  # Index 0 is the FuzeFront instance's (authentik's default).
+  redisDb: 2
+  # Cookie domain MUST NOT overlap the FuzeFront one. A shared parent domain
+  # would let one instance's session cookie be sent to the other.
+  cookieDomain: mendysrobotics.com
+  bootstrapEmail: admin@mendysrobotics.com
+  # Fewer web workers than FuzeFront: this silo serves two apps, not the whole
+  # platform. Raise if login latency shows queueing.
+  webWorkers: 2
+  # Browser-facing exposure. OFF by default, matching authentik.adminIngress:
+  # FuzeFront deliberately has NO public IdP host — its authentik is
+  # ClusterIP-only and reached through app.fuzefront.com/api/auth/idp/*, so the
+  # browser never learns the IdP hostname. Enabling this re-introduces a public
+  # IdP host and is only safe behind an edge auth gate (Cloudflare Access).
+  # See the README note in authentik/blueprints-mendys/ for the alternative
+  # (a reverse-proxy path on the MendysRobotics ingress).
+  ingress:
+    enabled: false
+    host: "" # e.g. auth.mendysrobotics.com
+    className: ""
+    annotations: {}
+  # SMTP for this silo's transactional email (enrollment verification, password
+  # reset). Separate from the FuzeFront sender so Mendys mail is Mendys-branded.
+  smtp:
+    host: ""
+    port: 25
+    username: ""
+    from: "noreply@mendysrobotics.com"
+    useTls: false
+    useSSL: false
+    timeout: 10
+  # Placement for the Mendys authentik server + worker (empty → global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 ingress:
   enabled: true
