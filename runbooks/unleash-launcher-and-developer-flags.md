@@ -48,34 +48,53 @@ so the cluster Ingress host-matches `unleash.prod.fuzefront.com` → the Unleash
 Service. This alone does **not** make Unleash reachable or add a launcher tile — it
 only wires the in-cluster route. Steps 2–3 are the remaining, out-of-repo work.
 
-### Step 2 (FuzeInfra — delegated `@claude`) — Cloudflare tunnel + Access Application
+### Step 2 (Cloudflare) — **DONE 2026-07-26**
 
-FuzeInfra-owned (Cloudflare dashboard / Terraform); cannot be done from this repo.
+The original version of this runbook assumed three missing pieces (tunnel route, DNS
+record, Access application). **Two of the three already existed** via wildcards, so
+only the Access application was actually needed:
 
-> **@claude (FuzeInfra):** please expose the FuzeFront Unleash admin UI on the
-> `fuzefront` Cloudflare Access team, gated to the developer group.
->
-> 1. **Tunnel public-hostname route:** `unleash.prod.fuzefront.com` → the cluster
->    ingress entrypoint (the same `traefik.kube-system:80` target used for the other
->    `*.prod.fuzefront.com` admin hosts). Proxied.
-> 2. **DNS:** proxied CNAME `unleash.prod.fuzefront.com` → the tunnel.
-> 3. **Cloudflare Access → Applications → Add → Self-hosted:**
->    - Application domain: `unleash.prod.fuzefront.com`
->    - Policy: **Allow** the developer group (emails or IdP group), including
->      `izzy.weinberg@gmail.com`.
->    - **App Launcher → "Show in App Launcher": ON** (this is the step that creates
->      the tile; a tunnel route alone does NOT add one).
+| Assumed missing | Reality |
+|---|---|
+| Tunnel public-hostname route → `traefik.kube-system:80` | **Already satisfied.** The `fuzeinfra-cloudflare-tunnel` is *remotely-managed* (`cloudflared tunnel run` with a token, no ConfigMap) and its ingress ends in a **catch-all** → `http://traefik.kube-system:80`. Every host not explicitly routed already lands on Traefik. No per-host entry is required. |
+| Proxied CNAME `unleash.prod.fuzefront.com` → tunnel | **Already satisfied** by the wildcard record `*.prod.fuzefront.com` → `8c0180f1-…​.cfargotunnel.com`, proxied. |
+| Access application (the launcher tile) | **This was the only genuinely missing piece** — created, see below. |
 
-> Note: this delegation cannot be filed as a FuzeInfra issue from a FuzeFront
-> session (GitHub scope is `izzywdev/fuzefront` only). Forward the block above into
-> FuzeInfra, or trigger `@claude` there directly.
+Note also that the launcher tiles for the other admin services (ArgoCD, Grafana,
+Prometheus, …) are **`type: "bookmark"`** apps — pure links with no policy of their
+own. All *authentication* for those hosts comes from a single wildcard self-hosted
+app, **"FuzeInfra Admin Services"** (`*.prod.fuzefront.com`, policy = "Admin email
+allowlist (OTP)"). So Unleash was **already gated** before this change; it simply had
+no tile.
 
-### Verify
+**What was created** (account `8c535091cda7f0e7a55ee29a7b1999af`):
 
-- `https://unleash.prod.fuzefront.com` prompts Cloudflare Access, then loads Unleash
-  after auth.
-- A tile appears at `https://fuzefront.cloudflareaccess.com/#/Launcher` for members
-  of the developer group.
+- **Access application** `Unleash (FuzeFront feature flags)`
+  - id `514f8a21-3793-4726-858e-819556fbe346`, AUD `be7dc60b…d4a5`
+  - type `self_hosted`, domain `unleash.prod.fuzefront.com`, session `24h`
+  - **`app_launcher_visible: true`** ← this is what creates the tile
+- **Policy** `Developer email allowlist (OTP)`
+  (id `5eec7416-f3f0-4bd6-bef9-babe55fbd62b`) — `allow`, include
+  `email == izzy.weinberg@gmail.com`, mirroring the wildcard app's allowlist.
+
+Because a more specific Access app takes precedence over the wildcard, this app now
+governs `unleash.prod.fuzefront.com`. Its policy is deliberately identical to the
+wildcard's, so effective access is unchanged.
+
+> **The "developer group" is an email allowlist, not an IdP group.** The only
+> configured Access IdP is `onetimepin` (email OTP) and **no Access groups exist** in
+> this account. To add a developer, add their email to *both* this policy and the
+> wildcard app's policy — or, better, create a reusable Access group and point both
+> policies at it, so the cohort lives in one place.
+
+### Verify — results (2026-07-26)
+
+| Check | Result |
+|---|---|
+| `https://unleash.prod.fuzefront.com` prompts Cloudflare Access | ✅ `302` → `…/cdn-cgi/access/login/unleash.prod.fuzefront.com?kid=be7dc60b…` (the new app's AUD, confirming it governs the host) |
+| Origin actually serves Unleash | ✅ `HTTP 200` (1198 B) via `Host: unleash.prod.fuzefront.com` → `http://traefik.kube-system:80` → `fuzefront-unleash:4242` |
+| Tile at `fuzefront.cloudflareaccess.com/#/Launcher` | ✅ "Unleash (FuzeFront feature flags)" listed (13 of 13 apps) |
+| Loads Unleash *after* completing auth | ⚠️ **Not machine-verified** — completing the email-OTP login is a credential action. Both sides of it are proven (Access challenges correctly; origin returns 200), so this is a formality to confirm by hand. |
 
 ---
 
@@ -93,6 +112,111 @@ outage silently turns every dark feature on in prod.
 those defaults, not a change to them. This is runtime config in the live Unleash
 instance (there is no flag/segment config-as-code in this repo); it is owned by
 `feature-flags-engineer`.
+
+### EXECUTED — 2026-07-26
+
+| What | Value |
+|---|---|
+| Segment | `developers`, **id `1`** |
+| Constraint | context field `userId` **IN** `[<owner users.id UUID>]` |
+| Environment touched | **`production`** only (`development` and `default` untouched) |
+| Flags given the developer strategy | 3 release flags (below) |
+| Kill-switches given the developer strategy | **0 — deliberately excluded**, see note |
+
+> **Correction to the "fast path" text below:** the value to constrain on is the
+> owner's **`users.id` UUID**, *not* their email. `@fuzefront/feature-flags` maps
+> `userId` → OpenFeature `targetingKey` → the Unleash built-in `userId` context
+> field (`packages/feature-flags/src/context.ts`), and `users.id` is a UUID
+> (`shared/src/kafka/schemas/identity.session.issued.ts` types it `z.string().uuid()`).
+> A segment keyed on an email would never match.
+
+**Kill-switches are excluded from the segment on purpose.** An `ops-kill-switch`
+is already ON for everyone, so a developer strategy adds nothing — and during a
+break-glass incident it would keep the killed path **ON for developers** while OFF
+for everyone else, defeating the switch. Kill-switches get a plain 100% strategy
+with no segment.
+
+#### Verified (Unleash `/api/frontend` server-side evaluation, production env)
+
+| Flag | type | owner (developer) | other real user | non-existent user |
+|---|---|---|---|---|
+| `fuzefront.app-registry.v1-registry-write` | release | **ON** | OFF | OFF |
+| `fuzefront.account-security.hub` | release | **ON** | OFF | OFF |
+| `fuzefront.billing.invoice-history` | release | **ON** | OFF | OFF |
+| `fuzefront.app-registry.kafka-events-kill-switch` | kill-switch | ON | ON | ON |
+
+Non-developer behaviour is unchanged in every case. Verification used a temporary
+`frontend`-type API token, **revoked immediately afterwards**.
+
+### Making the segment actually reach runtime — what was broken
+
+The segment was correct inside Unleash but observable by nothing. Five defects
+stood between it and a running service; all are fixed in the same PR.
+
+**0. The provider package did not exist.** `packages/feature-flags/src/server.ts`
+dynamically imported `unleash-openfeature-provider-server` — **not a package on
+npm**, and never a declared dependency. The import therefore *always* threw, the
+`catch` degraded to OpenFeature's no-op default provider, and every server-side
+flag silently resolved to its in-code default. No Unleash targeting was ever
+applied, and nothing logged an error. This was the root cause; the rest are the
+reasons it was never noticed.
+
+Fixed by an in-repo OpenFeature `Provider` over the stable, Unleash-maintained
+`unleash-client` (`src/unleash-provider.ts`). The only published Unleash
+OpenFeature Node provider is `@unleash/openfeature-node-provider@0.1.0-alpha`,
+which is not fit for a production path. OpenFeature stays the public surface, so
+Unleash remains swappable.
+
+**1. The client was in no image.** `packages/feature-flags` was absent from every
+Dockerfile, so the workspace symlink resolved to a package with no `dist/`.
+Fixed: added to the build + production stages of `backend/Dockerfile` and
+`backend/applications/Dockerfile`, declared as a dependency of both services, and
+initialized at startup.
+
+**2. `getClient` was never exported.** `backend/applications/src/app-registry/flags.ts`
+resolves the client via `require('@fuzefront/feature-flags').getClient()`, but the
+package exported only `init`/`setContext`/`getBoolean`/`getString`/`getNumber`/
+`close`. `resolveClient()` therefore returned `null` and flags always took their
+default. Fixed: `getClient()` added and pinned by tests.
+
+**3. The chart read a key that exists in no Secret.** The env block was gated on
+`applicationsService.featureFlags.unleashUrl`, which was `""` in prod so nothing
+rendered; and it sourced the token from `fuzefront-secrets` under
+`FEATURE_FLAGS_CLIENT_TOKEN`, a key present in neither Secret. Fixed: prod values
+set the in-cluster URL and point at `unleash-secrets` / `UNLEASH_CLIENT_TOKEN` —
+the token the Unleash chart already seals, so nothing needs re-sealing. The same
+block was added to the backend, which had none.
+
+**4. The frontend flags were build-time constants.** `AccountSecurityPage.tsx`
+and `BillingPage.tsx` read `import.meta.env.VITE_FF_*`, baked into the bundle and
+identical for every user, so no per-user segment could ever affect them. Fixed:
+both read `useFlag(...)` from `frontend/src/platform/featureFlags.tsx`, which
+fetches `GET /api/flags` once per session.
+
+### Why the browser does NOT talk to Unleash directly
+
+A frontend token + the Unleash frontend API was the obvious route. It is the
+wrong one here: **Unleash's frontend API takes its evaluation context from
+client-supplied query params**, so any user could pass the platform owner's
+`userId` and enrol themselves into the `developers` segment. Flags gate
+visibility rather than authorization (Permit still owns authz), so the blast
+radius is bounded — but a cohort anyone can join is not a cohort.
+
+Instead the backend serves `GET /api/flags`, evaluating the catalog against the
+**authenticated session**. This also means no Unleash token reaches the browser,
+no `frontend`-type token has to be minted and sealed, and no new public host or
+Cloudflare Access carve-out is needed — `/api/*` is already same-origin routed.
+Only `WEB_EXPOSED_FLAGS` are returned, so server-only flags are never disclosed.
+
+**5. `packages/**` did not trigger a release.** The images compile the flag
+client, yet `release.yml` only watched `backend/**`, `shared/**`, `frontend/**`,
+… — a change confined to `packages/**` would merge green and ship nothing. Path
+added.
+
+Local/e2e stacks have no Unleash to target, so the backend accepts
+`FLAGS_FORCE_ON=<comma-separated keys>`, **hard-gated to non-production** so a
+stray env var can never light up dark features in prod. `docker-compose.e2e.yml`
+uses it in place of the removed `VITE_FF_ACCOUNT_SECURITY_HUB` build arg.
 
 ### Step 1. Create a `developers` segment
 
@@ -219,9 +343,19 @@ rollout. Both states remain covered by the flag tests
 | Item | Where | Status |
 |---|---|---|
 | Unleash prod ingress (`enabled: true`, CF-Access host) | `deploy/helm/unleash/values-prod.yaml` | **Done on `master`** |
-| CF tunnel route + CNAME + **Access Application** (the launcher tile) | Cloudflare / FuzeInfra | **Delegated** — Part 1, Step 2 |
-| `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Owner / feature-flags-engineer** — Part 2 |
-| Owner's user id / dev group membership | Unleash / Authentik | **Owner input needed** — Part 2, Step 3 |
+| CF tunnel route + CNAME | Cloudflare | **Already existed** (tunnel catch-all + `*.prod.fuzefront.com` wildcard) — no change needed |
+| **Access Application** (the launcher tile) | Cloudflare | **Done 2026-07-26** — app `514f8a21-…`, launcher ON, tile verified |
+| `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Done** — segment id 1, 3 release flags, production env (2026-07-26) |
+| Owner's user id / dev group membership | Unleash / Authentik | **Done** — owner `users.id` UUID in the segment constraint |
+| `developers`-segment step in the flag-creation checklist | `.claude/skills/feature-flags/SKILL.md` | **Done** |
+| Real OpenFeature provider (phantom package replaced) | `packages/feature-flags/src/unleash-provider.ts` | **Done** |
+| Flag client built into the images + declared dep | `backend/Dockerfile`, `backend/applications/Dockerfile` | **Done** |
+| `getClient` export | `packages/feature-flags/src/index.ts` | **Done** |
+| Helm env: URL + CLIENT token from `unleash-secrets` | `deploy/helm/fuzefront/**` | **Done** |
+| Frontend flags read per-user (`GET /api/flags`) | `frontend/src/platform/featureFlags.tsx` | **Done** |
+| `packages/**` triggers a release build | `.github/workflows/release.yml` | **Done** |
+| `frontend`-type Unleash token (SealedSecret) | — | **Not needed** — the browser never talks to Unleash |
 
-The single input needed to unblock Part 2 immediately is the owner's stable
-**user id** (the value passed as `userId` in the flag evaluation context).
+Part 2 is complete within Unleash **and** wired end-to-end in code. Runtime effect
+lands when the images build and Argo syncs; verify in-cluster after the deploy
+(merging is not deploying — check the running pods, not the merge).
