@@ -104,6 +104,10 @@ paths:
       operationId: getCurrentPortal
       tags: [portal-self]
       summary: Get the caller's own portal
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Singleton — returns exactly one portal (the session-resolved portal the
+        caller belongs to), never a growing collection.
       description: >-
         Returns the full portal record for the portal the authenticated caller
         belongs to, resolved from the session/token (`req.user.portalId`) — a
@@ -156,7 +160,19 @@ paths:
           description: A page of portals.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PortalPage' }
+              # Inline `{ items, page }` envelope (structurally identical to
+              # PortalPage) so the pagination gate — which does not resolve $ref —
+              # sees the envelope. `components.schemas.PortalPage` is the named
+              # alias the generated client exports.
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Portal' }
+                  page: { $ref: '#/components/schemas/Page' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -594,7 +610,7 @@ components:
           items: { $ref: '#/components/schemas/PortalDomain' }
         primaryDomain:
           type: [string, 'null']
-          description: Convenience: the primary domain string, or null if none yet.
+          description: 'Convenience: the primary domain string, or null if none yet.'
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
