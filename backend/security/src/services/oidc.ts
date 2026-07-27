@@ -12,6 +12,22 @@ import { logger } from '../lib/logger';
  */
 const OIDC_HTTP_TIMEOUT_MS = Number(process.env.OIDC_HTTP_TIMEOUT_MS) || 15000;
 
+/**
+ * Cooldown between init ATTEMPTS once one has failed. Without this, every
+ * request that lands while Authentik is down would each kick off a fresh
+ * discovery call — a self-inflicted retry storm against a service that is
+ * already struggling. A short cooldown lets the lazy re-init in
+ * ensureInitialized() fail fast (throwing the same error callers already
+ * handle) between attempts, while the background loop below keeps making
+ * slower, backed-off attempts in parallel.
+ */
+const OIDC_INIT_COOLDOWN_MS = Number(process.env.OIDC_INIT_COOLDOWN_MS) || 7000;
+
+/** Background re-init backoff bounds: starts fast, caps so a hard-down
+ * Authentik doesn't get hammered for the life of the process. */
+const OIDC_BACKGROUND_RETRY_INITIAL_MS = Number(process.env.OIDC_BACKGROUND_RETRY_INITIAL_MS) || 1000;
+const OIDC_BACKGROUND_RETRY_MAX_MS = Number(process.env.OIDC_BACKGROUND_RETRY_MAX_MS) || 60_000;
+
 interface OIDCConfig {
   issuerUrl: string;
   clientId: string;
@@ -22,6 +38,14 @@ interface OIDCConfig {
 class OIDCService {
   private client: Client | null = null;
   private config: OIDCConfig;
+
+  // Lazy/background re-init bookkeeping. `initPromise` is shared by every
+  // caller currently attempting init (request path AND background loop) so a
+  // burst of concurrent requests against an uninitialized client produces
+  // exactly ONE discovery call, not one per request.
+  private initPromise: Promise<void> | null = null;
+  private lastInitAttemptAt = 0;
+  private backgroundRetryStarted = false;
 
   constructor() {
     this.config = {
@@ -109,6 +133,111 @@ class OIDCService {
     }
   }
 
+  /**
+   * Kick off (or join) a single init attempt, honoring the cooldown. Shared by
+   * both the on-demand lazy path (ensureInitialized) and the background retry
+   * loop (startBackgroundRetry) so the two never race each other into a
+   * double discovery call.
+   *
+   * Returns the in-flight/most-recent attempt's promise, or `null` if no
+   * attempt was made because we're still within the cooldown window from the
+   * last failure (caller decides what to do — lazy path fails fast, the
+   * background loop just waits for the next tick).
+   */
+  private attemptInit(): Promise<void> | null {
+    if (this.client) {
+      return Promise.resolve();
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    const now = Date.now();
+    if (now - this.lastInitAttemptAt < OIDC_INIT_COOLDOWN_MS) {
+      return null;
+    }
+    this.lastInitAttemptAt = now;
+    const attemptStart = now;
+    this.initPromise = this.initialize()
+      .then(() => {
+        logger.info(
+          { elapsedMs: Date.now() - attemptStart },
+          'oidc: re-init succeeded'
+        );
+      })
+      .catch(error => {
+        logger.warn(
+          { err: (error as Error).message, elapsedMs: Date.now() - attemptStart },
+          'oidc: re-init attempt failed'
+        );
+        throw error;
+      })
+      .finally(() => {
+        this.initPromise = null;
+      });
+    return this.initPromise;
+  }
+
+  /**
+   * Lazy re-init on demand: called by request-path callers that find the
+   * client uninitialized. Multiple concurrent callers share the same
+   * in-flight promise (no stampede). If we're within the post-failure
+   * cooldown, this fails fast with the existing error rather than issuing a
+   * fresh discovery call per request — the background loop is what keeps
+   * trying between requests.
+   */
+  async ensureInitialized(): Promise<void> {
+    if (this.client) return;
+    const attempt = this.attemptInit();
+    if (!attempt) {
+      throw new Error('OIDC client not initialized');
+    }
+    await attempt;
+  }
+
+  /**
+   * Background self-heal: capped exponential backoff (1s -> 60s) for the life
+   * of the process, so the service recovers within about a minute of
+   * Authentik coming back even with zero request traffic. Idempotent — safe
+   * to call from multiple boot paths. Stops once initialized; nothing in this
+   * service currently un-initializes the client, so there's nothing further
+   * to self-heal after that.
+   */
+  startBackgroundRetry(): void {
+    if (this.backgroundRetryStarted) return;
+    this.backgroundRetryStarted = true;
+
+    const run = async () => {
+      let delayMs = OIDC_BACKGROUND_RETRY_INITIAL_MS;
+      while (!this.client) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        if (this.client) return;
+
+        const attempt = this.attemptInit();
+        if (!attempt) {
+          // Still cooling down from a very recent attempt (e.g. a request
+          // triggered one moments ago) — just wait for the next tick rather
+          // than busy-looping.
+          continue;
+        }
+        try {
+          await attempt;
+          logger.info('oidc: background re-init succeeded, self-heal complete');
+          return;
+        } catch {
+          delayMs = Math.min(delayMs * 2, OIDC_BACKGROUND_RETRY_MAX_MS);
+          logger.warn({ nextRetryMs: delayMs }, 'oidc: background re-init failed, backing off');
+        }
+      }
+    };
+
+    run().catch(error => {
+      // Should be unreachable (the loop only throws are caught internally),
+      // but never let a rejected background promise become an unhandled
+      // rejection that could crash the process.
+      logger.error({ err: (error as Error).message }, 'oidc: background retry loop crashed');
+    });
+  }
+
   generateAuthUrl(state?: string): { url: string; codeVerifier: string } {
     if (!this.client) {
       throw new Error('OIDC client not initialized');
@@ -139,7 +268,11 @@ class OIDCService {
     codeVerifier: string
   ): Promise<User> {
     if (!this.client) {
-      throw new Error('OIDC client not initialized');
+      // Lazy re-init: the callback can legitimately land after the client
+      // dropped/never came up (Authentik was briefly down). Preserve the
+      // exact error type/message on failure so callers' existing handling
+      // is unchanged.
+      await this.ensureInitialized();
     }
     if (!codeVerifier) {
       throw new Error('Code verifier not found');

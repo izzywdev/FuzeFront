@@ -177,12 +177,23 @@ function Overview({ data, onNavigate }: { data: Portfolio; onNavigate: (view: Vi
 function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ owner: 'izzywdev', name: '', defaultBranch: 'main', kind: 'mixed', localPath: '' })
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    owner: 'izzywdev',
+    name: '',
+    defaultBranch: 'main',
+    kind: 'mixed',
+    installationId: '',
+  })
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true)
+    event.preventDefault(); setBusy(true); setError('')
     try {
-      await api.addRepository({ ...form, includeGlobs: [], excludeGlobs: [], jiraProjects: [] })
+      const payload = { ...form, includeGlobs: [], excludeGlobs: [], jiraProjects: [] }
+      await api.verifyRepository(payload)
+      await api.addRepository(payload)
       setOpen(false); await reload()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Repository onboarding failed')
     } finally { setBusy(false) }
   }
   async function scan(id: string, localPath?: string) {
@@ -204,7 +215,7 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
           </article>
         })}
       </section>
-      {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div><label>Local path <small>(development only)</small><input value={form.localPath} onChange={event => setForm({ ...form, localPath: event.target.value })} placeholder="D:\source\FuzeService" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Adding…' : 'Add repository'}</button></div></form></div>}
+      {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><label>GitHub App installation ID<input value={form.installationId} onChange={event => setForm({ ...form, installationId: event.target.value.trim() })} inputMode="numeric" placeholder="148577461" required /><small>The read-only FuzeQuality GitHub App installation that can access this repository.</small></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Verifying…' : 'Verify and add'}</button></div></form></div>}
     </>
   )
 }

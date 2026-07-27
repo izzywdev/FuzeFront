@@ -44,6 +44,30 @@ export type Repository = RepositoryInput & {
   lastScanAt?: string
   lastScanRevision?: string
   lastScanStatus: 'never' | 'queued' | 'running' | 'complete' | 'failed'
+  lastScanDetails?: RepositoryScanDetails
+}
+
+export type RepositoryScanCandidate = {
+  sourcePath: string
+  kind: 'openapi-document' | 'openapi-config' | 'test' | 'storybook' | 'package'
+  status: 'discovered' | 'parsed' | 'partial' | 'invalid'
+  diagnosticCodes: string[]
+}
+
+export type RepositoryScanDetails = {
+  sourceRevision?: string
+  catalogRevision: string
+  scannerVersion: string
+  configVersion: string
+  partial: boolean
+  candidates: RepositoryScanCandidate[]
+  counts: {
+    candidates: number
+    operations: number
+    frontendSurfaces: number
+    tests: number
+    diagnostics: number
+  }
 }
 
 export type CoverageState =
@@ -246,6 +270,7 @@ export type ScanResult = {
   expectations: TestExpectation[]
   findings: CatalogFinding[]
   diagnostics: ScanDiagnostic[]
+  scanDetails: RepositoryScanDetails
   scannedAt: string
 }
 

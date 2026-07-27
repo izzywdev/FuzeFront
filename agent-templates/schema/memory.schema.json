@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/agent-templates/memory.schema.json",
+  "title": "Managed-Agents memory-store template",
+  "description": "A memory store (POST /v1/memory_stores) plus optional seed memories. Beta header agent-memory-2026-07-22.",
+  "type": "object",
+  "required": ["name", "description"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string", "description": "Shown to the agent; describe what the store holds." },
+    "seed": {
+      "type": "array",
+      "description": "Memories pre-loaded before any session runs.",
+      "items": {
+        "type": "object",
+        "required": ["path", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "pattern": "^/" },
+          "content": { "type": "string" }
+        }
+      }
+    }
+  }
+}

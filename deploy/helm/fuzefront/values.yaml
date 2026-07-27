@@ -251,6 +251,23 @@ clockApp:
   affinity: {}
   tolerations: []
 
+# federatedApps — list of Module-Federation remotes deployed as in-cluster pods.
+# Each entry creates a same-origin ingress at /apps/<slug>/ that strips the
+# prefix and proxies to the named Service, so the browser fetches
+# https://<host>/apps/<slug>/remoteEntry.js without leaving the cluster (no WAN
+# hairpin). The app's remote_url in the database must be /apps/<slug>/remoteEntry.js.
+#
+# Example entry:
+#   - slug: task-manager
+#     enabled: true
+#     serviceName: task-manager-svc
+#     port: 3002
+#
+# Add one entry per federated app that runs as a k8s Service in this cluster.
+# Apps not listed here (external remotes with real public URLs) continue to work
+# with their full URL stored in remote_url — only in-cluster apps need an entry.
+federatedApps: []
+
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
 # read from the existing chart Secret. Local enablement needs a REAL key — the

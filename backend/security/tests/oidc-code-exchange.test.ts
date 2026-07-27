@@ -9,6 +9,8 @@ import request from 'supertest'
 jest.mock('../src/services/oidc', () => ({
   oidcService: {
     isConfigured: () => true,
+    isInitialized: () => true,
+    ensureInitialized: jest.fn().mockResolvedValue(undefined),
     generateAuthUrl: jest.fn().mockReturnValue({ url: 'http://auth.example.com/auth?state=test-state', codeVerifier: 'mock-code-verifier' }),
     handleCallback: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', firstName: 'U', lastName: 'E', roles: ['user'] })
   }

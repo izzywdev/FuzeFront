@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/agent-templates/role-manifest.schema.json",
+  "title": "Managed-Agents role manifest",
+  "description": "One engineer-role definition. Projected into a POST /v1/agents payload by sync/sync_agents.py. The persona .md body becomes the agent's `system`; `environment` binds a POST /v1/environments resource by name.",
+  "type": "object",
+  "required": ["role", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "role": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "description": "Stable role key (frontend, backend, qa, devops, _base)."
+    },
+    "extends": {
+      "type": "string",
+      "description": "Role key to inherit defaults from (usually _base). Loader merges base then overlays this file."
+    },
+    "coordinator": {
+      "type": "boolean",
+      "description": "If true this is the routing coordinator; sync fills multiagent.agents from multiagent_roles.",
+      "default": false
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable agent name (unique per workspace; sync matches existing agents by this name)."
+    },
+    "description": { "type": "string" },
+    "persona": {
+      "type": "string",
+      "description": "Repo-relative path to the agent .md whose body (frontmatter stripped) becomes `system`. Omit for a coordinator that sets `system` inline."
+    },
+    "system": {
+      "type": "string",
+      "description": "Inline system prompt, used when `persona` is absent (e.g. the coordinator)."
+    },
+    "system_append": {
+      "type": "string",
+      "description": "Extra system text appended after the persona/base guard block (role-specific guardrails)."
+    },
+    "model": {
+      "type": "string",
+      "description": "Claude model id, e.g. claude-opus-4-8."
+    },
+    "environment": {
+      "type": "string",
+      "description": "Basename (no .json) of an environments/*.json this role binds to."
+    },
+    "tools": {
+      "type": "array",
+      "description": "Passed through verbatim as the agent `tools` array. Each entry is an agent_toolset_20260401 or mcp_toolset with permission_policy/config.",
+      "items": { "type": "object" }
+    },
+    "mcp_servers": {
+      "type": "array",
+      "description": "Passed through as the agent `mcp_servers` array. ${VAR} in string values is expanded from the environment at sync time.",
+      "items": { "type": "object" }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Agent skills passthrough (filesystem skill bundles are uploaded separately; names/ids only here).",
+      "items": {}
+    },
+    "multiagent_roles": {
+      "type": "array",
+      "description": "Coordinator only: role keys this agent may delegate to. sync resolves each to {type:agent,id,version}.",
+      "items": { "type": "string" }
+    },
+    "services": {
+      "type": "object",
+      "description": "Informational credential-grant summary (drives the self-hosted worker's mounted secrets; not sent to the API).",
+      "additionalProperties": false,
+      "properties": {
+        "github": { "enum": ["none", "read", "write"] },
+        "k8s": { "enum": ["none", "read", "gitops-safe", "admin"] },
+        "cloud": { "enum": ["none", "read", "write"] }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Passed through as agent `metadata` (free-form tracking)."
+    }
+  }
+}
