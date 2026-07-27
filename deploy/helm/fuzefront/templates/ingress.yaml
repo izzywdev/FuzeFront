@@ -159,6 +159,73 @@ spec:
                   number: {{ .Values.clockApp.port }}
           {{- end }}
 {{- end }}
+{{- range .Values.federatedApps }}
+{{- if .enabled }}
+---
+# Federated remote: {{ .slug }}
+# Browser fetches /apps/{{ .slug }}/remoteEntry.js (same-origin) → nginx
+# strips the prefix and proxies to the in-cluster Service → no WAN hairpin.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-federated-{{ .slug }}
+  labels:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: federated-remote-{{ .slug }}
+  annotations:
+    {{- if eq $.Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq $.Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ $.Release.Namespace }}-federated-{{ .slug }}-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with $.Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $.Values.ingress.className }}
+  {{- if $.Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $.Values.ingress.host | quote }}
+      secretName: {{ $.Values.ingress.tls.secretName | default (printf "%s-tls" $.Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ $.Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq $.Values.ingress.className "nginx" }}
+          - path: /apps/{{ .slug }}(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .serviceName }}
+                port:
+                  number: {{ .port }}
+          {{- else }}
+          - path: /apps/{{ .slug }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .serviceName }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+{{- if eq $.Values.ingress.className "traefik" }}
+---
+# Traefik strip-prefix middleware for federated remote {{ .slug }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: federated-{{ .slug }}-stripprefix
+  labels:
+    app.kubernetes.io/part-of: fuzefront
+spec:
+  stripPrefix:
+    prefixes:
+      - /apps/{{ .slug }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.authentik.enabled }}
 ---
 # IdP reverse-proxy — the provider-agnostic security boundary.

@@ -13,6 +13,8 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import flagsRoutes from './routes/flags'
+import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
   initializeDatabase,
@@ -277,6 +279,9 @@ try {
 app.use('/api/auth', authRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
+// Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
+// session so the `developers` segment cannot be self-assigned by a client.
+app.use('/api/flags', flagsRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
 // internal token). Webhook subroute is mounted separately above (raw body).
 app.use('/api/v1/billing', billingRoutes)
@@ -523,6 +528,10 @@ async function startServer() {
 
     // Provision Authentik M2M clients (idempotent; errors are non-fatal)
     await provisionM2MClients()
+
+    // Install the OpenFeature/Unleash provider. Non-fatal: on failure flags
+    // fall back to their in-code fail-safe defaults.
+    await initFeatureFlags('fuzefront-host')
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

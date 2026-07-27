@@ -15,6 +15,7 @@ import { InvoiceHistoryPanel, BillingI18nProvider } from '@fuzefront/billing-ui'
 // (mirroring @fuzefront/chat-ui) is a follow-up owned by devops.
 import '../../../packages/billing-ui/src/styles/billing-ui.css'
 import { useOrganizations } from '../lib/shared'
+import { useFlag } from '../platform/featureFlags'
 import {
   listPlans,
   getSubscription,
@@ -31,15 +32,17 @@ import {
 
 /**
  * Gate for the design-system-first invoice history panel
- * (`fuzefront.billing.invoice-history`, default OFF). The family flag standard
- * is Unleash via `@fuzefront/feature-flags`; until the web flag client is
- * initialized in the shell bootstrap this reads a build-time override and
- * defaults OFF, so production behavior is unchanged. Swap the body for
- * `getBoolean('fuzefront.billing.invoice-history', false)` once the web client
- * is wired — the flag key and default stay identical.
+ * (`fuzefront.billing.invoice-history`, default OFF).
+ *
+ * Reads the per-user evaluation served by the backend (`GET /api/flags`), which
+ * resolves the flag through Unleash against the authenticated session — so the
+ * `developers` segment actually applies. This previously read the build-time
+ * constant `import.meta.env.VITE_FF_BILLING_INVOICE_HISTORY`, which was baked at
+ * build time and identical for every user, making per-user targeting impossible.
+ * Key and default are unchanged.
  */
 function useInvoiceHistoryFlag(): boolean {
-  return import.meta.env.VITE_FF_BILLING_INVOICE_HISTORY === 'true'
+  return useFlag('fuzefront.billing.invoice-history', false)
 }
 
 /**

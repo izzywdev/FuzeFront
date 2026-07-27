@@ -151,6 +151,12 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
+  # @fuzefront/feature-flags client for GET /api/flags (the shell's flag source).
+  featureFlags:
+    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+    appName: "fuzefront-host"
+    tokenSecretName: ""      # empty -> fuzefront-secrets; prod uses unleash-secrets
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -210,9 +216,12 @@ applicationsService:
   # at it. The scoped CLIENT TOKEN is a SECRET (sealed) — its key in the chart
   # Secret / SealedSecret is below; absence → flags fall back to safe defaults.
   featureFlags:
-    unleashUrl: ""           # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
     appName: "applications-service"
-    # Key in fuzefront-secrets holding the scoped Unleash client token.
+    # Secret holding the scoped Unleash CLIENT token. Empty -> the umbrella
+    # fuzefront-secrets; set to "unleash-secrets" to reuse the token the Unleash
+    # chart already seals, instead of duplicating it.
+    tokenSecretName: ""
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -241,6 +250,23 @@ clockApp:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+
+# federatedApps — list of Module-Federation remotes deployed as in-cluster pods.
+# Each entry creates a same-origin ingress at /apps/<slug>/ that strips the
+# prefix and proxies to the named Service, so the browser fetches
+# https://<host>/apps/<slug>/remoteEntry.js without leaving the cluster (no WAN
+# hairpin). The app's remote_url in the database must be /apps/<slug>/remoteEntry.js.
+#
+# Example entry:
+#   - slug: task-manager
+#     enabled: true
+#     serviceName: task-manager-svc
+#     port: 3002
+#
+# Add one entry per federated app that runs as a k8s Service in this cluster.
+# Apps not listed here (external remotes with real public URLs) continue to work
+# with their full URL stored in remote_url — only in-cluster apps need an entry.
+federatedApps: []
 
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is

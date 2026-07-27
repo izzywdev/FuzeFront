@@ -1,8 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Routes, Route, Navigate, useParams } from 'react-router-dom'
-import { useCurrentUser, useAppContext, MenuItem } from './lib/shared'
+import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import {
+  useCurrentUser,
+  useAppContext,
+  MenuItem,
+  resetWorkspaceSessionIfUserChanged,
+} from './lib/shared'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
+import { FeatureFlagProvider } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -40,6 +46,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
             console.log('Attempting to get current user...')
             const user = await getCurrentUser()
             console.log('Successfully got user:', user.email)
+            resetWorkspaceSessionIfUserChanged(user.id)
             dispatch({ type: 'SET_USER', payload: user })
           } catch (userError) {
             // Token is invalid or expired
@@ -174,14 +181,19 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthWrapper>
-      <AppContent />
+      {/* Inside AuthWrapper: flags are fetched per authenticated user, so the
+          request always carries a session token and the `developers` segment
+          resolves against the real user id. */}
+      <FeatureFlagProvider>
+        <AppContent />
+      </FeatureFlagProvider>
     </AuthWrapper>
   )
 }
 
 function AppContent() {
   const { isAuthenticated, user } = useCurrentUser()
-  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  const { pathname: currentPath } = useLocation()
 
   // Public route: invitation accept page — handle before auth check
   if (currentPath.startsWith('/invitations/')) {
@@ -207,6 +219,16 @@ function AppContent() {
         <LoginPage />
       </AppRegistryProvider>
     )
+  }
+
+  // An authenticated user hitting the pre-auth /login or /signup routes must
+  // be redirected to /dashboard (replace, not push, so Back doesn't bounce
+  // them into the auth surface). Without this, those paths simply aren't
+  // registered in the authenticated route tree below and fall through to the
+  // catch-all 404 — this was BUG 1: a signed-in user visiting /login saw a
+  // "404 - Page Not Found" app-shell page instead of being routed home.
+  if (currentPath === '/login' || currentPath === '/signup') {
+    return <Navigate to="/dashboard" replace />
   }
 
   // Standalone apps (mode = "standalone") render WITHOUT any portal chrome —

@@ -24,6 +24,7 @@
     "version": "echo $npm_package_version"
   },
   "dependencies": {
+    "@fuzefront/feature-flags": "1.0.0",
     "@fuzefront/shared": "1.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.6",
