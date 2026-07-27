@@ -49,8 +49,35 @@ const stubCss = {
   },
 }
 
+// `virtual:__federation__` is injected at BUILD time by @originjs/vite-plugin-federation
+// (registered in vite.config.ts, deliberately NOT here — tests don't build remotes).
+// Without the plugin the id is unresolvable, so vite:import-analysis fails the whole
+// test file the moment anything reaches src/utils/loadFederatedApp.ts — which
+// FederatedAppLoader.tsx and StandaloneAppSurface.tsx both import. Stub it, exactly as
+// stubCss does for stylesheets: jsdom tests assert host logic, never real remote loading.
+// Tests that care about loading behaviour vi.mock('../utils/loadFederatedApp') anyway.
+const FEDERATION_ID = 'virtual:__federation__'
+const FEDERATION_STUB_ID = '\0federation-stub.js'
+const stubFederation = {
+  name: 'stub-virtual-federation',
+  enforce: 'pre' as const,
+  resolveId(id: string) {
+    return id === FEDERATION_ID ? FEDERATION_STUB_ID : null
+  },
+  load(id: string) {
+    return id === FEDERATION_STUB_ID
+      ? [
+          'export const __federation_method_setRemote = () => {}',
+          'export const __federation_method_getRemote = () => Promise.resolve({})',
+          'export const __federation_method_unwrapDefault = (m) =>',
+          '  m && typeof m === "object" && "default" in m ? m.default : m',
+        ].join('\n')
+      : null
+  },
+}
+
 export default defineConfig({
-  plugins: [stubCss, react()],
+  plugins: [stubCss, stubFederation, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
