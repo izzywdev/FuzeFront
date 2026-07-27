@@ -24,6 +24,7 @@ import {
 import { oidcService } from './services/oidc'
 import { setupMetrics } from './metrics'
 import { provisionM2MClients } from './authentik/provision-m2m-clients'
+import { startBillingProjection, stopBillingProjection } from './services/billingProjection'
 
 // Load environment variables
 dotenv.config()
@@ -419,6 +420,13 @@ function gracefulShutdown(signal: string) {
         console.error('❌ Error closing database:', error)
       }
 
+      // Stop the billing plan-state projection consumer (no-op if never started)
+      try {
+        await stopBillingProjection()
+      } catch (error) {
+        console.error('❌ Error stopping billing projection consumer:', error)
+      }
+
       console.log('🎯 Graceful shutdown complete')
       process.exit(0)
     })
@@ -532,6 +540,10 @@ async function startServer() {
     // Install the OpenFeature/Unleash provider. Non-fatal: on failure flags
     // fall back to their in-code fail-safe defaults.
     await initFeatureFlags('fuzefront-host')
+
+    // Start consuming billing.subscription.changed to project plan-tier/status
+    // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
+    await startBillingProjection()
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

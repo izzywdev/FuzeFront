@@ -27,14 +27,6 @@ export interface HandlerContext {
   provider?: PaymentProvider;
   permit: PermitSyncService;
   emitter: BillingEventEmitter;
-  /** Writes the plan-tier hot-path cache columns back to public.users/organizations. */
-  writePlanCache: (args: {
-    entityType: 'user' | 'organization';
-    entityId: string;
-    planTier: string;
-    status: string;
-    trialEnd: string | null;
-  }) => Promise<void>;
   /**
    * Retrieves a full Stripe Subscription by id. Used by the
    * `checkout.session.completed` handler: the session payload only carries the
