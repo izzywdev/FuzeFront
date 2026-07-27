@@ -88,10 +88,15 @@ export const authenticateToken = async (
         if (resolvedPortal && resolvedPortal.id !== decoded.portalId) {
           // AC3 — a token minted for portal A presented on portal B's Host is
           // rejected outright; the caller must re-authenticate on that portal.
-          console.log(`❌ [${requestId}] Token portal mismatch:`, {
-            tokenPortalId: decoded.portalId,
-            hostPortalId: resolvedPortal.id,
-          })
+          // Constant format string + arguments, never an interpolated one (a
+          // variable as/in the format string lets an injected specifier
+          // forge log output) — same convention as utils/feature-flags.ts.
+          console.log(
+            '❌ [%s] Token portal mismatch: token=%s host=%s',
+            requestId,
+            decoded.portalId,
+            resolvedPortal.id
+          )
           return res.status(401).json({ error: 'Invalid token.' })
         }
         user.portalId = decoded.portalId

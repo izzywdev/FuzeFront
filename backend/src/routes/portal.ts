@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import {
@@ -19,6 +20,31 @@ import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
 
 const router = express.Router()
 
+// Public boot fetch — same express-rate-limit convention/limits as the
+// authenticated flags-read endpoint (routes/flags.ts flagsRateLimiter): the
+// shell fetches this once per boot, so a generous per-client ceiling is
+// invisible to real users while bounding host/slug enumeration abuse.
+const portalContextRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// /current performs an authorization decision (resolves + returns the
+// caller's own portal from their session-bound portalId) — tighter than the
+// public context limiter since a legitimate caller fetches it rarely (once
+// per admin-console/session load), and this is exactly the
+// enumeration/brute-force surface a missing rate limit exposes.
+const portalCurrentRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
 /**
  * GET /api/v1/portal/context — PUBLIC, unauthenticated. Renders before login.
  * `req.portal` is set by the global `resolvePortalContext` middleware
@@ -26,7 +52,7 @@ const router = express.Router()
  * PORTAL_SUSPENDED / 404 unresolved) and is itself flag-gated — so `!req.portal`
  * here covers BOTH "flag is off" and "genuinely nothing resolved".
  */
-router.get('/context', async (req: Request, res: Response) => {
+router.get('/context', portalContextRateLimiter, async (req: Request, res: Response) => {
   const portal = (req as any).portal
   if (!portal) {
     return res.status(404).json({
@@ -43,7 +69,7 @@ router.get('/context', async (req: Request, res: Response) => {
  * authenticateToken from the JWT `portal_id` claim) — never from a
  * client-supplied id/query/Host.
  */
-router.get('/current', authenticateToken, async (req: any, res: Response) => {
+router.get('/current', portalCurrentRateLimiter, authenticateToken, async (req: any, res: Response) => {
   const enabled = await isMultiTenantPortalsEnabled({ userId: req.user?.id })
   if (!enabled) {
     return res.status(404).json({
