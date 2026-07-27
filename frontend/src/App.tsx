@@ -8,6 +8,7 @@ import {
 } from './lib/shared'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
+import { FeatureFlagProvider } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -180,7 +181,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <AuthWrapper>
-      <AppContent />
+      {/* Inside AuthWrapper: flags are fetched per authenticated user, so the
+          request always carries a session token and the `developers` segment
+          resolves against the real user id. */}
+      <FeatureFlagProvider>
+        <AppContent />
+      </FeatureFlagProvider>
     </AuthWrapper>
   )
 }

@@ -151,6 +151,12 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
+  # @fuzefront/feature-flags client for GET /api/flags (the shell's flag source).
+  featureFlags:
+    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+    appName: "fuzefront-host"
+    tokenSecretName: ""      # empty -> fuzefront-secrets; prod uses unleash-secrets
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -210,9 +216,12 @@ applicationsService:
   # at it. The scoped CLIENT TOKEN is a SECRET (sealed) — its key in the chart
   # Secret / SealedSecret is below; absence → flags fall back to safe defaults.
   featureFlags:
-    unleashUrl: ""           # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
     appName: "applications-service"
-    # Key in fuzefront-secrets holding the scoped Unleash client token.
+    # Secret holding the scoped Unleash CLIENT token. Empty -> the umbrella
+    # fuzefront-secrets; set to "unleash-secrets" to reuse the token the Unleash
+    # chart already seals, instead of duplicating it.
+    tokenSecretName: ""
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -377,6 +386,12 @@ chatService:
     limits:
       cpu: "1"
       memory: 1Gi
+  # chat-db-migrate Job: runs the knex migrations (chat_conversations,
+  # chat_messages, chat_audit_log, chat_feedback) as a pre-install/pre-upgrade
+  # hook, before chat-service starts. Nothing else creates these tables, so
+  # leave this on whenever chatService.enabled is true; it is idempotent.
+  migrate:
+    enabled: true
   # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
   # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
   # LiteLLM + ChromaDB are reachable in fuzeinfra.
@@ -511,6 +526,14 @@ authentik:
     repository: ghcr.io/goauthentik/server
     tag: "2026.5.5"
   host: auth.fuzefront.dev.local
+  # Dedicated admin host for the Authentik UI, separate from the OIDC
+  # reverse-proxy under the app host (see templates/ingress.yaml). OFF by default:
+  # it is only safe where an edge auth gate (Cloudflare Access) fronts the host.
+  adminIngress:
+    enabled: false
+    host: ""
+    className: ""
+    annotations: {}
   dbName: authentik # must pre-exist in the FuzeInfra Postgres
   cookieDomain: fuzefront.dev.local
   bootstrapEmail: admin@fuzefront.dev

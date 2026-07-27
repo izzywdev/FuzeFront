@@ -38,6 +38,9 @@ function buildApp(overrides: any = {}) {
       list: jest.fn().mockResolvedValue([CONVERSATION]),
       findById: jest.fn().mockResolvedValue(CONVERSATION),
       create: jest.fn().mockResolvedValue({ ...CONVERSATION, id: 'c-new', title: null }),
+      getOrCreateContinuous: jest
+        .fn()
+        .mockResolvedValue({ ...CONVERSATION, id: 'c-new', title: null }),
       touch: jest.fn().mockResolvedValue(undefined),
     },
     messages: {
@@ -87,27 +90,46 @@ describe('POST /chat/stream', () => {
     );
   });
 
-  it('creates a conversation when none is supplied and announces its id first', async () => {
+  it('resolves the continuous thread when none is supplied and announces its id first', async () => {
     const { app, deps } = buildApp();
     const res = await request(app)
       .post('/chat/stream')
       .set('Authorization', `Bearer ${token()}`)
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID });
-    expect(deps.conversations.create).toHaveBeenCalledWith(
+    expect(deps.conversations.getOrCreateContinuous).toHaveBeenCalledWith(
       expect.objectContaining({ userId: USER_ID, orgId: ORG_ID, appId: 'fuzefront' }),
     );
+    // Resolved server-side, so a client that never echoes the id back must NOT
+    // get a brand-new conversation per turn (#120).
+    expect(deps.conversations.create).not.toHaveBeenCalled();
     const firstEvent = res.text.split('\n\n')[0];
     expect(firstEvent).toContain('"type":"conversation"');
     expect(firstEvent).toContain('"conversationId":"c-new"');
   });
 
-  it('scopes the new conversation to the appId from the request body', async () => {
+  it('returns the SAME thread id across turns when the client never echoes it back', async () => {
+    const { app, deps } = buildApp();
+    const send = () =>
+      request(app)
+        .post('/chat/stream')
+        .set('Authorization', `Bearer ${token()}`)
+        .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID });
+
+    const first = await send();
+    const second = await send();
+    const idOf = (res: any) => JSON.parse(res.text.split('\n\n')[0].slice('data: '.length));
+
+    expect(idOf(first).conversationId).toBe(idOf(second).conversationId);
+    expect(deps.conversations.getOrCreateContinuous).toHaveBeenCalledTimes(2);
+  });
+
+  it('scopes the continuous thread to the appId from the request body', async () => {
     const { app, deps } = buildApp();
     await request(app)
       .post('/chat/stream')
       .set('Authorization', `Bearer ${token()}`)
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID, appId: 'mendys' });
-    expect(deps.conversations.create).toHaveBeenCalledWith(
+    expect(deps.conversations.getOrCreateContinuous).toHaveBeenCalledWith(
       expect.objectContaining({ appId: 'mendys' }),
     );
   });
@@ -118,7 +140,7 @@ describe('POST /chat/stream', () => {
       .post('/chat/stream')
       .set('Authorization', `Bearer ${token({ appId: 'mendys' })}`)
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID, appId: 'spoofed' });
-    expect(deps.conversations.create).toHaveBeenCalledWith(
+    expect(deps.conversations.getOrCreateContinuous).toHaveBeenCalledWith(
       expect.objectContaining({ appId: 'mendys' }),
     );
   });
@@ -131,6 +153,7 @@ describe('POST /chat/stream', () => {
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID, conversationId: 'c1' });
     expect(deps.conversations.findById).toHaveBeenCalledWith('c1', USER_ID);
     expect(deps.conversations.create).not.toHaveBeenCalled();
+    expect(deps.conversations.getOrCreateContinuous).not.toHaveBeenCalled();
   });
 
   it('streams an error (not a foreign write) for a conversation the caller does not own', async () => {
@@ -139,6 +162,7 @@ describe('POST /chat/stream', () => {
         findById: jest.fn().mockResolvedValue(null),
         list: jest.fn(),
         create: jest.fn(),
+        getOrCreateContinuous: jest.fn(),
         touch: jest.fn(),
       },
     });
@@ -255,6 +279,7 @@ describe('GET /chat/conversations/:id', () => {
         findById: jest.fn().mockResolvedValue(null),
         list: jest.fn(),
         create: jest.fn(),
+        getOrCreateContinuous: jest.fn(),
         touch: jest.fn(),
       },
     });

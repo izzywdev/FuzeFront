@@ -5,6 +5,7 @@ import {
   type Client,
 } from '@openfeature/server-sdk';
 import { toEvaluationContext } from './context';
+import { UnleashOpenFeatureProvider } from './unleash-provider';
 import type { FuzeFlagsContext, FuzeFlagsOptions } from './types';
 
 const DEFAULT_READY_TIMEOUT_MS = 5000;
@@ -17,20 +18,22 @@ let client: Client | undefined;
 /**
  * Build the server-side Unleash OpenFeature provider.
  *
- * We wrap the native Unleash Node SDK (`unleash-client`) behind the official
- * OpenFeature provider published by Unleash (`unleash-openfeature-provider-server`)
- * when available; the import is dynamic so a missing/unreachable provider never
- * crashes module load. Keeping OpenFeature as the public surface means the rest
- * of this module is provider-agnostic.
+ * This previously `import()`ed `unleash-openfeature-provider-server` — a package
+ * that does not exist on npm and was never declared as a dependency, so the
+ * import always threw, the catch below degraded to the no-op default provider,
+ * and every server-side flag silently resolved to its in-code default. We now
+ * use an in-repo provider over the stable, Unleash-maintained `unleash-client`
+ * (see ./unleash-provider). OpenFeature remains the public surface.
  */
 async function buildProvider(opts: FuzeFlagsOptions): Promise<Provider> {
-  const mod: any = await import('unleash-openfeature-provider-server');
-  const UnleashProvider = mod.UnleashProvider ?? mod.default?.UnleashProvider ?? mod.default;
-  return new UnleashProvider({
+  // Statically imported: it is in-repo source and only *type*-imports the
+  // OpenFeature SDK. The heavy `unleash-client` stays lazily imported inside
+  // the provider's initialize(), so module load never requires the Unleash SDK.
+  return new UnleashOpenFeatureProvider({
     url: opts.url,
-    clientKey: opts.clientToken,
+    clientToken: opts.clientToken,
     appName: opts.appName ?? DEFAULT_APP_NAME,
-    refreshInterval: (opts.refreshIntervalSec ?? DEFAULT_REFRESH_SEC) * 1000,
+    refreshIntervalMs: (opts.refreshIntervalSec ?? DEFAULT_REFRESH_SEC) * 1000,
   });
 }
 
@@ -136,6 +139,46 @@ export async function getNumber(
   } catch {
     return defaultValue;
   }
+}
+
+/**
+ * OpenFeature-shaped facade returned by {@link getClient}.
+ *
+ * Consumers (e.g. `backend/applications/src/app-registry/flags.ts`) resolve the
+ * client via `require('@fuzefront/feature-flags').getClient()` and call
+ * `getBooleanValue(key, default, context)`. That export was missing, so
+ * `resolveClient()` returned null and every flag took its in-code default
+ * regardless of Unleash — this restores the contract those callers already
+ * assume. Never throws: any failure resolves to the caller's default.
+ */
+export interface FuzeFlagsClient {
+  getBooleanValue(
+    flag: string,
+    defaultValue: boolean,
+    context?: FuzeFlagsContext,
+  ): Promise<boolean>;
+  getStringValue(
+    flag: string,
+    defaultValue: string,
+    context?: FuzeFlagsContext,
+  ): Promise<string>;
+  getNumberValue(
+    flag: string,
+    defaultValue: number,
+    context?: FuzeFlagsContext,
+  ): Promise<number>;
+}
+
+/**
+ * Get the flag client. Safe to call before {@link init} — evaluations simply
+ * return their defaults until a provider is installed.
+ */
+export function getClient(): FuzeFlagsClient {
+  return {
+    getBooleanValue: getBoolean,
+    getStringValue: getString,
+    getNumberValue: getNumber,
+  };
 }
 
 /** Shut down the provider and reset state. Safe to call repeatedly. */

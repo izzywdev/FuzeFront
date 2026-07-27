@@ -10,6 +10,10 @@ export interface TabItem {
   id?: string;
   /** id of the `role="tabpanel"` this tab controls (`aria-controls`). */
   controls?: string;
+  /** When set, the tab renders as an `<a href={href}>` instead of a
+   * `<button>` — for a tabbed console shell where each tab is its own route
+   * (e.g. Portal Admin → Overview / Users / App catalog / Billing). */
+  href?: string;
 }
 
 /**

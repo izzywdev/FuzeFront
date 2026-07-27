@@ -293,3 +293,50 @@ spec:
           {{- end }}
 {{- end }}
 {{- end }}
+
+{{- /*
+  Authentik ADMIN Ingress — a dedicated, CF-Access-gated admin host for the
+  Authentik UI. Deliberately SEPARATE from the OIDC reverse-proxy above.
+
+  Why a second host instead of exposing auth.fuzefront.com:
+    - The block above deliberately keeps the IdP invisible by serving Authentik's
+      native paths UNDER app.fuzefront.com so the browser never sees an IdP host.
+      That path carries live OIDC traffic (discovery/authorize/token/flow-executor).
+      Putting an auth gate in front of it would break sign-in for every user.
+    - This admin host serves the SAME service on a different hostname that carries
+      NO OIDC traffic, so gating it cannot affect the login flow.
+
+  Gating: authentik.prod.fuzefront.com is covered by the wildcard proxied CNAME
+  *.prod.fuzefront.com -> the CF tunnel, whose ingress catch-all targets
+  traefik.kube-system:80, and by the wildcard Cloudflare Access app
+  "FuzeInfra Admin Services" (*.prod.fuzefront.com, admin email allowlist / OTP).
+  Cloudflare Access authenticates via email OTP — NOT via Authentik — so gating
+  Authentik behind Access creates no circular dependency.
+*/}}
+{{- if and .Values.authentik.enabled .Values.authentik.adminIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-authentik-admin
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authentik-admin
+  {{- with .Values.authentik.adminIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.authentik.adminIngress.className | default .Values.ingress.className }}
+  rules:
+    - host: {{ required "authentik.adminIngress.host is required when authentik.adminIngress.enabled" .Values.authentik.adminIngress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 9000
+{{- end }}

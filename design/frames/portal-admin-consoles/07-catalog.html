@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App catalog — portal-admin frame (g)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="07-catalog">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Portal-admin · Frame (g) · route /portal/admin/catalog</div>
+  <h1>Northwind · Console</h1>
+
+  <nav class="tabs" data-panel="portal-tabs" role="tablist">
+    <a class="tab" href="05-overview.html" role="tab" aria-selected="false" data-tab="overview">Overview</a>
+    <a class="tab" href="06-users.html" role="tab" aria-selected="false" data-tab="users">Users</a>
+    <a class="tab" href="07-catalog.html" role="tab" aria-selected="true" data-tab="catalog">App catalog</a>
+    <a class="tab" href="08-billing.html" role="tab" aria-selected="false" data-tab="billing">Billing</a>
+  </nav>
+
+  <div class="panel" data-panel="catalog-enabled">
+    <div class="panel-head">
+      <div><h2>Your catalog</h2><p class="sub"><span data-count="enabled">3</span> apps enabled ·
+        drag to set the order they appear in your portal's launcher</p></div>
+      <button class="btn btn-accent" data-action="add-app">Add app</button>
+    </div>
+    <div class="catalog" data-list="enabled-apps">
+      <div class="cat-item" data-app="crm" data-enabled="true" data-order="1">
+        <span class="cat-grip" data-action="drag" aria-label="Reorder">⣿</span>
+        <span class="cat-icon">📇</span>
+        <div class="stack"><span class="cat-name">CRM</span><span class="cat-desc">module-federation · /crm</span></div>
+        <span class="status status--enabled" data-app-status="enabled"><span class="dot"></span>Enabled</span>
+        <div class="reorder">
+          <button class="btn btn-ghost" data-action="move-up" data-target="crm" disabled aria-label="Move up">▲</button>
+          <button class="btn btn-ghost" data-action="move-down" data-target="crm" aria-label="Move down">▼</button>
+        </div>
+      </div>
+      <div class="cat-item" data-app="analytics" data-enabled="true" data-order="2">
+        <span class="cat-grip" data-action="drag" aria-label="Reorder">⣿</span>
+        <span class="cat-icon">📊</span>
+        <div class="stack"><span class="cat-name">Analytics</span><span class="cat-desc">module-federation · /analytics</span></div>
+        <span class="status status--enabled" data-app-status="enabled"><span class="dot"></span>Enabled</span>
+        <div class="reorder">
+          <button class="btn btn-ghost" data-action="move-up" data-target="analytics" aria-label="Move up">▲</button>
+          <button class="btn btn-ghost" data-action="move-down" data-target="analytics" aria-label="Move down">▼</button>
+        </div>
+      </div>
+      <div class="cat-item" data-app="docs" data-enabled="true" data-order="3">
+        <span class="cat-grip" data-action="drag" aria-label="Reorder">⣿</span>
+        <span class="cat-icon">📄</span>
+        <div class="stack"><span class="cat-name">Docs</span><span class="cat-desc">iframe · /docs</span></div>
+        <span class="status status--enabled" data-app-status="enabled"><span class="dot"></span>Enabled</span>
+        <div class="reorder">
+          <button class="btn btn-ghost" data-action="move-up" data-target="docs" aria-label="Move up">▲</button>
+          <button class="btn btn-ghost" data-action="move-down" data-target="docs" disabled aria-label="Move down">▼</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- add-app dialog rendered inline/static for the frame -->
+  <h3 style="margin-top: var(--space-10)">Add app dialog</h3>
+  <div class="panel" data-panel="add-app" data-state="default" style="margin-top: var(--space-3)">
+    <div class="panel-head"><div><h2>Available apps</h2><p class="sub">Apps FuzeFront offers that
+      aren't in your catalog yet</p></div></div>
+    <div class="catalog" data-list="available-apps">
+      <div class="cat-item" data-app="helpdesk" data-enabled="false">
+        <span class="cat-icon">🎧</span>
+        <span></span>
+        <div class="stack"><span class="cat-name">Helpdesk</span><span class="cat-desc">module-federation · marketplace</span></div>
+        <span class="status status--disabled" data-app-status="available"><span class="dot"></span>Not added</span>
+        <button class="btn btn-accent" data-action="enable-app" data-target="helpdesk">Add</button>
+      </div>
+      <div class="cat-item" data-app="billing-widget" data-enabled="false">
+        <span class="cat-icon">💳</span>
+        <span></span>
+        <div class="stack"><span class="cat-name">Invoicing</span><span class="cat-desc">spa · organization</span></div>
+        <span class="status status--disabled" data-app-status="available"><span class="dot"></span>Not added</span>
+        <button class="btn btn-accent" data-action="enable-app" data-target="billing-widget">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> App display fields — <code>slug</code>, <code>name</code>,
+    <code>menuLabel</code>, <code>integration</code> (module-federation | iframe | spa),
+    <code>icon</code> — come from the real app registry
+    (<code>@fuzefront/app-registry-client</code>, <code>GET /apps</code>). <b>Enablement + order are
+    per-portal and anticipated</b> (FF-EPIC-12-S3, <code>portal_apps</code>): add/remove is
+    <code>PUT /api/v1/portal/catalog/{appId}</code> <code>{ enabled }</code>; reorder is
+    <code>PATCH /api/v1/portal/catalog/order</code> <code>{ order: [...] }</code>, persisted to
+    <code>pinned_order</code> and reflected without a full reload. Drag is the primary affordance;
+    the ▲▼ controls are the keyboard-accessible equivalent (endpoints of the list disable the
+    unusable direction).
+  </p>
+
+  <nav class="pager"><a href="06-users.html">← Users</a><a href="08-billing.html">Next: Billing →</a></nav>
+</div>
+</body>
+</html>

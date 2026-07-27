@@ -1,0 +1,26 @@
+{
+  "corpabcContext": {
+    "portalId": "prt_corpabc",
+    "slug": "corpabc",
+    "status": "active",
+    "branding": {
+      "name": "CorpABC",
+      "logo": null,
+      "favicon": null,
+      "accent": "#2452e8",
+      "tagline": "Your team, connected."
+    }
+  },
+  "rootContext": {
+    "portalId": "prt_root",
+    "slug": "fuzefront",
+    "status": "active",
+    "branding": {
+      "name": "FuzeFront",
+      "logo": null,
+      "favicon": null,
+      "accent": null,
+      "tagline": null
+    }
+  }
+}

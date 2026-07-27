@@ -13,16 +13,23 @@ RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
+COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY backend/package.json ./backend/
 
 RUN npm install
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/feature-flags/ ./packages/feature-flags/
 COPY backend/ ./backend/
 
-# Build shared kafka sub-tree first, then the backend.
+# Build shared kafka sub-tree, then the flag client, then the backend.
+# @fuzefront/feature-flags must be BUILT here: its package `main` points at
+# dist/, and without this the workspace symlink resolves to an empty package —
+# which is why the flag client was absent from the running image and every flag
+# silently took its in-code default.
 RUN cd shared && npm run build:kafka
+RUN cd packages/feature-flags && npm run build
 RUN cd backend && npm run build
 
 # ---------- production ----------
@@ -44,6 +51,8 @@ COPY --from=build --chown=backend:nodejs /app/backend/node_modules ./backend/nod
 # Built shared kafka output + compiled backend.
 COPY --from=build --chown=backend:nodejs /app/shared/dist ./shared/dist
 COPY --from=build --chown=backend:nodejs /app/shared/package.json ./shared/package.json
+COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
+COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
 COPY --from=build --chown=backend:nodejs /app/backend/dist ./backend/dist
 COPY --from=build --chown=backend:nodejs /app/backend/package.json ./backend/package.json
 

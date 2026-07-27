@@ -26,6 +26,10 @@ export const repositoryInputSchema = z.object({
     team: z.string().trim().min(1).max(100),
     contact: z.string().trim().email().optional(),
   }).optional(),
+  storybookBaseUrl: z.string().trim().url().refine(
+    value => new URL(value).protocol === 'https:',
+    'Storybook base URL must use HTTPS'
+  ).optional(),
 }).superRefine((value, context) => {
   for (const glob of [...value.includeGlobs, ...value.excludeGlobs]) {
     if (glob.includes('..') || glob.includes('://') || /[\r\n]/.test(glob)) {
@@ -121,6 +125,17 @@ export type FrontendSurface = {
   public: boolean
   states: string[]
   hasStory: boolean
+  stories: StorybookStory[]
+}
+
+export type StorybookStory = {
+  id: string
+  title: string
+  name: string
+  exportName: string
+  sourcePath: string
+  hasPlay: boolean
+  previewPath: string
 }
 
 export type TestCase = {

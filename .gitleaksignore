@@ -1,0 +1,19 @@
+# gitleaks fingerprint allowlist — <commit>:<path>:<rule>:<line>
+#
+# Entries here suppress a finding for ONE specific occurrence in history. Prefer
+# this over adding a value to .gitleaks.toml's `regexes` when the finding is a
+# real-but-non-secret identifier: a regex entry would re-commit the very string
+# we are trying to keep out of the repo, permanently and in plaintext.
+#
+# ---------------------------------------------------------------------------
+# packages/feature-flags/tests/unleash-provider.test.ts
+# A test fixture hard-coded the platform owner's `users.id` UUID while proving
+# the targetingKey -> Unleash `userId` mapping that the `developers` segment
+# constrains. gitleaks scores a UUID as a high-entropy generic-api-key.
+#
+# It is NOT a credential — it is a user identifier, and it grants nothing on its
+# own (flags gate visibility; authorization is enforced by Permit server-side,
+# and /api/flags derives the user from the authenticated session, never from
+# client input). It was replaced with a synthetic UUID in a later commit, but it
+# remains in this commit's history and history is not rewritten on this repo.
+6c21dfd3e67158b0059b1657eb7f65b722dc50a0:packages/feature-flags/tests/unleash-provider.test.ts:generic-api-key:13

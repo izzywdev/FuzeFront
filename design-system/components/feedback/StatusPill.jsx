@@ -1,17 +1,43 @@
 import React from "react";
 
-// Status -> color token map. Mirrors StatusPage.tsx, where "operational"
-// surfaces use --success-color and failures use --error-color.
+// Status key -> semantic tone + default label. Mirrors StatusPage.tsx (service
+// health) AND the portal lifecycle / domain / Connect-onboarding vocabulary
+// commissioned by design/frames/portal-admin-consoles (active/suspended/
+// pending/restricted, verified/enabled/disabled, in-progress/not-started,
+// invited/expired). `online`/`degraded`/`offline` are kept for back-compat
+// with existing service-health consumers.
 const STATUSES = {
-  online: { color: "var(--success-color)", label: "Online" },
-  degraded: { color: "var(--warning-color)", label: "Degraded" },
-  offline: { color: "var(--error-color)", label: "Offline" },
+  online: { tone: "success", label: "Online" },
+  active: { tone: "success", label: "Active" },
+  verified: { tone: "success", label: "Verified" },
+  enabled: { tone: "success", label: "Enabled" },
+
+  degraded: { tone: "warning", label: "Degraded" },
+  pending: { tone: "warning", label: "Pending" },
+  "in-progress": { tone: "warning", label: "In progress" },
+  invited: { tone: "warning", label: "Invited" },
+
+  offline: { tone: "error", label: "Offline" },
+  suspended: { tone: "error", label: "Suspended" },
+  restricted: { tone: "error", label: "Restricted" },
+  expired: { tone: "error", label: "Expired" },
+
+  disabled: { tone: "neutral", label: "Disabled" },
+  "not-started": { tone: "neutral", label: "Not started" },
+};
+
+const TONES = {
+  success: { color: "var(--success-color)", background: "var(--success-soft)" },
+  warning: { color: "var(--warning-color)", background: "var(--warning-soft)" },
+  error: { color: "var(--error-color)", background: "var(--error-soft)" },
+  neutral: { color: "var(--text-secondary)", background: "var(--bg-quaternary)" },
 };
 
 /**
- * Inline service-status indicator — a colored dot + label keyed to the
- * health of a remote/service in the runtime fabric. online=success,
- * degraded=warning, offline=error.
+ * Semantic lifecycle status pill — a colored dot + label keyed to a fixed
+ * vocabulary of statuses (service health, portal lifecycle, domain
+ * verification, invite/Connect-onboarding state). Background is a soft tint
+ * of the status color (not color-only: paired with the dot + text label).
  */
 export function StatusPill({
   status = "online",
@@ -20,24 +46,26 @@ export function StatusPill({
   ...rest
 }) {
   const s = STATUSES[status] || STATUSES.online;
+  const t = TONES[s.tone] || TONES.success;
   const text = label != null ? label : s.label;
   return (
     <span
       role="status"
       aria-label={text}
+      data-status={status}
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: "var(--space-2)",
-        padding: "var(--space-1) var(--space-3)",
-        background: "var(--bg-quaternary)",
-        color: "var(--text-secondary)",
-        border: "1px solid var(--border-color)",
+        gap: "var(--space-1)",
+        padding: "2px var(--space-3)",
+        background: t.background,
+        color: t.color,
+        border: "1px solid transparent",
         borderRadius: "var(--radius-pill)",
         fontFamily: "var(--font-sans)",
         fontSize: "var(--text-xs)",
-        fontWeight: "var(--weight-medium)",
-        lineHeight: 1,
+        fontWeight: "var(--weight-semibold)",
+        lineHeight: 1.4,
         whiteSpace: "nowrap",
         ...style,
       }}
@@ -47,11 +75,10 @@ export function StatusPill({
         aria-hidden="true"
         style={{
           flex: "none",
-          width: "8px",
-          height: "8px",
+          width: "6px",
+          height: "6px",
           borderRadius: "var(--radius-pill)",
-          background: s.color,
-          boxShadow: `0 0 0 3px color-mix(in srgb, ${s.color} 22%, transparent)`,
+          background: "currentColor",
         }}
       />
       {text}

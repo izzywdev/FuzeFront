@@ -84,13 +84,17 @@ spec:
               value: {{ .Values.applicationsService.featureFlags.unleashUrl | quote }}
             - name: UNLEASH_APP_NAME
               value: {{ .Values.applicationsService.featureFlags.appName | quote }}
-            # Scoped Unleash client token (sealed). The chart Secret / SealedSecret
-            # carries it under this key; rendered only when a URL is configured so
-            # local/dev with no flag platform stays inert (safe defaults).
+            # Scoped Unleash CLIENT token (sealed). Defaults to the umbrella
+            # fuzefront-secrets, but the live token is provisioned by the standalone
+            # Unleash chart into `unleash-secrets` under UNLEASH_CLIENT_TOKEN — so
+            # tokenSecretName/tokenSecretKey point there in prod rather than
+            # duplicating (and having to re-seal) the same secret in two places.
+            # This previously read a key that exists in NEITHER Secret, so the env
+            # var was always empty and the client never initialized.
             - name: UNLEASH_CLIENT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
+                  name: {{ .Values.applicationsService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
                   key: {{ .Values.applicationsService.featureFlags.tokenSecretKey | quote }}
                   optional: true
             {{- end }}

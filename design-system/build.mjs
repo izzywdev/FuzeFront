@@ -29,8 +29,16 @@ function walk(dir, pred, out = []) {
 }
 
 /* ---- Components ----------------------------------------------------------- */
-const componentFiles = walk(join(ROOT, 'components'), (n) => n.endsWith('.jsx'))
-  .sort()
+// Component source is `<Name>.jsx`; sibling `<Name>.test.jsx` / `.spec.jsx` /
+// `.stories.jsx` files live beside it (mirrors gate_ds_conformance.py's
+// SKIP_FEATURE_GLOBS) and must NOT be scanned as public components — a
+// caught-in-CI bug once did: `export { BrandTokenScope.test } from …` is
+// invalid JS, and every consumer's build breaks the moment a component gets
+// a test file.
+const componentFiles = walk(
+  join(ROOT, 'components'),
+  (n) => n.endsWith('.jsx') && !/\.(test|spec|stories)\.jsx$/.test(n),
+).sort()
 const components = componentFiles.map((f) => ({
   name: basename(f, '.jsx'),
   sourcePath: rel(f),

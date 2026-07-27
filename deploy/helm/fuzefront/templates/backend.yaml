@@ -167,6 +167,26 @@ spec:
             - name: CF_ZONE_ID
               value: {{ .Values.cloudflare.cachePurge.zoneId | quote }}
             {{- end }}
+            # @fuzefront/feature-flags (OpenFeature + Unleash). The backend serves
+            # GET /api/flags, evaluating browser-exposed flags against the
+            # AUTHENTICATED session — this is how the host shell reads flags, so
+            # the shell's `developers` targeting depends on this wiring.
+            # Absence of URL/token → client stays uninitialized → safe in-code
+            # defaults (release OFF / kill-switch ON).
+            - name: FLAG_ENV
+              value: {{ ternary "prod" "local" (eq .Values.ingress.className "traefik") | quote }}
+            {{- if .Values.backend.featureFlags.unleashUrl }}
+            - name: UNLEASH_URL
+              value: {{ .Values.backend.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.backend.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.backend.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
