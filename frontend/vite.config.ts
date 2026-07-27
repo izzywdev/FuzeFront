@@ -143,6 +143,12 @@ export default defineConfig({
       // Service workers are irrelevant in CI (E2E tests the app, not the SW).
       ...(process.env.CI === 'true' ? { disabled: true } : {}),
       registerType: 'autoUpdate',
+      // We register the SW ourselves (src/registerServiceWorker.ts via
+      // virtual:pwa-register) so we can add the periodic/visibility/online
+      // update-check polling the default auto-injected registerSW.js does
+      // not provide. injectRegister: false stops VitePWA from ALSO
+      // injecting its own <script> registration into index.html.
+      injectRegister: false,
       devOptions: { enabled: false },
       // Don't precache JS bundles — MFE remotes change independently and stale
       // cached JS would break federation. Let Workbox runtime-cache JS with
@@ -159,6 +165,10 @@ export default defineConfig({
         // control of already-open clients without a reload race.
         skipWaiting: true,
         clientsClaim: true,
+        // Old precached entries (previous build's hashed CSS/icons/etc.) are
+        // never purged otherwise — cleanupOutdatedCaches drops them once the
+        // new SW activates, keeping the cache storage bounded to one build.
+        cleanupOutdatedCaches: true,
         // Exclude server-owned paths from the SPA navigation fallback so full-page
         // navigations to them are NOT intercepted by the SW and silently served as
         // index.html. Two families must be excluded:
