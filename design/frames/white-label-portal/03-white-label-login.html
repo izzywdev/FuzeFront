@@ -1,0 +1,108 @@
+<!-- @dsCard group="White-label portal" viewport="1280x800" name="(3) White-label login" subtitle="Tenant-branded sign-in served on the portal host — CorpABC" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>White-label portal — (3) White-label login (CorpABC)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .login {
+    min-height: 100vh; display: grid; grid-template-columns: 1.05fr 0.95fr;
+    background:
+      radial-gradient(1000px 480px at 85% -10%, var(--accent-soft), transparent 60%),
+      var(--bg-primary);
+  }
+  .pane-brand {
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: var(--space-12); border-right: 1px solid var(--border-color);
+  }
+  .pane-brand .lockup-lg { display: flex; align-items: center; gap: var(--space-3); }
+  .pane-brand .lockup-lg .brand-glyph { width: 40px; height: 40px; font-size: var(--text-lg); }
+  .pane-brand .brand-name { font-size: var(--text-xl); }
+  .pitch h1 {
+    font-family: var(--font-display); font-size: var(--text-3xl); line-height: 1.1;
+    letter-spacing: var(--tracking-display); margin: 0 0 var(--space-4); max-width: 16ch;
+  }
+  .pitch h1 .accent { color: var(--accent-color); }
+  .pitch p { color: var(--text-secondary); font-size: var(--text-lg); max-width: 44ch; margin: 0; }
+  .brand-foot { display: flex; gap: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); }
+  .brand-foot a { text-decoration: none; color: var(--text-tertiary); }
+  .pane-auth { display: flex; align-items: center; justify-content: center; padding: var(--space-10); }
+  .auth-card {
+    width: 100%; max-width: 380px; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-8); box-shadow: var(--shadow-md);
+  }
+  .auth-card h2 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-1); }
+  .auth-card .sub { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-6); }
+  .forgot { display: block; text-align: right; font-size: var(--text-xs); margin-top: var(--space-2); text-decoration: none; }
+  .url-chip {
+    font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-pill); padding: 4px 10px;
+  }
+  .signup-row { text-align: center; margin-top: var(--space-5); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .signup-row a { text-decoration: none; }
+  @media (max-width: 860px) { .login { grid-template-columns: 1fr; } .pane-brand { border-right: none; border-bottom: 1px solid var(--border-color); } }
+</style>
+</head>
+<!-- Tenant login: portal branding (name, logo, accent, custom copy) all from
+     GET /api/v1/portal/context — a PUBLIC endpoint that resolves before auth so
+     the login can paint branded on first load. Auth itself is FuzeFront's, hidden. -->
+<body data-frame="03-white-label-login" data-portal="corpabc">
+<div class="login" data-whitelabel="true">
+  <!-- ============ BRAND PANE ============ -->
+  <section class="pane-brand" data-region="brand">
+    <div class="lockup-lg brand-lockup" data-branding="login">
+      <span class="brand-glyph" data-branding-logo aria-hidden="true">CA</span>
+      <span class="brand-name" data-branding-name>CorpABC</span>
+    </div>
+    <div class="pitch">
+      <!-- branding.tagline (custom copy) from portal context -->
+      <h1 data-branding-copy="tagline">Your team, <span class="accent">connected</span>.</h1>
+      <p data-branding-copy="subtitle">Sign in to the CorpABC workspace to reach your apps, docs, and reports.</p>
+    </div>
+    <div class="brand-foot">
+      <span class="url-chip" data-portal-host>app.corpabc.com</span>
+      <a href="#">Terms</a><a href="#">Privacy</a><a href="#">Support</a>
+    </div>
+  </section>
+
+  <!-- ============ AUTH PANE ============ -->
+  <section class="pane-auth" data-region="auth">
+    <div class="auth-card" data-form="login">
+      <h2>Sign in</h2>
+      <p class="sub" data-branding-copy="welcome">Welcome back to CorpABC.</p>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" value="jordan@corpabc.com" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" value="••••••••••" autocomplete="current-password" />
+        <a class="forgot" href="#" data-action="forgot">Forgot password?</a>
+      </div>
+      <button class="btn btn-primary btn-block" data-action="submit">Sign in to CorpABC</button>
+      <div class="divider">or</div>
+      <button class="btn-social" data-action="social-sso"><span>🏢</span> Continue with CorpABC SSO</button>
+      <p class="signup-row">New here? <a href="#" data-nav="signup">Create a CorpABC account</a></p>
+    </div>
+  </section>
+
+  <div class="reviewer-note">
+    design-review note · logo/name/accent/copy resolve from <code>branding.*</code>
+    (<code>GET /api/v1/portal/context</code>). The submit button, focus ring, tagline accent, and SSO
+    all use <code>var(--accent-color)</code> = CorpABC blue. Auth is served same-origin by the hidden
+    FuzeFront platform — no FuzeFront wordmark shown to the tenant's user.
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption">Frame <b>3 / 5</b> · White-label login (CorpABC host)</span>
+  <span>
+    <a class="btn btn-ghost" href="02-root-shell.html">← Root shell</a>
+    <a class="btn btn-primary" href="04-theme-layers.html" data-nav="04-theme-layers">Light / dark theming →</a>
+  </span>
+</nav>
+</body>
+</html>

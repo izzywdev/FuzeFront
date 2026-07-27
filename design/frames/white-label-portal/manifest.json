@@ -1,0 +1,201 @@
+{
+  "name": "White-label tenant portal — shell & login (approval frames)",
+  "description": "Contract-freeze UX artifacts for the FuzeFront white-label tenant portal: one shell (topbar + side panel + app grid) and one login, reskinned to the active portal's name/logo/accent from GET /api/v1/portal/context, applied entirely through design-system token overrides (no raw hex). Covers loading (no-flash), error, and the fail-closed cases (suspended portal, unknown-host root fallback, cross-portal login rejection) plus light/dark theming. Approving these frames approves the flows, components, DS primitive, and package in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — approving portal-shell unblocks that flow independently of portal-login.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "epics": [
+    "FF-EPIC-13",
+    "FF-EPIC-10"
+  ],
+  "plan": "docs/planning/epics/EPIC-13-white-label-shell-branding.md",
+  "precedent": "design/frames/locked-app-mode/",
+  "approved": false,
+  "approvedBy": null,
+  "approvedAt": null,
+  "contract": {
+    "openapi": "services/portal-service/openapi.yaml",
+    "client": "@fuzefront/portal-client",
+    "schemas": [
+      "components.schemas.PortalContext",
+      "components.schemas.PortalBranding",
+      "components.schemas.PortalIdentityPolicy",
+      "components.schemas.ErrorBody"
+    ],
+    "endpoints": [
+      "GET /api/v1/portal/context"
+    ],
+    "component": "@fuzefront/portal-branding-ui → PortalShell / PortalLoginFlow",
+    "featureFlag": "fuzefront.platform.multi-tenant-portals",
+    "dependsOn": [
+      "FF-EPIC-10-S2: GET /api/v1/portal/context boot endpoint (public/pre-auth) — the contract + @fuzefront/portal-client are authored by contract-designer, not in this frames PR.",
+      "FF-EPIC-09: portals.branding jsonb (name/logo/favicon/accent/tagline) + seeded root portal.",
+      "FF-EPIC-10-S1/S3: resolvePortalContext fail-closed (suspended 403, unknown-host root fallback) + portal_id JWT binding (cross-portal rejection)."
+    ],
+    "brandingFields": [
+      "branding.name (string)",
+      "branding.logo (url | null → initials/default fallback, never a broken image)",
+      "branding.favicon (url | null → default fallback, cache-busted per portal id)",
+      "branding.accent (CSS color → DS token override; AA-contrast-validated, malformed → default)",
+      "branding.tagline (string | null → custom login copy)"
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "portal-shell",
+        "orchestrator": "PortalShell",
+        "route": "/",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "portal-login",
+        "orchestrator": "PortalLoginFlow",
+        "route": "/login",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "PortalBrandingProvider",
+      "PortalThemeScope",
+      "BrandedTopBar",
+      "BrandedSidePanel",
+      "PortalAppGrid",
+      "PortalBrandLockup",
+      "WhiteLabelLoginCard",
+      "BrandingBoundary",
+      "PortalUnavailableNotice"
+    ],
+    "designSystemPrimitives": [
+      "BrandTokenScope (applies a validated portal accent as scoped CSS-var overrides layered over base @fuzefront/design-system tokens, with WCAG 2.1 AA contrast fallback + malformed-color rejection) — NET-NEW in @fuzefront/design-system; frontend-engineer is the sole editor of design-system/.",
+      "Logo slot primitive (img with initials/default fallback — never a broken-image icon) — add to the base DS if not already present."
+    ],
+    "packages": [
+      "@fuzefront/portal-branding-ui"
+    ],
+    "consumes": [
+      "@fuzefront/design-system (base tokens + primitives — extended, never forked)",
+      "host shell ThemeContext (extended from light/dark-only — not a parallel theming mechanism)",
+      "@fuzefront/portal-client (from contract-designer, FF-EPIC-10)"
+    ]
+  },
+  "entry": "index.html",
+  "frames": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "label": "Index",
+      "route": "/",
+      "flow": "index",
+      "summary": "Flow walker + build inventory: the two flow cards (portal-shell, portal-login), the ordered 5-frame walk, the components/DS-primitive/package plan mirroring manifest.build 1:1, and the contract binding.",
+      "acceptanceNotes": "index links to every frame in order; the build inventory mirrors manifest.build exactly; both flow cards resolve to their first screen.",
+      "testHooks": [
+        "[data-frame='index']",
+        "[data-flows]",
+        "[data-inventory]",
+        "[data-inv='flows']",
+        "[data-inv='components']",
+        "[data-inv='designSystemPrimitives']",
+        "[data-inv='packages']",
+        "[data-contract]",
+        "[data-nav='01-branded-shell']",
+        "[data-nav='02-root-shell']",
+        "[data-nav='03-white-label-login']",
+        "[data-nav='04-theme-layers']",
+        "[data-nav='05-states']"
+      ]
+    },
+    {
+      "id": "01-branded-shell",
+      "file": "01-branded-shell.html",
+      "label": "Branded tenant shell (CorpABC)",
+      "route": "/",
+      "flow": "portal-shell",
+      "summary": "CorpABC portal shell: topbar with tenant logo tile + name, branded search, side panel with active-nav accent, avatar, and the portal app grid. Every accent surface resolves to the CorpABC brand token via [data-portal='corpabc'].",
+      "acceptanceNotes": "data-portal='corpabc' re-points --accent-* to CorpABC tokens; topbar logo/name come from branding.*; no FuzeFront wordmark anywhere; active nav, avatar, seam, app-icon tints all use var(--accent-color).",
+      "testHooks": [
+        "[data-frame='01-branded-shell']",
+        "[data-portal='corpabc']",
+        "[data-region='topbar']",
+        "[data-region='side-panel']",
+        "[data-region='app-grid']",
+        "[data-branding-name]",
+        "[data-branding-logo]"
+      ]
+    },
+    {
+      "id": "02-root-shell",
+      "file": "02-root-shell.html",
+      "label": "Root FuzeFront shell",
+      "route": "/",
+      "flow": "portal-shell",
+      "summary": "The identical shell markup with data-portal flipped to 'root' — default FuzeFront branding (seam logo, indigo→cyan accent) returns. Proves the reskin is token-only with zero component changes.",
+      "acceptanceNotes": "Same regions/markup as frame 1; only data-portal='root'; the seam gradient + indigo accent render; demonstrates same shell reskinned by portal context (FF-EPIC-13 goal).",
+      "testHooks": [
+        "[data-frame='02-root-shell']",
+        "[data-portal='root']",
+        "[data-region='topbar']",
+        "[data-region='side-panel']",
+        "[data-region='app-grid']",
+        "[data-portal-badge]"
+      ]
+    },
+    {
+      "id": "03-white-label-login",
+      "file": "03-white-label-login.html",
+      "label": "White-label login (CorpABC host)",
+      "route": "/login",
+      "flow": "portal-login",
+      "summary": "Tenant-branded sign-in served on the portal host (app.corpabc.com): brand pane with logo/name/tagline (custom copy), auth card with email/password, forgot-password, portal SSO, and create-account link. Branded pre-auth from the public portal-context endpoint.",
+      "acceptanceNotes": "logo/name/accent/copy from branding.*; submit, focus ring, tagline accent, SSO use var(--accent-color)=CorpABC; auth served same-origin by the hidden platform with no FuzeFront wordmark; forgot-password and signup routes present.",
+      "testHooks": [
+        "[data-frame='03-white-label-login']",
+        "[data-portal='corpabc']",
+        "[data-whitelabel='true']",
+        "[data-form='login']",
+        "[data-action='submit']",
+        "[data-action='forgot']",
+        "[data-action='social-sso']",
+        "[data-nav='signup']"
+      ]
+    },
+    {
+      "id": "04-theme-layers",
+      "file": "04-theme-layers.html",
+      "label": "Light / dark theming",
+      "route": "/",
+      "flow": "portal-shell",
+      "summary": "2×2 matrix (CorpABC/root × dark/light) showing the portal accent layered over both light and dark theme tokens. Theme = [data-theme] surfaces; branding = [data-portal] accent — orthogonal layers, no style forks. Includes the WCAG-AA contrast-fallback guardrail note.",
+      "acceptanceNotes": "each preview is a self-contained token scope (own data-theme + data-portal); CorpABC blue and root indigo both read correctly on light and dark; semantic status tokens never overridden by branding; contrast guardrail (FF-EPIC-13-S3 AC3/AC4) documented.",
+      "testHooks": [
+        "[data-frame='04-theme-layers']",
+        "[data-theme='light'][data-portal='corpabc']",
+        "[data-theme='dark'][data-portal='corpabc']",
+        "[data-theme='light'][data-portal='root']",
+        "[data-theme='dark'][data-portal='root']"
+      ]
+    },
+    {
+      "id": "05-states",
+      "file": "05-states.html",
+      "label": "States (contract)",
+      "route": "/login",
+      "flow": "portal-login",
+      "summary": "The five contract states: loading (neutral skeleton, no flash of FuzeFront branding), error+retry (context failed), suspended portal ('this portal is unavailable', 403), unknown-host → root fallback, and cross-portal login rejection ('this account isn't part of CorpABC').",
+      "acceptanceNotes": "each state addressable by data-state; loading shows no default branding before tenant paints; suspended/unknown-host/cross-portal are fail-closed; error offers retry, never a silent unbranded fallback; cross-portal maps to FF-EPIC-10-S3 token-vs-host mismatch → re-auth.",
+      "testHooks": [
+        "[data-frame='05-states']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='suspended']",
+        "[data-state='unknown-host']",
+        "[data-state='cross-portal-reject']",
+        "[data-action='retry-login']"
+      ]
+    }
+  ],
+  "stamp": "61c774adba7588b343391211b5366bdcefbea6c3565acc8248da86f7abd2dcfe"
+}
