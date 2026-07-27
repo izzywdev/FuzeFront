@@ -37,6 +37,7 @@
     "check:workspace-deps": "node scripts/check-workspace-deps.mjs"
   },
   "devDependencies": {
+    "ajv": "^8.17.1",
     "concurrently": "^8.2.2",
     "lint-staged": "^16.1.2",
     "prettier": "^3.6.2",
