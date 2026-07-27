@@ -332,6 +332,14 @@ ingress:
 authentik:
   enabled: true
   host: auth.fuzefront.com  # internal/legacy only — no public Ingress binds this
+  # Admin-only host for the Authentik UI (cluster-admin debugging + using Authentik
+  # for authN outside FuzeFront). Gated at the edge by the wildcard Cloudflare
+  # Access app on *.prod.fuzefront.com (email-OTP allowlist), and surfaced as an
+  # App Launcher tile. Carries NO OIDC traffic — the live OIDC reverse-proxy stays
+  # under app.fuzefront.com and is untouched, so sign-in cannot be affected.
+  adminIngress:
+    enabled: true
+    host: authentik.prod.fuzefront.com
   cookieDomain: fuzefront.com
   bootstrapEmail: admin@fuzefront.com
   oidc:

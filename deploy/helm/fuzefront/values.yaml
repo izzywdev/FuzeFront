@@ -520,6 +520,14 @@ authentik:
     repository: ghcr.io/goauthentik/server
     tag: "2026.5.5"
   host: auth.fuzefront.dev.local
+  # Dedicated admin host for the Authentik UI, separate from the OIDC
+  # reverse-proxy under the app host (see templates/ingress.yaml). OFF by default:
+  # it is only safe where an edge auth gate (Cloudflare Access) fronts the host.
+  adminIngress:
+    enabled: false
+    host: ""
+    className: ""
+    annotations: {}
   dbName: authentik # must pre-exist in the FuzeInfra Postgres
   cookieDomain: fuzefront.dev.local
   bootstrapEmail: admin@fuzefront.dev
