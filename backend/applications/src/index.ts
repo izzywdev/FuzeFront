@@ -24,6 +24,7 @@ import {
 import appsRoutes from './routes/apps'
 import appRegistryRoutes from './routes/app-registry'
 import { ensureBuiltins } from './app-registry/builtins'
+import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 
 dotenv.config()
@@ -105,6 +106,11 @@ async function startServer() {
     await ensureBuiltins().catch(err =>
       console.error('⚠️  [applications-service] ensureBuiltins failed:', err)
     )
+
+    // Install the OpenFeature/Unleash provider so app-registry flags actually
+    // consult Unleash. Non-fatal: on failure they keep their in-code fail-safe
+    // defaults (release OFF / kill-switch ON).
+    await initFeatureFlags('applications-service')
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

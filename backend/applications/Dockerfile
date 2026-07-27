@@ -12,6 +12,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY backend/core/package.json ./backend/core/
+COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY backend/applications/package.json ./backend/applications/
 
 RUN npm install
@@ -19,11 +20,17 @@ RUN npm install
 # Copy source
 COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
+COPY packages/feature-flags/ ./packages/feature-flags/
 COPY backend/applications/ ./backend/applications/
 
-# Build the shared kafka sub-barrel, then core, then applications-service.
+# Build the shared kafka sub-barrel, then core, then the flag client, then
+# applications-service. @fuzefront/feature-flags must be BUILT here: its
+# package `main` points at dist/, and without this the workspace symlink
+# resolves to an empty package — which is why the flag client was absent from
+# the running image and every flag silently took its in-code default.
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
+RUN cd packages/feature-flags && npm run build
 RUN cd backend/applications && npm run build
 
 # ---------- production ----------
@@ -39,6 +46,8 @@ COPY --from=build --chown=applications:nodejs /app/shared/dist ./shared/dist
 COPY --from=build --chown=applications:nodejs /app/shared/package.json ./shared/package.json
 COPY --from=build --chown=applications:nodejs /app/backend/core/dist ./backend/core/dist
 COPY --from=build --chown=applications:nodejs /app/backend/core/package.json ./backend/core/package.json
+COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
+COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
 COPY --from=build --chown=applications:nodejs /app/backend/applications/dist ./backend/applications/dist
 COPY --from=build --chown=applications:nodejs /app/backend/applications/package.json ./backend/applications/package.json
 

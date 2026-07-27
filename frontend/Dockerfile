@@ -42,15 +42,15 @@ WORKDIR /app/frontend
 # the CF-edge/same-origin prod model.
 ARG VITE_API_URL=
 ARG VITE_APP_TITLE="FuzeFront Platform"
-# account-security hub release flag (fuzefront.account-security.hub), default OFF —
-# e2e/CI can flip it ON at build time to exercise the gated route; prod stays OFF
-# until the Unleash-backed client replaces this build-time override.
-ARG VITE_FF_ACCOUNT_SECURITY_HUB=false
+# NOTE: there is deliberately no VITE_FF_* build arg. Feature flags are resolved
+# PER USER at runtime via GET /api/flags (backend -> Unleash), so they can be
+# targeted (e.g. the `developers` segment). A build-time constant is baked into
+# the bundle and identical for every user, which made per-user rollout
+# impossible. Local/e2e forcing is done with the backend's FLAGS_FORCE_ON env.
 
 # Set environment variables for build
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
-ENV VITE_FF_ACCOUNT_SECURITY_HUB=$VITE_FF_ACCOUNT_SECURITY_HUB
 
 RUN rm -f package-lock.json && npm install
 

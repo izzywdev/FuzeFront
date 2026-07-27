@@ -32,13 +32,20 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
   replicas: 2
+  # Serves GET /api/flags for the host shell. Same CLIENT token as the
+  # applications-service, read from the Unleash chart's own sealed Secret.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "fuzefront-host"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -66,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -90,20 +97,20 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Family Unleash hosted by FuzeFront. The scoped client token is in the
-  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
-  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
-  # the sealed token land, leave unleashUrl empty so the client stays inert and
-  # the app-registry flags fall back to their safe in-code defaults.
+  # Live flag platform. The token is the one the standalone Unleash chart already
+  # seals into `unleash-secrets` (key UNLEASH_CLIENT_TOKEN) — reused rather than
+  # duplicated, so no re-sealing is needed. It is a CLIENT token: server-side
+  # only, never exposed to a browser.
   featureFlags:
-    unleashUrl: ""   # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
     appName: "applications-service"
-    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
@@ -113,7 +120,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -124,7 +131,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -164,7 +171,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 4b67a191a887
+    tag: ff4ccc20daa9
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.

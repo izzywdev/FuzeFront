@@ -36,6 +36,44 @@ function persistActiveOrganizationId(id: string | null): void {
   }
 }
 
+// The session-scoped "workspace provisioned" flag WorkspaceProvisioningGate
+// uses to skip its loading flash on subsequent navigations within a session.
+const WORKSPACE_READY_SESSION_KEY = 'ff.workspaceReady'
+const LAST_AUTHENTICATED_USER_ID_KEY = 'ff.lastAuthenticatedUserId'
+
+/**
+ * BUG 2 fix (org switcher rendering blank for a social/Google login):
+ *
+ * `ff.activeOrganizationId` (localStorage) and `ff.workspaceReady`
+ * (sessionStorage) are keyed per BROWSER, not per account. A user who signs
+ * out and a *different* user signs back in on the same browser/tab inherits
+ * both stale values: `ff.workspaceReady` short-circuits
+ * WorkspaceProvisioningGate straight to "ready" without confirming org
+ * membership for the NEW session, and `ff.activeOrganizationId` may point at
+ * an org the new user does not belong to at all — leaving
+ * `useOrganizations().activeOrganization` unable to resolve (the org list
+ * for the new user never contains that id), which is exactly what renders
+ * the top-bar org switcher blank.
+ *
+ * Call this once the authenticated user is known (after login/session
+ * restore). If the user id differs from the last-seen one on this browser,
+ * clear both stale keys so WorkspaceProvisioningGate performs a full,
+ * un-shortcut org fetch + hydration for the new account — the same path a
+ * fresh native-login session takes.
+ */
+export function resetWorkspaceSessionIfUserChanged(userId: string): void {
+  try {
+    const lastUserId = localStorage.getItem(LAST_AUTHENTICATED_USER_ID_KEY)
+    if (lastUserId && lastUserId !== userId) {
+      sessionStorage.removeItem(WORKSPACE_READY_SESSION_KEY)
+      localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY)
+    }
+    localStorage.setItem(LAST_AUTHENTICATED_USER_ID_KEY, userId)
+  } catch {
+    // localStorage/sessionStorage unavailable (privacy mode) — degrade gracefully.
+  }
+}
+
 // Types
 export interface User {
   id: string
