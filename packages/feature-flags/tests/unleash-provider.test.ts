@@ -10,9 +10,9 @@ import { toUnleashContext } from '../src/unleash-provider';
 describe('toUnleashContext', () => {
   it('maps targetingKey onto the built-in userId (what the segment constrains)', () => {
     const ctx = toUnleashContext({
-      targetingKey: '9aed7c94-dcf7-4dd8-b5d9-f6236c6546bd',
+      targetingKey: '00000000-0000-4000-8000-000000000001',
     });
-    expect(ctx.userId).toBe('9aed7c94-dcf7-4dd8-b5d9-f6236c6546bd');
+    expect(ctx.userId).toBe('00000000-0000-4000-8000-000000000001');
   });
 
   it('passes Unleash built-in fields through at the top level, not under properties', () => {

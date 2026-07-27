@@ -102,11 +102,6 @@ applicationsService:
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Family Unleash hosted by FuzeFront. The scoped client token is in the
-  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
-  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
-  # the sealed token land, leave unleashUrl empty so the client stays inert and
-  # the app-registry flags fall back to their safe in-code defaults.
   # Live flag platform. The token is the one the standalone Unleash chart already
   # seals into `unleash-secrets` (key UNLEASH_CLIENT_TOKEN) — reused rather than
   # duplicated, so no re-sealing is needed. It is a CLIENT token: server-side
