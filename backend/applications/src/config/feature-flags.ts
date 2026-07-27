@@ -18,8 +18,11 @@ const DEFAULT_UNLEASH_URL =
 export async function initFeatureFlags(appName: string): Promise<void> {
   const clientToken = process.env.UNLEASH_CLIENT_TOKEN
   if (!clientToken) {
+    // Constant format string + arguments, never an interpolated one: a variable
+    // as the format string lets an injected specifier (%s/%d) forge log output.
     console.log(
-      `⚠️  [${appName}] UNLEASH_CLIENT_TOKEN not set — feature flags use in-code defaults`
+      '⚠️  [%s] UNLEASH_CLIENT_TOKEN not set — feature flags use in-code defaults',
+      appName
     )
     return
   }
@@ -28,7 +31,7 @@ export async function initFeatureFlags(appName: string): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const flags = require('@fuzefront/feature-flags')
     if (typeof flags.init !== 'function') {
-      console.log(`⚠️  [${appName}] @fuzefront/feature-flags has no init() — using defaults`)
+      console.log('⚠️  [%s] @fuzefront/feature-flags has no init() — using defaults', appName)
       return
     }
     await flags.init(
@@ -45,11 +48,12 @@ export async function initFeatureFlags(appName: string): Promise<void> {
         app: appName,
       }
     )
-    console.log(`✅ [${appName}] Feature flags initialized`)
+    console.log('✅ [%s] Feature flags initialized', appName)
   } catch (error) {
     console.error(
-      `❌ [${appName}] Feature-flag init failed — continuing with in-code defaults:`,
-      error instanceof Error ? error.message : error
+      '❌ [%s] Feature-flag init failed — continuing with in-code defaults: %s',
+      appName,
+      error instanceof Error ? error.message : String(error)
     )
   }
 }

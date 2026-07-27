@@ -17,8 +17,11 @@ const DEFAULT_UNLEASH_URL =
 export async function initFeatureFlags(appName: string): Promise<void> {
   const clientToken = process.env.UNLEASH_CLIENT_TOKEN
   if (!clientToken) {
+    // Constant format string + arguments, never an interpolated one: a variable
+    // as the format string lets an injected specifier (%s/%d) forge log output.
     console.log(
-      `⚠️  UNLEASH_CLIENT_TOKEN not set — feature flags will use in-code defaults (${appName})`
+      '⚠️  UNLEASH_CLIENT_TOKEN not set — feature flags will use in-code defaults (%s)',
+      appName
     )
     return
   }
@@ -44,11 +47,11 @@ export async function initFeatureFlags(appName: string): Promise<void> {
         app: appName,
       }
     )
-    console.log(`✅ Feature flags initialized (${appName})`)
+    console.log('✅ Feature flags initialized (%s)', appName)
   } catch (error) {
     console.error(
-      '❌ Feature-flag init failed — continuing with in-code defaults:',
-      error instanceof Error ? error.message : error
+      '❌ Feature-flag init failed — continuing with in-code defaults: %s',
+      error instanceof Error ? error.message : String(error)
     )
   }
 }

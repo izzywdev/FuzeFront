@@ -11,9 +11,22 @@
 // failure path returns the flag's declared fail-safe default, so an Unleash
 // outage degrades to "release flags OFF" rather than erroring the shell.
 import { Router, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import { authenticateToken } from '../middleware/auth'
 
 const router = Router()
+
+// The handler authenticates every request (DB lookup per call) and then fans out
+// to the flag provider, so an unbounded caller could amplify cheap requests into
+// repeated DB + provider work. The shell fetches this ONCE per session, so a
+// generous ceiling is invisible to real users while bounding abuse.
+const flagsRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many flag requests. Try again shortly.' },
+})
 
 type FlagDescriptor = { key: string; type: string; default: boolean }
 
@@ -51,7 +64,7 @@ function loadFlags(): {
  * Only catalog-listed (browser-exposed) flags are returned; server-only flags
  * are never disclosed.
  */
-router.get('/', authenticateToken, async (req: any, res: Response) => {
+router.get('/', flagsRateLimiter, authenticateToken, async (req: any, res: Response) => {
   const { catalog, client } = loadFlags()
 
   const context = {
