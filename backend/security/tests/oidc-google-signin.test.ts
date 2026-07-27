@@ -536,6 +536,8 @@ describe('Route GET /api/auth/oidc/login (configured)', () => {
 
   beforeEach(() => {
     isConfiguredSpy = jest.spyOn(oidcService, 'isConfigured').mockReturnValue(true)
+    jest.spyOn(oidcService, 'isInitialized').mockReturnValue(true)
+    jest.spyOn(oidcService, 'ensureInitialized').mockResolvedValue(undefined)
     generateAuthUrlSpy = jest
       .spyOn(oidcService, 'generateAuthUrl')
       .mockReturnValue({
