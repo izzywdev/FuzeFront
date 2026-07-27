@@ -12,6 +12,8 @@ import {
   Database,
   FileCode2,
   GitBranch,
+  Eye,
+  ExternalLink,
   Layers3,
   Network,
   Plus,
@@ -27,10 +29,13 @@ import type {
   CoverageState,
   FrontendSurface,
   Portfolio,
+  Repository,
+  StorybookStory,
   TestExpectation,
 } from '@fuzequality/contracts'
 import { api } from './api'
 import { planGap } from './testPlan'
+import { storybookPreviewUrl } from './storybook'
 
 type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review'
 
@@ -120,6 +125,40 @@ function GapPlanDrawer({ subject, expectations, selectedId, onClose }: {
           </div>
         </article>
       })}</div>
+    </aside>
+  </div>
+}
+
+function ComponentPreviewDrawer({ surface, repository, onClose }: {
+  surface: FrontendSurface
+  repository?: Repository
+  onClose: () => void
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const [story, setStory] = useState<StorybookStory | undefined>(surface.stories[0])
+  const previewUrl = story && storybookPreviewUrl(repository?.storybookBaseUrl, story)
+  useEffect(() => {
+    closeButton.current?.focus()
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onClose])
+  return <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+    <aside className="preview-drawer" role="dialog" aria-modal="true" aria-labelledby="component-preview-title">
+      <header className="drawer-header">
+        <div><p className="eyebrow">Storybook visual reference</p><h2 id="component-preview-title">{surface.name}</h2><code>{surface.packageName} · {surface.sourcePath}</code></div>
+        <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close component preview"><X /></button>
+      </header>
+      {surface.stories.length > 0 ? <>
+        <div className="preview-toolbar">
+          <label>Story<select value={story?.id} onChange={event => setStory(surface.stories.find(item => item.id === event.target.value))}>{surface.stories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          {previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer">Open Storybook <ExternalLink size={14} /></a>}
+        </div>
+        {previewUrl
+          ? <div className="storybook-frame"><iframe title={`${surface.name}: ${story?.name}`} src={previewUrl} sandbox="allow-scripts allow-forms" referrerPolicy="no-referrer" /></div>
+          : <div className="preview-empty"><Eye /><strong>Story discovered; preview host not configured</strong><span>Add this repository’s HTTPS Storybook URL to render its isolated story here.</span><code>{story?.sourcePath} · {story?.exportName}</code></div>}
+        <footer className="preview-provenance"><BookOpen size={14} /> Static CSF metadata from the scanned commit. The iframe runs sandboxed without same-origin, navigation, or popup privileges.</footer>
+      </> : <div className="preview-empty"><Eye /><strong>No Storybook visual reference found</strong><span>Add a co-located <code>*.stories.tsx</code> file and publish Storybook to make this component renderable.</span></div>}
     </aside>
   </div>
 }
@@ -223,11 +262,12 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     defaultBranch: 'main',
     kind: 'mixed',
     installationId: '',
+    storybookBaseUrl: '',
   })
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
     try {
-      const payload = { ...form, includeGlobs: [], excludeGlobs: [], jiraProjects: [] }
+      const payload = { ...form, storybookBaseUrl: form.storybookBaseUrl || undefined, includeGlobs: [], excludeGlobs: [], jiraProjects: [] }
       await api.verifyRepository(payload)
       await api.addRepository(payload)
       setOpen(false); await reload()
@@ -254,28 +294,29 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
           </article>
         })}
       </section>
-      {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><label>GitHub App installation ID<input value={form.installationId} onChange={event => setForm({ ...form, installationId: event.target.value.trim() })} inputMode="numeric" placeholder="148577461" required /><small>The read-only FuzeQuality GitHub App installation that can access this repository.</small></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Verifying…' : 'Verify and add'}</button></div></form></div>}
+      {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><label>GitHub App installation ID<input value={form.installationId} onChange={event => setForm({ ...form, installationId: event.target.value.trim() })} inputMode="numeric" placeholder="148577461" required /><small>The read-only FuzeQuality GitHub App installation that can access this repository.</small></label><label>Storybook URL (optional)<input type="url" value={form.storybookBaseUrl} onChange={event => setForm({ ...form, storybookBaseUrl: event.target.value.trim() })} placeholder="https://storybook.example.com" /><small>HTTPS host for sandboxed component previews. Story metadata is cataloged even without it.</small></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Verifying…' : 'Verify and add'}</button></div></form></div>}
     </>
   )
 }
 
-function Matrix({ items, expectations, kind }: { items: Array<ApiOperation | FrontendSurface>; expectations: TestExpectation[]; kind: 'api' | 'frontend' }) {
+function Matrix({ items, expectations, kind, repositories = [] }: { items: Array<ApiOperation | FrontendSurface>; expectations: TestExpectation[]; kind: 'api' | 'frontend'; repositories?: Repository[] }) {
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<{ subject: ApiOperation | FrontendSurface; expectationId: string }>()
+  const [preview, setPreview] = useState<FrontendSurface>()
   const trigger = useRef<HTMLButtonElement | null>(null)
   const filtered = items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()))
   function closePlan() {
     setSelection(undefined)
     requestAnimationFrame(() => trigger.current?.focus())
   }
-  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{(item as FrontendSurface).name}</strong><small>{(item as FrontendSurface).packageName} · {(item as FrontendSurface).kind}</small></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}</>
+  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); const surface = kind === 'frontend' ? item as FrontendSurface : undefined; return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{surface?.name}</strong><small>{surface?.packageName} · {surface?.kind}</small><button className="preview-button" onClick={() => setPreview(surface)}><Eye size={14} /> {surface?.stories.length ? `${surface.stories.length} visual ${surface.stories.length === 1 ? 'state' : 'states'}` : 'Visual reference'}</button></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}{preview && <ComponentPreviewDrawer surface={preview} repository={repositories.find(item => item.id === preview.repositoryId)} onClose={() => setPreview(undefined)} />}</>
 }
 
 function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio }) {
   const isApi = type === 'api'
   const expectations = data.expectations.filter(item => item.subjectType === (isApi ? 'api-operation' : 'frontend-surface'))
   const items: Array<ApiOperation | FrontendSurface> = isApi ? data.operations : data.surfaces
-  return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} /></>
+  return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} repositories={data.repositories} /></>
 }
 
 function ApiCatalogPage({ data }: { data: Portfolio }) {
