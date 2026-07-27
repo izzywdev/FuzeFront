@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Users — portal-admin frame (f)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="06-users">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Portal-admin · Frame (f) · route /portal/admin/users</div>
+  <h1>Northwind · Console</h1>
+
+  <nav class="tabs" data-panel="portal-tabs" role="tablist">
+    <a class="tab" href="05-overview.html" role="tab" aria-selected="false" data-tab="overview">Overview</a>
+    <a class="tab" href="06-users.html" role="tab" aria-selected="true" data-tab="users">Users</a>
+    <a class="tab" href="07-catalog.html" role="tab" aria-selected="false" data-tab="catalog">App catalog</a>
+    <a class="tab" href="08-billing.html" role="tab" aria-selected="false" data-tab="billing">Billing</a>
+  </nav>
+
+  <div class="panel" data-panel="portal-users">
+    <div class="panel-head">
+      <div><h2>Users</h2><p class="sub"><span data-count="users">18</span> in this portal ·
+        <span data-count="invites">2</span> invites pending</p></div>
+      <button class="btn btn-accent" data-action="invite-user">Invite user</button>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Person</th><th>Role</th><th>Status</th><th class="right">Actions</th></tr></thead>
+      <tbody>
+        <tr data-user="u_2001" data-role="portal-admin" data-self="true">
+          <td><div class="who">ada@northwind.example <span class="tag">You</span></div></td>
+          <td><span class="pill pill-accent" data-role-pill="portal-admin">Portal admin</span></td>
+          <td><span class="status status--active" data-user-status="active"><span class="dot"></span>Active</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_2001" disabled title="You can't change your own role">Change role</button>
+          </td>
+        </tr>
+        <tr data-user="u_2002" data-role="member">
+          <td><div class="who">grace@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="member">Member</span></td>
+          <td><span class="status status--active" data-user-status="active"><span class="dot"></span>Active</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="change-role" data-target="u_2002">Change role</button>
+            <button class="btn btn-ghost btn-danger" data-action="remove-user" data-target="u_2002">Remove</button>
+          </td>
+        </tr>
+        <tr data-user="u_2003" data-role="member" data-user-status="invited">
+          <td><div class="who">linus@northwind.example</div></td>
+          <td><span class="pill" data-role-pill="member">Member</span></td>
+          <td><span class="status status--pending" data-user-status="invited"><span class="dot"></span>Invited</span></td>
+          <td class="right">
+            <button class="btn btn-ghost" data-action="resend-invite" data-target="u_2003">Resend</button>
+            <button class="btn btn-ghost btn-danger" data-action="revoke-invite" data-target="u_2003">Revoke</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="panel-foot"><button class="btn btn-ghost" data-action="load-more">Load more</button></div>
+  </div>
+
+  <!-- invite dialog rendered inline/static for the frame -->
+  <h3 style="margin-top: var(--space-10)">Invite dialog</h3>
+  <div class="modal" data-panel="invite-user" data-state="default" style="margin: var(--space-3) 0 0">
+    <div class="modal-head"><h2>Invite to Northwind</h2></div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="label" for="iv-email">Email</label>
+        <input class="input" id="iv-email" data-input="email" value="edsger@northwind.example" placeholder="teammate@company.com" />
+        <p class="hint">They'll get an email to join this portal and set their own password.</p>
+      </div>
+      <div class="field">
+        <label class="label">Role</label>
+        <label class="radio-row" data-selected="true" data-role-option="member">
+          <input type="radio" name="role" value="member" checked />
+          <span><span class="rl">Member</span><span class="rd">Uses the portal's apps. No admin access.</span></span>
+        </label>
+        <label class="radio-row" data-selected="false" data-role-option="portal-admin">
+          <input type="radio" name="role" value="portal-admin" />
+          <span><span class="rl">Portal admin</span><span class="rd">Manages users, catalog, and billing for this portal.</span></span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+      <button class="btn btn-accent" data-action="submit-invite">Send invite</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> The user list is portal-scoped: members come from the real
+    <code>@fuzefront/security-client</code> —
+    <code>GET /v1/security/tenants/{tenantId}/members</code> (the tenant <i>is</i> this portal's org;
+    the <code>tenantId</code> is resolved from the session, never accepted from the client). Roles
+    come from <code>GET .../roles</code>; change-role is <code>PUT .../members/{userId}/roles</code>.
+    <b>Invite</b> is the anticipated portal-scoped invitation route (FF-EPIC-11-S3 — not native to
+    the monolith today): <code>POST /api/v1/portal/invitations</code> (<code>InvitationCreate</code> →
+    <code>201</code>), scoped to the caller's own portal. Inviting into a portal you don't own is
+    refused <code>403</code> (states frame, g). You cannot change your own role (self-lockout guard).
+  </p>
+
+  <nav class="pager"><a href="05-overview.html">← Overview</a><a href="07-catalog.html">Next: App catalog →</a></nav>
+</div>
+</body>
+</html>
