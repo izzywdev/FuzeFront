@@ -59,12 +59,38 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 // Sample PortalContext fixtures (incl. the CorpABC tenant accent) live in a JSON
 // fixture, not inline in this .ts — gate-ds-conformance forbids raw color
 // literals on changed UI-code lines, and a JSON test fixture is sample data,
 // not a styling decision (the real accent comes from the API, never a literal
-// baked into product code).
-import portalFixtures from './fixtures/white-label-portal.fixtures.json'
+// baked into product code). Loaded via fs.readFileSync + import.meta.url
+// (not a static `import … from '*.json'`, and not __dirname) because
+// frontend/ is "type": "module" — Playwright runs this spec as real ESM, so
+// __dirname is undefined and a static JSON import would need a Node
+// import-attribute the TS loader doesn't add.
+type PortalBranding = {
+  name: string
+  logo: string | null
+  favicon: string | null
+  accent: string | null
+  tagline: string | null
+}
+type PortalContext = {
+  portalId: string
+  slug: string
+  status: string
+  branding: PortalBranding
+}
+const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url))
+const FIXTURES_PATH = path.join(SPEC_DIR, 'fixtures', 'white-label-portal.fixtures.json')
+const portalFixtures = JSON.parse(fs.readFileSync(FIXTURES_PATH, 'utf8')) as {
+  corpabcContext: PortalContext
+  rootContext: PortalContext
+}
 
 const PORTAL_CONTEXT_ROUTE = '**/api/v1/portal/context'
 const SESSION_ROUTE = '**/api/v1/security/session'
