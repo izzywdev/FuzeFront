@@ -28,7 +28,8 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@openfeature/server-sdk": "^1.18.0",
-    "@openfeature/web-sdk": "^1.5.0"
+    "@openfeature/web-sdk": "^1.5.0",
+    "unleash-client": "^6.11.1"
   },
   "optionalDependencies": {
     "@openfeature/unleash-web-provider": "^0.1.1"

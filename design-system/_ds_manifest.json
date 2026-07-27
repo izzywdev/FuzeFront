@@ -14,6 +14,14 @@
       "sourcePath": "components/brand/BrandMark.jsx"
     },
     {
+      "name": "BrandTokenScope",
+      "sourcePath": "components/brand/BrandTokenScope.jsx"
+    },
+    {
+      "name": "Logo",
+      "sourcePath": "components/brand/Logo.jsx"
+    },
+    {
       "name": "SeamDivider",
       "sourcePath": "components/brand/SeamDivider.jsx"
     },
@@ -36,6 +44,14 @@
     {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
+    },
+    {
+      "name": "SortableList",
+      "sourcePath": "components/data/SortableList.jsx"
+    },
+    {
+      "name": "StatCard",
+      "sourcePath": "components/data/StatCard.jsx"
     },
     {
       "name": "StatGroup",
@@ -68,6 +84,10 @@
     {
       "name": "StatusPill",
       "sourcePath": "components/feedback/StatusPill.jsx"
+    },
+    {
+      "name": "Stepper",
+      "sourcePath": "components/feedback/Stepper.jsx"
     },
     {
       "name": "Toast",

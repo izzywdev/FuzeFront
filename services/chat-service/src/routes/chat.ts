@@ -36,7 +36,10 @@ import type { BillingEmitter } from '../billing/emitter';
 export interface ChatRouterDeps {
   /** Runs one agent turn, emitting events + reporting usage. */
   runAgentTurn(input: AgentTurnInput, cb: AgentCallbacks): Promise<void>;
-  conversations: Pick<ConversationsRepository, 'list' | 'findById' | 'create' | 'touch'>;
+  conversations: Pick<
+    ConversationsRepository,
+    'list' | 'findById' | 'create' | 'touch' | 'getOrCreateContinuous'
+  >;
   messages: Pick<MessagesRepository, 'append' | 'listPage'>;
   feedback: Pick<FeedbackRepository, 'submit'>;
   confirmations: Pick<ConfirmationStore, 'confirm'>;
@@ -103,8 +106,17 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
           return;
         }
       } else {
-        const created = await deps.conversations.create({ userId, orgId, appId, title: null });
-        conversationId = created.id;
+        // No id supplied -> resolve the caller's ONE ongoing thread for this
+        // (user, app, org) scope, creating it only on first ever use (#120).
+        // Previously this called create() unconditionally, so any client that
+        // did not echo the id back forked a new conversation every turn.
+        const thread = await deps.conversations.getOrCreateContinuous({
+          userId,
+          orgId,
+          appId,
+          title: null,
+        });
+        conversationId = thread.id;
       }
 
       // Tell the client which conversation this turn belongs to, so it can

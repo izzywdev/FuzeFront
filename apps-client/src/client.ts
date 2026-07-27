@@ -3,9 +3,11 @@ import type {
   App,
   AppManifest,
   AppRegistryClientConfig,
+  BillingProfile,
   HeartbeatRequest,
   ListAppsParams,
   ListAppsResult,
+  ProductPolicy,
   RegisterAppRequest,
 } from './types';
 
@@ -70,6 +72,37 @@ export class AppRegistryClient {
   async suspendApp(slug: string): Promise<App> {
     const { data } = await this.http.post<App>(
       `/apps/${encodeURIComponent(slug)}/suspend`,
+    );
+    return data;
+  }
+
+  /**
+   * PUT /apps/{slug}/policy — submit the app's OWN authorization policy.
+   *
+   * Declared with BARE keys (`Listing`, `seller`); the platform namespaces them by
+   * slug before merging, so two products may both define a `Listing` without
+   * colliding. Full replace — removing a role here removes it.
+   */
+  async putAppPolicy(
+    slug: string,
+    policy: ProductPolicy,
+  ): Promise<{ slug: string; resources: number; roles: number }> {
+    const { data } = await this.http.put<{
+      slug: string;
+      resources: number;
+      roles: number;
+    }>(`/apps/${encodeURIComponent(slug)}/policy`, policy);
+    return data;
+  }
+
+  /** PUT /apps/{slug}/billing-profile — register the app's billing product key. */
+  async putAppBillingProfile(
+    slug: string,
+    profile: BillingProfile,
+  ): Promise<BillingProfile> {
+    const { data } = await this.http.put<BillingProfile>(
+      `/apps/${encodeURIComponent(slug)}/billing-profile`,
+      profile,
     );
     return data;
   }

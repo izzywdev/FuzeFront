@@ -1,11 +1,21 @@
 import React from "react";
 
 /**
- * Accessible tab strip — a horizontal `role="tablist"` of buttons. Controlled:
- * the consumer owns the active value and switches on `onChange`. Use it to
- * navigate sub-views within an area (e.g. Billing → Plans / Invoices /
- * Payments). The active tab carries `aria-selected` + a seam-accent underline
- * so the signal is not color-only.
+ * Accessible tab strip — a horizontal `role="tablist"` of buttons or links.
+ * Two usage modes, per tab item:
+ *   - **Controlled** (default): the consumer owns the active `value` and
+ *     switches on `onChange`. Use for in-place sub-views (e.g. Billing →
+ *     Plans / Invoices / Payments).
+ *   - **Link tabs**: a tab item with an `href` renders as an `<a>` instead of
+ *     a `<button>` — for a tabbed console shell where each tab is its own
+ *     route (e.g. Portal Admin → Overview / Users / App catalog / Billing).
+ *     `value`/`onChange` still drive `aria-selected` so the two modes share
+ *     one accessible tablist implementation; navigation itself is left to
+ *     the app's router (the anchor's default click behavior, or a consumer
+ *     `onClick` on the tab item via `rest` passthrough is not supported here
+ *     — wrap with your router's Link component via `tab.render` if needed).
+ * The active tab carries `aria-selected` + a seam-accent underline so the
+ * signal is not color-only.
  *
  * Keyboard: Left/Right (and Home/End) move focus+selection across tabs, per the
  * WAI-ARIA tabs pattern (automatic activation).
@@ -46,12 +56,14 @@ export function Tabs({ tabs = [], value, onChange, ariaLabel, style, ...rest }) 
     >
       {tabs.map((tab, i) => {
         const selected = tab.value === value;
+        const Tag = tab.href ? "a" : "button";
         return (
-          <button
+          <Tag
             key={tab.value}
             ref={(el) => (refs.current[i] = el)}
             role="tab"
-            type="button"
+            type={tab.href ? undefined : "button"}
+            href={tab.href}
             id={tab.id || `tab-${tab.value}`}
             aria-selected={selected}
             aria-controls={tab.controls}
@@ -72,12 +84,13 @@ export function Tabs({ tabs = [], value, onChange, ariaLabel, style, ...rest }) 
               fontWeight: "var(--weight-medium)",
               color: selected ? "var(--text-primary)" : "var(--text-secondary)",
               cursor: "pointer",
+              textDecoration: "none",
               whiteSpace: "nowrap",
               transition: "color var(--duration-fast) var(--ease-standard)",
             }}
           >
             {tab.label}
-          </button>
+          </Tag>
         );
       })}
     </div>

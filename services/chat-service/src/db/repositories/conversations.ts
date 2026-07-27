@@ -43,6 +43,16 @@ export interface ListConversationsFilter {
 const TABLE = 'chat_conversations';
 const COLUMNS = ['id', 'title', 'app_id', 'org_id', 'created_at', 'updated_at'];
 
+/**
+ * Collapse a missing org to SQL NULL. The route derives orgId as
+ * `req.body.orgId || req.orgId || ''`, so "no org" arrives as an empty string.
+ * Storing '' would make it a tenant distinct from NULL and split one user's
+ * continuous thread in two.
+ */
+function normaliseOrgId(orgId?: string | null): string | null {
+  return orgId ? orgId : null;
+}
+
 function toConversation(row: ConversationRow): Conversation {
   return {
     id: row.id,
@@ -83,11 +93,56 @@ export class ConversationsRepository {
       .insert({
         user_id: input.userId,
         app_id: input.appId,
-        org_id: input.orgId ?? null,
+        org_id: normaliseOrgId(input.orgId),
         title: input.title ?? null,
       })
       .returning(COLUMNS);
     return toConversation(row);
+  }
+
+  /**
+   * Resolve the caller's ONE ongoing thread for this (user, app, org) scope,
+   * creating it only on first ever use — the Slack/WhatsApp-style continuous
+   * conversation decided in #120 / FF-EPIC-02-S4.
+   *
+   * Before this existed, POST /chat/stream called create() whenever the client
+   * omitted conversationId, so continuity depended entirely on the client
+   * echoing the id back: a fresh browser, a cleared store, or any consumer that
+   * did not implement resume silently forked a new thread every turn. Resolving
+   * server-side makes the single thread a property of the service rather than of
+   * client good behaviour.
+   *
+   * Reads the most-recently-updated row for the scope — the exact lookup
+   * migration 002's (user_id, app_id, org_id, updated_at DESC) index was added
+   * to serve. Most-recent rather than a unique constraint: pre-existing
+   * multi-conversation rows predate the continuous-thread decision and a unique
+   * index would fail against them.
+   *
+   * Benign race: two concurrent first-ever turns for the same scope can both
+   * miss and both insert. The next turn settles on the most-recently-updated
+   * one. Not worth a lock — the window is one request wide and the only cost is
+   * a stray empty thread.
+   */
+  async getOrCreateContinuous(input: CreateConversationInput): Promise<Conversation> {
+    const orgId = normaliseOrgId(input.orgId);
+    const query = this.knex(TABLE).where({ user_id: input.userId, app_id: input.appId });
+
+    if (orgId === null) {
+      // Rows written before create() normalised '' to NULL may hold either, so
+      // "no org" must match both — otherwise a legacy '' row is invisible here
+      // and every turn would fork a new thread for that scope.
+      query.andWhere((builder: Knex.QueryBuilder) =>
+        builder.whereNull('org_id').orWhere({ org_id: '' }),
+      );
+    } else {
+      query.andWhere({ org_id: orgId });
+    }
+
+    const row: ConversationRow | undefined = await query
+      .orderBy('updated_at', 'desc')
+      .first(COLUMNS);
+
+    return row ? toConversation(row) : this.create(input);
   }
 
   /** Bump updated_at on an owned conversation (after a new message). */

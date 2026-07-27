@@ -1,18 +1,21 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AccountSecurityHub } from '@fuzefront/account-security-ui'
+import { useFlag } from '../platform/featureFlags'
 
 /**
  * Feature-flag gate for the account-security hub
- * (`fuzefront.account-security.hub`, default OFF). The family flag standard is
- * Unleash via `@fuzefront/feature-flags`; until the web flag client is wired
- * into the shell bootstrap this reads a build-time override and defaults OFF, so
- * production behavior is unchanged. Swap the body for
- * `getBoolean('fuzefront.account-security.hub', false)` once the web client is
- * initialized — the flag key and default stay identical.
+ * (`fuzefront.account-security.hub`, default OFF).
+ *
+ * Reads the per-user evaluation served by the backend (`GET /api/flags`), which
+ * resolves the flag through Unleash against the authenticated session — so the
+ * `developers` segment actually applies. This previously read the build-time
+ * constant `import.meta.env.VITE_FF_ACCOUNT_SECURITY_HUB`, which was baked at
+ * build time and identical for every user, making per-user targeting impossible.
+ * Key and default are unchanged.
  */
 function useAccountSecurityHubFlag(): boolean {
-  return import.meta.env.VITE_FF_ACCOUNT_SECURITY_HUB === 'true'
+  return useFlag('fuzefront.account-security.hub', false)
 }
 
 /**

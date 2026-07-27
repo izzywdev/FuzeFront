@@ -8,7 +8,25 @@ import {
   AppMode,
   AppStatus,
   Visibility,
+  DEFAULT_NAV_ORDER,
+  DEFAULT_NAV_SECTION,
+  navSectionRank,
 } from './manifest.schema'
+
+/**
+ * Derived side-menu ordering columns for a manifest. `manifest.nav` is the source
+ * of truth; these columns exist only so the list query can ORDER BY / keyset-paginate
+ * in SQL. Recompute on EVERY write so a manifest update re-ranks the app.
+ */
+export function navColumns(manifest: AppManifest): {
+  nav_rank: number
+  nav_order: number
+} {
+  return {
+    nav_rank: navSectionRank(manifest.nav?.section ?? DEFAULT_NAV_SECTION),
+    nav_order: manifest.nav?.order ?? DEFAULT_NAV_ORDER,
+  }
+}
 
 /** The App contract shape returned by the API (matches openapi App schema). */
 export interface AppRecord {
@@ -81,17 +99,47 @@ export function canMutate(app: AppRecord, caller: AppCaller): boolean {
   return caller.organizationIds.includes(app.organizationId)
 }
 
-function encodeCursor(row: { created_at: any; slug: string }): string {
-  const createdAt = new Date(row.created_at).toISOString()
-  return Buffer.from(`${createdAt}|${row.slug}`, 'utf8').toString('base64url')
+// The list sort key. MUST stay in lock-step with the ORDER BY and the keyset
+// predicate in list() — a cursor that encodes fewer columns than the sort key
+// silently skips or repeats rows at page boundaries.
+interface SortKey {
+  navRank: number
+  navOrder: number
+  createdAt: string
+  slug: string
 }
 
-function decodeCursor(cursor: string): { createdAt: string; slug: string } | null {
+function encodeCursor(row: {
+  nav_rank: any
+  nav_order: any
+  created_at: any
+  slug: string
+}): string {
+  const createdAt = new Date(row.created_at).toISOString()
+  const navRank = Number(row.nav_rank ?? navSectionRank(DEFAULT_NAV_SECTION))
+  const navOrder = Number(row.nav_order ?? DEFAULT_NAV_ORDER)
+  return Buffer.from(
+    `${navRank}|${navOrder}|${createdAt}|${row.slug}`,
+    'utf8'
+  ).toString('base64url')
+}
+
+function decodeCursor(cursor: string): SortKey | null {
   try {
     const decoded = Buffer.from(cursor, 'base64url').toString('utf8')
-    const idx = decoded.indexOf('|')
-    if (idx < 0) return null
-    return { createdAt: decoded.slice(0, idx), slug: decoded.slice(idx + 1) }
+    // Split on the FIRST 3 separators only — a slug cannot contain '|', but
+    // splitting unbounded would still be wrong if that ever changed.
+    const parts = decoded.split('|')
+    if (parts.length < 4) return null
+    const navRank = Number(parts[0])
+    const navOrder = Number(parts[1])
+    if (!Number.isFinite(navRank) || !Number.isFinite(navOrder)) return null
+    return {
+      navRank,
+      navOrder,
+      createdAt: parts[2],
+      slug: parts.slice(3).join('|'),
+    }
   } catch {
     return null
   }
@@ -112,8 +160,11 @@ export interface ListResult {
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
-   * never receives an app outside their org. Keyset pagination on (created_at, slug)
-   * keeps the page bounded. Only manifest-bearing (registry) rows are returned.
+   * never receives an app outside their org. Keyset pagination on
+   * (nav_rank, nav_order, created_at, slug) keeps the page bounded AND returns apps
+   * in side-menu order — lifecycle section first, then rank within it, with
+   * created_at/slug as the tiebreak that keeps the ordering total and stable.
+   * Only manifest-bearing (registry) rows are returned.
    */
   async list(params: ListParams, caller: AppCaller): Promise<ListResult> {
     const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
@@ -147,23 +198,39 @@ export class AppRegistryService {
       })
     }
 
-    // Keyset cursor.
+    // Keyset cursor over the FULL sort key (nav_rank, nav_order, created_at, slug).
+    // Written as the expanded OR-chain rather than a row-value comparison
+    // `(a,b,c,d) > (?,?,?,?)`: row-value comparison is Postgres-only and the test
+    // database is sqlite3, where it does not parse.
     if (params.cursor) {
-      const decoded = decodeCursor(params.cursor)
-      if (decoded) {
+      const c = decodeCursor(params.cursor)
+      if (c) {
         query = query.where(builder => {
           builder
-            .where('created_at', '>', decoded.createdAt)
+            .where('nav_rank', '>', c.navRank)
+            .orWhere(sub => {
+              sub.where('nav_rank', '=', c.navRank).andWhere('nav_order', '>', c.navOrder)
+            })
             .orWhere(sub => {
               sub
-                .where('created_at', '=', decoded.createdAt)
-                .andWhere('slug', '>', decoded.slug)
+                .where('nav_rank', '=', c.navRank)
+                .andWhere('nav_order', '=', c.navOrder)
+                .andWhere('created_at', '>', c.createdAt)
+            })
+            .orWhere(sub => {
+              sub
+                .where('nav_rank', '=', c.navRank)
+                .andWhere('nav_order', '=', c.navOrder)
+                .andWhere('created_at', '=', c.createdAt)
+                .andWhere('slug', '>', c.slug)
             })
         })
       }
     }
 
     const rows = await query
+      .orderBy('nav_rank', 'asc')
+      .orderBy('nav_order', 'asc')
       .orderBy('created_at', 'asc')
       .orderBy('slug', 'asc')
       .limit(limit + 1)
@@ -226,6 +293,7 @@ export class AppRegistryService {
       heartbeat_token: heartbeatToken,
       created_at: now,
       updated_at: now,
+      ...navColumns(manifest),
     }
 
     await db('apps').insert(insert)
@@ -257,6 +325,8 @@ export class AppRegistryService {
         mode: manifest.mode,
         visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
         updated_at: new Date(),
+        // Re-derive placement: a manifest update may move the app in the menu.
+        ...navColumns(manifest),
       })
     const updated = await this.findBySlug(existing.slug)
     if (!updated) throw new Error('updateManifest: row not found after update')
@@ -265,6 +335,56 @@ export class AppRegistryService {
 
   async delete(slug: string): Promise<void> {
     await db('apps').where('slug', slug).del()
+  }
+
+  /**
+   * Stores the app's self-declared authorization policy (full replace — a policy is
+   * never merged with its predecessor, so removing a role in the product's repo
+   * actually removes it). The stored value is what the product SUBMITTED, with bare
+   * un-namespaced keys; namespacing/merging happens at sync time.
+   */
+  async setPolicy(slug: string, policy: unknown): Promise<void> {
+    await db('apps')
+      .where('slug', slug)
+      .update({ policy: JSON.stringify(policy), updated_at: new Date() })
+  }
+
+  /** Stores the app's billing profile (full replace). */
+  async setBillingProfile(slug: string, profile: unknown): Promise<void> {
+    await db('apps')
+      .where('slug', slug)
+      .update({ billing_profile: JSON.stringify(profile), updated_at: new Date() })
+  }
+
+  /**
+   * Every registered app that has declared a policy, for the permit-schema sync job.
+   * This is what replaces the hardcoded product list in sync-permit-schema.ts —
+   * adding a product no longer edits platform source.
+   */
+  async listPolicies(): Promise<{ slug: string; policy: any }[]> {
+    const rows = await db('apps')
+      .whereNotNull('slug')
+      .whereNotNull('policy')
+      .select('slug', 'policy')
+    return rows.map((r: any) => ({
+      slug: r.slug,
+      policy: typeof r.policy === 'string' ? JSON.parse(r.policy) : r.policy,
+    }))
+  }
+
+  /** Every registered billing profile, for the billing service's key allowlist. */
+  async listBillingProfiles(): Promise<{ slug: string; profile: any }[]> {
+    const rows = await db('apps')
+      .whereNotNull('slug')
+      .whereNotNull('billing_profile')
+      .select('slug', 'billing_profile')
+    return rows.map((r: any) => ({
+      slug: r.slug,
+      profile:
+        typeof r.billing_profile === 'string'
+          ? JSON.parse(r.billing_profile)
+          : r.billing_profile,
+    }))
   }
 
   /** Idempotent transition to `activated`. */
@@ -326,6 +446,7 @@ export class AppRegistryService {
         heartbeat_token: heartbeatToken,
         created_at: now,
         updated_at: now,
+        ...navColumns(manifest),
       })
       .onConflict('slug')
       .ignore()

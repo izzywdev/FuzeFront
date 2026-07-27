@@ -1,0 +1,73 @@
+# FuzeFront self-registration init container.
+#
+# Paste into your Deployment's pod spec. It runs BEFORE your app container, so an
+# unregistered app never serves traffic — if registration fails the pod
+# CrashLoopBackOffs, which is the intended behaviour (see bin/register.sh).
+#
+# Prerequisites in the app's namespace:
+#   1. A `fuzefront-registration` Secret with key `token` (seal it with kubeseal —
+#      never commit the plaintext).
+#   2. A ConfigMap holding registration/manifest.json (+ optional policy.json,
+#      billing-profile.json). Generate it from the files in your repo:
+#
+#        kubectl create configmap myapp-registration \
+#          --from-file=registration/ \
+#          --dry-run=client -o yaml > deploy/registration-configmap.yaml
+#
+#      Or template it in your chart from .Files.Glob "registration/*".
+
+initContainers:
+  - name: fuzefront-register
+    # Any image with curl + jq. alpine + a one-shot apk add keeps it small and
+    # avoids maintaining a bespoke image just for this.
+    image: alpine:3.20
+    imagePullPolicy: IfNotPresent
+    command: ['/bin/sh', '-c']
+    args:
+      - |
+        set -eu
+        apk add --no-cache curl jq >/dev/null
+        exec /kit/register.sh
+    env:
+      - name: FUZEFRONT_API_URL
+        # Cluster-internal service DNS. Do NOT use the public ingress host — the
+        # init container has no reason to leave the cluster, and the public host
+        # may not resolve before ingress is ready.
+        value: 'http://fuzefront-applications.fuzefront.svc.cluster.local:3003'
+      - name: FUZEFRONT_REGISTRATION_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: fuzefront-registration
+            key: token
+            # NOT optional: a missing secret must fail the pod, not silently skip
+            # registration and leave the app running unregistered.
+      - name: REGISTRATION_DIR
+        value: /registration
+    volumeMounts:
+      - name: registration
+        mountPath: /registration
+        readOnly: true
+      - name: fuzefront-kit
+        mountPath: /kit
+        readOnly: true
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 200m, memory: 128Mi }
+    securityContext:
+      runAsNonRoot: false # apk add needs root; the container exits before the app starts
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ['ALL']
+
+volumes:
+  - name: registration
+    configMap:
+      name: myapp-registration
+  - name: fuzefront-kit
+    configMap:
+      name: fuzefront-onboarding-kit
+      # 0555 octal = r-xr-xr-x. Written in DECIMAL deliberately: `defaultMode` is an
+      # int32 and octal-looking literals are parsed inconsistently across YAML
+      # versions, so a bare 0555 can silently become the wrong mode and the script
+      # ends up non-executable.
+      defaultMode: 365

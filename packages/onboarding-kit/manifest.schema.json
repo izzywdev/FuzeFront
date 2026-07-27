@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeFront/packages/onboarding-kit/manifest.schema.json",
+  "title": "FuzeFront AppManifest",
+  "description": "The declarative document describing how the host mounts and chromes an app. Stored on the app row, served back on read, and the single shared type across UI / backend / tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "slug",
+    "name",
+    "menuLabel",
+    "mode",
+    "integration"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
+    },
+    "slug": {
+      "$ref": "#/$defs/Slug"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "menuLabel": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Label shown in the application menu / launcher (e.g. \"Market\")."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "icon": {
+      "$ref": "#/$defs/Icon"
+    },
+    "mode": {
+      "$ref": "#/$defs/AppMode"
+    },
+    "builtin": {
+      "type": "boolean",
+      "default": false,
+      "description": "Shipped with the platform; cannot be deleted, only suspended."
+    },
+    "integration": {
+      "$ref": "#/$defs/Integration"
+    },
+    "chrome": {
+      "$ref": "#/$defs/Chrome"
+    },
+    "nav": {
+      "$ref": "#/$defs/Nav"
+    },
+    "routing": {
+      "$ref": "#/$defs/Routing"
+    },
+    "infra": {
+      "$ref": "#/$defs/Infra"
+    },
+    "visibility": {
+      "$ref": "#/$defs/Visibility"
+    },
+    "roles": {
+      "type": "array",
+      "description": "Roles permitted to see/activate the app. Empty = all members.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "AppManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestVersion",
+        "slug",
+        "name",
+        "menuLabel",
+        "mode",
+        "integration"
+      ],
+      "description": "The declarative document describing how the host mounts and chromes an app. Stored on the app row, served back on read, and the single shared type across UI / backend / tests.",
+      "properties": {
+        "manifestVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "slug": {
+          "$ref": "#/$defs/Slug"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "menuLabel": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Label shown in the application menu / launcher (e.g. \"Market\")."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "mode": {
+          "$ref": "#/$defs/AppMode"
+        },
+        "builtin": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shipped with the platform; cannot be deleted, only suspended."
+        },
+        "integration": {
+          "$ref": "#/$defs/Integration"
+        },
+        "chrome": {
+          "$ref": "#/$defs/Chrome"
+        },
+        "nav": {
+          "$ref": "#/$defs/Nav"
+        },
+        "routing": {
+          "$ref": "#/$defs/Routing"
+        },
+        "infra": {
+          "$ref": "#/$defs/Infra"
+        },
+        "visibility": {
+          "$ref": "#/$defs/Visibility"
+        },
+        "roles": {
+          "type": "array",
+          "description": "Roles permitted to see/activate the app. Empty = all members.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Slug": {
+      "type": "string",
+      "description": "URL-safe unique identifier, immutable once registered.",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+      "examples": [
+        "clock",
+        "market"
+      ]
+    },
+    "AppMode": {
+      "type": "string",
+      "description": "`portal` — mounted inside the host shell at `/app/:slug` with chrome. `standalone` — rendered without portal chrome on its own host/path.",
+      "enum": [
+        "portal",
+        "standalone"
+      ]
+    },
+    "IntegrationType": {
+      "type": "string",
+      "enum": [
+        "module-federation",
+        "iframe",
+        "web-component",
+        "spa"
+      ]
+    },
+    "Visibility": {
+      "type": "string",
+      "enum": [
+        "private",
+        "organization",
+        "public",
+        "marketplace"
+      ]
+    },
+    "Icon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "description": "App icon — either an emoji glyph or an image URL.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "emoji",
+            "url"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "The emoji character, or an https URL to the icon image."
+        }
+      }
+    },
+    "Integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "description": "How the host loads/mounts the app.",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/IntegrationType"
+        },
+        "remoteEntry": {
+          "type": "string",
+          "format": "uri",
+          "description": "FULL Module-Federation remote entry URL, e.g. `https://clock.example.com/remoteEntry.js`. Required when `type = module-federation`. This freezes the legacy base-vs-entry ambiguity: the value is the complete entry URL, NOT a base."
+        },
+        "scope": {
+          "type": "string",
+          "description": "MF remote scope/name. Required for module-federation."
+        },
+        "module": {
+          "type": "string",
+          "description": "Exposed module path, e.g. `./ClockApp`. Required for module-federation."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Navigable URL for `iframe` and `standalone`/`spa` integrations."
+        }
+      }
+    },
+    "MenuItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label"
+      ],
+      "description": "An app-declared menu item (for chrome substitution or app section).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string",
+          "description": "icon name or emoji"
+        },
+        "route": {
+          "type": "string",
+          "description": "in-app route the item navigates to"
+        },
+        "order": {
+          "type": "integer"
+        }
+      }
+    },
+    "Chrome": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the host's chrome behaves while this app is active. Ignored for `mode = standalone` (standalone apps render with no portal chrome).",
+      "properties": {
+        "menu": {
+          "type": "string",
+          "enum": [
+            "host",
+            "substitute"
+          ],
+          "default": "host",
+          "description": "`host` — keep the portal side menu (app may still push runtime items). `substitute` — the app provides its OWN full side menu; the host yields its portal menu and renders `items` instead. The host always retains a minimal \"return to portal\" affordance so the user is never trapped."
+        },
+        "topbar": {
+          "type": "string",
+          "enum": [
+            "host",
+            "hidden"
+          ],
+          "default": "host"
+        },
+        "items": {
+          "type": "array",
+          "description": "App-declared menu items, used when `menu = substitute`.",
+          "items": {
+            "$ref": "#/$defs/MenuItem"
+          }
+        }
+      }
+    },
+    "Nav": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where the app sits in the host's side menu. The app DECLARES its own placement here rather than the platform holding a central ordering table, so onboarding a product never requires a FuzeFront edit.",
+      "properties": {
+        "section": {
+          "$ref": "#/$defs/NavSection"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999,
+          "default": 999,
+          "description": "Rank WITHIN the section, ascending. Ties break on `slug` so ordering is always total and stable. Leave unset (999) to sort after apps that care."
+        }
+      }
+    },
+    "NavSection": {
+      "type": "string",
+      "description": "The app's place in the company's day-to-day lifecycle. The host groups the side menu by this, in the order declared here: steer -> plan -> build -> sell -> serve -> measure -> operate. Apps that do not declare one fall into `platform` (last).",
+      "enum": [
+        "executive",
+        "plan",
+        "build",
+        "revenue",
+        "customer",
+        "insight",
+        "platform"
+      ],
+      "default": "platform"
+    },
+    "Routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Routing for the app. `host` applies to standalone only.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/[a-zA-Z0-9/_-]*$",
+          "description": "Path the app is reachable at. For portal apps this is informational (host mounts at `/app/:slug`); for standalone it is the routed path."
+        },
+        "host": {
+          "type": "string",
+          "description": "Standalone-only: a dedicated host (e.g. `clock.fuzefront.com`). When omitted, standalone apps are path-based under the main app host."
+        }
+      }
+    },
+    "Infra": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Platform infrastructure the (typically standalone) app opts into. Portal apps implicitly get auth + api; this block is mainly meaningful for standalone apps that selectively use FuzeFront infra.",
+      "properties": {
+        "auth": {
+          "type": "boolean",
+          "default": true,
+          "description": "Authentik identity/SSO"
+        },
+        "billing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stripe billing surface"
+        },
+        "api": {
+          "type": "boolean",
+          "default": true,
+          "description": "Same-origin platform API"
+        },
+        "deployOnFuzeInfra": {
+          "type": "boolean",
+          "default": true,
+          "description": "Deployed via the FuzeInfra GitOps pipeline"
+        }
+      }
+    }
+  }
+}

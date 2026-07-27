@@ -13,8 +13,13 @@ export {
   getBoolean,
   getString,
   getNumber,
+  getClient,
   close,
 } from './server';
 
 export { toEvaluationContext } from './context';
+export { UnleashOpenFeatureProvider, toUnleashContext } from './unleash-provider';
+export { WEB_EXPOSED_FLAGS } from './catalog';
+export type { FlagDescriptor, FlagType } from './catalog';
+export type { FuzeFlagsClient } from './server';
 export type { FuzeFlagsContext, FuzeFlagsOptions } from './types';

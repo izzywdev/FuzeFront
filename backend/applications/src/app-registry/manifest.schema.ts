@@ -75,6 +75,40 @@ export const chromeSchema = z
   })
   .strict()
 
+// Lifecycle sections, in the order the host renders them:
+// steer -> plan -> build -> sell -> serve -> measure -> operate. The ARRAY ORDER is
+// the render order — `navSectionRank` below derives from it, so adding a section in
+// the right position is all it takes to place it in the menu.
+export const NAV_SECTIONS = [
+  'executive',
+  'plan',
+  'build',
+  'revenue',
+  'customer',
+  'insight',
+  'platform',
+] as const
+
+export const navSectionSchema = z.enum(NAV_SECTIONS)
+
+/** Default section for an app that declares no `nav` — sorts last. */
+export const DEFAULT_NAV_SECTION: NavSection = 'platform'
+/** Default rank within a section for an app that declares no order — sorts last. */
+export const DEFAULT_NAV_ORDER = 999
+
+/** 0-based render rank of a section. Unknown values sort last, never throw. */
+export function navSectionRank(section: string | null | undefined): number {
+  const idx = NAV_SECTIONS.indexOf(section as NavSection)
+  return idx === -1 ? NAV_SECTIONS.length : idx
+}
+
+export const navSchema = z
+  .object({
+    section: navSectionSchema.optional(),
+    order: z.number().int().min(0).max(9999).optional(),
+  })
+  .strict()
+
 export const routingSchema = z
   .object({
     path: z
@@ -106,6 +140,7 @@ export const appManifestSchema = z
     builtin: z.boolean().optional(),
     integration: integrationSchema,
     chrome: chromeSchema.optional(),
+    nav: navSchema.optional(),
     routing: routingSchema.optional(),
     infra: infraSchema.optional(),
     visibility: visibilitySchema.optional(),
@@ -117,6 +152,8 @@ export type AppManifest = z.infer<typeof appManifestSchema>
 export type AppMode = z.infer<typeof appModeSchema>
 export type AppStatus = z.infer<typeof appStatusSchema>
 export type Visibility = z.infer<typeof visibilitySchema>
+export type NavSection = (typeof NAV_SECTIONS)[number]
+export type Nav = z.infer<typeof navSchema>
 
 export const registerAppRequestSchema = z
   .object({

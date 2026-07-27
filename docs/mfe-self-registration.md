@@ -3,6 +3,13 @@
 Each MFE self-registers with FuzeFront at pod startup via a Kubernetes init container.
 The registration manifest lives in the MFE's own repo — no FuzeFront coupling.
 
+> **Use [`@fuzefront/onboarding-kit`](../packages/onboarding-kit/README.md).** This
+> document describes the pattern; the kit is the implementation — `register.sh`,
+> valid-as-shipped templates, the Helm init-container snippet, and a generated
+> manifest schema. For a long time this page described a pattern that nothing
+> implemented: there was no script and no template to copy, so in practice apps were
+> registered by hand-editing platform source. Start from the kit, not from this page.
+
 ## Why registration is a hard requirement
 
 The MFE depends on FuzeFront for AuthN, AuthZ, org/user context, billing, sockets,
@@ -40,10 +47,41 @@ See `services/app-registry-service/openapi.yaml`. Key fields for an MF app:
     "scope": "fuzesales",
     "module": "./FuzeSalesApp"
   },
+  "nav": { "section": "revenue", "order": 20 },
   "routing": { "path": "/app/fuzesales" },
   "visibility": "organization"
 }
 ```
+
+### `nav` — where the app lands in the side menu
+
+`section` places the app in the company lifecycle; `order` ranks it within that
+section. The registry returns apps already sorted by `(section, order)`, and the host
+shell renders that order, so **this field is the only thing that decides menu
+placement**.
+
+| Section | Stage |
+|---|---|
+| `executive` | Steer |
+| `plan` | Plan |
+| `build` | Build |
+| `revenue` | Sell |
+| `customer` | Serve |
+| `insight` | Measure |
+| `platform` | Operate |
+
+Omit `nav` and the app defaults to `platform` / order 999 — i.e. **last**. Before this
+field existed the list was ordered by `created_at`, so the menu was in registration
+order and placement could not be expressed at all.
+
+## Policy and billing come with registration
+
+Alongside `manifest.json`, an app may ship `policy.json` (its own Permit
+resources/roles, with bare keys) and `billing-profile.json` (its billing product key).
+`register.sh` submits both. This replaces two edits that previously had to be made
+inside the platform repo — a `*.policy.ts` file plus a hardcoded sync list, and the
+`BILLING_PRODUCT_KEYS` env allowlist — neither of which the product team could make
+or see.
 
 ## Auth token
 
