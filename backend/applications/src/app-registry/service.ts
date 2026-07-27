@@ -337,6 +337,56 @@ export class AppRegistryService {
     await db('apps').where('slug', slug).del()
   }
 
+  /**
+   * Stores the app's self-declared authorization policy (full replace — a policy is
+   * never merged with its predecessor, so removing a role in the product's repo
+   * actually removes it). The stored value is what the product SUBMITTED, with bare
+   * un-namespaced keys; namespacing/merging happens at sync time.
+   */
+  async setPolicy(slug: string, policy: unknown): Promise<void> {
+    await db('apps')
+      .where('slug', slug)
+      .update({ policy: JSON.stringify(policy), updated_at: new Date() })
+  }
+
+  /** Stores the app's billing profile (full replace). */
+  async setBillingProfile(slug: string, profile: unknown): Promise<void> {
+    await db('apps')
+      .where('slug', slug)
+      .update({ billing_profile: JSON.stringify(profile), updated_at: new Date() })
+  }
+
+  /**
+   * Every registered app that has declared a policy, for the permit-schema sync job.
+   * This is what replaces the hardcoded product list in sync-permit-schema.ts —
+   * adding a product no longer edits platform source.
+   */
+  async listPolicies(): Promise<{ slug: string; policy: any }[]> {
+    const rows = await db('apps')
+      .whereNotNull('slug')
+      .whereNotNull('policy')
+      .select('slug', 'policy')
+    return rows.map((r: any) => ({
+      slug: r.slug,
+      policy: typeof r.policy === 'string' ? JSON.parse(r.policy) : r.policy,
+    }))
+  }
+
+  /** Every registered billing profile, for the billing service's key allowlist. */
+  async listBillingProfiles(): Promise<{ slug: string; profile: any }[]> {
+    const rows = await db('apps')
+      .whereNotNull('slug')
+      .whereNotNull('billing_profile')
+      .select('slug', 'billing_profile')
+    return rows.map((r: any) => ({
+      slug: r.slug,
+      profile:
+        typeof r.billing_profile === 'string'
+          ? JSON.parse(r.billing_profile)
+          : r.billing_profile,
+    }))
+  }
+
   /** Idempotent transition to `activated`. */
   async setStatus(slug: string, status: AppStatus): Promise<AppRecord> {
     await db('apps')

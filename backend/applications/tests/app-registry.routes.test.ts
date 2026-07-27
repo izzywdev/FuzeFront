@@ -418,6 +418,96 @@ describe('lifecycle register → activate → suspend', () => {
   })
 })
 
+// The onboarding writes are what let a product declare its OWN authz policy and
+// billing key instead of the platform hardcoding them. Both are apps:write on an
+// existing app.
+describe('onboarding: policy + billing profile', () => {
+  async function seedApp(slug: string, org: string, who: any) {
+    await request(app).post('/api/v1/app-registry/apps').set(asUser(who))
+      .send({ manifest: manifest(slug), organizationId: org })
+  }
+
+  const validPolicy = {
+    name: 'Market',
+    resources: [
+      { key: 'Listing', name: 'Listing', actions: { read: { name: 'Read' }, update: { name: 'Update' } } },
+    ],
+    roles: [{ key: 'seller', name: 'Seller', permissions: ['Listing:update'] }],
+  }
+
+  it('stores a valid policy and reports what was synced', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .set(asUser(userA))
+      .send(validPolicy)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ slug: 'market', resources: 1, roles: 1 })
+  })
+
+  it('rejects a permission referencing an action the policy never declares', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .set(asUser(userA))
+      .send({
+        ...validPolicy,
+        roles: [{ key: 'seller', name: 'Seller', permissions: ['Listing:delete'] }],
+      })
+    // Caught here, at deploy, rather than shipping a role that silently grants nothing.
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('validation_error')
+  })
+
+  it('rejects a body whose product disagrees with the path slug', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .set(asUser(userA))
+      // Otherwise write access to `market` would install a policy namespaced to
+      // another product entirely.
+      .send({ ...validPolicy, product: 'someotherapp' })
+    expect(res.status).toBe(400)
+    expect(res.body.fields[0].path).toBe('product')
+  })
+
+  it('hides policy writes on a cross-org app as 404 (BOLA)', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .set(asUser(userB))
+      .send(validPolicy)
+    expect([403, 404]).toContain(res.status)
+  })
+
+  it('stores a valid billing profile', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/billing-profile')
+      .set(asUser(userA))
+      .send({ productKey: 'market', currencies: ['usd'] })
+    expect(res.status).toBe(200)
+    expect(res.body.productKey).toBe('market')
+  })
+
+  it('rejects a malformed billing productKey', async () => {
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/billing-profile')
+      .set(asUser(userA))
+      .send({ productKey: 'Not A Key' })
+    expect(res.status).toBe(400)
+  })
+
+  it('404s for an app that is not registered', async () => {
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/nosuchapp/policy')
+      .set(asUser(userA))
+      .send(validPolicy)
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('deleteApp', () => {
   it('deletes a non-builtin app (204)', async () => {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
