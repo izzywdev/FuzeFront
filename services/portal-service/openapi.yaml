@@ -1,0 +1,689 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Portal API
+  version: 1.0.0
+  description: >-
+    REST API for **multi-tenant portals** — the first-class `portals` object that
+    lets one shared FuzeFront deployment serve many isolated white-label tenant
+    portals. This contract freezes two surfaces:
+
+      1. **Public portal context** (`GET /api/v1/portal/context`) — the
+         unauthenticated boot endpoint the shell/login call to resolve the active
+         portal (id, slug, branding, identity policy, auth entry points) for the
+         current Host. Renders *before* login (a branded login screen), so it
+         exposes only public branding/identity-policy/auth-entry data — never a
+         raw `portals` row. Source: FF-EPIC-10-S2.
+
+      2. **Master-admin portal CRUD** (`/api/v1/admin/portals`) — create / list /
+         get / update / suspend / resume, Permit **platform-admin** gated and
+         fail-closed (non-admin ⇒ 403). This surfaces the resumable provisioning
+         pipeline behind a versioned, generated client. Source: FF-EPIC-09-S3.
+
+    A portal's own self-scoped identity (`GET /api/v1/portal/current`) is also
+    frozen here so the portal-admin console can read the caller's own portal
+    (resolved from the session, never from a client-supplied id).
+
+    This file is the single source of truth for `@fuzefront/portal-client`.
+    Changing the API means amending this file first (see the `api-contract-first`
+    skill), bumping `info.version` + the changelog, re-linting (Spectral), then
+    regenerating the client (`openapi-typescript`). UI, backend, and tests import
+    the SAME generated types, so drift becomes a compile error.
+
+    ### Fail-closed semantics (contract, not decoration)
+      * A **suspended** portal fails closed — `403 PORTAL_SUSPENDED`.
+      * The **root** portal (slug `fuzefront`) cannot be suspended —
+        `409 ROOT_PORTAL_PROTECTED`.
+      * Creating a portal with a duplicate slug — `409 SLUG_TAKEN`.
+      * A non-platform-admin caller on any admin route — `403 FORBIDDEN`
+        (an authorization denial, NOT a sign-in redirect; only `401`
+        re-authenticates).
+      * A caller acting on a portal they do not administer — `403 FORBIDDEN_PORTAL`,
+        with zero cross-tenant data leaked.
+
+    All portal capability is staged behind the master feature flag
+    `fuzefront.platform.multi-tenant-portals` (default OFF, FF-EPIC-09-S4); authz
+    stays in Permit — the flag is rollout convenience only.
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: '{baseUrl}'
+    description: >-
+      Platform backend serving the portal surface. Paths below are absolute
+      (`/api/v1/...`) and match exactly what the shell and admin consoles bind to.
+      The frontend calls these on a same-origin base — never a cross-origin host.
+    variables:
+      baseUrl:
+        default: http://fuzefront-backend:3001
+        description: Cluster-internal base URL of the platform backend.
+
+tags:
+  - name: portal-context
+    description: Public, pre-auth portal resolution for the shell/login boot.
+  - name: portal-self
+    description: The caller's own portal, resolved from the session.
+  - name: admin-portals
+    description: Master-admin portal lifecycle CRUD (Permit platform-admin gated).
+  - name: health
+    description: Service liveness / readiness.
+
+security:
+  - sessionAuth: []
+
+paths:
+  /api/v1/portal/context:
+    get:
+      operationId: getPortalContext
+      tags: [portal-context]
+      summary: Resolve the public context for the current portal
+      description: >-
+        Returns the active portal's public boot data (id, slug, branding,
+        identity policy, auth entry points) for the Host/`/p/<slug>`/custom domain
+        the request arrived on. **Unauthenticated** — it must render before login
+        so a branded login screen can paint. Exposes only public
+        branding/identity-policy/auth-entry fields; never a raw `portals` row.
+        Fail-closed: an unknown host resolves to the root portal (for shell/UI
+        routes), and a suspended portal returns 403 `PORTAL_SUSPENDED`.
+      security: []
+      responses:
+        '200':
+          description: The resolved portal context.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalContext' }
+        '403':
+          description: The resolved portal is suspended (`PORTAL_SUSPENDED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/portal/current:
+    get:
+      operationId: getCurrentPortal
+      tags: [portal-self]
+      summary: Get the caller's own portal
+      description: >-
+        Returns the full portal record for the portal the authenticated caller
+        belongs to, resolved from the session/token (`req.user.portalId`) — a
+        `portalId` is **never** accepted from the client. Used by the portal-admin
+        console to render portal identity (domain, owner, status). A caller acting
+        on a portal they do not administer gets 403 `FORBIDDEN_PORTAL`.
+      responses:
+        '200':
+          description: The caller's portal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/ForbiddenPortal' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/admin/portals:
+    get:
+      operationId: listPortals
+      tags: [admin-portals]
+      summary: List portals (master-admin fleet view)
+      description: >-
+        Returns a cursor-paginated page of portals for the master-admin fleet
+        list. Permit **platform-admin** only — a non-admin caller is denied
+        fail-closed with 403 `FORBIDDEN`. A fresh install returns exactly one
+        portal (the seeded root portal, slug `fuzefront`).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by lifecycle status. Omit for all statuses.
+          schema: { $ref: '#/components/schemas/PortalStatus' }
+        - name: q
+          in: query
+          required: false
+          description: Free-text filter over name/slug/primary domain.
+          schema: { type: string, maxLength: 200 }
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Clamped to `maximum` server-side.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque, server-issued pagination cursor (from `page.nextCursor`).
+          schema: { type: string }
+      responses:
+        '200':
+          description: A page of portals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createPortal
+      tags: [admin-portals]
+      summary: Create (provision) a portal
+      description: >-
+        Provisions a new tenant portal via the resumable pipeline
+        (org → Permit tenant → portal row → default subdomain → owner invite). The
+        new portal starts `provisioned-pending-invite` (never silently `active`)
+        and the owner invite dispatches with provisioning. `slug` is immutable and
+        must be unique — a duplicate returns 409 `SLUG_TAKEN`. Permit
+        **platform-admin** only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalCreate' }
+      responses:
+        '201':
+          description: Portal created (status = provisioned-pending-invite).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: A portal with this slug already exists (`SLUG_TAKEN`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/admin/portals/{portalId}:
+    parameters:
+      - $ref: '#/components/parameters/PortalId'
+    get:
+      operationId: getPortal
+      tags: [admin-portals]
+      summary: Get a portal by id
+      description: >-
+        Returns the full portal record (branding, identity policy, billing mode,
+        domains + verification/TLS status). Permit **platform-admin** only.
+      responses:
+        '200':
+          description: The portal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      operationId: updatePortal
+      tags: [admin-portals]
+      summary: Update a portal (fields and/or lifecycle status)
+      description: >-
+        Partially updates a portal. `name`, `branding`, `identityPolicy`, and
+        `billingMode` are mutable; `slug` is immutable and cannot be changed.
+        Setting `status` is how the master-admin **suspends** (`active` →
+        `suspended`) or **resumes** (`suspended` → `active`) a portal — this is
+        the transition the fleet list and detail views bind to. Suspending the
+        root portal (slug `fuzefront`) is refused with 409
+        `ROOT_PORTAL_PROTECTED`. Permit **platform-admin** only. Equivalent
+        semantic action endpoints are `POST .../suspend` and `POST .../resume`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalUpdate' }
+      responses:
+        '200':
+          description: The updated portal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >-
+            The requested transition is refused — e.g. suspending the root portal
+            (`ROOT_PORTAL_PROTECTED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/admin/portals/{portalId}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/PortalId'
+    post:
+      operationId: suspendPortal
+      tags: [admin-portals]
+      summary: Suspend a portal
+      description: >-
+        Semantic lifecycle action equivalent to `PATCH .../{portalId}` with
+        `{ "status": "suspended" }`. Flips the portal to `suspended`, after which
+        it fails closed (paired with FF-EPIC-10 resolution: 403
+        `PORTAL_SUSPENDED`) and any cached resolution is invalidated. Idempotent:
+        suspending an already-suspended portal is a no-op 200. Suspending the root
+        portal is refused with 409 `ROOT_PORTAL_PROTECTED`. Permit
+        **platform-admin** only.
+      responses:
+        '200':
+          description: Portal suspended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The root portal cannot be suspended (`ROOT_PORTAL_PROTECTED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorBody' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/admin/portals/{portalId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/PortalId'
+    post:
+      operationId: resumePortal
+      tags: [admin-portals]
+      summary: Resume a suspended portal
+      description: >-
+        Semantic lifecycle action equivalent to `PATCH .../{portalId}` with
+        `{ "status": "active" }`. Flips a `suspended` portal back to `active` and
+        invalidates any cached resolution. Idempotent: resuming an already-active
+        portal is a no-op 200. Permit **platform-admin** only.
+      responses:
+        '200':
+          description: Portal resumed (active).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness
+      description: Unauthenticated liveness/readiness probe for the portal surface.
+      security: []
+      responses:
+        '200':
+          description: Service healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Platform user session (Authentik OIDC bearer) carrying the `portal_id`
+        claim. The backend authorizes admin routes via Permit's platform-admin
+        role. Scope referenced in this contract: `portals:admin`.
+
+  parameters:
+    PortalId:
+      name: portalId
+      in: path
+      required: true
+      description: The portal's server-issued id (e.g. `prt_northwind`).
+      schema: { $ref: '#/components/schemas/PortalId' }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid session / token (re-authenticate).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    Forbidden:
+      description: >-
+        The caller is not a platform admin (`FORBIDDEN`). An authorization denial,
+        never a sign-in redirect.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    ForbiddenPortal:
+      description: >-
+        The caller acted on a portal they do not administer
+        (`FORBIDDEN_PORTAL`) — no cross-tenant data is returned.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    NotFound:
+      description: Portal not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationErrorBody' }
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorBody' }
+
+  schemas:
+    PortalId:
+      type: string
+      description: Server-issued portal id, immutable once provisioned.
+      pattern: '^prt_[A-Za-z0-9]{1,40}$'
+      examples: ['prt_fuzefront', 'prt_northwind']
+
+    Slug:
+      type: string
+      description: >-
+        URL-safe unique portal identifier used for `/p/<slug>` and the default
+        subdomain, immutable once provisioned. The root portal's slug is
+        `fuzefront`.
+      pattern: '^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$'
+      examples: ['fuzefront', 'northwind']
+
+    PortalStatus:
+      type: string
+      description: >-
+        Lifecycle status. `provisioning` and `provisioned-pending-invite` are
+        transient states from the resumable provisioning pipeline (FF-EPIC-09-S2);
+        `active`/`suspended` are the steady lifecycle the master-admin toggles.
+      enum: [provisioning, provisioned-pending-invite, active, suspended]
+
+    BillingMode:
+      type: string
+      description: >-
+        How the portal is billed. `free` — no billing; `platform` — billed by
+        FuzeFront directly; `reseller` — the portal bills its own users via Stripe
+        Connect (FF-EPIC-15). Selecting `reseller` at create time unlocks the
+        Connect console.
+      enum: [free, platform, reseller]
+
+    DomainKind:
+      type: string
+      description: How a portal is addressed. `subdomain` (e.g. `northwind.fuzefront.com`), `path` (`/p/northwind`), or a verified `custom` domain (FF-EPIC-16).
+      enum: [subdomain, path, custom]
+
+    VerificationStatus:
+      type: string
+      description: Domain-ownership verification status (custom domains, FF-EPIC-16).
+      enum: [pending, verified, failed]
+
+    TlsStatus:
+      type: string
+      description: TLS certificate issuance status for the domain.
+      enum: [none, pending, issued, failed]
+
+    PortalBranding:
+      type: object
+      additionalProperties: false
+      description: >-
+        Public white-label branding, applied entirely through design-system token
+        overrides (no raw hex in feature code). Every field has a documented
+        fallback so the UI never shows a broken image or unbranded flash.
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          description: Portal display name (e.g. "Northwind"). Shown in the topbar and login.
+        logo:
+          type: [string, 'null']
+          format: uri
+          description: Logo image URL, or null → initials/default fallback (never a broken image).
+        favicon:
+          type: [string, 'null']
+          format: uri
+          description: Favicon URL, or null → default fallback (cache-busted per portal id).
+        accent:
+          type: [string, 'null']
+          description: >-
+            CSS color applied as a scoped design-system token override
+            (`--accent-*`). AA-contrast-validated; a malformed color falls back to
+            the default accent. Null → default.
+        tagline:
+          type: [string, 'null']
+          maxLength: 240
+          description: Optional custom login copy / strapline. Null → default copy.
+
+    PortalIdentityPolicy:
+      type: object
+      additionalProperties: false
+      description: >-
+        Public identity policy telling the login screen which auth affordances to
+        render. Contains no secrets — only booleans and public provider ids.
+      required: [allowPasswordLogin, allowSelfSignup]
+      properties:
+        allowPasswordLogin:
+          type: boolean
+          description: Whether email/password sign-in is offered.
+        allowSelfSignup:
+          type: boolean
+          description: Whether the "create account" affordance is shown.
+        mfaRequired:
+          type: boolean
+          default: false
+          description: Whether MFA is enforced for this portal.
+        ssoProviders:
+          type: array
+          description: Public SSO provider ids offered on this portal (e.g. `google`, `okta`).
+          items: { type: string }
+
+    PortalSsoProvider:
+      type: object
+      additionalProperties: false
+      required: [id, label, startUrl]
+      description: A single SSO button on the login screen.
+      properties:
+        id: { type: string, description: 'Stable provider id (e.g. `google`).' }
+        label: { type: string, description: 'Human label (e.g. "Continue with Google").' }
+        startUrl:
+          type: string
+          format: uri-reference
+          description: Same-origin URL that begins the SSO flow for this portal.
+
+    PortalAuthEntry:
+      type: object
+      additionalProperties: false
+      description: >-
+        Where the shell/login sends the user to authenticate — all same-origin so
+        it works identically under local TLS and prod ingress.
+      required: [loginUrl]
+      properties:
+        loginUrl:
+          type: string
+          format: uri-reference
+          description: Same-origin login route for this portal.
+        signupUrl:
+          type: [string, 'null']
+          format: uri-reference
+          description: Create-account route, or null when self-signup is disabled.
+        forgotPasswordUrl:
+          type: [string, 'null']
+          format: uri-reference
+          description: Password-reset route, or null when password login is disabled.
+        ssoProviders:
+          type: array
+          description: SSO buttons to render, in display order.
+          items: { $ref: '#/components/schemas/PortalSsoProvider' }
+
+    PortalContext:
+      type: object
+      additionalProperties: false
+      description: >-
+        The public boot payload for `GET /api/v1/portal/context`. Intentionally a
+        narrow, public projection of a portal — id, slug, branding, identity
+        policy, and auth entry — never a raw `portals` row.
+      required: [id, slug, branding, identityPolicy, authEntry]
+      properties:
+        id: { $ref: '#/components/schemas/PortalId' }
+        slug: { $ref: '#/components/schemas/Slug' }
+        isRoot:
+          type: boolean
+          default: false
+          description: True when this is the seeded root portal (unknown-host fallback).
+        branding: { $ref: '#/components/schemas/PortalBranding' }
+        identityPolicy: { $ref: '#/components/schemas/PortalIdentityPolicy' }
+        authEntry: { $ref: '#/components/schemas/PortalAuthEntry' }
+
+    PortalDomain:
+      type: object
+      additionalProperties: false
+      description: >-
+        A domain (subdomain / path / custom) bound to a portal, with its
+        verification + TLS status. Add/verify of custom domains is FF-EPIC-16;
+        here domains are read-only.
+      required: [id, portalId, domain, kind, verificationStatus, tlsStatus, isPrimary]
+      properties:
+        id: { type: string }
+        portalId: { $ref: '#/components/schemas/PortalId' }
+        domain:
+          type: string
+          description: The host or path segment (e.g. `northwind.fuzefront.com` or `northwind`).
+        kind: { $ref: '#/components/schemas/DomainKind' }
+        verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+        tlsStatus: { $ref: '#/components/schemas/TlsStatus' }
+        isPrimary:
+          type: boolean
+          description: Whether this is the portal's primary/canonical domain.
+        createdAt: { type: string, format: date-time }
+
+    Portal:
+      type: object
+      additionalProperties: false
+      description: >-
+        The full portal record returned by the master-admin CRUD and
+        `GET /api/v1/portal/current`. Its `status` field is the single source of
+        truth for the fail-closed block that pairs with FF-EPIC-10 resolution.
+      required:
+        [id, slug, name, status, organizationId, billingMode, branding, identityPolicy, domains, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/PortalId' }
+        slug: { $ref: '#/components/schemas/Slug' }
+        name: { type: string, maxLength: 120 }
+        status: { $ref: '#/components/schemas/PortalStatus' }
+        isRoot:
+          type: boolean
+          default: false
+          description: True for the seeded root portal (slug `fuzefront`) — cannot be suspended.
+        organizationId:
+          type: string
+          format: uuid
+          description: The tenant organization backing this portal (unique 1:1).
+        ownerEmail:
+          type: [string, 'null']
+          format: email
+          description: The portal owner's email (from the create/invite step).
+        billingMode: { $ref: '#/components/schemas/BillingMode' }
+        branding: { $ref: '#/components/schemas/PortalBranding' }
+        identityPolicy: { $ref: '#/components/schemas/PortalIdentityPolicy' }
+        domains:
+          type: array
+          description: Domains bound to this portal (read-only here).
+          items: { $ref: '#/components/schemas/PortalDomain' }
+        primaryDomain:
+          type: [string, 'null']
+          description: Convenience: the primary domain string, or null if none yet.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PortalCreate:
+      type: object
+      additionalProperties: false
+      description: Payload to provision a new portal.
+      required: [name, slug, ownerEmail]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { $ref: '#/components/schemas/Slug' }
+        ownerEmail:
+          type: string
+          format: email
+          description: The email invited as the portal owner during provisioning.
+        billingMode:
+          allOf:
+            - $ref: '#/components/schemas/BillingMode'
+          default: free
+        branding: { $ref: '#/components/schemas/PortalBranding' }
+        identityPolicy: { $ref: '#/components/schemas/PortalIdentityPolicy' }
+
+    PortalUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        Partial update. All fields optional; at least one must be present. `slug`
+        is immutable and is intentionally absent. Setting `status` performs
+        suspend/resume.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        status: { $ref: '#/components/schemas/PortalStatus' }
+        billingMode: { $ref: '#/components/schemas/BillingMode' }
+        branding: { $ref: '#/components/schemas/PortalBranding' }
+        identityPolicy: { $ref: '#/components/schemas/PortalIdentityPolicy' }
+
+    Page:
+      type: object
+      additionalProperties: false
+      description: Cursor-pagination envelope (canonical, `governance/pagination-standard.md`).
+      required: [nextCursor, hasMore]
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: Opaque cursor for the next page, or null on the last page.
+        hasMore:
+          type: boolean
+          description: Whether a further page exists.
+        total:
+          type: integer
+          description: Optional total count (omitted when counting is expensive).
+
+    PortalPage:
+      type: object
+      additionalProperties: false
+      description: A page of portals — the `{ items, page }` envelope.
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Portal' }
+        page: { $ref: '#/components/schemas/Page' }
+
+    ErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      description: >-
+        Stable machine-readable error. `error` codes used by this contract:
+        `PORTAL_SUSPENDED`, `ROOT_PORTAL_PROTECTED`, `SLUG_TAKEN`, `FORBIDDEN`,
+        `FORBIDDEN_PORTAL`, `NOT_FOUND`, `UNAUTHORIZED`, `INTERNAL`.
+      properties:
+        error: { type: string, description: 'Stable machine-readable error code.' }
+        message: { type: string, description: 'Human-readable detail.' }
+
+    ValidationErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error, fields]
+      properties:
+        error: { type: string, enum: [validation_error] }
+        message: { type: string }
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }
