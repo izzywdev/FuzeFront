@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -30,6 +30,7 @@ import type {
   TestExpectation,
 } from '@fuzequality/contracts'
 import { api } from './api'
+import { planGap } from './testPlan'
 
 type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review'
 
@@ -83,6 +84,44 @@ function CoverageRail({ expectations }: { expectations: TestExpectation[] }) {
 
 function StatusPill({ state }: { state: CoverageState }) {
   return <span className={`status-pill state-${state}`}>{coverageLabel[state]}</span>
+}
+
+function GapPlanDrawer({ subject, expectations, selectedId, onClose }: {
+  subject: ApiOperation | FrontendSurface
+  expectations: TestExpectation[]
+  selectedId: string
+  onClose: () => void
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    closeButton.current?.focus()
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onClose])
+  const gaps = expectations.filter(item => item.coverage === 'gap' && item.priority !== 'not-applicable')
+  const subjectLabel = 'method' in subject ? `${subject.method.toUpperCase()} ${subject.path}` : `${subject.name} · ${subject.packageName}`
+  return <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+    <aside className="gap-drawer" role="dialog" aria-modal="true" aria-labelledby="gap-plan-title">
+      <header className="drawer-header">
+        <div><p className="eyebrow">Deterministic test planner</p><h2 id="gap-plan-title">{gaps.length} tests to close this gap</h2><code>{subjectLabel}</code></div>
+        <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close test plan"><X /></button>
+      </header>
+      <p className="drawer-intro">Generated from catalog policy and source metadata. These are authoritative expected tests—not AI suggestions.</p>
+      <div className="planned-tests">{gaps.map((expectation, index) => {
+        const plan = planGap(expectation, subject)
+        return <article className={expectation.id === selectedId ? 'planned-test selected' : 'planned-test'} key={expectation.id}>
+          <div className="plan-index">{String(index + 1).padStart(2, '0')}</div>
+          <div className="plan-body">
+            <div className="plan-heading"><div><span>{plan.priority} · {plan.level}</span><h3>{plan.title}</h3></div>{expectation.id === selectedId && <b>Selected gap</b>}</div>
+            <dl className="plan-path"><dt>Suggested file</dt><dd><code>{plan.suggestedFile}</code></dd></dl>
+            <div className="aaa-grid"><section><h4>Arrange</h4><p>{plan.arrange}</p></section><section><h4>Act</h4><p>{plan.act}</p></section><section><h4>Assert</h4><ul>{plan.assertions.map(assertion => <li key={assertion}>{assertion}</li>)}</ul></section></div>
+            <footer><BookOpen size={13} /><span>{plan.provenance}</span></footer>
+          </div>
+        </article>
+      })}</div>
+    </aside>
+  </div>
 }
 
 function Stat({ label, value, detail, tone = 'neutral' }: { label: string; value: string | number; detail: string; tone?: string }) {
@@ -222,8 +261,14 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
 
 function Matrix({ items, expectations, kind }: { items: Array<ApiOperation | FrontendSurface>; expectations: TestExpectation[]; kind: 'api' | 'frontend' }) {
   const [query, setQuery] = useState('')
+  const [selection, setSelection] = useState<{ subject: ApiOperation | FrontendSurface; expectationId: string }>()
+  const trigger = useRef<HTMLButtonElement | null>(null)
   const filtered = items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()))
-  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{(item as FrontendSurface).name}</strong><small>{(item as FrontendSurface).packageName} · {(item as FrontendSurface).kind}</small></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div></>
+  function closePlan() {
+    setSelection(undefined)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }
+  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{(item as FrontendSurface).name}</strong><small>{(item as FrontendSurface).packageName} · {(item as FrontendSurface).kind}</small></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}</>
 }
 
 function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio }) {
