@@ -63,10 +63,15 @@ function resolveClient(): FlagClientLike | null {
 }
 
 function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
+  const { organizationId, ...rest } = ctx ?? {}
   return {
     environment: process.env.NODE_ENV === 'production' ? 'prod' : process.env.FLAG_ENV || 'local',
     app: 'applications-service',
-    ...ctx,
+    // The client's context contract names this `orgId` (packages/feature-flags/
+    // src/types.ts). Emitting `organizationId` meant any org-targeted Unleash
+    // constraint silently never matched; map it onto the contract name.
+    ...(organizationId ? { orgId: organizationId } : {}),
+    ...rest,
   }
 }
 
