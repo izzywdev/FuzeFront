@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense } from 'react'
 import type { App } from '@fuzefront/app-registry-client'
 import { useCurrentUser } from '../lib/shared'
 import { useAppRegistry } from '../platform/appRegistry'
+import { usePortalContext } from '@fuzefront/portal-branding-ui'
 import {
   loadFederatedAppFromManifest,
   clearModuleCache,
@@ -55,6 +56,12 @@ const LoadingSpinner = () => (
 export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   const { apps, loading: appsLoading, getBySlug } = useAppRegistry()
   const { user } = useCurrentUser()
+  // White-label portal branding (FF-EPIC-13/FF-EPIC-10): resolves to the real
+  // portal id once Layout.tsx's multi-tenant-portals flag is on and boot has
+  // resolved; otherwise (flag off, still loading, or errored) this stays null
+  // and the session context below falls back to 'default-tenant' exactly as
+  // before.
+  const { status: portalStatus, context: portal } = usePortalContext()
   const [FederatedComponent, setFederatedComponent] =
     useState<React.ComponentType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -73,7 +80,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
           ? {
               id: 'current-session',
               userId: user.id,
-              tenantId: 'default-tenant',
+              tenantId: portalStatus === 'ready' && portal ? portal.id : 'default-tenant',
               expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             }
           : null,
@@ -82,7 +89,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         isPlatformMode: true,
       }
     }
-  }, [user, app, apps])
+  }, [user, app, apps, portalStatus, portal])
 
   useEffect(() => {
     let mounted = true
