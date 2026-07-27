@@ -35,7 +35,10 @@ await runConsumer(
         })
       }, 3_000)
       try {
-        const result = await scanRepository(repository, root, { onProgress: heartbeat })
+        const result = await scanRepository(repository, root, {
+          onProgress: heartbeat,
+          sourceRevision: command.commitSha,
+        })
         await apiRequest<ScanResult>('/api/v1/internal/scans/results', {
           method: 'POST',
           body: JSON.stringify(result),

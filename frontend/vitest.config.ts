@@ -18,6 +18,9 @@ const billingUiSrc = fileURLToPath(
 const billingClientSrc = fileURLToPath(
   new URL('../billing-client/src/index.ts', import.meta.url)
 )
+const accountSecurityUiSrc = fileURLToPath(
+  new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
+)
 // app-registry-client (apps-client/) is an unpublished file: workspace package
 // whose dist/ is not built in CI — resolve from SOURCE, mirroring vite.config.ts.
 // Without this, tests doing a real `import { AppRegistryClient } from
@@ -32,6 +35,27 @@ const appRegistryClientSrc = fileURLToPath(
 // @tailwindcss/postcss → @tailwindcss/oxide (a native binary absent in CI), which
 // otherwise crashes the test file during transform. jsdom tests assert DOM/logic,
 // not visual output, so stubbing CSS is correct. Runs before @vitejs/plugin-react.
+// Stub the virtual:__federation__ module that @originjs/vite-plugin-federation
+// provides at build time — vitest does not load that plugin, so imports of
+// loadFederatedApp.ts (which does `import ... from 'virtual:__federation__'`)
+// fail to resolve. The stub exposes the three exports the loader uses.
+const FEDERATION_STUB_ID = '\0federation-stub.js'
+const stubFederation = {
+  name: 'stub-federation-virtual',
+  enforce: 'pre' as const,
+  resolveId(id: string) {
+    return id === 'virtual:__federation__' ? FEDERATION_STUB_ID : null
+  },
+  load(id: string) {
+    if (id !== FEDERATION_STUB_ID) return null
+    return `
+      export const __federation_method_setRemote = () => {};
+      export const __federation_method_getRemote = async () => ({});
+      export const __federation_method_unwrapDefault = async (m) => m;
+    `
+  },
+}
+
 const CSS_STUB_ID = '\0css-stub.js'
 const stubCss = {
   name: 'stub-css-imports',
@@ -50,7 +74,7 @@ const stubCss = {
 }
 
 export default defineConfig({
-  plugins: [stubCss, react()],
+  plugins: [stubCss, stubFederation, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
@@ -63,6 +87,7 @@ export default defineConfig({
       '@fuzefront/billing-ui': billingUiSrc,
       '@fuzefront/billing-client': billingClientSrc,
       '@fuzefront/app-registry-client': appRegistryClientSrc,
+      '@fuzefront/account-security-ui': accountSecurityUiSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe

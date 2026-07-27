@@ -50,7 +50,7 @@ paths:
       `import request from 'supertest'; test('getUser returns a user', async () => { expect(await request(app).get('/users/42')).toBeTruthy() })`
     )
 
-    const result = await scanRepository(repository, root)
+    const result = await scanRepository(repository, root, { sourceRevision: 'a'.repeat(40) })
     expect(result.operations).toHaveLength(1)
     expect(result.operations[0].operationId).toBe('getUser')
     expect(result.surfaces.some(surface => surface.name === 'UserPage')).toBe(true)
@@ -62,6 +62,21 @@ paths:
     expect(result.expectations.some(item => item.kind === 'parameter-path-id-minlength')).toBe(true)
     expect(result.expectations.some(item => item.kind === 'parameter-path-id-pattern')).toBe(true)
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
+    expect(result.scanDetails).toMatchObject({
+      sourceRevision: 'a'.repeat(40),
+      scannerVersion: '1.1.0',
+      partial: false,
+      counts: {
+        operations: 1,
+        tests: 1,
+        diagnostics: 0,
+      },
+    })
+    expect(result.scanDetails.candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourcePath: 'openapi.yaml', kind: 'openapi-document', status: 'parsed' }),
+      expect.objectContaining({ sourcePath: 'package.json', kind: 'package', status: 'parsed' }),
+      expect.objectContaining({ sourcePath: 'tests/users.test.ts', kind: 'test', status: 'parsed' }),
+    ]))
   })
 
   it('credits scenario coverage only to assertion-bearing tests that name the scenario', async () => {
@@ -123,6 +138,16 @@ paths:
         code: 'invalid-openapi-document',
       }),
     ])
+    expect(result.scanDetails).toMatchObject({
+      partial: true,
+      candidates: [
+        expect.objectContaining({
+          sourcePath: 'openapi.yaml',
+          status: 'invalid',
+          diagnosticCodes: ['invalid-openapi-document'],
+        }),
+      ],
+    })
   })
 
   it.each([

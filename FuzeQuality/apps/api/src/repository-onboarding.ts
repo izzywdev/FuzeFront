@@ -6,6 +6,8 @@ export interface RepositoryAccess {
   commitSha: string
   private: boolean
   permissions: { contents: 'read' | 'write' | 'admin'; metadata: 'read' }
+  openApiCandidates: string[]
+  candidatePreviewComplete: boolean
 }
 
 export interface RepositoryAccessVerifier {
@@ -62,6 +64,31 @@ export function createGitHubAccessVerifier(tokenForInstallation: (installationId
       if (!commitSha || !/^[0-9a-f]{40}$/i.test(commitSha)) {
         throw new RepositoryAccessError('UPSTREAM_UNAVAILABLE')
       }
+      let openApiCandidates: string[] = []
+      let candidatePreviewComplete = false
+      try {
+        const treeResponse = await fetch(
+          `${repositoryUrl}/git/trees/${encodeURIComponent(commitSha)}?recursive=1`,
+          { headers }
+        )
+        if (treeResponse.ok) {
+          const tree = await treeResponse.json() as {
+            truncated?: boolean
+            tree?: Array<{ path?: string; type?: string }>
+          }
+          openApiCandidates = (tree.tree ?? [])
+            .filter(item => item.type === 'blob' && typeof item.path === 'string')
+            .map(item => item.path!)
+            .filter(path => /(?:^|\/)(?:openapi|swagger)(?:[.-][^/]*)?\.(?:ya?ml|json|[cm]?[jt]s)$/i.test(path)
+              || /(?:openapi|swagger)[^/]*\.(?:ya?ml|json|[cm]?[jt]s)$/i.test(path.split('/').at(-1) ?? ''))
+            .slice(0, 500)
+            .sort()
+          candidatePreviewComplete = !tree.truncated
+        }
+      } catch {
+        // Repository/branch access remains authoritative; the UI exposes an
+        // incomplete preview and the exact-revision scanner performs discovery.
+      }
       // GitHub App installation tokens can report every legacy repository
       // permission flag as false even when the app has read-only Contents
       // access. Successful repository and branch reads are the authoritative
@@ -75,6 +102,8 @@ export function createGitHubAccessVerifier(tokenForInstallation: (installationId
           contents: repository.permissions?.admin ? 'admin' : repository.permissions?.push ? 'write' : 'read',
           metadata: 'read',
         },
+        openApiCandidates,
+        candidatePreviewComplete,
       }
     },
   }
