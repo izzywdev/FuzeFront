@@ -15,6 +15,8 @@ import {
   UnsupportedFlowStageError,
 } from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
+import { getRootPortal } from '../repositories/portalRepository'
+import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
 
@@ -29,6 +31,29 @@ setInterval(() => {
 }, CODE_TTL_MS).unref()
 
 const router = express.Router()
+
+// ─── FF-EPIC-10-S3 — JWT/session portal binding ──────────────────────────────
+//
+// Resolves the portal a freshly-minted token/session should be bound to: the
+// Host-resolved portal (req.portal, set by the global resolvePortalContext
+// middleware) if present, else the seeded root portal. Returns {} (no-op)
+// when the master flag is OFF, so token payload / session columns are
+// byte-for-byte unchanged from pre-epic behavior.
+async function resolvePortalBindingForLogin(
+  req: express.Request,
+  userId: string
+): Promise<{ portalId?: string; organizationId?: string }> {
+  const enabled = await isMultiTenantPortalsEnabled({ userId })
+  if (!enabled) return {}
+
+  const resolved = (req as any).portal
+  if (resolved) {
+    return { portalId: resolved.id, organizationId: resolved.organization_id }
+  }
+  const root = await getRootPortal(db)
+  if (!root) return {}
+  return { portalId: root.id, organizationId: root.organization_id }
+}
 
 // ─── Fire-and-forget provisioning tracker ────────────────────────────────────
 //
@@ -209,9 +234,16 @@ router.post('/login', async (req, res) => {
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
+    // FF-EPIC-10-S3 — no-op ({}) when the multi-tenant-portals flag is OFF.
+    const portalBinding = await resolvePortalBindingForLogin(req, userRow.id)
+
     // Generate JWT
     const token = jwt.sign(
-      { userId: userRow.id, sessionId },
+      {
+        userId: userRow.id,
+        sessionId,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -230,6 +262,9 @@ router.post('/login', async (req, res) => {
       id: sessionId,
       user_id: userRow.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     // Debug logging for roles parsing
@@ -551,11 +586,17 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
 
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    // FF-EPIC-10-S3 — no-op ({}) when the multi-tenant-portals flag is OFF.
+    const portalBinding = await resolvePortalBindingForLogin(req, user.id)
     // This IS FuzeFront's identity service — the issuer of platform tokens
     // (same mint as /login and the OIDC callback), not a product self-minting.
     // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const token = jwt.sign(
-      { userId: user.id, sessionId },
+      {
+        userId: user.id,
+        sessionId,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -563,6 +604,9 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     selfHealProvisioningOnLogin(user.id)
@@ -653,10 +697,19 @@ router.get('/oidc/callback', async (req, res) => {
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
+    // FF-EPIC-10-S3 — no-op ({}) when the multi-tenant-portals flag is OFF.
+    const portalBinding = await resolvePortalBindingForLogin(req, user.id)
+
     // Generate JWT token — include standard OIDC claims (sub, email) alongside
     // the internal userId/sessionId so consumers can inspect identity claims.
     const token = jwt.sign(
-      { userId: user.id, sessionId, sub: user.id, email: user.email },
+      {
+        userId: user.id,
+        sessionId,
+        sub: user.id,
+        email: user.email,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -665,6 +718,9 @@ router.get('/oidc/callback', async (req, res) => {
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email)

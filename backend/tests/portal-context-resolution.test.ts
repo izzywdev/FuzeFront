@@ -1,0 +1,222 @@
+import { v4 as uuidv4 } from 'uuid'
+import express from 'express'
+import request from 'supertest'
+
+jest.mock('../src/config/permit', () => ({
+  __esModule: true,
+  default: { api: {} },
+}))
+
+import { db, initializeDatabaseConnection } from '../src/config/database'
+import {
+  createResolvePortalContext,
+  invalidatePortalCache,
+  _clearPortalCacheForTests,
+} from '../src/middleware/portalContext'
+import { ROOT_PORTAL_ID, ROOT_PORTAL_SLUG, generatePortalId } from '../src/repositories/portalRepository'
+
+beforeAll(() => {
+  initializeDatabaseConnection()
+})
+
+async function createUser(): Promise<string> {
+  const id = uuidv4()
+  await db('users').insert({
+    id,
+    email: `portal-resolve-${id.slice(0, 8)}@test.local`,
+    first_name: 'Portal',
+    last_name: 'Resolve',
+    roles: JSON.stringify(['admin', 'user']),
+    created_at: new Date(),
+    updated_at: new Date(),
+  })
+  return id
+}
+
+async function createPortal(opts: {
+  slug: string
+  status?: 'active' | 'suspended'
+  isRoot?: boolean
+  domain?: { domain: string; kind: 'subdomain' | 'custom' }
+}) {
+  const userId = await createUser()
+  const orgId = uuidv4()
+  await db('organizations').insert({
+    id: orgId,
+    name: opts.slug,
+    slug: `${opts.slug}-${orgId.slice(0, 6)}`,
+    owner_id: userId,
+    type: opts.isRoot ? 'platform' : 'organization',
+    settings: JSON.stringify({}),
+    metadata: JSON.stringify({}),
+    is_active: true,
+    provisioning_state: 'active',
+  })
+  const portalId = opts.isRoot ? ROOT_PORTAL_ID : generatePortalId()
+  await db('portals').insert({
+    id: portalId,
+    organization_id: orgId,
+    slug: opts.slug,
+    name: opts.slug,
+    status: opts.status ?? 'active',
+    billing_mode: 'free',
+    branding: JSON.stringify({ name: opts.slug }),
+    identity_policy: JSON.stringify({ allowPasswordLogin: true, allowSelfSignup: false }),
+    is_root: !!opts.isRoot,
+  })
+  if (opts.domain) {
+    await db('portal_domains').insert({
+      portal_id: portalId,
+      domain: opts.domain.domain,
+      kind: opts.domain.kind,
+      is_primary: true,
+      verification_status: 'verified',
+      tls_status: 'issued',
+    })
+  }
+  return portalId
+}
+
+function buildApp(enabled: boolean) {
+  const app = express()
+  const middleware = createResolvePortalContext({
+    db,
+    isEnabled: async () => enabled,
+  })
+  app.use(middleware)
+  app.get('/api/v1/portal/context', (req: any, res) => {
+    res.json({ portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null })
+  })
+  app.get('/p/:slug/whatever', (req: any, res) => {
+    res.json({ portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null })
+  })
+  return app
+}
+
+beforeEach(async () => {
+  _clearPortalCacheForTests()
+  await db('portal_domains').del()
+  await db('portals').del()
+})
+
+describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
+  it('is a no-op when the master flag is OFF — req.portal stays undefined', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const app = buildApp(false)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'unknown.example.com')
+    expect(res.status).toBe(200)
+    expect(res.body.portal).toBeNull()
+  })
+
+  it('resolves by Host header for a subdomain portal_domains row', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const portalId = await createPortal({
+      slug: 'northwind',
+      domain: { domain: 'northwind.fuzefront.test', kind: 'subdomain' },
+    })
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'northwind.fuzefront.test')
+    expect(res.status).toBe(200)
+    expect(res.body.portal).toEqual({ id: portalId, slug: 'northwind' })
+  })
+
+  it('resolves by Host header for a custom domain', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const portalId = await createPortal({
+      slug: 'acme',
+      domain: { domain: 'portal.acme.example', kind: 'custom' },
+    })
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'portal.acme.example')
+    expect(res.body.portal).toEqual({ id: portalId, slug: 'acme' })
+  })
+
+  it('falls back to /p/<slug> path when the Host does not match', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const portalId = await createPortal({ slug: 'contoso' })
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/p/contoso/whatever')
+      .set('Host', 'app.fuzefront.test')
+    expect(res.body.portal).toEqual({ id: portalId, slug: 'contoso' })
+  })
+
+  it('falls back to the root portal when neither Host nor path match', async () => {
+    const rootId = await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'totally-unknown.example.com')
+    expect(res.body.portal).toEqual({ id: rootId, slug: ROOT_PORTAL_SLUG })
+  })
+
+  it('returns 404 when nothing resolves and no root portal is seeded', async () => {
+    // portals table is empty (beforeEach cleared it, and this test creates none).
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'nothing.example.com')
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBe('NOT_FOUND')
+  })
+
+  it('fails closed with 403 PORTAL_SUSPENDED before any handler runs', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({
+      slug: 'suspended-co',
+      status: 'suspended',
+      domain: { domain: 'suspended-co.fuzefront.test', kind: 'subdomain' },
+    })
+    const app = buildApp(true)
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'suspended-co.fuzefront.test')
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe('PORTAL_SUSPENDED')
+  })
+
+  it('caches a resolution and serves it without re-querying until invalidated', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const portalId = await createPortal({
+      slug: 'cached-co',
+      domain: { domain: 'cached-co.fuzefront.test', kind: 'subdomain' },
+    })
+    const app = buildApp(true)
+
+    const first = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'cached-co.fuzefront.test')
+    expect(first.body.portal).toEqual({ id: portalId, slug: 'cached-co' })
+
+    // Suspend directly in the DB without invalidating the cache — the
+    // middleware should still serve the cached (pre-suspend) resolution.
+    await db('portals').where({ id: portalId }).update({ status: 'suspended' })
+
+    const second = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'cached-co.fuzefront.test')
+    expect(second.status).toBe(200)
+    expect(second.body.portal).toEqual({ id: portalId, slug: 'cached-co' })
+
+    // Now invalidate — the next request must see the suspension immediately.
+    invalidatePortalCache(portalId)
+    const third = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'cached-co.fuzefront.test')
+    expect(third.status).toBe(403)
+    expect(third.body.error).toBe('PORTAL_SUSPENDED')
+  })
+})

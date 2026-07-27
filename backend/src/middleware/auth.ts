@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { db } from '../config/database'
 import { User } from '../types/shared'
+import { getRootPortal } from '../repositories/portalRepository'
+import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
 
 export const authenticateToken = async (
   req: Request,
@@ -29,6 +31,10 @@ export const authenticateToken = async (
     console.log(`🔍 [${requestId}] Verifying JWT token...`)
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string
+      // FF-EPIC-10-S3 — the portal this token was minted for (routes/auth.ts
+      // jwt.sign call sites). Absent on tokens issued before this epic, or
+      // whenever the multi-tenant-portals flag was OFF at mint time.
+      portalId?: string
     }
 
     console.log(`✅ [${requestId}] Token verified, fetching user:`, {
@@ -70,6 +76,32 @@ export const authenticateToken = async (
       roles: Array.isArray(userRow.roles)
         ? userRow.roles
         : JSON.parse(userRow.roles || '["user"]'),
+    }
+
+    // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied
+    // URL/query param. Only active when the master flag is ON, so pre-epic
+    // token/session shapes and behavior are unchanged while it's OFF.
+    const portalsEnabled = await isMultiTenantPortalsEnabled({ userId: user.id })
+    if (portalsEnabled) {
+      const resolvedPortal = (req as any).portal // set by resolvePortalContext, if mounted upstream
+      if (decoded.portalId) {
+        if (resolvedPortal && resolvedPortal.id !== decoded.portalId) {
+          // AC3 — a token minted for portal A presented on portal B's Host is
+          // rejected outright; the caller must re-authenticate on that portal.
+          console.log(`❌ [${requestId}] Token portal mismatch:`, {
+            tokenPortalId: decoded.portalId,
+            hostPortalId: resolvedPortal.id,
+          })
+          return res.status(401).json({ error: 'Invalid token.' })
+        }
+        user.portalId = decoded.portalId
+      } else {
+        // AC-risk mitigation — a token issued before this epic (no portal_id
+        // claim) is treated as bound to the root portal rather than rejected,
+        // so existing sessions don't break on rollout.
+        const root = await getRootPortal(db)
+        user.portalId = resolvedPortal?.id ?? root?.id
+      }
     }
 
     req.user = user
