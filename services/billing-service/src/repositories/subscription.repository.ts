@@ -3,8 +3,8 @@ import { BillingSubscription, PlanTier, SubscriptionStatus } from '../types';
 
 export interface SubscriptionUpsert {
   customerId: string;
-  subscriptionId: string;
-  priceId: string;
+  stripeSubscriptionId: string;
+  stripePriceId: string;
   planTier: PlanTier;
   status: SubscriptionStatus;
   seatQuantity: number;
@@ -45,8 +45,8 @@ function mapRow(r: SubRow): BillingSubscription {
   return {
     id: r.id,
     customerId: r.customer_id,
-    subscriptionId: r.stripe_subscription_id,
-    priceId: r.stripe_price_id,
+    stripeSubscriptionId: r.stripe_subscription_id,
+    stripePriceId: r.stripe_price_id,
     planTier: r.plan_tier,
     status: r.status,
     seatQuantity: r.seat_quantity,
@@ -84,8 +84,8 @@ export class PgSubscriptionRepository implements SubscriptionRepository {
        RETURNING *`,
       [
         row.customerId,
-        row.subscriptionId,
-        row.priceId,
+        row.stripeSubscriptionId,
+        row.stripePriceId,
         row.planTier,
         row.status,
         row.seatQuantity,

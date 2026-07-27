@@ -25,16 +25,6 @@ spec:
           # Security-service direct paths (ingress-nginx longest-prefix-match
           # makes these win over the /api catch-all below). /internal is NOT
           # exposed — it stays cluster-internal (pod-to-pod via Service DNS).
-          # /api/v1/security is the provider-neutral Security API (AuthN/AuthZ);
-          # /api/auth + /api/organizations are the deprecated shims kept for one
-          # release.
-          - path: /api/v1/security
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-security
-                port:
-                  number: {{ .Values.securityService.port }}
           - path: /api/auth
             pathType: Prefix
             backend:
@@ -157,72 +147,6 @@ spec:
                 name: clock-app
                 port:
                   number: {{ .Values.clockApp.port }}
-          {{- end }}
-{{- end }}
-{{- if .Values.authentik.enabled }}
----
-# IdP reverse-proxy — the provider-agnostic security boundary.
-#
-# The browser must transit a small set of Authentik OAuth endpoints (authorize /
-# social-source redirect). We expose them ONLY under the FuzeFront-owned host at
-# app.fuzefront.com/api/auth/idp/* → authentik-server (ClusterIP, no public
-# Ingress of its own). The IdP host `auth.fuzefront.com` is invisible to the
-# browser and named in no consumer contract.
-#
-# A SEPARATE Ingress (not a path on the main one) so the prefix-strip +
-# forwarded-proto middlewares are scoped to the IdP proxy only and never touch
-# the host shell / API / security-service routes.
-#   - traefik: authentik-idp-stripprefix (strips /api/auth/idp, sets
-#     X-Forwarded-Prefix) + authentik-forwarded-proto (pins https), so the OIDC
-#     discovery/issuer resolve to https://app.fuzefront.com/api/auth/idp/...
-#   - nginx (local): rewrite-target strips the prefix; the issuer path stays
-#     app-hosted. Authentik would otherwise 404 the app-prefixed paths.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: fuzefront-authentik-idp
-  labels:
-    {{- include "fuzefront.labels" . | nindent 4 }}
-    app.kubernetes.io/component: authentik-idp
-  annotations:
-    {{- if eq .Values.ingress.className "traefik" }}
-    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
-    {{- else if eq .Values.ingress.className "nginx" }}
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
-    {{- end }}
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        - {{ .Values.ingress.host | quote }}
-      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
-  {{- end }}
-  rules:
-    - host: {{ .Values.ingress.host | quote }}
-      http:
-        paths:
-          # Route Authentik's OWN native root paths under the app host (NO prefix,
-          # NO strip). Authentik ignores X-Forwarded-Prefix, so it builds absolute
-          # OIDC discovery/authorize URLs at these root paths using the forwarded
-          # Host (app.fuzefront.com) — which must therefore be routable here.
-          # These prefixes don't overlap the app's /api, /apps, /socket.io, / routes.
-          {{- /* /api/v3 = Authentik's flow-executor + REST API, called BOTH by the
-                 login-page SPA (browser) AND server-side by the security-service
-                 (password/enrollment flow driver). Must route to authentik-server,
-                 or flow-executor calls hit FuzeFront's /api and fail with
-                 PROVIDER_UNAVAILABLE. Does not collide with FuzeFront's /api/v1/*. */ -}}
-          {{- range $p := list "/application" "/if" "/source" "/flows" "/ws" "/-" "/outpost.goauthentik.io" "/api/v3" "/static/dist" "/static/authentik" }}
-          - path: {{ $p }}
-            pathType: Prefix
-            backend:
-              service:
-                name: authentik-server
-                port:
-                  number: 9000
           {{- end }}
 {{- end }}
 {{- end }}

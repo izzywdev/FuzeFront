@@ -14,8 +14,6 @@ import {
 import path from 'path'
 
 import authRoutes from './routes/auth'
-import securityRoutes from './routes/security'
-import authzRoutes from './routes/authz'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
@@ -27,23 +25,10 @@ dotenv.config()
 
 const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service' })
-// Behind the k8s ingress every request otherwise carries the ingress IP —
-// trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
-// the real client from X-Forwarded-For.
-app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const startTime = Date.now()
 
-// Provider-agnostic Security API (AuthN surface). New consumers use this.
-app.use('/api/v1/security', securityRoutes)
-// Provider-agnostic Security API (AuthZ surface) — /authz/* + /tenants/*,
-// implemented purely against the AuthorizationProvider contract (Permit hidden).
-app.use('/api/v1/security', authzRoutes)
-// Domain routes (identical paths to the monolith). These remain the working,
-// prod-tested `/api/auth/*` surface; they are the DEPRECATED compatibility
-// layer that the SPA migrates OFF onto `/api/v1/security/*`. Converting them
-// into thin shims that delegate into the new provider is scheduled as a
-// follow-up (kept intact here to avoid regressing the live login path).
+// Domain routes (identical paths to the monolith).
 app.use('/api/auth', authRoutes)
 // Org-token sub-route: GET /api/organizations/:orgId/tokens (rate-limited, mounted BEFORE
 // organizationsRoutes so the specific /:orgId/tokens path cannot be shadowed by any future wildcard)
@@ -87,6 +72,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
+    const isProduction = process.env.NODE_ENV === 'production'
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
@@ -106,31 +92,6 @@ async function startServer() {
     } catch (error) {
       console.error('❌ Failed to initialize OIDC service:', error)
       console.log('⚠️  Continuing with local authentication only')
-    }
-
-    // If OIDC is configured but the initial discovery failed (e.g. Authentik
-    // blueprints not yet applied at startup), retry in the background every
-    // 10 seconds for up to 5 minutes. This makes the E2E stack reliable:
-    // the backend starts before OIDC is ready, but self-heals once it is.
-    if (oidcService.isConfigured() && !oidcService.isInitialized()) {
-      const oidcRetry = async () => {
-        const MAX_ATTEMPTS = 30 // 30 × 10s = 5 min
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-          await new Promise(resolve => setTimeout(resolve, 10_000))
-          try {
-            await oidcService.initialize()
-            console.log(`✅ OIDC service initialized on retry (attempt ${attempt})`)
-            return
-          } catch {
-            if (attempt < MAX_ATTEMPTS) {
-              console.log(`⚠️  OIDC retry ${attempt}/${MAX_ATTEMPTS} failed — will try again`)
-            } else {
-              console.error('❌ OIDC service failed to initialize after all retries')
-            }
-          }
-        }
-      }
-      oidcRetry() // fire-and-forget; server is already listening
     }
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT

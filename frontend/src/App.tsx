@@ -191,16 +191,17 @@ function AppContent() {
     return <AcceptInvitePage />
   }
 
-  if (import.meta.env.DEV) {
-    console.log('AppContent - Authentication state:', {
-      isAuthenticated,
-      user: user?.email,
-    })
-  }
+  console.log('AppContent - Authentication state:', {
+    isAuthenticated,
+    user: user?.email,
+  })
 
   if (!isAuthenticated) {
+    console.log('User not authenticated, showing login page')
     return <LoginPage />
   }
+
+  console.log('User authenticated, showing main app')
 
   // Standalone apps (mode = "standalone") render WITHOUT any portal chrome —
   // no side menu, no topbar — on their own surface (frame 04). Short-circuit

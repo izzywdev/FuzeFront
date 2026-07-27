@@ -21,10 +21,7 @@ export interface HeartbeatInstance {
 }
 
 export function createHeartbeat(config: HeartbeatConfig): HeartbeatInstance {
-  // ReturnType<typeof setInterval> — browser build; NodeJS.* namespace only
-  // resolved locally by @types/node leaking from the repo-root node_modules,
-  // and is absent in the isolated Docker build context.
-  let intervalId: ReturnType<typeof setInterval> | null = null
+  let intervalId: NodeJS.Timeout | null = null
   let isRunning = false
 
   const sendHeartbeat = async () => {

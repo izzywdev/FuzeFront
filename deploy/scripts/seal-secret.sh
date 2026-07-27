@@ -23,18 +23,12 @@
 # FuzeFront sealing.
 set -euo pipefail
 
-# Always run relative to the repo root so paths like deploy/contabo/sealed/...
-# resolve correctly regardless of the caller's CWD.
-REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
-
 # ---- per-repo defaults (this is the FuzeFront repo) ----------------------------
 NS="fuzefront"
 NAME="billing-secrets"
 # FuzeInfra publishes the sealed-secrets public cert here (single source of truth,
 # always current). Override via env if the URL differs.
-# (sealed-secrets.fuzeinfra.fuzefront.com no longer resolves; prod is canonical.)
-CERT_URL="${FUZEINFRA_SEALED_CERT_URL:-https://sealed-secrets.prod.fuzefront.com/v1/cert.pem}"
+CERT_URL="${FUZEINFRA_SEALED_CERT_URL:-https://sealed-secrets.fuzeinfra.fuzefront.com/v1/cert.pem}"
 
 CERT_OVERRIDE=""; INFILE=""; KEY=""; MANIFEST=""
 while [ $# -gt 0 ]; do
@@ -87,7 +81,7 @@ mkdir -p "$(dirname "$MANIFEST")"
 mkseal() { kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml | kubeseal --cert "$CERT" -o yaml; }
 if [ -f "$MANIFEST" ]; then
   kubectl create secret generic "$NAME" -n "$NS" --from-file="$KEY=$VAL" --dry-run=client -o yaml \
-    | kubeseal --cert "$CERT" -o yaml --merge-into "$MANIFEST"
+    | kubeseal --cert "$CERT" --merge-into "$MANIFEST"
 else
   mkseal > "$MANIFEST"
 fi

@@ -117,10 +117,8 @@ function requireAppAction(action: 'update' | 'delete') {
         return next()
       }
 
-      // Policy layer: only consult Permit for org members who aren't
-      // owner/admin. Non-members are denied fail-closed without a Permit
-      // round-trip (no Permit PDP dependency for membership-table authz).
-      if (app.organization_id && membershipRole !== null) {
+      // Policy layer: defer to Permit for this specific app within its org.
+      if (app.organization_id) {
         const { checkAppPermission } = await import(
           '../utils/permit/permission-check'
         )
@@ -134,7 +132,7 @@ function requireAppAction(action: 'update' | 'delete') {
           req.app_row = app
           return next()
         }
-      } else if (!app.organization_id) {
+      } else {
         // Un-owned legacy app: only a platform admin may touch it.
         const roles: string[] = req.user.roles || []
         if (roles.includes('admin')) {

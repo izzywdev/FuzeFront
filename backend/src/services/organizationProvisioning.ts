@@ -120,55 +120,31 @@ export async function ensurePersonalOrg(
 
   try {
     await db.transaction(async trx => {
-      // ON CONFLICT DO NOTHING on the partial unique index keeps concurrent
-      // races from surfacing a 23505 error to Postgres logs.  The SELECT below
-      // then retrieves whichever caller actually created the row.
-      await trx('organizations')
-        .insert({
-          id: orgId,
-          name: 'Personal',
-          slug: baseSlug,
-          parent_id: null,
-          owner_id: userId,
-          type: 'personal',
-          settings: JSON.stringify({}),
-          metadata: JSON.stringify({ personal: true }),
-          is_active: true,
-          provisioning_state: 'pending',
-        })
-        .onConflict(trx.raw("(owner_id) WHERE type = 'personal'"))
-        .ignore()
-
-      // Re-select the authoritative row: if the INSERT was a no-op (race lost),
-      // actualOrg.id differs from orgId; the membership must use the real id.
-      const actualOrg = await trx('organizations')
-        .where({ owner_id: userId, type: 'personal' })
-        .first()
-
-      if (!actualOrg) {
-        throw new Error(`Personal org still missing for user ${userId} after insert attempt`)
-      }
-
-      // Upsert the owner membership so re-runs of ensurePersonalOrg are safe even
-      // when the org already exists with its membership (unique index on
-      // organization_memberships(user_id, organization_id)).
-      await trx('organization_memberships')
-        .insert({
-          id: uuidv4(),
-          user_id: userId,
-          organization_id: actualOrg.id,
-          role: 'owner',
-          status: 'active',
-          joined_at: new Date(),
-          permissions: JSON.stringify({}),
-          metadata: JSON.stringify({}),
-        })
-        .onConflict(['user_id', 'organization_id'])
-        .ignore()
+      await trx('organizations').insert({
+        id: orgId,
+        name: 'Personal',
+        slug: baseSlug,
+        parent_id: null,
+        owner_id: userId,
+        type: 'personal',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({ personal: true }),
+        is_active: true,
+        provisioning_state: 'pending',
+      })
+      await trx('organization_memberships').insert({
+        id: uuidv4(),
+        user_id: userId,
+        organization_id: orgId,
+        role: 'owner',
+        status: 'active',
+        joined_at: new Date(),
+        permissions: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+      })
     })
   } catch (error: any) {
-    // Safety net for any remaining error (e.g. slug conflict from a concurrent
-    // create that hits a different index than the owner_id partial index).
+    // Concurrent create lost the race — return whatever personal org now exists.
     const raced = await db('organizations')
       .where({ owner_id: userId, type: 'personal' })
       .first()
@@ -176,10 +152,7 @@ export async function ensurePersonalOrg(
     throw error
   }
 
-  // Return the personal org — either the one we created or the one that won the race.
-  const created = await db('organizations')
-    .where({ owner_id: userId, type: 'personal' })
-    .first()
+  const created = await db('organizations').where({ id: orgId }).first()
   return rowToOrganization(created)
 }
 

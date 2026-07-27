@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -191,9 +190,9 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
 
   if (isLoading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <Spinner size={32} />
-        <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>Loading profile...</p>
+      <div className="p-8 text-center">
+        <div className="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-blue-600 rounded-full"></div>
+        <p className="mt-2 text-gray-600">Loading profile...</p>
       </div>
     )
   }
@@ -470,24 +469,36 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <InfoRow label="Password" description="Last changed: Never">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <h4 className="font-medium text-gray-900">Password</h4>
+                    <p className="text-sm text-gray-600">Last changed: Never</p>
+                  </div>
                   <button
                     disabled
-                    style={{ padding: '0.5rem 1rem', background: 'var(--bg-quaternary)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-tertiary)', cursor: 'not-allowed' }}
+                    className="px-4 py-2 bg-gray-300 text-gray-500 rounded-md cursor-not-allowed"
                   >
                     Change Password
                   </button>
-                </InfoRow>
+                </div>
 
-                <InfoRow label="Two-Factor Authentication" description="Add an extra layer of security">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <h4 className="font-medium text-gray-900">
+                      Two-Factor Authentication
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      Add an extra layer of security
+                    </p>
+                  </div>
                   <button
                     disabled
-                    style={{ padding: '0.5rem 1rem', background: 'var(--bg-quaternary)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-tertiary)', cursor: 'not-allowed' }}
+                    className="px-4 py-2 bg-gray-300 text-gray-500 rounded-md cursor-not-allowed"
                   >
                     Enable 2FA
                   </button>
-                </InfoRow>
+                </div>
               </div>
             </div>
           )}
@@ -501,32 +512,92 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 </h3>
 
                 <div className="space-y-4">
-                  <InfoRow label="Email Notifications" description="Receive notifications via email">
-                    <Toggle
-                      checked={formData.notifications.email}
-                      onChange={e => setFormData({ ...formData, notifications: { ...formData.notifications, email: e.target.checked } })}
-                      disabled={!isEditing}
-                      label="Email Notifications"
-                    />
-                  </InfoRow>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">
+                        Email Notifications
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        Receive notifications via email
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.notifications.email}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            notifications: {
+                              ...formData.notifications,
+                              email: e.target.checked,
+                            },
+                          })
+                        }
+                        className="sr-only peer"
+                        disabled={!isEditing}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
 
-                  <InfoRow label="Push Notifications" description="Receive push notifications in your browser">
-                    <Toggle
-                      checked={formData.notifications.push}
-                      onChange={e => setFormData({ ...formData, notifications: { ...formData.notifications, push: e.target.checked } })}
-                      disabled={!isEditing}
-                      label="Push Notifications"
-                    />
-                  </InfoRow>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">
+                        Push Notifications
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        Receive push notifications in your browser
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.notifications.push}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            notifications: {
+                              ...formData.notifications,
+                              push: e.target.checked,
+                            },
+                          })
+                        }
+                        className="sr-only peer"
+                        disabled={!isEditing}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
 
-                  <InfoRow label="Marketing Communications" description="Receive updates about new features and promotions">
-                    <Toggle
-                      checked={formData.notifications.marketing}
-                      onChange={e => setFormData({ ...formData, notifications: { ...formData.notifications, marketing: e.target.checked } })}
-                      disabled={!isEditing}
-                      label="Marketing Communications"
-                    />
-                  </InfoRow>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">
+                        Marketing Communications
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        Receive updates about new features and promotions
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.notifications.marketing}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            notifications: {
+                              ...formData.notifications,
+                              marketing: e.target.checked,
+                            },
+                          })
+                        }
+                        className="sr-only peer"
+                        disabled={!isEditing}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

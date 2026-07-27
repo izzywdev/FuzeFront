@@ -8,7 +8,7 @@ export declare const notifyEmailStatusSchemaV1: z.ZodObject<{
     providerMessageId: z.ZodOptional<z.ZodString>;
     attemptedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    status: "failed" | "sent" | "dead-lettered";
+    status: "sent" | "failed" | "dead-lettered";
     to: string;
     template: string;
     correlationId: string;
@@ -16,7 +16,7 @@ export declare const notifyEmailStatusSchemaV1: z.ZodObject<{
     error?: string | undefined;
     providerMessageId?: string | undefined;
 }, {
-    status: "failed" | "sent" | "dead-lettered";
+    status: "sent" | "failed" | "dead-lettered";
     to: string;
     template: string;
     correlationId: string;

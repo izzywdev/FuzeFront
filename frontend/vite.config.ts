@@ -41,20 +41,13 @@ const billingUiSrc = fileURLToPath(
   new URL('../packages/billing-ui/src/index.ts', import.meta.url)
 )
 const billingClientSrc = fileURLToPath(
-  new URL('../billing-client/src/index.ts', import.meta.url)
+  new URL('../billing-client/index.ts', import.meta.url)
 )
 // @fuzefront/app-registry-client (apps-client/) is an unpublished file: workspace
 // package whose dist/ is not built in CI — resolve from SOURCE, same as
 // billing-client. Its src/index.ts re-exports the generated schema + axios client.
 const appRegistryClientSrc = fileURLToPath(
   new URL('../apps-client/src/index.ts', import.meta.url)
-)
-// @fuzefront/security-client (packages/security/) is the generated, provider-
-// agnostic Security API client + contract types. Its dist/ is not built in CI —
-// resolve from SOURCE, same as the other unpublished workspace packages. The
-// frontend consumes only its TYPES (import type), so this alias is a safety net.
-const securityClientSrc = fileURLToPath(
-  new URL('../packages/security/src/index.ts', import.meta.url)
 )
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
@@ -88,7 +81,6 @@ export default defineConfig({
       '@fuzefront/billing-ui': billingUiSrc,
       '@fuzefront/billing-client': billingClientSrc,
       '@fuzefront/app-registry-client': appRegistryClientSrc,
-      '@fuzefront/security-client': securityClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
@@ -141,25 +133,6 @@ export default defineConfig({
       // NetworkFirst so the shell always fetches fresh federation assets.
       globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
-        // Exclude server-owned paths from the SPA navigation fallback so full-page
-        // navigations to them are NOT intercepted by the SW and silently served as
-        // index.html. Two families must be excluded:
-        //   1. /api/* — backend redirect endpoints (e.g. /api/auth/oidc/* → 302).
-        //   2. Authentik's NATIVE paths, which the app Ingress reverse-proxies to
-        //      the IdP (see values-prod authentik.oidc comment): /source/*,
-        //      /application/*, /if/*, /outpost.goauthentik.io/*, /-/*. Social
-        //      sign-in navigates the browser to /source/oauth/login/<provider>/;
-        //      without these entries the SW served the cached SPA shell instead of
-        //      letting the redirect reach Authentik → the "login just flickers"
-        //      bug. This denylist MUST track the Ingress's Authentik path list.
-        navigateFallbackDenylist: [
-          /^\/api\//,
-          /^\/source\//,
-          /^\/application\//,
-          /^\/if\//,
-          /^\/outpost\.goauthentik\.io\//,
-          /^\/-\//,
-        ],
         runtimeCaching: [
           {
             // API + WebSocket upgrade paths — never cache

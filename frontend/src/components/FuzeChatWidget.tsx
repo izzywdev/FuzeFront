@@ -39,7 +39,6 @@ export function FuzeChatWidget() {
     <ChatWidget
       client={client}
       orgId={activeOrganizationId}
-      appId="fuzefront"
       onError={message => window.__FUZEFRONT__?.notify?.({ level: 'error', message })}
     />
   )

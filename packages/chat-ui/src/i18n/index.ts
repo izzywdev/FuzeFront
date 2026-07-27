@@ -36,7 +36,6 @@ export interface ChatStrings {
   feedbackNegative: string;
   errorPrefix: string;
   emptyState: string;
-  historyLoading: string;
   assistantRole: string;
   userRole: string;
 }
@@ -61,7 +60,6 @@ const EN: ChatStrings = {
   feedbackNegative: 'Bad response',
   errorPrefix: 'Something went wrong',
   emptyState: 'Ask a question to get started.',
-  historyLoading: 'Loading earlier messages…',
   assistantRole: 'Assistant',
   userRole: 'You',
 };

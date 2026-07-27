@@ -6,16 +6,16 @@ export declare const billingUsageRecordedSchemaV1: z.ZodObject<{
     quantity: z.ZodNumber;
     occurredAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    entityType: "user" | "organization";
     entityId: string;
-    occurredAt: string;
+    entityType: "user" | "organization";
     meterEventName: string;
     quantity: number;
+    occurredAt: string;
 }, {
-    entityType: "user" | "organization";
     entityId: string;
-    occurredAt: string;
+    entityType: "user" | "organization";
     meterEventName: string;
     quantity: number;
+    occurredAt: string;
 }>;
 export type BillingUsageRecordedPayloadV1 = z.infer<typeof billingUsageRecordedSchemaV1>;

@@ -14,7 +14,6 @@ import {
   PRODUCT_NS_SEP,
 } from '../src/permit/product-policy'
 import { fuzemarketPolicy } from '../src/permit/products/fuzemarket.policy'
-import { mendysDatasetsPolicy } from '../src/permit/products/mendys-datasets.policy'
 
 // Same fake control-plane client as permit-schema.test.ts, extended to capture
 // the full payloads (so we can assert ReBAC relations/roles are forwarded).
@@ -62,7 +61,7 @@ const sample: ProductPolicy = {
 describe('namespaceKey', () => {
   it('joins product and bare key with the namespace separator', () => {
     expect(namespaceKey('fuzemarket', 'Listing')).toBe(`fuzemarket${PRODUCT_NS_SEP}Listing`)
-    expect(namespaceKey('fuzemarket', 'seller')).toBe('fuzemarket_seller')
+    expect(namespaceKey('fuzemarket', 'seller')).toBe('fuzemarket.seller')
   })
 })
 
@@ -104,11 +103,11 @@ describe('validateProductPolicy', () => {
 describe('namespaceProductPolicy', () => {
   it('namespaces resource keys, role keys, and permission resource refs', () => {
     const ns = namespaceProductPolicy(sample)
-    expect(ns.resources.map(r => r.key)).toEqual(['fuzemarket_Listing'])
-    expect(ns.roles.map(r => r.key)).toEqual(['fuzemarket_seller'])
+    expect(ns.resources.map(r => r.key)).toEqual(['fuzemarket.Listing'])
+    expect(ns.roles.map(r => r.key)).toEqual(['fuzemarket.seller'])
     expect(ns.roles[0].permissions).toEqual([
-      'fuzemarket_Listing:create',
-      'fuzemarket_Listing:read',
+      'fuzemarket.Listing:create',
+      'fuzemarket.Listing:read',
     ])
   })
 
@@ -126,8 +125,8 @@ describe('mergeProductPolicy', () => {
     const merged = mergeProductPolicy(permitSchema, sample)
 
     expect(merged.resources.map(r => r.key)).toContain('Organization')
-    expect(merged.resources.map(r => r.key)).toContain('fuzemarket_Listing')
-    expect(merged.roles.map(r => r.key)).toContain('fuzemarket_seller')
+    expect(merged.resources.map(r => r.key)).toContain('fuzemarket.Listing')
+    expect(merged.roles.map(r => r.key)).toContain('fuzemarket.seller')
     // base unchanged
     expect(permitSchema.resources).toHaveLength(baseResourceCount)
     expect(permitSchema.roles).toHaveLength(baseRoleCount)
@@ -137,10 +136,10 @@ describe('mergeProductPolicy', () => {
     const other: ProductPolicy = { ...sample, product: 'fuzeshop', name: 'FuzeShop' }
     const merged = mergeProductPolicy(permitSchema, sample, other)
     expect(merged.resources.map(r => r.key)).toEqual(
-      expect.arrayContaining(['fuzemarket_Listing', 'fuzeshop_Listing'])
+      expect.arrayContaining(['fuzemarket.Listing', 'fuzeshop.Listing'])
     )
     expect(merged.roles.map(r => r.key)).toEqual(
-      expect.arrayContaining(['fuzemarket_seller', 'fuzeshop_seller'])
+      expect.arrayContaining(['fuzemarket.seller', 'fuzeshop.seller'])
     )
   })
 
@@ -168,33 +167,10 @@ describe('syncPermitSchemaWithProducts (via merged schema)', () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client, buildEnvSchema(sample))
     expect(calls.resourceCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining(['Organization', 'App', 'fuzemarket_Listing'])
+      expect.arrayContaining(['Organization', 'App', 'fuzemarket.Listing'])
     )
     expect(calls.roleCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining(['admin', 'fuzemarket_seller'])
-    )
-  })
-
-  it('syncs the registered consumer products (fuzemarket + mendys-datasets) side by side', async () => {
-    const { client, calls } = makeFakeClient({ resources: [], roles: [] })
-    await syncPermitSchema(client, buildEnvSchema(fuzemarketPolicy, mendysDatasetsPolicy))
-    expect(calls.resourceCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining([
-        'fuzemarket_Listing',
-        'mendys-datasets_Dataset',
-        'mendys-datasets_TalentProfile',
-        'mendys-datasets_Order',
-        'mendys-datasets_Equipment',
-        'mendys-datasets_Report',
-      ])
-    )
-    expect(calls.roleCreate.map(r => r.key)).toEqual(
-      expect.arrayContaining([
-        'fuzemarket_buyer',
-        'mendys-datasets_talent',
-        'mendys-datasets_buyer',
-        'mendys-datasets_admin',
-      ])
+      expect.arrayContaining(['admin', 'fuzemarket.seller'])
     )
   })
 
@@ -235,63 +211,5 @@ describe('FuzeMarket sample policy', () => {
   it('market-admin can refund orders', () => {
     const admin = fuzemarketPolicy.roles.find(r => r.key === 'market-admin')!
     expect(admin.permissions).toContain('Order:refund')
-  })
-})
-
-describe('MendysRobotics datasets policy', () => {
-  it('is a valid product policy', () => {
-    expect(() => validateProductPolicy(mendysDatasetsPolicy)).not.toThrow()
-  })
-
-  it('declares Dataset/TalentProfile/Order/Equipment/Report and talent/buyer/admin', () => {
-    expect(mendysDatasetsPolicy.product).toBe('mendys-datasets')
-    expect(mendysDatasetsPolicy.resources.map(r => r.key).sort()).toEqual(
-      ['Dataset', 'Equipment', 'Order', 'Report', 'TalentProfile']
-    )
-    expect(mendysDatasetsPolicy.roles.map(r => r.key).sort()).toEqual(
-      ['admin', 'buyer', 'talent']
-    )
-  })
-
-  it('buyer can checkout/cancel orders and read equipment, but cannot create datasets', () => {
-    const buyer = mendysDatasetsPolicy.roles.find(r => r.key === 'buyer')!
-    expect(buyer.permissions).toEqual(
-      expect.arrayContaining([
-        'Dataset:read',
-        'Order:create', 'Order:read', 'Order:checkout', 'Order:cancel',
-        'Equipment:read',
-      ])
-    )
-    expect(buyer.permissions).not.toContain('Dataset:create')
-    expect(buyer.permissions).not.toContain('Order:manage')
-    expect(buyer.permissions).not.toContain('Equipment:manage')
-  })
-
-  it('talent manages their datasets + profile but cannot approve profiles or publish', () => {
-    const talent = mendysDatasetsPolicy.roles.find(r => r.key === 'talent')!
-    expect(talent.permissions).toEqual(
-      expect.arrayContaining([
-        'Dataset:create', 'Dataset:read', 'Dataset:update',
-        'TalentProfile:create', 'TalentProfile:read', 'TalentProfile:update',
-      ])
-    )
-    expect(talent.permissions).not.toContain('TalentProfile:approve')
-    expect(talent.permissions).not.toContain('Dataset:publish')
-  })
-
-  it('admin holds every declared action on every declared resource', () => {
-    const admin = mendysDatasetsPolicy.roles.find(r => r.key === 'admin')!
-    const allPerms = mendysDatasetsPolicy.resources.flatMap(r =>
-      Object.keys(r.actions).map(a => `${r.key}:${a}`)
-    )
-    expect(admin.permissions.slice().sort()).toEqual(allPerms.sort())
-  })
-
-  it('namespaces cleanly (hyphenated product key is valid)', () => {
-    expect(namespaceKey('mendys-datasets', 'Order')).toBe('mendys-datasets_Order')
-    const ns = namespaceProductPolicy(mendysDatasetsPolicy)
-    expect(ns.roles.map(r => r.key)).toEqual(
-      expect.arrayContaining(['mendys-datasets_talent', 'mendys-datasets_buyer', 'mendys-datasets_admin'])
-    )
   })
 })

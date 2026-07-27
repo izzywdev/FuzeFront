@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
@@ -86,9 +85,18 @@ function CreateOrganizationPage() {
       </p>
 
       {error && (
-        <Alert tone="error" style={{ marginBottom: '1rem' }}>
+        <div
+          style={{
+            color: 'var(--error-color)',
+            marginBottom: '1rem',
+            padding: '10px',
+            border: '1px solid var(--error-color)',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+          }}
+        >
           {error}
-        </Alert>
+        </div>
       )}
 
       <form onSubmit={handleSubmit}>

@@ -292,6 +292,14 @@ export interface IdentityProvider {
   /** Server-brokered account creation. Rejects with CONFLICT if the email exists. */
   signup(input: SignupInput, ctx?: SessionContext): Promise<BrokeredSession>;
 
+  /**
+   * True when an account already exists for `email` (case-insensitive) — the
+   * SAME source of truth `signup` consults to reject a duplicate. Powers the
+   * public inline availability check; never mints a session or reveals anything
+   * beyond a boolean. `email` is expected pre-normalized (trimmed + lowercased).
+   */
+  emailExists(email: string): Promise<boolean>;
+
   /** Normalized identity + user for a presented session token ("me"). */
   getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
 

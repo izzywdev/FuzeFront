@@ -6,27 +6,9 @@
 #
 # Prerequisites: create a Google OAuth2 app at console.cloud.google.com
 # (APIs & Services → Credentials → OAuth 2.0 Client ID, type: Web application)
-# and add the following Authorized redirect URIs to the matching Google OAuth client:
-#
-#   Production client:  https://app.fuzefront.com/source/oauth/callback/google/
-#   Dev tunnel client:  https://auth-dev.fuzefront.com/source/oauth/callback/google/
-#
-# The production callback is on the APP host, not a dedicated IdP host: the
-# public auth.fuzefront.com ingress was removed so the browser only ever sees
-# app.fuzefront.com + accounts.google.com. There is no settable callback field
-# on an oauthsource — Authentik derives callback_url at runtime from the request
-# Host + X-Forwarded-Proto, which the IdP ingress pins to https/app.fuzefront.com.
-#
-# Use TWO SEPARATE Google OAuth clients — one for production, one for the dev
-# tunnel. Never share credentials between them. The dev client is used by
-# docker-compose.e2e.yml (CI) and docker-compose.tunnel.yml (local tunnel dev).
-#
-# NOTE: Google requires a real public TLD for redirect URIs — it rejects
-# .dev.local, .local, .internal and all other non-public suffixes.
-# auth.fuzefront.dev.local cannot be registered. Use the Cloudflare tunnel
-# (auth-dev.fuzefront.com) for any environment that needs real Google OAuth.
-#
-# See docker-compose.tunnel.yml and .env.example for tunnel setup instructions.
+# and add ALL of the following Authorized redirect URIs:
+#   Local dev:  https://auth.fuzefront.dev.local/source/oauth/callback/google/
+#   Production: https://auth.fuzefront.com/source/oauth/callback/google/
 #
 # Supply credentials via:
 #   Helm (k8s):        secret.googleClientId / secret.googleClientSecret in values
@@ -38,50 +20,10 @@
 version: 1
 metadata:
   name: FuzeFront Google OAuth Source
-  labels:
-    blueprints.goauthentik.io/instantiate: "true"
 entries:
   # ── User-matching / de-dupe policy ───────────────────────────────────────────
   # Link on verified email prevents duplicate accounts when the same address
   # is used across password + Google sign-in.
-
-  # ── Social authentication flow ───────────────────────────────────────────────
-  # FuzeFront's own source-authentication flow. Defined HERE, before the source
-  # entry, so the !Find below resolves in the same blueprint pass.
-  #
-  # WHY THIS EXISTS: the stock `default-source-authentication` is
-  # `require_unauthenticated`. The moment a returning user already held an
-  # Authentik session, the Google callback re-entered the source flow, the
-  # requirement failed, and Authentik raised FlowNonApplicableException —
-  # rendering its OWN "Permission denied" page. That both broke Google sign-in
-  # and leaked the IdP UI to the browser, violating the provider-agnostic
-  # boundary (the browser must only ever see FuzeFront + accounts.google.com).
-  #
-  # `authentication: none` makes the flow apply regardless of session state, so
-  # the callback proceeds to the login stage and lands on FuzeFront instead.
-  - model: authentik_flows.flow
-    state: present
-    identifiers:
-      slug: fuzefront-source-authentication
-    attrs:
-      name: "FuzeFront Social Authentication"
-      slug: fuzefront-source-authentication
-      title: "Signing you in…"
-      designation: authentication
-      authentication: none
-      layout: stacked
-
-  # Single stage: reuse Authentik's EXISTING built-in source-login stage rather
-  # than creating a duplicate UserLoginStage.
-  - model: authentik_flows.flowstagebinding
-    state: present
-    identifiers:
-      target: !Find [authentik_flows.flow, [slug, fuzefront-source-authentication]]
-      stage: !Find [authentik_stages_user_login.userloginstage, [name, default-source-authentication-login]]
-    attrs:
-      order: 0
-      evaluate_on_plan: true
-      re_evaluate_policies: false
 
   # ── Google OAuth source ───────────────────────────────────────────────────────
   - model: authentik_sources_oauth.oauthsource
@@ -98,45 +40,8 @@ entries:
       consumer_key: !Env [GOOGLE_CLIENT_ID, ""]
       consumer_secret: !Env [GOOGLE_CLIENT_SECRET, ""]
       # Link on verified email — merges accounts instead of creating duplicates
-      user_matching_mode: email_link
+      user_matching_mode: link_by_email
       user_path_template: "goauthentik.io/sources/%(slug)s"
-      # Show a "Sign in with Google" button on the login page.
-      # Points at FuzeFront's OWN source-authentication flow (defined above) —
-      # the stock `default-source-authentication` is require_unauthenticated and
-      # threw FlowNonApplicableException ("Permission denied") for any user who
-      # already had an Authentik session.
-      authentication_flow: !Find [authentik_flows.flow, [slug, fuzefront-source-authentication]]
-      # Points at FuzeFront's OWN non-interactive social enrollment flow (see
-      # flow-enrollment.yaml). The stock `default-source-enrollment` renders an
-      # Authentik-branded "select a username" prompt, which leaks the IdP to the
-      # browser and blocked first-time Google sign-up.
-      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-source-enrollment]]
-
-  # ── Login surface wiring ─────────────────────────────────────────────────────
-  # Creating flows/sources does NOT surface them on the login page — the
-  # identification stage of the default authentication flow controls what
-  # renders. Patch it here, in the SAME file and AFTER the source entry, so the
-  # !Find lookups resolve in one pass (fuzefront-enrollment / fuzefront-recovery
-  # come from their own blueprints, which sort earlier alphabetically).
-  - model: authentik_stages_identification.identificationstage
-    state: present
-    identifiers:
-      name: default-authentication-identification
-    attrs:
-      user_fields:
-        - username
-        - email
-      show_source_labels: true
-      enrollment_flow: !Find [authentik_flows.flow, [slug, fuzefront-enrollment]]
-      recovery_flow: !Find [authentik_flows.flow, [slug, fuzefront-recovery]]
-      sources:
-        - !Find [authentik_core.source, [slug, authentik-built-in]]
-        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
-
-  # Title shown on the hosted login card (default is "Welcome to authentik!").
-  - model: authentik_flows.flow
-    state: present
-    identifiers:
-      slug: default-authentication-flow
-    attrs:
-      title: "Sign in to FuzeFront"
+      # Show a "Sign in with Google" button on the login page
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]

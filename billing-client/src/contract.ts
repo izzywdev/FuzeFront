@@ -12,17 +12,10 @@
  */
 import type { components } from './schema';
 import type {
-  BillingInvoice,
-  BillingPayment,
   BillingSubscription,
-  InvoiceListResponse,
   Plan,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
-  PaymentCheckoutRequest,
-  PaymentCheckoutResponse,
-  PaymentLineItem,
-  PaymentStatus,
   UpdateSubscriptionRequest,
   EntityType,
 } from './types';
@@ -42,13 +35,6 @@ type _CreateReq = Exact<CreateSubscriptionRequest, Schemas['CreateSubscriptionRe
 type _CreateRes = Exact<CreateSubscriptionResponse, Schemas['CreateSubscriptionResponse']>;
 type _UpdateReq = Exact<UpdateSubscriptionRequest, Schemas['UpdateSubscriptionRequest']>;
 type _Entity = Exact<EntityType, Schemas['EntityType']>;
-type _PaymentReq = Exact<PaymentCheckoutRequest, Schemas['PaymentCheckoutRequest']>;
-type _PaymentRes = Exact<PaymentCheckoutResponse, Schemas['PaymentCheckoutResponse']>;
-type _PaymentLine = Exact<PaymentLineItem, Schemas['PaymentLineItem']>;
-type _PaymentStatus = Exact<PaymentStatus, Schemas['PaymentStatus']>;
-type _Payment = Exact<BillingPayment, Schemas['BillingPayment']>;
-type _Invoice = Exact<BillingInvoice, Schemas['BillingInvoice']>;
-type _InvoiceList = Exact<InvoiceListResponse, Schemas['InvoiceListResponse']>;
 
 // Reference the aliases so `noUnusedLocals`-style lints don't strip them.
 export type ContractAlignment = {
@@ -58,11 +44,4 @@ export type ContractAlignment = {
   createResponse: _CreateRes;
   updateRequest: _UpdateReq;
   entityType: _Entity;
-  paymentCheckoutRequest: _PaymentReq;
-  paymentCheckoutResponse: _PaymentRes;
-  paymentLineItem: _PaymentLine;
-  paymentStatus: _PaymentStatus;
-  payment: _Payment;
-  invoice: _Invoice;
-  invoiceList: _InvoiceList;
 };

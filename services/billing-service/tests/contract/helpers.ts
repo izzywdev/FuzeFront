@@ -32,8 +32,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
   return {
     id: '55555555-5555-4555-8555-555555555555',
     customerId: '66666666-6666-4666-8666-666666666666',
-    subscriptionId: 'sub_test123',
-    priceId: BASIC_PRICE_ID,
+    stripeSubscriptionId: 'sub_test123',
+    stripePriceId: BASIC_PRICE_ID,
     planTier: 'starter',
     status: 'active',
     seatQuantity: 1,
@@ -50,8 +50,8 @@ export function makeSubscription(overrides: Partial<BillingSubscription> = {}): 
 /** A spec-conformant Plan fixture (the $9/mo Basic plan). */
 export function makeBasicPlan(overrides: Partial<Plan> = {}): Plan {
   return {
-    priceId: BASIC_PRICE_ID,
-    productId: 'prod_basic',
+    stripePriceId: BASIC_PRICE_ID,
+    stripeProductId: 'prod_basic',
     tierName: 'starter',
     displayName: 'Basic',
     billingInterval: 'month',
@@ -84,19 +84,10 @@ export interface DepStubs {
     insert: jest.Mock;
   };
   customers: { ensureCustomer: jest.Mock };
-  payments: {
-    upsert: jest.Mock;
-    getBySessionId: jest.Mock;
-    findByOrder: jest.Mock;
-  };
-  invoiceRepo: {
-    upsertFromProvider: jest.Mock;
-    listByCustomer: jest.Mock;
-  };
   stripe: {
     setupIntents: { create: jest.Mock };
     customers: { createBalanceTransaction: jest.Mock };
-    checkout: { sessions: { create: jest.Mock; retrieve: jest.Mock } };
+    checkout: { sessions: { create: jest.Mock } };
     webhooks: { constructEvent: jest.Mock };
   };
   webhook: {
@@ -112,19 +103,8 @@ export interface DepStubs {
  * auth guard (omit to test the dev-bypass path documented in the spec's security
  * scheme description).
  */
-/** Default payments allowlists/bounds used by buildApp (override per test). */
-export const PAYMENTS_CONFIG = {
-  productKeys: ['mendys-datasets'],
-  currencies: ['usd', 'eur'],
-  maxTotalCents: 5_000_000,
-};
-
 export function buildApp(
-  opts: {
-    internalToken?: string;
-    stubs?: Partial<DepStubs>;
-    paymentsConfig?: typeof PAYMENTS_CONFIG;
-  } = {},
+  opts: { internalToken?: string; stubs?: Partial<DepStubs> } = {},
 ): { app: Application; stubs: DepStubs } {
   const constructEvent = jest.fn();
 
@@ -160,21 +140,6 @@ export function buildApp(
         stripeCustomerId: 'cus_test123',
       }),
     },
-    payments: {
-      upsert: jest.fn().mockImplementation(async (row: Record<string, unknown>) => ({
-        id: '77777777-7777-4777-8777-777777777777',
-        createdAt: '2026-07-01T00:00:00.000Z',
-        updatedAt: '2026-07-01T00:00:00.000Z',
-        ...row,
-      })),
-      getBySessionId: jest.fn().mockResolvedValue(null),
-      findByOrder: jest.fn().mockResolvedValue(null),
-    },
-    invoiceRepo: {
-      upsertFromProvider: jest.fn().mockResolvedValue(undefined),
-      // Default: empty store, no further page. Override per test.
-      listByCustomer: jest.fn().mockResolvedValue({ rows: [], nextCursor: null }),
-    },
     stripe: {
       setupIntents: { create: jest.fn() },
       customers: { createBalanceTransaction: jest.fn() },
@@ -184,13 +149,6 @@ export function buildApp(
             id: 'cs_test_session',
             url: 'https://checkout.stripe.com/c/pay/cs_test_session',
           }),
-          retrieve: jest.fn().mockRejectedValue(
-            Object.assign(new Error('No such checkout.session'), {
-              type: 'StripeInvalidRequestError',
-              code: 'resource_missing',
-              statusCode: 404,
-            }),
-          ),
         },
       },
       webhooks: { constructEvent },
@@ -219,9 +177,6 @@ export function buildApp(
     subscriptionRepo: stubs.subscriptionRepo as any,
     customerRepo: stubs.customerRepo as any,
     customers: stubs.customers as any,
-    payments: stubs.payments as any,
-    invoiceRepo: stubs.invoiceRepo as any,
-    paymentsConfig: opts.paymentsConfig ?? { ...PAYMENTS_CONFIG },
     webhook: stubs.webhook as any,
   };
 

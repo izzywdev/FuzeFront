@@ -24,8 +24,8 @@ interface PlanRow {
 
 function mapRow(r: PlanRow): Plan {
   return {
-    priceId: r.stripe_price_id,
-    productId: r.stripe_product_id,
+    stripePriceId: r.stripe_price_id,
+    stripeProductId: r.stripe_product_id,
     tierName: r.tier_name,
     displayName: r.display_name,
     billingInterval: r.billing_interval,
@@ -63,8 +63,8 @@ export class PgPlanRepository implements PlanRepository {
           sort_order         = EXCLUDED.sort_order,
           synced_at          = now()`,
       [
-        plan.priceId,
-        plan.productId,
+        plan.stripePriceId,
+        plan.stripeProductId,
         plan.tierName,
         plan.displayName,
         plan.billingInterval,

@@ -3,7 +3,6 @@ export * from './app.activated';
 export * from './app.suspended';
 export * from './app.heartbeat';
 export * from './billing.llm.usage';
-export * from './billing.payment.completed';
 export * from './billing.subscription.changed';
 export * from './billing.usage.recorded';
 export * from './identity.user.created';

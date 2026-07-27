@@ -51,14 +51,6 @@ android/keystore/*.jks
 # Bubblewrap-generated Android project (reproducible via `bubblewrap init`)
 android/app/
 android/gradle/
-
-# Shopify Navigator (standalone unit) — same rules, SHOPIFY_NAV_* GitHub Secrets
-shopify-nav/android/keystore/
-shopify-nav/android/app/
-shopify-nav/android/gradle/
-shopify-nav/android/*.keystore
-shopify-nav/deploy/.env
-shopify-nav/server/data/
 android/gradlew
 android/gradlew.bat
 android/build.gradle
@@ -67,10 +59,3 @@ android/local.properties
 
 # Vite build output (generated; not committed)
 frontend/dist/
-task-manager-app/dist/
-.claude/worktrees/
-__pycache__/
-
-# design-frames Pages build output
-_site/
-_site_test/

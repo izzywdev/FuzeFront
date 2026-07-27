@@ -4,16 +4,6 @@ name: Release (images + GitOps bump)
 # GHCR tagged with the commit SHA, then bump the tags in values-prod.yaml and
 # commit. Argo CD sees the git change and rolls out the new images.
 on:
-  # Manual trigger: auto-merged PRs push to master under GITHUB_TOKEN, and GitHub
-  # does NOT start push-triggered workflows for GITHUB_TOKEN pushes — so this
-  # workflow otherwise never runs after an auto-merge and images never build.
-  # Dispatch this after a deploy-window merge to build + bump the image tags.
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Why this manual build (e.g. deploy security-service after an auto-merged PR)'
-        required: false
-        default: 'manual release'
   push:
     branches: [master]
     paths:
@@ -91,9 +81,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-root
 
       - name: Build and push email-service
-        # Ancillary services are disabled in prod (only billing is enabled). They
-        # must NEVER block the core backend+frontend deploy — a failed build here
-        # is non-fatal; the bump+deploy still proceeds.
+        # Ancillary services are disabled in prod (only billing is enabled) and some
+        # have unbuilt workspace wiring. They must NEVER block the core backend+frontend
+        # deploy — a failed build here is non-fatal; the bump+deploy still proceeds.
         continue-on-error: true
         uses: docker/build-push-action@v5
         with:
@@ -190,102 +180,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Bump image tags in values-prod.yaml (GitOps)
-        # The "Protect Master" ruleset has a pull_request rule, so neither a
-        # plain `git push` with GITHUB_TOKEN nor a contents-API commit can land
-        # on master (the API PUT 409s with "Changes must be made through a pull
-        # request" — that killed every release once the rule appeared; GitHub
-        # also refuses to add the github-actions app as a ruleset bypass actor
-        # on a user-owned repo). The write path is therefore a DEPLOY KEY:
-        # "Protect Master" has a DeployKey bypass_actor, and the private half
-        # lives in the RELEASE_BUMP_SSH_KEY secret (public half: deploy key
-        # "release-bump"). If this step starts failing with a rule violation,
-        # the DeployKey bypass entry or the deploy key was removed — restore
-        # them rather than weakening the ruleset's PR rule for humans.
-        # NOTE: deploy-key pushes are unsigned; if required_signatures is ever
-        # (re-)enabled on master this needs a signing setup or a bot identity.
-        env:
-          SSH_KEY: ${{ secrets.RELEASE_BUMP_SSH_KEY }}
-          FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
-          set -euo pipefail
           SHA="${{ steps.tag.outputs.sha }}"
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
-          chmod 600 ~/.ssh/release_bump
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_bump -o IdentitiesOnly=yes"
-          git config user.name  "fuzefront-release"
-          git config user.email "release-bump@users.noreply.github.com"
-          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
-          # Read-modify-write against CURRENT master, not this job's (stale)
-          # checkout: the builds above take minutes and other commits land
-          # meanwhile. A non-fast-forward race (someone pushes between our
-          # fetch and push) just retries with a fresh fetch.
-          for attempt in 1 2 3; do
-          git fetch origin master
-          git checkout --detach --force FETCH_HEAD
-          cp "$FILE" /tmp/vp-current.yaml
-          # Bump ONLY the core-app image tags built by this workflow. A blanket
-          # `tag:` sed would also stomp deliberately-pinned services and the
-          # EXTERNAL images (authentik, unleash) whose tags are managed by hand.
-          # The tag: line must be the line IMMEDIATELY after the repository:
-          # line (true for every block in values-prod.yaml). Scoping `hot` to a
-          # single following line means a block that drops its tag: can never
-          # leak the bump onto a later, unrelated tag: (review finding).
-          # The \r? in the repository anchor tolerates CRLF line endings: a bot
-          # commit once rewrote the whole file as CRLF, the $-anchored match got
-          # 0 hits, and the count guard below killed every release until a human
-          # manually restored LF. Rewritten tag lines preserve the line's
-          # original ending so a CRLF file round-trips without a spurious
-          # whole-file diff.
-          awk -v sha="$SHA" '
-            hot {
-              hot=0
-              if ($0 ~ /^[[:space:]]*tag:/) {
-                match($0, /^[[:space:]]*/)
-                print substr($0, 1, RLENGTH) "tag: " sha ($0 ~ /\r$/ ? "\r" : "")
-                n++
-                next
-              }
-            }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-backend\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-frontend\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-security-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
-            { print }
-            END { print n+0 > "/tmp/bump-count" }
-          ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
-          # Guard against silent no-ops: if the file layout drifts (quoted
-          # values, reordered keys, renamed registry path) the awk matches
-          # nothing and we would otherwise "succeed" while deploying stale
-          # tags (review finding). Exactly 7 core-app tags must be rewritten.
-          # The anchor list MUST cover every image this workflow BUILDS. It
-          # previously listed only 5 while the build steps produced 7: the
-          # email-service and sms-service images were built and pushed on every
-          # release but their values-prod.yaml tags were never rewritten. The
-          # count guard did not catch it (5 anchors == 5 rewrites == "pass"),
-          # so it failed silently: email-service froze at a stale SHA and
-          # sms-service kept tag "" — i.e. it was NEVER deployed at all. If you
-          # add a build step above, add its anchor here AND bump this number.
-          COUNT=$(cat /tmp/bump-count)
-          if [ "$COUNT" -ne 7 ]; then
-            echo "::error::expected 7 core-app tag rewrites in ${FILE}, got ${COUNT} — file layout changed; update the bump step"
-            exit 1
-          fi
-          if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
-            echo "values-prod.yaml already at ${SHA} — nothing to bump"
-            exit 0
-          fi
-          cp /tmp/vp-new.yaml "$FILE"
-          git commit -m "release: fuzefront images ${SHA} [skip ci]" -- "$FILE"
-          if git push origin HEAD:master; then
-            echo "Bumped via commit $(git rev-parse HEAD)"
-            exit 0
-          fi
-          echo "push rejected (attempt ${attempt}) — refetching master and retrying"
-          done
-          echo "::error::could not push the tag bump after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
-          exit 1
+          sed -i -E "s/^(\s*tag:).*/\1 ${SHA}/" deploy/helm/fuzefront/values-prod.yaml
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add deploy/helm/fuzefront/values-prod.yaml
+          git commit -m "release: fuzefront images ${SHA} [skip ci]" || exit 0
+          git push

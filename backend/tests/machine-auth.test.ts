@@ -36,7 +36,7 @@ jest.mock('../src/config/permit', () => {
   const makeNoOpProxy = (): any => {
     const handler: ProxyHandler<object> = {
       get: () => makeNoOpProxy(),
-      apply: () => Promise.resolve(false),
+      apply: () => Promise.resolve(undefined),
       construct: () => makeNoOpProxy(),
     }
     return new Proxy(function () {} as any, handler)

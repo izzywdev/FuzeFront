@@ -5,13 +5,8 @@
  * product codes against for authentication + authorization identity. The
  * `Identity` shape is the single synchronization point: it does NOT change
  * when the underlying token format migrates from the current HS256 shared-secret
- * token to the target federated RS256/JWKS token. Consumers depend on
+ * token to the target Authentik OIDC / RS256-JWKS token. Consumers depend on
  * `Identity`, never on the raw JWT claims.
- *
- * PROVIDER-NEUTRAL: this contract names no identity vendor. The federated token
- * mode is `federated-jwks`; the concrete federation provider lives only behind
- * the server-side Security adapter. See `@fuzefront/security-client` for the
- * full provider-agnostic Security API surface (AuthN + AuthZ).
  *
  * Nothing in this package mints tokens. It only *verifies* and normalizes.
  */
@@ -20,7 +15,7 @@
  * Semantic version of THIS contract. Bump on every interface change and record
  * the change in CHANGELOG.md. Consumers may assert on the major.
  */
-export const AUTH_CONTRACT_VERSION = '0.2.0' as const;
+export const AUTH_CONTRACT_VERSION = '0.1.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -31,7 +26,7 @@ export const AUTH_CONTRACT_VERSION = '0.2.0' as const;
  * - `tenantId` — the organization/tenant scope for authz. MAY be `null` in
  *                `legacy-hs256` mode when it cannot be resolved out-of-band
  *                (the current FuzeFront token carries no tenant claim). In
- *                `federated-jwks` target mode it is populated from the token claim.
+ *                `oidc-jwks` target mode it is populated from the token claim.
  *                Consumers MUST handle `null` and fail-closed on tenant-scoped
  *                authorization when it is absent.
  * - `roles`    — ALWAYS an array (possibly empty). Never `undefined`. In
@@ -59,7 +54,7 @@ export interface Identity {
   issuedAt?: number;
   /** Token expiry (epoch seconds), when present. */
   expiresAt?: number;
-  /** Issuer (`iss`), when present. Provider-neutral value (server-side federation issuer). */
+  /** Issuer (`iss`), when present — e.g. the Authentik issuer URL in OIDC mode. */
   issuer?: string;
   /**
    * Escape hatch for verifier-specific extras (raw claims a consumer may need
@@ -70,7 +65,7 @@ export interface Identity {
 }
 
 /** The supported verification modes. */
-export type AuthMode = 'legacy-hs256' | 'federated-jwks';
+export type AuthMode = 'legacy-hs256' | 'oidc-jwks';
 
 /**
  * Stable error codes for verification failures. The package is FAIL-CLOSED:
@@ -83,10 +78,10 @@ export type AuthErrorCode =
   | 'INVALID_SIGNATURE' // signature check failed
   | 'EXPIRED' // token past `exp`
   | 'NOT_ACTIVE' // token before `nbf`
-  | 'INVALID_ISSUER' // `iss` not in the allowed set (federated-jwks)
-  | 'INVALID_AUDIENCE' // `aud` mismatch (federated-jwks)
+  | 'INVALID_ISSUER' // `iss` not in the allowed set (oidc-jwks)
+  | 'INVALID_AUDIENCE' // `aud` mismatch (oidc-jwks)
   | 'MISSING_CLAIM' // required claim (e.g. subject) absent
-  | 'JWKS_UNAVAILABLE' // could not fetch/resolve signing keys (federated-jwks)
+  | 'JWKS_UNAVAILABLE' // could not fetch/resolve signing keys (oidc-jwks)
   | 'VERIFIER_UNAVAILABLE' // verifier misconfigured (e.g. no secret)
   | 'UNKNOWN';
 
@@ -106,7 +101,7 @@ export class AuthError extends Error {
 /**
  * A pluggable token verifier. Implementations validate a raw bearer token and
  * return a normalized `Identity`, or throw `AuthError`. Two implementations are
- * part of this contract: `legacy-hs256` and `federated-jwks`.
+ * part of this contract: `legacy-hs256` and `oidc-jwks`.
  *
  * IMPLEMENTATION IS OUT OF SCOPE for this freeze — only the interface is frozen.
  */
@@ -139,23 +134,16 @@ export interface LegacyHs256Config {
   clockToleranceSec?: number;
 }
 
-/**
- * Config for the target `federated-jwks` verifier (federated RS256/JWKS).
- *
- * SERVER-INTERNAL: this config is consumed only by the host/server wiring that
- * constructs a verifier. It is provider-neutral — the concrete federation
- * provider and its issuer host are a server-side deployment detail, never named
- * in the consumer contract. Consumers depend on the normalized `Identity`.
- */
-export interface FederatedJwksConfig {
-  mode: 'federated-jwks';
+/** Config for the target `oidc-jwks` verifier (Authentik RS256/JWKS). */
+export interface OidcJwksConfig {
+  mode: 'oidc-jwks';
   /**
-   * Federation issuer URL. Used for discovery of the JWKS endpoint and for
-   * `iss` validation. Provided by server-side deployment config; not a
-   * consumer-facing value.
+   * OIDC issuer URL. Used for discovery of the JWKS endpoint and for `iss`
+   * validation. For FuzeFront: the Authentik application issuer
+   * (`AUTHENTIK_ISSUER_URL`).
    */
   issuer: string;
-  /** Expected audience (`aud`). Typically the registered client id. */
+  /** Expected audience (`aud`). Typically the Authentik client id. */
   audience?: string | string[];
   /**
    * Explicit JWKS URI. Optional — if omitted, resolved via OIDC discovery of
@@ -172,12 +160,5 @@ export interface FederatedJwksConfig {
   clockToleranceSec?: number;
 }
 
-/**
- * @deprecated Renamed to {@link FederatedJwksConfig} (provider-neutral). This
- * alias is retained for one release to ease migration; the `mode` value is now
- * `'federated-jwks'`.
- */
-export type OidcJwksConfig = FederatedJwksConfig;
-
 /** Union config passed to `createVerifier`. */
-export type VerifierConfig = LegacyHs256Config | FederatedJwksConfig;
+export type VerifierConfig = LegacyHs256Config | OidcJwksConfig;

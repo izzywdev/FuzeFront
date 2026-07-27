@@ -2,8 +2,6 @@ import React, {
   createContext,
   useContext,
   useState,
-  useCallback,
-  useMemo,
   ReactNode,
 } from 'react'
 import type { Organization } from '../services/api'
@@ -187,25 +185,15 @@ export function useAppContext() {
 
 export function useCurrentUser() {
   const { state, dispatch } = useAppContext()
-  // Stable callback + memoized return: without this, every render produced a
-  // NEW setUser function, so any consumer with `useEffect(..., [setUser])`
-  // (e.g. LoginPage's page-load handler) re-fired on every render — an infinite
-  // loop that flooded /api/auth/method at ~2-3 req/s and made the page
-  // unresponsive. dispatch is stable, so these references are now stable too.
-  const setUser = useCallback(
-    (user: User | null) => dispatch({ type: 'SET_USER', payload: user }),
-    [dispatch]
-  )
-  return useMemo(
-    () => ({
-      currentUser: state.user,
-      user: state.user,
-      isAuthenticated: !!state.user,
-      setCurrentUser: setUser,
-      setUser,
-    }),
-    [state.user, setUser]
-  )
+  return {
+    currentUser: state.user,
+    user: state.user,
+    isAuthenticated: !!state.user,
+    setCurrentUser: (user: User | null) =>
+      dispatch({ type: 'SET_USER', payload: user }),
+    setUser: (user: User | null) =>
+      dispatch({ type: 'SET_USER', payload: user }),
+  }
 }
 
 /**

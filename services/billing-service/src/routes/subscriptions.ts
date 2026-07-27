@@ -39,7 +39,7 @@ export function createSubscriptionsRouter(
   // { subscription: <view> | null }. Absence is NOT an error (the UI treats null
   // as "no current subscription"), so we 200 {subscription:null} rather than 404.
   //
-  // NOTE: registered BEFORE GET /subscriptions/:subscriptionId so the
+  // NOTE: registered BEFORE GET /subscriptions/:stripeSubscriptionId so the
   // param route does not shadow this collection route.
   router.get(
     '/subscriptions',
@@ -70,31 +70,22 @@ export function createSubscriptionsRouter(
     }
   });
 
-  // GET /subscriptions/:subscriptionId
-  router.get('/subscriptions/:subscriptionId', async (req: Request, res: Response) => {
-    const sub = await repo.findByStripeId(req.params.subscriptionId);
+  // GET /subscriptions/:stripeSubscriptionId
+  router.get('/subscriptions/:stripeSubscriptionId', async (req: Request, res: Response) => {
+    const sub = await repo.findByStripeId(req.params.stripeSubscriptionId);
     if (!sub) return res.status(404).json({ error: 'not found' });
     return res.json({ subscription: sub });
   });
 
-  // PATCH /subscriptions/:subscriptionId — change plan / seats
-  router.patch('/subscriptions/:subscriptionId', async (req: Request, res: Response) => {
+  // PATCH /subscriptions/:stripeSubscriptionId — change plan / seats
+  router.patch('/subscriptions/:stripeSubscriptionId', async (req: Request, res: Response) => {
     const parsed = validateBody(updateSchema, req.body);
     if (!parsed.ok) {
       return res.status(400).json({ error: 'invalid request', details: parsed.details });
     }
-    // Contract: UpdateSubscriptionRequest.minProperties = 1. A PATCH with no
-    // updatable field (`{}`, or a body of only-unknown keys stripped by the
-    // schema) is a 400 — there is nothing to change.
-    if (Object.keys(parsed.data as Record<string, unknown>).length === 0) {
-      return res.status(400).json({
-        error: 'invalid request',
-        details: { message: 'at least one updatable field (priceId or seatQuantity) is required' },
-      });
-    }
     try {
       const sub = await service.update(
-        req.params.subscriptionId,
+        req.params.stripeSubscriptionId,
         parsed.data as UpdateSubscriptionRequest,
       );
       return res.json({ subscription: sub });
@@ -103,10 +94,10 @@ export function createSubscriptionsRouter(
     }
   });
 
-  // DELETE /subscriptions/:subscriptionId — cancel at period end
-  router.delete('/subscriptions/:subscriptionId', async (req: Request, res: Response) => {
+  // DELETE /subscriptions/:stripeSubscriptionId — cancel at period end
+  router.delete('/subscriptions/:stripeSubscriptionId', async (req: Request, res: Response) => {
     try {
-      const sub = await service.cancel(req.params.subscriptionId);
+      const sub = await service.cancel(req.params.stripeSubscriptionId);
       return res.json({ subscription: sub });
     } catch (err) {
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });

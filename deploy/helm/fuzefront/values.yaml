@@ -111,12 +111,6 @@ secret:
   # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
-  # OIDC client secret for the mendys-datasets consumer product (blueprint
-  # provider-oidc-mendys-datasets.yaml, client_id mendys-datasets-oidc-client).
-  # OPTIONAL: leave empty to apply the blueprint with a placeholder secret;
-  # supply via --set / a gitignored values file / the prod SealedSecret.
-  # NEVER commit a real secret.
-  mendysDatasetsClientSecret: ""
   sendgridApiKey: ""
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
@@ -169,11 +163,6 @@ securityService:
     tag: local
   port: 3002
   replicas: 1
-  # Enforce signup email verification. Default false: the code DEGRADES to
-  # auto-verifying every account when this is off, so turning it on is only safe
-  # once a working email path (email-service + a proven SMTP/SendGrid sender) is
-  # verified — otherwise every new signup is locked out at the door.
-  requireEmailVerification: false
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
   resources:
@@ -184,10 +173,6 @@ securityService:
   tolerations: []
   # security-service owns auth; keep it co-located with the DB-heavy node-1 by
   # default (no-op here, set in values-prod if desired).
-  # Server-brokered Google sign-in (PR #329). OFF by default; prod enables it.
-  googleBrokered: "false"
-  # Browser-facing Google callback URL. Dev default here; prod overrides in values-prod.
-  googleRedirectUri: "https://auth-dev.fuzefront.com/api/v1/security/social/google/callback"
 
 applicationsService:
   enabled: false
@@ -295,20 +280,6 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
-    # SMTP transport config (provider: "smtp"). NON-secret only — the credentials
-    # (SMTP_USER / SMTP_PASS) come from the SealedSecret, never from values.
-    #
-    # Leave `host` EMPTY for local/dev: the service then falls back to its in-code
-    # localhost:1025 (mailhog) default, which is correct for a dev mail catcher.
-    # In any environment that must deliver real mail, host MUST be set — see the
-    # smtp.hostRequired guard in templates/email-service.yaml. That in-code
-    # fallback is silent: with no host the pod is healthy, /health is green, and
-    # every message is dropped. That is exactly how signup email-verification and
-    # password-reset sat live-dead in prod.
-    smtp:
-      host: ""          # e.g. smtp.zoho.com — empty = dev mailhog fallback
-      port: 587
-      secure: false     # true for implicit TLS (465); false for STARTTLS (587)
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -421,45 +392,9 @@ billingService:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "billing-service"
     groupId: "billing-service-group"
-  # Payment-path config (checkout allowlist). Fail-closed by default: empty
-  # productKeys means the payments route rejects every product key. Prod
-  # overrides these in values-prod.yaml.
-  payment:
-    productKeys: ""
-    currencies: ""
-    maxTotalCents: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 512Mi }
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-
-# payment-service — vendor-neutral payment GATEWAY (SCAFFOLD; not the live money
-# path yet). Stateless: no DB, no Kafka. Runnable with zero secrets — without a
-# real STRIPE_SECRET_KEY it serves /health only (degraded mode). Its templates
-# live in this umbrella chart, so it is synced by the umbrella `fuzefront` Argo
-# Application (hybrid-Argo — same rule as billingService/unleash). Disabled by
-# default; flip `enabled` + seal payment-secrets to bring it up.
-paymentService:
-  enabled: false
-  image:
-    repository: fuzefront/payment-service
-    tag: local
-  # 3007: billing-service is 3006. Keep unique across the service port map.
-  port: 3007
-  replicas: 1
-  # Active vendor adapter. Swapping the vendor = adding a sibling adapter and
-  # changing this. Default 'stripe'.
-  provider: stripe
-  # Per-service secret (payment-only keys: STRIPE_SECRET_KEY,
-  # PAYMENT_INTERNAL_TOKEN). Placeholders committed in
-  # deploy/contabo/sealed/payment-secrets.yaml; both keys are `optional: true` in
-  # the Deployment so the scaffold pod runs even before real values are sealed.
-  secretName: payment-secrets
-  resources:
-    requests: { cpu: 50m,  memory: 128Mi }
-    limits:   { cpu: 500m, memory: 256Mi }
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -545,7 +480,7 @@ authentik:
   enabled: true
   image:
     repository: ghcr.io/goauthentik/server
-    tag: "2026.5.5"
+    tag: "2024.12.3"
   host: auth.fuzefront.dev.local
   dbName: authentik # must pre-exist in the FuzeInfra Postgres
   cookieDomain: fuzefront.dev.local
@@ -656,19 +591,3 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
-    - name: billing.payment.completed
-      partitions: 3
-      replicationFactor: 1
-      retentionMs: 2592000000 # 30d — billing audit trail
-
-# ── Cloudflare edge integration ──────────────────────────────────────────────
-# Cache purge lets the backend purge the CF edge cache after MFE deploys.
-# Disabled by default; prod enables it and supplies the kubesealed token blob
-# (see templates/sealed-secret-cloudflare-cache-purge.yaml for reseal steps).
-cloudflare:
-  cachePurge:
-    enabled: false
-    # Cloudflare zone ID for app.fuzefront.com (not a secret).
-    zoneId: "94eaf85fb0ed9a26b5645af10fed0788"
-    # kubesealed ciphertext of the CF API token; empty disables the SealedSecret.
-    sealedToken: ""

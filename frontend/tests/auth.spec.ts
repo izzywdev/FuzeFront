@@ -28,15 +28,13 @@ test.describe('Authentication', () => {
     await page.waitForTimeout(5000)
 
     // Check if we're redirected or if login was successful
-    // Check for signs of successful authentication.
-    // The app stores the JWT under the key 'authToken' (camelCase) — not the
-    // snake_case variants that were previously checked here (which always
-    // returned false even on successful login).
+    // Check for signs of successful authentication
     const isLoggedIn = await page.evaluate(() => {
+      // Check if auth token exists in localStorage
       return (
-        !!localStorage.getItem('authToken') ||      // primary — set by authAPI.login()
-        !!localStorage.getItem('access_token') ||   // fallback for legacy callers
-        !!sessionStorage.getItem('authToken')        // fallback for session-only flows
+        !!localStorage.getItem('auth_token') ||
+        !!localStorage.getItem('access_token') ||
+        !!sessionStorage.getItem('auth_token')
       )
     })
 

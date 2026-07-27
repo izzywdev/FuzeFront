@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -30,6 +30,7 @@ import type {
   TestExpectation,
 } from '@fuzequality/contracts'
 import { api } from './api'
+import { planGap } from './testPlan'
 
 type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review'
 
@@ -83,6 +84,55 @@ function CoverageRail({ expectations }: { expectations: TestExpectation[] }) {
 
 function StatusPill({ state }: { state: CoverageState }) {
   return <span className={`status-pill state-${state}`}>{coverageLabel[state]}</span>
+}
+
+function GapPlanDrawer({
+  subject,
+  expectations,
+  selectedId,
+  onClose,
+}: {
+  subject: ApiOperation | FrontendSurface
+  expectations: TestExpectation[]
+  selectedId: string
+  onClose: () => void
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    closeButton.current?.focus()
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onClose])
+  const gaps = expectations.filter(item => item.coverage === 'gap' && item.priority !== 'not-applicable')
+  const subjectLabel = 'method' in subject
+    ? `${subject.method.toUpperCase()} ${subject.path}`
+    : `${subject.name} · ${subject.packageName}`
+  return (
+    <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      <aside className="gap-drawer" role="dialog" aria-modal="true" aria-labelledby="gap-plan-title">
+        <header className="drawer-header">
+          <div><p className="eyebrow">Deterministic test planner</p><h2 id="gap-plan-title">{gaps.length} tests to close this gap</h2><code>{subjectLabel}</code></div>
+          <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close test plan"><X /></button>
+        </header>
+        <p className="drawer-intro">Generated from catalog policy and source metadata. These are authoritative expected tests—not AI suggestions.</p>
+        <div className="planned-tests">
+          {gaps.map((expectation, index) => {
+            const plan = planGap(expectation, subject)
+            return <article className={expectation.id === selectedId ? 'planned-test selected' : 'planned-test'} key={expectation.id}>
+              <div className="plan-index">{String(index + 1).padStart(2, '0')}</div>
+              <div className="plan-body">
+                <div className="plan-heading"><div><span>{plan.priority} · {plan.level}</span><h3>{plan.title}</h3></div>{expectation.id === selectedId && <b>Selected gap</b>}</div>
+                <dl className="plan-path"><dt>Suggested file</dt><dd><code>{plan.suggestedFile}</code></dd></dl>
+                <div className="aaa-grid"><section><h4>Arrange</h4><p>{plan.arrange}</p></section><section><h4>Act</h4><p>{plan.act}</p></section><section><h4>Assert</h4><ul>{plan.assertions.map(assertion => <li key={assertion}>{assertion}</li>)}</ul></section></div>
+                <footer><BookOpen size={13} /><span>{plan.provenance}</span></footer>
+              </div>
+            </article>
+          })}
+        </div>
+      </aside>
+    </div>
+  )
 }
 
 function Stat({ label, value, detail, tone = 'neutral' }: { label: string; value: string | number; detail: string; tone?: string }) {
@@ -193,14 +243,16 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     <>
       <PageHeading eyebrow="Source control" title="Repository inventory" detail="Onboard read-only sources and inspect their latest deterministic scan." action={<button className="primary-button" onClick={() => setOpen(true)}><Plus size={16} /> Add repository</button>} />
       <section className="repo-cards">
-        {data.repositories.map(repository => (
-          <article className="repo-card" key={repository.id}>
+        {data.repositories.map(repository => {
+          const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id)
+          return <article className="repo-card" key={repository.id}>
             <div className="repo-card-top"><div className="repo-mark large">{repository.name.slice(0, 2).toUpperCase()}</div><span className={`scan-status scan-${repository.lastScanStatus}`}>{repository.lastScanStatus}</span></div>
             <h3>{repository.name}</h3><p>{repository.canonicalUrl}</p>
-            <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
+            <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Revision</dt><dd title={repository.lastScanRevision}>{repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
+            {diagnostics.length > 0 && <details className="scan-diagnostics"><summary><AlertTriangle size={14} /> {diagnostics.length} scan {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}</summary><div>{diagnostics.map(item => <article key={`${item.sourcePath}:${item.code}`}><span className={`diagnostic-severity diagnostic-${item.severity}`}>{item.severity}</span><code>{item.sourcePath}</code><strong>{item.code}</strong><p>{item.message}</p></article>)}</div></details>}
             <button className="secondary-button" disabled={busy} onClick={() => scan(repository.id, repository.localPath)}><RefreshCw size={15} /> Scan now</button>
           </article>
-        ))}
+        })}
       </section>
       {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div><label>Local path <small>(development only)</small><input value={form.localPath} onChange={event => setForm({ ...form, localPath: event.target.value })} placeholder="D:\source\FuzeService" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Adding…' : 'Add repository'}</button></div></form></div>}
     </>
@@ -209,8 +261,14 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
 
 function Matrix({ items, expectations, kind }: { items: Array<ApiOperation | FrontendSurface>; expectations: TestExpectation[]; kind: 'api' | 'frontend' }) {
   const [query, setQuery] = useState('')
+  const [selection, setSelection] = useState<{ subject: ApiOperation | FrontendSurface; expectationId: string }>()
+  const trigger = useRef<HTMLButtonElement | null>(null)
   const filtered = items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()))
-  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{(item as FrontendSurface).name}</strong><small>{(item as FrontendSurface).packageName} · {(item as FrontendSurface).kind}</small></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div></>
+  function closePlan() {
+    setSelection(undefined)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }
+  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{(item as FrontendSurface).name}</strong><small>{(item as FrontendSurface).packageName} · {(item as FrontendSurface).kind}</small></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(item => item.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}</>
 }
 
 function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio }) {

@@ -136,36 +136,10 @@ spec:
               value: {{ .Values.authentik.oidc.issuerUrl | quote }}
             - name: AUTHENTIK_REDIRECT_URI
               value: {{ .Values.authentik.oidc.redirectUri | quote }}
-            # M2M provisioning (backend/src/authentik/provision-m2m-clients.ts)
-            # authenticates to the Authentik Admin API with the akadmin bootstrap
-            # token — which Authentik issues as a full API token — so we reuse the
-            # already-sealed AUTHENTIK_BOOTSTRAP_TOKEN key rather than minting a
-            # second admin token. optional:true keeps provisioning gracefully
-            # skipped (provisionM2MClients returns early) if the key is absent.
-            - name: AUTHENTIK_ADMIN_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: AUTHENTIK_BOOTSTRAP_TOKEN
-                  optional: true
             {{- if .Values.authentik.oidc.caConfigMap }}
             - name: NODE_EXTRA_CA_CERTS
               value: /etc/fuzefront-ca/ca.crt
             {{- end }}
-            {{- end }}
-            {{- if .Values.cloudflare.cachePurge.enabled }}
-            # Cloudflare cache purge — lets the platform purge the CF edge cache
-            # after MFE deploys. Token comes from the cloudflare-cache-purge
-            # SealedSecret; optional:true keeps the pod schedulable while the
-            # secret is still being sealed/synced.
-            - name: CF_CACHE_PURGE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: cloudflare-cache-purge
-                  key: CF_CACHE_PURGE_TOKEN
-                  optional: true
-            - name: CF_ZONE_ID
-              value: {{ .Values.cloudflare.cachePurge.zoneId | quote }}
             {{- end }}
           readinessProbe:
             httpGet:

@@ -1,5 +1,4 @@
 import React, { Component, ReactNode } from 'react'
-import { Alert } from '@fuzefront/design-system'
 
 interface Props {
   children: ReactNode
@@ -37,10 +36,21 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <Alert tone="error" title="⚠️ App Loading Error" style={{ padding: '2rem', textAlign: 'center' }}>
-          <p style={{ margin: '0.5rem 0' }}>
+        <div
+          style={{
+            padding: '2rem',
+            border: '1px solid var(--error-color)',
+            borderRadius: '8px',
+            backgroundColor: 'var(--bg-tertiary)',
+            textAlign: 'center',
+            color: 'var(--error-color)',
+          }}
+        >
+          <h3>⚠️ App Loading Error</h3>
+          <p>
             Failed to load{' '}
-            {this.props.appName ? `"${this.props.appName}"` : 'the application'}.
+            {this.props.appName ? `"${this.props.appName}"` : 'the application'}
+            .
           </p>
           {this.state.error && (
             <details style={{ marginTop: '1rem', textAlign: 'left' }}>
@@ -80,7 +90,7 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
               🏠 Go to Dashboard
             </button>
           </div>
-        </Alert>
+        </div>
       )
     }
 

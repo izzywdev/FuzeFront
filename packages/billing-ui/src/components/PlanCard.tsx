@@ -41,7 +41,7 @@ export function PlanCard({
     .filter(Boolean)
     .join(' ');
 
-  const headingId = `ffb-plan-${plan.priceId}`;
+  const headingId = `ffb-plan-${plan.stripePriceId}`;
 
   return (
     <section className={classes} aria-labelledby={headingId}>

@@ -17,8 +17,6 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   block?: boolean;
   loading?: boolean;
-  /** Allow arbitrary data-* hooks (e.g. data-action) to reach the DOM button. */
-  [dataAttr: `data-${string}`]: unknown;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

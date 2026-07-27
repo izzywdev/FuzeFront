@@ -92,18 +92,10 @@ export async function syncPermitSchemaWithProducts(
 
 // CLI entry — only runs when executed directly (node dist/permit/sync-permit-schema.js).
 // Lazily importing the real client here keeps the module import-safe for tests.
-// Product policies (backend/src/permit/products/*) must be listed here — the
-// permit-schema-sync Job runs this entry, and a policy that isn't passed to
-// syncPermitSchemaWithProducts never reaches the Permit control plane.
 if (require.main === module) {
-  /* eslint-disable @typescript-eslint/no-var-requires */
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const permit = require('../config/permit').default as PermitSchemaClient
-  const products: ProductPolicy[] = [
-    require('./products/fuzemarket.policy').default,
-    require('./products/mendys-datasets.policy').default,
-  ]
-  /* eslint-enable @typescript-eslint/no-var-requires */
-  syncPermitSchemaWithProducts(permit, products)
+  syncPermitSchema(permit)
     .then(() => {
       console.log('Permit schema sync complete')
       process.exit(0)

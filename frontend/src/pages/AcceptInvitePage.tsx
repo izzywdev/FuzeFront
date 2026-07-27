@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Alert, CenteredCard } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { getInvitation, acceptInvitation } from '../services/api'
 
@@ -93,56 +92,92 @@ function AcceptInvitePage() {
     }
   }
 
+  const containerStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100vh',
+    background: 'var(--bg-primary)',
+    padding: '2rem',
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '8px',
+    padding: '2rem',
+    maxWidth: '440px',
+    width: '100%',
+    textAlign: 'center' as const,
+  }
+
   if (loading) {
     return (
-      <CenteredCard>
-        <p style={{ color: 'var(--text-secondary)' }}>Loading invitation…</p>
-      </CenteredCard>
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ color: 'var(--text-secondary)' }}>Loading invitation…</p>
+        </div>
+      </div>
     )
   }
 
   if (gone) {
     return (
-      <CenteredCard>
-        <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>⚠️</p>
-        <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Invitation expired</h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          This invitation has expired or been revoked. Please ask to be re-invited.
-        </p>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
-          Go to login
-        </button>
-      </CenteredCard>
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>⚠️</p>
+          <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Invitation expired</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            This invitation has expired or been revoked. Please ask to be re-invited.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/login')}
+          >
+            Go to login
+          </button>
+        </div>
+      </div>
     )
   }
 
   if (error && !invitation) {
     return (
-      <CenteredCard>
-        <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>❌</p>
-        <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Something went wrong</h2>
-        <Alert tone="error" style={{ marginBottom: '1.5rem', textAlign: 'left' }}>{error}</Alert>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
-          Go to login
-        </button>
-      </CenteredCard>
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>❌</p>
+          <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Something went wrong</h2>
+          <p style={{ color: 'var(--error-color)', marginBottom: '1.5rem' }}>{error}</p>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/login')}
+          >
+            Go to login
+          </button>
+        </div>
+      </div>
     )
   }
 
   if (accepted) {
     return (
-      <CenteredCard>
-        <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✓</p>
-        <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
-          You have joined {organization?.name}
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          Your role is <strong>{invitation?.role}</strong>.
-        </p>
-        <button className="btn btn-primary" onClick={() => navigate('/organizations')}>
-          Go to Organizations
-        </button>
-      </CenteredCard>
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✓</p>
+          <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+            You have joined {organization?.name}
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            Your role is <strong>{invitation?.role}</strong>.
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/organizations')}
+          >
+            Go to Organizations
+          </button>
+        </div>
+      </div>
     )
   }
 
@@ -150,67 +185,79 @@ function AcceptInvitePage() {
     user.email.toLowerCase() === invitation.email.toLowerCase()
 
   return (
-    <CenteredCard>
-      <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✉️</p>
-      <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
-        You are invited to join
-      </h2>
-      <h3 style={{ margin: '0 0 1rem', color: 'var(--accent-color)' }}>
-        {organization?.name}
-      </h3>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-        Role: <strong>{invitation?.role}</strong>
-      </p>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        Invited to: {invitation?.email}
-      </p>
+    <div style={containerStyle}>
+      <div style={cardStyle}>
+        <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✉️</p>
+        <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+          You are invited to join
+        </h2>
+        <h3 style={{ margin: '0 0 1rem', color: 'var(--accent-color)' }}>
+          {organization?.name}
+        </h3>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          Role: <strong>{invitation?.role}</strong>
+        </p>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+          Invited to: {invitation?.email}
+        </p>
 
-      {error && (
-        <Alert tone="error" style={{ marginBottom: '1rem', textAlign: 'left', fontSize: '0.9rem' }}>
-          {error}
-        </Alert>
-      )}
+        {error && (
+          <div
+            style={{
+              color: 'var(--error-color)',
+              marginBottom: '1rem',
+              padding: '10px',
+              border: '1px solid var(--error-color)',
+              borderRadius: '4px',
+              backgroundColor: 'rgba(255, 0, 0, 0.1)',
+              fontSize: '0.9rem',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-      {isAuthenticated && emailMatches ? (
-        <button
-          className="btn btn-primary"
-          onClick={handleAccept}
-          disabled={accepting}
-          style={{ width: '100%' }}
-        >
-          {accepting ? 'Accepting…' : `Accept invitation`}
-        </button>
-      ) : isAuthenticated && !emailMatches ? (
-        <div>
-          <p style={{ color: 'var(--error-color)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            You are signed in as <strong>{user?.email}</strong>, but this invitation is for <strong>{invitation?.email}</strong>.
-          </p>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Please sign in with the correct account to accept this invitation.
-          </p>
-        </div>
-      ) : (
-        <div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            Sign in or create an account to accept this invitation.
-          </p>
+        {isAuthenticated && emailMatches ? (
           <button
             className="btn btn-primary"
-            onClick={() => navigate(`/login?invite=${token}`)}
-            style={{ width: '100%', marginBottom: '0.75rem' }}
-          >
-            Sign in to accept
-          </button>
-          <button
-            className="btn btn-secondary"
             onClick={handleAccept}
+            disabled={accepting}
             style={{ width: '100%' }}
           >
-            Create an account
+            {accepting ? 'Accepting…' : `Accept invitation`}
           </button>
-        </div>
-      )}
-    </CenteredCard>
+        ) : isAuthenticated && !emailMatches ? (
+          <div>
+            <p style={{ color: 'var(--error-color)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+              You are signed in as <strong>{user?.email}</strong>, but this invitation is for <strong>{invitation?.email}</strong>.
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Please sign in with the correct account to accept this invitation.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+              Sign in or create an account to accept this invitation.
+            </p>
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate(`/login?invite=${token}`)}
+              style={{ width: '100%', marginBottom: '0.75rem' }}
+            >
+              Sign in to accept
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={handleAccept}
+              style={{ width: '100%' }}
+            >
+              Create an account
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

@@ -1,15 +1,16 @@
 /**
- * Route tests for GET /api/v1/billing/invoices and POST /api/v1/billing/invoices/sync.
+ * Unit/route tests for GET /api/v1/billing/invoices.
  *
- * Drives the REAL createApp wiring via supertest with mocked deps. Invoices are
- * now VENDOR-NEUTRAL and DB-backed: the route reads the local invoice store via
- * InvoiceService -> invoiceRepo.listByCustomer, exposing OUR uuid as `id` and an
- * OPAQUE keyset cursor. No Stripe id or cursor leaks through the contract.
+ * Drives the REAL createApp wiring via supertest with mocked deps (Stripe never
+ * hit). Asserts: field mapping + nextCursor; no-customer -> empty list; missing
+ * actor context -> 401; limit clamping; cursor -> starting_after passthrough;
+ * Stripe error -> mapped status.
  *
- * Asserts: neutral field mapping + opaque nextCursor passthrough; no-customer ->
- * empty list; missing actor -> 401; missing token -> 401; limit clamping +
- * cursor passthrough to the repo; the lazy sync-once-then-read path; and
- * POST /invoices/sync returning {synced}.
+ * The shared helper's DepStubs.stripe does not include `invoices` (it predates
+ * this slice), so we supply a FULL stripe stub via opts.stubs.stripe — buildApp
+ * shallow-merges opts.stubs over its defaults, so the whole `stripe` key is
+ * replaced. We keep the other stripe sub-resources present so unrelated wiring
+ * (checkout/credits/setup-intent/webhooks) still constructs.
  */
 import request from 'supertest';
 import {
@@ -22,27 +23,20 @@ import {
 } from '../contract/helpers';
 
 const URL = '/api/v1/billing/invoices';
-const SYNC_URL = '/api/v1/billing/invoices/sync';
 
-/** A billing.invoices row (snake_case) as returned by invoiceRepo.listByCustomer. */
-function rawRow(overrides: Record<string, unknown> = {}) {
+/** A full Stripe stub including invoices.list + the pre-existing sub-resources. */
+function stripeStub(listImpl?: jest.Mock) {
+  const constructEvent = jest.fn();
   return {
-    id: '99999999-9999-4999-8999-999999999999',
-    customer_id: 'localcust_1',
-    provider: 'stripe',
-    provider_invoice_id: 'in_1',
-    number: 'INV-0001',
-    status: 'paid',
-    amount_due_cents: 900,
-    amount_paid_cents: 900,
-    currency: 'usd',
-    hosted_invoice_url: 'https://invoice.provider/i/in_1',
-    invoice_pdf_url: 'https://invoice.provider/i/in_1.pdf',
-    issued_at: new Date('2023-11-14T22:13:20.000Z'),
-    created_at: new Date('2023-11-14T22:13:20.000Z'),
-    updated_at: new Date('2023-11-14T22:13:20.000Z'),
-    ...overrides,
-  };
+    stripe: {
+      setupIntents: { create: jest.fn() },
+      customers: { createBalanceTransaction: jest.fn() },
+      checkout: { sessions: { create: jest.fn() } },
+      billingPortal: { sessions: { create: jest.fn() } },
+      invoices: { list: listImpl ?? jest.fn() },
+      webhooks: { constructEvent },
+    },
+  } as any;
 }
 
 /** Customer-with-billing stub for the authorized org. */
@@ -61,50 +55,30 @@ function orgCustomerRepoStub(stripeCustomerId = 'cus_org_1') {
   } as any;
 }
 
-/** A full Stripe stub including invoices.list (needed only on the sync path). */
-function stripeStub(listImpl?: jest.Mock) {
-  return {
-    stripe: {
-      setupIntents: { create: jest.fn() },
-      customers: { createBalanceTransaction: jest.fn() },
-      checkout: { sessions: { create: jest.fn(), retrieve: jest.fn() } },
-      billingPortal: { sessions: { create: jest.fn() } },
-      invoices: { list: listImpl ?? jest.fn() },
-      webhooks: { constructEvent: jest.fn() },
-    },
-  } as any;
-}
-
-/** A provider invoice, as Stripe.invoices.list().data items map from. */
-function rawStripeInvoice(overrides: Record<string, unknown> = {}) {
+function rawInvoice(overrides: Record<string, unknown> = {}) {
   return {
     id: 'in_1',
-    object: 'invoice',
     number: 'INV-0001',
-    created: 1_700_000_000,
+    created: 1_700_000_000, // 2023-11-14T22:13:20.000Z
     amount_due: 900,
     amount_paid: 900,
     currency: 'USD',
     status: 'paid',
-    hosted_invoice_url: 'https://invoice.provider/i/in_1',
-    invoice_pdf: 'https://invoice.provider/i/in_1.pdf',
-    customer: 'cus_org_1',
+    hosted_invoice_url: 'https://invoice.stripe.com/i/in_1',
+    invoice_pdf: 'https://invoice.stripe.com/i/in_1.pdf',
     ...overrides,
   };
 }
 
-describe('GET /invoices — provider-backed, DB-served invoice history', () => {
-  it('200 maps stored rows to the neutral shape (id=uuid) and passes the opaque nextCursor through', async () => {
-    const listByCustomer = jest.fn().mockResolvedValue({
-      rows: [rawRow(), rawRow({ id: 'aaaa1111-1111-4111-8111-111111111111', number: null })],
-      nextCursor: 'b3BhcXVlLWN1cnNvcg==',
+describe('GET /invoices — Stripe-backed invoice history', () => {
+  it('200 maps Stripe fields to the frozen shape and sets nextCursor when has_more', async () => {
+    const list = jest.fn().mockResolvedValue({
+      data: [rawInvoice({ id: 'in_1' }), rawInvoice({ id: 'in_last', number: null })],
+      has_more: true,
     });
     const { app, stubs } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any,
-      },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
 
     const res = await request(app)
@@ -113,33 +87,50 @@ describe('GET /invoices — provider-backed, DB-served invoice history', () => {
       .set(actorOrgHeaders(ORG_ID, USER_ID));
 
     expect(res.status).toBe(200);
-    expect(res.body.nextCursor).toBe('b3BhcXVlLWN1cnNvcg==');
+    expect(res.body.nextCursor).toBe('in_last');
     expect(res.body.invoices).toHaveLength(2);
     expect(res.body.invoices[0]).toEqual({
-      id: '99999999-9999-4999-8999-999999999999', // OUR uuid, not in_...
+      id: 'in_1',
       number: 'INV-0001',
       created: '2023-11-14T22:13:20.000Z',
       amountDue: 900,
       amountPaid: 900,
-      currency: 'usd',
+      currency: 'usd', // lowercased
       status: 'paid',
-      hostedInvoiceUrl: 'https://invoice.provider/i/in_1',
-      invoicePdf: 'https://invoice.provider/i/in_1.pdf',
+      hostedInvoiceUrl: 'https://invoice.stripe.com/i/in_1',
+      invoicePdf: 'https://invoice.stripe.com/i/in_1.pdf',
     });
+    // null passthrough for number when absent.
     expect(res.body.invoices[1].number).toBeNull();
 
     expect(stubs.customerRepo.findByEntity).toHaveBeenCalledWith('organization', ORG_ID);
-    expect(listByCustomer).toHaveBeenCalledWith(
-      expect.objectContaining({ customerId: 'localcust_1', limit: 20 }),
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ customer: 'cus_org_1', limit: 20 }),
     );
+    // No cursor supplied -> no starting_after.
+    expect(list.mock.calls[0][0]).not.toHaveProperty('starting_after');
+  });
+
+  it('200 nextCursor=null when Stripe reports has_more=false', async () => {
+    const list = jest.fn().mockResolvedValue({ data: [rawInvoice()], has_more: false });
+    const { app } = buildApp({
+      internalToken: INTERNAL_TOKEN,
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
+    });
+    const res = await request(app)
+      .get(URL)
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID, USER_ID));
+    expect(res.status).toBe(200);
+    expect(res.body.nextCursor).toBeNull();
   });
 
   it('200 empty list when the entity has no billing customer (not an error)', async () => {
-    const listByCustomer = jest.fn();
+    const list = jest.fn();
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      // default customerRepo.findByEntity resolves null.
-      stubs: { invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any },
+      // customerRepo default findByEntity resolves null.
+      stubs: { ...stripeStub(list) },
     });
     const res = await request(app)
       .get(URL)
@@ -147,113 +138,68 @@ describe('GET /invoices — provider-backed, DB-served invoice history', () => {
       .set(actorOrgHeaders(ORG_ID, USER_ID));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ invoices: [], nextCursor: null });
-    expect(listByCustomer).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
   });
 
   it('401 when the proxy actor-context headers are absent', async () => {
-    const listByCustomer = jest.fn();
+    const list = jest.fn();
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any,
-      },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
     const res = await request(app)
       .get(URL)
       .set(...authHeader()); // valid token, NO actor headers
     expect(res.status).toBe(401);
-    expect(listByCustomer).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
   });
 
   it('401 when the internal token is missing', async () => {
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: { ...orgCustomerRepoStub() },
+      stubs: { ...stripeStub(jest.fn()), ...orgCustomerRepoStub() },
     });
     const res = await request(app).get(URL).set(actorOrgHeaders(ORG_ID, USER_ID));
     expect(res.status).toBe(401);
   });
 
   it('clamps limit: over-max -> 100, under-min -> 1, non-numeric -> default 20', async () => {
-    const listByCustomer = jest.fn().mockResolvedValue({ rows: [rawRow()], nextCursor: null });
+    const list = jest.fn().mockResolvedValue({ data: [], has_more: false });
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any,
-      },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
 
     await request(app).get(`${URL}?limit=9999`).set(...authHeader()).set(actorOrgHeaders(ORG_ID, USER_ID));
-    expect(listByCustomer.mock.calls[0][0].limit).toBe(100);
+    expect(list.mock.calls[0][0].limit).toBe(100);
 
     await request(app).get(`${URL}?limit=0`).set(...authHeader()).set(actorOrgHeaders(ORG_ID, USER_ID));
-    expect(listByCustomer.mock.calls[1][0].limit).toBe(1);
+    expect(list.mock.calls[1][0].limit).toBe(1);
 
     await request(app).get(`${URL}?limit=abc`).set(...authHeader()).set(actorOrgHeaders(ORG_ID, USER_ID));
-    expect(listByCustomer.mock.calls[2][0].limit).toBe(20);
+    expect(list.mock.calls[2][0].limit).toBe(20);
   });
 
-  it('passes the opaque cursor through to the repository', async () => {
-    const listByCustomer = jest.fn().mockResolvedValue({ rows: [rawRow()], nextCursor: null });
+  it('passes the cursor through as starting_after', async () => {
+    const list = jest.fn().mockResolvedValue({ data: [], has_more: false });
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any,
-      },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
     await request(app)
-      .get(`${URL}?cursor=b3BhcXVl`)
+      .get(`${URL}?cursor=in_prevpage`)
       .set(...authHeader())
       .set(actorOrgHeaders(ORG_ID, USER_ID));
-    expect(listByCustomer.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ cursor: 'b3BhcXVl' }),
+    expect(list.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ starting_after: 'in_prevpage' }),
     );
   });
 
-  it('lazily syncs once from the provider when a known customer has an empty store, then reads', async () => {
-    const upsertFromProvider = jest.fn().mockResolvedValue(undefined);
-    // First read empty (triggers sync), second read returns the synced row.
-    const listByCustomer = jest
-      .fn()
-      .mockResolvedValueOnce({ rows: [], nextCursor: null })
-      .mockResolvedValueOnce({ rows: [rawRow()], nextCursor: null });
-    const list = jest.fn().mockResolvedValue({ data: [rawStripeInvoice()], has_more: false });
-
+  it('maps a Stripe error to its status (502 on an unknown/upstream throw)', async () => {
+    const list = jest.fn().mockRejectedValue(new Error('stripe boom'));
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        ...stripeStub(list),
-        invoiceRepo: { upsertFromProvider, listByCustomer } as any,
-      },
-    });
-
-    const res = await request(app)
-      .get(URL)
-      .set(...authHeader())
-      .set(actorOrgHeaders(ORG_ID, USER_ID));
-
-    expect(res.status).toBe(200);
-    // provider.listInvoices -> stripe.invoices.list with the customer id.
-    expect(list).toHaveBeenCalledWith(expect.objectContaining({ customer: 'cus_org_1' }));
-    expect(upsertFromProvider).toHaveBeenCalledTimes(1);
-    expect(listByCustomer).toHaveBeenCalledTimes(2); // empty read, then post-sync read
-    expect(res.body.invoices).toHaveLength(1);
-  });
-
-  it('maps a provider error thrown during the lazy sync to its status (502)', async () => {
-    const listByCustomer = jest.fn().mockResolvedValue({ rows: [], nextCursor: null });
-    const list = jest.fn().mockRejectedValue(new Error('provider boom'));
-    const { app } = buildApp({
-      internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        ...stripeStub(list),
-        invoiceRepo: { upsertFromProvider: jest.fn(), listByCustomer } as any,
-      },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
     const res = await request(app)
       .get(URL)
@@ -264,55 +210,24 @@ describe('GET /invoices — provider-backed, DB-served invoice history', () => {
       expect.objectContaining({ error: expect.any(String), message: expect.any(String) }),
     );
   });
-});
 
-describe('POST /invoices/sync — force a provider→store resync', () => {
-  it('200 {synced} counts the upserted invoices for the authorized entity', async () => {
-    const upsertFromProvider = jest.fn().mockResolvedValue(undefined);
-    const list = jest.fn().mockResolvedValue({
-      data: [rawStripeInvoice({ id: 'in_1' }), rawStripeInvoice({ id: 'in_2' })],
-      has_more: false,
-    });
+  it('forwards a StripeInvalidRequestError as its 4xx status', async () => {
+    const list = jest.fn().mockRejectedValue(
+      Object.assign(new Error('No such customer'), {
+        type: 'StripeInvalidRequestError',
+        code: 'resource_missing',
+        statusCode: 400,
+      }),
+    );
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
-      stubs: {
-        ...orgCustomerRepoStub(),
-        ...stripeStub(list),
-        invoiceRepo: { upsertFromProvider, listByCustomer: jest.fn() } as any,
-      },
-    });
-
-    const res = await request(app)
-      .post(SYNC_URL)
-      .set(...authHeader())
-      .set(actorOrgHeaders(ORG_ID, USER_ID));
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ synced: 2 });
-    expect(upsertFromProvider).toHaveBeenCalledTimes(2);
-  });
-
-  it('200 {synced:0} when the entity has no billing customer', async () => {
-    const upsertFromProvider = jest.fn();
-    const { app } = buildApp({
-      internalToken: INTERNAL_TOKEN,
-      stubs: { invoiceRepo: { upsertFromProvider, listByCustomer: jest.fn() } as any },
+      stubs: { ...stripeStub(list), ...orgCustomerRepoStub() },
     });
     const res = await request(app)
-      .post(SYNC_URL)
+      .get(URL)
       .set(...authHeader())
       .set(actorOrgHeaders(ORG_ID, USER_ID));
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ synced: 0 });
-    expect(upsertFromProvider).not.toHaveBeenCalled();
-  });
-
-  it('401 when the proxy actor-context headers are absent', async () => {
-    const { app } = buildApp({
-      internalToken: INTERNAL_TOKEN,
-      stubs: { ...orgCustomerRepoStub() },
-    });
-    const res = await request(app).post(SYNC_URL).set(...authHeader());
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(expect.objectContaining({ code: 'resource_missing' }));
   });
 });

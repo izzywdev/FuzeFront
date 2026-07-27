@@ -12,25 +12,6 @@ import { appManifestSchema, AppManifest } from './manifest.schema'
 const BUILTIN_MANIFESTS: unknown[] = [
   {
     manifestVersion: '1',
-    slug: 'fuzesocial',
-    name: 'FuzeSocial',
-    menuLabel: 'Social',
-    description:
-      'Social media automation, scheduling, and cross-platform publishing — Facebook, Instagram, TikTok, YouTube, Reddit, X, and WhatsApp.',
-    icon: { kind: 'emoji', value: '📱' },
-    mode: 'portal',
-    builtin: true,
-    integration: {
-      type: 'iframe',
-      url: 'https://social.prod.fuzefront.com',
-    },
-    chrome: { menu: 'host', topbar: 'host' },
-    routing: { path: '/app/fuzesocial' },
-    visibility: 'organization',
-    roles: [],
-  },
-  {
-    manifestVersion: '1',
     slug: 'fuzeagent',
     name: 'FuzeAgent',
     menuLabel: 'Agents',
@@ -47,6 +28,27 @@ const BUILTIN_MANIFESTS: unknown[] = [
     },
     chrome: { menu: 'host', topbar: 'host' },
     routing: { path: '/app/fuzeagent' },
+    visibility: 'organization',
+    roles: [],
+  },
+  {
+    manifestVersion: '1',
+    slug: 'mendys',
+    name: 'MendysRobotics',
+    menuLabel: 'Robotics',
+    description:
+      'MendysRobotics management platform — monitor robot fleets, scraper jobs, and operational status in real time.',
+    icon: { kind: 'emoji', value: '🤖' },
+    mode: 'portal',
+    builtin: true,
+    integration: {
+      type: 'module-federation',
+      remoteEntry: 'https://mendys.prod.fuzefront.com/remoteEntry.js',
+      scope: 'mendysApp',
+      module: './MendysApp',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/app/mendys' },
     visibility: 'organization',
     roles: [],
   },
@@ -69,6 +71,28 @@ const BUILTIN_MANIFESTS: unknown[] = [
     chrome: { menu: 'host', topbar: 'host' },
     routing: { path: '/clock' },
     visibility: 'public',
+    roles: [],
+  },
+  {
+    manifestVersion: '1',
+    slug: 'fuzekeys',
+    name: 'FuzeKeys',
+    menuLabel: 'Keys',
+    description:
+      'Keys, secrets, and PII tokenization — AI-powered credential management.',
+    icon: { kind: 'emoji', value: '🔑' },
+    mode: 'portal',
+    builtin: false,
+    integration: {
+      type: 'module-federation',
+      remoteEntry:
+        'https://keys.prod.fuzefront.com/apps/fuzekeys/assets/remoteEntry.js',
+      scope: 'fuzeKeysApp',
+      module: './FuzeKeysApp',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/keys' },
+    visibility: 'organization',
     roles: [],
   },
 ]

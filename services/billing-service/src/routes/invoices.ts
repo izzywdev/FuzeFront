@@ -1,20 +1,55 @@
 import { Router, Response } from 'express';
+import type Stripe from 'stripe';
+import { CustomerRepository } from '../repositories/customer.repository';
 import { BillingRequest, requireActorContext } from '../middleware/auth';
-import { InvoiceService } from '../services/invoice.service';
 import { sendStripeError } from './stripe-error';
-
-// Re-export the neutral view shape from the repository so existing importers of
-// `BillingInvoiceView` from this module keep working after the DB-backed rewrite.
-export type { BillingInvoiceView } from '../repositories/invoice.repository';
 
 /** Default page size and clamp bounds for GET /invoices. */
 const DEFAULT_LIMIT = 20;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 100;
 
+/**
+ * The contract-frozen invoice projection. We expose ONLY these fields (a stable
+ * subset of the Stripe Invoice) so the billing UI never depends on the raw
+ * Stripe object shape. amountDue/amountPaid are cents (Stripe minor units),
+ * currency is lowercased, created is ISO-8601 derived from the unix seconds.
+ */
+export interface BillingInvoiceView {
+  id: string;
+  number: string | null;
+  created: string;
+  amountDue: number;
+  amountPaid: number;
+  currency: string;
+  status: string;
+  hostedInvoiceUrl: string | null;
+  invoicePdf: string | null;
+}
+
 export interface InvoicesDeps {
-  /** Vendor-neutral, DB-backed invoice read/sync service. */
-  service: InvoiceService;
+  // Narrow to the single Stripe call we make so unit tests can stub it.
+  stripe: { invoices: Pick<Stripe.InvoicesResource, 'list'> };
+  customerRepo: CustomerRepository;
+}
+
+/**
+ * Maps a Stripe Invoice to the frozen BillingInvoiceView. Defensive about the
+ * optional/nullable Stripe fields: number/hosted_invoice_url/invoice_pdf are
+ * `null` when Stripe has not produced them (e.g. draft invoices).
+ */
+export function mapInvoice(inv: Stripe.Invoice): BillingInvoiceView {
+  return {
+    id: inv.id,
+    number: inv.number ?? null,
+    created: new Date(inv.created * 1000).toISOString(),
+    amountDue: inv.amount_due,
+    amountPaid: inv.amount_paid,
+    currency: (inv.currency || '').toLowerCase(),
+    status: inv.status ?? 'draft',
+    hostedInvoiceUrl: inv.hosted_invoice_url ?? null,
+    invoicePdf: inv.invoice_pdf ?? null,
+  };
 }
 
 /** Clamp/parse the `limit` query param to [MIN_LIMIT, MAX_LIMIT]. */
@@ -25,15 +60,15 @@ export function parseLimit(raw: unknown): number {
 }
 
 /**
- * Invoice routes for the proxy-authorized entity. Mounted behind the
- * internal-token guard (app.ts); `requireActorContext` re-derives the
- * SERVER-DERIVED entity so identity is never taken from a client query/body.
+ * GET /api/v1/billing/invoices — list the proxy-authorized entity's Stripe
+ * invoices (read-only). Mounted behind the internal-token guard (app.ts);
+ * requireActorContext here re-derives the SERVER-DERIVED entity so identity is
+ * never taken from a client query/body. A new entity with no billing customer
+ * is NOT an error — it just has no invoices.
  *
- *  - GET  /invoices       reads the local, provider-synced invoice store
- *                         (opaque keyset cursor). An entity with no billing
- *                         customer is NOT an error — it just has no invoices.
- *  - POST /invoices/sync  forces a provider→store resync and returns {synced}.
- *                         Idempotent.
+ * Cursor pagination uses an opaque cursor that is a Stripe invoice id passed to
+ * `starting_after`. nextCursor is the id of the LAST invoice on the page when
+ * Stripe reports has_more, else null.
  */
 export function createInvoicesRouter(deps: InvoicesDeps): Router {
   const router = Router();
@@ -45,26 +80,24 @@ export function createInvoicesRouter(deps: InvoicesDeps): Router {
     const cursorRaw = req.query.cursor;
     const cursor = typeof cursorRaw === 'string' && cursorRaw.trim() ? cursorRaw.trim() : undefined;
 
-    try {
-      const page = await deps.service.list(
-        { entityType: actor.entityType, entityId: actor.entityId },
-        { limit, cursor },
-      );
-      return res.status(200).json(page);
-    } catch (err) {
-      return sendStripeError(res, err);
+    const customer = await deps.customerRepo.findByEntity(actor.entityType, actor.entityId);
+    if (!customer) {
+      // No billing relationship yet -> no invoices. Absence is not an error.
+      return res.status(200).json({ invoices: [], nextCursor: null });
     }
-  });
-
-  router.post('/invoices/sync', requireActorContext(), async (req: BillingRequest, res: Response) => {
-    const actor = req.actor!; // requireActorContext guarantees this
 
     try {
-      const synced = await deps.service.syncEntity({
-        entityType: actor.entityType,
-        entityId: actor.entityId,
+      const page = await deps.stripe.invoices.list({
+        customer: customer.stripeCustomerId,
+        limit,
+        ...(cursor ? { starting_after: cursor } : {}),
       });
-      return res.status(200).json({ synced });
+
+      const invoices = page.data.map(mapInvoice);
+      const nextCursor =
+        page.has_more && invoices.length > 0 ? invoices[invoices.length - 1].id : null;
+
+      return res.status(200).json({ invoices, nextCursor });
     } catch (err) {
       return sendStripeError(res, err);
     }

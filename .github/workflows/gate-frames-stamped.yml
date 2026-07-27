@@ -1,0 +1,36 @@
+name: gate-frames-stamped
+
+# A PR that touches design/frames/** must carry an up-to-date `stamp` in each
+# feature manifest. The stamp is DERIVED from the files (scripts/stamp-frames.mjs);
+# this gate recomputes it and fails if any manifest's recorded stamp is stale.
+# That is what stops an approval binding to frames that changed after stamping —
+# without it the stamp is a hand-maintained mirror that silently drifts.
+
+on:
+  pull_request:
+    paths:
+      - 'design/frames/**'
+      - 'scripts/stamp-frames.mjs'
+      - '.github/workflows/gate-frames-stamped.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-frames-stamped-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  stamped:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to immutable commit SHAs (repo hardening standard — a mutable
+      # tag can be silently repointed by the action owner).
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '20'
+
+      - name: Verify every feature manifest stamp is current
+        run: node scripts/stamp-frames.mjs --check
