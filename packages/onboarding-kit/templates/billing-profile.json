@@ -1,0 +1,6 @@
+{
+  "productKey": "myapp",
+  "currencies": ["usd", "eur"],
+  "maxTotalCents": 5000000,
+  "meteredUsage": false
+}

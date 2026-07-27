@@ -105,6 +105,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/apps/{slug}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Submit the app's authorization policy
+         * @description Declares the product's OWN Permit resources/actions/roles using BARE keys (`Listing`, `seller`). The platform namespaces them by the app's slug (`fuzemarket_Listing`) and merges them into the base platform schema before syncing to the policy provider, so two products may both define a `Listing` or an `admin` without colliding.
+         *
+         *     This is the declarative replacement for hand-editing a product policy into the platform source tree and adding it to a hardcoded sync list — a step that was invisible to the product team and silently skipped the provider when forgotten. Idempotent (full replace). Requires `apps:write`.
+         */
+        put: operations["putAppPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apps/{slug}/billing-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register the app's billing profile
+         * @description Registers the app's billing `productKey` so the billing service accepts checkout for it. Replaces hand-editing the `BILLING_PRODUCT_KEYS` env allowlist in platform deploy values, which coupled onboarding a product to a platform redeploy. Idempotent. Requires `apps:write`.
+         */
+        put: operations["putAppBillingProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/apps/{slug}/heartbeat": {
         parameters: {
             query?: never;
@@ -135,7 +183,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Liveness / readiness */
+        /**
+         * Liveness / readiness
+         * @description Unauthenticated liveness/readiness probe for the applications-service.
+         */
         get: operations["getHealth"];
         put?: never;
         post?: never;
@@ -149,7 +200,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description URL-safe unique identifier, immutable once registered. */
+        /**
+         * @description URL-safe unique identifier, immutable once registered.
+         * @example clock
+         * @example market
+         */
         Slug: string;
         /**
          * @description `portal` — mounted inside the host shell at `/app/:slug` with chrome. `standalone` — rendered without portal chrome on its own host/path.
@@ -199,6 +254,21 @@ export interface components {
             /** @description in-app route the item navigates to */
             route?: string;
             order?: number;
+        };
+        /**
+         * @description The app's place in the company's day-to-day lifecycle. The host groups the side menu by this, in the order declared here: steer -> plan -> build -> sell -> serve -> measure -> operate. Apps that do not declare one fall into `platform` (last).
+         * @default platform
+         * @enum {string}
+         */
+        NavSection: "executive" | "plan" | "build" | "revenue" | "customer" | "insight" | "platform";
+        /** @description Where the app sits in the host's side menu. The app DECLARES its own placement here rather than the platform holding a central ordering table, so onboarding a product never requires a FuzeFront edit. */
+        Nav: {
+            section?: components["schemas"]["NavSection"];
+            /**
+             * @description Rank WITHIN the section, ascending. Ties break on `slug` so ordering is always total and stable. Leave unset (999) to sort after apps that care.
+             * @default 999
+             */
+            order: number;
         };
         /** @description How the host's chrome behaves while this app is active. Ignored for `mode = standalone` (standalone apps render with no portal chrome). */
         Chrome: {
@@ -264,7 +334,9 @@ export interface components {
             builtin: boolean;
             integration: components["schemas"]["Integration"];
             chrome?: components["schemas"]["Chrome"];
+            nav?: components["schemas"]["Nav"];
             routing?: components["schemas"]["Routing"];
+            infra?: components["schemas"]["Infra"];
             visibility?: components["schemas"]["Visibility"];
             /** @description Roles permitted to see/activate the app. Empty = all members. */
             roles?: string[];
@@ -297,6 +369,48 @@ export interface components {
              * @description Owning org for org-scoped apps; omit for platform-global.
              */
             organizationId?: string | null;
+        };
+        /** @description A resource the product owns, declared with a BARE key. */
+        ProductResourceDecl: {
+            /** @description Bare resource key, e.g. `Listing`. Namespaced to `<slug>_Listing`. May NOT contain `_` — that is the namespace separator and the key must split cleanly at the first one. */
+            key: string;
+            name: string;
+            /** @description Map of action key -> { name }, e.g. { create: { name: Create } }. */
+            actions: {
+                [key: string]: {
+                    name: string;
+                };
+            };
+        };
+        /** @description A role the product owns, declared with a BARE key. */
+        ProductRoleDecl: {
+            /** @description Bare role key, e.g. `seller`. Namespaced to `<slug>_seller`. */
+            key: string;
+            name: string;
+            /** @description Permission strings against this product's BARE resource keys, e.g. `Listing:create`. Rewritten to `<slug>_Listing:create` on merge. Every referenced resource/action must exist in this same document. */
+            permissions: string[];
+        };
+        /** @description A product's self-declared authorization policy. `product` is implied by the path slug and rejected in the body if it disagrees. */
+        ProductPolicy: {
+            product?: components["schemas"]["Slug"];
+            /** @description Human-readable product name, used to prefix display names. */
+            name?: string;
+            resources: components["schemas"]["ProductResourceDecl"][];
+            roles: components["schemas"]["ProductRoleDecl"][];
+        };
+        /** @description The app's billing identity. Registering this is what allows the billing service to accept checkout sessions carrying this `productKey`. */
+        BillingProfile: {
+            /** @description The key stamped on checkout sessions and echoed on billing events, e.g. `mendys-datasets`. Conventionally the app slug unless the product already ships a different one. */
+            productKey: string;
+            /** @description ISO-4217 lowercase currency codes the product accepts. Empty = platform default. */
+            currencies?: string[];
+            /** @description Upper bound on a single checkout total, in minor units. A guard against a mispriced line item billing a customer catastrophically; omit for the platform default. */
+            maxTotalCents?: number;
+            /**
+             * @description Whether the product reports metered usage for billing.
+             * @default false
+             */
+            meteredUsage: boolean;
         };
         HeartbeatRequest: {
             /**
@@ -592,6 +706,76 @@ export interface operations {
                     "application/json": components["schemas"]["App"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    putAppPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductPolicy"];
+            };
+        };
+        responses: {
+            /** @description Policy accepted and synced. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: components["schemas"]["Slug"];
+                        /** @description Count of namespaced resources synced. */
+                        resources: number;
+                        /** @description Count of namespaced roles synced. */
+                        roles: number;
+                    };
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    putAppBillingProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The app's immutable url-safe slug (e.g. `clock`). */
+                slug: components["parameters"]["Slug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingProfile"];
+            };
+        };
+        responses: {
+            /** @description Billing profile registered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingProfile"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
