@@ -1,0 +1,104 @@
+name: MCP Maintain
+
+# Keeps this repo's Model Context Protocol (MCP) surface current, as part of CI. The
+# sibling of a2a-maintain.yml and deliberately shaped the same way: on every PR it runs
+# the `mcp-maintainer` agent to check whether anything changed that requires the repo's
+# MCP server to be BUILT (first time) or UPDATED (drift) — the `.fuze/manifest.json`
+# mcp block, the server under `mcp/`, its tools.json, and protocol-version currency.
+# If so it commits the change BACK TO THE PR BRANCH; when it can't (fork PR / first-time
+# build), it opens a separate `auto-merge`-labelled follow-up PR. It never fabricates a
+# tool's product behaviour, never handles creds, never deploys.
+#
+# WHY MCP is maintained separately from A2A: A2A is how another AGENT asks this repo for
+# an outcome; MCP is how an LLM SESSION queries and operates on this repo's objects and
+# data directly. Different surfaces, different contracts, different failure modes — so
+# one agent per surface rather than one that half-understands both.
+#
+# Requires repo secret ANTHROPIC_API_KEY. No key -> SKIPS (never red).
+
+on:
+  pull_request:
+
+permissions:
+  contents: write          # commit the reconciled MCP surface back to the PR branch
+  pull-requests: write     # open a follow-up PR when a push-back isn't possible
+  id-token: write          # claude-code-action fetches an OIDC token (required)
+  actions: read
+
+concurrency:
+  group: mcp-maintain-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mcp-maintain:
+    # Loop guard: never run on our own maintenance branches.
+    if: ${{ !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if key absent
+        id: guard
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY not set — MCP maintain skipped (set it to enable)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR head (writable, same-repo only)
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Skip on last-commit marker
+        id: marker
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[skip mcp\]'; then
+            echo "::notice::last commit marked [skip mcp] — skipping to avoid a self-trigger loop."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run mcp-maintainer
+        if: steps.guard.outputs.ok == 'true' && steps.marker.outputs.run == 'true'
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the **mcp-maintainer** for this repo (follow `.claude/agents/mcp-maintainer.md`
+            exactly — same scope, boundaries, and done-contract). This is an automated CI run on
+            PR #${{ github.event.pull_request.number }} (head `${{ github.event.pull_request.head.ref }}`).
+
+            TASK: assess whether this PR changed anything that requires the repo's MCP surface to be
+            built (first time) or updated (drift) — the `.fuze/manifest.json` `mcp` block, the
+            server(s) under `mcp/` named in `servers[]`, the `mcp/tools.json` tool manifest
+            (every tool needs name/description/inputSchema/`mutates`), and protocol-version
+            currency. If the surface is already in sync, DO NOTHING and say so.
+
+            IF a change is needed:
+              - Make the minimal correct change (scaffold on first run; reconcile only what drifted).
+              - COMMIT IT BACK TO THIS PR BRANCH: `chore(mcp-maintain): <what> [skip mcp]` and push to
+                `${{ github.event.pull_request.head.ref }}`. The trailing `[skip mcp]` is REQUIRED so you
+                do not re-trigger yourself.
+              - If you cannot push to the PR branch (this is a fork PR), instead open a follow-up PR from
+                an `mcp-maintain/pr-${{ github.event.pull_request.number }}` branch, add the `auto-merge`
+                label, and comment the link on this PR.
+
+            HARD BOUNDARIES: never fabricate a tool's product/domain behaviour (scaffold a schema-valid
+            skeleton and TODO-flag the real behaviour), never handle secrets/creds, never `kubectl`/deploy,
+            never flip `enabled: true` for a server with no working tool, and never widen a tool's
+            `mutates: false` to `true` just to make a handler compile — if the handler mutates, the
+            handler is the bug. Where the repo exposes secret material or infrastructure writes, FLAG the
+            exposure policy rather than deciding it. Verify any server you touch actually starts and
+            lists its tools.
+
+            End with the done-contract line from your agent def
+            (`MCP SURFACE: <in-sync|scaffolded|reconciled>` + what landed + `NEEDS PRODUCT/OPERATOR:` if any).
+          claude_args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'

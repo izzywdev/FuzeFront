@@ -58,6 +58,18 @@
     "servingRoles": ["app-shell-platform"],
     "entryRole": "app-shell-platform"
   },
+  "mcp": {
+    "enabled": false,
+    "servers": [
+      {
+        "name": "fuzefront-platform",
+        "transport": "stdio",
+        "entry": "mcp/server.ts"
+      }
+    ],
+    "entryServer": "fuzefront-platform",
+    "note": "Scaffold only — enabled:false until the server exposes a working tool. Intended surface: query the app registry (which apps are registered, their manifest/nav placement, health) and the org/user context. Owned by mcp-maintainer for upkeep; tool behaviour is backend-engineer's."
+  },
   "providesTo": [
     "FuzeAgent",
     "FuzeBI",
