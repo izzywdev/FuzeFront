@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
 
 interface ImportMetaEnv {
   readonly VITE_API_URL: string
@@ -6,6 +7,9 @@ interface ImportMetaEnv {
   // Node-style env exposed by some tooling; not a standard Vite key, so it must
   // be declared explicitly (DEV/PROD/MODE/BASE_URL come from `vite/client`).
   readonly NODE_ENV?: string
+  // Overrides the SW update-check poll interval (ms); see
+  // registerServiceWorker.ts. Optional — defaults to 60s.
+  readonly VITE_SW_UPDATE_INTERVAL_MS?: string
   // more env variables...
 }
 

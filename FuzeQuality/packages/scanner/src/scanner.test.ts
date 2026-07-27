@@ -79,6 +79,41 @@ paths:
     ]))
   })
 
+  it('catalogs Storybook CSF stories and maps their visual states to components', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-storybook-'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/design' }))
+    await writeFile(join(root, 'src', 'Button.tsx'), `export function Button() { return <button>Save</button> }`)
+    await writeFile(join(root, 'src', 'Button.stories.tsx'), `
+      import { Button } from './Button'
+      export default { title: 'Design/Button', component: Button }
+      export const Primary = { args: { children: 'Save' } }
+      export const Loading = { args: { loading: true }, play: async () => {} }
+      Loading.storyName = 'Saving'
+    `)
+
+    const result = await scanRepository(repository, root)
+    const button = result.surfaces.find(surface => surface.name === 'Button')
+
+    expect(button).toEqual(expect.objectContaining({
+      hasStory: true,
+      stories: [
+        expect.objectContaining({
+          id: 'design-button--primary',
+          name: 'Primary',
+          previewPath: 'iframe.html?id=design-button--primary&viewMode=story',
+          hasPlay: false,
+        }),
+        expect.objectContaining({
+          id: 'design-button--loading',
+          name: 'Saving',
+          hasPlay: true,
+        }),
+      ],
+    }))
+    expect(result.expectations.find(item => item.kind === 'storybook')?.coverage).toBe('covered-explicit')
+  })
+
   it('credits scenario coverage only to assertion-bearing tests that name the scenario', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-evidence-'))
     await mkdir(join(root, 'tests'), { recursive: true })

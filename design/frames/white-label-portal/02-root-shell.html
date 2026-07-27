@@ -1,0 +1,99 @@
+<!-- @dsCard group="White-label portal" viewport="1280x800" name="(2) Root FuzeFront shell" subtitle="Same shell markup, root portal branding — proves the reskin is token-only" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>White-label portal — (2) Root FuzeFront shell</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<!-- IDENTICAL markup to frame 1, only data-portal changed to "root".
+     The seam gradient + indigo accent return. This is the "same shell reskinned
+     by portal context" requirement: one component tree, branding is data. -->
+<body data-frame="02-root-shell" data-portal="root">
+<div class="shell" data-shell="root" data-portal-name="FuzeFront">
+  <!-- ================= TOPBAR ================= -->
+  <header class="topbar" data-region="topbar">
+    <div class="brand-lockup" data-branding="topbar">
+      <span class="brand-glyph seam" data-branding-logo aria-hidden="true">F</span>
+      <span class="brand-name" data-branding-name>FuzeFront</span>
+    </div>
+    <div class="search"><span>🔎</span><span>Search FuzeFront…</span></div>
+    <div class="spacer"></div>
+    <div class="icon-btn" title="Apps">▦</div>
+    <div class="icon-btn" title="Notifications">🔔</div>
+    <div class="avatar" data-user-initials title="Jordan Rivera">JR</div>
+  </header>
+
+  <div class="body">
+    <!-- ================= SIDE PANEL ================= -->
+    <nav class="side" data-region="side-panel">
+      <a class="nav-item active" href="#"><span class="ico">🏠</span> Home</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Apps</a>
+      <a class="nav-item" href="#"><span class="ico">👥</span> Team</a>
+      <a class="nav-item" href="#"><span class="ico">📊</span> Reports</a>
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">⚙️</span> Settings</a>
+      <a class="nav-item" href="#"><span class="ico">🎨</span> Branding</a>
+      <a class="nav-item" href="#"><span class="ico">🔒</span> Security</a>
+    </nav>
+
+    <!-- ================= CONTENT: APP GRID ================= -->
+    <main class="content" data-region="content">
+      <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-2)">
+        <h1 class="page-title" style="margin:0">Welcome back to FuzeFront</h1>
+        <span class="badge accent" data-portal-badge>portal · root</span>
+      </div>
+      <p class="page-sub">The root portal is just another portal — the seeded default (FF-EPIC-09).</p>
+
+      <section class="app-grid" data-region="app-grid" aria-label="Portal apps">
+        <div class="app-card" data-app="crm">
+          <div class="app-ico">📇</div>
+          <div class="app-name">CRM</div>
+          <p class="app-desc">Pipeline, contacts &amp; deals.</p>
+        </div>
+        <div class="app-card" data-app="docs">
+          <div class="app-ico">📄</div>
+          <div class="app-name">Docs</div>
+          <p class="app-desc">Shared team documents.</p>
+        </div>
+        <div class="app-card" data-app="analytics">
+          <div class="app-ico">📈</div>
+          <div class="app-name">Analytics</div>
+          <p class="app-desc">Dashboards &amp; metrics.</p>
+        </div>
+        <div class="app-card" data-app="inbox">
+          <div class="app-ico">✉️</div>
+          <div class="app-name">Inbox</div>
+          <p class="app-desc">Unified messages.</p>
+        </div>
+        <div class="app-card" data-app="billing">
+          <div class="app-ico">💳</div>
+          <div class="app-name">Billing</div>
+          <p class="app-desc">Invoices &amp; plans.</p>
+        </div>
+        <div class="app-card" data-app="add">
+          <div class="app-ico">＋</div>
+          <div class="app-name">Add app</div>
+          <p class="app-desc">Browse the catalog.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="reviewer-note">
+    design-review note · byte-for-byte the same shell as frame 1. Only <code>data-portal</code>
+    flipped <code>corpabc → root</code>; the indigo→cyan seam and default logo return. Reskin is
+    <b>token-only</b>, zero component changes — exactly the FF-EPIC-13 goal.
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption">Frame <b>2 / 5</b> · Root FuzeFront shell (same markup)</span>
+  <span>
+    <a class="btn btn-ghost" href="01-branded-shell.html">← CorpABC shell</a>
+    <a class="btn btn-primary" href="03-white-label-login.html" data-nav="03-white-label-login">White-label login →</a>
+  </span>
+</nav>
+</body>
+</html>

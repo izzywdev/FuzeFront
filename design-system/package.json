@@ -7,12 +7,47 @@
   "module": "index.js",
   "types": "index.d.ts",
   "exports": {
-    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
     "./tokens/*": "./tokens/*",
     "./styles.css": "./styles.css"
   },
-  "files": ["components", "tokens", "index.js", "index.d.ts", "styles.css", "_ds_manifest.json"],
-  "peerDependencies": { "react": "^18.0.0", "react-dom": "^18.0.0" },
-  "publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" },
-  "repository": { "type": "git", "url": "https://github.com/fuzefront/FuzeFront.git", "directory": "design-system" }
+  "files": [
+    "components",
+    "tokens",
+    "index.js",
+    "index.d.ts",
+    "styles.css",
+    "_ds_manifest.json"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fuzefront/FuzeFront.git",
+    "directory": "design-system"
+  }
 }

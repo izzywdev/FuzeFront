@@ -48,34 +48,53 @@ so the cluster Ingress host-matches `unleash.prod.fuzefront.com` → the Unleash
 Service. This alone does **not** make Unleash reachable or add a launcher tile — it
 only wires the in-cluster route. Steps 2–3 are the remaining, out-of-repo work.
 
-### Step 2 (FuzeInfra — delegated `@claude`) — Cloudflare tunnel + Access Application
+### Step 2 (Cloudflare) — **DONE 2026-07-26**
 
-FuzeInfra-owned (Cloudflare dashboard / Terraform); cannot be done from this repo.
+The original version of this runbook assumed three missing pieces (tunnel route, DNS
+record, Access application). **Two of the three already existed** via wildcards, so
+only the Access application was actually needed:
 
-> **@claude (FuzeInfra):** please expose the FuzeFront Unleash admin UI on the
-> `fuzefront` Cloudflare Access team, gated to the developer group.
->
-> 1. **Tunnel public-hostname route:** `unleash.prod.fuzefront.com` → the cluster
->    ingress entrypoint (the same `traefik.kube-system:80` target used for the other
->    `*.prod.fuzefront.com` admin hosts). Proxied.
-> 2. **DNS:** proxied CNAME `unleash.prod.fuzefront.com` → the tunnel.
-> 3. **Cloudflare Access → Applications → Add → Self-hosted:**
->    - Application domain: `unleash.prod.fuzefront.com`
->    - Policy: **Allow** the developer group (emails or IdP group), including
->      `izzy.weinberg@gmail.com`.
->    - **App Launcher → "Show in App Launcher": ON** (this is the step that creates
->      the tile; a tunnel route alone does NOT add one).
+| Assumed missing | Reality |
+|---|---|
+| Tunnel public-hostname route → `traefik.kube-system:80` | **Already satisfied.** The `fuzeinfra-cloudflare-tunnel` is *remotely-managed* (`cloudflared tunnel run` with a token, no ConfigMap) and its ingress ends in a **catch-all** → `http://traefik.kube-system:80`. Every host not explicitly routed already lands on Traefik. No per-host entry is required. |
+| Proxied CNAME `unleash.prod.fuzefront.com` → tunnel | **Already satisfied** by the wildcard record `*.prod.fuzefront.com` → `8c0180f1-…​.cfargotunnel.com`, proxied. |
+| Access application (the launcher tile) | **This was the only genuinely missing piece** — created, see below. |
 
-> Note: this delegation cannot be filed as a FuzeInfra issue from a FuzeFront
-> session (GitHub scope is `izzywdev/fuzefront` only). Forward the block above into
-> FuzeInfra, or trigger `@claude` there directly.
+Note also that the launcher tiles for the other admin services (ArgoCD, Grafana,
+Prometheus, …) are **`type: "bookmark"`** apps — pure links with no policy of their
+own. All *authentication* for those hosts comes from a single wildcard self-hosted
+app, **"FuzeInfra Admin Services"** (`*.prod.fuzefront.com`, policy = "Admin email
+allowlist (OTP)"). So Unleash was **already gated** before this change; it simply had
+no tile.
 
-### Verify
+**What was created** (account `8c535091cda7f0e7a55ee29a7b1999af`):
 
-- `https://unleash.prod.fuzefront.com` prompts Cloudflare Access, then loads Unleash
-  after auth.
-- A tile appears at `https://fuzefront.cloudflareaccess.com/#/Launcher` for members
-  of the developer group.
+- **Access application** `Unleash (FuzeFront feature flags)`
+  - id `514f8a21-3793-4726-858e-819556fbe346`, AUD `be7dc60b…d4a5`
+  - type `self_hosted`, domain `unleash.prod.fuzefront.com`, session `24h`
+  - **`app_launcher_visible: true`** ← this is what creates the tile
+- **Policy** `Developer email allowlist (OTP)`
+  (id `5eec7416-f3f0-4bd6-bef9-babe55fbd62b`) — `allow`, include
+  `email == izzy.weinberg@gmail.com`, mirroring the wildcard app's allowlist.
+
+Because a more specific Access app takes precedence over the wildcard, this app now
+governs `unleash.prod.fuzefront.com`. Its policy is deliberately identical to the
+wildcard's, so effective access is unchanged.
+
+> **The "developer group" is an email allowlist, not an IdP group.** The only
+> configured Access IdP is `onetimepin` (email OTP) and **no Access groups exist** in
+> this account. To add a developer, add their email to *both* this policy and the
+> wildcard app's policy — or, better, create a reusable Access group and point both
+> policies at it, so the cohort lives in one place.
+
+### Verify — results (2026-07-26)
+
+| Check | Result |
+|---|---|
+| `https://unleash.prod.fuzefront.com` prompts Cloudflare Access | ✅ `302` → `…/cdn-cgi/access/login/unleash.prod.fuzefront.com?kid=be7dc60b…` (the new app's AUD, confirming it governs the host) |
+| Origin actually serves Unleash | ✅ `HTTP 200` (1198 B) via `Host: unleash.prod.fuzefront.com` → `http://traefik.kube-system:80` → `fuzefront-unleash:4242` |
+| Tile at `fuzefront.cloudflareaccess.com/#/Launcher` | ✅ "Unleash (FuzeFront feature flags)" listed (13 of 13 apps) |
+| Loads Unleash *after* completing auth | ⚠️ **Not machine-verified** — completing the email-OTP login is a credential action. Both sides of it are proven (Access challenges correctly; origin returns 200), so this is a formality to confirm by hand. |
 
 ---
 
@@ -324,7 +343,8 @@ rollout. Both states remain covered by the flag tests
 | Item | Where | Status |
 |---|---|---|
 | Unleash prod ingress (`enabled: true`, CF-Access host) | `deploy/helm/unleash/values-prod.yaml` | **Done on `master`** |
-| CF tunnel route + CNAME + **Access Application** (the launcher tile) | Cloudflare / FuzeInfra | **Delegated** — Part 1, Step 2 |
+| CF tunnel route + CNAME | Cloudflare | **Already existed** (tunnel catch-all + `*.prod.fuzefront.com` wildcard) — no change needed |
+| **Access Application** (the launcher tile) | Cloudflare | **Done 2026-07-26** — app `514f8a21-…`, launcher ON, tile verified |
 | `developers` segment + per-flag ON strategy in Unleash | live Unleash instance | **Done** — segment id 1, 3 release flags, production env (2026-07-26) |
 | Owner's user id / dev group membership | Unleash / Authentik | **Done** — owner `users.id` UUID in the segment constraint |
 | `developers`-segment step in the flag-creation checklist | `.claude/skills/feature-flags/SKILL.md` | **Done** |

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Create portal — master-admin frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-create-portal">
+  <a class="back" href="01-portals-list.html">← Portals</a>
+  <div class="eyebrow">Master-admin · Frame (b) · route /admin/portals/new</div>
+  <h1>Create portal</h1>
+  <p class="lead">Provisioning a new tenant portal: an organization, its slug (the tenant's front
+    door), an owner to invite as the first Portal Admin, and how it bills. Submitting kicks off
+    provisioning — the portal starts in a pending-invite state until the owner accepts.</p>
+
+  <div class="modal" data-panel="create-portal" style="max-width: 560px; margin: 0">
+    <div class="modal-head"><h2>New portal</h2></div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="label" for="np-name">Portal name</label>
+        <input class="input" id="np-name" data-input="name" value="Contoso" placeholder="Acme, Inc." />
+        <p class="hint">Shown in the shell header and the portals list. Editable later.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="np-slug">Slug</label>
+        <input class="input mono" id="np-slug" data-input="slug" value="contoso" placeholder="acme" />
+        <p class="hint">Lowercase, unique, immutable. Becomes the tenant's default subdomain
+          (<span class="mono">contoso.fuzefront.com</span>) until a custom domain is verified.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="np-owner">Owner email</label>
+        <input class="input" id="np-owner" data-input="owner-email" value="admin@contoso.example" placeholder="owner@company.com" />
+        <p class="hint">Invited as the first Portal Admin. They set their own password on accept —
+          you never see it.</p>
+      </div>
+
+      <div class="field">
+        <label class="label">Plan &amp; billing mode</label>
+        <label class="radio-row" data-selected="false" data-plan-option="free">
+          <input type="radio" name="plan" value="free" />
+          <span><span class="rl">Free</span><span class="rd">No charge. FuzeFront-billed. Reseller
+            billing off.</span></span>
+        </label>
+        <label class="radio-row" data-selected="true" data-plan-option="pro">
+          <input type="radio" name="plan" value="pro" checked />
+          <span><span class="rl">Pro · platform-billed</span><span class="rd">FuzeFront charges this
+            portal (their own subscription). Standard tenant.</span></span>
+        </label>
+        <label class="radio-row" data-selected="false" data-plan-option="reseller">
+          <input type="radio" name="plan" value="reseller" />
+          <span><span class="rl">Reseller · Connect</span><span class="rd">This portal bills its own
+            customers via Stripe Connect. Unlocks the billing console (S4).</span></span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <a class="btn btn-ghost" href="01-portals-list.html" data-action="cancel">Cancel</a>
+      <button class="btn btn-accent" data-action="submit-create-portal">Create portal</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract (anticipated — <code>@fuzefront/portal-client</code>).</b>
+    <code>POST /api/v1/admin/portals</code> (<code>PortalCreate</code> → <code>201 Portal</code>).
+    Body: <code>name</code>, <code>slug</code>, <code>ownerEmail</code>, <code>billingMode</code>
+    (<code>free</code> | <code>platform</code> | <code>reseller</code>). Slug uniqueness is validated
+    server-side; a taken slug returns <code>409 SLUG_TAKEN</code> shown inline on the field (see states
+    frame, c). The new portal is created <code>status: provisioned-pending-invite</code>; the owner's
+    invitation is dispatched as part of provisioning. <code>reseller</code> mode is what surfaces the
+    Connect billing console — the plan choice here is the switch.
+  </p>
+
+  <nav class="pager"><a href="01-portals-list.html">← Portals</a><a href="03-portal-detail.html">Next: Portal detail →</a></nav>
+</div>
+</body>
+</html>

@@ -5,6 +5,7 @@ import fg from 'fast-glob'
 import type {
   ApiOperation,
   FrontendSurface,
+  StorybookStory,
   Repository,
   RepositoryScanCandidate,
   ScanDiagnostic,
@@ -160,10 +161,49 @@ function stateHints(source: string) {
   return [...states]
 }
 
+function storySlug(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+}
+
+function storyDisplayName(exportName: string, source: string) {
+  const assignment = source.match(new RegExp(`${exportName}\\.storyName\\s*=\\s*['"]([^'"]+)['"]`))
+  return assignment?.[1] ?? exportName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+}
+
+function extractStories(sourcePath: string, source: string): Array<StorybookStory & { componentName?: string }> {
+  const title = source.match(/\btitle\s*:\s*['"]([^'"]+)['"]/)?.[1]
+    ?? sourcePath.replace(/\.stories\.[^.]+$/, '').split('/').pop()
+    ?? 'Component'
+  const componentName = source.match(/\bcomponent\s*:\s*([A-Z][A-Za-z0-9_]*)/)?.[1]
+  const exports = [...source.matchAll(/export\s+(?:const|function)\s+([A-Z][A-Za-z0-9_]*)/g)]
+    .map(match => ({ name: match[1], index: match.index ?? 0 }))
+    .filter(item => !['Meta', 'Story', 'StoryObj'].includes(item.name))
+  return exports.map((item, index) => {
+    const exportName = item.name
+    const id = `${storySlug(title)}--${storySlug(exportName)}`
+    const exportBlock = source.slice(item.index, exports[index + 1]?.index ?? source.length)
+    return {
+      id,
+      title,
+      name: storyDisplayName(exportName, source),
+      exportName,
+      sourcePath: normalize(sourcePath),
+      hasPlay: /\bplay\s*:/.test(exportBlock) || new RegExp(`${exportName}\\.play\\s*=`).test(source),
+      previewPath: `iframe.html?id=${encodeURIComponent(id)}&viewMode=story`,
+      componentName,
+    }
+  })
+}
+
 async function scanFrontend(
   root: string,
   repository: Repository,
   ignore: string[],
+  stories: Array<StorybookStory & { componentName?: string }>,
   storyFiles: Set<string>,
   onProgress: () => Promise<void>
 ) {
@@ -195,6 +235,7 @@ async function scanFrontend(
       ignore,
     })
     for (const file of sourceFiles) {
+      if (storyFiles.has(normalize(file))) continue
       await onProgress()
       let source: string
       try {
@@ -227,6 +268,7 @@ async function scanFrontend(
           public: true,
           states: stateHints(source),
           hasStory: false,
+          stories: [],
         })
       }
 
@@ -236,7 +278,12 @@ async function scanFrontend(
       for (const componentMatch of componentMatches) {
         const name = componentMatch[1]
         const base = normalize(file).replace(/\.[^.]+$/, '')
-        const hasStory = [...storyFiles].some(story => story.replace(/\.stories\.[^.]+$/, '') === base)
+        const componentStories = stories
+          .filter(story =>
+            story.componentName === name ||
+            story.sourcePath.replace(/\.stories\.[^.]+$/, '') === base
+          )
+          .map(({ componentName: _componentName, ...story }) => story)
         surfaces.push({
           id: `ui:${repository.name}:${packageName}:component:${name}`,
           repositoryId: repository.id,
@@ -246,7 +293,8 @@ async function scanFrontend(
           sourcePath: normalize(file),
           public: /(?:index\.|exports|export\s+)/.test(`${file} ${source}`),
           states: stateHints(source),
-          hasStory,
+          hasStory: componentStories.length > 0,
+          stories: componentStories,
         })
       }
     }
@@ -338,11 +386,13 @@ export async function scanRepository(
     }
   }
 
+  const stories: Array<StorybookStory & { componentName?: string }> = []
   for (const file of storyFiles) {
     await onProgress()
     try {
       const content = await readText(root, file)
       contentFingerprints.push(`${normalize(file)}:${fingerprint(content)}`)
+      stories.push(...extractStories(normalize(file), content))
     } catch (error) {
       diagnostics.push({
         sourcePath: normalize(file),
@@ -354,7 +404,7 @@ export async function scanRepository(
     }
   }
 
-  const frontend = await scanFrontend(root, repository, ignore, storyFiles, onProgress)
+  const frontend = await scanFrontend(root, repository, ignore, stories, storyFiles, onProgress)
   const surfaces = frontend.surfaces
   contentFingerprints.push(...frontend.fingerprints)
   diagnostics.push(...frontend.diagnostics)

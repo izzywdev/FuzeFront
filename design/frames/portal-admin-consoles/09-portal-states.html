@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portal-admin states — frame (i)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="09-portal-states">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Portal-admin · Frame (i) · routes /portal/admin/*</div>
+  <h1>Portal-admin states</h1>
+  <p class="lead">The states the portal-admin console must render — the ones that decide whether the
+    UI is safe. Loading and empty for users and catalog; the two fail-closed authz cases that keep a
+    tenant inside its own walls (a <b>suspended portal</b> and an <b>invite into a portal you don't
+    own</b>); and the Stripe Connect onboarding state machine, including the case where a false
+    "active" would be a money bug.</p>
+
+  <!-- i1 users loading -->
+  <div class="state-block">
+    <div class="state-label">(i1) Users · loading</div>
+    <div class="panel" data-panel="portal-users" data-state="loading" aria-busy="true">
+      <div class="panel-head"><div><h2>Users</h2><p class="sub">Loading…</p></div></div>
+      <table class="tbl"><tbody>
+        <tr><td><div class="skel" style="width: 55%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td><div class="skel" style="width: var(--space-12)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+        <tr><td><div class="skel" style="width: 45%"></div></td><td><div class="skel" style="width: var(--space-16)"></div></td><td><div class="skel" style="width: var(--space-12)"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <!-- i2 users empty -->
+  <div class="state-block">
+    <div class="state-label">(i2) Users · just you — newly provisioned portal</div>
+    <div class="panel" data-panel="portal-users" data-state="empty">
+      <div class="panel-head"><div><h2>Users</h2><p class="sub"><span data-count="users">1</span> in this portal</p></div>
+        <button class="btn btn-accent" data-action="invite-user">Invite user</button></div>
+      <div class="empty">
+        <h3>It's just you so far</h3>
+        <p>You're the admin of this portal. Invite your team to give them access to the apps in your
+          catalog.</p>
+        <button class="btn btn-accent" data-action="invite-user">Invite your first teammate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i3 catalog empty -->
+  <div class="state-block">
+    <div class="state-label">(i3) Catalog · nothing enabled yet</div>
+    <div class="panel" data-panel="catalog-enabled" data-state="empty">
+      <div class="panel-head"><div><h2>Your catalog</h2><p class="sub"><span data-count="enabled">0</span> apps enabled</p></div>
+        <button class="btn btn-accent" data-action="add-app">Add app</button></div>
+      <div class="empty">
+        <h3>No apps in your portal yet</h3>
+        <p>Your launcher is empty. Add apps from the FuzeFront catalog to make them available to your
+          users — you choose which appear and in what order.</p>
+        <button class="btn btn-accent" data-action="add-app">Browse available apps</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i4 generic load error -->
+  <div class="state-block">
+    <div class="state-label">(i4) Couldn't load</div>
+    <div class="panel" data-panel="portal-users" data-state="error">
+      <div class="panel-head"><div><h2>Users</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="LOAD_FAILED" style="text-align: left">
+          <span><b>We couldn't load this</b><p>Something went wrong on our end. Your access hasn't
+            changed — try again.</p></span></div>
+        <button class="btn" data-action="retry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i5 portal suspended -->
+  <div class="state-block">
+    <div class="state-label">(i5) Portal suspended — 403, fail-closed for the whole console</div>
+    <div class="panel" data-panel="portal-console" data-state="suspended">
+      <div class="panel-head"><div><h2>Northwind · Console</h2></div>
+        <span class="status status--suspended" data-portal-status="suspended"><span class="dot"></span>Suspended</span></div>
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="PORTAL_SUSPENDED" data-http="403" style="text-align: left">
+          <span><b>This portal is suspended</b>
+            <p>A FuzeFront administrator has suspended this portal, so its console is read-blocked.
+              Your data is retained. Contact FuzeFront support to resolve it — you're signed in, this
+              is not a login problem.</p></span></div>
+        <a class="btn btn-ghost" href="#" data-action="contact-support">Contact support</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- i6 cross-tenant invite denied -->
+  <div class="state-block">
+    <div class="state-label">(i6) Invite into a portal you don't own — 403, no cross-tenant leak</div>
+    <div class="modal" data-panel="invite-user" data-state="forbidden">
+      <div class="modal-head"><h2>Can't invite here</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-info" data-error-code="FORBIDDEN_PORTAL" data-http="403">
+          <span><b>You don't administer this portal</b>
+            <p>You're a Portal Admin, but not of the portal in this request. The console never accepts
+              a portal id from the URL — it's resolved from your session. Nothing about another
+              portal's users is shown here.</p></span></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Close</button>
+        <button class="btn btn-accent" data-action="submit-invite" disabled>Send invite</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i7 connect not started -->
+  <div class="state-block">
+    <div class="state-label">(i7) Billing · Connect not started — the entry CTA</div>
+    <div class="panel" data-panel="connect-status" data-state="not-started">
+      <div class="panel-head"><div><h2>Reseller payouts · Connect</h2><p class="sub">Charge your own customers</p></div>
+        <span class="status status--not-started" data-connect-status="not-started"><span class="dot"></span>Not started</span></div>
+      <div class="empty">
+        <h3>Start billing your customers</h3>
+        <p>Onboard a Stripe Connect account to charge your own customers and receive payouts. It takes
+          a few minutes on Stripe's secure onboarding — you'll come right back here.</p>
+        <button class="btn btn-accent" data-action="start-connect-onboarding">Start onboarding</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i8 connect in progress -->
+  <div class="state-block">
+    <div class="state-label">(i8) Billing · onboarding in progress — never a false "active"</div>
+    <div class="panel" data-panel="connect-status" data-state="in-progress">
+      <div class="panel-head"><div><h2>Reseller payouts · Connect</h2></div>
+        <span class="status status--in-progress" data-connect-status="in-progress"><span class="dot"></span>In progress</span></div>
+      <div class="panel-body">
+        <div class="steps">
+          <div class="step-item" data-step="account" data-done="true"><span class="step-num">✓</span><div><div class="step-title">Account created</div></div></div>
+          <div class="step-item" data-step="details" data-current="true"><span class="step-num">2</span><div><div class="step-title">Business details needed</div><div class="step-desc">Stripe still needs identity or bank information before you can accept charges.</div></div></div>
+          <div class="step-item" data-step="charges" data-done="false"><span class="step-num">3</span><div><div class="step-title">Charges &amp; payouts</div><div class="step-desc"><span class="mono">charges_enabled</span> is still false — not active yet.</div></div></div>
+        </div>
+        <button class="btn btn-accent" data-action="continue-connect-onboarding">Continue onboarding</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i9 connect restricted / return error -->
+  <div class="state-block">
+    <div class="state-label">(i9) Billing · restricted or return failed — actionable, never blank</div>
+    <div class="panel" data-panel="connect-status" data-state="restricted">
+      <div class="panel-head"><div><h2>Reseller payouts · Connect</h2></div>
+        <span class="status status--restricted" data-connect-status="restricted"><span class="dot"></span>Restricted</span></div>
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="CONNECT_RESTRICTED" style="text-align: left">
+          <span><b>Stripe needs more from you</b>
+            <p>Your Connect account is restricted — payouts are paused until Stripe's outstanding
+              requirements are met. This also covers a failed return from onboarding (the account
+              link expired). Re-open onboarding to fix it.</p></span></div>
+        <button class="btn btn-accent" data-action="reonboard-connect">Continue onboarding</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- i10 price gated on charges -->
+  <div class="state-block">
+    <div class="state-label">(i10) Billing · add-price blocked until charges enabled — fail-closed</div>
+    <div class="modal" data-panel="add-price" data-state="charges-disabled" style="max-width: 460px">
+      <div class="modal-head"><h2>Add a price</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn" data-error-code="CHARGES_NOT_ENABLED">
+          <span><b>Finish onboarding first</b>
+            <p>You can't publish a price until Stripe has enabled charges on your account
+              (<span class="mono">charges_enabled = true</span>). Complete Connect onboarding, then
+              add prices.</p></span></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-price" disabled>Publish price</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> (i1–i4) cover in-flight / empty / non-2xx for the real
+    <code>@fuzefront/security-client</code> member surface and the anticipated
+    <code>portal_apps</code> catalog. <b>(i5)</b> a suspended portal returns
+    <code>403 PORTAL_SUSPENDED</code> for the whole console — shown in place, not a redirect.
+    <b>(i6)</b> the portal is always resolved from the session; a request against a portal you don't
+    administer is <code>403 FORBIDDEN_PORTAL</code> with zero cross-tenant data. <b>(i7–i10)</b> the
+    Connect state machine (anticipated, FF-EPIC-15): status derives from <code>charges_enabled</code>
+    /<code>payouts_enabled</code> /<code>onboarding_status</code> — an account is "active" only when
+    both flags are true, so an in-progress or restricted account is never rendered as active, and a
+    price cannot be published while charges are disabled.
+  </p>
+
+  <nav class="pager"><a href="08-billing.html">← Billing</a><a href="index.html">Back to index →</a></nav>
+</div>
+</body>
+</html>
