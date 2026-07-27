@@ -206,10 +206,18 @@ cohort by one of:
 
 - **Fast path (works today, no code):** a constraint on context field `userId`
   (the OpenFeature `targetingKey`, which `@fuzefront/feature-flags` already sets
-  from the caller's user id) — operator `STR_CONTAINS` / `IN`, values = the
-  developer user ids, including the platform owner's. Needs only **your stable user
-  id** (the security-service / Authentik user id passed as `userId` in the flag
-  context).
+  from the caller's user id) — operator `IN`, values = the developer user ids,
+  including the platform owner's.
+
+  > **Correctness — use the user UUID, NOT the email.** The app sends
+  > `userId = user.id`, and `user.id` is a **UUID**, not an email address
+  > (`shared/src/kafka/schemas/identity.session.issued.ts` →
+  > `userId: z.string().uuid()`; the `/me` response returns `id` and `email` as
+  > separate fields; `frontend/src/components/FederatedAppLoader.tsx` sets
+  > `userId: user.id`). A segment keyed on `you@example.com` would silently never
+  > match. Get the UUID with
+  > `SELECT id FROM users WHERE email='<owner-email>';` (or decode the `sub` claim
+  > of a logged-in session JWT / read `user.id` from the `/me` response).
 - **Durable path (optional follow-up):** target a group/role instead of a hand-kept
   id list. This needs a small addition to the evaluation context
   (`packages/feature-flags/src/types.ts` already allows extra fields; add a
@@ -230,6 +238,72 @@ template / `feature-flags-engineer`'s creation checklist).
 > non-developers until rolled out, and a **permission** flag is still enforced by
 > **Permit** server-side — the segment only changes who sees the *flag*, never who is
 > *authorized*.
+
+### Executable version (Unleash Admin API)
+
+Needs Unleash **admin** access. Reach it either through the CF-Access-gated host once
+Part 1 is live, or by port-forward:
+
+```bash
+# Option A: port-forward the in-cluster admin UI/API
+kubectl -n fuzefront port-forward svc/fuzefront-unleash 4242:4242   # -> http://localhost:4242
+
+# Common vars
+UNLEASH="http://localhost:4242"                 # or https://unleash.prod.fuzefront.com
+TOKEN="$INIT_ADMIN_API_TOKEN"                   # from the unleash-secrets INIT_ADMIN_API_TOKENS
+PROJECT="default"                               # adjust if flags live in another project
+ENVIRONMENT="production"
+```
+
+**0. Resolve the owner's user UUID** (NOT the email — see the correctness note above):
+```bash
+# via the DB
+UUID="$(psql "$DATABASE_URL" -tAc "SELECT id FROM users WHERE email='izzy.weinberg@gmail.com';")"
+echo "$UUID"   # sanity-check it is a UUID, not an email
+```
+
+**1. Create the `developers` segment** (idempotent-ish: skip if it already exists):
+```bash
+curl -sfX POST "$UNLEASH/api/admin/segments" \
+  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "name": "developers",
+    "description": "All flags ON for the developer cohort (owner + devs)",
+    "constraints": [
+      { "contextName": "userId", "operator": "IN", "values": ["'"$UUID"'"] }
+    ]
+  }'
+# note the returned segment "id" (a number) for step 2:
+SEGMENT_ID="$(curl -sf "$UNLEASH/api/admin/segments" -H "Authorization: $TOKEN" \
+  | python3 -c 'import sys,json;print(next(s["id"] for s in json.load(sys.stdin)["segments"] if s["name"]=="developers"))')"
+echo "segment id = $SEGMENT_ID"
+```
+To add more developers later, PUT the segment with the extra UUIDs appended to
+`constraints[0].values`.
+
+**2. Attach a 100%-ON strategy bound to the segment, to every flag, in production:**
+```bash
+# list all feature toggles in the project
+FLAGS="$(curl -sf "$UNLEASH/api/admin/projects/$PROJECT/features" -H "Authorization: $TOKEN" \
+  | python3 -c 'import sys,json;[print(f["name"]) for f in json.load(sys.stdin)["features"]]')"
+
+for FLAG in $FLAGS; do
+  echo "→ $FLAG"
+  curl -sfX POST \
+    "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
+    -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+    -d '{
+      "name": "flexibleRollout",
+      "parameters": { "rollout": "100", "stickiness": "default", "groupId": "'"$FLAG"'" },
+      "segments": ['"$SEGMENT_ID"']
+    }' >/dev/null && echo "  ok" || echo "  FAILED (check if a developers strategy already exists)"
+done
+```
+
+> Do **not** touch the flags' existing default/other strategies or their in-code
+> fallback values — this only *adds* the developer-segment strategy on top. Re-running
+> the loop will create duplicate strategies, so guard against re-adds (or delete the
+> prior developer strategy first) if you run it twice.
 
 ### Step 3. Add yourself
 
