@@ -1,0 +1,29 @@
+{
+  "name": "@fuzefront/onboarding-kit",
+  "version": "1.0.0",
+  "description": "Drop-in self-registration kit for FuzeFront apps — registration script, manifest schema, policy/billing templates, and the Helm init-container snippet",
+  "files": [
+    "bin",
+    "templates",
+    "helm",
+    "manifest.schema.json",
+    "README.md"
+  ],
+  "bin": {
+    "fuzefront-register": "bin/register.sh"
+  },
+  "scripts": {
+    "test": "sh tests/register.test.sh",
+    "lint": "shellcheck bin/register.sh"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/onboarding-kit"
+  },
+  "license": "MIT"
+}
