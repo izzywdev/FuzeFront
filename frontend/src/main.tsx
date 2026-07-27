@@ -13,6 +13,7 @@ import App from './App.tsx'
 // color theme (defined there) still wins where the two overlap.
 import '@fuzefront/design-system/styles.css'
 import './index.css'
+import { registerServiceWorker } from './registerServiceWorker'
 
 // Enhanced console logging for debugging
 const originalConsole = {
@@ -90,6 +91,11 @@ window.addEventListener('unhandledrejection', event => {
 
 // Initialize enhanced console
 enhanceConsole()
+
+// Keep the PWA service worker checking for updates while the tab is open —
+// see registerServiceWorker.ts for why this is required (autoUpdate alone
+// only re-checks on hard navigation / the browser's ~24h heuristic).
+registerServiceWorker()
 
 console.log('🚀 Frontend Application Starting:', {
   timestamp: new Date().toISOString(),

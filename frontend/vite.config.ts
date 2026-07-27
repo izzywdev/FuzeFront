@@ -143,12 +143,22 @@ export default defineConfig({
       // Service workers are irrelevant in CI (E2E tests the app, not the SW).
       ...(process.env.CI === 'true' ? { disabled: true } : {}),
       registerType: 'autoUpdate',
+      // We register the SW ourselves (src/registerServiceWorker.ts via
+      // virtual:pwa-register) so we can add the periodic/visibility/online
+      // update-check polling the default auto-injected registerSW.js does
+      // not provide. injectRegister: false stops VitePWA from ALSO
+      // injecting its own <script> registration into index.html.
+      injectRegister: false,
       devOptions: { enabled: false },
-      // Don't precache JS bundles — MFE remotes change independently and stale
-      // cached JS would break federation. Let Workbox runtime-cache JS with
-      // NetworkFirst so the shell always fetches fresh federation assets.
-      globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
       workbox: {
+        // Don't precache JS bundles — MFE remotes change independently and
+        // stale cached JS would break federation. Let Workbox runtime-cache
+        // JS with NetworkFirst so the shell always fetches fresh federation
+        // assets. (Moved here from a top-level `globPatterns:` sibling of
+        // `workbox` — VitePWAOptions has no such top-level field, only
+        // `workbox.globPatterns` via GenerateSWOptions, so the prior
+        // placement silently had no effect on the actual precache manifest.)
+        globPatterns: ['**/*.{html,css,ico,png,svg,woff,woff2}'],
         // registerType 'autoUpdate' only re-checks for a new SW; it does NOT
         // by itself make a waiting worker activate. Without these two flags a
         // freshly-installed SW sits in `waiting` (observed live: old SW
@@ -159,6 +169,10 @@ export default defineConfig({
         // control of already-open clients without a reload race.
         skipWaiting: true,
         clientsClaim: true,
+        // Old precached entries (previous build's hashed CSS/icons/etc.) are
+        // never purged otherwise — cleanupOutdatedCaches drops them once the
+        // new SW activates, keeping the cache storage bounded to one build.
+        cleanupOutdatedCaches: true,
         // Exclude server-owned paths from the SPA navigation fallback so full-page
         // navigations to them are NOT intercepted by the SW and silently served as
         // index.html. Two families must be excluded:
