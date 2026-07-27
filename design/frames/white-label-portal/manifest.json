@@ -44,9 +44,9 @@
         "id": "portal-shell",
         "orchestrator": "PortalShell",
         "route": "/",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-07-27T11:07:37.257Z"
       },
       {
         "id": "portal-login",
