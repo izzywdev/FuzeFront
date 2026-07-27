@@ -13,6 +13,8 @@ declare module 'lucide-react' {
   export const Database: LucideIcon
   export const FileCode2: LucideIcon
   export const GitBranch: LucideIcon
+  export const Eye: LucideIcon
+  export const ExternalLink: LucideIcon
   export const Layers3: LucideIcon
   export const Network: LucideIcon
   export const Plus: LucideIcon
