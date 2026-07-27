@@ -20,6 +20,7 @@
     "packages/feature-flags",
     "packages/security",
     "design-system",
+    "services/chat-service",
     "services/email-service"
   ],
   "scripts": {

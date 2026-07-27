@@ -386,6 +386,12 @@ chatService:
     limits:
       cpu: "1"
       memory: 1Gi
+  # chat-db-migrate Job: runs the knex migrations (chat_conversations,
+  # chat_messages, chat_audit_log, chat_feedback) as a pre-install/pre-upgrade
+  # hook, before chat-service starts. Nothing else creates these tables, so
+  # leave this on whenever chatService.enabled is true; it is idempotent.
+  migrate:
+    enabled: true
   # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
   # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
   # LiteLLM + ChromaDB are reachable in fuzeinfra.
