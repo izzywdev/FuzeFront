@@ -40,12 +40,16 @@ describe('WhiteLabelLoginCard', () => {
     expect(screen.getByRole('button', { name: /sign in to corpabc/i })).toBeVisible()
   })
 
-  it('email/password fields are labeled (a11y) and required', () => {
+  it('email/password fields are labeled (a11y), with no native `required` blocking submission', () => {
+    // No `required`: the RED spec (and the real cross-portal-rejection flow)
+    // submits with empty fields and expects the SERVER to reject — a native
+    // `required` attribute would block that submit event before our onSubmit
+    // ever runs.
     render(<WhiteLabelLoginCard context={CORPABC} />)
     const email = screen.getByLabelText('Email') as HTMLInputElement
     const password = screen.getByLabelText('Password') as HTMLInputElement
-    expect(email).toBeRequired()
-    expect(password).toBeRequired()
+    expect(email).not.toBeRequired()
+    expect(password).not.toBeRequired()
     expect(email.type).toBe('email')
     expect(password.type).toBe('password')
   })

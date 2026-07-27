@@ -168,6 +168,10 @@ export function WhiteLabelLoginCard({ context }: WhiteLabelLoginCardProps) {
             Welcome back to {name}.
           </p>
 
+          {/* No native `required` — the RED spec (and the real cross-portal
+              rejection flow) submits and lets the SERVER validate/reject;
+              client-side `required` would block the native form submission
+              before our onSubmit ever runs. */}
           <Input
             label="Email"
             type="email"
@@ -176,7 +180,6 @@ export function WhiteLabelLoginCard({ context }: WhiteLabelLoginCardProps) {
             autoComplete="username"
             value={email}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-            required
           />
           <div style={{ height: 'var(--space-4)' }} />
           <Input
@@ -187,7 +190,6 @@ export function WhiteLabelLoginCard({ context }: WhiteLabelLoginCardProps) {
             autoComplete="current-password"
             value={password}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-            required
           />
           <a
             data-action="forgot"
