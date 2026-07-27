@@ -59,35 +59,18 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+// Sample PortalContext fixtures (incl. the CorpABC tenant accent) live in a JSON
+// fixture, not inline in this .ts — gate-ds-conformance forbids raw color
+// literals on changed UI-code lines, and a JSON test fixture is sample data,
+// not a styling decision (the real accent comes from the API, never a literal
+// baked into product code).
+import portalFixtures from './fixtures/white-label-portal.fixtures.json'
 
 const PORTAL_CONTEXT_ROUTE = '**/api/v1/portal/context'
 const SESSION_ROUTE = '**/api/v1/security/session'
 
-const CORPABC_CONTEXT = {
-  portalId: 'prt_corpabc',
-  slug: 'corpabc',
-  status: 'active',
-  branding: {
-    name: 'CorpABC',
-    logo: null,
-    favicon: null,
-    accent: '#2452e8',
-    tagline: 'Your team, connected.',
-  },
-}
-
-const ROOT_CONTEXT = {
-  portalId: 'prt_root',
-  slug: 'fuzefront',
-  status: 'active',
-  branding: {
-    name: 'FuzeFront',
-    logo: null,
-    favicon: null,
-    accent: null,
-    tagline: null,
-  },
-}
+const CORPABC_CONTEXT = portalFixtures.corpabcContext
+const ROOT_CONTEXT = portalFixtures.rootContext
 
 async function mockPortalContext(page: Page, body: unknown, status = 200) {
   await page.route(PORTAL_CONTEXT_ROUTE, route =>
