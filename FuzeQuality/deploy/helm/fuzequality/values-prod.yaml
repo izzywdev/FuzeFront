@@ -5,10 +5,10 @@ global:
 
 backendImage:
   repository: ghcr.io/izzywdev/fuzequality-backend
-  tag: 4f880accecfb
+  tag: ae14c26236e1
 frontendImage:
   repository: ghcr.io/izzywdev/fuzequality-frontend
-  tag: 4f880accecfb
+  tag: ae14c26236e1
 
 ingress:
   enabled: true
