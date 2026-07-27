@@ -34,6 +34,13 @@ backend:
     repository: ghcr.io/izzywdev/fuzefront-backend
     tag: ff4ccc20daa9
   replicas: 2
+  # Serves GET /api/flags for the host shell. Same CLIENT token as the
+  # applications-service, read from the Unleash chart's own sealed Secret.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "fuzefront-host"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
 frontend:
   image:
@@ -95,15 +102,15 @@ applicationsService:
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Family Unleash hosted by FuzeFront. The scoped client token is in the
-  # fuzefront-secrets SealedSecret under FEATURE_FLAGS_CLIENT_TOKEN (seal the real
-  # token — see deploy/contabo/SEAL_PROD_SECRETS.md). Until the Unleash deploy +
-  # the sealed token land, leave unleashUrl empty so the client stays inert and
-  # the app-registry flags fall back to their safe in-code defaults.
+  # Live flag platform. The token is the one the standalone Unleash chart already
+  # seals into `unleash-secrets` (key UNLEASH_CLIENT_TOKEN) — reused rather than
+  # duplicated, so no re-sealing is needed. It is a CLIENT token: server-side
+  # only, never exposed to a browser.
   featureFlags:
-    unleashUrl: ""   # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
     appName: "applications-service"
-    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
