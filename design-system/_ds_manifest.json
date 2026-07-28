@@ -66,6 +66,10 @@
       "sourcePath": "components/feedback/EmptyState.jsx"
     },
     {
+      "name": "ProgressMeter",
+      "sourcePath": "components/feedback/ProgressMeter.jsx"
+    },
+    {
       "name": "Rating",
       "sourcePath": "components/feedback/Rating.jsx"
     },
