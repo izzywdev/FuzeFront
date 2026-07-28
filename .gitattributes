@@ -9,3 +9,12 @@
 # checkin once broke every release until the endings were manually restored.
 # (Contents-API commits bypass gitattributes; the bump awk also tolerates \r.)
 deploy/helm/** text eol=lf
+
+# Force LF for the VENDORED FuzeInfra contract and its generated client.
+# services/custom-hostname-api/openapi.yaml must stay byte-identical to the
+# upstream file at the commit pinned in UPSTREAM.json -- CI diffs the two, and
+# a CRLF checkin from a Windows dev made every line differ, failing the drift
+# gate for a file nobody had actually changed. src/schema.ts is likewise
+# regenerated on Linux CI and diffed, so it must be LF too.
+services/custom-hostname-api/** text eol=lf
+custom-hostname-client/**       text eol=lf
