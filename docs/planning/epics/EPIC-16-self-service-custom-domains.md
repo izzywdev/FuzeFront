@@ -38,10 +38,45 @@ domain: Platform / DevOps
 - **Portal Admin** — wants their portal reachable at a branded domain without filing an infra ticket.
 - **Master Admin** — needs domain status visible platform-wide to support tenants and spot stuck verifications.
 
+### ⚠️ AMENDED 2026-07-28 — `_fuzefront-verify` is dropped
+
+> FuzeInfra shipped the custom-hostname capability this epic was blocked on
+> (`izzywdev/FuzeInfra`, `docs/consuming-repos/CUSTOM_DOMAINS.md` §4.4). Its
+> design supersedes S1 as originally written.
+>
+> **We no longer mint a `_fuzefront-verify.<domain>` TXT token, and we do not
+> poll DNS to check one.** Cloudflare issues `_cf-custom-hostname.<domain>` and
+> validates it itself. That is the same proof of DNS control, checked by the
+> party that also issues the certificate — a strictly stronger verifier than our
+> own resolver, which is subject to caching and split-horizon — and it removes a
+> third record from every customer's onboarding.
+>
+> No such generator was ever implemented, so this amendment removed **no code**;
+> it only prevents one from being written.
+>
+> What replaces it: surface `verification.records[]` from the API. Three records,
+> rendered in this order (ownership and certificate first so a customer migrating
+> a live domain can watch TLS go active *before* cutting the CNAME over — a
+> zero-downtime migration):
+>
+> | purpose | method | record | value |
+> |---|---|---|---|
+> | `ownership` | TXT | `_cf-custom-hostname.<domain>` | Cloudflare token |
+> | `certificate` | TXT | `_acme-challenge.<domain>` | ACME DCV token |
+> | `routing` | CNAME | `<domain>` | `connect.fuzefront.com` |
+>
+> The top-level `method`/`record`/`value` mirror the **ownership record only** —
+> a UI that renders just those silently omits two records the customer must
+> publish.
+>
+> The `portal_domains` row and its state machine are kept; only the source of the
+> records changes. Status vocabulary is now FuzeInfra's, mapped in
+> `services/portal-service/openapi.yaml` v1.1.0.
+
 ### ✅ Features In Scope
-- [ ] Feature 1: Domain verification flow — generate a `_fuzefront-verify` DNS TXT token, verify endpoint, `verification_status` state machine.
-- [ ] Feature 2: TLS status surfacing + FuzeInfra integration — request/poll TLS issuance through the FuzeInfra-provided mechanism, `tls_status` state machine.
-- [ ] Feature 3: Custom-domain self-service UI — portal-admin add-domain flow with verification/TLS status shown for all states.
+- [x] Feature 1: ~~Domain verification flow — generate a `_fuzefront-verify` DNS TXT token, verify endpoint~~ — **superseded**, see the amendment above. `verification_status` now projects FuzeInfra's `dns_status`.
+- [ ] Feature 2: TLS status surfacing + FuzeInfra integration — poll `GET /custom-hostnames/{domain}`, project `tls_status`/`dns_status`/`active` onto `portal_domains`.
+- [ ] Feature 3: Custom-domain self-service UI — portal-admin add-domain flow with verification/TLS status shown for all states, plus the apex guidance.
 - [ ] Feature 4: `fuzefront.platform.portal-domains` feature flag, default OFF.
 
 ### 🚫 Out of Scope

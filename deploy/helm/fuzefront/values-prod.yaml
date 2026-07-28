@@ -314,6 +314,15 @@ ingress:
   enabled: true
   className: traefik
   host: app.fuzefront.com
+  # Tenant subdomains (FF-EPIC-16). Cloudflare Universal SSL already covers
+  # *.fuzefront.com, and the wildcard proxied CNAME → the existing tunnel is
+  # gated on FuzeInfra's `tenant_wildcard_enabled` Terraform var. Emitting the
+  # rule before that is harmless: with no DNS record nothing resolves here.
+  #
+  # app.fuzefront.com, auth, plan, prod and *.prod.fuzefront.com all keep
+  # winning — exact hosts beat wildcards in both DNS and Ingress matching, so
+  # the admin OTP wall is untouched.
+  wildcardHost: '*.fuzefront.com'
   annotations: {}
   tls:
     enabled: false

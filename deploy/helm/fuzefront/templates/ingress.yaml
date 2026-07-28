@@ -1,3 +1,95 @@
+{{- /*
+  The full path fan-out, defined ONCE and emitted with a YAML anchor (&fanout)
+  on the canonical host rule, then aliased (*fanout) by the tenant-wildcard
+  rule below. Structural, not a review item: it is impossible for a tenant
+  subdomain to route differently from app.fuzefront.com, because there is only
+  one list and the YAML parser expands the alias to it.
+
+  Do NOT inline these paths into the wildcard rule. FF-EPIC-16 / FFRNT-91.
+*/}}
+{{- define "fuzefront.ingress.fanout" -}}
+{{- if .Values.securityService.enabled }}
+# Security-service direct paths (ingress-nginx longest-prefix-match
+# makes these win over the /api catch-all below). /internal is NOT
+# exposed — it stays cluster-internal (pod-to-pod via Service DNS).
+# /api/v1/security is the provider-neutral Security API (AuthN/AuthZ);
+# /api/auth + /api/organizations are the deprecated shims kept for one
+# release.
+- path: /api/v1/security
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/auth
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/organizations
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+{{- end }}
+{{- if .Values.applicationsService.enabled }}
+# Applications-service direct paths (+ Socket.IO).
+- path: /api/apps
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-applications
+      port:
+        number: {{ .Values.applicationsService.port }}
+- path: /socket.io
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-applications
+      port:
+        number: {{ .Values.applicationsService.port }}
+{{- end }}
+{{- if .Values.billingService.enabled }}
+# Billing webhook carve-out: the Stripe webhook is the ONLY publicly
+# reachable billing path (Stripe-signature verified via STRIPE_WEBHOOK_SECRET).
+# Exact match so the rest of /api/v1/billing/* stays internal (no ingress) —
+# internal callers reach it in-cluster with BILLING_INTERNAL_TOKEN.
+- path: /api/v1/billing/webhooks/stripe
+  pathType: Exact
+  backend:
+    service:
+      name: fuzefront-billing-service
+      port:
+        number: {{ .Values.billingService.port }}
+{{- end }}
+{{- if or .Values.securityService.enabled .Values.applicationsService.enabled }}
+# Thin backend: health + any remaining /api/* (still dual-serving the
+# domain routes during the soak; this is the catch-all under the
+# service-specific prefixes above).
+- path: /api
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-backend
+      port:
+        number: {{ .Values.backend.port }}
+{{- end }}
+# Frontend catch-all. The frontend nginx also fans /api and /socket.io
+# to the per-service backends for in-pod / port-forward scenarios.
+- path: /
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-frontend
+      port:
+        number: {{ .Values.frontend.port }}
+{{- end -}}
+
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -19,88 +111,27 @@ spec:
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
-      http:
+      http: &fanout
         paths:
-          {{- if .Values.securityService.enabled }}
-          # Security-service direct paths (ingress-nginx longest-prefix-match
-          # makes these win over the /api catch-all below). /internal is NOT
-          # exposed — it stays cluster-internal (pod-to-pod via Service DNS).
-          # /api/v1/security is the provider-neutral Security API (AuthN/AuthZ);
-          # /api/auth + /api/organizations are the deprecated shims kept for one
-          # release.
-          - path: /api/v1/security
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-security
-                port:
-                  number: {{ .Values.securityService.port }}
-          - path: /api/auth
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-security
-                port:
-                  number: {{ .Values.securityService.port }}
-          - path: /api/organizations
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-security
-                port:
-                  number: {{ .Values.securityService.port }}
-          {{- end }}
-          {{- if .Values.applicationsService.enabled }}
-          # Applications-service direct paths (+ Socket.IO).
-          - path: /api/apps
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-applications
-                port:
-                  number: {{ .Values.applicationsService.port }}
-          - path: /socket.io
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-applications
-                port:
-                  number: {{ .Values.applicationsService.port }}
-          {{- end }}
-          {{- if .Values.billingService.enabled }}
-          # Billing webhook carve-out: the Stripe webhook is the ONLY publicly
-          # reachable billing path (Stripe-signature verified via STRIPE_WEBHOOK_SECRET).
-          # Exact match so the rest of /api/v1/billing/* stays internal (no ingress) —
-          # internal callers reach it in-cluster with BILLING_INTERNAL_TOKEN.
-          - path: /api/v1/billing/webhooks/stripe
-            pathType: Exact
-            backend:
-              service:
-                name: fuzefront-billing-service
-                port:
-                  number: {{ .Values.billingService.port }}
-          {{- end }}
-          {{- if or .Values.securityService.enabled .Values.applicationsService.enabled }}
-          # Thin backend: health + any remaining /api/* (still dual-serving the
-          # domain routes during the soak; this is the catch-all under the
-          # service-specific prefixes above).
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-backend
-                port:
-                  number: {{ .Values.backend.port }}
-          {{- end }}
-          # Frontend catch-all. The frontend nginx also fans /api and /socket.io
-          # to the per-service backends for in-pod / port-forward scenarios.
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-frontend
-                port:
-                  number: {{ .Values.frontend.port }}
+          {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
+    {{- if .Values.ingress.wildcardHost }}
+    # Tenant subdomains — FF-EPIC-16 / FFRNT-91.
+    #
+    # Kubernetes wildcard hosts match exactly ONE label, and exact hosts beat
+    # wildcards, so `{{ .Values.ingress.host }}` keeps winning and every other
+    # explicit host (auth, plan, the admin *.prod wall) is unaffected. Order
+    # does not matter.
+    #
+    # NO tls: block here, deliberately. Cloudflare terminates edge TLS
+    # (Universal SSL already covers one wildcard label) and the tunnel delivers
+    # plain HTTP to the ingress controller. Adding tls: would either do nothing
+    # or break the path — see FuzeInfra CUSTOM_DOMAINS.md §2/§3.
+    #
+    # `*fanout` aliases the canonical host's path list. A tenant subdomain
+    # therefore CANNOT drift from the canonical host: there is one list.
+    - host: {{ .Values.ingress.wildcardHost | quote }}
+      http: *fanout
+    {{- end }}
 {{- if .Values.clockApp.enabled }}
 ---
 # Clock-app remote, same-origin under the app host at /apps/clock/. A SEPARATE

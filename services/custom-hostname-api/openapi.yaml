@@ -1,0 +1,525 @@
+openapi: 3.1.0
+
+# =============================================================================
+# FuzeInfra Custom Hostname API — FROZEN CONTRACT v1
+#
+# Runtime provisioning of arbitrary customer domains (app.corpabc.com) onto the
+# shared cluster WITHOUT a Helm release per domain. Consumers (e.g. FuzeFront)
+# generate a typed client from this file.
+#
+# The service is CLUSTER-INTERNAL ONLY. It has no Ingress and is never routed
+# through the Cloudflare tunnel; it is reachable exclusively at
+#   http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
+# and is additionally fenced by a NetworkPolicy. It holds the Cloudflare API
+# token so that consumers never do.
+#
+# Contract stability: this file is the source of truth. tests/test_contract.py
+# asserts the running app's generated schema matches it, so drift fails CI.
+# =============================================================================
+
+info:
+  title: FuzeInfra Custom Hostname API
+  version: "1.0.0"
+  description: |
+    Attach, inspect, and detach customer-owned domains on the shared FuzeInfra
+    cluster.
+
+    ## Mechanism
+    Backed by **Cloudflare for SaaS (Custom Hostnames)** on the `fuzefront.com`
+    zone. Creating a custom hostname asks Cloudflare to (a) prove the caller's
+    customer controls the domain and (b) issue and deploy a DV certificate for
+    it at the Cloudflare edge. In the same operation this service materializes a
+    Kubernetes `Ingress` so Traefik host-routes the domain to the consumer's
+    Service — Cloudflare terminates TLS and solves DNS, but it does not teach the
+    in-cluster ingress controller about the new host, so both halves are needed.
+
+    ## Lifecycle
+    ```
+    POST /custom-hostnames          -> dns_status=pending,  tls_status=pending_validation
+      customer publishes the CNAME + the two TXT records returned in `verification`
+    GET  /custom-hostnames/{domain} -> poll until active=true
+    DELETE /custom-hostnames/{domain}
+    ```
+    Both statuses are normalized (see `DnsStatus` / `TlsStatus`); the raw
+    upstream value is always echoed in `provider` for debugging.
+
+    ## Authentication
+    `Authorization: Bearer <token>`. Tokens are provisioned per consumer as
+    SealedSecrets and identify a **route profile** — the namespace/Service a
+    caller is allowed to route domains to. A caller can never route a domain to
+    another consumer's workload.
+
+    ## Idempotency
+    `POST` for an already-registered domain returns `200` with the existing
+    record rather than `409`, so a consumer's reconcile loop is safe to re-run.
+    `DELETE` for an unknown domain returns `204`.
+
+  contact:
+    name: FuzeInfra
+    url: https://github.com/izzywdev/FuzeInfra
+
+servers:
+  - url: http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
+    description: In-cluster service DNS (the only supported address)
+  - url: http://localhost:8080
+    description: Local development / stub mode
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: custom-hostnames
+    description: Customer-owned domain provisioning
+  - name: health
+    description: Liveness and readiness
+
+paths:
+  /custom-hostnames:
+    post:
+      tags: [custom-hostnames]
+      operationId: createCustomHostname
+      summary: Begin validation + certificate issuance for a customer domain
+      description: |
+        Registers `domain` with Cloudflare for SaaS and materializes the routing
+        Ingress. Returns immediately — issuance is asynchronous. The customer
+        must publish the records in `verification` before the domain goes active.
+
+        Idempotent: re-posting a known domain returns the existing record (200).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomHostnameRequest"
+      responses:
+        "201":
+          description: Domain accepted; validation and issuance started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomHostname"
+        "200":
+          description: Domain was already registered; existing record returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomHostname"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+    get:
+      tags: [custom-hostnames]
+      operationId: listCustomHostnames
+      summary: List the domains registered by the calling consumer
+      description: |
+        Scoped to the caller's route profile — a consumer never sees another
+        consumer's domains.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous response's `next_cursor`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of custom hostnames.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomHostnameList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+  /custom-hostnames/{domain}:
+    parameters:
+      - name: domain
+        in: path
+        required: true
+        description: The fully-qualified customer domain, e.g. `app.corpabc.com`.
+        schema:
+          $ref: "#/components/schemas/Domain"
+
+    get:
+      tags: [custom-hostnames]
+      operationId: getCustomHostname
+      summary: Poll validation, certificate, and routing status
+      description: |
+        The endpoint a consumer UI polls. `verification` carries the records the
+        customer still needs to publish; it stays populated after activation so
+        the UI can show what was required, and is re-populated by Cloudflare
+        ahead of each certificate renewal.
+
+        Suggested polling: every 10s for the first 2 minutes, then every 60s.
+        Issuance typically completes 30s–5min after the records resolve.
+      responses:
+        "200":
+          description: Current state of the custom hostname.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomHostname"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+    delete:
+      tags: [custom-hostnames]
+      operationId: deleteCustomHostname
+      summary: Deprovision a customer domain
+      description: |
+        Removes the Cloudflare custom hostname (revoking the edge certificate)
+        and deletes the routing Ingress. Idempotent — unknown domains return 204.
+      responses:
+        "204":
+          description: Deprovisioned (or was not provisioned).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /readyz:
+    get:
+      tags: [health]
+      operationId: readyz
+      summary: Readiness probe
+      description: Verifies the configured backend (Cloudflare or stub) is reachable.
+      security: []
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Backend unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Per-consumer token, delivered as a SealedSecret to both the consumer's
+        namespace and `fuzeinfra`. The token selects the caller's route profile.
+
+  schemas:
+    Domain:
+      type: string
+      minLength: 4
+      maxLength: 253
+      pattern: "^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$"
+      examples: ["app.corpabc.com"]
+      description: |
+        A fully-qualified domain the customer controls. Wildcards are rejected.
+        Domains inside a FuzeInfra-managed zone (e.g. `*.fuzefront.com`) are
+        rejected too — those are already served by the static wildcard and need
+        no per-domain provisioning.
+
+    CreateCustomHostnameRequest:
+      type: object
+      required: [domain]
+      additionalProperties: false
+      properties:
+        domain:
+          $ref: "#/components/schemas/Domain"
+        profile:
+          type: string
+          description: |
+            Route profile to attach the domain to. Optional when the caller's
+            token grants exactly one profile (the normal case). Supplying a
+            profile the token does not grant is a 403.
+          examples: ["fuzefront"]
+
+    VerificationRecord:
+      type: object
+      required: [method, record, value]
+      additionalProperties: false
+      description: One DNS record the customer must publish.
+      properties:
+        method:
+          type: string
+          enum: [txt, cname]
+          description: |
+            `txt` for the ownership and DCV challenges, `cname` for the routing
+            record that points the domain at the platform edge.
+        record:
+          type: string
+          description: The record NAME to create.
+          examples: ["_cf-custom-hostname.app.corpabc.com"]
+        value:
+          type: string
+          description: The record VALUE.
+          examples: ["3b3a5f8c-1f3d-4d1f-9d63-9f0b2e1c4a77"]
+        purpose:
+          type: string
+          enum: [ownership, certificate, routing]
+          description: |
+            What the record proves. `ownership` proves domain control,
+            `certificate` satisfies ACME DCV, `routing` sends traffic to us.
+
+    Verification:
+      type: object
+      required: [method, record, value, records]
+      additionalProperties: false
+      description: |
+        What the customer must publish. `method`/`record`/`value` mirror the
+        PRIMARY (ownership) record for callers that only need one; `records`
+        carries the complete set and is what a UI should render.
+      properties:
+        method:
+          type: string
+          enum: [txt, cname]
+        record:
+          type: string
+        value:
+          type: string
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/VerificationRecord"
+
+    DnsStatus:
+      type: string
+      enum: [pending, active, moved, blocked, error]
+      description: |
+        Whether the customer's DNS points at us and ownership is proven.
+        * `pending` — records not yet published/propagated
+        * `active`  — ownership proven and the domain resolves to the platform
+        * `moved`   — the domain stopped pointing at us
+        * `blocked` — Cloudflare refused the hostname (already claimed elsewhere)
+        * `error`   — validation failed; see `error`
+
+    TlsStatus:
+      type: string
+      enum:
+        - pending_validation
+        - pending_issuance
+        - pending_deployment
+        - active
+        - expired
+        - failed
+      description: |
+        Certificate lifecycle, suitable for direct display in a consumer UI.
+        Everything before `active` is a normal in-progress state. `failed` and
+        `expired` are terminal until the customer fixes their DNS; re-POST to
+        retry.
+
+    CustomHostname:
+      type: object
+      required:
+        - domain
+        - profile
+        - active
+        - dns_status
+        - tls_status
+        - verification
+        - created_at
+      additionalProperties: false
+      properties:
+        domain:
+          $ref: "#/components/schemas/Domain"
+        profile:
+          type: string
+          description: Route profile this domain is attached to.
+        active:
+          type: boolean
+          description: |
+            True only when `dns_status=active` AND `tls_status=active` AND the
+            routing Ingress exists. This is the single field a consumer needs to
+            decide whether to advertise the domain to its user.
+        dns_status:
+          $ref: "#/components/schemas/DnsStatus"
+        tls_status:
+          $ref: "#/components/schemas/TlsStatus"
+        verification:
+          $ref: "#/components/schemas/Verification"
+        routing:
+          $ref: "#/components/schemas/Routing"
+        certificate:
+          $ref: "#/components/schemas/Certificate"
+        error:
+          type: [string, "null"]
+          description: Human-readable reason when a status is `error`/`failed`.
+        provider:
+          $ref: "#/components/schemas/Provider"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: [string, "null"]
+          format: date-time
+
+    Routing:
+      type: object
+      required: [cname_target, ingress_ready]
+      additionalProperties: false
+      description: Where the customer should point DNS, and whether we can serve it.
+      properties:
+        cname_target:
+          type: string
+          description: |
+            The hostname the customer CNAMEs their domain to. Apex domains need
+            a provider that supports CNAME flattening or ALIAS/ANAME records —
+            see the consuming-repo guide.
+          examples: ["connect.fuzefront.com"]
+        ingress_ready:
+          type: boolean
+          description: Whether the in-cluster routing Ingress has been materialized.
+        ingress_name:
+          type: [string, "null"]
+          description: Name of the materialized Ingress (diagnostics only).
+
+    Certificate:
+      type: object
+      additionalProperties: false
+      description: Present once Cloudflare has issued a certificate.
+      properties:
+        issuer:
+          type: [string, "null"]
+        not_before:
+          type: [string, "null"]
+          format: date-time
+        not_after:
+          type: [string, "null"]
+          format: date-time
+        serial_number:
+          type: [string, "null"]
+
+    Provider:
+      type: object
+      additionalProperties: true
+      description: |
+        Raw upstream detail, for debugging only. Consumers MUST NOT branch on
+        these values — they are not part of the frozen contract.
+      properties:
+        name:
+          type: string
+          enum: [cloudflare_for_saas, stub]
+        id:
+          type: [string, "null"]
+          description: Cloudflare custom hostname id.
+        status:
+          type: [string, "null"]
+          description: Raw Cloudflare hostname status.
+        ssl_status:
+          type: [string, "null"]
+          description: Raw Cloudflare `ssl.status`.
+
+    CustomHostnameList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomHostname"
+        next_cursor:
+          type: [string, "null"]
+
+    Health:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        provider:
+          type: string
+          enum: [cloudflare_for_saas, stub]
+        detail:
+          type: [string, "null"]
+
+    Error:
+      type: object
+      required: [error, message]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code.
+          enum:
+            - bad_request
+            - unauthorized
+            - forbidden
+            - not_found
+            - validation_error
+            - upstream_error
+            - quota_exceeded
+        message:
+          type: string
+        detail:
+          type: [string, "null"]
+
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Token does not grant the requested profile or domain.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such custom hostname for this consumer.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: The domain was rejected (wildcard, managed zone, or malformed).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UpstreamError:
+      description: Cloudflare or the Kubernetes API returned an error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
