@@ -19,10 +19,19 @@
 > - **`product-designer` exists** — landed with the `contract-designer` /
 >   `frontend-engineer` corrections (PR #300).
 >
-> **Not yet built** (sequencing step 1 remainder): `design/frames/_template/`,
-> `scripts/stamp-frames.mjs`, `gate-frames-first`, `gate-frames-stamped`, the
-> design-approval issue form + workflow, and Pages publishing for
-> `design/frames/**`.
+> **Built since** (sequencing step 1): `scripts/stamp-frames.mjs` +
+> `.github/workflows/gate-frames-stamped.yml`, `.github/workflows/design-approval.yml`,
+> `scripts/build-frames-site.mjs` + `.github/workflows/pages-frames.yml`, and
+> `design/frames/_template/` — `index.html`, `frame.html`, `tokens.css`,
+> `manifest.json`, `manifest.schema.json`, `README.md`. Note: **no
+> `approval-bar.html`**; the approval banner lives inline in `index.html` as
+> `[data-approval-status]`, which is what all 12 feature frame sets actually do.
+>
+> **Still not built**: `gate-frames-first` (UI code requires approved frames),
+> `gate-frames-schema` (validate manifests against `manifest.schema.json` in CI —
+> the schema exists and all 12 feature manifests validate against it, but nothing
+> enforces it yet), `gate-ds-conformance`, and the design-approval **issue form**
+> (`.github/ISSUE_TEMPLATE/design-approval.yml`).
 
 ## Context
 
@@ -113,7 +122,7 @@ Flags default OFF ⇒ **prod-smoke and Playwright would never see the feature, s
 ## Template → FuzeSDLC (the part that outlives this feature)
 
 ```
-design/frames/_template/{index.html,frame.html,approval-bar.html,manifest.schema.json,README.md}
+design/frames/_template/{index.html,frame.html,tokens.css,manifest.json,manifest.schema.json,README.md}
 .github/ISSUE_TEMPLATE/design-approval.yml
 .github/workflows/design-approval.yml      # workflow_call — lives in FuzeSDLC
 .github/workflows/gate-frames-first.yml    # UI code requires approved frames
