@@ -314,15 +314,35 @@ ingress:
   enabled: true
   className: traefik
   host: app.fuzefront.com
-  # Tenant subdomains (FF-EPIC-16). Cloudflare Universal SSL already covers
-  # *.fuzefront.com, and the wildcard proxied CNAME → the existing tunnel is
-  # gated on FuzeInfra's `tenant_wildcard_enabled` Terraform var. Emitting the
-  # rule before that is harmless: with no DNS record nothing resolves here.
+  # Tenant subdomains (FF-EPIC-16) — DISABLED. Do not re-enable on Traefik
+  # without the router-priority fix; see below.
   #
-  # app.fuzefront.com, auth, plan, prod and *.prod.fuzefront.com all keep
-  # winning — exact hosts beat wildcards in both DNS and Ingress matching, so
-  # the admin OTP wall is untouched.
-  wildcardHost: '*.fuzefront.com'
+  # This was set to '*.fuzefront.com' in #431 and IMMEDIATELY BROKE FuzePlan:
+  # plan.fuzefront.com started serving the FuzeFront shell instead of
+  # fuzeplan-frontend. Two wrong assumptions compounded:
+  #
+  #  1. "Nothing resolves here yet." False. The wildcard proxied CNAME already
+  #     existed at Cloudflare, so every *.fuzefront.com host went live the
+  #     moment this rule rendered — there was no DNS gate to wait behind.
+  #  2. "Exact hosts beat wildcards, order does not matter." True for the
+  #     Kubernetes Ingress spec and for ingress-nginx (local), but NOT for
+  #     Traefik, which is what prod runs. Traefik orders routers by RULE
+  #     LENGTH, not host specificity. The generated HostRegexp rule for the
+  #     wildcard is longer than Host(`plan.fuzefront.com`), so the wildcard
+  #     wins and shadows every single-label host in the cluster.
+  #
+  # app.fuzefront.com hid the bug because it fans out to the same backends
+  # either way. plan.fuzefront.com did not.
+  #
+  # *.prod.fuzefront.com hosts (argocd, grafana, authentik-admin, the CF Access
+  # OTP wall, ...) were NEVER at risk — they carry two labels and a k8s
+  # wildcard matches exactly one.
+  #
+  # To re-enable safely: put the wildcard rule in its OWN Ingress object
+  # carrying `traefik.ingress.kubernetes.io/router.priority` set LOW, so every
+  # exact-host router outranks it, and verify against plan.fuzefront.com in a
+  # deploy window before trusting it.
+  wildcardHost: ''
   annotations: {}
   tls:
     enabled: false
