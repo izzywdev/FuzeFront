@@ -92,9 +92,11 @@ jobs:
         with:
           node-version: '20.x'
 
-      - name: Install
-        working-directory: custom-hostname-client
-        run: npm install --no-audit --no-fund
+      - name: Install dependencies (workspace root)
+        # Install from the workspace ROOT, matching backend-tests.yml: root
+        # `overrides` (e.g. the @types/express v4 pin) only apply from there,
+        # and custom-hostname-client is a workspace member.
+        run: npm ci
 
       - name: Regenerate types and fail on drift
         working-directory: custom-hostname-client
@@ -105,15 +107,12 @@ jobs:
           git diff --exit-code -- src/schema.ts
 
       - name: Lint the contract
-        working-directory: custom-hostname-client
-        run: npm run lint:contract
+        run: npm run lint:contract -w custom-hostname-client
 
       - name: Type-check
-        working-directory: custom-hostname-client
-        run: npm run type-check
+        run: npm run type-check -w custom-hostname-client
 
       - name: Test
-        working-directory: custom-hostname-client
         env:
           CUSTOM_HOSTNAME_STUB_URL: http://127.0.0.1:8099
           CUSTOM_HOSTNAME_STUB_TOKEN: local-dev-token
@@ -121,7 +120,7 @@ jobs:
           # bare checkout still runs the unit suite. In CI the stub IS up, so
           # require them to actually run.
           CUSTOM_HOSTNAME_STUB_REQUIRED: '1'
-        run: npm test
+        run: npm test -w custom-hostname-client
 
       - name: Stub logs
         if: failure()
