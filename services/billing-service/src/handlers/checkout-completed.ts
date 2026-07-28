@@ -110,14 +110,10 @@ export async function handleCheckoutCompleted(
     seatQuantity,
   });
 
-  await ctx.writePlanCache({
-    entityType: entity.entityType,
-    entityId: entity.entityId,
-    planTier,
-    status,
-    trialEnd: sub?.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-  });
-
+  // NOTE: the public.users/organizations plan-tier/status cache is projected
+  // by the backend's billingProjection consumer off the event below —
+  // billing-service must never write those tables directly (per-service-DB
+  // boundary; see FFRNT-146).
   await ctx.emitter.subscriptionChanged({
     entityId: entity.entityId,
     entityType: entity.entityType,

@@ -13,6 +13,14 @@ export type IntegrationType = components['schemas']['IntegrationType'];
 export type Integration = components['schemas']['Integration'];
 export type Chrome = components['schemas']['Chrome'];
 export type MenuItem = components['schemas']['MenuItem'];
+/** Side-menu placement: which lifecycle section the app sits in, and its rank there. */
+export type Nav = components['schemas']['Nav'];
+export type NavSection = components['schemas']['NavSection'];
+/** Self-declared onboarding surfaces submitted by the app at registration. */
+export type ProductPolicy = components['schemas']['ProductPolicy'];
+export type ProductResourceDecl = components['schemas']['ProductResourceDecl'];
+export type ProductRoleDecl = components['schemas']['ProductRoleDecl'];
+export type BillingProfile = components['schemas']['BillingProfile'];
 export type Routing = components['schemas']['Routing'];
 export type Infra = components['schemas']['Infra'];
 export type Icon = components['schemas']['Icon'];

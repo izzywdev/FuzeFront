@@ -93,7 +93,6 @@ describe('webhook-router — invoice event wiring', () => {
       subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro', subscriptionId: 'sub_1' }) },
       permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
       emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
-      writePlanCache: jest.fn().mockResolvedValue(undefined),
     });
     await routeWebhookEvent(
       { type: 'invoice.payment_succeeded', data: { object: { object: 'invoice', id: 'in_1', customer: 'cus_1' } } } as any,
@@ -109,7 +108,6 @@ describe('webhook-router — invoice event wiring', () => {
       subscriptions: { findByCustomer: jest.fn().mockResolvedValue({ planTier: 'pro' }) },
       permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
       emitter: { paymentFailed: jest.fn().mockResolvedValue(undefined) },
-      writePlanCache: jest.fn().mockResolvedValue(undefined),
     });
     await routeWebhookEvent(
       {
