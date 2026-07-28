@@ -35,6 +35,20 @@ const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
 const PLATFORM_REGISTRAR_EMAIL = 'platform-registrar@fuzefront.internal'
 
 export async function up(knex: Knex): Promise<void> {
+  // Only columns created by this service's own 001_create_users_table are
+  // referenced here.  In particular `email_verified` is deliberately NOT set:
+  // it is added by the *security* service's 012_create_mfa_and_verification,
+  // which does not run in backend-only environments (CI test jobs, and the E2E
+  // stack where `security` starts after `backend`).  Referencing it there
+  // aborts the migration with `column "email_verified" does not exist`, which
+  // fails `runMigrations()` and prevents the backend from starting at all.
+  //
+  // Leaving it out is safe: the column is declared NOT NULL DEFAULT false, so
+  // this row is backfilled automatically whenever security's 012 runs, and the
+  // app-registry auth middleware never reads it — it selects only id, email,
+  // first_name, last_name, default_app_id and roles.  Verification state is
+  // meaningless for a token-only principal that never performs an OIDC login.
+  //
   // `ON CONFLICT DO NOTHING` without a conflict target covers *every* unique
   // constraint on the table (both `users_pkey` and `users_email_unique`), so a
   // pre-existing row under either the id or the email is left untouched rather
@@ -43,8 +57,8 @@ export async function up(knex: Knex): Promise<void> {
   // No `password_hash` is set: this is a token-only service principal and must
   // never be able to complete an interactive password login.
   const result = await knex.raw(
-    `INSERT INTO users (id, email, first_name, last_name, roles, email_verified)
-     VALUES (?, ?, 'Platform', 'Registrar', ?::json, true)
+    `INSERT INTO users (id, email, first_name, last_name, roles)
+     VALUES (?, ?, 'Platform', 'Registrar', ?::json)
      ON CONFLICT DO NOTHING`,
     [PLATFORM_REGISTRAR_ID, PLATFORM_REGISTRAR_EMAIL, JSON.stringify(['admin', 'user'])]
   )
