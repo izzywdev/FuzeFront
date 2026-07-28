@@ -6,7 +6,10 @@ import {
   findPortalBySlug,
   getRootPortal,
 } from '../repositories/portalRepository'
-import { isMultiTenantPortalsEnabled, PortalFlagContext } from '../utils/portalFlag'
+import {
+  isMultiTenantPortalsEnabled,
+  PortalFlagContext,
+} from '../utils/portalFlag'
 
 /**
  * FF-EPIC-10-S1 — resolvePortalContext middleware.
@@ -84,7 +87,8 @@ export function _clearPortalCacheForTests(): void {
 
 async function cached(
   key: string,
-  loader: () => Promise<any | undefined>
+  loader: () => Promise<any | undefined>,
+  opts: { throwOnError?: boolean } = {}
 ): Promise<any | null> {
   const now = Date.now()
   const hit = cache.get(key)
@@ -101,12 +105,27 @@ async function cached(
     // used to reach the outer catch and 500 the WHOLE request — turning
     // health/login/metrics into 500s too on a brief DB blip, once the flag
     // is ON. Same "fail-closed at the wrong layer" class already fixed for
-    // the bootstrap case (Bug 4). Treated as a miss so resolution falls
-    // through to the next strategy (path match, then root), ultimately
-    // reaching bootstrap-mode pass-through if every lookup misses/errors.
-    // Deliberately NOT cached: a transient error should be retried on the
-    // very next request, not stuck as a "miss" for the full TTL like a
-    // genuine negative lookup.
+    // the bootstrap case (Bug 4).
+    //
+    // Round-7 fix (gate-code-review) — a MISS (loader cleanly returned
+    // undefined/null) and an ERROR are NOT the same thing and must not be
+    // collapsed into the same "fall through to the next strategy" behavior.
+    // A genuine miss falls through path -> root exactly as before. But an
+    // ERROR on the HOST lookup specifically must NEVER fall through to path
+    // or root: if the Host maps to a SUSPENDED portal and the domain query
+    // hits a transient DB error while `root` (an active portal) happens to
+    // still be cached, falling through would resolve and serve the ROOT
+    // portal for a suspended tenant's host — silently defeating suspension.
+    // So callers that need to distinguish (the host branch below) pass
+    // `throwOnError: true` and catch it themselves to degrade the WHOLE
+    // request to pass-through (`req.portal` unset), never to root. Callers
+    // that are safe to treat an error as an ordinary miss (path/root, where
+    // there is no "fall through past a stricter check" risk) keep the
+    // original swallow-to-null behavior.
+    //
+    // Deliberately NOT cached either way: a transient error should be
+    // retried on the very next request, not stuck as a "miss" for the full
+    // TTL like a genuine negative lookup.
     //
     // `key` is built from externally-controlled input (the raw Host header
     // or the /p/<slug> path segment — see the call sites below), so it must
@@ -116,12 +135,16 @@ async function cached(
     // at all (CodeQL js/log-injection — an embedded newline could forge
     // additional fake log lines). Constant format string + %s + oneLine():
     // the same established pattern already used for this exact CodeQL pair
-    // in routes/billing.ts's upstream-error logger.
+    // in routes/billing.ts's upstream-error logger. The `error` itself is
+    // ALSO externally-influenceable (a DB driver error message can embed
+    // request-derived content, e.g. the host) so only its sanitized
+    // `.message` — never the raw Error object — is ever logged.
     console.error(
       'resolvePortalContext lookup error for %s (degrading to miss):',
       String(key).replace(/[\r\n]+/g, ' '),
-      error
+      String((error as any)?.message ?? error).replace(/[\r\n]+/g, ' ')
     )
+    if (opts.throwOnError) throw error
     return null
   }
 }
@@ -143,7 +166,9 @@ type Outcome =
   | { kind: 'resolved'; row: any }
   | { kind: 'flag-off' }
 
-export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) {
+export function createResolvePortalContext(
+  deps: ResolvePortalContextDeps = {}
+) {
   const db = deps.db ?? defaultDb
   // Resolved per-call (not snapshotted here) so the default wiring always
   // reads the CURRENT `isMultiTenantPortalsEnabled` binding — required both
@@ -192,49 +217,79 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
         const host = (req.headers.host || '').split(':')[0].toLowerCase()
 
         let row: any | null = null
+        // Round-7 fix — a host-lookup ERROR is observed here (via
+        // `throwOnError`) distinctly from a genuine miss (`row` staying
+        // null with no throw). See the invariant documented on `cached()`
+        // above: an error on this specific branch must degrade the WHOLE
+        // request rather than fall through to path/root, or a transient DB
+        // blip could serve ROOT branding for a host that maps to a
+        // SUSPENDED portal — silently defeating suspension.
+        let hostLookupErrored = false
 
         if (host) {
-          row = await cached(`host:${host}`, () => findPortalByDomain(host, db))
-        }
-
-        if (!row) {
-          const match = PATH_SLUG_RE.exec(req.path)
-          if (match) {
-            const slug = match[1]
-            row = await cached(`slug:${slug}`, () => findPortalBySlug(slug, db))
+          try {
+            row = await cached(
+              `host:${host}`,
+              () => findPortalByDomain(host, db),
+              {
+                throwOnError: true,
+              }
+            )
+          } catch {
+            // Already logged (sanitized) inside cached(); nothing more to
+            // do here besides flip the flag so we skip path/root below.
+            hostLookupErrored = true
           }
         }
 
-        if (!row) {
-          row = await cached('root', () => getRootPortal(db))
-        }
-
-        if (!row) {
-          // Bug 4 fix — no root portal seeded yet. This is a genuinely
-          // supported, expected state (a fresh install: migrations have run
-          // but ensureRootPortal() found no user yet to own the platform
-          // org — see repositories/portalRepository.ts). The OLD behavior
-          // (404 here) fails closed at the WRONG layer: this middleware is
-          // mounted globally, ahead of EVERY route, so it 404'd login,
-          // signup, health, and /portal/context alike — and since nothing
-          // can authenticate, no user can ever be created to seed the root
-          // portal. The platform was permanently bricked until an operator
-          // manually flipped the flag back off. Fail-closed must not mean
-          // fail-to-boot (feature-flags skill): a release flag can gate NEW
-          // capability, but it must never be able to wedge the platform out
-          // of its own bootstrap sequence. So: pass through untouched
-          // (`req.portal` stays undefined) rather than block the request —
-          // downstream routes that care about a resolved portal (e.g.
-          // /portal/context, /portal/current) make their own honest
-          // decision about the missing-portal state; every unrelated route
-          // (login, health, apps, ...) is completely unaffected, exactly as
-          // if the flag were off, until a root portal exists to actually
-          // enforce fail-closed resolution against.
-          outcome = { kind: 'bootstrap' }
-        } else if (row.status === 'suspended') {
-          outcome = { kind: 'suspended', row }
+        if (hostLookupErrored) {
+          // Never fall through to path or root on a host-lookup error — see
+          // the invariant above. Pass-through (`req.portal` stays unset) is
+          // the ONLY safe outcome; a suspended portal's request must not be
+          // allowed to accidentally resolve as root/unresolved-but-active.
+          outcome = { kind: 'degraded' }
         } else {
-          outcome = { kind: 'resolved', row }
+          if (!row) {
+            const match = PATH_SLUG_RE.exec(req.path)
+            if (match) {
+              const slug = match[1]
+              row = await cached(`slug:${slug}`, () =>
+                findPortalBySlug(slug, db)
+              )
+            }
+          }
+
+          if (!row) {
+            row = await cached('root', () => getRootPortal(db))
+          }
+
+          if (!row) {
+            // Bug 4 fix — no root portal seeded yet. This is a genuinely
+            // supported, expected state (a fresh install: migrations have run
+            // but ensureRootPortal() found no user yet to own the platform
+            // org — see repositories/portalRepository.ts). The OLD behavior
+            // (404 here) fails closed at the WRONG layer: this middleware is
+            // mounted globally, ahead of EVERY route, so it 404'd login,
+            // signup, health, and /portal/context alike — and since nothing
+            // can authenticate, no user can ever be created to seed the root
+            // portal. The platform was permanently bricked until an operator
+            // manually flipped the flag back off. Fail-closed must not mean
+            // fail-to-boot (feature-flags skill): a release flag can gate NEW
+            // capability, but it must never be able to wedge the platform out
+            // of its own bootstrap sequence. So: pass through untouched
+            // (`req.portal` stays undefined) rather than block the request —
+            // downstream routes that care about a resolved portal (e.g.
+            // /portal/context, /portal/current) make their own honest
+            // decision about the missing-portal state; every unrelated route
+            // (login, health, apps, ...) is completely unaffected, exactly as
+            // if the flag were off, until a root portal exists to actually
+            // enforce fail-closed resolution against.
+            outcome = { kind: 'bootstrap' }
+          } else if (row.status === 'suspended') {
+            outcome = { kind: 'suspended', row }
+          } else {
+            outcome = { kind: 'resolved', row }
+          }
         }
       }
     } catch (error) {
@@ -251,7 +306,10 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
       // this middleware still originates are a genuine PORTAL_SUSPENDED
       // (403 — an explicit business decision, not an error) and the
       // resolved/no-root-yet pass-through cases below.
-      console.error('resolvePortalContext error (degrading to pass-through):', error)
+      console.error(
+        'resolvePortalContext error (degrading to pass-through):',
+        error
+      )
       outcome = { kind: 'degraded' }
     }
 

@@ -303,10 +303,18 @@ router.post('/login', async (req, res) => {
     // (fail closed) — no session id, no token, no session row.
     const portalBinding = await resolvePortalBindingForLogin(req, userRow.id)
     if (!portalBinding.ok) {
-      console.log(`❌ [${requestId}] Login rejected — user is not a member of the resolved portal:`, {
-        userId: userRow.id,
-        responseTime: Date.now() - startTime,
-      })
+      // Constant format string + %s (Semgrep js/unsafe-formatstring) — a
+      // template literal used as the format string with a trailing arg is
+      // flagged even though `requestId` is server-generated here; keep the
+      // same established pattern as the rest of this file's sanitized logs.
+      console.log(
+        '❌ [%s] Login rejected — user is not a member of the resolved portal:',
+        requestId,
+        {
+          userId: userRow.id,
+          responseTime: Date.now() - startTime,
+        }
+      )
       return res.status(403).json({
         error: 'FORBIDDEN_PORTAL',
         message: portalBinding.portalName
@@ -802,7 +810,8 @@ router.get('/oidc/callback', async (req, res) => {
       // CR/LF before logging (same convention as this file's existing OIDC
       // error logs a few lines up) so it can't forge additional log lines.
       console.log(
-        `❌ [${requestId}] OIDC login rejected — user is not a member of the resolved portal:`,
+        '❌ [%s] OIDC login rejected — user is not a member of the resolved portal: %s',
+        requestId,
         String(user.email).replace(/[\r\n]+/g, ' ')
       )
       return res.redirect(`${FRONTEND_BASE}/?error=forbidden_portal`)

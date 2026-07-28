@@ -390,4 +390,67 @@ describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
     // error was NOT cached as a stale miss for the TTL.
     expect(second.body.portal).toEqual({ id: rootId })
   })
+
+  // Round-7 gate-code-review finding (GENUINE FAIL-OPEN, highest priority) —
+  // the old behavior treated a host-lookup ERROR exactly like a genuine miss
+  // and fell through to path -> root. If the Host maps to a SUSPENDED
+  // portal, the domain query hits a transient error, and `root` (an active
+  // portal) is still cached from an earlier request, the request resolved
+  // to `{ kind: 'resolved', row: rootRow }` and was served ROOT branding —
+  // silently defeating suspension for that host. A host-lookup error must
+  // instead degrade the WHOLE request to pass-through (req.portal unset),
+  // never fall through to path or root.
+  function domainLookupThrowingDb(): any {
+    return (table: string) => {
+      if (table === 'portal_domains') {
+        const chain: any = {
+          whereIn: () => chain,
+          andWhere: () => chain,
+          where: () => chain,
+          first: async () => {
+            throw new Error('simulated transient DB error on domain lookup')
+          },
+        }
+        return chain
+      }
+      return db(table)
+    }
+  }
+
+  it('a host-lookup error must NOT fall through to root — suspension must never be defeated by a transient DB error', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({
+      slug: 'suspended-co',
+      status: 'suspended',
+      domain: { domain: 'suspended-co.fuzefront.test', kind: 'subdomain' },
+    })
+
+    // Warm the "root" cache entry with a healthy DB first — mirroring the
+    // real failure mode: root was already resolved/cached from an earlier,
+    // unrelated request, and it is a perfectly healthy, active portal.
+    const warmApp = buildApp(true)
+    const warm = await request(warmApp)
+      .get('/api/v1/portal/context')
+      .set('Host', 'totally-unrelated-host.example.com')
+    expect(warm.body.portal).toEqual({ id: ROOT_PORTAL_ID, slug: ROOT_PORTAL_SLUG })
+
+    // Now the Host maps to the SUSPENDED portal, but its domain-lookup query
+    // throws (a transient DB blip) while `root` is still cached and active.
+    const middleware = createResolvePortalContext({
+      db: domainLookupThrowingDb(),
+      isEnabled: async () => true,
+    })
+    const app = express()
+    app.use(middleware)
+    app.get('/probe', (req: any, res) =>
+      res.json({ portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null })
+    )
+
+    const res = await request(app).get('/probe').set('Host', 'suspended-co.fuzefront.test')
+
+    expect(res.status).toBe(200)
+    // MUST NOT be served the root portal (or any resolved portal) — the
+    // request must degrade to pass-through, never fall through to root.
+    expect(res.body.portal).toBeNull()
+  })
 })
