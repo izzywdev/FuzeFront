@@ -657,13 +657,19 @@ authentikMendys:
   # Fewer web workers than FuzeFront: this silo serves two apps, not the whole
   # platform. Raise if login latency shows queueing.
   webWorkers: 2
-  # Browser-facing exposure. OFF by default, matching authentik.adminIngress:
-  # FuzeFront deliberately has NO public IdP host — its authentik is
-  # ClusterIP-only and reached through app.fuzefront.com/api/auth/idp/*, so the
-  # browser never learns the IdP hostname. Enabling this re-introduces a public
-  # IdP host and is only safe behind an edge auth gate (Cloudflare Access).
-  # See the README note in authentik/blueprints-mendys/ for the alternative
-  # (a reverse-proxy path on the MendysRobotics ingress).
+  # Browser-facing exposure. OFF, and it should STAY off.
+  #
+  # This instance is an implementation detail of FuzeFront's security-service,
+  # which is the single front door for every tenant. MendysRobotics reaches
+  # security-service on its own hosts; security-service drives this Authentik
+  # in-cluster over ClusterIP. Nothing outside FuzeFront's boundary — not
+  # end-users, not the MendysRobotics apps — ever addresses Authentik.
+  #
+  # Do NOT reach for Cloudflare Access to make an exposed IdP host safe: a host
+  # carrying live OIDC traffic cannot be gated. Per templates/ingress.yaml,
+  # putting an auth gate in front of the OIDC path "would break sign-in for
+  # every user". Access is only usable on an admin host carrying no OIDC
+  # traffic. The escape hatch below exists for debugging, not for production.
   ingress:
     enabled: false
     host: "" # e.g. auth.mendysrobotics.com

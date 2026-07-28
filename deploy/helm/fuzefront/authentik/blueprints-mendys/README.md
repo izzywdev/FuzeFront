@@ -72,20 +72,51 @@ OAuth2 client credential shared by the two sides of the exchange.
 `client_id`/`client_secret` only at provider *creation*; updating the secret
 requires deleting the provider entry and re-applying the blueprint.
 
-## Browser-facing exposure (open decision)
+## Browser-facing exposure — there is none, by design
 
-`authentikMendys.ingress` is **off by default**, matching FuzeFront's posture:
-FuzeFront has no public IdP host — its authentik is ClusterIP-only and reached
-through `app.fuzefront.com/api/auth/idp/*`, so the browser never learns the IdP
-hostname. Two ways to expose this silo, in order of preference:
+**This instance is never reachable from outside FuzeFront's boundary.**
+`authentikMendys.ingress` is off, and it should stay off.
 
-1. **Mirror FuzeFront (preferred).** Add an `/api/auth/idp/*` path to the
-   MendysRobotics ingress in `mendys-prod` proxying to
-   `authentik-mendys-server.<fuzefront-ns>.svc.cluster.local:9000`. Keeps the
-   IdP host invisible. That change belongs to the MendysRobotics repo.
-2. **A public `auth.mendysrobotics.com` host** via `authentikMendys.ingress`.
-   Simpler, but re-introduces the exposed IdP host, so only do this behind
-   Cloudflare Access.
+Authentik is an implementation detail of FuzeFront's **security-service**, which
+is the single front door for every tenant. MendysRobotics does not talk to
+Authentik, does not know its hostname, and holds no Authentik configuration —
+its users reach `live.` / `marketplace.mendysrobotics.com`, those hosts route
+`/api/v1/security/*` and `/api/auth/*` to security-service, and security-service
+drives the correct Authentik instance in-cluster over ClusterIP
+(`authentik-mendys-server:9000`).
+
+This is the module's stated contract, not a new invention — see
+`backend/security/src/providers/authentik/config.ts`: *"no vendor name leaks
+past this boundary into the API surface"* and *"the browser is ALWAYS sent to a
+same-host path … so the browser never sees an internal identity host."*
+
+Consequences for this directory:
+
+- **Password + enrollment** use the **server-side flow driver** — security-service
+  calls Authentik's `/api/v3` flow-executor server-side and issues its own
+  session. The browser never touches Authentik, so no Authentik paths are routed
+  on the Mendys hosts at all (unlike `app.fuzefront.com`, which does route
+  Authentik's native paths).
+- **Social login** uses the **server-brokered** path, which already exists:
+  Google redirects to `/api/v1/security/social/google/callback` on the tenant
+  host — a security-service route — and security-service exchanges the code with
+  Google itself and provisions the account into this silo via the admin API. It
+  must never fall back to Authentik's `/source/oauth/*`, so
+  `securityService.googleBrokered` must be `"true"` for this tenant. It
+  currently defaults to `"false"`.
+- **The issuer is not a MendysRobotics-facing value.** It is internal to
+  security-service. Nothing in the MendysRobotics repo should contain an
+  Authentik URL.
+
+### Not yet true
+
+security-service is currently **single-tenant**: it reads `AUTHENTIK_ISSUER_URL`,
+`AUTHENTIK_BASE_URL`, `AUTHENTIK_CLIENT_ID/SECRET`, `AUTHENTIK_ADMIN_TOKEN` and
+`AUTHENTIK_ENROLLMENT_FLOW_SLUG` directly from `process.env` at ~12 call sites
+across 7 files, each defaulting to FuzeFront (`…/application/o/fuzefront/`,
+`fuzefront-enrollment`). Until it resolves a tenant per request and threads that
+through, **this silo cannot actually serve a login** — the blueprints here are
+correct and inert, waiting on that work.
 
 Either way the issuer is **not** `https://auth.fuzefront.com/application/o/mendys-platform/`
 — that host belongs to the FuzeFront instance, which is a different directory.
