@@ -119,6 +119,29 @@ spec:
                   key: BILLING_INTERNAL_TOKEN
                   optional: true
             {{- end }}
+            {{- if .Values.customHostnameApi.enabled }}
+            # FuzeInfra Custom Hostname API (FF-EPIC-16 / FFRNT-91).
+            #
+            # A FuzeInfra-issued BEARER token identifying our route profile —
+            # NOT a Cloudflare credential. FuzeInfra holds the Cloudflare token
+            # in its own namespace precisely so consumers never do; do not add
+            # a Cloudflare credential here.
+            #
+            # optional:true so the backend still boots before the SealedSecret
+            # carries the key. The feature is separately gated by the
+            # default-OFF flag `fuzefront.platform.portal-domains`, so a missing
+            # token degrades to "feature unavailable", never a CrashLoop.
+            - name: CUSTOM_HOSTNAME_API_URL
+              value: {{ .Values.customHostnameApi.baseUrl | quote }}
+            - name: CUSTOM_HOSTNAME_API_PROFILE
+              value: {{ .Values.customHostnameApi.profile | quote }}
+            - name: CUSTOM_HOSTNAME_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.customHostnameApi.secret.name | default (include "fuzefront.secretName" .) }}
+                  key: {{ .Values.customHostnameApi.secret.key }}
+                  optional: true
+            {{- end }}
             {{- if .Values.authentik.oidc.enabled }}
             # Authentik OIDC (SSO). client_id/secret come from the Secret (set
             # deterministically by blueprints); issuer/redirect from values.

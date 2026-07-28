@@ -688,12 +688,45 @@ ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
+  # Tenant-subdomain wildcard (FF-EPIC-16 / FFRNT-91). Empty = rule not emitted.
+  # Matches exactly ONE label ("*.fuzefront.com" covers corpabc.fuzefront.com but
+  # NOT eu.corpabc.fuzefront.com — nested tenant subdomains would need Cloudflare
+  # Advanced Certificate Manager). Exact hosts beat wildcards, so `host` above and
+  # every other explicit record keep winning.
+  #
+  # Its path fan-out is a YAML alias of the canonical host's, so the two can never
+  # diverge. It deliberately gets NO tls: block — Cloudflare terminates edge TLS.
+  wildcardHost: ''
   # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
   annotations: {}
   tls:
     enabled: false
     # Defaults to "<host>-tls" when empty.
     secretName: ''
+
+# ---------------------------------------------------------------------------
+# FuzeInfra Custom Hostname API (FF-EPIC-16 / FFRNT-91).
+#
+# Cluster-internal, bearer-authenticated provisioning of customer-owned domains
+# (app.corpabc.com) via Cloudflare for SaaS. FuzeInfra owns the service AND the
+# Cloudflare token; FuzeFront holds ONLY the bearer token below and never a
+# Cloudflare credential.
+#
+# Gated by the default-OFF flag `fuzefront.platform.portal-domains`; this block
+# only supplies connection details, it does not enable the feature.
+# ---------------------------------------------------------------------------
+customHostnameApi:
+  # Injects CUSTOM_HOSTNAME_API_TOKEN into the backend. Leave false until the
+  # SealedSecret below actually carries the key, or the pod CrashLoops on a
+  # missing secret key.
+  enabled: false
+  baseUrl: http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
+  # Route profile our token grants. Optional in the contract when the token
+  # grants exactly one profile (our case); sent explicitly for clarity.
+  profile: fuzefront
+  secret:
+    name: fuzefront-secrets
+    key: CUSTOM_HOSTNAME_API_TOKEN
 
 # ---------------------------------------------------------------------------
 # Kafka topic pre-creation (Phase D). A Helm post-install/post-upgrade Job runs
