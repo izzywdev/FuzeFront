@@ -288,19 +288,24 @@ spec:
 {{- if $akm.ingress.enabled }}
 ---
 {{- /*
-  PUBLIC IdP HOST — OFF BY DEFAULT, AND THAT DEFAULT IS DELIBERATE.
+  DEBUG ESCAPE HATCH — NOT A PRODUCTION PATH.
 
-  FuzeFront removed its own public `auth.fuzefront.com` Ingress on purpose:
-  its authentik is ClusterIP-only and the sole browser-transitable surface is
-  the reverse-proxied app.fuzefront.com/api/auth/idp/* path, so the browser
-  never learns the IdP hostname. Turning this on for the Mendys silo
-  re-introduces exactly the exposure that boundary exists to prevent.
+  This silo is an implementation detail of FuzeFront's security-service, which
+  is the single front door for every tenant. MendysRobotics users reach
+  live./marketplace.mendysrobotics.com; those hosts route /api/v1/security/*
+  and /api/auth/* to security-service, which drives THIS Authentik in-cluster
+  over ClusterIP. Nothing outside FuzeFront's boundary addresses Authentik —
+  not end-users, not the MendysRobotics apps. See
+  backend/security/src/providers/authentik/config.ts: "no vendor name leaks
+  past this boundary into the API surface".
 
-  Only enable it behind an edge auth gate (Cloudflare Access), or prefer the
-  equivalent of FuzeFront's pattern: a /api/auth/idp/* path on the
-  MendysRobotics ingress in the mendys-prod namespace proxying to
-  authentik-mendys-server.<this-namespace>.svc.cluster.local:9000. That change
-  belongs to the MendysRobotics repo, not this chart.
+  Do NOT reach for Cloudflare Access to make an exposed IdP host safe. A host
+  carrying live OIDC traffic cannot be gated — per templates/ingress.yaml,
+  putting an auth gate in front of the OIDC path "would break sign-in for every
+  user". Access only works on an admin host carrying no OIDC traffic.
+
+  Enable this only for temporary debugging of the instance itself, and turn it
+  back off.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
