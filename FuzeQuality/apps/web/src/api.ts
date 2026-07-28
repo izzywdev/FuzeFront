@@ -1,4 +1,4 @@
-import type { Portfolio } from '@fuzequality/contracts'
+import type { Portfolio, TestImplementationRequest } from '@fuzequality/contracts'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem('authToken')
@@ -38,4 +38,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision }),
     }),
+  implementTests: (value: { repositoryId: string; sourceRevision: string; expectationIds: string[] }) =>
+    request<TestImplementationRequest>('/api/v1/test-implementations', {
+      method: 'POST',
+      body: JSON.stringify(value),
+    }),
+  testImplementation: (id: string) =>
+    request<TestImplementationRequest>(`/api/v1/test-implementations/${id}`),
 }

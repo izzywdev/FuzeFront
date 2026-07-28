@@ -8,6 +8,7 @@ import type {
   ScanResult,
   Suggestion,
   Requirement,
+  TestImplementationRequest,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 
@@ -19,6 +20,9 @@ export interface CatalogStore {
   saveScan(result: ScanResult): Promise<void>
   saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
   decideSuggestion(id: string, decision: 'confirm' | 'reject'): Promise<Suggestion | undefined>
+  createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
+  testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
+  updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -36,6 +40,7 @@ const emptyPortfolio = (): Portfolio => ({
 
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
+  private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -144,6 +149,22 @@ export class MemoryCatalogStore implements CatalogStore {
         ...result.suggestions,
       ]
     }
+  }
+
+  async createTestImplementation(request: TestImplementationRequest, idempotencyKey: string) {
+    const existing = this.implementations.find(item => item.tenantId === request.tenantId && item.idempotencyKey === idempotencyKey)
+    if (existing) return existing
+    this.implementations.push({ ...request, idempotencyKey })
+    return request
+  }
+
+  async testImplementation(id: string, tenantId: string) {
+    return this.implementations.find(item => item.id === id && item.tenantId === tenantId)
+  }
+
+  async updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>) {
+    const item = this.implementations.find(candidate => candidate.id === id)
+    if (item) Object.assign(item, value, { updatedAt: new Date().toISOString() })
   }
 }
 
@@ -268,6 +289,55 @@ export class PostgresCatalogStore implements CatalogStore {
     const state = decision === 'confirm' ? 'confirmed' : 'rejected'
     await this.pool.query('UPDATE fuzequality.suggestions SET state=$2 WHERE id=$1', [id, state])
     return (await this.portfolio()).suggestions.find(item => item.id === id)
+  }
+
+  async createTestImplementation(request: TestImplementationRequest, idempotencyKey: string) {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.test_implementation_requests
+       (id,tenant_id,repository_id,source_revision,expectation_ids,idempotency_key,agent_profile,skills,status,requested_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (tenant_id,idempotency_key) DO UPDATE SET updated_at=fuzequality.test_implementation_requests.updated_at
+       RETURNING *`,
+      [request.id, request.tenantId, request.repositoryId, request.sourceRevision, JSON.stringify(request.expectationIds), idempotencyKey, request.agentProfile, JSON.stringify(request.skills), request.status, request.requestedBy],
+    )
+    return this.mapTestImplementation(result.rows[0])
+  }
+
+  async testImplementation(id: string, tenantId: string) {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.test_implementation_requests WHERE id=$1 AND tenant_id=$2',
+      [id, tenantId],
+    )
+    return result.rows[0] ? this.mapTestImplementation(result.rows[0]) : undefined
+  }
+
+  async updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>) {
+    await this.pool.query(
+      `UPDATE fuzequality.test_implementation_requests
+       SET status=COALESCE($2,status), workflow_url=COALESCE($3,workflow_url),
+           pull_request_url=COALESCE($4,pull_request_url), error=COALESCE($5,error), updated_at=now()
+       WHERE id=$1`,
+      [id, value.status, value.workflowUrl, value.pullRequestUrl, value.error],
+    )
+  }
+
+  private mapTestImplementation(row: Record<string, any>): TestImplementationRequest {
+    return {
+      id: row.id,
+      tenantId: row.tenant_id,
+      repositoryId: row.repository_id,
+      sourceRevision: row.source_revision,
+      expectationIds: row.expectation_ids,
+      agentProfile: row.agent_profile,
+      skills: row.skills,
+      status: row.status,
+      requestedBy: row.requested_by,
+      workflowUrl: row.workflow_url ?? undefined,
+      pullRequestUrl: row.pull_request_url ?? undefined,
+      error: row.error ?? undefined,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    }
   }
 }
 
