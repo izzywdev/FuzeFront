@@ -250,6 +250,32 @@ describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session bind
     expect(res.body.id).toBe(rootOrg.portalId)
   })
 
+  // Root cause B fix (gate-code-review round 4) — a legacy token (no
+  // portal_id claim) carries NO verifiable portal binding. The OLD code
+  // bound it to `resolvedPortal?.id ?? root?.id` — i.e. WHATEVER Host the
+  // request happened to resolve to, UNVERIFIED. A pre-epic session
+  // presented on a tenant's Host was silently bound to that tenant portal:
+  // fail-open cross-portal, exactly what AC3 exists to stop, just reached
+  // via the one branch (no claim to compare against) AC3 doesn't cover.
+  // POLICY (flagged to the coordinator/owner for sign-off): a legacy token
+  // is valid ONLY on the root portal — presented on a Host that resolves to
+  // a non-root TENANT portal, it must be rejected outright.
+  it('POLICY — a legacy token (no portal_id claim) is REJECTED on a Host that resolves to a non-root tenant portal', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({ slug: 'tenant-b', domain: 'tenant-b.fuzefront.test' })
+    const userId = await createUser()
+
+    const token = signToken(userId) // no portalId claim — a pre-epic session
+    const res = await request(app)
+      .get('/api/v1/portal/current')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'tenant-b.fuzefront.test') // resolves to a NON-root tenant portal
+
+    // Must NEVER silently bind to tenant-b — reject and require re-auth.
+    expect(res.status).toBe(401)
+  })
+
   it('returns 403 FORBIDDEN_PORTAL when no portal is bound and no root portal is seeded (bootstrap mode)', async () => {
     flagEnabled = true
     // Bug 4 fix — no portals at all (bootstrap). resolvePortalContext now
@@ -299,7 +325,16 @@ describe('FF-EPIC-10-S3 fail-closed fix — cross-portal token rejection under c
     expect(res.status).toBe(401)
   })
 
-  it('resolvePortalContext and authenticateToken evaluate the flag exactly ONCE for the same request (cannot disagree)', async () => {
+  // Root cause A fix (gate-code-review round 4) — /current used to
+  // independently re-evaluate the flag with {userId} (a SEPARATE bug from
+  // the authenticateToken one this describe block was originally written
+  // for), so this assertion is updated from "exactly 2" (resolvePortalContext
+  // + /current's own check, with authenticateToken already fixed to reuse
+  // the cache) to "exactly 1": EVERY consumer downstream of
+  // resolvePortalContext — authenticateToken AND /current — now reuses the
+  // one shared per-request decision via getRequestPortalsEnabled
+  // (utils/portalFlag.ts). Covers context + auth + /current in one request.
+  it('resolvePortalContext, authenticateToken, and /current evaluate the flag exactly ONCE for the same request (cannot disagree)', async () => {
     flagEnabled = true
     await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
     const userId = await createUser()
@@ -315,14 +350,17 @@ describe('FF-EPIC-10-S3 fail-closed fix — cross-portal token rejection under c
       .set('Host', 'shared-eval.fuzefront.test')
     expect(res.status).toBe(200)
 
-    // Exactly two calls for this request: resolvePortalContext (pre-auth) and
-    // the /current route handler's own separate feature-gate check. Zero
-    // ADDITIONAL calls from authenticateToken — it reused
-    // resolvePortalContext's cached decision instead of re-evaluating, which
-    // is what guarantees the two middlewares cannot disagree.
+    // Exactly ONE call for this request — resolvePortalContext's (pre-auth).
+    // Zero additional calls from authenticateToken OR the /current route
+    // handler; both reused the cached decision, which is what guarantees
+    // none of the three can disagree.
     const callsDuringRequest = spy.mock.calls.length - callsBefore
-    expect(callsDuringRequest).toBe(2)
+    expect(callsDuringRequest).toBe(1)
   })
+
+  // The fourth consumer — the login-mint path (routes/auth.ts) — covered
+  // separately in the "bug 5 fix" describe block below, which already
+  // asserts exactly one evaluation for a login request (context + login).
 })
 
 // Coordinator-flagged bug 4 (SERIOUS) — resolvePortalContext is mounted
@@ -455,5 +493,52 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
     expect(res.status).toBe(200)
     const decoded: any = jwt.decode(res.body.token)
     expect(decoded.portalId).toBeUndefined()
+  })
+
+  // Coordinator-flagged extra finding (round 4) — a regular user logging in
+  // on the MAIN app host (not a tenant subdomain) resolves to the ROOT/
+  // platform portal via resolvePortalContext's fallback. The OLD code force-
+  // set sessions.active_organization_id to that root portal's org (the
+  // platform org) on EVERY main-domain login once the flag was ON — even
+  // though the logging-in user is almost certainly NOT a member of the
+  // platform org. That silently rebinds the session's active org, violating
+  // "flag-off/main-domain behavior is byte-for-byte unchanged" (latent until
+  // the flag is enabled). Fixed: active_organization_id is only set from a
+  // genuine TENANT (non-root) portal; a root-portal/main-domain login must
+  // get the IDENTICAL session (active_organization_id null, matching
+  // pre-epic behavior) whether the flag is on or off.
+  it('main-domain login (root portal) does NOT rebind active_organization_id to the platform org, flag ON', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    // ADMIN_EMAIL (the seeded user) is NOT a member of the platform org —
+    // asserting the session's active org stays exactly what pre-epic login
+    // already leaves it as (null — sessions.insert() never set it).
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .set('Host', 'app.fuzefront.test') // main app host, no tenant subdomain -> resolves to root
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(200)
+    // The token IS still bound to the root portal (a legitimate binding)...
+    const decoded: any = jwt.decode(res.body.token)
+    expect(decoded.portalId).toBe(ROOT_PORTAL_ID)
+    // ...but the session's active org must be UNCHANGED from pre-epic
+    // behavior — never force-set to the platform org.
+    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    expect(session.active_organization_id).toBeNull()
+  })
+
+  it('flag ON + no root portal seeded yet (bootstrap) also never rebinds active_organization_id', async () => {
+    flagEnabled = true
+    // No portals at all — resolvePortalContext bootstrap-passes-through.
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(200)
+    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    expect(session.active_organization_id).toBeNull()
   })
 })

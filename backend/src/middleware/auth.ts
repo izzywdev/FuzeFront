@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import { db } from '../config/database'
 import { User } from '../types/shared'
 import { getRootPortal } from '../repositories/portalRepository'
-import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
+import { getRequestPortalsEnabled } from '../utils/portalFlag'
 
 export const authenticateToken = async (
   req: Request,
@@ -82,21 +82,15 @@ export const authenticateToken = async (
     // URL/query param. Only active when the master flag is ON, so pre-epic
     // token/session shapes and behavior are unchanged while it's OFF.
     //
-    // Fix (b) — reuse resolvePortalContext's flag decision for THIS request
-    // (stashed on req.portalsFlagEnabled) instead of evaluating independently.
-    // Two separate per-user evaluations of a gradually-targeted flag can
-    // legitimately disagree; a single shared decision removes that class of
-    // bug by construction. Only fall back to an independent evaluation if
-    // resolvePortalContext never ran upstream of this route — and even then,
-    // use the SAME context shape ({}), never {userId}, so the fallback can
-    // never diverge in KIND from the primary resolver's semantics either.
-    const cachedPortalsEnabled = req.portalsFlagEnabled
-    const portalsEnabled =
-      typeof cachedPortalsEnabled === 'boolean'
-        ? cachedPortalsEnabled
-        : await isMultiTenantPortalsEnabled({})
+    // Root cause A fix (gate-code-review round 4) — getRequestPortalsEnabled
+    // reuses resolvePortalContext's flag decision for THIS request (stashed
+    // on req.portalsFlagEnabled) instead of evaluating independently. See
+    // utils/portalFlag.ts for why every request-path consumer must go
+    // through that one shared helper rather than re-implementing this
+    // fallback locally.
+    const portalsEnabled = await getRequestPortalsEnabled(req)
     if (portalsEnabled) {
-      const resolvedPortal = (req as any).portal // set by resolvePortalContext, if mounted upstream
+      const resolvedPortal = req.portal // set by resolvePortalContext, if mounted upstream
       if (decoded.portalId) {
         // Fix (a) — FAIL CLOSED. Previously `resolvedPortal &&
         // resolvedPortal.id !== decoded.portalId` skipped the reject
@@ -123,11 +117,43 @@ export const authenticateToken = async (
         }
         user.portalId = decoded.portalId
       } else {
-        // AC-risk mitigation — a token issued before this epic (no portal_id
-        // claim) is treated as bound to the root portal rather than rejected,
-        // so existing sessions don't break on rollout.
-        const root = await getRootPortal(db)
-        user.portalId = resolvedPortal?.id ?? root?.id
+        // Root cause B fix (gate-code-review round 4) — FAIL CLOSED for
+        // legacy tokens too. A pre-epic token (no portal_id claim) carries
+        // NO verifiable portal binding at all. The old code bound it to
+        // `resolvedPortal?.id ?? root?.id` — i.e. WHATEVER Host the request
+        // happened to resolve to, unverified. A pre-epic session presented
+        // on tenant B's Host was silently bound to portal B: fail-open
+        // cross-portal, the exact thing AC3 exists to stop, just reached via
+        // the one branch AC3 doesn't cover (no claim to compare against).
+        //
+        // POLICY (flagged to the coordinator/owner for sign-off): a legacy
+        // token is valid ONLY on the root portal. Presented on a Host that
+        // resolves to a non-root TENANT portal, it is rejected outright
+        // (401, re-authentication required) rather than silently bound.
+        if (resolvedPortal) {
+          if (!resolvedPortal.is_root) {
+            console.log(
+              '❌ [%s] Legacy token (no portal_id claim) presented on a non-root portal Host: host=%s',
+              requestId,
+              resolvedPortal.id
+            )
+            return res.status(401).json({ error: 'Invalid token.' })
+          }
+          user.portalId = resolvedPortal.id
+        } else {
+          // No portal resolved for this request at all (bootstrap mode, or
+          // resolvePortalContext didn't run upstream) — only NOW fetch root,
+          // and only here: the OLD code fetched it unconditionally on every
+          // legacy-token request (even when resolvedPortal already made the
+          // fallback unused), so a portals-table hiccup broke auth (this
+          // whole block is inside authenticateToken's try/catch, which turns
+          // any thrown error into a blanket 401) for sessions that never
+          // touch multi-tenant portals at all. `.catch()` additionally
+          // ensures a genuine DB error here degrades to "no portal bound"
+          // rather than failing the request.
+          const root = await getRootPortal(db).catch(() => undefined)
+          user.portalId = root?.id
+        }
       }
     }
 

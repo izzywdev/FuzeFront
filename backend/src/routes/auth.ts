@@ -16,7 +16,7 @@ import {
 } from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
 import { getRootPortal } from '../repositories/portalRepository'
-import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
+import { getRequestPortalsEnabled } from '../utils/portalFlag'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
 
@@ -40,32 +40,48 @@ const router = express.Router()
 // when the master flag is OFF, so token payload / session columns are
 // byte-for-byte unchanged from pre-epic behavior.
 //
-// Bug 5 fix — reuses `req.portalsFlagEnabled` (stashed by resolvePortalContext
-// for THIS request) instead of independently re-evaluating the flag with
-// {userId}. Two separate evaluations of a per-user-targeted flag can
-// legitimately disagree (the same class of bug already closed for
-// authenticateToken); a login-minted token binding that disagreed with the
-// request's own resolved portal context would be exactly as unsafe as the
-// cross-portal acceptance bug. Falls back to an independent {}-context
-// evaluation (matching resolvePortalContext's own pre-auth context shape,
-// never {userId}) only if resolvePortalContext never ran upstream.
+// Root cause A fix (gate-code-review round 4) — reuses
+// getRequestPortalsEnabled (utils/portalFlag.ts), the ONE shared helper every
+// request-path consumer must go through, instead of re-implementing its own
+// copy of the "read req.portalsFlagEnabled, else fall back" ternary. Two
+// independent evaluations of a per-user-targeted flag can legitimately
+// disagree (this exact function regressed once already after
+// authenticateToken was fixed in isolation — see utils/portalFlag.ts's
+// doc-comment on why this can no longer happen per-callsite).
 async function resolvePortalBindingForLogin(
   req: express.Request,
   // Kept for call-site clarity (which user this binding is for) even though
-  // the flag decision itself no longer depends on it — see Bug 5 fix above.
+  // the flag decision itself no longer depends on it.
   _userId: string
 ): Promise<{ portalId?: string; organizationId?: string }> {
-  const cached = req.portalsFlagEnabled
-  const enabled = typeof cached === 'boolean' ? cached : await isMultiTenantPortalsEnabled({})
+  const enabled = await getRequestPortalsEnabled(req)
   if (!enabled) return {}
 
   const resolved = req.portal
   if (resolved) {
+    // New fix (gate-code-review round 4, extra finding) — do NOT rebind
+    // sessions.active_organization_id to the ROOT/platform portal's org for
+    // a root-portal / main-domain login. A regular user logging in on the
+    // main app host is very likely NOT a member of the platform org;
+    // force-setting active_organization_id there would silently rebind the
+    // session's active org on EVERY main-domain login once the flag is ON —
+    // violating "flag-off/main-domain behavior is byte-for-byte unchanged."
+    // `portalId` is still bound for the root portal (a legitimate,
+    // non-tenant-specific binding, consistent with authenticateToken's
+    // legacy-token policy); only `organizationId` is withheld for root.
+    if (resolved.is_root) {
+      return { portalId: resolved.id }
+    }
     return { portalId: resolved.id, organizationId: resolved.organization_id }
   }
-  const root = await getRootPortal(db)
+  // Only reached when nothing resolved for this request (bootstrap mode, or
+  // resolvePortalContext didn't run upstream). `.catch()` so a portals-table
+  // hiccup degrades to "no portal bound" rather than breaking login itself.
+  // The fallback is always the ROOT portal, so — same reasoning as above —
+  // organizationId is never set here either.
+  const root = await getRootPortal(db).catch(() => undefined)
   if (!root) return {}
-  return { portalId: root.id, organizationId: root.organization_id }
+  return { portalId: root.id }
 }
 
 // ─── Fire-and-forget provisioning tracker ────────────────────────────────────

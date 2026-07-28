@@ -9,7 +9,7 @@ import {
   rowToPortal,
   rowToPortalContext,
 } from '../repositories/portalRepository'
-import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
+import { getRequestPortalsEnabled } from '../utils/portalFlag'
 
 /**
  * FF-EPIC-10-S2 — public portal-context boot endpoint + the caller's own
@@ -80,7 +80,12 @@ router.get('/context', portalContextRateLimiter, async (req: Request, res: Respo
  * client-supplied id/query/Host.
  */
 router.get('/current', portalCurrentRateLimiter, authenticateToken, async (req: any, res: Response) => {
-  const enabled = await isMultiTenantPortalsEnabled({ userId: req.user?.id })
+  // Root cause A fix (gate-code-review round 4) — this handler used to
+  // independently re-evaluate the flag with {userId}, which could disagree
+  // with resolvePortalContext's (and authenticateToken's) decision for the
+  // SAME request. Reuses the one shared per-request decision instead — see
+  // utils/portalFlag.ts's getRequestPortalsEnabled doc-comment.
+  const enabled = await getRequestPortalsEnabled(req)
   if (!enabled) {
     return res.status(404).json({
       error: 'NOT_FOUND',

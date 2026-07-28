@@ -127,7 +127,12 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
     // whatever the downstream handler/Express's own error handler already
     // sent — crashing the request with ERR_HTTP_HEADERS_SENT and masking
     // the real error.
-    let outcome: Outcome = { kind: 'error' }
+    //
+    // Declared WITHOUT an initializer (CodeQL alert #1463, "useless
+    // assignment" — every path below assigns it before use: the try block's
+    // success paths, or the catch block unconditionally). TypeScript's
+    // definite-assignment analysis proves it's always set before the switch.
+    let outcome: Outcome
 
     try {
       const enabled = await (isEnabled ?? isMultiTenantPortalsEnabled)({})
