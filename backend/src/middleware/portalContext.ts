@@ -107,7 +107,21 @@ async function cached(
     // Deliberately NOT cached: a transient error should be retried on the
     // very next request, not stuck as a "miss" for the full TTL like a
     // genuine negative lookup.
-    console.error(`resolvePortalContext lookup error for "${key}" (degrading to miss):`, error)
+    //
+    // `key` is built from externally-controlled input (the raw Host header
+    // or the /p/<slug> path segment — see the call sites below), so it must
+    // never be interpolated into the console.error FORMAT-STRING position
+    // (CodeQL js/tainted-format-string — an embedded `%` specifier could
+    // forge/break the log) and must have CR/LF stripped before being logged
+    // at all (CodeQL js/log-injection — an embedded newline could forge
+    // additional fake log lines). Constant format string + %s + oneLine():
+    // the same established pattern already used for this exact CodeQL pair
+    // in routes/billing.ts's upstream-error logger.
+    console.error(
+      'resolvePortalContext lookup error for %s (degrading to miss):',
+      String(key).replace(/[\r\n]+/g, ' '),
+      error
+    )
     return null
   }
 }

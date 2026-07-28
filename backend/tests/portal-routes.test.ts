@@ -450,13 +450,29 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
 
   const ADMIN_EMAIL = 'admin@fuzefront.dev'
   const ADMIN_PASSWORD = 'admin123'
+  // Fixed id from src/seeds/001_initial_users.ts — used to insert a real
+  // organization_memberships row for the cross-tenant-login authz tests.
+  const ADMIN_USER_ID = '8dbf6a1b-c0a1-462a-9bf5-934c8c7339c3'
 
-  it('mints a portal_id claim consistent with the Host-resolved portal, and never double-evaluates the flag', async () => {
+  it('a genuine ACTIVE member logging in on their tenant Host succeeds and is bound (mints a consistent portal_id claim, never double-evaluates the flag)', async () => {
     flagEnabled = true
     await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
     const { portalId, organizationId } = await createPortal({
       slug: 'login-bind-co',
       domain: 'login-bind-co.fuzefront.test',
+    })
+    // Cross-tenant login authz fix — membership is now REQUIRED for a
+    // tenant-host login to succeed; make ADMIN a genuine active member of
+    // this portal's org.
+    await db('organization_memberships').insert({
+      id: uuidv4(),
+      user_id: ADMIN_USER_ID,
+      organization_id: organizationId,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
     })
 
     const spy = portalFlagModule.isMultiTenantPortalsEnabled as jest.Mock
@@ -480,6 +496,57 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
     // re-evaluating independently with {userId}.
     const callsDuringRequest = spy.mock.calls.length - callsBefore
     expect(callsDuringRequest).toBe(1)
+  })
+
+  // Cross-tenant login authorization fix (round 8) — login previously only
+  // verified GLOBAL credentials; ANY valid FuzeFront account logging in on a
+  // tenant Host got its session/token silently bound to that tenant's org,
+  // regardless of actual membership. Same silent-rebind class already closed
+  // for the root portal, now closed for tenant portals too: fail CLOSED.
+  it('a NON-member logging in on a tenant Host is rejected (403 FORBIDDEN_PORTAL) — no session/token is created', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({
+      slug: 'members-only-co',
+      domain: 'members-only-co.fuzefront.test',
+    })
+    // Deliberately NO organization_memberships row for ADMIN on this org.
+
+    const sessionCountBefore = await db('sessions').count<{ c: string }[]>('* as c')
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .set('Host', 'members-only-co.fuzefront.test')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe('FORBIDDEN_PORTAL')
+    expect(res.body.token).toBeUndefined()
+
+    // No session row was created for this rejected login.
+    const sessionCountAfter = await db('sessions').count<{ c: string }[]>('* as c')
+    expect(Number(sessionCountAfter[0].c)).toBe(Number(sessionCountBefore[0].c))
+  })
+
+  it('flag OFF — a non-member logging in on a tenant Host still succeeds unchanged (membership check is flag-gated too)', async () => {
+    flagEnabled = false
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({
+      slug: 'members-only-off',
+      domain: 'members-only-off.fuzefront.test',
+    })
+    // No membership row — would be rejected if the flag were ON.
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .set('Host', 'members-only-off.fuzefront.test')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    // Flag OFF -> resolvePortalBindingForLogin short-circuits to {ok:true}
+    // before ever reaching req.portal/the membership check — pre-epic
+    // behavior, unchanged.
+    expect(res.status).toBe(200)
+    expect(res.body.token).toBeTruthy()
   })
 
   it('mints no portal_id claim when the flag is OFF — unchanged pre-epic token shape', async () => {

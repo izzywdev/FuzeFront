@@ -5,6 +5,15 @@ import { User } from '../types/shared'
 import { getRootPortal } from '../repositories/portalRepository'
 import { getRequestPortalsEnabled } from '../utils/portalFlag'
 
+// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
+// an embedded newline could forge additional fake log lines). Applied to
+// every value below that ultimately traces back to request-controlled input
+// (the JWT `portal_id` claim, resolved from the client-supplied Authorization
+// header) even though it's cryptographically verified first — defense in
+// depth against CodeQL's conservative taint tracking, same idiom as
+// routes/billing.ts's upstream-error logger.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 export const authenticateToken = async (
   req: Request,
   res: Response,
@@ -109,9 +118,9 @@ export const authenticateToken = async (
           // forge log output) — same convention as utils/feature-flags.ts.
           console.log(
             '❌ [%s] Token portal mismatch or missing portal context: token=%s host=%s',
-            requestId,
-            decoded.portalId,
-            resolvedPortal?.id ?? 'none'
+            oneLine(requestId),
+            oneLine(decoded.portalId),
+            oneLine(resolvedPortal?.id ?? 'none')
           )
           return res.status(401).json({ error: 'Invalid token.' })
         }
@@ -134,8 +143,8 @@ export const authenticateToken = async (
           if (!resolvedPortal.is_root) {
             console.log(
               '❌ [%s] Legacy token (no portal_id claim) presented on a non-root portal Host: host=%s',
-              requestId,
-              resolvedPortal.id
+              oneLine(requestId),
+              oneLine(resolvedPortal.id)
             )
             return res.status(401).json({ error: 'Invalid token.' })
           }
