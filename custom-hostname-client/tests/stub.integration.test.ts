@@ -20,7 +20,10 @@
  * then `CUSTOM_HOSTNAME_STUB_URL=http://127.0.0.1:8099 npm test`.
  *
  * Skipped (not failed) when the stub is unreachable, so the unit suite still
- * runs in a bare checkout. CI stands the stub up before invoking this.
+ * runs in a bare checkout. CI stands the stub up and sets
+ * `CUSTOM_HOSTNAME_STUB_REQUIRED=1`, which turns an unreachable stub into a
+ * hard failure — a suite that silently passes because its subject was down is
+ * a green check that proves nothing.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CustomHostnameClient } from '../src/client';
@@ -38,6 +41,9 @@ const TOKEN = process.env.CUSTOM_HOSTNAME_STUB_TOKEN ?? 'local-dev-token';
 /** The stub walks its lifecycle over ~5s; allow generous headroom on slow CI. */
 const ACTIVATION_TIMEOUT_MS = 60_000;
 
+/** CI sets this so an unreachable stub fails loudly instead of skipping. */
+const STUB_REQUIRED = process.env.CUSTOM_HOSTNAME_STUB_REQUIRED === '1';
+
 let reachable = false;
 
 beforeAll(async () => {
@@ -48,6 +54,18 @@ beforeAll(async () => {
     reachable = res.ok;
   } catch {
     reachable = false;
+  }
+  if (!reachable && STUB_REQUIRED) {
+    throw new Error(
+      `CUSTOM_HOSTNAME_STUB_REQUIRED=1 but the stub at ${BASE_URL} is unreachable. ` +
+        'Refusing to report green for a suite that never ran.'
+    );
+  }
+  if (!reachable) {
+    console.warn(
+      `[custom-hostname] stub unreachable at ${BASE_URL} — integration tests skipped. ` +
+        'Start it per the header comment to exercise the real contract.'
+    );
   }
 });
 

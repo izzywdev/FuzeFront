@@ -10,6 +10,7 @@
     "backend/applications",
     "shared",
     "billing-client",
+    "custom-hostname-client",
     "packages/billing-ui",
     "packages/chat-client",
     "packages/chat-ui",
