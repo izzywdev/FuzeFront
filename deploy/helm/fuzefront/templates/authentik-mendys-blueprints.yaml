@@ -1,0 +1,29 @@
+{{- /*
+  authentik-mendys-blueprints.yaml — ConfigMap of the MendysRobotics silo's
+  Authentik blueprints, mounted at /blueprints/mendys/ on the authentik-mendys
+  server and worker pods.
+
+  SEPARATE SOURCE DIRECTORY ON PURPOSE. Authentik's worker applies every
+  *.yaml it discovers under /blueprints, so this instance must never mount the
+  FuzeFront set — doing so would recreate FuzeFront's flows, providers and
+  applications inside the Mendys directory and defeat the split.
+
+  Blueprint files live in: deploy/helm/fuzefront/authentik/blueprints-mendys/
+  (FuzeFront's own set stays in authentik/blueprints/ and is mounted only on
+  the FuzeFront instance by authentik-blueprints.yaml.)
+*/}}
+{{- if .Values.authentikMendys.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-mendys-blueprints
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik-mendys
+data:
+  {{- range $path, $content := .Files.Glob "authentik/blueprints-mendys/*.yaml" }}
+  {{- /* Strip the directory prefix so each key is just the filename. */}}
+  {{ base $path }}: |
+    {{- $content | toString | nindent 4 }}
+  {{- end }}
+{{- end }}

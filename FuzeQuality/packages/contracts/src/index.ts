@@ -302,6 +302,33 @@ export type Portfolio = {
   suggestions: Suggestion[]
 }
 
+export const testImplementationRequestSchema = z.object({
+  repositoryId: z.string().uuid(),
+  sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i),
+  expectationIds: z.array(z.string().min(1).max(500)).min(1).max(50),
+}).strict()
+
+export type TestImplementationInput = z.infer<typeof testImplementationRequestSchema>
+
+export type TestImplementationStatus = 'queued' | 'running' | 'pr-ready' | 'failed'
+
+export type TestImplementationRequest = {
+  id: string
+  tenantId: string
+  repositoryId: string
+  sourceRevision: string
+  expectationIds: string[]
+  agentProfile: 'test-engineer' | 'frontend-test-engineer'
+  skills: string[]
+  status: TestImplementationStatus
+  requestedBy: string
+  workflowUrl?: string
+  pullRequestUrl?: string
+  error?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export const eventEnvelopeSchema = <T extends z.ZodTypeAny>(payload: T) =>
   z.object({
     version: z.literal('1.0'),
