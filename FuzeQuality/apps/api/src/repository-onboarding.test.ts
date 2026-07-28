@@ -72,4 +72,51 @@ describe('FQ-18 repository access verification', () => {
       permissions: { contents: 'read', metadata: 'read' },
     })
   })
+
+  it('bounds and marks a truncated candidate preview without failing access verification', async () => {
+    const tree = Array.from({ length: 510 }, (_, index) => ({
+      type: 'blob',
+      path: `services/service-${String(index).padStart(3, '0')}/openapi.yaml`,
+    }))
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        html_url: 'https://github.com/izzywdev/FuzePortfolio',
+        default_branch: 'master',
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: 'c'.repeat(40) } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ truncated: true, tree }), { status: 200 })))
+    const verifier = createGitHubAccessVerifier(async () => 'read-only-token')
+
+    const result = await verifier.verify({
+      installationId: '42',
+      owner: 'izzywdev',
+      name: 'FuzePortfolio',
+      defaultBranch: 'master',
+    })
+
+    expect(result.openApiCandidates).toHaveLength(500)
+    expect(result.candidatePreviewComplete).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('read-only-token')
+  })
+
+  it('keeps repository verification usable when candidate preview is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        html_url: 'https://github.com/izzywdev/FuzePortfolio',
+        default_branch: 'master',
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: 'd'.repeat(40) } }), { status: 200 }))
+      .mockRejectedValueOnce(new Error('tree unavailable token=secret')))
+    const verifier = createGitHubAccessVerifier(async () => 'read-only-token')
+
+    await expect(verifier.verify({
+      installationId: '42',
+      owner: 'izzywdev',
+      name: 'FuzePortfolio',
+      defaultBranch: 'master',
+    })).resolves.toMatchObject({
+      openApiCandidates: [],
+      candidatePreviewComplete: false,
+    })
+  })
 })

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@fuzequality/contracts'
+import { MemoryCatalogStore } from '@fuzequality/core'
 import { isCredentialFreeRepositoryUrl, scanRepository } from './index'
 
 const repository: Repository = {
@@ -21,6 +22,61 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('onboards five repositories and incrementally replaces one exact source revision', async () => {
+    const store = new MemoryCatalogStore({ repositories: [] })
+    const onboarded: Repository[] = []
+    for (const [index, name] of ['FuzeOne', 'FuzeInfra', 'FuzePlan', 'FuzeSDLC', 'FuzeAuth'].entries()) {
+      const item = await store.addRepository({
+        owner: 'izzywdev',
+        name,
+        defaultBranch: 'master',
+        kind: index === 1 ? 'infrastructure' : 'mixed',
+        includeGlobs: [],
+        excludeGlobs: [],
+        jiraProjects: [],
+        jiraBindings: [],
+      }, 'tenant-portfolio')
+      const root = await mkdtemp(join(tmpdir(), `fuzequality-${name.toLowerCase()}-`))
+      await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.3
+info: { title: ${name}, version: 1.0.0 }
+paths:
+  /health:
+    get:
+      operationId: ${name.toLowerCase()}Health
+      responses: { '200': { description: ok } }
+`)
+      await store.saveScan(await scanRepository(item, root, { sourceRevision: String(index + 1).repeat(40) }))
+      onboarded.push({ ...item, localPath: root })
+    }
+
+    const initial = await store.portfolio('tenant-portfolio')
+    expect(initial.repositories).toHaveLength(5)
+    expect(initial.operations).toHaveLength(5)
+    expect(initial.repositories.every(item => item.lastScanDetails?.counts.operations === 1)).toBe(true)
+
+    const changed = onboarded[0]
+    await writeFile(join(changed.localPath!, 'openapi.yaml'), `openapi: 3.0.3
+info: { title: FuzeOne, version: 1.1.0 }
+paths:
+  /ready:
+    get:
+      operationId: fuzeoneReady
+      responses: { '200': { description: ok } }
+`)
+    await store.saveScan(await scanRepository(changed, changed.localPath!, { sourceRevision: 'f'.repeat(40) }))
+
+    const refreshed = await store.portfolio('tenant-portfolio')
+    const refreshedRepository = refreshed.repositories.find(item => item.id === changed.id)
+    expect(refreshed.repositories).toHaveLength(5)
+    expect(refreshed.operations.filter(item => item.repositoryId === changed.id)).toEqual([
+      expect.objectContaining({ operationId: 'fuzeoneReady', path: '/ready' }),
+    ])
+    expect(refreshedRepository?.lastScanDetails?.sourceRevision).toBe('f'.repeat(40))
+    expect(refreshedRepository?.lastScanDetails?.catalogRevision).not.toBe(
+      initial.repositories.find(item => item.id === changed.id)?.lastScanDetails?.catalogRevision
+    )
+  })
+
   it('builds API and frontend expectations from repository files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-'))
     await mkdir(join(root, 'src'), { recursive: true })
