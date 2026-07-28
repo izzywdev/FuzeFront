@@ -407,6 +407,17 @@ litellm:
                 values: ["fuzefront-node-2"]
 
 chatService:
+  # The tag: line MUST stay immediately after repository: — release.yml's GitOps
+  # bump step only rewrites a tag: found on the line directly following a matched
+  # repository: anchor. Seeded with the first SHA this image was built at; every
+  # later release rewrites it.
+  #
+  # chatService.enabled is still false (see values.yaml), so nothing pulls this
+  # yet. Flipping enabled on before an LLM endpoint exists gets you a running pod
+  # that fails every turn — see docs/planning/ai-chat-gap-analysis.md blocker 1.
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-chat-service
+    tag: latest
   affinity:
     nodeAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:

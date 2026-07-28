@@ -177,6 +177,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push chat-service
+        # Root build context: the Dockerfile runs `npm ci --workspace=
+        # services/chat-service`, so it needs the root package.json/lockfile and
+        # shared/ — not just services/chat-service/.
+        continue-on-error: true
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/chat-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-chat-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-chat-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push clock-app (built-in MF remote)
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
@@ -261,13 +277,14 @@ jobs:
             /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
           # Guard against silent no-ops: if the file layout drifts (quoted
           # values, reordered keys, renamed registry path) the awk matches
           # nothing and we would otherwise "succeed" while deploying stale
-          # tags (review finding). Exactly 7 core-app tags must be rewritten.
+          # tags (review finding). Exactly 8 core-app tags must be rewritten.
           # The anchor list MUST cover every image this workflow BUILDS. It
           # previously listed only 5 while the build steps produced 7: the
           # email-service and sms-service images were built and pushed on every
@@ -277,8 +294,8 @@ jobs:
           # sms-service kept tag "" — i.e. it was NEVER deployed at all. If you
           # add a build step above, add its anchor here AND bump this number.
           COUNT=$(cat /tmp/bump-count)
-          if [ "$COUNT" -ne 7 ]; then
-            echo "::error::expected 7 core-app tag rewrites in ${FILE}, got ${COUNT} — file layout changed; update the bump step"
+          if [ "$COUNT" -ne 8 ]; then
+            echo "::error::expected 8 core-app tag rewrites in ${FILE}, got ${COUNT} — file layout changed; update the bump step"
             exit 1
           fi
           if cmp -s /tmp/vp-current.yaml /tmp/vp-new.yaml; then
