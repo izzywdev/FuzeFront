@@ -85,7 +85,10 @@ function buildApp(enabled: boolean) {
   })
   app.use(middleware)
   app.get('/api/v1/portal/context', (req: any, res) => {
-    res.json({ portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null })
+    res.json({
+      portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null,
+      portalsFlagEnabled: req.portalsFlagEnabled,
+    })
   })
   app.get('/p/:slug/whatever', (req: any, res) => {
     res.json({ portal: req.portal ? { id: req.portal.id, slug: req.portal.slug } : null })
@@ -218,5 +221,71 @@ describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
       .set('Host', 'cached-co.fuzefront.test')
     expect(third.status).toBe(403)
     expect(third.body.error).toBe('PORTAL_SUSPENDED')
+  })
+
+  // Coordinator-flagged bug 2 — a miss (row === null) cached under a host/slug
+  // key can never be matched by `entry.row?.id === portalId`, so a targeted
+  // invalidatePortalCache(newPortalId) after creating a portal left the STALE
+  // "not found" cached for the rest of the TTL, and the brand-new portal
+  // stayed unresolvable immediately after creation.
+  it('invalidatePortalCache clears a prior negative (miss) lookup so a newly created portal resolves immediately', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const app = buildApp(true)
+    const freshHost = 'brand-new-co.fuzefront.test'
+
+    // 1. Resolve an unknown host BEFORE the portal exists — caches a miss
+    //    (falls back to root, but internally records `host:brand-new-co...`
+    //    -> null in the cache).
+    const before = await request(app).get('/api/v1/portal/context').set('Host', freshHost)
+    expect(before.status).toBe(200)
+    expect(before.body.portal).toEqual({ id: ROOT_PORTAL_ID, slug: ROOT_PORTAL_SLUG })
+
+    // 2. NOW create the portal + domain for that exact host.
+    const newPortalId = await createPortal({
+      slug: 'brand-new-co',
+      domain: { domain: freshHost, kind: 'subdomain' },
+    })
+
+    // 3. Invalidate (as the follow-up EPIC-09 create-portal endpoint will do).
+    invalidatePortalCache(newPortalId)
+
+    // 4. The SAME host must now resolve to the new portal, not the stale
+    //    negative-cache root fallback.
+    const after = await request(app).get('/api/v1/portal/context').set('Host', freshHost)
+    expect(after.status).toBe(200)
+    expect(after.body.portal).toEqual({ id: newPortalId, slug: 'brand-new-co' })
+  })
+
+  it('a full invalidatePortalCache() (no portalId) also clears negative entries', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const app = buildApp(true)
+    const freshHost = 'another-new-co.fuzefront.test'
+
+    await request(app).get('/api/v1/portal/context').set('Host', freshHost) // caches a miss
+
+    const newPortalId = await createPortal({
+      slug: 'another-new-co',
+      domain: { domain: freshHost, kind: 'subdomain' },
+    })
+    invalidatePortalCache() // full clear, no portalId
+
+    const after = await request(app).get('/api/v1/portal/context').set('Host', freshHost)
+    expect(after.body.portal).toEqual({ id: newPortalId, slug: 'another-new-co' })
+  })
+
+  // Coordinator-flagged bug 1(b) — stashes the per-request flag decision so
+  // authenticateToken (middleware/auth.ts) can reuse the EXACT SAME result
+  // instead of re-evaluating independently with a different context, which
+  // is what let the two middlewares disagree in the first place.
+  it('stashes the evaluated flag decision on req.portalsFlagEnabled for downstream reuse', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+
+    const onApp = buildApp(true)
+    const onRes = await request(onApp).get('/api/v1/portal/context').set('Host', 'x.example.com')
+    expect(onRes.body.portalsFlagEnabled).toBe(true)
+
+    const offApp = buildApp(false)
+    const offRes = await request(offApp).get('/api/v1/portal/context').set('Host', 'x.example.com')
+    expect(offRes.body.portalsFlagEnabled).toBe(false)
   })
 })

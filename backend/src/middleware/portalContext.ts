@@ -49,7 +49,16 @@ export function invalidatePortalCache(portalId?: string): void {
     return
   }
   for (const [key, entry] of cache) {
-    if (entry.row?.id === portalId) cache.delete(key)
+    // Positive-hit entries for this exact portal, AND every negative (miss,
+    // `row === null`) entry. A miss can never be matched by portalId (there
+    // was no portal to match when it was cached) — yet a stale miss is
+    // EXACTLY the failure mode a targeted invalidation must fix: create a
+    // portal/domain for a host that previously resolved to nothing, and the
+    // cached `null` for that host/slug key would otherwise stick for the
+    // full TTL, leaving the brand-new portal unresolvable right after
+    // creation. Clearing all negative entries on any invalidation call is a
+    // deliberately conservative trade (a few extra reloads) for correctness.
+    if (entry.row === null || entry.row?.id === portalId) cache.delete(key)
   }
 }
 
@@ -93,6 +102,17 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
   ): Promise<void> {
     try {
       const enabled = await (isEnabled ?? isMultiTenantPortalsEnabled)({})
+      // Fix (b) — stash the decision on the request so authenticateToken
+      // (which runs downstream and CANNOT use this same pre-auth {} context,
+      // since it evaluates per-user) reuses THIS exact result instead of
+      // re-evaluating independently. Two separate evaluations of a
+      // per-user-targeted flag can legitimately disagree (e.g. gradual
+      // rollout by userId): this middleware sees the flag OFF (no user yet)
+      // while authenticateToken's own per-user evaluation sees it ON, or vice
+      // versa — which silently skips the cross-portal JWT check below and
+      // fails OPEN. A single evaluation shared for the whole request removes
+      // that disagreement by construction rather than by convention.
+      ;(req as any).portalsFlagEnabled = enabled
       if (!enabled) {
         // Flag OFF: no-op, preserves pre-epic behavior exactly.
         return next()

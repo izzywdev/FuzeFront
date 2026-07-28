@@ -81,21 +81,43 @@ export const authenticateToken = async (
     // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied
     // URL/query param. Only active when the master flag is ON, so pre-epic
     // token/session shapes and behavior are unchanged while it's OFF.
-    const portalsEnabled = await isMultiTenantPortalsEnabled({ userId: user.id })
+    //
+    // Fix (b) — reuse resolvePortalContext's flag decision for THIS request
+    // (stashed on req.portalsFlagEnabled) instead of evaluating independently.
+    // Two separate per-user evaluations of a gradually-targeted flag can
+    // legitimately disagree; a single shared decision removes that class of
+    // bug by construction. Only fall back to an independent evaluation if
+    // resolvePortalContext never ran upstream of this route — and even then,
+    // use the SAME context shape ({}), never {userId}, so the fallback can
+    // never diverge in KIND from the primary resolver's semantics either.
+    const cachedPortalsEnabled = req.portalsFlagEnabled
+    const portalsEnabled =
+      typeof cachedPortalsEnabled === 'boolean'
+        ? cachedPortalsEnabled
+        : await isMultiTenantPortalsEnabled({})
     if (portalsEnabled) {
       const resolvedPortal = (req as any).portal // set by resolvePortalContext, if mounted upstream
       if (decoded.portalId) {
-        if (resolvedPortal && resolvedPortal.id !== decoded.portalId) {
-          // AC3 — a token minted for portal A presented on portal B's Host is
-          // rejected outright; the caller must re-authenticate on that portal.
+        // Fix (a) — FAIL CLOSED. Previously `resolvedPortal &&
+        // resolvedPortal.id !== decoded.portalId` skipped the reject
+        // entirely whenever resolvedPortal was falsy (e.g. resolvePortalContext
+        // didn't run, or context disagreement made it see the flag OFF and
+        // never set req.portal) — silently ACCEPTING a token minted for a
+        // portal we have no way to verify against. A claimed portal_id with
+        // no portal context to check it against must never fall through to
+        // acceptance.
+        if (!resolvedPortal || resolvedPortal.id !== decoded.portalId) {
+          // AC3 — a token minted for portal A presented on portal B's Host
+          // (or on a route where portal context is simply missing) is
+          // rejected outright; the caller must re-authenticate.
           // Constant format string + arguments, never an interpolated one (a
           // variable as/in the format string lets an injected specifier
           // forge log output) — same convention as utils/feature-flags.ts.
           console.log(
-            '❌ [%s] Token portal mismatch: token=%s host=%s',
+            '❌ [%s] Token portal mismatch or missing portal context: token=%s host=%s',
             requestId,
             decoded.portalId,
-            resolvedPortal.id
+            resolvedPortal?.id ?? 'none'
           )
           return res.status(401).json({ error: 'Invalid token.' })
         }

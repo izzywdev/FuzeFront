@@ -11,6 +11,7 @@ jest.mock('../src/config/permit', () => ({
 import * as portalFlagModule from '../src/utils/portalFlag'
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import { resolvePortalContext, _clearPortalCacheForTests } from '../src/middleware/portalContext'
+import { authenticateToken } from '../src/middleware/auth'
 import portalRoutes from '../src/routes/portal'
 import {
   ROOT_PORTAL_ID,
@@ -251,5 +252,61 @@ describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session bind
       .set('Authorization', `Bearer ${token}`)
       .set('Host', 'nothing.example.com')
     expect(res.status).toBe(404)
+  })
+})
+
+// Coordinator-flagged bug 1 — authenticateToken previously evaluated the
+// multi-tenant flag with {userId}, resolvePortalContext with {} (pre-auth, no
+// user). Those two evaluations can legitimately disagree under per-user
+// targeting, and the OLD guard `resolvedPortal && resolvedPortal.id !==
+// decoded.portalId` skipped the reject whenever resolvedPortal was undefined
+// — silently ACCEPTING a cross-portal token. Fixed by (a) failing closed
+// whenever a claimed portal_id has no portal context to verify it against,
+// and (b) authenticateToken reusing resolvePortalContext's exact decision
+// (req.portalsFlagEnabled) instead of a second, independent evaluation.
+describe('FF-EPIC-10-S3 fail-closed fix — cross-portal token rejection under context disagreement', () => {
+  it('fails closed (401) when a portal_id-bearing token reaches authenticateToken with NO portal context at all (resolvePortalContext never ran)', async () => {
+    // A minimal app that mounts ONLY authenticateToken — simulating exactly
+    // the disagreement scenario: some route (or a future refactor) has the
+    // flag ON but no resolvePortalContext upstream, so req.portal/
+    // req.portalsFlagEnabled are both absent and authenticateToken must fall
+    // back to its own evaluation. The bug let this silently ACCEPT the token;
+    // the fix must REJECT it, because there is no portal context to verify
+    // the claim against.
+    flagEnabled = true
+    const bareApp = express()
+    bareApp.use(authenticateToken as any)
+    bareApp.get('/probe', (req: any, res) => res.json({ portalId: req.user?.portalId ?? null }))
+
+    const userId = await createUser()
+    const token = signToken(userId, 'prt_someOtherPortal')
+
+    const res = await request(bareApp).get('/probe').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('resolvePortalContext and authenticateToken evaluate the flag exactly ONCE for the same request (cannot disagree)', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const userId = await createUser()
+    const { portalId } = await createPortal({ slug: 'shared-eval', domain: 'shared-eval.fuzefront.test' })
+    const token = signToken(userId, portalId)
+
+    const spy = portalFlagModule.isMultiTenantPortalsEnabled as jest.Mock
+    const callsBefore = spy.mock.calls.length
+
+    const res = await request(app)
+      .get('/api/v1/portal/current')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'shared-eval.fuzefront.test')
+    expect(res.status).toBe(200)
+
+    // Exactly two calls for this request: resolvePortalContext (pre-auth) and
+    // the /current route handler's own separate feature-gate check. Zero
+    // ADDITIONAL calls from authenticateToken — it reused
+    // resolvePortalContext's cached decision instead of re-evaluating, which
+    // is what guarantees the two middlewares cannot disagree.
+    const callsDuringRequest = spy.mock.calls.length - callsBefore
+    expect(callsDuringRequest).toBe(2)
   })
 })
