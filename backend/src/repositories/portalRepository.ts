@@ -196,6 +196,32 @@ export function rowToPortalContext(row: any): PortalContextDto {
   }
 }
 
+/**
+ * The `GET /api/v1/portal/context` response during BOOTSTRAP MODE (flag ON,
+ * but `ensureRootPortal()` hasn't seeded the root portal yet — a fresh
+ * install with no users at all, see middleware/portalContext.ts). There is
+ * genuinely no portal row to project yet, but the shell still needs SOMETHING
+ * contract-valid to paint a login screen with — this is the platform's own
+ * generic default (never a specific tenant's data). `id` is a fixed,
+ * well-known sentinel (matches the `PortalId` pattern, but resolves to no
+ * real `portals` row) so callers can distinguish it if they need to.
+ */
+export function bootstrapPortalContext(): PortalContextDto {
+  return {
+    id: 'prt_bootstrap',
+    slug: ROOT_PORTAL_SLUG,
+    isRoot: true,
+    branding: DEFAULT_BRANDING('FuzeFront'),
+    identityPolicy: DEFAULT_IDENTITY_POLICY,
+    authEntry: {
+      loginUrl: '/login',
+      signupUrl: null,
+      forgotPasswordUrl: '/forgot-password',
+      ssoProviders: [],
+    },
+  }
+}
+
 export async function getPortalDomains(
   portalId: string,
   db: Knex = defaultDb

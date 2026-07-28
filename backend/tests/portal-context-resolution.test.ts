@@ -164,15 +164,25 @@ describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
     expect(res.body.portal).toEqual({ id: rootId, slug: ROOT_PORTAL_SLUG })
   })
 
-  it('returns 404 when nothing resolves and no root portal is seeded', async () => {
+  // Bug 4 fix — a genuine bootstrap state (flag ON, no root portal seeded
+  // yet) must PASS THROUGH, not 404. Previously this 404'd every request —
+  // including login/signup/health — because the middleware is mounted
+  // globally ahead of every route, permanently bricking a fresh install
+  // (nothing could authenticate to create the first user and seed the root
+  // portal). See the dedicated bootstrap-mode describe block below for the
+  // full request-reachability assertions (login, health, etc.).
+  it('passes through (does not 404) in bootstrap mode — no root portal seeded yet', async () => {
     // portals table is empty (beforeEach cleared it, and this test creates none).
     const app = buildApp(true)
 
     const res = await request(app)
       .get('/api/v1/portal/context')
       .set('Host', 'nothing.example.com')
-    expect(res.status).toBe(404)
-    expect(res.body.error).toBe('NOT_FOUND')
+    // The route handler ran (next() was called) — req.portal stayed
+    // undefined, so this specific bare test route reports portal: null. It
+    // is explicitly NOT the middleware's own blanket 404 anymore.
+    expect(res.status).toBe(200)
+    expect(res.body.portal).toBeNull()
   })
 
   it('fails closed with 403 PORTAL_SUSPENDED before any handler runs', async () => {

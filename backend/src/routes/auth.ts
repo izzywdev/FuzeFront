@@ -39,14 +39,27 @@ const router = express.Router()
 // middleware) if present, else the seeded root portal. Returns {} (no-op)
 // when the master flag is OFF, so token payload / session columns are
 // byte-for-byte unchanged from pre-epic behavior.
+//
+// Bug 5 fix — reuses `req.portalsFlagEnabled` (stashed by resolvePortalContext
+// for THIS request) instead of independently re-evaluating the flag with
+// {userId}. Two separate evaluations of a per-user-targeted flag can
+// legitimately disagree (the same class of bug already closed for
+// authenticateToken); a login-minted token binding that disagreed with the
+// request's own resolved portal context would be exactly as unsafe as the
+// cross-portal acceptance bug. Falls back to an independent {}-context
+// evaluation (matching resolvePortalContext's own pre-auth context shape,
+// never {userId}) only if resolvePortalContext never ran upstream.
 async function resolvePortalBindingForLogin(
   req: express.Request,
-  userId: string
+  // Kept for call-site clarity (which user this binding is for) even though
+  // the flag decision itself no longer depends on it — see Bug 5 fix above.
+  _userId: string
 ): Promise<{ portalId?: string; organizationId?: string }> {
-  const enabled = await isMultiTenantPortalsEnabled({ userId })
+  const cached = req.portalsFlagEnabled
+  const enabled = typeof cached === 'boolean' ? cached : await isMultiTenantPortalsEnabled({})
   if (!enabled) return {}
 
-  const resolved = (req as any).portal
+  const resolved = req.portal
   if (resolved) {
     return { portalId: resolved.id, organizationId: resolved.organization_id }
   }

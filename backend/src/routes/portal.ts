@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import {
+  bootstrapPortalContext,
   findPortalById,
   getPortalDomains,
   rowToPortal,
@@ -49,12 +50,21 @@ const portalCurrentRateLimiter = rateLimit({
  * GET /api/v1/portal/context — PUBLIC, unauthenticated. Renders before login.
  * `req.portal` is set by the global `resolvePortalContext` middleware
  * (src/middleware/portalContext.ts), which already fails closed (403
- * PORTAL_SUSPENDED / 404 unresolved) and is itself flag-gated — so `!req.portal`
- * here covers BOTH "flag is off" and "genuinely nothing resolved".
+ * PORTAL_SUSPENDED) and is itself flag-gated.
+ *
+ * `!req.portal` covers three distinct cases, disambiguated via
+ * `req.portalsFlagEnabled` (also set by resolvePortalContext):
+ *   - flag OFF (`portalsFlagEnabled` false/undefined)      -> 404, unchanged pre-epic behavior.
+ *   - flag ON, BOOTSTRAP MODE (no root portal seeded yet)   -> 200, the generic
+ *     platform default (bootstrapPortalContext()) so the shell can still
+ *     paint a login screen and the fresh install isn't bricked.
  */
 router.get('/context', portalContextRateLimiter, async (req: Request, res: Response) => {
-  const portal = (req as any).portal
+  const portal = req.portal
   if (!portal) {
+    if (req.portalsFlagEnabled) {
+      return res.json(bootstrapPortalContext())
+    }
     return res.status(404).json({
       error: 'NOT_FOUND',
       message: 'No portal context available.',

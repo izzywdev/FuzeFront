@@ -12,6 +12,7 @@ import * as portalFlagModule from '../src/utils/portalFlag'
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import { resolvePortalContext, _clearPortalCacheForTests } from '../src/middleware/portalContext'
 import { authenticateToken } from '../src/middleware/auth'
+import authRoutes, { drainProvisioningQueue } from '../src/routes/auth'
 import portalRoutes from '../src/routes/portal'
 import {
   ROOT_PORTAL_ID,
@@ -40,6 +41,15 @@ beforeAll(() => {
   jest.spyOn(portalFlagModule, 'isMultiTenantPortalsEnabled').mockImplementation(
     async () => flagEnabled
   )
+})
+
+// This file's bootstrap-mode/login tests exercise the REAL login route,
+// which fires selfHealProvisioningOnLogin (organizationProvisioning) without
+// awaiting it. Drain explicitly (same pattern as tests/setup.ts's global
+// afterAll) so those in-flight promises settle before this file's own test
+// run ends, rather than racing the global teardown.
+afterAll(async () => {
+  await drainProvisioningQueue(8_000)
 })
 
 const app = express()
@@ -240,18 +250,22 @@ describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session bind
     expect(res.body.id).toBe(rootOrg.portalId)
   })
 
-  it('returns 403 FORBIDDEN_PORTAL when no portal is bound and no root portal is seeded', async () => {
+  it('returns 403 FORBIDDEN_PORTAL when no portal is bound and no root portal is seeded (bootstrap mode)', async () => {
     flagEnabled = true
-    // No portals at all — resolvePortalContext itself will 404 first because it
-    // can't resolve ANY portal (no root seeded), which is the correct
-    // fail-closed outcome for this state.
+    // Bug 4 fix — no portals at all (bootstrap). resolvePortalContext now
+    // PASSES THROUGH instead of 404ing (previously it 404'd here before
+    // authenticateToken ever ran). The request still reaches /current, which
+    // makes its own honest decision: no portalId is bound (no claim, no root
+    // to fall back to) -> 403 FORBIDDEN_PORTAL from the route's own logic,
+    // not a blanket middleware block.
     const userId = await createUser()
     const token = signToken(userId)
     const res = await request(app)
       .get('/api/v1/portal/current')
       .set('Authorization', `Bearer ${token}`)
       .set('Host', 'nothing.example.com')
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe('FORBIDDEN_PORTAL')
   })
 })
 
@@ -308,5 +322,138 @@ describe('FF-EPIC-10-S3 fail-closed fix — cross-portal token rejection under c
     // is what guarantees the two middlewares cannot disagree.
     const callsDuringRequest = spy.mock.calls.length - callsBefore
     expect(callsDuringRequest).toBe(2)
+  })
+})
+
+// Coordinator-flagged bug 4 (SERIOUS) — resolvePortalContext is mounted
+// globally, ahead of EVERY route. When the flag was ON but no root portal
+// existed yet (a fresh install — ensureRootPortal() found no user to own the
+// platform org, see repositories/portalRepository.ts), the middleware 404'd
+// EVERY request, including login/signup/health, so nothing could ever
+// authenticate to create the first user and seed the root portal. The
+// platform was permanently bricked until an operator manually flipped the
+// flag back off. Fixed: bootstrap mode passes through untouched.
+describe('FF-EPIC-10-S1/S4 bootstrap-mode fix — fail-closed must not mean fail-to-boot', () => {
+  // Mirrors src/index.ts's real wiring (resolvePortalContext mounted
+  // globally ahead of the real auth + portal routers + a bare health route)
+  // rather than the bare `app` above, so this exercises the ACTUAL routes a
+  // fresh install needs, not a synthetic probe.
+  const bootstrapApp = express()
+  bootstrapApp.use(express.json())
+  bootstrapApp.use(resolvePortalContext)
+  bootstrapApp.get('/health', (_req, res) => res.json({ status: 'ok' }))
+  bootstrapApp.use('/api/auth', authRoutes)
+  bootstrapApp.use('/api/v1/portal', portalRoutes)
+
+  // Seeded by src/seeds/001_initial_users.ts, always present (tests/setup.ts
+  // runs seeds globally) — using the real login route end-to-end rather than
+  // hand-rolling a bcrypt hash here.
+  const ADMIN_EMAIL = 'admin@fuzefront.dev'
+  const ADMIN_PASSWORD = 'admin123'
+
+  it('login remains reachable on a fresh install (flag ON, no root portal seeded)', async () => {
+    flagEnabled = true
+    // beforeEach already cleared portal_domains/portals — genuine bootstrap.
+
+    const res = await request(bootstrapApp)
+      .post('/api/auth/login')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(200)
+    expect(res.body.token).toBeTruthy()
+    expect(res.body.user?.email).toBe(ADMIN_EMAIL)
+  })
+
+  it('health remains reachable on a fresh install (flag ON, no root portal seeded)', async () => {
+    flagEnabled = true
+
+    const res = await request(bootstrapApp).get('/health')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ status: 'ok' })
+  })
+
+  it('/portal/context remains reachable (200, generic bootstrap default — not 404) on a fresh install', async () => {
+    flagEnabled = true
+
+    const res = await request(bootstrapApp)
+      .get('/api/v1/portal/context')
+      .set('Host', 'anything.example.com')
+
+    expect(res.status).toBe(200)
+    expect(res.body.isRoot).toBe(true)
+    expect(res.body.branding?.name).toBe('FuzeFront')
+    expect(res.body.authEntry?.loginUrl).toBe('/login')
+  })
+
+  it('once a root portal IS seeded, an unresolved tenant host still falls back to it (bootstrap mode no longer applies)', async () => {
+    flagEnabled = true
+    const { portalId: rootId } = await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+
+    const res = await request(bootstrapApp)
+      .get('/api/v1/portal/context')
+      .set('Host', 'still-unknown.example.com')
+
+    expect(res.status).toBe(200)
+    expect(res.body.id).toBe(rootId)
+    expect(res.body.slug).toBe(ROOT_PORTAL_SLUG)
+  })
+})
+
+// Coordinator-flagged bug 5 — the login-token-minting path
+// (resolvePortalBindingForLogin, src/routes/auth.ts) independently
+// re-evaluated the flag with {userId}, ignoring req.portalsFlagEnabled
+// already stashed by resolvePortalContext for this request — the same
+// disagreement class closed for authenticateToken (fix b) but left open here.
+describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-resolved flag decision', () => {
+  const loginApp = express()
+  loginApp.use(express.json())
+  loginApp.use(resolvePortalContext)
+  loginApp.use('/api/auth', authRoutes)
+
+  const ADMIN_EMAIL = 'admin@fuzefront.dev'
+  const ADMIN_PASSWORD = 'admin123'
+
+  it('mints a portal_id claim consistent with the Host-resolved portal, and never double-evaluates the flag', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const { portalId, organizationId } = await createPortal({
+      slug: 'login-bind-co',
+      domain: 'login-bind-co.fuzefront.test',
+    })
+
+    const spy = portalFlagModule.isMultiTenantPortalsEnabled as jest.Mock
+    const callsBefore = spy.mock.calls.length
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .set('Host', 'login-bind-co.fuzefront.test')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(200)
+    const decoded: any = jwt.decode(res.body.token)
+    expect(decoded.portalId).toBe(portalId)
+
+    // Session's active_organization_id must match the SAME resolved portal.
+    const session = await db('sessions').where({ id: res.body.sessionId }).first()
+    expect(session.active_organization_id).toBe(organizationId)
+
+    // Exactly ONE flag evaluation for this request (resolvePortalContext) —
+    // resolvePortalBindingForLogin reused req.portalsFlagEnabled instead of
+    // re-evaluating independently with {userId}.
+    const callsDuringRequest = spy.mock.calls.length - callsBefore
+    expect(callsDuringRequest).toBe(1)
+  })
+
+  it('mints no portal_id claim when the flag is OFF — unchanged pre-epic token shape', async () => {
+    flagEnabled = false
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+
+    const res = await request(loginApp)
+      .post('/api/auth/login')
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+
+    expect(res.status).toBe(200)
+    const decoded: any = jwt.decode(res.body.token)
+    expect(decoded.portalId).toBeUndefined()
   })
 })
