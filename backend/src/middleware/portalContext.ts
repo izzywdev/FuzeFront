@@ -31,6 +31,13 @@ import { isMultiTenantPortalsEnabled, PortalFlagContext } from '../utils/portalF
  * seed the root portal, permanently bricking the platform. Once a root
  * portal exists, an unresolved tenant host falls back to it as designed; a
  * suspended resolved portal still fails closed with 403.
+ *
+ * GRACEFUL DEGRADATION: an unexpected/infra error (e.g. a transient
+ * portals-table hiccup in the DB lookups) ALSO passes through rather than
+ * 500ing — same reasoning as bootstrap mode: this middleware sits ahead of
+ * every route, so a blanket 500 here would take down health/login/metrics
+ * on any brief DB blip once the flag is ON. `PORTAL_SUSPENDED` (403) is the
+ * only response this middleware still originates on its own initiative.
  */
 
 const DEFAULT_TTL_MS = 30_000
@@ -83,9 +90,26 @@ async function cached(
   const hit = cache.get(key)
   if (hit && hit.expiresAt > now) return hit.row
 
-  const row = (await loader()) ?? null
-  cache.set(key, { row, expiresAt: now + ttlMs() })
-  return row
+  try {
+    const row = (await loader()) ?? null
+    cache.set(key, { row, expiresAt: now + ttlMs() })
+    return row
+  } catch (error) {
+    // Round-6 fix — degrade gracefully on a lookup error (a transient
+    // portals-table hiccup) instead of letting it propagate. This middleware
+    // is mounted globally ahead of EVERY route, so an uncaught error here
+    // used to reach the outer catch and 500 the WHOLE request — turning
+    // health/login/metrics into 500s too on a brief DB blip, once the flag
+    // is ON. Same "fail-closed at the wrong layer" class already fixed for
+    // the bootstrap case (Bug 4). Treated as a miss so resolution falls
+    // through to the next strategy (path match, then root), ultimately
+    // reaching bootstrap-mode pass-through if every lookup misses/errors.
+    // Deliberately NOT cached: a transient error should be retried on the
+    // very next request, not stuck as a "miss" for the full TTL like a
+    // genuine negative lookup.
+    console.error(`resolvePortalContext lookup error for "${key}" (degrading to miss):`, error)
+    return null
+  }
 }
 
 const PATH_SLUG_RE = /^\/p\/([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)(?:\/|$)/
@@ -95,11 +119,11 @@ export interface ResolvePortalContextDeps {
   isEnabled?: (ctx: PortalFlagContext) => Promise<boolean>
 }
 
-// The three outcomes resolution can reach. Computed entirely inside the
-// try/catch (Bug 3 fix — no response is sent and next() is never called from
-// inside the try); the switch below acts on it AFTER the try/catch returns.
+// The outcomes resolution can reach. Computed entirely inside the try/catch
+// (Bug 3 fix — no response is sent and next() is never called from inside
+// the try); the switch below acts on it AFTER the try/catch returns.
 type Outcome =
-  | { kind: 'error' }
+  | { kind: 'degraded' } // Round-6 fix — an unexpected error; pass through.
   | { kind: 'bootstrap' } // Bug 4 — no root portal seeded yet; pass through.
   | { kind: 'suspended'; row: any }
   | { kind: 'resolved'; row: any }
@@ -200,14 +224,24 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
         }
       }
     } catch (error) {
-      console.error('resolvePortalContext error:', error)
-      outcome = { kind: 'error' }
+      // Round-6 fix — an unexpected error anywhere in resolution (NOT a
+      // lookup error, those are already caught+degraded inside `cached()`
+      // above; this is the last-resort safety net for anything else, e.g. a
+      // genuinely unforeseen bug) used to map to a 500 for the WHOLE
+      // request. Since this middleware is mounted globally ahead of every
+      // route, that turned health/login/metrics into 500s too on any
+      // infra hiccup once the flag was ON — the same "fail-closed at the
+      // wrong layer" class already fixed for the bootstrap case (Bug 4).
+      // Degrade to pass-through instead: never block a request the
+      // middleware doesn't have a confident answer for. The only responses
+      // this middleware still originates are a genuine PORTAL_SUSPENDED
+      // (403 — an explicit business decision, not an error) and the
+      // resolved/no-root-yet pass-through cases below.
+      console.error('resolvePortalContext error (degrading to pass-through):', error)
+      outcome = { kind: 'degraded' }
     }
 
     switch (outcome.kind) {
-      case 'error':
-        res.status(500).json({ error: 'INTERNAL', message: 'Portal resolution failed.' })
-        return
       case 'suspended':
         res.status(403).json({
           error: 'PORTAL_SUSPENDED',
@@ -216,7 +250,8 @@ export function createResolvePortalContext(deps: ResolvePortalContextDeps = {}) 
         return
       case 'flag-off':
       case 'bootstrap':
-        // Both are a pure pass-through: req.portal stays undefined.
+      case 'degraded':
+        // All three are a pure pass-through: req.portal stays undefined.
         next()
         return
       case 'resolved':

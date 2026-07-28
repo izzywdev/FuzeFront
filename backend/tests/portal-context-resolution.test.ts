@@ -298,4 +298,96 @@ describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
     const offRes = await request(offApp).get('/api/v1/portal/context').set('Host', 'x.example.com')
     expect(offRes.body.portalsFlagEnabled).toBe(false)
   })
+
+  // Round-6 gate-code-review finding — the catch-all previously mapped ANY
+  // thrown error (a transient portals-table hiccup in findPortalByDomain /
+  // findPortalBySlug / getRootPortal) to a 500 for the WHOLE request. Since
+  // this middleware is mounted globally ahead of every route, that turned
+  // health/login/metrics into 500s too on a brief DB blip once the flag is
+  // ON — the same "fail-closed at the wrong layer" class already fixed for
+  // the bootstrap case. Must degrade gracefully instead.
+  function throwingDb(): any {
+    const chain: any = {
+      where: () => chain,
+      whereIn: () => chain,
+      andWhere: () => chain,
+      first: async () => {
+        throw new Error('simulated portals-table DB error')
+      },
+    }
+    return (_table: string) => chain
+  }
+
+  it('degrades gracefully (does not 500) when EVERY portal lookup throws — a portals-table hiccup must never 500 the whole request', async () => {
+    const middleware = createResolvePortalContext({ db: throwingDb(), isEnabled: async () => true })
+    const app = express()
+    app.use(middleware)
+    app.get('/probe', (req: any, res) => res.json({ ok: true, portal: req.portal ?? null }))
+
+    const res = await request(app).get('/probe').set('Host', 'anything.example.com')
+    // Each lookup (host, path/slug, root) individually degrades to a miss
+    // inside cached(); with every lookup missing, resolution reaches the
+    // SAME bootstrap-mode pass-through as "no root portal seeded yet" — the
+    // request reaches the downstream handler (health/login/metrics would
+    // too), NOT a 500, and req.portal stays undefined rather than a
+    // guessed/fabricated portal.
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.portal).toBeNull()
+  })
+
+  it('degrades gracefully (does not 500) on an error OUTSIDE the lookups too — the outer catch-all is a last-resort net, not just cached()', async () => {
+    // Simulates a genuinely unexpected error that isn't a lookup at all
+    // (cached()'s own try/catch only covers findPortalByDomain/
+    // findPortalBySlug/getRootPortal) — the flag evaluation itself throwing
+    // is a stand-in for "anything else could go wrong here". The outer
+    // catch must ALSO pass through, never 500.
+    const middleware = createResolvePortalContext({
+      isEnabled: async () => {
+        throw new Error('simulated unexpected error, not a DB lookup')
+      },
+    })
+    const app = express()
+    app.use(middleware)
+    app.get('/probe', (req: any, res) => res.json({ ok: true, portal: req.portal ?? null }))
+
+    const res = await request(app).get('/probe').set('Host', 'anything.example.com')
+    expect(res.status).toBe(200)
+    expect(res.body.ok).toBe(true)
+    expect(res.body.portal).toBeNull()
+  })
+
+  it('does NOT cache a lookup error — the very next request retries the DB and recovers once it is healthy again', async () => {
+    const rootId = await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    let shouldThrow = true
+    const flakyDb: any = (table: string) => {
+      if (shouldThrow) {
+        const chain: any = {
+          where: () => chain,
+          whereIn: () => chain,
+          andWhere: () => chain,
+          first: async () => {
+            throw new Error('simulated transient DB error')
+          },
+        }
+        return chain
+      }
+      return db(table)
+    }
+    const middleware = createResolvePortalContext({ db: flakyDb, isEnabled: async () => true })
+    const app = express()
+    app.use(middleware)
+    app.get('/probe', (req: any, res) => res.json({ portal: req.portal ? { id: req.portal.id } : null }))
+
+    const first = await request(app).get('/probe').set('Host', 'flaky-db.example.com')
+    expect(first.status).toBe(200)
+    expect(first.body.portal).toBeNull() // degraded — DB was "down"
+
+    shouldThrow = false // DB recovers
+    const second = await request(app).get('/probe').set('Host', 'flaky-db.example.com')
+    expect(second.status).toBe(200)
+    // Falls back to root and resolves it correctly — proving the earlier
+    // error was NOT cached as a stale miss for the TTL.
+    expect(second.body.portal).toEqual({ id: rootId })
+  })
 })
