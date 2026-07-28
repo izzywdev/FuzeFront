@@ -168,6 +168,13 @@ jobs:
           cd ../sdk && npm ci
           cd ../task-manager-app && npm ci
 
+      # backend/src/custom-domains imports @fuzefront/custom-hostname-client
+      # statically and its `types` points at dist/, so the workspace symlink
+      # resolves to an empty package until this runs. Must precede the backend
+      # build, exactly like @fuzefront/shared's kafka sub-tree.
+      - name: Build @fuzefront/custom-hostname-client (for backend build)
+        run: npm run -w @fuzefront/custom-hostname-client build
+
       - name: Build backend
         run: cd backend && npm run build
 
