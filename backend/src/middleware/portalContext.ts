@@ -320,10 +320,28 @@ export function createResolvePortalContext(
           message: `Portal '${outcome.row.slug}' is suspended.`,
         })
         return
+      case 'degraded':
+        // Round-8 fix (gate-code-review) — still a pass-through (req.portal
+        // stays undefined, no response originates here), but explicitly
+        // marked so downstream consumers can tell this apart from
+        // `bootstrap`: both leave req.portal undefined, but this one is a
+        // TRANSIENT infra error, not a genuine "no root portal seeded yet"
+        // state. Without this marker, authenticateToken 401'd every
+        // portal-bound session on a brief DB hiccup (mass-logout), and
+        // GET /context silently served generic bootstrap branding for a host
+        // that might map to a SUSPENDED portal (the suspension leak just
+        // moved from root-branding to generic-branding). See
+        // req.portalResolutionDegraded's doc-comment in types/express.d.ts.
+        req.portalResolutionDegraded = true
+        next()
+        return
       case 'flag-off':
       case 'bootstrap':
-      case 'degraded':
-        // All three are a pure pass-through: req.portal stays undefined.
+        // Both are a pure pass-through: req.portal stays undefined, and
+        // req.portalResolutionDegraded is deliberately left unset — these are
+        // NOT errors (flag-off is pre-epic behavior; bootstrap is a genuine,
+        // expected "no root portal seeded yet" state), so downstream
+        // consumers must treat them as fail-OPEN-to-generic, not fail-closed.
         next()
         return
       case 'resolved':

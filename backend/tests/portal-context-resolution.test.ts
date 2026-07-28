@@ -453,4 +453,92 @@ describe('resolvePortalContext (FF-EPIC-10-S1)', () => {
     // request must degrade to pass-through, never fall through to root.
     expect(res.body.portal).toBeNull()
   })
+
+  // Round-8 gate-code-review finding — `degraded` (a transient lookup error)
+  // and `bootstrap` (no root portal seeded yet, a genuinely expected state)
+  // both leave req.portal undefined && req.portalsFlagEnabled true, which is
+  // indistinguishable to a naive downstream `!req.portal` check. That
+  // conflation caused authenticateToken to 401 (mass-logout) every
+  // portal-bound session on a transient error, and GET /context to silently
+  // serve generic bootstrap branding for a host that might map to a
+  // SUSPENDED portal. The fix: stamp an explicit `req.portalResolutionDegraded`
+  // marker ONLY on the degraded outcome, never on bootstrap/flag-off/resolved.
+  describe('req.portalResolutionDegraded — the explicit third-state marker (round-8 fix)', () => {
+    function probeApp(middleware: ReturnType<typeof createResolvePortalContext>) {
+      const app = express()
+      app.use(middleware)
+      app.get('/probe', (req: any, res) =>
+        res.json({
+          portal: req.portal ? { id: req.portal.id } : null,
+          portalResolutionDegraded: req.portalResolutionDegraded ?? null,
+        })
+      )
+      return app
+    }
+
+    it('is set to true on a degraded (host-lookup error) outcome', async () => {
+      await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+      await createPortal({
+        slug: 'suspended-marker-co',
+        status: 'suspended',
+        domain: { domain: 'suspended-marker-co.fuzefront.test', kind: 'subdomain' },
+      })
+      // Warm the root cache exactly like the fall-through regression test above.
+      const warmApp = buildApp(true)
+      await request(warmApp)
+        .get('/api/v1/portal/context')
+        .set('Host', 'totally-unrelated-host-2.example.com')
+
+      const middleware = createResolvePortalContext({
+        db: domainLookupThrowingDb(),
+        isEnabled: async () => true,
+      })
+      const res = await request(probeApp(middleware))
+        .get('/probe')
+        .set('Host', 'suspended-marker-co.fuzefront.test')
+
+      expect(res.status).toBe(200)
+      expect(res.body.portal).toBeNull()
+      expect(res.body.portalResolutionDegraded).toBe(true)
+    })
+
+    it('stays unset (undefined/null) on genuine bootstrap (no root portal seeded, no error)', async () => {
+      // portals table empty (beforeEach cleared it) — genuine bootstrap.
+      const middleware = createResolvePortalContext({ db, isEnabled: async () => true })
+      const res = await request(probeApp(middleware))
+        .get('/probe')
+        .set('Host', 'nothing-marker.example.com')
+
+      expect(res.status).toBe(200)
+      expect(res.body.portal).toBeNull()
+      expect(res.body.portalResolutionDegraded).toBeNull()
+    })
+
+    it('stays unset when the flag is OFF', async () => {
+      await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+      const middleware = createResolvePortalContext({ db, isEnabled: async () => false })
+      const res = await request(probeApp(middleware))
+        .get('/probe')
+        .set('Host', 'flag-off-marker.example.com')
+
+      expect(res.status).toBe(200)
+      expect(res.body.portalResolutionDegraded).toBeNull()
+    })
+
+    it('stays unset when a portal resolves successfully', async () => {
+      await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+      const portalId = await createPortal({
+        slug: 'resolved-marker-co',
+        domain: { domain: 'resolved-marker-co.fuzefront.test', kind: 'subdomain' },
+      })
+      const middleware = createResolvePortalContext({ db, isEnabled: async () => true })
+      const res = await request(probeApp(middleware))
+        .get('/probe')
+        .set('Host', 'resolved-marker-co.fuzefront.test')
+
+      expect(res.status).toBe(200)
+      expect(res.body.portal).toEqual({ id: portalId })
+      expect(res.body.portalResolutionDegraded).toBeNull()
+    })
+  })
 })

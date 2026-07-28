@@ -10,7 +10,11 @@ jest.mock('../src/config/permit', () => ({
 
 import * as portalFlagModule from '../src/utils/portalFlag'
 import { db, initializeDatabaseConnection } from '../src/config/database'
-import { resolvePortalContext, _clearPortalCacheForTests } from '../src/middleware/portalContext'
+import {
+  resolvePortalContext,
+  createResolvePortalContext,
+  _clearPortalCacheForTests,
+} from '../src/middleware/portalContext'
 import { authenticateToken } from '../src/middleware/auth'
 import authRoutes, { drainProvisioningQueue } from '../src/routes/auth'
 import portalRoutes from '../src/routes/portal'
@@ -607,5 +611,170 @@ describe('FF-EPIC-10-S3 bug 5 fix — login token binding reuses the request-res
     expect(res.status).toBe(200)
     const session = await db('sessions').where({ id: res.body.sessionId }).first()
     expect(session.active_organization_id).toBeNull()
+  })
+})
+
+// Round-8 gate-code-review fix — a DEGRADED resolution (transient host-lookup
+// error) used to be indistinguishable from BOOTSTRAP (both left req.portal
+// undefined && req.portalsFlagEnabled true), which caused two downstream
+// bugs: (A) authenticateToken 401'd every portal-bound session — a mass
+// logout on a brief DB hiccup — and (B) GET /context silently served generic
+// bootstrap branding for a host that might map to a SUSPENDED portal, moving
+// the suspension leak from root-branding to generic-branding instead of
+// fixing it. The fix: resolvePortalContext now stamps `req.portalResolutionDegraded`
+// ONLY on the degraded outcome, and both consumers below check it BEFORE
+// falling back to their bootstrap/mismatch-only logic.
+function domainLookupThrowingDb(): any {
+  return (table: string) => {
+    if (table === 'portal_domains') {
+      const chain: any = {
+        whereIn: () => chain,
+        andWhere: () => chain,
+        where: () => chain,
+        first: async () => {
+          throw new Error('simulated transient DB error on domain lookup')
+        },
+      }
+      return chain
+    }
+    return db(table)
+  }
+}
+
+describe('GET /api/v1/portal/context — degraded vs bootstrap must not be conflated (round-8 fix)', () => {
+  it('a degraded host-lookup error returns 503 PORTAL_RESOLUTION_UNAVAILABLE — NOT 200 bootstrap/generic branding', async () => {
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const { portalId } = await createPortal({
+      slug: 'suspended-degraded',
+      domain: 'suspended-degraded.fuzefront.test',
+    })
+    await db('portals').where({ id: portalId }).update({ status: 'suspended' })
+
+    // Warm the "root" cache entry with a healthy lookup first — mirrors the
+    // real failure mode: root was already resolved/cached from an earlier,
+    // unrelated request, and it is a perfectly healthy, active portal.
+    const warmMiddleware = createResolvePortalContext({ db, isEnabled: async () => true })
+    const warmApp = express()
+    warmApp.use(warmMiddleware)
+    warmApp.use('/api/v1/portal', portalRoutes)
+    const warm = await request(warmApp)
+      .get('/api/v1/portal/context')
+      .set('Host', 'unrelated-warm-host.example.com')
+    expect(warm.status).toBe(200)
+    expect(warm.body.isRoot).toBe(true)
+
+    // Now the Host maps to the SUSPENDED portal, but its domain-lookup query
+    // throws (a transient DB blip) while root is still cached and active.
+    const degradedMiddleware = createResolvePortalContext({
+      db: domainLookupThrowingDb(),
+      isEnabled: async () => true,
+    })
+    const degradedApp = express()
+    degradedApp.use(degradedMiddleware)
+    degradedApp.use('/api/v1/portal', portalRoutes)
+
+    const res = await request(degradedApp)
+      .get('/api/v1/portal/context')
+      .set('Host', 'suspended-degraded.fuzefront.test')
+
+    expect(res.status).toBe(503)
+    expect(res.body.error).toBe('PORTAL_RESOLUTION_UNAVAILABLE')
+  })
+
+  it('genuine bootstrap (no root portal seeded, no error) still returns 200 bootstrapPortalContext — unaffected by the degraded fix', async () => {
+    flagEnabled = true
+    // portals table is empty (beforeEach cleared it) — genuine bootstrap, not
+    // a lookup error. `app` (top-level) already wires the real
+    // resolvePortalContext + portalRoutes and respects the `flagEnabled` spy.
+
+    const res = await request(app)
+      .get('/api/v1/portal/context')
+      .set('Host', 'nothing-bootstrap.example.com')
+
+    expect(res.status).toBe(200)
+    expect(res.body.isRoot).toBe(true)
+    expect(res.body.branding?.name).toBe('FuzeFront')
+  })
+})
+
+describe('authenticateToken — degraded portal resolution returns 503, not 401 (round-8 fix)', () => {
+  it('a portal-bound token on a DEGRADED request returns 503 (retryable) — must not mass-logout on a DB hiccup', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const { portalId } = await createPortal({
+      slug: 'degraded-co',
+      domain: 'degraded-co.fuzefront.test',
+    })
+    const userId = await createUser()
+    const token = signToken(userId, portalId)
+
+    // Warm the root cache with a healthy lookup first (production-mirroring,
+    // same as the /context degraded test above).
+    const warmMiddleware = createResolvePortalContext({ db, isEnabled: async () => true })
+    const warmApp = express()
+    warmApp.use(warmMiddleware)
+    warmApp.get('/probe', (_req, res) => res.json({ ok: true }))
+    await request(warmApp).get('/probe').set('Host', 'unrelated-warm-host-2.example.com')
+
+    const degradedMiddleware = createResolvePortalContext({
+      db: domainLookupThrowingDb(),
+      isEnabled: async () => true,
+    })
+    const degradedApp = express()
+    degradedApp.use(degradedMiddleware)
+    degradedApp.use(authenticateToken as any)
+    degradedApp.get('/probe', (req: any, res) => res.json({ portalId: req.user?.portalId ?? null }))
+
+    const res = await request(degradedApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'degraded-co.fuzefront.test')
+
+    expect(res.status).toBe(503)
+    expect(res.body.error).toBe('PORTAL_RESOLUTION_UNAVAILABLE')
+  })
+
+  it('a genuine cross-portal id mismatch (resolvedPortal present but different) still returns 401', async () => {
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const { portalId: portalA } = await createPortal({
+      slug: 'mismatch-a',
+      domain: 'mismatch-a.fuzefront.test',
+    })
+    await createPortal({ slug: 'mismatch-b', domain: 'mismatch-b.fuzefront.test' })
+    const userId = await createUser()
+    const token = signToken(userId, portalA)
+
+    const testApp = express()
+    testApp.use(resolvePortalContext)
+    testApp.use(authenticateToken as any)
+    testApp.get('/probe', (req: any, res) => res.json({ portalId: req.user?.portalId ?? null }))
+
+    const res = await request(testApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'mismatch-b.fuzefront.test')
+
+    expect(res.status).toBe(401)
+  })
+
+  it('a legacy no-claim token is unaffected — still resolves via the existing fallback logic, not the new degraded check', async () => {
+    flagEnabled = true
+    const rootOrg = await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    const userId = await createUser()
+    const token = signToken(userId) // no portalId claim
+
+    const testApp = express()
+    testApp.use(resolvePortalContext)
+    testApp.use(authenticateToken as any)
+    testApp.get('/probe', (req: any, res) => res.json({ portalId: req.user?.portalId ?? null }))
+
+    const res = await request(testApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'unresolvable-legacy-host.example.com') // falls back to root
+
+    expect(res.status).toBe(200)
+    expect(res.body.portalId).toBe(rootOrg.portalId)
   })
 })

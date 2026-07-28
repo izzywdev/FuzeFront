@@ -52,16 +52,30 @@ const portalCurrentRateLimiter = rateLimit({
  * (src/middleware/portalContext.ts), which already fails closed (403
  * PORTAL_SUSPENDED) and is itself flag-gated.
  *
- * `!req.portal` covers three distinct cases, disambiguated via
- * `req.portalsFlagEnabled` (also set by resolvePortalContext):
+ * `!req.portal` covers four distinct cases, disambiguated via
+ * `req.portalsFlagEnabled` and `req.portalResolutionDegraded` (both set by
+ * resolvePortalContext):
  *   - flag OFF (`portalsFlagEnabled` false/undefined)      -> 404, unchanged pre-epic behavior.
- *   - flag ON, BOOTSTRAP MODE (no root portal seeded yet)   -> 200, the generic
- *     platform default (bootstrapPortalContext()) so the shell can still
- *     paint a login screen and the fresh install isn't bricked.
+ *   - flag ON, DEGRADED (a transient host-lookup/infra error)  -> 503, fail
+ *     CLOSED. Round-8 fix (gate-code-review) — this used to be
+ *     indistinguishable from genuine bootstrap and silently served generic
+ *     bootstrap branding for a host that may map to a SUSPENDED portal
+ *     during the transient error window: the suspension leak just moved from
+ *     root-branding to generic-branding, still failing OPEN. A transient
+ *     error must never resolve to ANY branding decision — retry instead.
+ *   - flag ON, BOOTSTRAP MODE (no root portal seeded yet, NOT degraded) -> 200,
+ *     the generic platform default (bootstrapPortalContext()) so the shell can
+ *     still paint a login screen and the fresh install isn't bricked.
  */
 router.get('/context', portalContextRateLimiter, async (req: Request, res: Response) => {
   const portal = req.portal
   if (!portal) {
+    if (req.portalResolutionDegraded) {
+      return res.status(503).json({
+        error: 'PORTAL_RESOLUTION_UNAVAILABLE',
+        message: 'Portal context is temporarily unavailable, please retry.',
+      })
+    }
     if (req.portalsFlagEnabled) {
       return res.json(bootstrapPortalContext())
     }

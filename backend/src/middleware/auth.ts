@@ -109,6 +109,25 @@ export const authenticateToken = async (
         // portal we have no way to verify against. A claimed portal_id with
         // no portal context to check it against must never fall through to
         // acceptance.
+        // Round-8 fix (gate-code-review) — a DEGRADED resolution (a
+        // transient host-lookup/infra error in resolvePortalContext) is NOT
+        // the same thing as "no portal context at all". Previously both
+        // collapsed into `!resolvedPortal` below and were 401'd identically —
+        // but 401 destroys the session (the client discards the token /
+        // redirects to login), so one brief portal_domains DB blip mass-
+        // logged-out every user with a portalId claim, defeating the whole
+        // point of graceful degradation (keep authenticated traffic alive
+        // across a DB hiccup). This is a TRANSIENT, retryable condition, not
+        // an auth failure — respond 503 so the client retries once the DB
+        // recovers, and never discards the token. A genuinely RESOLVED
+        // portal whose id mismatches the token's portalId (below) remains a
+        // real cross-portal violation and stays a 401.
+        if (req.portalResolutionDegraded) {
+          return res.status(503).json({
+            error: 'PORTAL_RESOLUTION_UNAVAILABLE',
+            message: 'Portal context is temporarily unavailable, please retry.',
+          })
+        }
         if (!resolvedPortal || resolvedPortal.id !== decoded.portalId) {
           // AC3 — a token minted for portal A presented on portal B's Host
           // (or on a route where portal context is simply missing) is
