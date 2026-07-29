@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
-          node-version: '20'
+          node-version: '24.x'
 
       - name: Build frames site (index derived from design/frames/*/)
         run: node scripts/build-frames-site.mjs --out _site

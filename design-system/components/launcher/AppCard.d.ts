@@ -23,4 +23,4 @@ export interface AppCardProps
   onClick?: (event: React.SyntheticEvent) => void;
 }
 
-export function AppCard(props: AppCardProps): JSX.Element;
+export function AppCard(props: AppCardProps): React.JSX.Element;

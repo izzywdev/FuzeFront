@@ -29,4 +29,4 @@ export interface SelectProps
   error?: string;
 }
 
-export function Select(props: SelectProps): JSX.Element;
+export function Select(props: SelectProps): React.JSX.Element;

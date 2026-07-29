@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes, ReactNode } from "react";
+import { CSSProperties, HTMLAttributes, JSX, ReactNode } from "react";
 
 export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;

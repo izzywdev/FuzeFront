@@ -16,4 +16,4 @@ export interface IconButtonProps
   disabled?: boolean;
 }
 
-export function IconButton(props: IconButtonProps): JSX.Element;
+export function IconButton(props: IconButtonProps): React.JSX.Element;
