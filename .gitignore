@@ -14,6 +14,12 @@ keys/
 # Playwright artifacts
 **/test-results/
 **/playwright-report/
+# The prod / post-prod configs write to their own suffixed dirs (outputDir +
+# html reporter outputFolder), which the bare patterns above do not cover.
+**/test-results-prod/
+**/playwright-report-prod/
+**/test-results-post-prod/
+**/playwright-report-post-prod/
 frontend/screens/
 
 # Downloaded CLI tools / binaries (never commit — re-downloadable)
