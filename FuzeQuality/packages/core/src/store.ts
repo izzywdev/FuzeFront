@@ -63,6 +63,11 @@ export class MemoryCatalogStore implements CatalogStore {
       expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
       findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
       diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
+      // Requirement intelligence predates tenant ownership. Fail closed until
+      // FQ-182 migrates Jira scopes and their graph to an organization.
+      requirements: [],
+      flows: [],
+      suggestions: [],
     }
   }
 
@@ -231,6 +236,11 @@ export class PostgresCatalogStore implements CatalogStore {
     result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
     result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
     result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
+    // Requirement intelligence predates tenant ownership. Never expose the
+    // legacy global graph through an organization-scoped portfolio.
+    result.requirements = []
+    result.flows = []
+    result.suggestions = []
     return result
   }
 

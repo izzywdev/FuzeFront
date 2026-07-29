@@ -39,6 +39,9 @@ const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 
 const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
 const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
 const mayReadCatalog = requirePlatformPermission('fuzequality.catalog', 'read')
+const mayReadRequirements = requirePlatformPermission('fuzequality.requirement', 'read')
+const mayReviewSuggestions = requirePlatformPermission('fuzequality.suggestion', 'review')
+const maySyncRequirements = requirePlatformPermission('fuzequality.requirement', 'sync')
 const mayCreateTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'create')
 const mayReadTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'read')
 
@@ -88,7 +91,9 @@ app.get('/metrics', async (_request, response) => {
   )
 })
 
-app.get('/api/v1/portfolio', async (_request, response) => response.json(await store.portfolio()))
+app.get('/api/v1/portfolio', mayReadCatalog, async (request, response) =>
+  response.json(await store.portfolio(requestIdentity(request)!.tenantId))
+)
 app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const repository = await store.repository(repositoryId)
@@ -329,17 +334,20 @@ app.post('/api/v1/internal/test-implementations/:id/status', async (request, res
   })
   response.status(202).json({ accepted: true })
 })
-app.get('/api/v1/requirements', async (_request, response) =>
-  response.json((await store.portfolio()).requirements)
+app.get('/api/v1/requirements', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).requirements)
 )
-app.get('/api/v1/flows', async (_request, response) => response.json((await store.portfolio()).flows))
-app.get('/api/v1/suggestions', async (_request, response) =>
-  response.json((await store.portfolio()).suggestions)
+app.get('/api/v1/flows', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).flows)
 )
-app.post('/api/v1/suggestions/:id/decision', async (request, response) => {
+app.get('/api/v1/suggestions', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).suggestions)
+)
+app.post('/api/v1/suggestions/:id/decision', mayReviewSuggestions, async (request, response) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
-  const suggestion = await store.decideSuggestion(request.params.id, parsed.data.decision)
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const suggestion = await store.decideSuggestion(suggestionId, parsed.data.decision)
   if (!suggestion) return response.status(404).json({ error: 'Suggestion not found' })
   await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
@@ -365,7 +373,7 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
   response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
 })
 
-app.post('/api/v1/jira/sync', async (request, response) => {
+app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
     scopeId: request.body?.scopeId ?? 'default',
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
