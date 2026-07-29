@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes } from "react";
+import { CSSProperties, HTMLAttributes, JSX } from "react";
 
 export interface PaginationProps extends Omit<HTMLAttributes<HTMLDivElement>, "onChange"> {
   /** Current active page (1-indexed). */

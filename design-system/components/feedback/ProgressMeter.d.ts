@@ -15,4 +15,4 @@ export interface ProgressMeterProps extends React.HTMLAttributes<HTMLDivElement>
   tone?: ProgressMeterTone;
 }
 
-export function ProgressMeter(props: ProgressMeterProps): JSX.Element;
+export function ProgressMeter(props: ProgressMeterProps): React.JSX.Element;

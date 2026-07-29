@@ -15,4 +15,4 @@ export interface SeamDividerProps extends React.HTMLAttributes<HTMLDivElement> {
   glow?: boolean;
 }
 
-export function SeamDivider(props: SeamDividerProps): JSX.Element;
+export function SeamDivider(props: SeamDividerProps): React.JSX.Element;

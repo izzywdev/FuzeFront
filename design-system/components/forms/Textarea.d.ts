@@ -14,4 +14,4 @@ export interface TextareaProps
   rows?: number;
 }
 
-export function Textarea(props: TextareaProps): JSX.Element;
+export function Textarea(props: TextareaProps): React.JSX.Element;

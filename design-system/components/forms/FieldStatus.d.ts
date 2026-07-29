@@ -13,4 +13,4 @@ export interface FieldStatusProps
   action?: React.ReactNode;
 }
 
-export function FieldStatus(props: FieldStatusProps): JSX.Element;
+export function FieldStatus(props: FieldStatusProps): React.JSX.Element;

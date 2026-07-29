@@ -14,4 +14,4 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLSpanElement> {
   interactive?: boolean;
 }
 
-export function Avatar(props: AvatarProps): JSX.Element;
+export function Avatar(props: AvatarProps): React.JSX.Element;

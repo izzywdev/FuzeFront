@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "^6.11.0",
-    "@types/node": "^20.19.0",
+    "@types/node": "^24.13.3",
     "openapi-typescript": "^7.4.0",
     "rimraf": "^6.0.0",
     "tsup": "^8.0.2",

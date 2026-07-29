@@ -19,4 +19,4 @@ export interface LogoProps extends Omit<React.HTMLAttributes<HTMLElement>, "styl
  * Image slot with an initials/default fallback — never renders a broken-image
  * icon. Falls back automatically on a failed image load (`onError`).
  */
-export function Logo(props: LogoProps): JSX.Element;
+export function Logo(props: LogoProps): React.JSX.Element;
