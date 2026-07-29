@@ -15,6 +15,11 @@ import { defineConfig, devices } from '@playwright/test'
  * internal IdP host, which must never be browser-visible under the new model)
  * FAILS the run. See `tests/prod-full-auth-flow.spec.ts`.
  *
+ * NOTE — not every spec here is read-only. `prod-org-invite-drive.spec.ts`
+ * MUTATES the target: it creates a real pending organization invitation and
+ * triggers a real invite email. It self-skips unless AUTHN_TEST_EMAIL/PASSWORD
+ * are set, so a routine run of this config does not send anything.
+ *
  * Run (boundary gate, real Chrome, headed, with a real Google test account):
  *   GOOGLE_TEST_EMAIL=... GOOGLE_TEST_PASSWORD=... \
  *     npx playwright test --config playwright.prod.config.ts --project chrome --headed --grep "@boundary"
@@ -23,7 +28,7 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './tests',
-  testMatch: /(prod-full-auth-flow|account-security-e2e)\.spec\.ts/,
+  testMatch: /(prod-full-auth-flow|account-security-e2e|prod-org-invite-drive)\.spec\.ts/,
   // Auth flows mutate session state and share the same test account — never
   // run them in parallel against one target.
   fullyParallel: false,
