@@ -1,0 +1,73 @@
+# Publish the auth-ui package to GitHub Packages under the @izzywdev scope.
+#
+# GitHub Packages requires the npm scope to match the repository owner, so the
+# canonical @fuzefront/auth-ui name cannot publish until the org transfer
+# completes (see packages-publish.yml, which stays the long-term path and no-ops
+# until then). Consuming apps need auth-ui TODAY, so this workflow publishes the
+# same build under an owner-scoped alias name:
+#
+#   @fuzefront/auth-ui -> @izzywdev/fuzefront-auth-ui
+#
+# Consumers install via an npm alias so their imports keep the canonical name:
+#
+#   "@fuzefront/auth-ui": "npm:@izzywdev/fuzefront-auth-ui@^0.1.0"
+#
+# Once the org transfer lands and packages-publish.yml activates, consumers drop
+# the alias and this workflow is deleted. Publishing is idempotent: a version that
+# already exists in the registry is skipped, not overwritten. No git push / tag is
+# made, so master's required_signatures protection is never involved.
+name: Publish auth-ui (alias scope)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/auth-ui/**'
+
+concurrency:
+  group: auth-ui-packages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_owner == 'izzywdev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@izzywdev'
+
+      - name: Build the design-system dependency
+        working-directory: design-system
+        run: npm install --workspaces=false --no-audit --no-fund && npm run build
+
+      - name: Build the security-client dependency (types only)
+        working-directory: packages/security
+        run: npm install --workspaces=false --no-audit --no-fund && npm run build
+
+      - name: Build auth-ui
+        working-directory: packages/auth-ui
+        run: |
+          npm install --workspaces=false --no-audit --no-fund
+          npm run build
+
+      - name: Publish @izzywdev/fuzefront-auth-ui
+        working-directory: packages/auth-ui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(npm pkg get version | tr -d '"')
+          npm pkg set name=@izzywdev/fuzefront-auth-ui
+          if npm view "@izzywdev/fuzefront-auth-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "@izzywdev/fuzefront-auth-ui@${VERSION} already published — skipping."
+          else
+            npm publish --registry=https://npm.pkg.github.com
+          fi
