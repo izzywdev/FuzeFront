@@ -153,7 +153,30 @@ const VALID_STATUSES: PortalStatus[] = [
 ]
 const VALID_BILLING_MODES: BillingMode[] = ['free', 'platform', 'reseller']
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Structural, LINEAR e-mail validation for the attacker-controlled `ownerEmail`.
+ *
+ * The former regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` is polynomial-backtracking on
+ * uncontrolled input (CodeQL js/redos, high severity): a `.` is itself a member
+ * of `[^\s@]`, so the two `[^\s@]+` groups around the literal `\.` overlap, and a
+ * near-match like `a@aaaa…aaaa` (no dot) forces superlinear backtracking — a DoS
+ * vector on a public-ish create endpoint. This replacement uses only indexOf/
+ * slice and a single-character `\s` test (all O(n), no backtracking) while
+ * preserving the exact accept/reject semantics of the old pattern:
+ *   - exactly one `@`, with ≥1 char before it,
+ *   - the domain contains a `.` with ≥1 char on each side,
+ *   - no whitespace anywhere, and a sane length bound.
+ */
+function isValidOwnerEmail(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 254) return false
+  if (/\s/.test(value)) return false // single-char class, linear — no ReDoS
+  const at = value.indexOf('@')
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false // exactly one '@', not leading
+  const domain = value.slice(at + 1)
+  const dot = domain.indexOf('.')
+  return dot > 0 && dot < domain.length - 1 // '.' present, char on each side
+}
 
 interface FieldError {
   path: string
@@ -171,7 +194,7 @@ function validateCreateBody(body: any): FieldError[] {
       message: 'slug is required and must match ^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$.',
     })
   }
-  if (typeof body?.ownerEmail !== 'string' || !EMAIL_RE.test(body.ownerEmail)) {
+  if (!isValidOwnerEmail(body?.ownerEmail)) {
     fields.push({ path: 'ownerEmail', message: 'ownerEmail is required and must be a valid email.' })
   }
   if (

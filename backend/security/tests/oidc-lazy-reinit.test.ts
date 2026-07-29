@@ -80,7 +80,8 @@ describe('OIDCService.ensureInitialized — lazy re-init resilience', () => {
       return fakeIssuer()
     })
 
-    const { oidcService } = require('../src/services/oidc')
+    const { getOidcService } = require('../src/services/oidc')
+    const oidcService = getOidcService()
     expect(oidcService.isInitialized()).toBe(false)
 
     const concurrentCallers = Array.from({ length: 8 }, () => oidcService.ensureInitialized())
@@ -101,7 +102,8 @@ describe('OIDCService.ensureInitialized — lazy re-init resilience', () => {
     })
 
     process.env.OIDC_INIT_COOLDOWN_MS = '10' // short, so the 2nd attempt below isn't blocked
-    const { oidcService } = require('../src/services/oidc')
+    const { getOidcService } = require('../src/services/oidc')
+    const oidcService = getOidcService()
 
     // First request lands while Authentik is down — fails, but the process
     // stays up and does NOT permanently latch a "never try again" state.
@@ -128,7 +130,8 @@ describe('OIDCService.ensureInitialized — lazy re-init resilience', () => {
     })
 
     process.env.OIDC_INIT_COOLDOWN_MS = '10000' // long cooldown for this case
-    const { oidcService } = require('../src/services/oidc')
+    const { getOidcService } = require('../src/services/oidc')
+    const oidcService = getOidcService()
 
     await expect(oidcService.ensureInitialized()).rejects.toThrow('discovery unreachable')
     expect(discoverCalls).toBe(1)
@@ -150,7 +153,8 @@ describe('OIDCService.ensureInitialized — lazy re-init resilience', () => {
 
   it('preserves the fail-fast contract: generateAuthUrl still throws while uninitialized', () => {
     mockOpenidClient(async () => fakeIssuer())
-    const { oidcService } = require('../src/services/oidc')
+    const { getOidcService } = require('../src/services/oidc')
+    const oidcService = getOidcService()
     expect(() => oidcService.generateAuthUrl()).toThrow('OIDC client not initialized')
   })
 })
