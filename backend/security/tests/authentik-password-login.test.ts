@@ -423,6 +423,47 @@ describe('authentikPasswordLogin()', () => {
     delete process.env.AUTHENTIK_LOGIN_DEADLINE_MS
   })
 
+  it('reports a slow hop at WARN, naming the stage, on a login that still succeeds', async () => {
+    // The per-hop timings existed only at logger.debug, and LOG_LEVEL defaults
+    // to info in prod — so the one piece of evidence needed to find the slow
+    // hop was switched off exactly when it mattered. A slow SUCCESS must be
+    // visible without a LOG_LEVEL change or a redeploy.
+    process.env.AUTHENTIK_SLOW_HOP_WARN_MS = '50'
+    jest.resetModules()
+    const { authentikPasswordLogin: login } = require('../src/services/authentikPassword')
+    const { logger } = require('../src/lib/logger')
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined)
+
+    const slow = (res: Response) =>
+      new Promise(resolve => setTimeout(() => resolve(res), 80))
+
+    fetchMock
+      .mockImplementationOnce(() =>
+        slow(mkRes({ json: { component: 'ak-stage-identification' } }))
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      .mockResolvedValueOnce(
+        mkRes({ status: 302, location: `${REDIRECT_URI}?code=c7&state=st` })
+      )
+
+    // The login SUCCEEDS — the warning is the whole point, not an error path.
+    await expect(login('e2e@test.local', 'pw')).resolves.toBeDefined()
+
+    const slowHops = warn.mock.calls.filter(
+      ([, msg]) => msg === 'authentikPassword: SLOW hop'
+    )
+    expect(slowHops).toHaveLength(1)
+    // Names the exact stage, so prod logs point at the culprit directly.
+    expect((slowHops[0][0] as any).label).toMatch(/flow\.step .*hop=0 GET/)
+    expect((slowHops[0][0] as any).elapsedMs).toBeGreaterThanOrEqual(50)
+
+    warn.mockRestore()
+    delete process.env.AUTHENTIK_SLOW_HOP_WARN_MS
+  })
+
   it('releases the response body of every hop it only reads headers from', async () => {
     // undici keeps the socket checked out until the body is consumed or
     // cancelled. Redirect hops read only `location`, and authorize hops never

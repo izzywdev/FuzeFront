@@ -66,9 +66,65 @@ const AUTHENTIK_FLOW_TIMEOUT_MS =
 const AUTHENTIK_LOGIN_DEADLINE_MS =
   Number(process.env.AUTHENTIK_LOGIN_DEADLINE_MS) || 40000
 
+/**
+ * A hop slower than this is reported at WARN, with its label, even when the
+ * login ultimately succeeds.
+ *
+ * Per-hop timings already existed — at `logger.debug`. LOG_LEVEL defaults to
+ * `info` and is not set anywhere in the chart, so in production that detail has
+ * always been switched OFF, and answering "which hop is slow?" required either
+ * a config change or a redeploy. That is why this path has accumulated timeout
+ * band-aids (#362, #371) instead of a diagnosis: the evidence was never in the
+ * logs when the incident happened.
+ *
+ * A slow-hop threshold is the standard fix (a slow-query log): silent on the
+ * fast path, fully detailed exactly when something is wrong — no LOG_LEVEL
+ * change, no redeploy, no spam. Overridable via AUTHENTIK_SLOW_HOP_WARN_MS.
+ */
+const AUTHENTIK_SLOW_HOP_WARN_MS =
+  Number(process.env.AUTHENTIK_SLOW_HOP_WARN_MS) || 1000
+
+/**
+ * A whole sign-in slower than this is reported at WARN even though it
+ * SUCCEEDED. Set above the ~5.5s fast path, well below the client bound — the
+ * gap between them is precisely the band that was silently eating sign-in.
+ */
+const AUTHENTIK_LOGIN_WARN_MS =
+  Number(process.env.AUTHENTIK_LOGIN_WARN_MS) || 8000
+
 /** Monotonic-ish elapsed helper for the per-step timing logs. */
 function since(startMs: number): number {
   return Math.round(Date.now() - startMs)
+}
+
+/**
+ * Record one hop's cost. Always available at debug; promoted to warn when the
+ * hop is slow enough to be the thing worth looking at.
+ *
+ * Leading hypothesis for what this will show, stated so the logs can refute it:
+ * these hops all target the same in-cluster origin, and this pod's own
+ * `dnsConfig` (deploy/helm/.../security.yaml) documents CoreDNS "intermittently
+ * stalls lookups in 5s/10s retry multiples", capped to ~2s by timeout:1 /
+ * attempts:2 — with the note that this service "resolves authentik-server on
+ * every auth flow". A DNS lookup happens per NEW CONNECTION, and the leaked
+ * response bodies (see drainBody) forced a new connection per hop, so the stall
+ * was multiplied by hop count: ~6 hops x ~2s is most of the observed 16-30s.
+ * If that is right, draining bodies lets undici reuse one keep-alive socket per
+ * origin and the stalls collapse to at most one. `elapsedMs` per labelled hop
+ * is what confirms or kills that; if connect/DNS time still dominates, the next
+ * step is an explicit keep-alive dispatcher pinned to the Authentik origin.
+ */
+function recordHop(
+  label: string,
+  elapsedMs: number,
+  fields: Record<string, unknown> = {}
+): void {
+  const entry = { label, elapsedMs, ...fields }
+  if (elapsedMs >= AUTHENTIK_SLOW_HOP_WARN_MS) {
+    logger.warn(entry, 'authentikPassword: SLOW hop')
+    return
+  }
+  logger.debug(entry, 'authentikPassword: hop')
 }
 
 /**
@@ -303,10 +359,12 @@ export async function flowRequest(
         `Authentik unreachable at ${base}: ${(err as Error).message}`
       )
     }
-    logger.debug(
-      { slug, hop, method, status: res.status, elapsedMs: since(stepStart) },
-      'authentikPassword: flow.step'
-    )
+    recordHop(`flow.step slug=${slug} hop=${hop} ${method}`, since(stepStart), {
+      slug,
+      hop,
+      method,
+      status: res.status,
+    })
     jar.absorb(res)
 
     const loc = res.headers.get('location')
@@ -377,10 +435,19 @@ export async function authentikPasswordLogin(
   logger.info({ email }, 'authentikPassword: login start')
   try {
     const user = await authentikPasswordLoginInner(email, password)
-    logger.info(
-      { email, elapsedMs: since(loginStart) },
-      'authentikPassword: login succeeded'
-    )
+    const elapsedMs = since(loginStart)
+    // A login that SUCCEEDS at 25s is the failure mode that broke sign-in: it
+    // never errors, so nothing alerts, and it only becomes visible once a
+    // client bound trips underneath it. Report a slow success as loudly as a
+    // slow hop — the per-hop WARNs above then say which stage owned the time.
+    if (elapsedMs >= AUTHENTIK_LOGIN_WARN_MS) {
+      logger.warn(
+        { email, elapsedMs, thresholdMs: AUTHENTIK_LOGIN_WARN_MS },
+        'authentikPassword: SLOW login (succeeded)'
+      )
+    } else {
+      logger.info({ email, elapsedMs }, 'authentikPassword: login succeeded')
+    }
     return user
   } catch (err) {
     logger.error(
@@ -539,10 +606,10 @@ export async function completeOidcWithSession(
         `Authorize request failed: ${(err as Error).message}`
       )
     }
-    logger.debug(
-      { hop, status: res.status, elapsedMs: since(hopStart) },
-      'authentikPassword: authorize.hop'
-    )
+    recordHop(`authorize.hop hop=${hop}`, since(hopStart), {
+      hop,
+      status: res.status,
+    })
     jar.absorb(res)
     // Nothing in this chain ever reads an authorize response BODY — only its
     // status, cookies and `location`. Release the socket now so the next hop
@@ -598,13 +665,21 @@ export async function completeOidcWithSession(
   // server still answers inside the browser's window with a stage-labelled
   // error. The underlying HTTP call may run on in the background; the point is
   // to stop WAITING on it, not to pretend it was cancelled.
+  const exchangeStart = Date.now()
   const exchange = oidcService.handleCallback(
     code,
     returnedState || state,
     codeVerifier
   )
-  if (!deadline) return exchange
-  return withDeadline(exchange, deadline, 'oidc.tokenExchange')
+  const bounded = deadline
+    ? withDeadline(exchange, deadline, 'oidc.tokenExchange')
+    : exchange
+  // Timed like any other hop: this stage is two openid-client round-trips
+  // (token, then userinfo) and is just as capable of being THE slow one, so it
+  // must not be the one stage missing from the timing breakdown.
+  return bounded.finally(() =>
+    recordHop('oidc.tokenExchange', since(exchangeStart))
+  )
 }
 
 /**
