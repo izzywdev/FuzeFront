@@ -120,7 +120,25 @@ function sendError(res: Response, err: unknown): void {
     return
   }
   if (name === 'AuthentikUnavailableError' || name === 'UnsupportedFlowStageError') {
-    res.status(401).json({ error: 'Authentication unavailable', code: 'PROVIDER_UNAVAILABLE' })
+    // 503, NOT 401. The identity provider being unreachable/too slow is a
+    // SERVICE condition, not a statement about the caller's credentials.
+    // Returning 401 told every client "those credentials failed" for what is
+    // actually an outage: the login UI has no way to tell a real rejection
+    // from a provider stall, so a platform incident renders to users as "your
+    // password is wrong" — they change a password that was never the problem,
+    // and the outage stays invisible in auth-failure metrics.
+    //
+    // This aligns three things that had drifted apart: the contract's own
+    // status map already declares PROVIDER_UNAVAILABLE -> 503
+    // (tests/security-api/referenceApp.ts), and the legacy /api/auth/* route
+    // already returns 503 for both of these errors (routes/auth.ts). This
+    // route — the one the login form actually calls — was the sole outlier.
+    //
+    // Retry-After marks it explicitly retryable; both errors are transient
+    // from the caller's point of view (an unavailable provider recovers, and
+    // an undriveable flow stage is retryable via the SSO button).
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ error: 'Authentication unavailable', code: 'PROVIDER_UNAVAILABLE' })
     return
   }
   console.error('[security] unhandled error:', err)

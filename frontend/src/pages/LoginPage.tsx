@@ -224,12 +224,24 @@ function LoginPage() {
         // NOT "you typed the wrong password"; word it as a service condition.
         errorMessage =
           'Sign-in is taking longer than expected — the service may be busy. Please try again.'
-      } else if (status === 401) {
-        // A 401 here is genuinely ambiguous: real bad credentials OR a slow
-        // auth hop that got cut short server-side. Don't wrongly accuse the
-        // user of a typo when it may be a transient service blip.
+      } else if (status === 503) {
+        // The Security API now distinguishes a provider outage from a rejected
+        // credential (503 PROVIDER_UNAVAILABLE vs 401). It previously returned
+        // 401 for BOTH, which forced the hedged wording below and told users
+        // their password might be wrong during what was actually an incident.
+        // With an unambiguous signal, say the true thing and nothing else — do
+        // not mention credentials at all.
         errorMessage =
-          'Incorrect email or password, or the sign-in service is temporarily unavailable. Please try again.'
+          err.response?.data?.code === 'PROVIDER_UNAVAILABLE'
+            ? 'The sign-in service is temporarily unavailable. Your details are fine — please try again in a moment.'
+            : err.response?.data?.error ||
+              'The sign-in service is temporarily unavailable. Please try again in a moment.'
+      } else if (status === 401) {
+        // Now genuinely means "these credentials were rejected" — the provider
+        // outage case moved to 503 above. Still worded without certainty about
+        // WHICH field is wrong, which is deliberate: naming the field tells an
+        // attacker whether the email exists.
+        errorMessage = 'Incorrect email or password. Please try again.'
       } else if (isNetworkError) {
         errorMessage =
           (err.message || 'Authentication failed') +
