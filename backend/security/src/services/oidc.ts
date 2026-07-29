@@ -295,13 +295,59 @@ class OIDCService {
         'oidc: token exchange completed'
       );
 
-      // Get user info
-      const userinfoStart = Date.now();
-      const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      logger.info(
-        { elapsedMs: Math.round(Date.now() - userinfoStart), email: userinfo.email },
-        'oidc: userinfo retrieved'
-      );
+      // Claims come from the ID TOKEN, not a second HTTP call.
+      //
+      // A sign-in is a chain of SEQUENTIAL round-trips to the identity provider
+      // (flow-executor stages, then authorize -> code, then this token
+      // exchange), and Authentik averages ~1.3s per request with multi-second
+      // spikes — so the round-trip COUNT is the dominant cost, and a redundant
+      // one is pure added latency on every single login.
+      //
+      // `userinfo` was exactly that. The provider blueprint sets
+      // `include_claims_in_id_token: true` and grants the `openid email
+      // profile` scope mappings we request, so the ID token already carries
+      // every field syncUserToDatabase reads: email, email_verified, name,
+      // given_name (see deploy/helm/.../blueprints/provider-oidc.yaml). The
+      // extra endpoint call re-fetched data we were already holding.
+      //
+      // Trust: `client.callback()` has already verified the ID token's
+      // signature, issuer, audience and expiry, so these claims are no less
+      // authoritative than the userinfo response — same provider, same
+      // mappings, one fewer hop.
+      //
+      // FALL BACK, don't assume. If `include_claims_in_id_token` is ever turned
+      // off, or a provider is configured without the profile/email mappings,
+      // `email` will be missing — and email is the natural key user sync
+      // matches on, so guessing would create duplicate accounts. Absent email
+      // means we still make the userinfo call rather than proceed on partial
+      // data.
+      const claimsStart = Date.now();
+      let userinfo: Record<string, unknown> = {};
+      try {
+        userinfo = tokenSet.claims() as Record<string, unknown>;
+      } catch (err) {
+        // A malformed/absent id_token should not be fatal — the fallback below
+        // covers it.
+        logger.warn(
+          { err: (err as Error).message },
+          'oidc: could not read id_token claims; falling back to userinfo'
+        );
+      }
+      if (!userinfo.email) {
+        const userinfoStart = Date.now();
+        userinfo = (await this.client.userinfo(
+          tokenSet.access_token!
+        )) as Record<string, unknown>;
+        logger.info(
+          { elapsedMs: Math.round(Date.now() - userinfoStart) },
+          'oidc: userinfo retrieved (id_token carried no email)'
+        );
+      } else {
+        logger.info(
+          { elapsedMs: Math.round(Date.now() - claimsStart) },
+          'oidc: claims read from id_token (userinfo round-trip skipped)'
+        );
+      }
 
       // Sync user to local database
       const syncStart = Date.now();

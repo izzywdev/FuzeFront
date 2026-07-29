@@ -240,6 +240,49 @@ describe('OIDCService.handleCallback()', () => {
     expect(mockClient.userinfo).toHaveBeenCalledWith('at-specific')
   })
 
+  // Sign-in is a chain of SEQUENTIAL provider round-trips and Authentik averages
+  // ~1.3s each, so the round-trip COUNT is the dominant cost. The provider sets
+  // `include_claims_in_id_token: true` and grants the scopes we ask for, so the
+  // token exchange already returns every claim user-sync reads — the separate
+  // userinfo call was re-fetching data we were already holding.
+  it('skips the userinfo round-trip when the id_token already carries the claims', async () => {
+    mockClient.callback.mockResolvedValue({
+      access_token: 'at-with-claims',
+      claims: () => ({
+        sub: 'idtoken-sub-001',
+        email: 'fromidtoken@oidctest.example.com',
+        given_name: 'Id',
+        family_name: 'Token',
+        email_verified: true,
+      }),
+    })
+
+    const user = await oidcService.handleCallback('c', 's', 'v')
+
+    // The whole point: one fewer sequential hop per login.
+    expect(mockClient.userinfo).not.toHaveBeenCalled()
+    // And the identity is taken from the (already signature-verified) claims.
+    expect(user).toMatchObject({
+      email: 'fromidtoken@oidctest.example.com',
+      firstName: 'Id',
+      lastName: 'Token',
+    })
+  })
+
+  it('falls back to userinfo when the id_token carries no email', async () => {
+    // email is the natural key user-sync matches on, so proceeding without it
+    // would risk creating duplicate accounts — worth the extra hop.
+    mockClient.callback.mockResolvedValue({
+      access_token: 'at-no-email',
+      claims: () => ({ sub: 'no-email-sub', given_name: 'Partial' }),
+    })
+
+    const user = await oidcService.handleCallback('c', 's', 'v')
+
+    expect(mockClient.userinfo).toHaveBeenCalledWith('at-no-email')
+    expect(user.email).toBe(mockUserInfo.email)
+  })
+
   it('returns a User with the correct shape from the userinfo claims', async () => {
     const user = await oidcService.handleCallback('auth-code-xyz', 'state-abc', 'verifier-123')
     expect(user).toMatchObject({
