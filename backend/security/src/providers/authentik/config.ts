@@ -1,13 +1,20 @@
 /**
  * Server-only configuration for the Authentik-backed identity provider.
  *
- * Everything here is env-driven and lives ONLY inside the concrete provider
- * implementation — no vendor name leaks past this boundary into the API surface.
+ * Everything here lives ONLY inside the concrete provider implementation — no
+ * vendor name leaks past this boundary into the API surface.
+ *
+ * Tenant-dependent values are read from the ambient tenant (see tenants.ts),
+ * NOT from process.env, because security-service fronts several tenants and
+ * each is backed by its own Authentik instance and account directory. In legacy
+ * single-tenant mode the ambient tenant is synthesised from the same env vars
+ * these functions used to read, so behaviour is unchanged.
  */
+import { currentTenant } from './tenants'
 
-/** App base origin the browser talks to (same-origin API base). */
+/** App base origin the browser talks to (same-origin API base), per tenant. */
 export function appBaseUrl(): string {
-  return (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
+  return currentTenant('appBaseUrl').appBaseUrl
 }
 
 /**
@@ -47,12 +54,15 @@ export function googleCallbackPath(): string {
 }
 
 /**
- * Whether the SERVER-BROKERED Google path is active (default ON). Set
- * `SECURITY_GOOGLE_BROKERED=false` to fall back to the legacy Authentik
- * `/source/oauth/*` source-redirect path while the brokered path is being proven.
+ * Whether the SERVER-BROKERED Google path is active for the current tenant
+ * (default ON). The fallback is Authentik's `/source/oauth/*` source-redirect,
+ * which sends the BROWSER to Authentik — acceptable for FuzeFront, whose
+ * Authentik paths are routed under its own app host, but NOT for a tenant whose
+ * whole premise is that Authentik is invisible to it. Such a tenant must set
+ * `googleBrokered: true` and keep it there.
  */
 export function googleBrokeredEnabled(): boolean {
-  return process.env.SECURITY_GOOGLE_BROKERED !== 'false'
+  return currentTenant('googleBrokered').googleBrokered
 }
 
 /** Session token lifetime (ms). */
