@@ -68,7 +68,8 @@
       }
     ],
     "entryServer": "fuzefront-platform",
-    "note": "Scaffold only — enabled:false until the server exposes a working tool. Intended surface: query the app registry (which apps are registered, their manifest/nav placement, health) and the org/user context. Owned by mcp-maintainer for upkeep; tool behaviour is backend-engineer's."
+    "protocolVersion": "2025-06-18",
+    "note": "Scaffold — mcp/server.ts starts, completes the MCP handshake, and advertises mcp/tools.json (currently empty). enabled:false until the server exposes a working tool. Intended surface: query the app registry (which apps are registered, their manifest/nav placement, health) and the org/user/portal context — see mcp/README.md for the TODO tool inventory. Owned by mcp-maintainer for upkeep; tool behaviour is backend-engineer's."
   },
   "providesTo": [
     "FuzeAgent",
