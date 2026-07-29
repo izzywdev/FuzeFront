@@ -46,6 +46,28 @@ jobs:
       - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
         run: npm run -w @fuzefront/identity-ui build
 
+      # @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) re-exports
+      # @fuzefront/security-client's SessionResult/AuthMethods types, so
+      # security-client's dist must exist before auth-ui's own d.ts build can
+      # resolve them (frontend itself only ever imports security-client TYPES
+      # straight from source via its tsconfig path — see api.ts — so it needs
+      # no build step of its own).
+      - name: Build @fuzefront/security-client (dep for auth-ui build)
+        run: npm run -w @fuzefront/security-client build
+
+      # frontend/tsconfig.json resolves @fuzefront/auth-ui to its built
+      # dist/index.d.ts (like identity-ui/chat-ui/i18n) — same CSSProperties-
+      # clash reasoning as the identity-ui comment above. Bundling/tests still
+      # resolve it from source via the vite/vitest aliases.
+      - name: Build @fuzefront/auth-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/auth-ui build
+
+      - name: auth-ui — type-check (tsc --noEmit)
+        run: npm run -w @fuzefront/auth-ui type-check
+
+      - name: auth-ui — unit tests (vitest)
+        run: npm run -w @fuzefront/auth-ui test
+
       # @fuzefront/chat-ui is consumed by the host frontend (FuzeChatWidget) and
       # has NO vite source alias, so both the frontend type-check (tsconfig →
       # chat-ui/dist/index.d.ts) and `vite build` resolve it from dist. Build its
