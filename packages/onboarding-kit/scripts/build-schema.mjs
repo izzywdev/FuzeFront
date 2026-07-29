@@ -40,6 +40,7 @@ const NEEDED = [
   'Chrome',
   'Nav',
   'NavSection',
+  'Suite',
   'Routing',
   'Infra',
 ]
@@ -78,6 +79,34 @@ const schema = {
     'GENERATED from services/app-registry-service/openapi.yaml by scripts/build-schema.mjs. Do not edit by hand.',
   ...retarget(defs.AppManifest),
   $defs: retarget(defs),
+}
+
+// The NEEDED list above is explicit so that a new $ref is a LOUD failure rather
+// than a silent omission — but nothing was actually checking that, so adding
+// Nav.suite emitted a schema with a dangling `#/$defs/Suite` that every consumer
+// would fail to compile at *their* validate step, not ours. Close the loop: walk
+// what we emitted and assert every internal ref resolves.
+const collectRefs = (node, acc = new Set()) => {
+  if (Array.isArray(node)) node.forEach(n => collectRefs(n, acc))
+  else if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) {
+      if (k === '$ref' && typeof v === 'string' && v.startsWith('#/$defs/')) {
+        acc.add(v.slice('#/$defs/'.length))
+      } else collectRefs(v, acc)
+    }
+  }
+  return acc
+}
+
+const dangling = [...collectRefs(schema)].filter(name => !schema.$defs[name]).sort()
+if (dangling.length) {
+  console.error(
+    `build-schema: ${OPENAPI} references ${dangling.join(', ')}, which ${
+      dangling.length === 1 ? 'is' : 'are'
+    } not in NEEDED.\n` +
+      'Add it there so the generated schema is self-contained.'
+  )
+  process.exit(1)
 }
 
 const json = `${JSON.stringify(schema, null, 2)}\n`
