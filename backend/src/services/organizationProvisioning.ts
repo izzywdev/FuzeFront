@@ -286,9 +286,12 @@ async function runStep(
         // org stuck in `failed` on any DB without a root org. Authorization
         // still fails closed (no derived org-admin); only the derivation is
         // missing, and the reconciler re-runs this step on the next login.
+        // Constant format string + arguments — see rootOrgAdmin.ts.
         console.warn(
-          `[provisioning] root organization ${parentId} not found — skipping ` +
-            `parent link for ${org.id} (will retry on the next reconcile)`
+          '[provisioning] root organization %s not found — skipping parent ' +
+            'link for %s (will retry on the next reconcile)',
+          parentId,
+          org.id
         )
         break
       }

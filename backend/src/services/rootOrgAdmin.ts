@@ -71,8 +71,12 @@ export async function ensureRootOrgAdmins(
       const ok = await assignOrgAdmin(admin.id, ROOT_ORG_ID)
       if (ok) granted.push(admin.id)
     } catch (error) {
+      // Constant format string + arguments: interpolating the id into the
+      // format string itself lets a value containing format specifiers forge
+      // the log line (Semgrep unsafe-formatstring).
       console.error(
-        `[rootOrgAdmin] failed to grant org-admin to ${admin.id}:`,
+        '[rootOrgAdmin] failed to grant org-admin to %s: %s',
+        admin.id,
         error
       )
     }
