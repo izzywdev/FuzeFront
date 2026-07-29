@@ -641,7 +641,7 @@ export const listInvitations = async (orgId: string) => {
 // `scopeLevel` is the app's own declaration of where it MAY be installed;
 // `scope` is where this particular installation went. The two are different
 // questions and the API rejects (422) a scope the app's level does not permit.
-// See backend/src/routes/app-installations.ts and migration 015.
+// See backend/src/routes/app-installations.ts and migration 017.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AppScopeLevel = 'personal' | 'organization' | 'both'

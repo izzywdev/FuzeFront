@@ -2,7 +2,7 @@
 //
 // `apps` answers who OWNS an app (organization_id) and who may SEE it
 // (visibility). This router answers the third question: who is it INSTALLED
-// for. See migration 015 and docs/planning/app-scopes-user-menu-notifications.md.
+// for. See migration 017 and docs/planning/app-scopes-user-menu-notifications.md.
 //
 // Mounted at /api/apps, BEFORE routes/apps.ts, so the paths below resolve
 // before that router's own /:id handlers. Nothing here shadows an existing
@@ -156,7 +156,7 @@ async function loadVisibleApp(
 
 /**
  * Is `scope` permitted by the app's declared scope_level?
- * A missing scope_level (a row written before migration 015 ran on this
+ * A missing scope_level (a row written before migration 017 ran on this
  * connection) is read as 'both' — the column default.
  */
 export function scopeIsAllowed(
@@ -310,7 +310,7 @@ router.get('/:id/installations', installReadRateLimiter, authenticateToken, asyn
 //   mode          'self' (default) | 'everyone'. 'everyone' needs owner/admin.
 //
 // Idempotent per target: an existing active installation is returned with 200
-// rather than duplicated (the partial unique indexes in migration 015 are the
+// rather than duplicated (the partial unique indexes in migration 017 are the
 // backstop if two requests race).
 // ---------------------------------------------------------------------------
 router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (req: any, res) => {
@@ -404,7 +404,7 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
     }
 
     // The anchor columns each shape carries. Mirrors the CHECK constraint in
-    // migration 015 — keep the two in step.
+    // migration 017 — keep the two in step.
     const anchorUserId =
       scope === 'personal' || mode === 'self' ? userId : null
 

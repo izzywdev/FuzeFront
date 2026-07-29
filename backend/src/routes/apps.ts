@@ -22,14 +22,14 @@ interface AppRow {
   metadata: string
   organization_id: string | null
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
-  // Where the app may be INSTALLED (migration 015). Distinct from `scope`
+  // Where the app may be INSTALLED (migration 017). Distinct from `scope`
   // above, which is the Module-Federation remote container name.
   scope_level: 'personal' | 'organization' | 'both'
   created_at: Date
   updated_at: Date
 }
 
-// Install scope levels an app may declare. Rows written before migration 015
+// Install scope levels an app may declare. Rows written before migration 017
 // read as the column default, 'both'.
 const VALID_SCOPE_LEVELS = ['personal', 'organization', 'both'] as const
 

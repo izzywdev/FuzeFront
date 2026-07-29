@@ -1,5 +1,5 @@
 // Integration tests for the app-installation surface
-// (backend/src/routes/app-installations.ts + migration 015).
+// (backend/src/routes/app-installations.ts + migration 017).
 //
 // These run against the REAL migrated Postgres the global harness
 // (tests/setup.ts) prepares, so the database CHECK constraint and the partial
