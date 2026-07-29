@@ -24,11 +24,23 @@
 # consuming side (a SealedSecret in FuzeInfra, or a GitHub secret for Terraform).
 #
 # DESIGN: everything is defined inline in ONE blueprint — no !Find to objects
-# owned by a different blueprint. Authentik's Celery runner applies blueprints
-# concurrently, so a cross-blueprint !Find silently aborts the entry when the
+# owned by a different CUSTOM blueprint. Authentik's Celery runner applies
+# blueprints concurrently, so such a !Find silently aborts the entry when the
 # target isn't in the DB yet. Entries WITHIN a blueprint are applied in order,
 # so the shared flow and scope mappings below are safe to reference. Same
 # rationale as provider-oidc-mendys-platform.yaml.
+#
+# THE ONE EXCEPTION IS `invalidation_flow`, and it must stay.
+# `default-provider-invalidation-flow` ships in Authentik's OWN system
+# blueprints, applied at startup before any custom blueprint runs, so it is not
+# subject to the concurrency race above. It is also a REQUIRED field on
+# oauth2provider in 2024.12 — omitting it fails validation, and the failure is
+# QUIET: every provider entry is skipped, the Applications end up with no
+# provider bound, and the only symptom is a 404 from
+#   /application/o/<slug>/.well-known/openid-configuration
+# while unrelated blueprints (the Google source binding) apply fine, so it looks
+# like the blueprint ran when it only half-did. That is exactly how this broke
+# the first time. Do not "tidy" these lines away.
 version: 1
 metadata:
   name: FuzeInfra Admin OIDC Providers
@@ -130,6 +142,7 @@ entries:
       sub_mode: user_email
       include_claims_in_id_token: true
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   - model: authentik_core.application
     state: present
@@ -164,6 +177,7 @@ entries:
       sub_mode: user_email
       include_claims_in_id_token: true
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   # Application slug is load-bearing: it forms the issuer URL
   # https://auth.fuzefront.com/application/o/grafana/ that FuzeInfra's
@@ -205,6 +219,7 @@ entries:
       sub_mode: user_email
       include_claims_in_id_token: true
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   - model: authentik_core.application
     state: present
@@ -241,6 +256,7 @@ entries:
       sub_mode: user_email
       include_claims_in_id_token: true
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
 
   - model: authentik_core.application
     state: present
