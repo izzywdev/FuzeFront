@@ -41,6 +41,8 @@ const NEEDED = [
   'Nav',
   'NavSection',
   'Suite',
+  'Auth',
+  'AuthOidc',
   'Routing',
   'Infra',
 ]

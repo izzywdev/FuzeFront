@@ -71,6 +71,9 @@
     "nav": {
       "$ref": "#/$defs/Nav"
     },
+    "auth": {
+      "$ref": "#/$defs/Auth"
+    },
     "routing": {
       "$ref": "#/$defs/Routing"
     },
@@ -158,6 +161,9 @@
         },
         "nav": {
           "$ref": "#/$defs/Nav"
+        },
+        "auth": {
+          "$ref": "#/$defs/Auth"
         },
         "routing": {
           "$ref": "#/$defs/Routing"
@@ -387,6 +393,106 @@
           "maximum": 9999,
           "default": 999,
           "description": "Rank of the GROUP within its section — distinct from `nav.order`, which ranks this app within the group. Sorting is section → suite.order → nav.order."
+        }
+      }
+    },
+    "Auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Identity the app needs the platform to provision for it. Today an Authentik application + OIDC provider is created by hand-writing a blueprint under FuzeFront's `deploy/helm/fuzefront/authentik/blueprints/`, which means onboarding a product's identity requires an edit INSIDE FuzeFront — the same coupling that `nav` removed for the side menu and `policy` removed for authz. Declaring it here lets the product own it.",
+      "properties": {
+        "oidc": {
+          "$ref": "#/$defs/AuthOidc"
+        }
+      }
+    },
+    "AuthOidc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "redirectUris"
+      ],
+      "description": "An OIDC client for this app. Describes only what the PRODUCT knows; every secret stays on the platform side.",
+      "properties": {
+        "applicationSlug": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Slug"
+            }
+          ],
+          "description": "Authentik application slug. Defaults to the app's own `slug` when omitted. The server MUST reject a value claimed by a different app — a manifest is self-declared at registration, so an unchecked slug would let one product bind itself to another product's identity."
+        },
+        "clientType": {
+          "type": "string",
+          "enum": [
+            "confidential",
+            "public"
+          ],
+          "default": "confidential",
+          "description": "`public` (PKCE, no secret) is for clients that cannot hold one — a browser-only SPA or a mobile/TWA build. Anything with a server keeps `confidential`."
+        },
+        "redirectUris": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^(https://|http://localhost([:/]|$)|http://127\\.0\\.0\\.1([:/]|$))[^*\\s]*$",
+            "maxLength": 2048
+          },
+          "description": "Exact callback URIs. HTTPS only, except loopback for local dev. NO wildcards: a redirect URI is where the authorization code is delivered, so a permissive entry is a token-theft primitive, not a convenience. The server SHOULD additionally require each host to be one the app already declares (`routing.host`, or its integration URL)."
+        },
+        "postLogoutRedirectUris": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^(https://|http://localhost([:/]|$)|http://127\\.0\\.0\\.1([:/]|$))[^*\\s]*$",
+            "maxLength": 2048
+          }
+        },
+        "scopes": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [
+            "openid",
+            "email",
+            "profile"
+          ],
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "Scopes the client requests. `openid` is implied and always granted."
+        },
+        "claims": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": "Maps an OIDC claim to the field the app expects, e.g. `{ \"sub\": \"userId\", \"groups\": \"roles\" }`."
+        },
+        "secretRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "key"
+          ],
+          "description": "Where the platform finds this client's secret — a (Sealed)Secret reference, NEVER the value. The manifest is committed to a product repo AND served back on read, so a literal secret here would be published twice over. There is deliberately no field to put one in.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 253
+            },
+            "key": {
+              "type": "string",
+              "maxLength": 253
+            }
+          }
         }
       }
     },

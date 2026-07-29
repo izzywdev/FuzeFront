@@ -309,6 +309,42 @@ export interface components {
             /** @description Standalone-only: a dedicated host (e.g. `clock.fuzefront.com`). When omitted, standalone apps are path-based under the main app host. */
             host?: string;
         };
+        /** @description Identity the app needs the platform to provision for it. Today an Authentik application + OIDC provider is created by hand-writing a blueprint under FuzeFront's `deploy/helm/fuzefront/authentik/blueprints/`, which means onboarding a product's identity requires an edit INSIDE FuzeFront — the same coupling that `nav` removed for the side menu and `policy` removed for authz. Declaring it here lets the product own it. */
+        Auth: {
+            oidc?: components["schemas"]["AuthOidc"];
+        };
+        /** @description An OIDC client for this app. Describes only what the PRODUCT knows; every secret stays on the platform side. */
+        AuthOidc: {
+            /** @description Authentik application slug. Defaults to the app's own `slug` when omitted. The server MUST reject a value claimed by a different app — a manifest is self-declared at registration, so an unchecked slug would let one product bind itself to another product's identity. */
+            applicationSlug?: components["schemas"]["Slug"];
+            /**
+             * @description `public` (PKCE, no secret) is for clients that cannot hold one — a browser-only SPA or a mobile/TWA build. Anything with a server keeps `confidential`.
+             * @default confidential
+             * @enum {string}
+             */
+            clientType: "confidential" | "public";
+            /** @description Exact callback URIs. HTTPS only, except loopback for local dev. NO wildcards: a redirect URI is where the authorization code is delivered, so a permissive entry is a token-theft primitive, not a convenience. The server SHOULD additionally require each host to be one the app already declares (`routing.host`, or its integration URL). */
+            redirectUris: string[];
+            postLogoutRedirectUris?: string[];
+            /**
+             * @description Scopes the client requests. `openid` is implied and always granted.
+             * @default [
+             *       "openid",
+             *       "email",
+             *       "profile"
+             *     ]
+             */
+            scopes: string[];
+            /** @description Maps an OIDC claim to the field the app expects, e.g. `{ "sub": "userId", "groups": "roles" }`. */
+            claims?: {
+                [key: string]: string;
+            };
+            /** @description Where the platform finds this client's secret — a (Sealed)Secret reference, NEVER the value. The manifest is committed to a product repo AND served back on read, so a literal secret here would be published twice over. There is deliberately no field to put one in. */
+            secretRef?: {
+                name: string;
+                key: string;
+            };
+        };
         /** @description Platform infrastructure the (typically standalone) app opts into. Portal apps implicitly get auth + api; this block is mainly meaningful for standalone apps that selectively use FuzeFront infra. */
         Infra: {
             /**
@@ -357,6 +393,7 @@ export interface components {
             integration: components["schemas"]["Integration"];
             chrome?: components["schemas"]["Chrome"];
             nav?: components["schemas"]["Nav"];
+            auth?: components["schemas"]["Auth"];
             routing?: components["schemas"]["Routing"];
             infra?: components["schemas"]["Infra"];
             visibility?: components["schemas"]["Visibility"];

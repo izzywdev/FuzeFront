@@ -272,6 +272,49 @@ and let Next import it, rather than federating Next itself.
 - Standalone URL renders with no portal chrome — that is what the APK wraps.
 - Both surfaces exercised in tests; a portal-only test suite hides standalone breakage.
 
+
+## `auth.oidc` — identity the product declares for itself
+
+Today an Authentik application + OIDC provider is created by hand-writing a blueprint
+under FuzeFront's `deploy/helm/fuzefront/authentik/blueprints/` (see
+`provider-oidc-mendys-platform.yaml`). So onboarding a product's *identity* requires an
+edit **inside FuzeFront** — exactly the coupling `nav` removed for the side menu and
+`policy` removed for authz. FuzeSocial had already written an `auth` block into its
+manifest by instinct; there was just no contract for it, and because `AppManifest` is
+`additionalProperties: false` that made its whole document invalid, so it was not
+registering at all.
+
+The block describes only what the **product** knows. Every secret stays platform-side:
+
+```jsonc
+"auth": {
+  "oidc": {
+    "applicationSlug": "fuzesocial",          // defaults to the app's slug
+    "clientType": "confidential",             // "public" = PKCE, for SPA/mobile
+    "redirectUris": ["https://social.fuzefront.com/api/auth/oidc/callback"],
+    "scopes": ["openid", "email", "profile"],
+    "claims": { "sub": "userId", "groups": "roles" },
+    "secretRef": { "name": "fuzesocial-oidc", "key": "clientSecret" }
+  }
+}
+```
+
+Three constraints are enforced by the schema rather than left to reviewers:
+
+1. **No literal secret.** There is no field to put one in — `additionalProperties: false`
+   rejects `clientSecret` outright, and `secretRef` points at a (Sealed)Secret instead.
+   A manifest is committed to a product repo *and* served back on read, so a secret here
+   would be published twice over.
+2. **No wildcard redirect URIs.** A redirect URI is where the authorization code is
+   delivered, so `https://*.example.com/cb` is a token-theft primitive, not a
+   convenience. HTTPS only, except loopback for local dev.
+3. **`applicationSlug` defaults to the app's own slug**, and the server MUST reject one
+   already claimed by a different app. A manifest is *self-declared* at registration —
+   without that check, a product could bind itself to another product's identity.
+
+The third is a server-side obligation the schema cannot express, and it is the one worth
+implementing carefully when the provisioning lands.
+
 ## Follow-ups
 
 Not in the contract PR, each independently shippable:
@@ -287,3 +330,8 @@ Not in the contract PR, each independently shippable:
    that order. The legacy job is the only thing registering those four surfaces today
    and must not be removed before its replacement is live.
 5. **`modes` sweep** across the remaining product repos.
+6. **Provision Authentik from `auth.oidc`** — generate the blueprint from the manifest
+   instead of hand-writing it, and enforce the `applicationSlug` ownership check plus
+   the redirect-host check (each host should be one the app already declares). Until
+   that lands the block is declarative only: it validates and is stored, but nothing
+   acts on it yet.
