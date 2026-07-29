@@ -16,6 +16,8 @@
     "packages/chat-ui",
     "packages/identity-ui",
     "packages/account-security-ui",
+    "packages/portal-branding-ui",
+    "portal-client",
     "packages/i18n",
     "packages/i18n-translate",
     "packages/feature-flags",

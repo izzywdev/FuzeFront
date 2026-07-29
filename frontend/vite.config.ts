@@ -56,6 +56,17 @@ const appRegistryClientSrc = fileURLToPath(
 const securityClientSrc = fileURLToPath(
   new URL('../packages/security/src/index.ts', import.meta.url)
 )
+// @fuzefront/portal-client (top-level portal-client/) is the generated portal
+// API client + contract types (contract-designer, FF-EPIC-10) and
+// @fuzefront/portal-branding-ui (packages/portal-branding-ui) is the white-label
+// tenant portal shell/login UI built against it (FF-EPIC-13). Neither's dist/ is
+// built in CI — resolve both from SOURCE, same as billing-client/billing-ui.
+const portalClientSrc = fileURLToPath(
+  new URL('../portal-client/src/index.ts', import.meta.url)
+)
+const portalBrandingUiSrc = fileURLToPath(
+  new URL('../packages/portal-branding-ui/src/index.ts', import.meta.url)
+)
 // @fuzefront/account-security-ui (packages/account-security-ui) is an unpublished
 // file: workspace package whose dist/ is not built in CI — resolve from SOURCE,
 // same as identity-ui. It is design-system-first and consumes only the generated
@@ -97,6 +108,8 @@ export default defineConfig({
       '@fuzefront/billing-client': billingClientSrc,
       '@fuzefront/app-registry-client': appRegistryClientSrc,
       '@fuzefront/security-client': securityClientSrc,
+      '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
+      '@fuzefront/portal-client': portalClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
