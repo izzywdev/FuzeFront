@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs billing-service unit tests in a clean node:18 Linux container.
+# Runs billing-service unit tests in a clean node:24 Linux container.
 # Avoids the host (Windows) node_modules entirely — copies sources into the
 # container, installs fresh, and runs jest. Used for local verification where
 # the Windows npm install is unreliable. CI runs jest natively on Linux.
@@ -10,7 +10,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 docker run --rm \
   -e GITHUB_TOKEN=x-dummy \
   -v "$REPO_ROOT":/repo:ro \
-  node:18-alpine sh -c '
+  node:24-alpine sh -c '
     set -e
     mkdir -p /work
     cp -r /repo/shared /work/shared

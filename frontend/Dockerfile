@@ -8,7 +8,7 @@
 # live outside frontend/, so the build needs the whole workspace layout. Building
 # with `context: ./frontend` is what broke the prod frontend image: vite resolved
 # `../packages/i18n/src/index.ts` to a path that did not exist in the context.
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 

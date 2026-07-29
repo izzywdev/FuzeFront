@@ -19,4 +19,4 @@ export interface SortableListProps<T = unknown>
  * (`data-action="move-up" | "move-down"`) is the keyboard-accessible
  * equivalent, disabled at the list boundary.
  */
-export function SortableList<T = unknown>(props: SortableListProps<T>): JSX.Element;
+export function SortableList<T = unknown>(props: SortableListProps<T>): React.JSX.Element;

@@ -274,7 +274,7 @@ USE_POSTGRES=true bash scripts/run-backend-tests.sh
 ### **CI/CD Benefits**
 
 - ✅ **Automated Testing**: Every push/PR triggers tests
-- ✅ **Multi-Environment**: Node.js 18.x and 20.x testing
+- ✅ **Runtime**: Node.js 24.x (Active LTS — matches `engines.node >=24.0.0`)
 - ✅ **Coverage Reporting**: Codecov integration
 - ✅ **Artifact Collection**: Test results preserved
 

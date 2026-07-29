@@ -13,3 +13,19 @@
 # (it holds this repo's own first-party role definitions).
 agent-templates/sync/
 agent-templates/providers/
+
+# SealedSecret manifests. `spec.encryptedData` values are CIPHERTEXT, encrypted
+# against the cluster's published public cert; only the in-cluster controller
+# holds the private key. Being safe to commit is the entire point of Sealed
+# Secrets — see FuzeInfra docs/SECRETS_MANAGEMENT.md.
+#
+# generic.secrets.security.detected-generic-secret fires on the base64 blobs
+# anyway, and re-fires the moment a diff touches ANY key in the file, so every
+# routine credential rotation would turn this check red for a finding that is a
+# false positive by construction.
+#
+# SCOPE NOTE: this directory holds ONLY SealedSecrets. The trade-off is that a
+# *plaintext* v1/Secret accidentally committed HERE would no longer be caught by
+# this rule — so keep the directory to sealed manifests only. Detection is
+# unchanged everywhere else in the repo, which is where a real leak would land.
+deploy/contabo/sealed/

@@ -31,4 +31,4 @@ export interface PricingCardProps
   disabled?: boolean;
 }
 
-export function PricingCard(props: PricingCardProps): JSX.Element;
+export function PricingCard(props: PricingCardProps): React.JSX.Element;

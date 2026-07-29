@@ -70,6 +70,16 @@ loads the remote on demand using `@originjs/vite-plugin-federation`. React /
 React-DOM are shared singletons for performance, so keep your React major in step
 with the host.
 
+**The host is on React 19 and Node 24 (Active LTS). These are minimums, not targets:**
+
+- Your federation `shared` block must declare `requiredVersion: '^19.0.0'` for both
+  `react` and `react-dom` — **identical to the host**. If it differs, your remote
+  quietly loads its own React copy and fails at runtime with "Invalid hook call";
+  nothing in your build or the host's CI will warn you first.
+- Your app needs `react`/`react-dom` `^19.2.0` and `@types/react(-dom)` `^19.2.0`.
+- Build on Node `>=24.0.0` / npm `>=10.0.0`. The published `@fuzefront/*` packages
+  peer-depend on `react@^19.0.0`, so a React 18 consumer fails peer resolution outright.
+
 ---
 
 ## 2. Consume the `@fuzefront/*` packages

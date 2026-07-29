@@ -1,5 +1,5 @@
 # Build stage — glibc/Node 20 (consistent with the host frontend build).
-FROM node:20-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
 # Drop any host lockfile so npm resolves platform-native deps in this image.

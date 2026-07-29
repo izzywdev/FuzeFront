@@ -15,4 +15,4 @@ export interface ToastProps extends React.HTMLAttributes<HTMLDivElement> {
   onDismiss?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
-export function Toast(props: ToastProps): JSX.Element;
+export function Toast(props: ToastProps): React.JSX.Element;

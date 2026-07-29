@@ -6,7 +6,7 @@
 # services/email-service/Dockerfile).
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
@@ -33,7 +33,7 @@ RUN cd backend/core && npm run build
 RUN cd backend/security && npm run build
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 RUN apk add --no-cache dumb-init && \
     addgroup -g 1001 -S nodejs && \
     adduser -S security -u 1001

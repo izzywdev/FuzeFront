@@ -1,5 +1,5 @@
 # Build context is the shopify-nav/ directory:  docker build -f deploy/Dockerfile .
-FROM node:22-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 

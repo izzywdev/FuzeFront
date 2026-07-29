@@ -27,4 +27,4 @@ export interface DrawerProps {
   style?: React.CSSProperties;
 }
 
-export function Drawer(props: DrawerProps): JSX.Element | null;
+export function Drawer(props: DrawerProps): React.JSX.Element | null;
