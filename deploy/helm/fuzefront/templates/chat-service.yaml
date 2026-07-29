@@ -56,20 +56,15 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: JWT_SECRET
-            {{- if .Values.secret.anthropicApiKey }}
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: ANTHROPIC_API_KEY
-            {{- end }}
-            {{- if .Values.secret.openaiApiKey }}
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: OPENAI_API_KEY
-            {{- end }}
+            {{- /*
+            ANTHROPIC_API_KEY / OPENAI_API_KEY are deliberately NOT mounted here.
+            chat-service never calls a provider directly — src/llm/litellm.ts is
+            the only LLM path and it speaks OpenAI protocol to FuzeInfra's
+            gateway. Provider keys live on that gateway (sealed in
+            fuzeinfra/litellm-secret), which is the entire point of running one:
+            key custody, model routing and cost caps in a single place.
+            The only credential this pod needs is LITELLM_MASTER_KEY, below.
+            */ -}}
             {{- if .Values.secret.litellmMasterKey }}
             - name: LITELLM_MASTER_KEY
               valueFrom:

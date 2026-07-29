@@ -91,6 +91,29 @@ describe('POST /session (password login)', () => {
     expect(res.status).toBe(401)
     expect(res.body.code).toBeDefined()
   })
+
+  // A provider outage is a SERVICE condition, not a credential verdict. These
+  // used to return 401, which made an incident indistinguishable from a typo:
+  // the login UI could only hedge ("wrong password, OR the service is down"),
+  // and the outage hid inside auth-failure metrics.
+  for (const name of ['AuthentikUnavailableError', 'UnsupportedFlowStageError']) {
+    it(`maps ${name} to 503 PROVIDER_UNAVAILABLE, not 401`, async () => {
+      const err = new Error('provider is having a bad day')
+      err.name = name
+      const p = fakeProvider({ passwordLogin: jest.fn().mockRejectedValue(err) })
+      const res = await request(makeApp(p))
+        .post('/api/v1/security/session')
+        .send({ email: 'x', password: 'y' })
+
+      expect(res.status).toBe(503)
+      expect(res.body.code).toBe('PROVIDER_UNAVAILABLE')
+      // Marked retryable so clients (and probes) treat it as transient.
+      expect(res.headers['retry-after']).toBeDefined()
+      // The provider's raw message can name internal hosts/flow slugs — it
+      // must not be echoed to an unauthenticated caller.
+      expect(JSON.stringify(res.body)).not.toContain('bad day')
+    })
+  }
 })
 
 describe('GET /session (me) — bearer enforcement', () => {
@@ -134,7 +157,13 @@ describe('social login boundary', () => {
     expect(res.status).toBe(302)
     expect(res.headers.location).toBe('/api/auth/idp/application/o/authorize/?x=1')
     expect(res.headers.location).not.toMatch(/auth\.fuzefront\.com/)
-    expect(res.headers['set-cookie'].join(';')).toMatch(/sec_social_state=/)
+    // `set-cookie` is typed `string | string[]` (supertest gives an array when
+    // several are set, a bare string for one). Normalise rather than assuming
+    // the array shape — the unguarded `.join` failed to COMPILE, which took the
+    // whole suite down with it, so nothing in this file has been running.
+    expect([res.headers['set-cookie']].flat().join(';')).toMatch(
+      /sec_social_state=/
+    )
   })
   it('callback 302s back to the app with a FuzeFront opaque ?code= (no token in URL)', async () => {
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?code=prov&state=st')

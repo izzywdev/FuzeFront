@@ -1,5 +1,6 @@
 import { Knex } from 'knex'
 import bcrypt from 'bcrypt'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 // The `platform-registrar` service principal created by migration
 // 014_seed_platform_registrar_user.  Every deployed Module-Federation remote
@@ -14,34 +15,40 @@ import bcrypt from 'bcrypt'
 // deletion that has taken production down three times.
 const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
 
-// The FuzeOne root organization created by migration 015_seed_fuzeone_root_org,
-// and its owner membership.  Same reasoning as the registrar above, plus one
-// more: migrations run exactly once per database, so a row this seed deletes is
-// NEVER recreated — the dev reset would permanently destroy the root of the
-// ReBAC org hierarchy on the first `npm run seed` after a fresh migrate, and
-// every `setOrganizationParent()` call would then have nothing to parent to.
-const FUZEONE_ROOT_ORG_ID = '00000000-0000-0000-0000-000000000002'
-
 export async function seed(knex: Knex): Promise<void> {
   // Delete dependent data in FK-safe order before removing users.
   // organization_memberships.invited_by and organization_invitations.invited_by
   // reference users.id without an ON DELETE rule, so a bare knex('users').del()
   // fails with a FK violation whenever those columns are populated.  Clear the
   // dependent tables explicitly first so the final users delete always succeeds.
-  await knex('organization_provisioning').del()
+  // The ROOT platform organization (migration 015) is exempted for the same
+  // reason PLATFORM_REGISTRAR_ID is exempted below: migrations create it, and a
+  // bare `organizations().del()` here deletes it again on every dev reset — so
+  // the root org exists only until the first seed run. That breaks the portal
+  // root, leaves `ensureRootOrgAdmins()` with nothing to grant on, and makes
+  // every new org skip its `parent` link to the root. Production never runs
+  // seeds, so this bites dev and CI only — which is precisely where it is
+  // hardest to notice and easiest to mistake for "the feature doesn't work".
+  await knex('organization_provisioning')
+    .whereNot('organization_id', ROOT_ORG_ID)
+    .del()
   await knex('organization_invitations').del()
   await knex('organization_memberships')
-    .whereNot('organization_id', FUZEONE_ROOT_ORG_ID)
+    .whereNot('organization_id', ROOT_ORG_ID)
     .del()
-  await knex('organizations').whereNot('id', FUZEONE_ROOT_ORG_ID).del()
+  await knex('organizations').whereNot('id', ROOT_ORG_ID).del()
   await knex('sessions').del()
-
-  // The root org's surviving memberships are only the ones whose user also
-  // survives.  The users delete below is ON DELETE CASCADE on
-  // organization_memberships.user_id, so any seeded human's root membership is
-  // cleaned up automatically; the registrar's owner membership stays, which is
-  // what keeps the org listable by GET /api/organizations after a reset.
-  await knex('users').whereNot('id', PLATFORM_REGISTRAR_ID).del()
+  // Keep the root org's owner too — deleting it would cascade the org away
+  // (organizations.owner_id → users.id ON DELETE CASCADE), undoing the exemption
+  // above. In practice this is the registrar, already exempt; the subquery keeps
+  // it correct if ownership is ever moved to a real administrator.
+  const rootOwnerIds = await knex('organizations')
+    .where({ id: ROOT_ORG_ID })
+    .pluck('owner_id')
+  await knex('users')
+    .whereNot('id', PLATFORM_REGISTRAR_ID)
+    .whereNotIn('id', rootOwnerIds)
+    .del()
 
   // Generate password hash for admin
   const adminPasswordHash = await bcrypt.hash('admin123', 10)

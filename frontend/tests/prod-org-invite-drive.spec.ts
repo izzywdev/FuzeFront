@@ -4,7 +4,7 @@
  * Drives the real invitation flow end-to-end through the shell exactly as a
  * human would:
  *
- *   sign in → /organizations → select the FuzeOne root org → Members tab
+ *   sign in → /organizations → select the root platform org → Members tab
  *     → "Invite member" → email + role=Admin → "Send invite"
  *     → Pending Invitations lists the invitee as Admin
  *
@@ -23,7 +23,7 @@
  *   PROD_BASE_URL        target origin (default https://app.fuzefront.com)
  *   INVITE_EMAIL         invitee (default weinberg770@gmail.com)
  *   INVITE_ROLE          admin | member | viewer (default admin)
- *   INVITE_ORG_NAME      org to invite into (default FuzeOne)
+ *   INVITE_ORG_NAME      org to invite into by name (default: the root platform org)
  *   AUTHN_TEST_EMAIL     password account that is owner/admin on that org
  *   AUTHN_TEST_PASSWORD
  *
@@ -40,7 +40,25 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
 
 const INVITE_EMAIL = (process.env.INVITE_EMAIL ?? 'weinberg770@gmail.com').toLowerCase()
 const INVITE_ROLE = (process.env.INVITE_ROLE ?? 'admin').toLowerCase()
-const INVITE_ORG_NAME = process.env.INVITE_ORG_NAME ?? 'FuzeOne'
+/**
+ * Which org to invite into. Defaults to the ROOT organization, matched by its
+ * `platform` TYPE rather than by name — deliberately.
+ *
+ * Migration `015_seed_root_platform_organization` seeds the root as
+ * name `FuzeFront` / slug `fuzefront`, but it *adopts* any pre-existing
+ * `type = 'platform'` row instead of creating a second one, so an environment
+ * that already had a root org keeps whatever that row was called. The name is
+ * therefore environment-dependent while "the single platform-type org" is not.
+ * The org picker renders each option as `<name> (<type>)`, which makes the type
+ * matchable straight from the UI.
+ *
+ * Set INVITE_ORG_NAME to target a specific org by name instead.
+ */
+const INVITE_ORG_NAME = process.env.INVITE_ORG_NAME ?? ''
+const ORG_OPTION_RE = INVITE_ORG_NAME
+  ? new RegExp(INVITE_ORG_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+  : /\(platform\)\s*$/i
+const ORG_LABEL = INVITE_ORG_NAME || 'the root platform organization'
 const AUTHN_TEST_EMAIL = process.env.AUTHN_TEST_EMAIL ?? ''
 const AUTHN_TEST_PASSWORD = process.env.AUTHN_TEST_PASSWORD ?? ''
 
@@ -95,10 +113,10 @@ async function signInWithPassword(page: Page) {
   await expect(page).not.toHaveURL(/\/login/)
 }
 
-test.describe('FuzeOne root org — invite member (production drive)', () => {
+test.describe('Root organization — invite member (production drive)', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test(`invites ${INVITE_EMAIL} as ${INVITE_ROLE} to ${INVITE_ORG_NAME} @org-invite`, async ({
+  test(`invites ${INVITE_EMAIL} as ${INVITE_ROLE} to ${ORG_LABEL} @org-invite`, async ({
     page,
     baseURL,
   }) => {
@@ -117,21 +135,30 @@ test.describe('FuzeOne root org — invite member (production drive)', () => {
     await page.goto('/organizations')
 
     // The org picker is a native <select> whose option labels render as
-    // "<name> (<type>)" — match on the name only so the org's type can change
-    // without breaking the drive.
+    // "<name> (<type>)" — see ORG_OPTION_RE above for why the default matches
+    // on the `platform` type rather than on a name.
     const orgSelect = page.locator('select').first()
     await expect(orgSelect, 'organization picker is present').toBeVisible({ timeout: 30_000 })
 
-    const orgOption = orgSelect.locator('option', { hasText: new RegExp(INVITE_ORG_NAME, 'i') })
+    const orgOption = orgSelect.locator('option', { hasText: ORG_OPTION_RE })
     await expect(
       orgOption,
-      `"${INVITE_ORG_NAME}" is listed for this account — if this fails the org either does not ` +
-        `exist (migration 015_seed_fuzeone_root_org has not run) or the signed-in user has no ` +
-        `membership on it`
+      `exactly one option matching ${ORG_OPTION_RE} is listed for this account. Zero means the ` +
+        `org does not exist (migration 015_seed_root_platform_organization has not run) or the ` +
+        `signed-in user has no membership on it — GET /api/organizations lists by membership, so ` +
+        `the root org is invisible until ensureRootOrgAdmins() grants this user on it. More than ` +
+        `one means the match is ambiguous; set INVITE_ORG_NAME to disambiguate.`
     ).toHaveCount(1)
 
-    await orgSelect.selectOption({ label: await orgOption.innerText() })
-    await expect(page.getByRole('heading', { name: new RegExp(INVITE_ORG_NAME, 'i') })).toBeVisible()
+    const orgOptionLabel = (await orgOption.innerText()).trim()
+    await orgSelect.selectOption({ label: orgOptionLabel })
+
+    // The heading renders the org NAME only, so derive it from the option label
+    // by stripping the trailing " (<type>)" the picker appends.
+    const orgName = orgOptionLabel.replace(/\s*\([^)]*\)\s*$/, '')
+    await expect(
+      page.getByRole('heading', { name: new RegExp(orgName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
+    ).toBeVisible()
 
     // ── 3. Members tab ────────────────────────────────────────────────────
     await page.getByRole('button', { name: /Members/i }).first().click()
