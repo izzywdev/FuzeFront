@@ -23,8 +23,8 @@ This project and everyone participating in it is governed by our [Code of Conduc
 
 ### Prerequisites
 
-- **Node.js 20+** (required for latest dependencies)
-- **npm 10+**
+- **Node.js 24+** (Krypton, Active LTS — enforced by `engines.node >=24.0.0`; `.nvmrc` pins the major)
+- **npm 10+** (enforced by `engines.npm >=10.0.0`)
 - **Git**
 - **Code Editor** (VS Code recommended with TypeScript extensions)
 

@@ -91,6 +91,40 @@
       name: {{ include "fuzefront.secretName" . }}
       key: MENDYS_PLATFORM_CLIENT_SECRET
       optional: true
+# FuzeInfra admin-plane OIDC client secrets — read by
+# provider-oidc-fuzeinfra-admin.yaml via !Env at apply time. These let the
+# FuzeInfra admin UIs (Cloudflare Access, Grafana, ArgoCD, Kafka UI) authenticate
+# against Authentik instead of each carrying a local password.
+#
+# Optional, matching the Mendys convention: a missing key stamps an empty client
+# secret, which is inert until the value is sealed. But note the blueprint runner
+# only honours client_secret at CREATION time — if a provider is created while
+# the key is absent, setting the key later does NOT update it. Seal the values
+# BEFORE the first apply, or delete the provider entry and re-apply.
+- name: AUTHENTIK_CF_ACCESS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: CF_ACCESS_CLIENT_SECRET
+      optional: true
+- name: AUTHENTIK_GRAFANA_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: GRAFANA_CLIENT_SECRET
+      optional: true
+- name: AUTHENTIK_ARGOCD_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: ARGOCD_CLIENT_SECRET
+      optional: true
+- name: AUTHENTIK_KAFKA_UI_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: KAFKA_UI_CLIENT_SECRET
+      optional: true
 {{- if .Values.smsService.enabled }}
 # SMS MFA — the stages-sms blueprint reads these env vars at apply time.
 # AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster
@@ -157,6 +191,16 @@ spec:
       app: authentik-server
   template:
     metadata:
+      annotations:
+        # Roll the pod when a blueprint changes.
+        #
+        # Blueprints are mounted from the authentik-blueprints ConfigMap and are
+        # discovered by Authentik at STARTUP. Updating the ConfigMap alone does
+        # not restart anything, so without this annotation an edited blueprint
+        # sits unapplied indefinitely — which is why blueprint changes appeared
+        # to "fail silently" in prod and had to be pushed through the
+        # prod-authentik-ops workflow by hand.
+        checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
       labels:
         {{- include "fuzefront.labels" . | nindent 8 }}
         app: authentik-server
@@ -212,6 +256,10 @@ spec:
       app: authentik-worker
   template:
     metadata:
+      annotations:
+        # The worker is the process that actually applies blueprints, so this
+        # annotation matters most here. See the note on authentik-server above.
+        checksum/blueprints: {{ include (print $.Template.BasePath "/authentik-blueprints.yaml") . | sha256sum }}
       labels:
         {{- include "fuzefront.labels" . | nindent 8 }}
         app: authentik-worker
