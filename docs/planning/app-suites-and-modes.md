@@ -205,6 +205,73 @@ real auth wiring (`SimpleAuthProvider`) and no data fetching. They share no code
 neither is finished. So this is duplicated *product surface*, not duplicated
 implementation — cheap to reconcile now, expensive once both are real.
 
+## The bar for a product that needs BOTH portal and standalone
+
+FuzeHub gets a pass because its portal surfaces already exist as Vite MF remotes and
+its Next.js app can simply be the standalone one. **Most products will not be that
+lucky**, so this is the standard for everyone else. It is a requirement, not a
+suggestion: `iframe` is not an acceptable portal integration for a product that has a
+real UI.
+
+**1. One implementation, two entry points — never two implementations.**
+
+The failure mode is building the portal surface and the standalone surface separately
+and letting them drift, which is exactly the state FuzeHub is in (`frontend/app/marketplace/`
+vs `packages/fuzehub-marketplace/`). The app itself is one component tree:
+
+```
+src/App.tsx              ← the product. Knows nothing about how it is mounted.
+src/entry.remote.ts      ← exposes <App/> via Module Federation  (portal)
+src/entry.standalone.tsx ← mounts <App/> into #root with a router (standalone)
+```
+
+Both entries import the *same* `App`. If a behaviour exists in one and not the other,
+it is a bug, not a variant.
+
+**2. The shared-dependency contract is fixed by the host, not negotiated.**
+
+The host shares React as a **singleton at `^18.3.1`**. A remote on React 19 cannot
+share that singleton — you get two Reacts, and hooks break in ways that look like
+random state loss. Match the host, or you are not federating.
+
+```ts
+shared: {
+  react:       { singleton: true, requiredVersion: '^18.3.1' },
+  'react-dom': { singleton: true, requiredVersion: '^18.3.1' },
+}
+```
+
+**3. Auth differs per surface, and that difference belongs behind one interface.**
+
+In portal mode the host injects the token (`window.__FUZE_AUTH__`); standalone must
+acquire it itself via Authentik. Do not scatter that fork through the app — resolve it
+once, at the entry:
+
+```ts
+// auth.ts — the app calls getToken(); it never knows which surface it is on.
+export const getToken = () =>
+  window.__FUZE_AUTH__?.token ?? standaloneSession()?.token ?? null
+```
+
+**4. Same-origin API base, both ways.** Never hard-code an absolute API host; it breaks
+under local TLS and prod ingress differently, and mixed-content blocks it under the
+portal.
+
+**5. Routing is prefix-relative.** Portal mounts at `/app/:slug`, standalone at `/`. The
+app must take a `basename` from its entry rather than assuming either.
+
+**6. Next.js App Router is not a federation host or remote — do not try.** React 19 +
+RSC + `@module-federation/nextjs-mf` (a Pages-Router story) is not a paved path. If a
+product is Next.js and needs a portal surface, extract the UI into a Vite MF package
+and let Next import it, rather than federating Next itself.
+
+### Definition of done
+
+- One `App`, two entries, no duplicated screens.
+- Remote loads in the host with **no console errors** (the `ui-runtime-validation` gate).
+- Standalone URL renders with no portal chrome — that is what the APK wraps.
+- Both surfaces exercised in tests; a portal-only test suite hides standalone breakage.
+
 ## Follow-ups
 
 Not in the contract PR, each independently shippable:
