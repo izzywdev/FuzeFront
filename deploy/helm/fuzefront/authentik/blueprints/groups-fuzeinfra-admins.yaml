@@ -1,0 +1,51 @@
+# Authentik Blueprint — fuzeinfra-admins group + the infra admin identity
+#
+# WHY A PRE-CREATED USER
+# source-google.yaml sets user_matching_mode: link_by_email. A Google sign-in
+# whose email matches an existing Authentik user LINKS into that account and
+# inherits its privileges; an unmatched email runs the enrollment flow and lands
+# as an ordinary, non-privileged account. Since the infra admin's Google address
+# (a gmail.com address) is not the akadmin bootstrap address
+# (admin@fuzefront.com), signing in with Google would otherwise produce a
+# powerless second account.
+#
+# Pre-creating the user here means the FIRST Google sign-in links straight into
+# an account that is already a superuser. No post-login clickops, and a rebuild
+# from scratch reproduces it.
+#
+# No password is set on this user, so the account is Google-only. The akadmin
+# bootstrap account (AUTHENTIK_BOOTSTRAP_PASSWORD) remains the break-glass login
+# if Google federation breaks.
+#
+# THIS GROUP NAME IS A CONTRACT. It is consumed by:
+#   - Grafana  — grafana.oidc.roleAttributePath  (izzywdev/FuzeInfra values.yaml)
+#   - ArgoCD   — policy.csv in argocd-rbac-cm    (izzywdev/FuzeInfra)
+# Renaming it silently demotes every admin to the lowest role rather than
+# failing loudly. Rename in lockstep across all three repos' worth of config.
+version: 1
+metadata:
+  name: FuzeInfra Admins Group
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  - model: authentik_core.group
+    state: present
+    identifiers:
+      name: fuzeinfra-admins
+    attrs:
+      name: fuzeinfra-admins
+      # Grants the Authentik admin interface itself (/if/admin/), which is what
+      # makes this account able to administer the IdP, not just consume it.
+      is_superuser: true
+
+  - model: authentik_core.user
+    state: present
+    identifiers:
+      username: izzy
+    attrs:
+      username: izzy
+      name: Izzy Weinberg
+      email: izzy.weinberg@gmail.com
+      is_active: true
+      groups:
+        - !Find [authentik_core.group, [name, fuzeinfra-admins]]

@@ -38,6 +38,7 @@ import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
+import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -288,6 +289,23 @@ function AppContent() {
   // ever fail, and running it here blocked first paint of the login page for
   // up to its 10s axios timeout while React re-rendered on every retry tick.
   if (!isAuthenticated) {
+    // White-label tenant portal shell + login (FF-EPIC-13/FF-EPIC-10), behind
+    // fuzefront.platform.multi-tenant-portals (default OFF — see
+    // @fuzefront/portal-branding-ui's isMultiTenantPortalsEnabled for why this
+    // is a pre-auth-safe resolver rather than the authenticated useFlag()
+    // Layout.tsx uses for the post-login shell). Flag OFF falls through to
+    // today's LoginPage, completely unchanged — and every other
+    // unauthenticated path (not exactly '/' or '/login') is untouched too,
+    // scoped strictly to the two approved frames/flows (portal-shell,
+    // portal-login).
+    if (isMultiTenantPortalsEnabled()) {
+      if (currentPath === '/login') {
+        return <PortalLoginFlow />
+      }
+      if (currentPath === '/') {
+        return <PortalShell />
+      }
+    }
     return (
       <AppRegistryProvider enabled={false}>
         <LoginPage />

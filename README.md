@@ -617,7 +617,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 24+ (Active LTS)
 - npm or yarn
 - Git
 

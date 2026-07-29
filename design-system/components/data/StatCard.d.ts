@@ -19,4 +19,4 @@ export interface StatCardProps extends Omit<React.HTMLAttributes<HTMLElement>, "
  * A single summary-metric tile — seam top accent, mono key label, display-font
  * value, optional meta caption. The standalone/grid companion to `StatGroup`.
  */
-export function StatCard(props: StatCardProps): JSX.Element;
+export function StatCard(props: StatCardProps): React.JSX.Element;

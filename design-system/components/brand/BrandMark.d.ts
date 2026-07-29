@@ -13,4 +13,4 @@ export interface BrandMarkProps extends React.HTMLAttributes<HTMLSpanElement> {
   alt?: string;
 }
 
-export function BrandMark(props: BrandMarkProps): JSX.Element;
+export function BrandMark(props: BrandMarkProps): React.JSX.Element;

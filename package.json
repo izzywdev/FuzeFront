@@ -16,6 +16,8 @@
     "packages/chat-ui",
     "packages/identity-ui",
     "packages/account-security-ui",
+    "packages/portal-branding-ui",
+    "portal-client",
     "packages/i18n",
     "packages/i18n-translate",
     "packages/feature-flags",
@@ -39,6 +41,8 @@
     "check:workspace-deps": "node scripts/check-workspace-deps.mjs"
   },
   "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "ajv": "^8.17.1",
     "concurrently": "^8.2.2",
     "lint-staged": "^16.1.2",
@@ -59,8 +63,8 @@
     ]
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   },
   "dependencies": {
     "@eslint/config-array": "^0.21.0",

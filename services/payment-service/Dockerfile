@@ -5,14 +5,14 @@
 # workspace services use). Mirrors the clock-app self-contained pattern.
 
 # ---------- base: production deps only ----------
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 COPY package.json ./
 RUN npm install --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json ./
 RUN npm install --ignore-scripts
@@ -21,7 +21,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache dumb-init && \

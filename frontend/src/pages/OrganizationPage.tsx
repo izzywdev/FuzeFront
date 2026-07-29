@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../lib/shared'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
@@ -6,16 +7,18 @@ import { IdentityPage } from '@fuzefront/identity-ui'
 import {
   getOrganizations,
   getOrganizationMembers,
-  createOrganization,
   updateOrganization,
   deleteOrganization,
 } from '../services/api'
+import { organizationErrorMessage } from '../utils/organization'
 
 interface Organization {
   id: string
   name: string
   slug: string
-  type: 'personal' | 'team' | 'enterprise'
+  // Mirrors the backend `organization_type_enum` (migrations 004 + 009).
+  // There is no 'team'/'enterprise' member — posting one is a 400.
+  type: 'platform' | 'organization' | 'personal'
   description?: string
   owner_id: string
   is_active: boolean
@@ -45,6 +48,7 @@ interface OrganizationMember {
 
 function OrganizationPage() {
   const { user } = useCurrentUser()
+  const navigate = useNavigate()
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<OrganizationMember[]>([])
@@ -112,17 +116,6 @@ function OrganizationPage() {
     }
   }
 
-  const handleCreateOrganization = async (orgData: Partial<Organization>) => {
-    try {
-      const newOrg = await createOrganization(orgData)
-      setOrganizations(prev => [...prev, newOrg])
-      setCurrentOrg(newOrg)
-    } catch (err) {
-      setError('Failed to create organization')
-      console.error('Error creating organization:', err)
-    }
-  }
-
   const handleUpdateOrganization = async (
     orgId: string,
     updates: Partial<Organization>
@@ -136,7 +129,7 @@ function OrganizationPage() {
         setCurrentOrg(prev => (prev ? { ...prev, ...updatedOrg } : null))
       }
     } catch (err) {
-      setError('Failed to update organization')
+      setError(organizationErrorMessage(err, 'Failed to update organization'))
       console.error('Error updating organization:', err)
     }
   }
@@ -152,7 +145,7 @@ function OrganizationPage() {
         setCurrentOrg(remaining.length > 0 ? remaining[0] : null)
       }
     } catch (err) {
-      setError('Failed to delete organization')
+      setError(organizationErrorMessage(err, 'Failed to delete organization'))
       console.error('Error deleting organization:', err)
     }
   }
@@ -256,16 +249,7 @@ function OrganizationPage() {
 
           <PermissionGate requiredPermissions={['Organization:create']}>
             <button
-              onClick={() => {
-                const name = prompt('Organization name:')
-                if (name) {
-                  handleCreateOrganization({
-                    name,
-                    type: 'team',
-                    description: `${name} organization`,
-                  })
-                }
-              }}
+              onClick={() => navigate('/organizations/new')}
               style={{
                 padding: '0.5rem 1rem',
                 backgroundColor: 'var(--accent-color)',
@@ -518,16 +502,7 @@ function OrganizationPage() {
           <p>You're not a member of any organizations yet.</p>
           <PermissionGate requiredPermissions={['Organization:create']}>
             <button
-              onClick={() => {
-                const name = prompt('Organization name:')
-                if (name) {
-                  handleCreateOrganization({
-                    name,
-                    type: 'team',
-                    description: `${name} organization`,
-                  })
-                }
-              }}
+              onClick={() => navigate('/organizations/new')}
               style={{
                 padding: '1rem 2rem',
                 backgroundColor: 'var(--accent-color)',

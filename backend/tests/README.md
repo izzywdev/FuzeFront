@@ -146,7 +146,7 @@ FRONTEND_URL=http://localhost:8085
 The tests are automatically run in CI/CD via `.github/workflows/backend-tests.yml`:
 
 - **Triggers**: Push/PR to main branches, backend file changes
-- **Matrix**: Node.js 18.x and 20.x
+- **Matrix**: Node.js 24.x
 - **Services**: PostgreSQL 15
 - **Coverage**: Codecov integration
 - **Artifacts**: Test results and coverage reports

@@ -274,7 +274,9 @@ jobs:
           # bump its tag when the image actually got pushed.
           NOTIF_OK=0
           if [ "${{ steps.notification_image.outcome }}" = "success" ]; then NOTIF_OK=1; fi
-          EXPECTED=$((7 + CHAT_OK + NOTIF_OK))
+          # 9 always-built images (incl. billing-service + provisioning-service,
+          # added in #442) plus the two continue-on-error ones.
+          EXPECTED=$((9 + CHAT_OK + NOTIF_OK))
           echo "chat-service image built: ${CHAT_OK}, notification-service: ${NOTIF_OK} — expecting ${EXPECTED} tag rewrites"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
@@ -322,6 +324,8 @@ jobs:
             /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-billing-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-provisioning-service\r?$/ { hot=1 }
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
             notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
             { print }
@@ -331,9 +335,20 @@ jobs:
           # values, reordered keys, renamed registry path) the awk matches
           # nothing and we would otherwise "succeed" while deploying stale
           # tags (review finding). Exactly EXPECTED core-app tags must be
-          # rewritten: 7 always-built images, plus chat-service and
+          # rewritten: 9 always-built images, plus chat-service and
           # notification-service only when their continue-on-error builds
           # actually succeeded.
+          #
+          # billing-service and provisioning-service were added to this list
+          # late: both were BUILT on every release and pinned in values-prod,
+          # but had no anchor here, so their tags were never rewritten —
+          # billing froze at 6135e6b5ed77 (2026-06-30) while enabled: true in
+          # prod, and provisioning sat at tag "" having never been deployed.
+          # Same defect as the email/sms one recorded above, third occurrence.
+          # The lesson keeps repeating because the count guard cannot detect a
+          # MISSING anchor (fewer anchors == fewer rewrites == "pass"); it only
+          # catches layout drift. If you add a build step, you MUST add the
+          # anchor and bump this number by hand.
           # The anchor list MUST cover every image this workflow BUILDS. It
           # previously listed only 5 while the build steps produced 7: the
           # email-service and sms-service images were built and pushed on every

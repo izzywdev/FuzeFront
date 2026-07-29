@@ -16,4 +16,4 @@ export interface MenuItemProps
   onClick?: (e: React.MouseEvent | React.KeyboardEvent) => void;
 }
 
-export function MenuItem(props: MenuItemProps): JSX.Element;
+export function MenuItem(props: MenuItemProps): React.JSX.Element;
