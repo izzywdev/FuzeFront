@@ -3,6 +3,7 @@
  * GET  /api/invitations/:token         — resolve (no auth required)
  * POST /api/invitations/:token/accept  — accept (auth optional)
  */
+import { currentTenant } from '../providers/authentik/tenants'
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
@@ -78,7 +79,7 @@ router.post('/:token/accept', async (req: any, res) => {
 
     // Not authenticated: direct to enroll
     if (!req.user) {
-      const enrollUrl = `${process.env.AUTHENTIK_ISSUER_URL || ''}/if/flow/enrollment/`
+      const enrollUrl = `${currentTenant('invitation enrollment URL').issuerUrl}/if/flow/enrollment/`
       return res.status(202).json({
         action: 'enroll',
         enrollUrl,

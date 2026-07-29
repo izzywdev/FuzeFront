@@ -21,7 +21,7 @@ import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
-import { oidcService } from './services/oidc'
+import { initializeAllTenants } from './services/oidc'
 
 dotenv.config()
 
@@ -96,15 +96,15 @@ async function startServer() {
     })
 
     try {
-      console.log('🔧 Initializing OIDC service...')
-      if (oidcService.isConfigured()) {
-        await oidcService.initialize()
-        console.log('✅ OIDC service initialized successfully')
-      } else {
-        console.log('⚠️  OIDC service not configured - local auth only')
-      }
+      console.log('🔧 Initializing OIDC service(s)...')
+      // One client per configured tenant, each against its OWN Authentik.
+      // initializeAllTenants warms them in parallel and starts each one's
+      // self-heal loop; a tenant whose Authentik is down is logged and left to
+      // the background retry rather than blocking the others from coming up.
+      await initializeAllTenants()
+      console.log('✅ OIDC service(s) initialized')
     } catch (error) {
-      console.error('❌ Failed to initialize OIDC service:', error)
+      console.error('❌ Failed to initialize OIDC service(s):', error)
       console.log('⚠️  Continuing with local authentication only')
     }
 
@@ -118,12 +118,15 @@ async function startServer() {
     // human ran `kubectl rollout restart`. This self-heals on its own once
     // Authentik comes back, with zero request traffic required. Requests
     // arriving in the meantime also get a lazy re-init attempt via
-    // oidcService.ensureInitialized() (see routes/auth.ts, authentikPassword.ts,
-    // AuthentikIdentityProvider.ts) — both paths share the same in-flight
-    // promise + cooldown so they never double-fire against Authentik.
-    if (oidcService.isConfigured() && !oidcService.isInitialized()) {
-      oidcService.startBackgroundRetry()
-    }
+    // getOidcService().ensureInitialized() (see routes/auth.ts,
+    // authentikPassword.ts, AuthentikIdentityProvider.ts) — both paths share
+    // the same in-flight promise + cooldown so they never double-fire against
+    // Authentik.
+    //
+    // The retry loops are started by initializeAllTenants() above, per tenant,
+    // so there is no separate kick-off here. Each tenant self-heals
+    // independently: one tenant's Authentik being down neither blocks nor
+    // resets another's.
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

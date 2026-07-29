@@ -6,7 +6,11 @@
 import express from 'express'
 import request from 'supertest'
 
-jest.mock('../src/services/oidc', () => ({
+jest.mock('../src/services/oidc', () => {
+  // getOidcService() replaced the former `oidcService` singleton (the client is
+  // now resolved per tenant). Expose both, backed by the SAME object, so the
+  // assertions below still address what the code under test receives.
+  const mod: any = ({
   oidcService: {
     isConfigured: () => true,
     isInitialized: () => true,
@@ -14,7 +18,10 @@ jest.mock('../src/services/oidc', () => ({
     generateAuthUrl: jest.fn().mockReturnValue({ url: 'http://auth.example.com/auth?state=test-state', codeVerifier: 'mock-code-verifier' }),
     handleCallback: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', firstName: 'U', lastName: 'E', roles: ['user'] })
   }
-}))
+})
+  mod.getOidcService = () => mod.oidcService
+  return mod
+})
 
 jest.mock('../src/config/database', () => ({
   db: Object.assign(

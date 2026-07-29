@@ -11,6 +11,8 @@
  * concrete `AuthentikIdentityProvider`, never by the neutral API surface.
  */
 
+import { currentTenant } from '../providers/authentik/tenants'
+
 export interface TokenIntrospectionResult {
   active: boolean
   client_id?: string
@@ -31,27 +33,27 @@ export interface RegisterMachineClientResult {
 }
 
 function getAuthentikBaseUrl(): string {
+  const tenant = currentTenant('Authentik base URL')
   return (
-    process.env.AUTHENTIK_BASE_URL ||
-    process.env.AUTHENTIK_ISSUER_URL?.replace(/\/application\/o\/.*$/, '') ||
+    tenant.baseUrl ||
+    tenant.issuerUrl.replace(/\/application\/o\/.*$/, '') ||
     'http://localhost:9000'
   )
 }
 
 function getAuthentikAdminToken(): string {
-  const token = process.env.AUTHENTIK_ADMIN_TOKEN
+  // Per-tenant admin credential — see accountApi.adminToken().
+  const token = currentTenant('Authentik admin token').adminToken
   if (!token) {
     throw new Error(
-      'AUTHENTIK_ADMIN_TOKEN environment variable is required for machine client registration'
+      'An Authentik admin token is required for machine client registration, and none is configured for this tenant'
     )
   }
   return token
 }
 
 function getIntrospectionEndpoint(): string {
-  const issuerUrl =
-    process.env.AUTHENTIK_ISSUER_URL || 'http://localhost:9000/application/o/fuzefront/'
-  return issuerUrl.replace(/\/$/, '') + '/introspect/'
+  return currentTenant('introspection endpoint').issuerUrl.replace(/\/$/, '') + '/introspect/'
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
@@ -148,11 +150,15 @@ export async function introspectMachineToken(
   bearerToken: string
 ): Promise<TokenIntrospectionResult> {
   const introspectionEndpoint = getIntrospectionEndpoint()
-  const clientId = process.env.AUTHENTIK_CLIENT_ID
-  const clientSecret = process.env.AUTHENTIK_CLIENT_SECRET
+  // Introspection MUST use this tenant's client credentials: presenting them to
+  // another tenant's endpoint would be rejected, and validating a token against
+  // the wrong directory is the failure the tenant split exists to prevent.
+  const tenant = currentTenant('introspection client credentials')
+  const clientId = tenant.clientId
+  const clientSecret = tenant.clientSecret
 
   if (!clientId || !clientSecret) {
-    console.warn('[machine-identity] AUTHENTIK_CLIENT_ID/CLIENT_SECRET not set; cannot introspect token')
+    console.warn('[machine-identity] tenant client credentials not set; cannot introspect token')
     return { active: false }
   }
 
