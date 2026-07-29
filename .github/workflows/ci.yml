@@ -62,6 +62,11 @@ jobs:
       - name: Build @fuzefront/i18n (d.ts for frontend type-check)
         run: npm run -w @fuzefront/i18n build
 
+      - name: Build @fuzefront/custom-hostname-client (d.ts for backend type-check)
+        # Its `types` points at dist/, and backend/src/custom-domains imports it
+        # statically, so backend's tsc cannot resolve it until this runs.
+        run: npm run -w @fuzefront/custom-hostname-client build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -162,6 +167,13 @@ jobs:
           cd frontend && npm ci
           cd ../sdk && npm ci
           cd ../task-manager-app && npm ci
+
+      # backend/src/custom-domains imports @fuzefront/custom-hostname-client
+      # statically and its `types` points at dist/, so the workspace symlink
+      # resolves to an empty package until this runs. Must precede the backend
+      # build, exactly like @fuzefront/shared's kafka sub-tree.
+      - name: Build @fuzefront/custom-hostname-client (for backend build)
+        run: npm run -w @fuzefront/custom-hostname-client build
 
       - name: Build backend
         run: cd backend && npm run build

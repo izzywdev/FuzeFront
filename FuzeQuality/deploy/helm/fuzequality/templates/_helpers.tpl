@@ -24,6 +24,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: GITHUB_APP_PRIVATE_KEY, optional: true } }
 - name: GITHUB_WEBHOOK_SECRET
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: GITHUB_WEBHOOK_SECRET, optional: true } }
+- name: FUZEQUALITY_CLOUD_DISPATCH_TOKEN
+  valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: FUZEQUALITY_CLOUD_DISPATCH_TOKEN, optional: true } }
+- name: FUZEQUALITY_CLOUD_CALLBACK_TOKEN
+  valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: FUZEQUALITY_CLOUD_CALLBACK_TOKEN, optional: true } }
 - name: JIRA_BASE_URL
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: JIRA_BASE_URL, optional: true } }
 - name: JIRA_EMAIL

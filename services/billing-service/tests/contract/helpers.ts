@@ -205,7 +205,6 @@ export function buildApp(
         plans: {},
         permit: {},
         emitter: {},
-        writePlanCache: jest.fn(),
       },
     },
     ...opts.stubs,

@@ -41,6 +41,14 @@ ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
+  # Tenant-subdomain wildcard, mirroring prod's *.fuzefront.com. FuzeInfra's
+  # kind overlay serves *.fuzefront.local from the in-cluster dnsmasq
+  # (dnsmasq.extraWildcards), so a resolved tenant host actually routes here.
+  #
+  # NOTE: the tls: block below only lists `host`, so a *.fuzefront.local request
+  # is HTTP-only locally. That is the correct local mirror of prod, where
+  # Cloudflare terminates TLS at the edge and the origin never sees it.
+  wildcardHost: '*.fuzefront.local'
   # Local TLS via cert-manager + the self-signed local CA
   # (deploy/local-tls/cert-manager-local-ca.yaml). Trust the CA cert once and
   # https://fuzefront.dev.local is green in the browser.
@@ -49,6 +57,21 @@ ingress:
   tls:
     enabled: true
     secretName: fuzefront-dev-local-tls
+
+# FuzeInfra Custom Hostname API — kind stub mode (FF-EPIC-16 / FFRNT-91).
+# The stub returns Cloudflare-shaped records and walks the real four-state
+# lifecycle over ~5s, so polling, retries and status rendering are genuinely
+# exercised with no Cloudflare account. Stand it up with:
+#   bash k8s/kind/setup-kind.sh
+#   helm upgrade --install fuzeinfra helm/fuzeinfra -n fuzeinfra \
+#     --create-namespace -f helm/fuzeinfra/values-local.yaml
+customHostnameApi:
+  enabled: false  # flip to true once the local dev token secret exists
+  baseUrl: http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
+  profile: fuzefront
+  secret:
+    name: fuzefront-secrets
+    key: CUSTOM_HOSTNAME_API_TOKEN
 
 # Backend OIDC SSO against the in-cluster Authentik (#12).
 #

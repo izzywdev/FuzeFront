@@ -5,6 +5,50 @@ bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
+## 1.1.0 — 2026-07-28
+
+Aligns the domain-status vocabulary with FuzeInfra's shipped Custom Hostname API
+(FF-EPIC-16 / FFRNT-91). The two contracts previously disagreed, which would have
+made a `portal_domains` projection impossible to type.
+
+### Changed — `TlsStatus` (BREAKING)
+- Was `[none, pending, issued, failed]`; now
+  `[none, pending_validation, pending_issuance, pending_deployment, active, expired, failed]`.
+- These mirror FuzeInfra's normalized enum verbatim rather than re-mapping it.
+  Their values are already mapped from Cloudflare's rawer vocabulary, and unknown
+  upstream states deliberately map to a *pending* state, never to a failure — a
+  second mapping layer here would only re-introduce the coupling FuzeInfra removed.
+- `none` is retained as the FuzeFront-only value for `subdomain`/`path` domains,
+  which the static wildcard certificate already serves.
+
+### Changed — `VerificationStatus` (BREAKING)
+- Was `[pending, verified, failed]`; now `[pending, verified, moved, blocked, failed]`,
+  projecting FuzeInfra's `dns_status`.
+- **Sourced from Cloudflare's `_cf-custom-hostname` validation, not from a
+  FuzeFront-issued token.** FF-EPIC-16 originally specified generating a
+  `_fuzefront-verify.<domain>` TXT record and polling DNS for it. That is dropped:
+  it proves the same fact with a weaker verifier (our resolver, subject to caching
+  and split-horizon) and adds a third record to every customer's onboarding.
+  No such generator was ever implemented, so nothing was removed in code.
+
+### Added — `PortalDomain.active` (BREAKING: new required field)
+- The **only** field a caller may gate on before advertising a domain. True only
+  when DNS, TLS, and in-cluster routing all agree.
+- Deliberately not derivable from `tlsStatus` alone: a certificate can be live
+  while routing is missing, which serves a valid certificate in front of a 404 —
+  the worst failure mode to debug.
+
+### Added — `PortalDomain.verificationRecords` / `cnameTarget` / `error`
+- `verificationRecords[]` (new `DomainVerificationRecord` schema) carries the full
+  ownership + certificate + routing record set the customer must publish. A UI must
+  render all three; the ownership record alone does not make the domain work.
+- `cnameTarget` is read from the API rather than hard-coded — the target is a
+  public contract kept separate from the origin so the origin can be repointed
+  without customer DNS changes.
+
+> Safe to make breaking: `@fuzefront/portal-client` currently has no consumers in
+> this repo, and `services/portal-service` has no implementation behind it yet.
+
 ## 1.0.0 — 2026-07-27 (frozen)
 
 Initial freeze — the gate for the FF-EPIC-09 / FF-EPIC-10 multi-tenant-portal

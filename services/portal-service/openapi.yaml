@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Portal API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     REST API for **multi-tenant portals** — the first-class `portals` object that
     lets one shared FuzeFront deployment serve many isolated white-label tenant
@@ -433,13 +433,49 @@ components:
 
     VerificationStatus:
       type: string
-      description: Domain-ownership verification status (custom domains, FF-EPIC-16).
-      enum: [pending, verified, failed]
+      description: >-
+        Domain-ownership verification status (custom domains, FF-EPIC-16).
+
+        Sourced from FuzeInfra's `dns_status`, NOT from a FuzeFront-issued TXT
+        token. We deliberately do not generate a `_fuzefront-verify` record and
+        do not poll DNS: Cloudflare issues `_cf-custom-hostname.<domain>` and
+        validates it itself, which is the same proof of DNS control checked by
+        the party that also issues the certificate — and one fewer record for
+        the customer to publish.
+
+        * `pending` — records not yet published or propagated
+        * `verified` — ownership proven and the domain resolves to the platform
+        * `moved` — the domain stopped pointing at us
+        * `blocked` — refused upstream; the hostname is claimed elsewhere
+        * `failed` — validation failed; see `error`
+      enum: [pending, verified, moved, blocked, failed]
 
     TlsStatus:
       type: string
-      description: TLS certificate issuance status for the domain.
-      enum: [none, pending, issued, failed]
+      description: >-
+        Certificate lifecycle for the domain, mirroring FuzeInfra's normalized
+        `tls_status` enum verbatim (contract:
+        `services/custom-hostname-api/openapi.yaml`). Those values are already
+        mapped from Cloudflare's rawer vocabulary, and unknown upstream states
+        deliberately map to a pending state rather than to a failure — so a
+        Cloudflare vocabulary change cannot present to a user as an error.
+        Re-mapping them here would only re-introduce the coupling FuzeInfra
+        removed.
+
+        Everything before `active` is a normal in-progress state. `failed` and
+        `expired` are terminal until the customer fixes their DNS; retry is a
+        re-POST.
+
+        `none` is FuzeFront-only: a `subdomain`/`path` domain served by the
+        static wildcard certificate, which needs no per-domain issuance.
+      enum:
+        - none
+        - pending_validation
+        - pending_issuance
+        - pending_deployment
+        - active
+        - expired
+        - failed
 
     PortalBranding:
       type: object
@@ -560,7 +596,11 @@ components:
         A domain (subdomain / path / custom) bound to a portal, with its
         verification + TLS status. Add/verify of custom domains is FF-EPIC-16;
         here domains are read-only.
-      required: [id, portalId, domain, kind, verificationStatus, tlsStatus, isPrimary]
+
+        For `kind: custom`, every status field is a projection of FuzeInfra's
+        Custom Hostname API response — see `services/custom-hostname-api/`.
+      required:
+        [id, portalId, domain, kind, verificationStatus, tlsStatus, isPrimary, active]
       properties:
         id: { type: string }
         portalId: { $ref: '#/components/schemas/PortalId' }
@@ -570,10 +610,71 @@ components:
         kind: { $ref: '#/components/schemas/DomainKind' }
         verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
         tlsStatus: { $ref: '#/components/schemas/TlsStatus' }
+        active:
+          type: boolean
+          description: >-
+            **The only field to gate on** before advertising this domain to a
+            user. True only when DNS validation passed, the certificate is
+            deployed, AND the in-cluster routing exists. Any one missing means a
+            visitor gets an error, so the three are deliberately collapsed into
+            one boolean rather than left for each caller to re-derive.
+
+            Notably NOT equivalent to `tlsStatus == active`: a certificate can
+            be live while routing is missing, which serves a valid certificate
+            in front of a 404.
+
+            Always true for `subdomain`/`path` domains, which the static
+            wildcard already serves.
         isPrimary:
           type: boolean
           description: Whether this is the portal's primary/canonical domain.
+        verificationRecords:
+          type: array
+          description: >-
+            DNS records the customer must publish, for `kind: custom` only.
+            Sourced from the upstream `verification.records[]` — FuzeFront does
+            not mint its own verification token.
+
+            A UI must render ALL of these. The ownership record alone is not
+            enough to make the domain work.
+          items: { $ref: '#/components/schemas/DomainVerificationRecord' }
+        cnameTarget:
+          type: [string, 'null']
+          description: >-
+            The hostname the customer CNAMEs their domain to. Always read from
+            the API rather than hard-coded: the target is a deliberate public
+            contract kept separate from the origin, so the origin can be
+            repointed without asking every customer to change DNS.
+        error:
+          type: [string, 'null']
+          description: Human-readable reason when a status is failed/blocked. Shown with a retry action.
         createdAt: { type: string, format: date-time }
+
+    DomainVerificationRecord:
+      type: object
+      additionalProperties: false
+      description: One DNS record the customer must publish for a custom domain.
+      required: [method, record, value, purpose]
+      properties:
+        method:
+          type: string
+          enum: [txt, cname]
+        record:
+          type: string
+          description: The record NAME to create.
+        value:
+          type: string
+          description: The record VALUE.
+        purpose:
+          type: string
+          enum: [ownership, certificate, routing]
+          description: >-
+            `ownership` proves domain control (`_cf-custom-hostname.<domain>`),
+            `certificate` satisfies ACME DCV (`_acme-challenge.<domain>`), and
+            `routing` points traffic at us (CNAME). Presented in that order —
+            a customer migrating a live domain publishes the TXT records first
+            and cuts the CNAME over last, which is what makes the migration
+            zero-downtime.
 
     Portal:
       type: object

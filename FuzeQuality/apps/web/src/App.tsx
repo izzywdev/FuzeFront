@@ -32,6 +32,7 @@ import type {
   Repository,
   StorybookStory,
   TestExpectation,
+  TestImplementationRequest,
 } from '@fuzequality/contracts'
 import { api } from './api'
 import { planGap } from './testPlan'
@@ -91,20 +92,48 @@ function StatusPill({ state }: { state: CoverageState }) {
   return <span className={`status-pill state-${state}`}>{coverageLabel[state]}</span>
 }
 
-function GapPlanDrawer({ subject, expectations, selectedId, onClose }: {
+function GapPlanDrawer({ subject, repository, expectations, selectedId, onClose }: {
   subject: ApiOperation | FrontendSurface
+  repository?: Repository
   expectations: TestExpectation[]
   selectedId: string
   onClose: () => void
 }) {
   const closeButton = useRef<HTMLButtonElement>(null)
+  const gaps = expectations.filter(item => item.coverage === 'gap' && item.priority !== 'not-applicable')
+  const [selected, setSelected] = useState(() => new Set(gaps.map(item => item.id)))
+  const [implementation, setImplementation] = useState<TestImplementationRequest>()
+  const [implementationError, setImplementationError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   useEffect(() => {
     closeButton.current?.focus()
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [onClose])
-  const gaps = expectations.filter(item => item.coverage === 'gap' && item.priority !== 'not-applicable')
+  useEffect(() => {
+    if (!implementation || !['queued', 'running'].includes(implementation.status)) return
+    const timer = window.setInterval(async () => {
+      try { setImplementation(await api.testImplementation(implementation.id)) } catch { /* retain last known state */ }
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [implementation])
+  const implement = async () => {
+    if (!repository?.lastScanRevision || selected.size === 0) return
+    setSubmitting(true)
+    setImplementationError('')
+    try {
+      setImplementation(await api.implementTests({
+        repositoryId: repository.id,
+        sourceRevision: repository.lastScanRevision,
+        expectationIds: [...selected],
+      }))
+    } catch (error) {
+      setImplementationError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSubmitting(false)
+    }
+  }
   const subjectLabel = 'method' in subject ? `${subject.method.toUpperCase()} ${subject.path}` : `${subject.name} · ${subject.packageName}`
   return <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
     <aside className="gap-drawer" role="dialog" aria-modal="true" aria-labelledby="gap-plan-title">
@@ -113,10 +142,24 @@ function GapPlanDrawer({ subject, expectations, selectedId, onClose }: {
         <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close test plan"><X /></button>
       </header>
       <p className="drawer-intro">Generated from catalog policy and source metadata. These are authoritative expected tests—not AI suggestions.</p>
+      <div className="implementation-toolbar">
+        <label><input type="checkbox" checked={selected.size === gaps.length} onChange={event => setSelected(event.target.checked ? new Set(gaps.map(item => item.id)) : new Set())} /> Select all</label>
+        <button className="primary-button" disabled={submitting || selected.size === 0 || !repository?.lastScanRevision} onClick={implement}>
+          <Sparkles size={15} /> {submitting ? 'Launching…' : `Implement ${selected.size} selected`}
+        </button>
+      </div>
+      {implementation && <div className={`implementation-status implementation-${implementation.status}`} role="status">
+        <strong>Cloud Codex: {implementation.status}</strong>
+        <span>{implementation.agentProfile} · {implementation.skills.join(', ')}</span>
+        {implementation.workflowUrl && <a href={implementation.workflowUrl} target="_blank" rel="noreferrer">View workflow <ExternalLink size={13} /></a>}
+        {implementation.pullRequestUrl && <a href={implementation.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ExternalLink size={13} /></a>}
+        {implementation.error && <span>{implementation.error}</span>}
+      </div>}
+      {implementationError && <div className="form-error" role="alert">{implementationError}</div>}
       <div className="planned-tests">{gaps.map((expectation, index) => {
         const plan = planGap(expectation, subject)
         return <article className={expectation.id === selectedId ? 'planned-test selected' : 'planned-test'} key={expectation.id}>
-          <div className="plan-index">{String(index + 1).padStart(2, '0')}</div>
+          <div className="plan-index"><input type="checkbox" aria-label={`Select ${plan.title}`} checked={selected.has(expectation.id)} onChange={event => setSelected(current => { const next = new Set(current); event.target.checked ? next.add(expectation.id) : next.delete(expectation.id); return next })} /><span>{String(index + 1).padStart(2, '0')}</span></div>
           <div className="plan-body">
             <div className="plan-heading"><div><span>{plan.priority} · {plan.level}</span><h3>{plan.title}</h3></div>{expectation.id === selectedId && <b>Selected gap</b>}</div>
             <dl className="plan-path"><dt>Suggested file</dt><dd><code>{plan.suggestedFile}</code></dd></dl>
@@ -309,7 +352,7 @@ function Matrix({ items, expectations, kind, repositories = [] }: { items: Array
     setSelection(undefined)
     requestAnimationFrame(() => trigger.current?.focus())
   }
-  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); const surface = kind === 'frontend' ? item as FrontendSurface : undefined; return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{surface?.name}</strong><small>{surface?.packageName} · {surface?.kind}</small><button className="preview-button" onClick={() => setPreview(surface)}><Eye size={14} /> {surface?.stories.length ? `${surface.stories.length} visual ${surface.stories.length === 1 ? 'state' : 'states'}` : 'Visual reference'}</button></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}{preview && <ComponentPreviewDrawer surface={preview} repository={repositories.find(item => item.id === preview.repositoryId)} onClose={() => setPreview(undefined)} />}</>
+  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); const surface = kind === 'frontend' ? item as FrontendSurface : undefined; return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{surface?.name}</strong><small>{surface?.packageName} · {surface?.kind}</small><button className="preview-button" onClick={() => setPreview(surface)}><Eye size={14} /> {surface?.stories.length ? `${surface.stories.length} visual ${surface.stories.length === 1 ? 'state' : 'states'}` : 'Visual reference'}</button></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} repository={repositories.find(item => item.id === selection.subject.repositoryId)} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}{preview && <ComponentPreviewDrawer surface={preview} repository={repositories.find(item => item.id === preview.repositoryId)} onClose={() => setPreview(undefined)} />}</>
 }
 
 function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio }) {
@@ -358,7 +401,7 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
       <div className="snapshot-stamp"><span>Policy</span><strong>api-coverage-v1</strong><small>{data.repositories.filter(repository => repository.lastScanAt).length} fresh scan snapshots</small></div>
     </div>
     <CoverageRail expectations={expectations} />
-    <Matrix items={operations} expectations={expectations} kind="api" />
+    <Matrix items={operations} expectations={expectations} kind="api" repositories={data.repositories} />
     <section className="panel catalog-findings">
       <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
       <div className="finding-list">

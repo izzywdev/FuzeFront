@@ -117,6 +117,26 @@ secret:
   # supply via --set / a gitignored values file / the prod SealedSecret.
   # NEVER commit a real secret.
   mendysDatasetsClientSecret: ""
+  # OIDC client secret for the mendys-platform provider (client_id
+  # mendys-platform-oidc-client) — the shared `mendys-backend` behind both
+  # live.mendysrobotics.com and marketplace.mendysrobotics.com.
+  # Must equal MENDYS_AUTHENTIK_CLIENT_SECRET in the mendys-prod
+  # `mendys-secrets` sealed secret. Same rules as above: NEVER commit a real
+  # secret; supply via --set / a gitignored values file / the prod SealedSecret.
+  mendysPlatformClientSecret: ""
+  # ── Credentials for the separate MendysRobotics Authentik instance ──────────
+  # Only consumed when authentikMendys.enabled is true. Each MUST be distinct
+  # from its FuzeFront counterpart — a shared secret key would let either
+  # instance validate the other's sessions and destroy the account boundary.
+  authentikMendysSecretKey: ""
+  authentikMendysBootstrapPassword: ""
+  authentikMendysBootstrapToken: ""
+  # Password of the `authentik_mendys_user` Postgres role, provisioned by
+  # FuzeInfra (serviceDatabases entry `authentik-mendys`). The identical value
+  # must be sealed as `authentik-mendys-db-credentials` (key `password`) into
+  # the `fuzeinfra` namespace, or the provisioning Job will set a password the
+  # Authentik pods do not know.
+  authentikMendysDbPassword: ""
   sendgridApiKey: ""
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
@@ -590,16 +610,129 @@ authentik:
     # Namespace whose pods may reach authentik-server in-cluster (A2A JWKS fetch).
     fuzeagentNamespace: fuzeagent
 
+# ── MendysRobotics identity silo — a SECOND, fully separate Authentik ─────────
+#
+# WHY A SECOND INSTANCE AND NOT A BRAND: authentik has no realm. One instance
+# is one user directory; `authentik_brands.brand` controls branding + default
+# flows only ("all objects like applications and providers are still global"),
+# so a Mendys brand on the FuzeFront instance would still share every account.
+# authentik's hard tenancy (a Postgres SCHEMA per tenant, 2024.2+) does give
+# real separation, but it is Enterprise-only, still alpha, needs a license per
+# tenant, and is created only through the API — i.e. it cannot be expressed as
+# a blueprint in git, which is how every other authentik object here is
+# managed. A second instance on its own DATABASE gives the same isolation for
+# free and stays declarative.
+#
+# The boundary this buys: MendysRobotics accounts exist only in this instance.
+# A FuzeFront account cannot sign in to the Mendys apps, a Mendys account
+# cannot sign in to FuzeFront, and the same email address may exist
+# independently on both sides as two unrelated accounts.
+#
+# The only applications in this silo are the two MendysRobotics products:
+# the platform backend (mendys-platform) and the datasets marketplace
+# (mendys-datasets).
+authentikMendys:
+  enabled: false
+  # Image is deliberately pinned separately from the FuzeFront instance so the
+  # two can be upgraded independently (one IdP at a time), but defaults to the
+  # same tested tag.
+  image:
+    repository: ghcr.io/goauthentik/server
+    tag: "2026.5.5"
+  # Postgres: same shared FuzeInfra server (fuzeinfra.postgres.*), different
+  # DATABASE and different ROLE. Provisioned by FuzeInfra's
+  # `fuzeinfra-service-db-provision` Job — values entry `authentik-mendys` in
+  # helm/fuzeinfra/values.yaml. Must exist before this instance starts.
+  dbName: authentik_mendys
+  dbUser: authentik_mendys_user
+  # Redis: same shared instance, DIFFERENT logical DB index. Authentik keeps
+  # cache + sessions in Redis; two instances sharing index 0 would collide on
+  # identical key names and leak session state across the silo boundary.
+  # Index 0 is the FuzeFront instance's (authentik's default).
+  redisDb: 2
+  # Cookie domain MUST NOT overlap the FuzeFront one. A shared parent domain
+  # would let one instance's session cookie be sent to the other.
+  cookieDomain: mendysrobotics.com
+  bootstrapEmail: admin@mendysrobotics.com
+  # Fewer web workers than FuzeFront: this silo serves two apps, not the whole
+  # platform. Raise if login latency shows queueing.
+  webWorkers: 2
+  # Browser-facing exposure. OFF, and it should STAY off.
+  #
+  # This instance is an implementation detail of FuzeFront's security-service,
+  # which is the single front door for every tenant. MendysRobotics reaches
+  # security-service on its own hosts; security-service drives this Authentik
+  # in-cluster over ClusterIP. Nothing outside FuzeFront's boundary — not
+  # end-users, not the MendysRobotics apps — ever addresses Authentik.
+  #
+  # Do NOT reach for Cloudflare Access to make an exposed IdP host safe: a host
+  # carrying live OIDC traffic cannot be gated. Per templates/ingress.yaml,
+  # putting an auth gate in front of the OIDC path "would break sign-in for
+  # every user". Access is only usable on an admin host carrying no OIDC
+  # traffic. The escape hatch below exists for debugging, not for production.
+  ingress:
+    enabled: false
+    host: "" # e.g. auth.mendysrobotics.com
+    className: ""
+    annotations: {}
+  # SMTP for this silo's transactional email (enrollment verification, password
+  # reset). Separate from the FuzeFront sender so Mendys mail is Mendys-branded.
+  smtp:
+    host: ""
+    port: 25
+    username: ""
+    from: "noreply@mendysrobotics.com"
+    useTls: false
+    useSSL: false
+    timeout: 10
+  # Placement for the Mendys authentik server + worker (empty → global.scheduling).
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
+  # Tenant-subdomain wildcard (FF-EPIC-16 / FFRNT-91). Empty = rule not emitted.
+  # Matches exactly ONE label ("*.fuzefront.com" covers corpabc.fuzefront.com but
+  # NOT eu.corpabc.fuzefront.com — nested tenant subdomains would need Cloudflare
+  # Advanced Certificate Manager). Exact hosts beat wildcards, so `host` above and
+  # every other explicit record keep winning.
+  #
+  # Its path fan-out is a YAML alias of the canonical host's, so the two can never
+  # diverge. It deliberately gets NO tls: block — Cloudflare terminates edge TLS.
+  wildcardHost: ''
   # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
   annotations: {}
   tls:
     enabled: false
     # Defaults to "<host>-tls" when empty.
     secretName: ''
+
+# ---------------------------------------------------------------------------
+# FuzeInfra Custom Hostname API (FF-EPIC-16 / FFRNT-91).
+#
+# Cluster-internal, bearer-authenticated provisioning of customer-owned domains
+# (app.corpabc.com) via Cloudflare for SaaS. FuzeInfra owns the service AND the
+# Cloudflare token; FuzeFront holds ONLY the bearer token below and never a
+# Cloudflare credential.
+#
+# Gated by the default-OFF flag `fuzefront.platform.portal-domains`; this block
+# only supplies connection details, it does not enable the feature.
+# ---------------------------------------------------------------------------
+customHostnameApi:
+  # Injects CUSTOM_HOSTNAME_API_TOKEN into the backend. Leave false until the
+  # SealedSecret below actually carries the key, or the pod CrashLoops on a
+  # missing secret key.
+  enabled: false
+  baseUrl: http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
+  # Route profile our token grants. Optional in the contract when the token
+  # grants exactly one profile (our case); sent explicitly for clarity.
+  profile: fuzefront
+  secret:
+    name: fuzefront-secrets
+    key: CUSTOM_HOSTNAME_API_TOKEN
 
 # ---------------------------------------------------------------------------
 # Kafka topic pre-creation (Phase D). A Helm post-install/post-upgrade Job runs

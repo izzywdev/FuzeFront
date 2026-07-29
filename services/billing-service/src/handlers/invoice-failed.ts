@@ -32,12 +32,18 @@ export async function handleInvoiceFailed(
     status: 'past_due',
   });
 
-  await ctx.writePlanCache({
-    entityType: entity.entityType,
+  // NOTE: the public.users/organizations plan-tier/status cache is projected
+  // by the backend's billingProjection consumer off subscriptionChanged below
+  // — billing-service must never write those tables directly (per-service-DB
+  // boundary; see FFRNT-146). Previously this handler wrote the cache
+  // directly and did NOT emit subscriptionChanged, so the past_due status
+  // would not have reached the projection at all; emit it here too.
+  await ctx.emitter.subscriptionChanged({
     entityId: entity.entityId,
+    entityType: entity.entityType,
     planTier,
     status: 'past_due',
-    trialEnd: existing?.trialEnd ?? null,
+    stripeSubscriptionId: existing?.subscriptionId ?? '',
   });
 
   await ctx.emitter.paymentFailed({

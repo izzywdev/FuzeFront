@@ -13,6 +13,10 @@ import {
   heartbeatRequestSchema,
   toValidationErrorBody,
 } from '../app-registry/manifest.schema'
+import {
+  productPolicySchema,
+  billingProfileSchema,
+} from '../app-registry/onboarding.schema'
 import { appRegistryService, canRead, canMutate } from '../app-registry/service'
 import { resolveCaller } from '../app-registry/caller'
 import { checkAppRegistryPermission } from '../app-registry/permit'
@@ -231,6 +235,112 @@ router.put('/apps/:slug', authenticateToken, async (req: any, res) => {
   } catch (err) {
     console.error('[app-registry] updateApp error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to update app' })
+  }
+})
+
+/**
+ * Shared guard for the onboarding writes (policy / billing-profile). Both are
+ * `apps:write` on an EXISTING app, so the checks are identical and the only thing
+ * that differs is what gets stored — factored out so the two routes cannot drift
+ * into different authorization behaviour.
+ *
+ * Resolves to the app when the caller may write it; otherwise it has already
+ * written the response and returns null.
+ */
+async function requireWritableApp(req: any, res: express.Response) {
+  const caller = await resolveCaller(req.user)
+  const existing = await appRegistryService.findBySlug(req.params.slug)
+  if (!existing) {
+    notFound(res)
+    return null
+  }
+  // BOLA: an app the caller cannot even read is a 404, never a 403 — a 403 would
+  // confirm the app exists.
+  if (!canRead(existing, caller)) {
+    notFound(res)
+    return null
+  }
+  if (!(await v1WriteGate(caller, existing.organizationId, res))) return null
+  if (!canMutate(existing, caller)) {
+    forbidden(res)
+    return null
+  }
+  const permitted = await checkAppRegistryPermission({
+    userId: caller.userId,
+    action: 'apps:write',
+    organizationId: existing.organizationId,
+    slug: existing.slug,
+  })
+  if (!permitted && !caller.isPlatformAdmin) {
+    forbidden(res, 'Missing apps:write scope')
+    return null
+  }
+  return existing
+}
+
+// ── PUT /apps/:slug/policy — putAppPolicy ─────────────────────────────────────
+router.put('/apps/:slug/policy', authenticateToken, async (req: any, res) => {
+  try {
+    const existing = await requireWritableApp(req, res)
+    if (!existing) return
+
+    const parsed = productPolicySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
+    }
+    const policy = parsed.data
+
+    // `product` is implied by the path. Allowing a mismatched body value would let a
+    // caller with write access to app A install a policy namespaced to app B.
+    if (policy.product && policy.product !== existing.slug) {
+      return res.status(400).json({
+        error: 'validation_error',
+        message: 'product must match the path slug',
+        fields: [
+          {
+            path: 'product',
+            message: `expected "${existing.slug}", got "${policy.product}"`,
+          },
+        ],
+      })
+    }
+
+    await appRegistryService.setPolicy(existing.slug, {
+      ...policy,
+      product: existing.slug,
+    })
+
+    return res.json({
+      slug: existing.slug,
+      resources: policy.resources.length,
+      roles: policy.roles.length,
+    })
+  } catch (err) {
+    console.error('[app-registry] putAppPolicy error:', err)
+    return res
+      .status(500)
+      .json({ error: 'internal_error', message: 'Failed to store policy' })
+  }
+})
+
+// ── PUT /apps/:slug/billing-profile — putAppBillingProfile ────────────────────
+router.put('/apps/:slug/billing-profile', authenticateToken, async (req: any, res) => {
+  try {
+    const existing = await requireWritableApp(req, res)
+    if (!existing) return
+
+    const parsed = billingProfileSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
+    }
+
+    await appRegistryService.setBillingProfile(existing.slug, parsed.data)
+    return res.json(parsed.data)
+  } catch (err) {
+    console.error('[app-registry] putAppBillingProfile error:', err)
+    return res
+      .status(500)
+      .json({ error: 'internal_error', message: 'Failed to store billing profile' })
   }
 })
 

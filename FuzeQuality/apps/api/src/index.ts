@@ -1,8 +1,10 @@
 import express from 'express'
+import { randomUUID } from 'node:crypto'
 import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
+  testImplementationRequestSchema,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
@@ -21,6 +23,12 @@ import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformPermission } from './platform-authorization'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
+import {
+  buildImplementationManifest,
+  dispatchImplementation,
+  implementationIdempotencyKey,
+  newImplementationRequest,
+} from './test-implementation'
 
 const app = express()
 const store = createCatalogStore()
@@ -31,6 +39,8 @@ const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 
 const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
 const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
 const mayReadCatalog = requirePlatformPermission('fuzequality.catalog', 'read')
+const mayCreateTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'create')
+const mayReadTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'read')
 
 app.use(express.json({
   limit: '2mb',
@@ -46,6 +56,11 @@ app.use((request, response, next) => {
     !configuredToken ||
     isPublicRequest(request.method, request.path) ||
     authorization === `Bearer ${configuredToken}` ||
+    (
+      request.path.startsWith('/api/v1/internal/test-implementations/') &&
+      process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN &&
+      request.header('x-fuzequality-callback-token') === process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN
+    ) ||
     (
       authorization?.startsWith('Bearer ') &&
       isPlatformAuthenticatedRequest(request.method, request.path)
@@ -232,6 +247,87 @@ app.get('/api/v1/coverage/apis', mayReadCatalog, async (request, response) => {
 app.get('/api/v1/coverage/frontend', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
   response.json({ surfaces: portfolio.surfaces, expectations: portfolio.expectations.filter(item => item.subjectType === 'frontend-surface') })
+})
+app.post('/api/v1/test-implementations', mayCreateTestImplementation, async (request, response) => {
+  const parsed = testImplementationRequestSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  const portfolio = await store.portfolio(identity.tenantId)
+  const repository = portfolio.repositories.find(item => item.id === parsed.data.repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found', code: 'REPOSITORY_NOT_FOUND' })
+  if (!repository.lastScanRevision || repository.lastScanRevision !== parsed.data.sourceRevision) {
+    return response.status(409).json({ error: 'The coverage plan is stale; refresh before implementation', code: 'SOURCE_REVISION_STALE' })
+  }
+  const selected = parsed.data.expectationIds.map(id => portfolio.expectations.find(item => item.id === id))
+  if (selected.some(item => !item)) return response.status(409).json({ error: 'One or more expectations are stale', code: 'EXPECTATION_STALE' })
+  const expectations = selected as typeof portfolio.expectations
+  if (expectations.some(item => item.coverage !== 'gap' || item.priority === 'not-applicable')) {
+    return response.status(409).json({ error: 'Only current coverage gaps can be implemented', code: 'EXPECTATION_NOT_GAP' })
+  }
+  const subjectIds = new Set([
+    ...portfolio.operations.filter(item => item.repositoryId === repository.id).map(item => item.id),
+    ...portfolio.surfaces.filter(item => item.repositoryId === repository.id).map(item => item.id),
+  ])
+  if (expectations.some(item => !subjectIds.has(item.subjectId))) {
+    return response.status(403).json({ error: 'Expectation does not belong to the selected repository', code: 'EXPECTATION_REPOSITORY_MISMATCH' })
+  }
+  const requestId = randomUUID()
+  let manifest
+  try {
+    manifest = buildImplementationManifest({
+      requestId,
+      repository,
+      sourceRevision: parsed.data.sourceRevision,
+      expectations,
+      operations: portfolio.operations,
+      surfaces: portfolio.surfaces,
+    })
+  } catch (error) {
+    return response.status(400).json({ error: error instanceof Error ? error.message : String(error), code: 'AGENT_SCOPE_MIXED' })
+  }
+  const implementation = newImplementationRequest({
+    tenantId: identity.tenantId,
+    repositoryId: repository.id,
+    sourceRevision: parsed.data.sourceRevision,
+    expectationIds: parsed.data.expectationIds,
+    requestedBy: identity.userId,
+    agentProfile: manifest.agentProfile,
+    skills: [...manifest.skills],
+  })
+  implementation.id = requestId
+  const key = implementationIdempotencyKey(identity.tenantId, repository.id, parsed.data.sourceRevision, parsed.data.expectationIds)
+  const saved = await store.createTestImplementation(implementation, key)
+  if (saved.id !== requestId) return response.status(200).json(saved)
+  try {
+    const workflowUrl = await dispatchImplementation(manifest)
+    await store.updateTestImplementation(saved.id, { workflowUrl })
+    response.status(202).json({ ...saved, workflowUrl })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await store.updateTestImplementation(saved.id, { status: 'failed', error: message })
+    response.status(503).json({ ...saved, status: 'failed', error: message })
+  }
+})
+app.get('/api/v1/test-implementations/:id', mayReadTestImplementation, async (request, response) => {
+  const id = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const item = await store.testImplementation(id, requestIdentity(request)!.tenantId)
+  if (!item) return response.status(404).json({ error: 'Implementation request not found' })
+  response.json(item)
+})
+app.post('/api/v1/internal/test-implementations/:id/status', async (request, response) => {
+  if (!process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN || request.header('x-fuzequality-callback-token') !== process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN) {
+    return response.status(401).json({ error: 'Invalid callback credential' })
+  }
+  const status = request.body?.status
+  if (!['running', 'pr-ready', 'failed'].includes(status)) return response.status(400).json({ error: 'Invalid status' })
+  const id = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  await store.updateTestImplementation(id, {
+    status,
+    workflowUrl: typeof request.body?.workflowUrl === 'string' ? request.body.workflowUrl : undefined,
+    pullRequestUrl: typeof request.body?.pullRequestUrl === 'string' ? request.body.pullRequestUrl : undefined,
+    error: typeof request.body?.error === 'string' ? request.body.error.slice(0, 2000) : undefined,
+  })
+  response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/requirements', async (_request, response) =>
   response.json((await store.portfolio()).requirements)

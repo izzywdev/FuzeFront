@@ -1,6 +1,19 @@
 import { Knex } from 'knex'
 import bcrypt from 'bcrypt'
 
+// The `platform-registrar` service principal created by migration
+// 014_seed_platform_registrar_user.  Every deployed Module-Federation remote
+// authenticates to the app-registry with a sealed token bound to this UUID, so
+// deleting it breaks app registration cluster-wide (Init:CrashLoopBackOff on
+// every remote) until it is restored by hand.
+//
+// Seeds are gated to non-production by initializeDatabase(), but that gate is a
+// single `NODE_ENV !== 'production'` check — one unset env var between this
+// code and a live database would wipe it.  Exempting the row here means the
+// dev reset below keeps its full-slate semantics while removing the one
+// deletion that has taken production down three times.
+const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
+
 export async function seed(knex: Knex): Promise<void> {
   // Delete dependent data in FK-safe order before removing users.
   // organization_memberships.invited_by and organization_invitations.invited_by
@@ -12,7 +25,7 @@ export async function seed(knex: Knex): Promise<void> {
   await knex('organization_memberships').del()
   await knex('organizations').del()
   await knex('sessions').del()
-  await knex('users').del()
+  await knex('users').whereNot('id', PLATFORM_REGISTRAR_ID).del()
 
   // Generate password hash for admin
   const adminPasswordHash = await bcrypt.hash('admin123', 10)

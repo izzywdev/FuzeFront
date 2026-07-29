@@ -91,16 +91,10 @@ async function main() {
   flushTimer.unref?.();
 
   // --- Handler context ---
-  const writePlanCache: HandlerContext['writePlanCache'] = async (args) => {
-    const table = args.entityType === 'user' ? 'users' : 'organizations';
-    await pool!.query(
-      `UPDATE public.${table}
-          SET billing_plan_tier = $2, billing_plan_status = $3, trial_ends_at = $4
-        WHERE id = $1`,
-      [args.entityId, args.planTier, args.status, args.trialEnd],
-    );
-  };
-
+  // The public.users/organizations plan-tier/status hot-path cache is no
+  // longer written here: billing-service owns only the `billing` schema.
+  // The backend's billingProjection consumer projects it from the
+  // billing.subscription.changed events emitted below (see FFRNT-146).
   const ctx: HandlerContext = {
     customers: customerRepo,
     subscriptions: subscriptionRepo,
@@ -108,7 +102,6 @@ async function main() {
     payments: paymentRepo,
     permit,
     emitter,
-    writePlanCache,
     // Lets the checkout.session.completed handler fetch the full subscription
     // (the session payload only carries its id) to mirror price/status/periods.
     retrieveSubscription: (id) => stripe.subscriptions.retrieve(id),

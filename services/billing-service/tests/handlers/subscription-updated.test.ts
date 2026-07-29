@@ -11,7 +11,6 @@ function makeCtx() {
     plans: { findByPriceId: jest.fn().mockResolvedValue({ tierName: 'pro' }) },
     permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
     emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
-    writePlanCache: jest.fn().mockResolvedValue(undefined),
   } as any;
 }
 
@@ -39,9 +38,6 @@ describe('handleSubscriptionUpdated', () => {
     expect(ctx.subscriptions.upsert).toHaveBeenCalledTimes(1);
     expect(ctx.permit.syncPlanToPermit).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'organization', entityId: 'org-1', planTier: 'pro', status: 'active', seatQuantity: 3 }),
-    );
-    expect(ctx.writePlanCache).toHaveBeenCalledWith(
-      expect.objectContaining({ planTier: 'pro', status: 'active' }),
     );
     expect(ctx.emitter.subscriptionChanged).toHaveBeenCalledWith(
       expect.objectContaining({ planTier: 'pro', status: 'active', stripeSubscriptionId: 'sub_1' }),

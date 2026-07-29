@@ -1,0 +1,35 @@
+{
+  "name": "FuzeQuality",
+  "resources": [
+    {
+      "key": "Repository",
+      "name": "Repository",
+      "actions": {
+        "read": { "name": "Read" },
+        "onboard": { "name": "Onboard" },
+        "scan": { "name": "Scan" }
+      }
+    },
+    {
+      "key": "Evidence",
+      "name": "Evidence",
+      "actions": {
+        "read": { "name": "Read" },
+        "export": { "name": "Export" }
+      }
+    },
+    {
+      "key": "TestImplementation",
+      "name": "Test implementation",
+      "actions": {
+        "create": { "name": "Create" },
+        "read": { "name": "Read" }
+      }
+    }
+  ],
+  "roles": [
+    { "key": "viewer", "name": "Viewer", "permissions": ["Repository:read", "Evidence:read"] },
+    { "key": "analyst", "name": "Analyst", "permissions": ["Repository:read", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create"] },
+    { "key": "admin", "name": "Admin", "permissions": ["Repository:read", "Repository:onboard", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create"] }
+  ]
+}

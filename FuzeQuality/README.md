@@ -13,6 +13,33 @@ suggestions.
 - [GitHub App operations](docs/github-app.md)
 - [Repository onboarding contract](docs/FQ-18-repository-onboarding.md)
 
+## Cloud implementation of coverage gaps
+
+The GAP planner submits selected deterministic expectations to a governed Codex
+workflow. The API validates tenant ownership, the exact scanned commit, current GAP
+state, agent scope, and idempotency before dispatching
+`.github/workflows/fuzequality-implement-tests.yml`. The browser sends expectation
+IDs only; agent profiles and skills are resolved from the server allowlist.
+
+Configure `FUZEQUALITY_CLOUD_DISPATCH_TOKEN` and
+`FUZEQUALITY_CLOUD_CALLBACK_TOKEN` only in the API deployment. Target repositories
+need `OPENAI_API_KEY`, `GH_TOKEN`, `FUZEQUALITY_CALLBACK_URL`, the matching
+`FUZEQUALITY_CALLBACK_TOKEN`, and the propagated workflow/agent stack.
+
+## USB-friendly worktree cleanup
+
+`scripts/windows/Remove-WorktreesInBackground.ps1` removes explicit worktree paths
+in small resumable batches. It defaults to a dry run; `-Confirmed` asserts that
+valuable branch state has already been pushed or otherwise preserved.
+
+```powershell
+pwsh scripts/windows/Remove-WorktreesInBackground.ps1 -Action Start `
+  -TargetPath D:\source\FuzeFront-FQ-173
+pwsh scripts/windows/Remove-WorktreesInBackground.ps1 -Action Start `
+  -TargetPath D:\source\FuzeFront-FQ-173 -Confirmed
+pwsh scripts/windows/Remove-WorktreesInBackground.ps1 -Action Status
+```
+
 ## Local development
 
 ```powershell

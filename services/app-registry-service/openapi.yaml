@@ -50,6 +50,10 @@ tags:
     description: Application registry — list/read/register apps.
   - name: lifecycle
     description: Activation / suspension lifecycle transitions.
+  - name: onboarding
+    description: >-
+      Self-service onboarding surfaces an app calls at deploy time (authz policy,
+      billing profile) so registering a product requires no platform-side edit.
   - name: heartbeat
     description: App liveness heartbeat (called by the app, not by users).
   - name: health
@@ -241,6 +245,82 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /apps/{slug}/policy:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    put:
+      operationId: putAppPolicy
+      tags: [onboarding]
+      summary: Submit the app's authorization policy
+      description: >-
+        Declares the product's OWN Permit resources/actions/roles using BARE keys
+        (`Listing`, `seller`). The platform namespaces them by the app's slug
+        (`fuzemarket_Listing`) and merges them into the base platform schema before
+        syncing to the policy provider, so two products may both define a `Listing`
+        or an `admin` without colliding.
+
+
+        This is the declarative replacement for hand-editing a product policy into
+        the platform source tree and adding it to a hardcoded sync list — a step that
+        was invisible to the product team and silently skipped the provider when
+        forgotten. Idempotent (full replace). Requires `apps:write`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductPolicy' }
+      responses:
+        '200':
+          description: Policy accepted and synced.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [slug, resources, roles]
+                properties:
+                  slug: { $ref: '#/components/schemas/Slug' }
+                  resources:
+                    type: integer
+                    description: Count of namespaced resources synced.
+                  roles:
+                    type: integer
+                    description: Count of namespaced roles synced.
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /apps/{slug}/billing-profile:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    put:
+      operationId: putAppBillingProfile
+      tags: [onboarding]
+      summary: Register the app's billing profile
+      description: >-
+        Registers the app's billing `productKey` so the billing service accepts
+        checkout for it. Replaces hand-editing the `BILLING_PRODUCT_KEYS` env
+        allowlist in platform deploy values, which coupled onboarding a product to a
+        platform redeploy. Idempotent. Requires `apps:write`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingProfile' }
+      responses:
+        '200':
+          description: Billing profile registered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingProfile' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /apps/{slug}/heartbeat:
     parameters:
       - $ref: '#/components/parameters/Slug'
@@ -423,6 +503,34 @@ components:
         route: { type: string, description: 'in-app route the item navigates to' }
         order: { type: integer }
 
+    NavSection:
+      type: string
+      description: >-
+        The app's place in the company's day-to-day lifecycle. The host groups the
+        side menu by this, in the order declared here:
+        steer -> plan -> build -> sell -> serve -> measure -> operate.
+        Apps that do not declare one fall into `platform` (last).
+      enum: [executive, plan, build, revenue, customer, insight, platform]
+      default: platform
+
+    Nav:
+      type: object
+      additionalProperties: false
+      description: >-
+        Where the app sits in the host's side menu. The app DECLARES its own
+        placement here rather than the platform holding a central ordering table,
+        so onboarding a product never requires a FuzeFront edit.
+      properties:
+        section: { $ref: '#/components/schemas/NavSection' }
+        order:
+          type: integer
+          minimum: 0
+          maximum: 9999
+          default: 999
+          description: >-
+            Rank WITHIN the section, ascending. Ties break on `slug` so ordering is
+            always total and stable. Leave unset (999) to sort after apps that care.
+
     Chrome:
       type: object
       additionalProperties: false
@@ -506,6 +614,7 @@ components:
           description: Shipped with the platform; cannot be deleted, only suspended.
         integration: { $ref: '#/components/schemas/Integration' }
         chrome: { $ref: '#/components/schemas/Chrome' }
+        nav: { $ref: '#/components/schemas/Nav' }
         routing: { $ref: '#/components/schemas/Routing' }
         infra:
           $ref: '#/components/schemas/Infra'
@@ -550,6 +659,106 @@ components:
           type: [string, 'null']
           format: uuid
           description: Owning org for org-scoped apps; omit for platform-global.
+
+    ProductResourceDecl:
+      type: object
+      additionalProperties: false
+      required: [key, name, actions]
+      description: A resource the product owns, declared with a BARE key.
+      properties:
+        key:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9-]*$'
+          description: >-
+            Bare resource key, e.g. `Listing`. Namespaced to `<slug>_Listing`.
+            May NOT contain `_` — that is the namespace separator and the key must
+            split cleanly at the first one.
+        name: { type: string }
+        actions:
+          type: object
+          description: 'Map of action key -> { name }, e.g. { create: { name: Create } }.'
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name: { type: string }
+
+    ProductRoleDecl:
+      type: object
+      additionalProperties: false
+      required: [key, name, permissions]
+      description: A role the product owns, declared with a BARE key.
+      properties:
+        key:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9-]*$'
+          description: 'Bare role key, e.g. `seller`. Namespaced to `<slug>_seller`.'
+        name: { type: string }
+        permissions:
+          type: array
+          description: >-
+            Permission strings against this product's BARE resource keys, e.g.
+            `Listing:create`. Rewritten to `<slug>_Listing:create` on merge. Every
+            referenced resource/action must exist in this same document.
+          items:
+            type: string
+            pattern: '^[A-Za-z][A-Za-z0-9-]*:[A-Za-z][A-Za-z0-9_-]*$'
+
+    ProductPolicy:
+      type: object
+      additionalProperties: false
+      required: [resources, roles]
+      description: >-
+        A product's self-declared authorization policy. `product` is implied by the
+        path slug and rejected in the body if it disagrees.
+      properties:
+        product:
+          $ref: '#/components/schemas/Slug'
+        name:
+          type: string
+          description: Human-readable product name, used to prefix display names.
+        resources:
+          type: array
+          items: { $ref: '#/components/schemas/ProductResourceDecl' }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/ProductRoleDecl' }
+
+    BillingProfile:
+      type: object
+      additionalProperties: false
+      required: [productKey]
+      description: >-
+        The app's billing identity. Registering this is what allows the billing
+        service to accept checkout sessions carrying this `productKey`.
+      properties:
+        productKey:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[a-z0-9][a-z0-9-]*$'
+          description: >-
+            The key stamped on checkout sessions and echoed on billing events, e.g.
+            `mendys-datasets`. Conventionally the app slug unless the product already
+            ships a different one.
+        currencies:
+          type: array
+          description: 'ISO-4217 lowercase currency codes the product accepts. Empty = platform default.'
+          items:
+            type: string
+            pattern: '^[a-z]{3}$'
+        maxTotalCents:
+          type: integer
+          minimum: 1
+          description: >-
+            Upper bound on a single checkout total, in minor units. A guard against a
+            mispriced line item billing a customer catastrophically; omit for the
+            platform default.
+        meteredUsage:
+          type: boolean
+          default: false
+          description: Whether the product reports metered usage for billing.
 
     HeartbeatRequest:
       type: object
