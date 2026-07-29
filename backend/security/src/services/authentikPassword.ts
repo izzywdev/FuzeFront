@@ -15,14 +15,15 @@
  *   4. challenge "xak-flow-redirect"                    → Authentik session established
  *   5. GET the OIDC authorize URL with the session cookies (implicit consent)
  *      → 302 …/api/auth/oidc/callback?code=…&state=…
- *   6. oidcService.handleCallback(code, state, codeVerifier) → synced User
+ *   6. getOidcService().handleCallback(code, state, codeVerifier) → synced User
  *
  * Only single-factor identification/password flows are supported. Users with
  * MFA or other stages configured must use the browser (Google/SSO) path — we
  * fail closed with a clear error rather than trying to drive arbitrary stages.
  */
 import { generators } from 'openid-client'
-import { oidcService } from './oidc'
+import { getOidcService } from './oidc'
+import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
 import { logger } from '../lib/logger'
 
@@ -133,29 +134,36 @@ export class CookieJar {
   }
 }
 
+/**
+ * In-cluster base for THIS tenant's Authentik. Resolved from the tenant rather
+ * than the environment so the server-side flow-executor calls land on the
+ * tenant's own instance (authentik-server vs authentik-mendys-server) instead
+ * of whichever one the process happened to be configured with.
+ */
 export function authentikBaseUrl(): string {
-  if (process.env.AUTHENTIK_BASE_URL) {
-    return process.env.AUTHENTIK_BASE_URL.replace(/\/$/, '')
-  }
-  const issuer =
-    process.env.AUTHENTIK_ISSUER_URL ||
-    'http://localhost:9000/application/o/fuzefront/'
-  return new URL(issuer).origin
+  const tenant = currentTenant('authentikBaseUrl')
+  if (tenant.baseUrl) return tenant.baseUrl.replace(/\/$/, '')
+  return new URL(tenant.issuerUrl).origin
 }
 
+// Not tenant-scoped: this is authentik's own built-in flow slug, identical in
+// every instance. Kept on the environment so a deployment can still override it
+// globally.
 function authFlowSlug(): string {
   return process.env.AUTHENTIK_AUTH_FLOW_SLUG || 'default-authentication-flow'
 }
 
 export function redirectUri(): string {
-  return (
-    process.env.AUTHENTIK_REDIRECT_URI ||
-    'http://fuzefront.dev.local/api/auth/oidc/callback'
-  )
+  return currentTenant('redirectUri').redirectUri
 }
 
+/**
+ * Enrollment flow slug inside THIS tenant's Authentik. Each tenant ships its
+ * own enrollment flow (fuzefront-enrollment vs mendys-enrollment), so this must
+ * not fall back to a global default.
+ */
 function enrollmentFlowSlug(): string {
-  return process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+  return currentTenant('enrollmentFlowSlug').enrollmentFlowSlug
 }
 
 export interface FlowChallenge {
@@ -302,15 +310,15 @@ async function authentikPasswordLoginInner(
   email: string,
   password: string
 ): Promise<User> {
-  if (!oidcService.isConfigured()) {
+  if (!getOidcService().isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
   }
-  if (!oidcService.isInitialized()) {
+  if (!getOidcService().isInitialized()) {
     // Lazy re-init: dedupes concurrent callers onto one in-flight attempt and
     // fails fast during the post-failure cooldown (see oidc.ts). Preserves
     // the original error type/message on failure.
     try {
-      await oidcService.ensureInitialized()
+      await getOidcService().ensureInitialized()
     } catch {
       throw new AuthentikUnavailableError('OIDC is not configured/initialized')
     }
@@ -403,7 +411,7 @@ export async function completeOidcWithSession(
   jar: CookieJar
 ): Promise<User> {
   const state = generators.state()
-  const { url: authorizeUrl, codeVerifier } = oidcService.generateAuthUrl(state)
+  const { url: authorizeUrl, codeVerifier } = getOidcService().generateAuthUrl(state)
   const target = redirectUri()
 
   let location = toInternalAuthorizeUrl(authorizeUrl, base)
@@ -477,7 +485,7 @@ export async function completeOidcWithSession(
     'authentikPassword: authorize chain resolved to code; entering token exchange'
   )
   // Token exchange + user sync — identical to the redirect callback path.
-  return oidcService.handleCallback(code, returnedState || state, codeVerifier)
+  return getOidcService().handleCallback(code, returnedState || state, codeVerifier)
 }
 
 /** Thrown when an account already exists for the email (signup conflict). */
@@ -534,12 +542,12 @@ export async function authentikSignup(input: AuthentikSignupInput): Promise<User
 }
 
 async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> {
-  if (!oidcService.isConfigured()) {
+  if (!getOidcService().isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
   }
-  if (!oidcService.isInitialized()) {
+  if (!getOidcService().isInitialized()) {
     try {
-      await oidcService.ensureInitialized()
+      await getOidcService().ensureInitialized()
     } catch {
       throw new AuthentikUnavailableError('OIDC is not configured/initialized')
     }
@@ -637,7 +645,7 @@ export class PasswordPolicyError extends Error {
 }
 
 function authentikAdminToken(): string {
-  const token = process.env.AUTHENTIK_ADMIN_TOKEN
+  const token = currentTenant('Authentik admin token').adminToken
   if (!token) {
     throw new AuthentikUnavailableError(
       'AUTHENTIK_ADMIN_TOKEN is required to set an account password'
