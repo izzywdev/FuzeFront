@@ -91,7 +91,21 @@ jobs:
             exit 0
           fi
 
-          # Expected path today. Report the ACTUAL remedy, not the raw API error —
+          # RE-CHECK before declaring the branch stranded. The check at the top of this
+          # step and the create above are not atomic, and the agent is REQUIRED to open
+          # its own PR — so the normal, correct sequence races this job: push starts the
+          # workflow, the agent opens its PR moments later, and by the time we attempt
+          # the create the PR exists. `gh pr create` then fails with "a pull request for
+          # branch ... already exists", which is the SUCCESS condition, and we reported
+          # it as stranded. That false positive fires precisely when the process is
+          # followed correctly, which is the worst possible time for it.
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            echo "PR #$existing was opened while this job was running — the agent did its job. Nothing to do."
+            exit 0
+          fi
+
+          # Genuinely stranded. Report the ACTUAL remedy, not the raw API error —
           # a stranded branch is an agent that pushed and died before opening its
           # PR, and a human/orchestrator salvaging it needs to know that, not to go
           # hunting for a permissions bug that is an intentional security choice.
