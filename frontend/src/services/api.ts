@@ -65,14 +65,25 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 })
 
-// Dedicated, SHORTER timeout for the login/signup submit path. Prod reality:
-// the auth chain normally answers in ~5.5s, but an intermittent slow hop can
-// stretch it to 16-30s before the shared 30s client timeout ever trips — that
-// entire window the submit button sat on "Signing in…" with zero feedback.
-// Bounding just this call lets a slow attempt fail fast with a clear message
-// instead of hanging to the full 30s. Env-overridable for tuning without a
-// redeploy of the timeout value itself.
-const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 15000
+// Dedicated timeout for the login/signup submit path. Prod reality: the auth
+// chain normally answers in ~5.5s, but an intermittent slow hop stretches it
+// well past that.
+//
+// This was 15s, chosen to fail FAST on a slow attempt rather than leave the
+// submit button on "Signing in…". That traded the wrong way: the documented
+// slow path runs 16-30s, so a 15s bound did not fail slow sign-ins fast — it
+// failed sign-ins that would otherwise have SUCCEEDED, and sign-in broke
+// outright. A bound below the known worst case is not a safety net, it is an
+// outage.
+//
+// 45s covers the documented 16-30s worst case with real margin. The wait is
+// not pleasant, but it completes; LoginPage shows a "still working…" hint at
+// 8s so a slow-but-succeeding attempt never looks frozen. The server's own
+// budget (AUTHENTIK_LOGIN_DEADLINE_MS, 40s) sits UNDER this so the server
+// still answers first with a labelled error instead of being raced — keep
+// that ordering if either value is retuned. Env-overridable so the pair can
+// be tightened again, without a rebuild, once the slow hop is actually fixed.
+const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 45000
 
 // Add request timing and enhanced logging
 api.interceptors.request.use(

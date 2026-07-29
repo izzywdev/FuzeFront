@@ -53,12 +53,18 @@ const AUTHENTIK_FLOW_TIMEOUT_MS =
  * were still waiting to be produced and never reached anyone.
  *
  * Bounding the CHAIN — not just each link — is what makes the server answer
- * first. Keep this comfortably BELOW the client's bound so a stalled sign-in
- * surfaces as a real, logged, labelled HTTP response instead of a blind
- * client-side abort. Overridable via AUTHENTIK_LOGIN_DEADLINE_MS.
+ * first. This MUST stay below the client's bound so a stalled sign-in surfaces
+ * as a real, logged, labelled HTTP response instead of a blind client-side
+ * abort: 40s here against the client's 45s. The margin is for the response
+ * trip, so retune the pair together and never let this cross above it.
+ *
+ * Sized to the documented slow path (16-30s), not to what sign-in SHOULD cost
+ * — a budget below the real worst case rejects logins that would have
+ * succeeded. Tighten both once the underlying slow hop is fixed.
+ * Overridable via AUTHENTIK_LOGIN_DEADLINE_MS.
  */
 const AUTHENTIK_LOGIN_DEADLINE_MS =
-  Number(process.env.AUTHENTIK_LOGIN_DEADLINE_MS) || 12000
+  Number(process.env.AUTHENTIK_LOGIN_DEADLINE_MS) || 40000
 
 /** Monotonic-ish elapsed helper for the per-step timing logs. */
 function since(startMs: number): number {
