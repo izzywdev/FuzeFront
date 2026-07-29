@@ -204,6 +204,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push notification-service
+        # Root build context: the Dockerfile runs `npm ci --workspace=
+        # services/notification-service`, so it needs the root package.json and
+        # lockfile — not just services/notification-service/.
+        #
+        # continue-on-error matches the other auxiliary services, and the `id`
+        # is what lets the bump step below gate on the real outcome instead of
+        # pinning a tag for an image that was never pushed.
+        id: notification_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: services/notification-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-notification-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-notification-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push clock-app (built-in MF remote)
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
@@ -249,8 +270,12 @@ jobs:
           # The expected-rewrite count moves with it so the guard stays exact.
           CHAT_OK=0
           if [ "${{ steps.chat_image.outcome }}" = "success" ]; then CHAT_OK=1; fi
-          EXPECTED=$((7 + CHAT_OK))
-          echo "chat-service image built: ${CHAT_OK} — expecting ${EXPECTED} tag rewrites"
+          # Same treatment for notification-service: continue-on-error, so only
+          # bump its tag when the image actually got pushed.
+          NOTIF_OK=0
+          if [ "${{ steps.notification_image.outcome }}" = "success" ]; then NOTIF_OK=1; fi
+          EXPECTED=$((7 + CHAT_OK + NOTIF_OK))
+          echo "chat-service image built: ${CHAT_OK}, notification-service: ${NOTIF_OK} — expecting ${EXPECTED} tag rewrites"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
           chmod 600 ~/.ssh/release_bump
@@ -280,7 +305,7 @@ jobs:
           # manually restored LF. Rewritten tag lines preserve the line's
           # original ending so a CRLF file round-trips without a spurious
           # whole-file diff.
-          awk -v sha="$SHA" -v chat="$CHAT_OK" '
+          awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -298,6 +323,7 @@ jobs:
             /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
+            notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
@@ -305,8 +331,9 @@ jobs:
           # values, reordered keys, renamed registry path) the awk matches
           # nothing and we would otherwise "succeed" while deploying stale
           # tags (review finding). Exactly EXPECTED core-app tags must be
-          # rewritten: 7 always-built images, plus chat-service only when its
-          # continue-on-error build actually succeeded.
+          # rewritten: 7 always-built images, plus chat-service and
+          # notification-service only when their continue-on-error builds
+          # actually succeeded.
           # The anchor list MUST cover every image this workflow BUILDS. It
           # previously listed only 5 while the build steps produced 7: the
           # email-service and sms-service images were built and pushed on every

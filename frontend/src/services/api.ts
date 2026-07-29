@@ -1,5 +1,12 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
+import {
+  getActiveAccountId,
+  getActiveAuthToken,
+  setActiveValue,
+  forgetAccount,
+  markAccountExpired,
+} from '../lib/accounts'
 import type {
   AuthMethods,
   SessionResult,
@@ -77,7 +84,10 @@ const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 15000
 // Add request timing and enhanced logging
 api.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('authToken')
+    // The ONE token resolver (lib/accounts.ts, rule 2). Reading localStorage
+    // directly here would attach whichever account happened to write the bare
+    // key last — the exact cross-account leak the vault exists to prevent.
+    const token = getActiveAuthToken()
     const requestId = Math.random().toString(36).substr(2, 9)
     ;(config as any).metadata = { startTime: Date.now(), requestId }
 
@@ -188,9 +198,13 @@ api.interceptors.response.use(
     console.groupEnd()
 
     if (error.response?.status === 401) {
-      console.log('🔐 Unauthorized - removing token and reloading')
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('user')
+      console.log('🔐 Unauthorized - clearing the active account session')
+      // Clear only the ACTIVE account. Other signed-in accounts keep their
+      // sessions — one expiring must not sign the user out of the rest.
+      setActiveValue('authToken', null)
+      setActiveValue('user', null)
+      const expiredAccountId = getActiveAccountId()
+      if (expiredAccountId) markAccountExpired(expiredAccountId)
       // Never bounce a visitor who is ALREADY on an auth route.
       //
       // This guard knew about /login but not /signup, which broke sign-up
@@ -252,9 +266,15 @@ export interface EmailAvailability {
 
 // Persist a freshly authenticated session so it survives the post-login page
 // reload and is attached to subsequent requests by the axios interceptor.
+// Written into the ACTIVE account's namespace. The account roster entry itself
+// is created by AccountsContext once `/session` resolves the identity — this
+// only has credentials, not a user id, so it cannot key them itself.
+// Written into the namespace this tab is currently acting as. During an "add
+// account" sign-in that is the provisional namespace, which AccountsContext
+// re-keys onto the real account id as soon as `/session` resolves the identity.
 function persistSession(token?: string, sessionId?: string): void {
-  if (token) localStorage.setItem('authToken', token)
-  if (sessionId) localStorage.setItem('sessionId', sessionId)
+  if (token) setActiveValue('authToken', token)
+  if (sessionId) setActiveValue('sessionId', sessionId)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -355,12 +375,18 @@ export const authAPI = {
     return response.data.user
   },
 
-  // Logout — revoke the current session (idempotent) and clear local state.
+  // Logout — revoke the ACTIVE account's session (idempotent) and erase that
+  // account from the vault. Other signed-in accounts are untouched: signing out
+  // of one identity must not sign the user out of the rest.
   async logout(): Promise<void> {
-    await api.delete(`${SECURITY_BASE}/session`)
-    localStorage.removeItem('authToken')
-    localStorage.removeItem('sessionId')
-    localStorage.removeItem('user')
+    const accountId = getActiveAccountId()
+    try {
+      await api.delete(`${SECURITY_BASE}/session`)
+    } finally {
+      // Erase locally even if the revoke call failed — leaving the token in the
+      // vault after the user asked to sign out is the worse failure.
+      if (accountId) forgetAccount(accountId)
+    }
   },
 
   // Complete a social-login round-trip. The social callback redirects back to
@@ -597,5 +623,97 @@ export const listInvitations = async (orgId: string) => {
   const res = await api.get(`/organizations/${orgId}/invitations`)
   return res.data
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App installations — where an app lands, and for whom.
+//
+// `scopeLevel` is the app's own declaration of where it MAY be installed;
+// `scope` is where this particular installation went. The two are different
+// questions and the API rejects (422) a scope the app's level does not permit.
+// See backend/src/routes/app-installations.ts and migration 015.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AppScopeLevel = 'personal' | 'organization' | 'both'
+export type InstallScope = 'personal' | 'organization'
+export type InstallMode = 'self' | 'everyone'
+
+export interface AppInstallation {
+  id: string
+  appId: string
+  scope: InstallScope
+  mode: InstallMode
+  userId: string | null
+  organizationId: string | null
+  installedBy: string
+  status: 'active' | 'revoked'
+  settings: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AppInstallationsResponse {
+  appId: string
+  scopeLevel: AppScopeLevel
+  installations: AppInstallation[]
+}
+
+export interface InstallAppRequest {
+  scope?: InstallScope
+  organizationId?: string
+  mode?: InstallMode
+  settings?: Record<string, unknown>
+}
+
+/** Installations of one app that are visible to the caller. */
+export const getAppInstallations = async (
+  appId: string
+): Promise<AppInstallationsResponse> => {
+  const res = await api.get<AppInstallationsResponse>(
+    `/apps/${encodeURIComponent(appId)}/installations`
+  )
+  return res.data
+}
+
+/**
+ * Install an app. Idempotent per target: an existing active installation comes
+ * back with `alreadyInstalled: true` rather than being duplicated.
+ */
+export const installApp = async (
+  appId: string,
+  body: InstallAppRequest
+): Promise<{ installation: AppInstallation; alreadyInstalled: boolean }> => {
+  const res = await api.post(`/apps/${encodeURIComponent(appId)}/install`, body)
+  return res.data
+}
+
+/** Soft-revoke an installation. */
+export const uninstallApp = async (
+  appId: string,
+  installationId: string
+): Promise<void> => {
+  await api.delete(
+    `/apps/${encodeURIComponent(appId)}/install/${encodeURIComponent(installationId)}`
+  )
+}
+
+/** The caller's EFFECTIVE installs: personal + their org-self + org-everyone. */
+export const getInstalledApps = async (organizationId?: string) => {
+  const res = await api.get('/apps/installed', {
+    params: organizationId ? { organizationId } : undefined,
+  })
+  return res.data as Array<
+    AppInstallation & {
+      app: {
+        id: string
+        name: string
+        url: string
+        iconUrl?: string
+        isActive: boolean
+        scopeLevel: AppScopeLevel
+      }
+    }
+  >
+}
+
 export default api
 

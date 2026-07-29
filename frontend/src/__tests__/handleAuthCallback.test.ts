@@ -18,6 +18,15 @@ import api, { authAPI } from '../services/api'
 // session at the same-origin `/api/v1/security/session/exchange` endpoint.
 const EXCHANGE_PATH = '/v1/security/session/exchange'
 
+// The account vault namespaces every per-account value under
+// `ff.acct.<id>.<key>` (see src/lib/accounts.ts). A session established before
+// its account id is known — which is exactly the social-callback case — lands
+// in the provisional namespace and is re-keyed by adoptProvisionalAccount once
+// /session names the account. So the assertions below read the NAMESPACED key:
+// a bare `authToken` would mean the vault had been bypassed.
+const TOKEN_KEY = 'ff.acct.__provisional__.authToken'
+const SESSION_KEY = 'ff.acct.__provisional__.sessionId'
+
 // Mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
@@ -70,8 +79,10 @@ describe('authAPI.handleAuthCallback', () => {
     const result = await authAPI.handleAuthCallback()
 
     expect(api.post).toHaveBeenCalledWith(EXCHANGE_PATH, { code: 'abc123' })
-    expect(localStorageMock.getItem('authToken')).toBe('jwt-token')
-    expect(localStorageMock.getItem('sessionId')).toBe('sess-1')
+    expect(localStorageMock.getItem(TOKEN_KEY)).toBe('jwt-token')
+    expect(localStorageMock.getItem(SESSION_KEY)).toBe('sess-1')
+    // Nothing account-specific may ever be written to a bare key.
+    expect(localStorageMock.getItem('authToken')).toBeNull()
     expect(result.result).toMatchObject({ status: 'authenticated', token: 'jwt-token' })
     expect(result.error).toBeUndefined()
     expect(mockReplaceState).toHaveBeenCalled()
@@ -92,7 +103,7 @@ describe('authAPI.handleAuthCallback', () => {
     expect(api.post).toHaveBeenCalledWith(EXCHANGE_PATH, { code: 'needs-mfa' })
     expect(result.result).toMatchObject({ status: 'mfa_required', challengeId: 'ch-1' })
     // No session is established for an MFA challenge.
-    expect(localStorageMock.getItem('authToken')).toBeNull()
+    expect(localStorageMock.getItem(TOKEN_KEY)).toBeNull()
   })
 
   it('returns error from URL when error param present', async () => {
@@ -120,7 +131,7 @@ describe('authAPI.handleAuthCallback', () => {
 
     expect(result).toEqual({})
     expect(api.post).not.toHaveBeenCalled()
-    expect(localStorageMock.getItem('authToken')).toBeNull()
+    expect(localStorageMock.getItem(TOKEN_KEY)).toBeNull()
   })
 
   it('surfaces a friendly error when the exchange POST fails', async () => {
@@ -133,6 +144,6 @@ describe('authAPI.handleAuthCallback', () => {
 
     expect(result.error).toBe('exchange_failed')
     expect(result.result).toBeUndefined()
-    expect(localStorageMock.getItem('authToken')).toBeNull()
+    expect(localStorageMock.getItem(TOKEN_KEY)).toBeNull()
   })
 })

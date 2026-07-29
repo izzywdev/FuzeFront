@@ -6,6 +6,15 @@ import {
   MenuItem,
   resetWorkspaceSessionIfUserChanged,
 } from './lib/shared'
+import {
+  MAX_PARALLEL_ACCOUNTS,
+  adoptProvisionalAccount,
+  cancelAddAccount,
+  getActiveAuthToken,
+  setActiveValue,
+} from './lib/accounts'
+import { AccountsProvider } from './contexts/AccountsContext'
+import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
 import { FeatureFlagProvider } from './platform/featureFlags'
@@ -33,12 +42,19 @@ import AccountSecurityPage from './pages/AccountSecurityPage'
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { state, dispatch } = useAppContext()
+  const { t } = useT()
   const [isLoading, setIsLoading] = useState(true)
+  // Set when an "add account" sign-in succeeded but the roster was already at
+  // MAX_PARALLEL_ACCOUNTS. The session is discarded and the user is told why,
+  // rather than an existing account being silently evicted.
+  const [accountLimitReached, setAccountLimitReached] = useState(false)
 
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const token = localStorage.getItem('authToken')
+        // Read through the account vault's single resolver: this tab's ACTIVE
+        // account, which may differ from another tab's (lib/accounts.ts).
+        const token = getActiveAuthToken()
         console.log('Initializing auth - token found:', !!token)
 
         if (token) {
@@ -46,19 +62,41 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
             console.log('Attempting to get current user...')
             const user = await getCurrentUser()
             console.log('Successfully got user:', user.email)
+
+            // Bind the session to its account. A session parked in the
+            // provisional namespace — a migrated single-account session, or the
+            // just-completed "add account" sign-in — is re-keyed onto the real
+            // account id here, now that /session has named it.
+            const adopted = adoptProvisionalAccount({
+              id: user.id,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+            })
+            if (!adopted) {
+              // Roster full and this is a new account. Refusing beats evicting
+              // one of the accounts the user is already signed in to.
+              console.warn(
+                `Cannot add a ${MAX_PARALLEL_ACCOUNTS + 1}th account; sign out of one first.`
+              )
+              cancelAddAccount()
+              setAccountLimitReached(true)
+              return
+            }
+
             resetWorkspaceSessionIfUserChanged(user.id)
             dispatch({ type: 'SET_USER', payload: user })
           } catch (userError) {
-            // Token is invalid or expired
+            // Token is invalid or expired — clear only THIS account's session.
             console.error('Failed to get current user:', userError)
-            localStorage.removeItem('authToken')
+            setActiveValue('authToken', null)
           }
         } else {
           console.log('No auth token found')
         }
       } catch (error) {
         console.error('Failed to initialize auth:', error)
-        localStorage.removeItem('authToken')
+        setActiveValue('authToken', null)
       } finally {
         setIsLoading(false)
       }
@@ -175,6 +213,37 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     )
   }
 
+  if (accountLimitReached) {
+    return (
+      <div
+        data-guard="max-accounts"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-4)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          padding: 'var(--space-6)',
+          textAlign: 'center',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <h2 style={{ margin: 0 }}>{t('accounts.limitTitle')}</h2>
+        <p style={{ margin: 0, color: 'var(--text-secondary)', maxWidth: '46ch' }}>
+          {t('accounts.limitBody', { max: MAX_PARALLEL_ACCOUNTS })}
+        </p>
+        <button
+          className="btn btn-primary"
+          onClick={() => (window.location.href = '/')}
+        >
+          {t('nav.dashboard')}
+        </button>
+      </div>
+    )
+  }
+
   return <>{children}</>
 }
 
@@ -185,7 +254,12 @@ function App() {
           request always carries a session token and the `developers` segment
           resolves against the real user id. */}
       <FeatureFlagProvider>
-        <AppContent />
+        {/* The account roster, for the user menu's account switcher. Mounted
+            below AuthWrapper so the provisional session has already been
+            adopted and the roster reflects real accounts. */}
+        <AccountsProvider>
+          <AppContent />
+        </AccountsProvider>
       </FeatureFlagProvider>
     </AuthWrapper>
   )

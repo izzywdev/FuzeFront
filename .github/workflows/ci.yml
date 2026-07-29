@@ -246,6 +246,35 @@ jobs:
         # Job entrypoint. These had never run in CI before.
         run: npm run -w @fuzefront/chat-service test
 
+  notification-service-tests:
+    name: Notification service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # notification-service is a root workspace, so `npm ci` installs its deps.
+      # It depends on no other workspace package, so nothing needs building first.
+      - name: Install workspace
+        run: npm ci
+
+      - name: Type-check notification-service
+        run: npm run -w @fuzefront/notification-service build
+
+      - name: Run notification-service unit tests
+        # Covers the routes (auth derivation, internal-publish fail-closed,
+        # read vs seen), the SSE hub (per-user isolation, stream cap, dead-client
+        # handling) and the auth middleware.
+        run: npm run -w @fuzefront/notification-service test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest

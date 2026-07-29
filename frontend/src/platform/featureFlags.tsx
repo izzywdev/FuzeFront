@@ -28,6 +28,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { getActiveAuthToken } from '../lib/accounts'
 
 type FlagMap = Record<string, boolean>
 
@@ -43,7 +44,7 @@ const FeatureFlagContext = createContext<FlagState>({ flags: {}, loaded: false }
 const FLAGS_ENDPOINT = '/api/flags'
 
 export async function fetchFlags(signal?: AbortSignal): Promise<FlagMap> {
-  const token = localStorage.getItem('authToken')
+  const token = getActiveAuthToken()
   if (!token) return {}
   try {
     const res = await fetch(FLAGS_ENDPOINT, {
