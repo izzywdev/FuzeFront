@@ -15,6 +15,7 @@
     "packages/chat-client",
     "packages/chat-ui",
     "packages/identity-ui",
+    "packages/auth-ui",
     "packages/account-security-ui",
     "packages/portal-branding-ui",
     "portal-client",

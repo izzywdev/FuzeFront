@@ -1,0 +1,73 @@
+# Publish the design system to GitHub Packages under the @izzywdev scope.
+#
+# GitHub Packages requires the npm scope to match the repository owner, so the
+# canonical @fuzefront/design-system name cannot publish until the org transfer
+# completes (see packages-publish.yml, which stays the long-term path and no-ops
+# until then). Consuming apps need the design system TODAY, so this workflow
+# publishes the same build under an owner-scoped alias name:
+#
+#   @fuzefront/design-system -> @izzywdev/fuzefront-design-system
+#
+# Consumers install via an npm alias so their imports keep the canonical name:
+#
+#   "@fuzefront/design-system": "npm:@izzywdev/fuzefront-design-system@^1.0.0"
+#
+# Unlike packages/security (a tsup dist/ build), design-system has no bundler —
+# `node build.mjs` (re)generates index.js / index.d.ts / _ds_manifest.json in
+# place from the components/tokens/guidelines folders, and `package.json`
+# "files" ships those plus components/ and tokens/ directly (CSS-only
+# consumption of `./styles.css` and `./tokens/*`, no bundler required by
+# consumers). This workflow keeps that shape faithfully — it does not
+# restructure the design system into a dist/ layout.
+#
+# Once the org transfer lands and packages-publish.yml activates, consumers drop
+# the alias and this workflow is deleted. Publishing is idempotent: a version that
+# already exists in the registry is skipped, not overwritten. No git push / tag is
+# made, so master's required_signatures protection is never involved.
+name: Publish design system (alias scope)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'design-system/**'
+
+concurrency:
+  group: design-system-packages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_owner == 'izzywdev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@izzywdev'
+
+      - name: Build design system
+        working-directory: design-system
+        run: |
+          npm install --workspaces=false --no-audit --no-fund
+          npm run build
+
+      - name: Publish @izzywdev/fuzefront-design-system
+        working-directory: design-system
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(npm pkg get version | tr -d '"')
+          npm pkg set name=@izzywdev/fuzefront-design-system
+          if npm view "@izzywdev/fuzefront-design-system@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "@izzywdev/fuzefront-design-system@${VERSION} already published — skipping."
+          else
+            npm publish --registry=https://npm.pkg.github.com
+          fi
