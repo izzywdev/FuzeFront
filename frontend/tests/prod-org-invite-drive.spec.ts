@@ -55,9 +55,18 @@ const INVITE_ROLE = (process.env.INVITE_ROLE ?? 'admin').toLowerCase()
  * Set INVITE_ORG_NAME to target a specific org by name instead.
  */
 const INVITE_ORG_NAME = process.env.INVITE_ORG_NAME ?? ''
-const ORG_OPTION_RE = INVITE_ORG_NAME
-  ? new RegExp(INVITE_ORG_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-  : /\(platform\)\s*$/i
+
+/**
+ * Matcher for the picker option. A plain string is matched by Playwright as a
+ * case-insensitive SUBSTRING, which is exactly the semantics wanted for a name
+ * override — so no RegExp is built from the env var. The default is a literal
+ * regex anchoring on the trailing "(platform)" the picker appends.
+ *
+ * Deliberately not `new RegExp(userInput)`: constructing a pattern from a
+ * non-literal is what Semgrep's detect-non-literal-regexp flags, and it buys
+ * nothing here.
+ */
+const ORG_OPTION_MATCHER: string | RegExp = INVITE_ORG_NAME || /\(platform\)\s*$/i
 const ORG_LABEL = INVITE_ORG_NAME || 'the root platform organization'
 const AUTHN_TEST_EMAIL = process.env.AUTHN_TEST_EMAIL ?? ''
 const AUTHN_TEST_PASSWORD = process.env.AUTHN_TEST_PASSWORD ?? ''
@@ -135,15 +144,15 @@ test.describe('Root organization — invite member (production drive)', () => {
     await page.goto('/organizations')
 
     // The org picker is a native <select> whose option labels render as
-    // "<name> (<type>)" — see ORG_OPTION_RE above for why the default matches
-    // on the `platform` type rather than on a name.
+    // "<name> (<type>)" — see ORG_OPTION_MATCHER above for why the default
+    // matches on the `platform` type rather than on a name.
     const orgSelect = page.locator('select').first()
     await expect(orgSelect, 'organization picker is present').toBeVisible({ timeout: 30_000 })
 
-    const orgOption = orgSelect.locator('option', { hasText: ORG_OPTION_RE })
+    const orgOption = orgSelect.locator('option', { hasText: ORG_OPTION_MATCHER })
     await expect(
       orgOption,
-      `exactly one option matching ${ORG_OPTION_RE} is listed for this account. Zero means the ` +
+      `exactly one option matching ${ORG_OPTION_MATCHER} is listed for this account. Zero means the ` +
         `org does not exist (migration 015_seed_root_platform_organization has not run) or the ` +
         `signed-in user has no membership on it — GET /api/organizations lists by membership, so ` +
         `the root org is invisible until ensureRootOrgAdmins() grants this user on it. More than ` +
@@ -153,12 +162,14 @@ test.describe('Root organization — invite member (production drive)', () => {
     const orgOptionLabel = (await orgOption.innerText()).trim()
     await orgSelect.selectOption({ label: orgOptionLabel })
 
-    // The heading renders the org NAME only, so derive it from the option label
-    // by stripping the trailing " (<type>)" the picker appends.
+    // The heading renders the org NAME plus a role badge, so derive the name
+    // from the option label by stripping the trailing " (<type>)" the picker
+    // appends. Passed as a plain string: `getByRole`'s `name` defaults to
+    // `exact: false`, i.e. a case-insensitive substring match — which is what a
+    // heading with a trailing badge needs, and avoids building a RegExp from a
+    // non-literal.
     const orgName = orgOptionLabel.replace(/\s*\([^)]*\)\s*$/, '')
-    await expect(
-      page.getByRole('heading', { name: new RegExp(orgName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })
-    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: orgName })).toBeVisible()
 
     // ── 3. Members tab ────────────────────────────────────────────────────
     await page.getByRole('button', { name: /Members/i }).first().click()
@@ -217,8 +228,10 @@ test.describe('Root organization — invite member (production drive)', () => {
     await expect(inviteRow, 'invitee appears in Pending Invitations').toBeVisible({
       timeout: 30_000,
     })
+    // `exact: true` gives a whole-string (trimmed) match without a RegExp, so
+    // "Admin" cannot be satisfied by some longer cell that merely contains it.
     await expect(
-      inviteRow.getByText(new RegExp(`^${ROLE_LABEL[INVITE_ROLE] ?? INVITE_ROLE}$`, 'i')),
+      inviteRow.getByText(ROLE_LABEL[INVITE_ROLE] ?? INVITE_ROLE, { exact: true }),
       `invitation is scoped to the ${INVITE_ROLE} role`
     ).toBeVisible()
 
