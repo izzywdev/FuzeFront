@@ -45,25 +45,37 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@izzywdev'
 
-      - name: Build the design-system dependency
-        working-directory: design-system
-        run: npm install --workspaces=false --no-audit --no-fund && npm run build
+      # Install the whole workspace so auth-ui's @fuzefront/* deps
+      # (design-system, security-client) resolve from SOURCE via workspace
+      # symlinks. A per-package `npm install --workspaces=false` instead tries to
+      # fetch @fuzefront/design-system@1.0.0 from the registry, which 404s — it
+      # has never been published (the reason these alias workflows exist).
+      - name: Install workspace (links @fuzefront/* from source)
+        run: npm ci --no-audit --no-fund
 
-      - name: Build the security-client dependency (types only)
-        working-directory: packages/security
-        run: npm install --workspaces=false --no-audit --no-fund && npm run build
-
-      - name: Build auth-ui
-        working-directory: packages/auth-ui
+      # Build the in-repo dependencies first (auth-ui imports their built output
+      # / types), then auth-ui itself — all via workspace-scoped scripts.
+      - name: Build design-system, security-client, then auth-ui
         run: |
-          npm install --workspaces=false --no-audit --no-fund
-          npm run build
+          npm run build -w @fuzefront/design-system
+          npm run build -w @fuzefront/security-client
+          npm run build -w @fuzefront/auth-ui
 
       - name: Publish @izzywdev/fuzefront-auth-ui
         working-directory: packages/auth-ui
         env:
+          # Both names: setup-node's .npmrc uses NODE_AUTH_TOKEN, while the
+          # repo-root .npmrc (pulled into scope by the root `npm ci`) references
+          # ${GITHUB_TOKEN}. Set both so whichever wins precedence, auth resolves.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Pin an explicit .npmrc in the package dir as the closest (winning)
+          # config, so registry+auth are deterministic regardless of ambient files.
+          cat > .npmrc <<'NPMRC'
+          @izzywdev:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-auth-ui
           if npm view "@izzywdev/fuzefront-auth-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
