@@ -19,6 +19,9 @@ import flagsRoutes from './routes/flags'
 import portalRoutes from './routes/portal'
 import { resolvePortalContext } from './middleware/portalContext'
 import { ensureRootPortal } from './repositories/portalRepository'
+import { syncPermitSchemaFromRegistry } from './permit/sync-permit-schema'
+import permitClient from './config/permit'
+import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
@@ -580,6 +583,43 @@ async function startServer() {
       )
     } catch (error) {
       console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
+    }
+
+    // Push the environment-level Permit policy (resources/actions/roles from
+    // permit/schema.ts, incl. the ReBAC Organization.parent relation and the
+    // derived `org-admin` role). This was previously reachable ONLY via
+    // `npm run permit:schema` and the test suite, so a schema change reached
+    // Permit only when somebody remembered to run it — and the derived role the
+    // org hierarchy depends on could silently not exist in the environment.
+    // Non-fatal: Permit being unreachable must not stop the platform booting;
+    // authorization already fails closed.
+    try {
+      const legacyPolicies = [
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./permit/products/fuzemarket.policy').default,
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./permit/products/mendys-datasets.policy').default,
+      ]
+      await syncPermitSchemaFromRegistry(permitClient as any, legacyPolicies)
+      console.log('✅ Permit schema synced')
+    } catch (error) {
+      console.error('⚠️  Permit schema sync failed (non-fatal):', error)
+    }
+
+    // Grant the ReBAC `org-admin` role on the ROOT organization to platform
+    // administrators. Without a grant at the root there is nothing for the
+    // schema's parent→child derivation to derive FROM, so wiring the hierarchy
+    // alone would still leave staff unable to administer tenants.
+    // Non-fatal for the same reason as above.
+    try {
+      const granted = await ensureRootOrgAdmins()
+      console.log(
+        granted.length > 0
+          ? `✅ Root org-admin ensured for ${granted.length} administrator(s)`
+          : 'ℹ️  No platform administrators to grant root org-admin to yet'
+      )
+    } catch (error) {
+      console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
     }
 
     // Start consuming billing.subscription.changed to project plan-tier/status
