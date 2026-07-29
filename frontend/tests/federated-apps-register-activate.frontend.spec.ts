@@ -174,7 +174,10 @@ async function installMocks(page: Page) {
 /** Seed an auth token so the shell renders authenticated. */
 async function seedAuth(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('authToken', 'e2e-mock-token')
+    // Seed into the account vault's provisional namespace — where a real first
+    // sign-in parks its token before /session names the account. A bare
+    // `authToken` is no longer read by anything.
+    localStorage.setItem('ff.acct.__provisional__.authToken', 'e2e-mock-token')
     // Pre-confirm the workspace so the provisioning gate opens without flashing
     // (READY_SESSION_KEY in WorkspaceProvisioningGate). The mocked /api/organizations
     // returning a personal org would open the gate anyway; this avoids the flash.
