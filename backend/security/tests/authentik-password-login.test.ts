@@ -8,7 +8,11 @@
  * the redirect flow's tests isolate openid-client.
  */
 
-jest.mock('../src/services/oidc', () => ({
+jest.mock('../src/services/oidc', () => {
+  // getOidcService() replaced the former `oidcService` singleton (the client is
+  // now resolved per tenant). Expose both, backed by the SAME object, so the
+  // assertions below still address what the code under test receives.
+  const mod: any = ({
   oidcService: {
     isConfigured: jest.fn().mockReturnValue(true),
     isInitialized: jest.fn().mockReturnValue(true),
@@ -24,7 +28,10 @@ jest.mock('../src/services/oidc', () => ({
       roles: ['user'],
     }),
   },
-}))
+})
+  mod.getOidcService = () => mod.oidcService
+  return mod
+})
 
 import {
   authentikPasswordLogin,
@@ -32,7 +39,10 @@ import {
   AuthentikUnavailableError,
   UnsupportedFlowStageError,
 } from '../src/services/authentikPassword'
-import { oidcService } from '../src/services/oidc'
+import { getOidcService } from '../src/services/oidc'
+
+/** The mocked client the code under test resolves via getOidcService(). */
+const oidcService: any = getOidcService()
 
 const REDIRECT_URI = 'http://fuzefront.test.local/api/auth/oidc/callback'
 
