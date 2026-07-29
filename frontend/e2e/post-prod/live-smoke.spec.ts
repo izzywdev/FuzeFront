@@ -1,4 +1,5 @@
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test'
+import { seedMockSession } from '../../tests/support/account-vault'
 
 /**
  * POST-PRODUCTION smoke / synthetic verification — READ-ONLY against the LIVE
@@ -160,10 +161,13 @@ test.describe('FuzeFront live post-prod smoke', () => {
     const token: string = loginBody.token
     expect(token, 'API login returned a token').toBeTruthy()
 
-    // Seed the SPA session before the app boots.
-    await page.addInitScript(t => {
-      window.localStorage.setItem('authToken', t)
-    }, token)
+    // Seed the SPA session before the app boots, into the ACCOUNT VAULT's
+    // provisional namespace (src/lib/accounts.ts) rather than the bare
+    // `authToken` key. A bare key would still boot today, but only because the
+    // vault's one-time legacy migration sweeps it — this synthetic must not
+    // depend on an upgrade path, or it goes quietly red against prod the day
+    // that migration is retired.
+    await page.addInitScript(seedMockSession, token)
 
     await page.goto('/dashboard')
     await page.waitForURL('**/dashboard', { timeout: 30_000 })

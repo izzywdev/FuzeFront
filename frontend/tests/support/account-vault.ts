@@ -112,11 +112,15 @@ export function hasActiveSession(): boolean {
 }
 
 /**
- * Seed a session for a MOCKED spec, in the shape the app boots from.
+ * Seed a session before the app boots, in the shape the app boots from.
  *
  * Writes to the provisional namespace — the same place a real first sign-in
  * parks its token before `/session` names the account — so the shell resolves
  * it without needing a roster entry the spec would have to invent.
+ *
+ * The token may be a fixture OR a real one minted against a live deployment
+ * (post-prod/live-smoke.spec.ts passes a genuine prod token); the vault write is
+ * identical either way, which is the point of routing both through one helper.
  *
  * Use with `page.addInitScript(seedMockSession, 'my-token')`.
  */
