@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- base: install production deps only ----------
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
@@ -14,7 +14,7 @@ COPY services/chat-service/package.json ./services/chat-service/
 RUN npm ci --workspace=services/chat-service --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
@@ -34,7 +34,7 @@ RUN cd shared && npm run build
 RUN cd services/chat-service && npm run build
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache dumb-init && \

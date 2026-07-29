@@ -5,6 +5,11 @@ export interface User {
   roles: string[]
   firstName?: string
   lastName?: string
+  // FF-EPIC-10-S3 — the portal this session/token is bound to (server-issued
+  // `prt_...` id). Set by authenticateToken from the JWT `portal_id` claim
+  // (falling back to the resolved req.portal when absent); undefined when the
+  // multi-tenant-portals flag is OFF, preserving pre-epic behavior.
+  portalId?: string
 }
 
 export interface Organization {

@@ -32,7 +32,7 @@ export interface PasswordChecklistProps
   title?: string;
 }
 
-export function PasswordChecklist(props: PasswordChecklistProps): JSX.Element;
+export function PasswordChecklist(props: PasswordChecklistProps): React.JSX.Element;
 
 // Pure helpers surfaced as statics so feature code reaches them through the
 // package barrel (which only re-exports the component itself).

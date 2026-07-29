@@ -131,6 +131,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
       x-pagination: exempt
       x-pagination-reason: Singleton session-creation action; returns one session.
     get:
@@ -610,6 +612,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
       x-pagination: exempt
       x-pagination-reason: Singleton account-creation action.
   # ─────────────────────────── AuthN: capabilities ──────────────────────────
@@ -1495,6 +1499,22 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    ServiceUnavailable:
+      description: >-
+        The identity provider is unreachable, too slow, or presented a flow this
+        API cannot drive server-side (`code: PROVIDER_UNAVAILABLE`). This is a
+        SERVICE condition and says nothing about the caller's credentials —
+        clients MUST NOT surface it as an authentication failure. Retryable;
+        `Retry-After` indicates how long to wait.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
       content:
         application/json:
           schema:

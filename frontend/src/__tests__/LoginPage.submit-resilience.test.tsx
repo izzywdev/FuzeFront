@@ -124,7 +124,13 @@ describe('LoginPage — credentials submit resilience (fail-fast + clear errors)
     expect(screen.queryByText(/^signing in…$/i)).not.toBeInTheDocument()
   })
 
-  it('shows an ambiguous-401 message (not a flat "wrong password" accusation) and un-sticks the button', async () => {
+  // The Security API used to answer 401 for BOTH a rejected credential and a
+  // provider outage, so this message had to hedge across the two ("wrong
+  // password, OR the service is down") — telling users during an incident that
+  // their password might be at fault. The API now separates them (503
+  // PROVIDER_UNAVAILABLE vs 401), so each case says one true thing.
+
+  it('shows a plain rejected-credentials message on 401 and un-sticks the button', async () => {
     const unauthorizedErr: any = new Error('Request failed with status code 401')
     unauthorizedErr.response = { status: 401, data: { error: 'Unauthorized' } }
     vi.mocked(authAPI.login).mockRejectedValue(unauthorizedErr)
@@ -134,9 +140,39 @@ describe('LoginPage — credentials submit resilience (fail-fast + clear errors)
 
     await waitFor(() => {
       expect(
-        screen.getByText(/incorrect email or password, or the sign-in service is temporarily unavailable/i)
+        screen.getByText(/incorrect email or password/i)
       ).toBeInTheDocument()
     })
+    // No longer hedged against an outage — 401 now means only one thing.
+    expect(
+      screen.queryByText(/temporarily unavailable/i)
+    ).not.toBeInTheDocument()
+
+    const signIn = screen.getByRole('button', { name: /^sign in$/i })
+    expect(signIn).not.toBeDisabled()
+    expect(screen.queryByText(/^signing in…$/i)).not.toBeInTheDocument()
+  })
+
+  it('never blames the user’s credentials on a 503 provider outage', async () => {
+    const outageErr: any = new Error('Request failed with status code 503')
+    outageErr.response = {
+      status: 503,
+      data: { error: 'Authentication unavailable', code: 'PROVIDER_UNAVAILABLE' },
+    }
+    vi.mocked(authAPI.login).mockRejectedValue(outageErr)
+
+    render(<LoginPage />)
+    await fillAndSubmit()
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/sign-in service is temporarily unavailable/i)
+      ).toBeInTheDocument()
+    })
+    // The whole point: an incident must not read as a credentials problem.
+    expect(
+      screen.queryByText(/incorrect email or password/i)
+    ).not.toBeInTheDocument()
 
     const signIn = screen.getByRole('button', { name: /^sign in$/i })
     expect(signIn).not.toBeDisabled()

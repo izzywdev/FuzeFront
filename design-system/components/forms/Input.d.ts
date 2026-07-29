@@ -12,4 +12,4 @@ export interface InputProps
   error?: string;
 }
 
-export function Input(props: InputProps): JSX.Element;
+export function Input(props: InputProps): React.JSX.Element;

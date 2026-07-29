@@ -20,4 +20,4 @@ export interface BottomSheetProps {
   style?: React.CSSProperties;
 }
 
-export function BottomSheet(props: BottomSheetProps): JSX.Element | null;
+export function BottomSheet(props: BottomSheetProps): React.JSX.Element | null;
