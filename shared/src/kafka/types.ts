@@ -12,6 +12,7 @@ export const TOPICS = {
   BILLING_PAYMENT_COMPLETED: 'billing.payment.completed',
   BILLING_TRIAL_ENDING: 'billing.trial.ending',
   BILLING_PAYMENT_FAILED: 'billing.payment.failed',
+  PORTAL_CREATED: 'portal.created',
 } as const;
 
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];

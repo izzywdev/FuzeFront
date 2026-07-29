@@ -12,6 +12,7 @@ export declare const TOPICS: {
     readonly BILLING_PAYMENT_COMPLETED: "billing.payment.completed";
     readonly BILLING_TRIAL_ENDING: "billing.trial.ending";
     readonly BILLING_PAYMENT_FAILED: "billing.payment.failed";
+    readonly PORTAL_CREATED: "portal.created";
 };
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
 /** Envelope wrapping every event published on FuzeFront Kafka topics */

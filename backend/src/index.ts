@@ -15,6 +15,7 @@ import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
 import flagsRoutes from './routes/flags'
 import portalRoutes from './routes/portal'
+import adminPortalsRoutes from './routes/adminPortals'
 import { resolvePortalContext } from './middleware/portalContext'
 import { ensureRootPortal } from './repositories/portalRepository'
 import { syncPermitSchemaFromRegistry } from './permit/sync-permit-schema'
@@ -299,6 +300,9 @@ app.use('/api/flags', flagsRoutes)
 // Portal context boot + the caller's own portal (FF-EPIC-10-S2). Both routes
 // are individually flag-gated (404 when off) — see routes/portal.ts.
 app.use('/api/v1/portal', portalRoutes)
+// Master-admin portal fleet CRUD + resumable provisioning (FF-EPIC-09-S2/S3).
+// Flag-gated (404 when off) and Permit platform-admin gated — see routes/adminPortals.ts.
+app.use('/api/v1/admin/portals', adminPortalsRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
 // internal token). Webhook subroute is mounted separately above (raw body).
 app.use('/api/v1/billing', billingRoutes)

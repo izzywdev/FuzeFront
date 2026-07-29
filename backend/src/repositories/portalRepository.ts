@@ -48,6 +48,14 @@ export interface PortalDomainDto {
   verificationStatus: VerificationStatus
   tlsStatus: TlsStatus
   isPrimary: boolean
+  // Contract (services/portal-service/openapi.yaml v1.1.0, PR #431) — "the
+  // only field to gate on" before advertising a domain. Always true for
+  // subdomain/path domains (served by the static wildcard); for `custom`
+  // domains, true only once verification + TLS + routing are all live.
+  // FF-EPIC-16 owns populating verification/TLS beyond 'verified'/'none' for
+  // custom domains — this projection only derives what today's columns
+  // already capture.
+  active: boolean
   createdAt: string
 }
 
@@ -130,14 +138,19 @@ export function generatePortalId(): string {
 }
 
 export function rowToPortalDomain(row: any): PortalDomainDto {
+  const kind: DomainKind = row.kind
+  const active =
+    kind !== 'custom' ||
+    (row.verification_status === 'verified' && row.tls_status === 'active')
   return {
     id: row.id,
     portalId: row.portal_id,
     domain: row.domain,
-    kind: row.kind,
+    kind,
     verificationStatus: row.verification_status,
     tlsStatus: row.tls_status,
     isPrimary: !!row.is_primary,
+    active,
     createdAt: new Date(row.created_at).toISOString(),
   }
 }
