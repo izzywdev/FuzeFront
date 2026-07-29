@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Knex } from 'knex'
 import { db as defaultDb } from '../config/database'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 /**
  * Data access + row<->DTO mapping for `portals`/`portal_domains`
@@ -293,10 +294,15 @@ export async function ensureRootPortal(
     return rowToPortal(existing, domains)
   }
 
-  let rootOrg = await db('organizations')
-    .where({ type: 'platform' })
-    .orderBy('created_at', 'asc')
-    .first()
+  // Prefer the FIXED root-org id seeded by migration 015. The oldest-platform-org
+  // fallback stays for databases that predate it (their root was created by an
+  // earlier ensureRootPortal() under a random id, and rows already reference it).
+  let rootOrg =
+    (await db('organizations').where({ id: ROOT_ORG_ID }).first()) ??
+    (await db('organizations')
+      .where({ type: 'platform' })
+      .orderBy('created_at', 'asc')
+      .first())
 
   if (!rootOrg) {
     const admin = await db('users')
@@ -310,7 +316,7 @@ export async function ensureRootPortal(
       return null
     }
 
-    const orgId = uuidv4()
+    const orgId = ROOT_ORG_ID
     await db('organizations')
       .insert({
         id: orgId,

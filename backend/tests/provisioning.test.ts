@@ -22,20 +22,38 @@ import {
   isAlreadyExistsError,
 } from '../src/utils/permit/tenant-management'
 import { Organization } from '../src/types/shared'
+import { ROOT_ORG_ID } from '../src/migrations/015_seed_root_platform_organization'
 
 // ---- fakes -------------------------------------------------------------
 
 function makeFakePermit(
   overrides: Partial<ProvisioningPermitClient> = {}
 ): ProvisioningPermitClient & { calls: Record<string, number> } {
-  const calls = { syncUser: 0, createTenant: 0, assignOwnerRole: 0 }
+  const calls = {
+    syncUser: 0,
+    createTenant: 0,
+    createOrgInstance: 0,
+    linkParent: 0,
+    assignOwnerRole: 0,
+  }
+  // Records the (child, parent) pairs passed to linkParent so tests can assert
+  // the ReBAC hierarchy is wired, not merely that a call happened.
+  const parentLinks: Array<{ child: string; parent: string }> = []
   return {
     calls,
+    parentLinks,
     async syncUser() {
       calls.syncUser++
     },
     async createTenant() {
       calls.createTenant++
+    },
+    async createOrgInstance() {
+      calls.createOrgInstance++
+    },
+    async linkParent(org: any, parentOrgId: string) {
+      calls.linkParent++
+      parentLinks.push({ child: org.id, parent: parentOrgId })
     },
     async assignOwnerRole() {
       calls.assignOwnerRole++
@@ -209,6 +227,9 @@ describe('reconcileOrganizationProvisioning', () => {
     expect(permit.calls).toEqual({
       syncUser: 1,
       createTenant: 1,
+      createOrgInstance: 1,
+      // migration 015 seeds the root org, so a non-root org links to it
+      linkParent: 1,
       assignOwnerRole: 1,
     })
     expect(emails).toHaveLength(1)
@@ -224,6 +245,37 @@ describe('reconcileOrganizationProvisioning', () => {
     expect(steps.every((s: any) => s.status === 'done')).toBe(true)
   })
 
+  // The ReBAC hierarchy is the whole point of Organization.relations.parent in
+  // permit/schema.ts. Before this was wired, createOrganizationResourceInstance
+  // and setOrganizationParent had ZERO callers, so the derived `org-admin` role
+  // had no instance and no tuple to derive from.
+  it('creates the Organization instance and links the org under the root org', async () => {
+    const userId = await createUser()
+    const orgId = await createOrg(userId)
+    const permit = makeFakePermit()
+    const { publisher } = makeFakePublisher()
+
+    await reconcileOrganizationProvisioning(orgId, deps(permit, publisher))
+
+    expect(permit.calls.createOrgInstance).toBe(1)
+    expect((permit as any).parentLinks).toEqual([
+      { child: orgId, parent: ROOT_ORG_ID },
+    ])
+  })
+
+  // Linking the root org to itself would create a self-referential tuple.
+  it('does not link the root organization to itself', async () => {
+    const permit = makeFakePermit()
+    const { publisher } = makeFakePublisher()
+
+    const rootExists = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+    expect(rootExists).toBeTruthy() // seeded by migration 015
+
+    await reconcileOrganizationProvisioning(ROOT_ORG_ID, deps(permit, publisher))
+
+    expect((permit as any).parentLinks).toEqual([])
+  })
+
   it('is resumable — a re-run skips done steps', async () => {
     const userId = await createUser()
     const orgId = await createOrg(userId)
@@ -237,6 +289,9 @@ describe('reconcileOrganizationProvisioning', () => {
     expect(permit.calls).toEqual({
       syncUser: 1,
       createTenant: 1,
+      createOrgInstance: 1,
+      // migration 015 seeds the root org, so a non-root org links to it
+      linkParent: 1,
       assignOwnerRole: 1,
     })
   })
