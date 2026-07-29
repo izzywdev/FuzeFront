@@ -15,6 +15,27 @@ Read the baseline for the full governance model (3 layers, repo tiers, single-re
 - **Backend:** Express + Postgres, with **Authentik** (identity/SSO) and **Permit** (authorization) for auth. The frontend talks to the API on a **same-origin API base** (no cross-origin base URL) so it works identically under local TLS and prod ingress — never hard-code an absolute API host.
 - **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@claude`** — never edit FuzeInfra or operate the cluster from here.
 
+## Toolchain baseline — Node 24 LTS / React 19 are a floor, not a suggestion
+
+These are **minimums every manifest, image, workflow and remote must meet.** FuzeFront is the Module-Federation host, so its React major *is* the shared-singleton contract for the whole family — drift here does not surface as a version warning, it surfaces as a white screen in somebody else's app.
+
+| Thing | Mandated minimum | Declared in |
+|---|---|---|
+| Node | `>=24.0.0` (Krypton, Active LTS) | `engines.node` in every manifest; `.nvmrc` = `24` |
+| npm | `>=10.0.0` | `engines.npm` |
+| `@types/node` | `^24.13.3` | every manifest |
+| `react` / `react-dom` | `^19.2.0` | app dependencies |
+| React peer range | `^19.0.0` | `peerDependencies` of every published `@fuzefront/*` package + the SDK |
+| `@types/react` / `@types/react-dom` | `^19.2.0` | root **and** `design-system` (it ships `.d.ts` that import React types) |
+| MF shared `requiredVersion` | `^19.0.0` | host `frontend/vite.config.ts` **and** every remote |
+| Docker base image | `node:24-alpine` / `node:24-bookworm-slim` | every Dockerfile |
+| CI runner | `node-version: '24.x'` | every workflow |
+
+- **Raising the floor is fine; lowering it is a breaking change to the family.** Node 18/20/22 and React 18 no longer satisfy these manifests. Bumping the React major means bumping the host, both in-repo remotes, every published peer range and every out-of-repo consumer together — it is never a single-package decision.
+- **Host and remote `requiredVersion` must be identical.** If they differ, the remote silently loads its own React copy and dies on "Invalid hook call" at runtime, in the browser, with nothing in CI to catch it.
+- **Out-of-repo remotes are bound by this too.** React 18 consumers fail peer resolution against the published packages; see `docs/guides/BUILDING_ON_FUZEFRONT.md`.
+- **Nothing enforces this yet.** No CI job reads `engines`, `.nvmrc`, the peer ranges or the MF `requiredVersion` — `gate-version` only checks SemVer bump discipline. Until a `gate-toolchain` exists, this table is the source of truth and the rule survives on review alone. Frozen point-in-time records under `docs/superpowers/plans/`, `sdd/` and `docs/chats/` deliberately still quote the versions current when they were written; they are history, not governance.
+
 ## Design system — FuzeFront IS the base
 
 - FuzeFront publishes the **"fuse seam" design system** as the base package **`@fuzefront/design-system`** — the single source of truth for color/spacing/type/primitives for the whole Fuze family.
