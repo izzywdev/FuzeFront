@@ -45,19 +45,21 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@izzywdev'
 
-      - name: Build the design-system dependency
-        working-directory: design-system
-        run: npm install --workspaces=false --no-audit --no-fund && npm run build
+      # Install the whole workspace so auth-ui's @fuzefront/* deps
+      # (design-system, security-client) resolve from SOURCE via workspace
+      # symlinks. A per-package `npm install --workspaces=false` instead tries to
+      # fetch @fuzefront/design-system@1.0.0 from the registry, which 404s — it
+      # has never been published (the reason these alias workflows exist).
+      - name: Install workspace (links @fuzefront/* from source)
+        run: npm ci --no-audit --no-fund
 
-      - name: Build the security-client dependency (types only)
-        working-directory: packages/security
-        run: npm install --workspaces=false --no-audit --no-fund && npm run build
-
-      - name: Build auth-ui
-        working-directory: packages/auth-ui
+      # Build the in-repo dependencies first (auth-ui imports their built output
+      # / types), then auth-ui itself — all via workspace-scoped scripts.
+      - name: Build design-system, security-client, then auth-ui
         run: |
-          npm install --workspaces=false --no-audit --no-fund
-          npm run build
+          npm run build -w @fuzefront/design-system
+          npm run build -w @fuzefront/security-client
+          npm run build -w @fuzefront/auth-ui
 
       - name: Publish @izzywdev/fuzefront-auth-ui
         working-directory: packages/auth-ui
