@@ -66,6 +66,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Pin an explicit .npmrc in the package dir so registry+auth don't
+          # depend on the repo-root .npmrc (which the root `npm ci` brought into
+          # scope and which references ${GITHUB_TOKEN}, unset here → E401).
+          cat > .npmrc <<'NPMRC'
+          @izzywdev:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-auth-ui
           if npm view "@izzywdev/fuzefront-auth-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
