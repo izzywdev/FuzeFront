@@ -142,23 +142,37 @@ each consuming repo, read `.fuze/manifest.json`, and reconcile the declared bloc
 against what is actually in the tree — building the surface the first time and
 correcting drift after.
 
-**`mobile` therefore belongs in `.fuze/manifest.json`**, alongside `mcp` and `a2a`, and
-`mobile-maintainer` becomes the third sibling of that pattern:
+**`mobile` therefore belongs in `.fuze/manifest.json`**, alongside `mcp` and `a2a` —
+and the contract for it **already exists**. FuzeSDLC ships
+`agent-templates/schema/mobile-requirements.schema.json`, which explicitly sanctions a
+`mobile` block in `.fuze/manifest.json`, plus the `mobile-app-engineer` agent and the
+`mobile-packaging` / `mobile-conformance` skills. An earlier draft of this document
+proposed a new block and a new `mobile-maintainer` agent; both were redundant, and
+inventing a parallel contract next to an unused one is how a standard stops being a
+standard. Use what is there:
 
 ```jsonc
 "mobile": {
-  "enabled": true,
-  "platforms": ["android"],
-  "applicationId": "com.fuzefront.fuzehub",
-  "standaloneSlug": "fuzehub-ventures"
+  "product": "FuzeHub",
+  "required": true,
+  "strategy": "pwa",                       // responsive-web | pwa | react-native | flutter
+  "targets": ["android", "mobile-web"],
+  "responsive": { "min_width": 375, "breakpoints": [375, 768, 1024], "min_tap_target_px": 44 },
+  "acceptance": [
+    "No horizontal scroll at min_width; the shell drawer replaces the desktop sidebar.",
+    { "check": "Lighthouse mobile performance", "min_score": 80, "at_width": 375 }
+  ]
 }
 ```
 
-It is the one block that must **cross-reference the other manifest**: the URL to wrap
-lives in `registration/`, not `.fuze/`. So the gate is a pair check — `mobile.enabled`
-requires the referenced registration manifest to declare `standalone` in `modes` and a
-`routing.host`. That is deliberately the only coupling between the two files, and it is
-one-directional.
+`strategy: pwa` is the family default because it is what FuzeFront actually ships — an
+installable PWA wrapped as a signed Android TWA (`build-android-apk.yml`).
+
+It is the one block that must **cross-reference the other manifest**: the URL a build
+wraps lives in `registration/`, not `.fuze/`. So the gate is a pair check —
+`required: true` demands that the product's registration manifest declare `standalone`
+in `modes` and a `routing.host`, because otherwise there is no URL to wrap. That is
+deliberately the only coupling between the two files, and it is one-directional.
 
 ## Worked example — FuzeHub
 
@@ -324,8 +338,11 @@ Not in the contract PR, each independently shippable:
 2. **Shell renders suite groups** in the side menu. This is feature UI, so it goes
    through the design-frames flow first. Until it lands, siblings render as flat
    entries — correct, just not grouped.
-3. **`mobile-maintainer`** in FuzeSDLC, plus the `mobile` block and its paired gate,
-   generalizing FuzeFront's existing `build-android-apk.yml`.
+3. **The `mobile` pair gate** — `required: true` must fail unless the product's
+   registration manifest declares `standalone` in `modes` and a `routing.host`. Plus
+   generalizing FuzeFront's `build-android-apk.yml` so `mobile-app-engineer` can build
+   a signed APK per product rather than only for the shell. No new agent is needed —
+   `mobile-app-engineer` already exists.
 4. **FuzeHub migration** to five manifests, and retiring `register-apps-job.yaml` — in
    that order. The legacy job is the only thing registering those four surfaces today
    and must not be removed before its replacement is live.
