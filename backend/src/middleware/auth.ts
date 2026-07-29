@@ -100,6 +100,30 @@ export const authenticateToken = async (
     const portalsEnabled = await getRequestPortalsEnabled(req)
     if (portalsEnabled) {
       const resolvedPortal = req.portal // set by resolvePortalContext, if mounted upstream
+
+      // Round-9 fix (gate-code-review) — a DEGRADED resolution (a transient
+      // host-lookup/infra error in resolvePortalContext) must fail closed for
+      // EVERY authenticated request — portal-bound AND legacy — and never fall
+      // open to root. We CANNOT distinguish a root-host blip from a tenant-host
+      // blip here (the host lookup itself failed), so both a claimed-portal
+      // token and a claimless legacy token get a TRANSIENT, retryable 503 —
+      // never a 401 (which destroys the session / mass-logs-out every portal-
+      // bound user on a brief portal_domains DB blip) and never a silent bind-
+      // to-root (the legacy branch's `getRootPortal()` fall-through, which
+      // would accept a legacy token presented on a tenant Host and bind it to
+      // root — bypassing the AC3 non-root rejection). Only a genuinely RESOLVED
+      // portal with a mismatching (portal-bound) or non-root (legacy) binding,
+      // handled below, is a real cross-portal violation and a 401. This guard
+      // is hoisted ABOVE the decoded.portalId/legacy split precisely so BOTH
+      // branches are covered by one check — the earlier round-8 fix guarded
+      // only the portal-bound branch, leaving the legacy branch fail-open.
+      if (req.portalResolutionDegraded) {
+        return res.status(503).json({
+          error: 'PORTAL_RESOLUTION_UNAVAILABLE',
+          message: 'Portal context is temporarily unavailable, please retry.',
+        })
+      }
+
       if (decoded.portalId) {
         // Fix (a) — FAIL CLOSED. Previously `resolvedPortal &&
         // resolvedPortal.id !== decoded.portalId` skipped the reject
@@ -108,26 +132,8 @@ export const authenticateToken = async (
         // never set req.portal) — silently ACCEPTING a token minted for a
         // portal we have no way to verify against. A claimed portal_id with
         // no portal context to check it against must never fall through to
-        // acceptance.
-        // Round-8 fix (gate-code-review) — a DEGRADED resolution (a
-        // transient host-lookup/infra error in resolvePortalContext) is NOT
-        // the same thing as "no portal context at all". Previously both
-        // collapsed into `!resolvedPortal` below and were 401'd identically —
-        // but 401 destroys the session (the client discards the token /
-        // redirects to login), so one brief portal_domains DB blip mass-
-        // logged-out every user with a portalId claim, defeating the whole
-        // point of graceful degradation (keep authenticated traffic alive
-        // across a DB hiccup). This is a TRANSIENT, retryable condition, not
-        // an auth failure — respond 503 so the client retries once the DB
-        // recovers, and never discards the token. A genuinely RESOLVED
-        // portal whose id mismatches the token's portalId (below) remains a
-        // real cross-portal violation and stays a 401.
-        if (req.portalResolutionDegraded) {
-          return res.status(503).json({
-            error: 'PORTAL_RESOLUTION_UNAVAILABLE',
-            message: 'Portal context is temporarily unavailable, please retry.',
-          })
-        }
+        // acceptance. (The DEGRADED case is handled by the hoisted guard
+        // above, before this split, so it is not re-checked here.)
         if (!resolvedPortal || resolvedPortal.id !== decoded.portalId) {
           // AC3 — a token minted for portal A presented on portal B's Host
           // (or on a route where portal context is simply missing) is

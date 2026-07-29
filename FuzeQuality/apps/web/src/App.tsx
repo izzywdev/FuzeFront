@@ -401,7 +401,7 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
       <div className="snapshot-stamp"><span>Policy</span><strong>api-coverage-v1</strong><small>{data.repositories.filter(repository => repository.lastScanAt).length} fresh scan snapshots</small></div>
     </div>
     <CoverageRail expectations={expectations} />
-    <Matrix items={operations} expectations={expectations} kind="api" />
+    <Matrix items={operations} expectations={expectations} kind="api" repositories={data.repositories} />
     <section className="panel catalog-findings">
       <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
       <div className="finding-list">

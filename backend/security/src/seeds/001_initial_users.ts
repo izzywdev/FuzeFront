@@ -1,9 +1,18 @@
 import { Knex } from 'knex'
 import bcrypt from 'bcrypt'
 
+// The `platform-registrar` service principal created by the backend's
+// 014_seed_platform_registrar_user migration.  Every deployed Module-Federation
+// remote authenticates to the app-registry with a sealed token bound to this
+// UUID, so deleting it breaks app registration cluster-wide until it is
+// restored by hand.  Seeds are gated to non-production by a single
+// `NODE_ENV !== 'production'` check; exempting the row removes the blast radius
+// if that gate is ever bypassed.
+const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
+
 export async function seed(knex: Knex): Promise<void> {
-  // Delete existing entries
-  await knex('users').del()
+  // Delete existing entries (never the platform-registrar service principal).
+  await knex('users').whereNot('id', PLATFORM_REGISTRAR_ID).del()
 
   // Generate password hash for admin
   const adminPasswordHash = await bcrypt.hash('admin123', 10)

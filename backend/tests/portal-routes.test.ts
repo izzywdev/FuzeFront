@@ -777,4 +777,46 @@ describe('authenticateToken — degraded portal resolution returns 503, not 401 
     expect(res.status).toBe(200)
     expect(res.body.portalId).toBe(rootOrg.portalId)
   })
+
+  it('round-9 fix — a LEGACY no-claim token on a DEGRADED tenant-host request returns 503, NOT silently bound to root', async () => {
+    // The round-8 fix guarded ONLY the portal-bound branch, so a legacy
+    // (no portal_id claim) token presented on a tenant Host during a transient
+    // domain-lookup error skipped the degraded check, fell to the legacy
+    // branch's getRootPortal() fall-through, and was silently BOUND TO ROOT —
+    // accepting a legacy token on a tenant Host and bypassing the AC3 non-root
+    // rejection. Round-9 hoists the degraded guard above the claim/legacy
+    // split so BOTH branches fail closed with a transient 503.
+    flagEnabled = true
+    await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
+    await createPortal({ slug: 'legacy-degraded-co', domain: 'legacy-degraded-co.fuzefront.test' })
+    const userId = await createUser()
+    const token = signToken(userId) // legacy: no portalId claim
+
+    // Warm the root cache with a healthy lookup first, so the pre-fix legacy
+    // fall-through would have a cached, healthy root to (wrongly) bind to.
+    const warmMiddleware = createResolvePortalContext({ db, isEnabled: async () => true })
+    const warmApp = express()
+    warmApp.use(warmMiddleware)
+    warmApp.get('/probe', (_req, res) => res.json({ ok: true }))
+    await request(warmApp).get('/probe').set('Host', 'unrelated-warm-host-3.example.com')
+
+    const degradedMiddleware = createResolvePortalContext({
+      db: domainLookupThrowingDb(),
+      isEnabled: async () => true,
+    })
+    const degradedApp = express()
+    degradedApp.use(degradedMiddleware)
+    degradedApp.use(authenticateToken as any)
+    degradedApp.get('/probe', (req: any, res) => res.json({ portalId: req.user?.portalId ?? null }))
+
+    const res = await request(degradedApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Host', 'legacy-degraded-co.fuzefront.test')
+
+    // Fail closed: transient 503, never a silent bind-to-root (status 200 with
+    // portalId === the root portal — the round-9 fail-open).
+    expect(res.status).toBe(503)
+    expect(res.body.error).toBe('PORTAL_RESOLUTION_UNAVAILABLE')
+  })
 })
