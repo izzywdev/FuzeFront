@@ -71,11 +71,11 @@ export default defineConfig({
       shared: {
         react: {
           singleton: true,
-          requiredVersion: '^18.0.0',
+          requiredVersion: '^19.0.0',
         } as any,
         'react-dom': {
           singleton: true,
-          requiredVersion: '^18.0.0',
+          requiredVersion: '^19.0.0',
         } as any,
       },
     }),
@@ -187,7 +187,7 @@ npm run preview
 
 ```dockerfile
 # Multi-stage build for production
-FROM node:18-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 COPY package*.json ./
