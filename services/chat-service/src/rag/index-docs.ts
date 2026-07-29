@@ -9,7 +9,7 @@
 // This file performs real I/O and is intentionally NOT unit-tested against live
 // services (the Indexer/chunker/chroma units are tested in isolation with mocks).
 
-import { promises as fs } from 'fs';
+import { promises as fs, type Dirent } from 'fs';
 import path from 'path';
 import { loadConfig } from '../config';
 import { LiteLLMClient } from '../llm/litellm';
@@ -21,7 +21,13 @@ import { GLOBAL_DOCS_COLLECTION } from '../rag/retriever';
 /** Recursively collect Markdown files under `dir`. */
 async function collectMarkdown(dir: string): Promise<string[]> {
   const out: string[] = [];
-  let entries: Awaited<ReturnType<typeof fs.readdir>>;
+  // Annotated `Dirent[]` rather than `Awaited<ReturnType<typeof fs.readdir>>`:
+  // `readdir` is overloaded, and `ReturnType` silently resolves to the LAST
+  // overload, which under @types/node 24 is the buffer-encoding one returning
+  // `Dirent<Buffer>[]` -- so the `{ withFileTypes: true }` call below (a
+  // `Dirent<string>[]`) failed to assign. `Dirent[]` is what this code means and
+  // is stable across typings versions.
+  let entries: Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {
