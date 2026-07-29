@@ -64,11 +64,14 @@ jobs:
       - name: Publish @izzywdev/fuzefront-auth-ui
         working-directory: packages/auth-ui
         env:
+          # Both names: setup-node's .npmrc uses NODE_AUTH_TOKEN, while the
+          # repo-root .npmrc (pulled into scope by the root `npm ci`) references
+          # ${GITHUB_TOKEN}. Set both so whichever wins precedence, auth resolves.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Pin an explicit .npmrc in the package dir so registry+auth don't
-          # depend on the repo-root .npmrc (which the root `npm ci` brought into
-          # scope and which references ${GITHUB_TOKEN}, unset here → E401).
+          # Pin an explicit .npmrc in the package dir as the closest (winning)
+          # config, so registry+auth are deterministic regardless of ambient files.
           cat > .npmrc <<'NPMRC'
           @izzywdev:registry=https://npm.pkg.github.com
           //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
