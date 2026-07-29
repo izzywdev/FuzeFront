@@ -26,4 +26,4 @@ export interface BottomNavProps {
   style?: React.CSSProperties;
 }
 
-export function BottomNav(props: BottomNavProps): JSX.Element;
+export function BottomNav(props: BottomNavProps): React.JSX.Element;

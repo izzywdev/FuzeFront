@@ -146,8 +146,8 @@ export default defineConfig({
       // federation boundary — a singleton mismatch would let the remote pull its
       // own React copy and crash on "Invalid hook call" / hang on the spinner.
       shared: {
-        react: { singleton: true, requiredVersion: '^18.0.0' } as any,
-        'react-dom': { singleton: true, requiredVersion: '^18.0.0' } as any,
+        react: { singleton: true, requiredVersion: '^19.0.0' } as any,
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' } as any,
       },
     }),
     VitePWA({

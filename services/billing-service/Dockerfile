@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- base: install production deps only ----------
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
@@ -14,7 +14,7 @@ COPY services/billing-service/package.json ./services/billing-service/
 RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
@@ -43,7 +43,7 @@ RUN mkdir -p services/billing-service/dist/migrations && \
 RUN cp services/billing-service/openapi.yaml services/billing-service/dist/openapi.yaml
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache dumb-init && \

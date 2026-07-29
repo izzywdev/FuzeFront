@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes } from "react";
+import { CSSProperties, HTMLAttributes, JSX } from "react";
 
 export interface StatItem {
   /** Primary metric value (number or formatted string). */

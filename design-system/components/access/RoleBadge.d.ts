@@ -11,4 +11,4 @@ export interface RoleBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   showIcon?: boolean;
 }
 
-export function RoleBadge(props: RoleBadgeProps): JSX.Element;
+export function RoleBadge(props: RoleBadgeProps): React.JSX.Element;

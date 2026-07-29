@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: ['24.x']
 
     steps:
       - name: Checkout code
@@ -102,7 +102,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       # Root install links the @fuzefront/* workspaces (design-system,
@@ -158,7 +158,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install dependencies
@@ -222,7 +222,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       # chat-service IS a root workspace, so `npm ci` installs its deps and links
@@ -272,7 +272,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Download build artifacts
@@ -318,7 +318,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install root workspace (shared deps)
@@ -395,7 +395,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
 
       - name: Discover OpenAPI specs
         id: discover
@@ -531,7 +531,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
 
       - name: Build documentation
         run: |

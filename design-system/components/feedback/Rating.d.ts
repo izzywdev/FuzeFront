@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes } from "react";
+import { CSSProperties, HTMLAttributes, JSX } from "react";
 
 export interface RatingProps extends HTMLAttributes<HTMLDivElement> {
   /** Numeric score, e.g. 4.5. Used to fill stars proportionally. */

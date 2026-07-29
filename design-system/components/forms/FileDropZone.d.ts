@@ -18,4 +18,4 @@ export interface FileDropZoneProps extends React.HTMLAttributes<HTMLDivElement> 
   multiple?: boolean;
 }
 
-export function FileDropZone(props: FileDropZoneProps): JSX.Element;
+export function FileDropZone(props: FileDropZoneProps): React.JSX.Element;

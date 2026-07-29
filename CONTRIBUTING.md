@@ -121,7 +121,7 @@ FrontFuse/
 
 ### Key Technologies
 
-- **Frontend**: React 18, TypeScript, Vite, Module Federation
+- **Frontend**: React 19, TypeScript, Vite, Module Federation
 - **Backend**: Node.js, Express, SQLite, Socket.IO
 - **Build**: Lerna, Concurrently, Docker
 - **CI/CD**: GitHub Actions, Automated testing

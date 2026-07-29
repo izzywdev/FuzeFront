@@ -20,8 +20,8 @@ export default defineConfig({
         './ClockApp': './src/App',
       },
       shared: {
-        react: { singleton: true, requiredVersion: '^18.0.0' } as any,
-        'react-dom': { singleton: true, requiredVersion: '^18.0.0' } as any,
+        react: { singleton: true, requiredVersion: '^19.0.0' } as any,
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' } as any,
       },
     }),
   ],

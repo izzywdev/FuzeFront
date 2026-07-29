@@ -24,4 +24,4 @@ export interface StatusPillProps extends React.HTMLAttributes<HTMLSpanElement> {
   label?: React.ReactNode;
 }
 
-export function StatusPill(props: StatusPillProps): JSX.Element;
+export function StatusPill(props: StatusPillProps): React.JSX.Element;

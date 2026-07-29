@@ -1,4 +1,4 @@
-import { CSSProperties, ChangeEventHandler } from "react";
+import { ChangeEventHandler, CSSProperties, JSX } from "react";
 
 export interface ToggleProps {
   checked?: boolean;

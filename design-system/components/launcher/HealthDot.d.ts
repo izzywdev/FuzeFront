@@ -15,4 +15,4 @@ export interface HealthDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   overlay?: boolean;
 }
 
-export function HealthDot(props: HealthDotProps): JSX.Element;
+export function HealthDot(props: HealthDotProps): React.JSX.Element;

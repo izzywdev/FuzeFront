@@ -5,7 +5,7 @@
 # @fuzefront/core and @fuzefront/shared workspace packages.
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
@@ -34,7 +34,7 @@ RUN cd packages/feature-flags && npm run build
 RUN cd backend/applications && npm run build
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 RUN apk add --no-cache dumb-init && \
     addgroup -g 1001 -S nodejs && \
     adduser -S applications -u 1001

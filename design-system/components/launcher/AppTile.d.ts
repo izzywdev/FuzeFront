@@ -22,4 +22,4 @@ export interface AppTileProps
   onClick?: (event: React.SyntheticEvent) => void;
 }
 
-export function AppTile(props: AppTileProps): JSX.Element;
+export function AppTile(props: AppTileProps): React.JSX.Element;
