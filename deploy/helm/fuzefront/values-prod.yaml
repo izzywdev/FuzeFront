@@ -309,6 +309,20 @@ database:
 # the bootstrap Job), alongside JWT_SECRET, SESSION_SECRET, PERMIT_API_KEY.
 secret:
   existingSecret: fuzefront-secrets
+  # GATE ONLY — the value is never used in prod, and that is the whole point.
+  # templates/chat-service.yaml wraps the LITELLM_MASTER_KEY env block in
+  # `{{- if .Values.secret.litellmMasterKey }}`. Because existingSecret is set
+  # above, templates/secret.yaml never renders, so this key's *value* goes
+  # nowhere; the real credential is the LITELLM_MASTER_KEY entry in the sealed
+  # `fuzefront-secrets`. Leave this empty and the env var is silently omitted —
+  # chat-service then starts healthy with no credential and 401s every LLM call,
+  # with nothing in the logs to say why.
+  #
+  # Gating an env block on a secret VALUE is a footgun (FuzeInfra flagged it):
+  # it couples a prod code path to a field prod deliberately does not set. The
+  # right fix is to gate on chatService.enabled instead — tracked separately so
+  # this PR stays a config change rather than a template change.
+  litellmMasterKey: "managed-by-sealed-secret"
 
 # Exposure model (verified against the LIVE cluster, 2026-06-23): prod is reached
 # via the Cloudflare tunnel "FuzeInfra" -> k3s Traefik (default ingress, NOT
@@ -436,26 +450,30 @@ kafkaTopics:
 # affinity steers them onto node-2 so the LLM/chat/billing load stays off the
 # DB-heavy node-1. nodeSelector uses the standard hostname label; adjust the
 # value to the real node name after the 2nd-node join.
-litellm:
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
+# The `litellm:` block that stood here is DELETED. FuzeFront never templated it —
+# there is no litellm template in deploy/helm/fuzefront/templates/ — so it
+# deployed nothing and only looked like config. The gateway is FuzeInfra's
+# (helm/litellm + argocd/applications/litellm.yaml, namespace fuzeinfra); we
+# consume it at chatService.litellmUrl. Its node affinity pinned
+# `fuzefront-node-2`, a node that does not exist in the Contabo cluster, which is
+# why FuzeInfra deliberately did not carry it across when they built the chart.
 
 chatService:
+  # ENABLED. The precondition recorded here — "flipping enabled on before an LLM
+  # endpoint exists gets you a running pod that fails every turn" — is now met:
+  # FuzeInfra's LiteLLM gateway is live at litellm.fuzeinfra.svc.cluster.local:4000
+  # and its NetworkPolicy admits the `fuzefront` namespace by name.
+  #
+  # KNOWN, ACCEPTED AT MERGE TIME: the gateway's Anthropic account has no credit,
+  # so /chat/completions returns 400 upstream while /embeddings (OpenAI-keyed)
+  # works. Chat turns will fail until that funding is resolved by FuzeInfra —
+  # this is a provider billing state, not a wiring defect, and the wiring is
+  # deliberately landed now so it is proven and ready. See the PR body.
+  #
   # The tag: line MUST stay immediately after repository: — release.yml's GitOps
   # bump step only rewrites a tag: found on the line directly following a matched
-  # repository: anchor. Seeded with the first SHA this image was built at; every
-  # later release rewrites it.
-  #
-  # chatService.enabled is still false (see values.yaml), so nothing pulls this
-  # yet. Flipping enabled on before an LLM endpoint exists gets you a running pod
-  # that fails every turn — see docs/planning/ai-chat-gap-analysis.md blocker 1.
+  # repository: anchor.
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
     tag: ca45c2119d95
