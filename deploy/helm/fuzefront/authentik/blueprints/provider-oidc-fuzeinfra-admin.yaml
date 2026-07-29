@@ -1,0 +1,256 @@
+# Authentik Blueprint — FuzeInfra admin-plane OIDC providers
+#
+# Creates the OIDC providers + Applications that let the FuzeInfra admin plane
+# (izzywdev/FuzeInfra) authenticate against Authentik instead of each service
+# carrying its own local password:
+#
+#   cloudflare-access  the Cloudflare Access wall on *.prod.fuzefront.com.
+#                      Covers EVERY admin tile, including ones with no SSO
+#                      support of their own (Prometheus, Alertmanager,
+#                      Mongo Express, ChromaDB).
+#   grafana            replaces the local `admin` account as the primary login.
+#   argocd             replaces the local `admin` account as the primary login.
+#   kafka-ui           kafka-ui has NO auth at all without this.
+#
+# client_secret is injected at blueprint-apply time via Authentik's !Env YAML
+# tag, read from the worker pod's environment (sourced from the chart Secret via
+# an OPTIONAL secretKeyRef). No secret value is stored in this file or in the
+# ConfigMap.
+#
+# NOTE: attrs.client_id / attrs.client_secret are respected at *creation time*
+# by the Authentik 2024.x blueprint runner. If the provider already exists,
+# these fields are not updated. Rotation requires deleting the provider entry
+# and re-applying. Rotating a secret here must be done in lockstep with the
+# consuming side (a SealedSecret in FuzeInfra, or a GitHub secret for Terraform).
+#
+# DESIGN: everything is defined inline in ONE blueprint — no !Find to objects
+# owned by a different blueprint. Authentik's Celery runner applies blueprints
+# concurrently, so a cross-blueprint !Find silently aborts the entry when the
+# target isn't in the DB yet. Entries WITHIN a blueprint are applied in order,
+# so the shared flow and scope mappings below are safe to reference. Same
+# rationale as provider-oidc-mendys-platform.yaml.
+version: 1
+metadata:
+  name: FuzeInfra Admin OIDC Providers
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  # ── Shared authorization flow (implicit consent) ─────────────────────────────
+  # Implicit, not explicit: these are first-party admin tools reached many times
+  # a day. An explicit-consent screen on every login would be pure friction.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: fuzeinfra-admin-authorization-implicit-consent
+    attrs:
+      name: FuzeInfra Admin Authorization (Implicit Consent)
+      slug: fuzeinfra-admin-authorization-implicit-consent
+      designation: authorization
+      title: FuzeInfra Admin Sign In
+      authentication: require_authenticated
+      policy_engine_mode: all
+
+  # ── Shared scope mappings ────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeInfra Admin OIDC scope - openid"
+    attrs:
+      name: "FuzeInfra Admin OIDC scope - openid"
+      scope_name: openid
+      expression: "return {}"
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeInfra Admin OIDC scope - email"
+    attrs:
+      name: "FuzeInfra Admin OIDC scope - email"
+      scope_name: email
+      expression: |
+        return {
+            "email": request.user.email,
+            "email_verified": True,
+        }
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeInfra Admin OIDC scope - profile"
+    attrs:
+      name: "FuzeInfra Admin OIDC scope - profile"
+      scope_name: profile
+      expression: |
+        return {
+            "name": request.user.name,
+            "given_name": request.user.name,
+            "preferred_username": request.user.username,
+            "nickname": request.user.username,
+        }
+
+  # A DEDICATED `groups` scope, not just groups-inside-profile. Grafana's
+  # role_attribute_path and ArgoCD's policy.csv both key off this claim, and both
+  # request `groups` as an explicit scope — it has to exist as a scope of that
+  # name or the claim never reaches them and every user silently lands with the
+  # lowest role.
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "FuzeInfra Admin OIDC scope - groups"
+    attrs:
+      name: "FuzeInfra Admin OIDC scope - groups"
+      scope_name: groups
+      expression: |
+        return {
+            "groups": [g.name for g in request.user.ak_groups.all()],
+        }
+
+  # ── Provider: Cloudflare Access ──────────────────────────────────────────────
+  # Consumed by cloudflare_zero_trust_access_identity_provider.authentik in
+  # izzywdev/FuzeInfra (terraform/contabo/cloudflare.tf). The redirect URI is
+  # fixed by Cloudflare and derives from the Zero Trust team domain
+  # (fuzefront.cloudflareaccess.com) — it is NOT free-form.
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeInfra Cloudflare Access
+    attrs:
+      name: FuzeInfra Cloudflare Access
+      client_type: confidential
+      client_id: "cloudflare-access"
+      client_secret: !Env [AUTHENTIK_CF_ACCESS_CLIENT_SECRET, ""]
+      redirect_uris:
+        - matching_mode: strict
+          url: "https://fuzefront.cloudflareaccess.com/cdn-cgi/access/callback"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - groups"]]
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: cloudflare-access
+    attrs:
+      name: FuzeInfra Cloudflare Access
+      slug: cloudflare-access
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeInfra Cloudflare Access]]
+      meta_description: "Zero Trust wall in front of every *.prod.fuzefront.com admin UI"
+      policy_engine_mode: all
+      open_in_new_tab: false
+
+  # ── Provider: Grafana ────────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeInfra Grafana
+    attrs:
+      name: FuzeInfra Grafana
+      client_type: confidential
+      client_id: "grafana"
+      client_secret: !Env [AUTHENTIK_GRAFANA_CLIENT_SECRET, ""]
+      redirect_uris:
+        - matching_mode: strict
+          url: "https://grafana.prod.fuzefront.com/login/generic_oauth"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - groups"]]
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+
+  # Application slug is load-bearing: it forms the issuer URL
+  # https://auth.fuzefront.com/application/o/grafana/ that FuzeInfra's
+  # values.yaml (grafana.oidc.issuer) points at.
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: grafana
+    attrs:
+      name: Grafana
+      slug: grafana
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeInfra Grafana]]
+      meta_launch_url: "https://grafana.prod.fuzefront.com/"
+      meta_description: "FuzeInfra metrics, logs and alerting"
+      policy_engine_mode: all
+      open_in_new_tab: false
+
+  # ── Provider: ArgoCD ─────────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeInfra ArgoCD
+    attrs:
+      name: FuzeInfra ArgoCD
+      client_type: confidential
+      client_id: "argocd"
+      client_secret: !Env [AUTHENTIK_ARGOCD_CLIENT_SECRET, ""]
+      redirect_uris:
+        - matching_mode: strict
+          url: "https://argocd.prod.fuzefront.com/auth/callback"
+        # The ArgoCD CLI's `argocd login --sso` uses a loopback listener.
+        - matching_mode: strict
+          url: "http://localhost:8085/auth/callback"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - groups"]]
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: argocd
+    attrs:
+      name: ArgoCD
+      slug: argocd
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeInfra ArgoCD]]
+      meta_launch_url: "https://argocd.prod.fuzefront.com/"
+      meta_description: "GitOps continuous delivery for the cluster"
+      policy_engine_mode: all
+      open_in_new_tab: false
+
+  # ── Provider: Kafka UI ───────────────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeInfra Kafka UI
+    attrs:
+      name: FuzeInfra Kafka UI
+      client_type: confidential
+      client_id: "kafka-ui"
+      client_secret: !Env [AUTHENTIK_KAFKA_UI_CLIENT_SECRET, ""]
+      redirect_uris:
+        # The trailing path segment is Spring's registration id, which kafka-ui
+        # derives from the AUTH_OAUTH2_CLIENT_<ID>_ env prefix (here: AUTHENTIK).
+        - matching_mode: strict
+          url: "https://kafka-ui.prod.fuzefront.com/login/oauth2/code/authentik"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: kafka-ui
+    attrs:
+      name: Kafka UI
+      slug: kafka-ui
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeInfra Kafka UI]]
+      meta_launch_url: "https://kafka-ui.prod.fuzefront.com/"
+      meta_description: "Kafka topics, consumers and cluster config"
+      policy_engine_mode: all
+      open_in_new_tab: false
