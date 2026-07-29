@@ -176,10 +176,15 @@ smsService:
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
 # Without it the provisioning-service pod will fail to start (missing env var).
+# provisioning-service — image IS built by release.yml, but until this change it
+# had no anchor in that workflow's bump step, so the tag below was never written
+# and stayed "". It is enabled: false (inherited from values.yaml), so nothing
+# rendered and the empty tag was inert rather than an InvalidImageName. The
+# anchor exists now, so the next release writes a real SHA here.
 provisioningService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: ""  # CI's release sed writes the real image SHA here
+    tag: ""
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -202,8 +207,15 @@ billingService:
   # surface on the umbrella sync (no InvalidImageName, no PreSync-hook gate).
   # Billing is a backend microservice, not part of the MF platform shell, and the
   # host backend's billing proxy degrades gracefully without it — so it must not
-  # gate go-live. GO-LIVE = flip this to true (the image tag below is already
-  # auto-bumped to the built SHA by release.yml) AND seal the real STRIPE_* keys.
+  # gate go-live. GO-LIVE = flip this to true AND seal the real STRIPE_* keys.
+  #
+  # The claim that once stood here — "the image tag below is already auto-bumped
+  # to the built SHA by release.yml" — was FALSE for the life of this file. The
+  # image was built on every release, but billing-service had no anchor in that
+  # workflow's bump step, so this tag never moved: it sat at 6135e6b5ed77
+  # (2026-06-30, 142 commits behind) while enabled: true, i.e. prod ran a
+  # month-old billing image. The anchor exists as of this change, so the next
+  # release DOES rewrite this tag — do not hand-pin it.
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
