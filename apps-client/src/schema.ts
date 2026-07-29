@@ -207,10 +207,10 @@ export interface components {
          */
         Slug: string;
         /**
-         * @description `portal` — mounted inside the host shell at `/app/:slug` with chrome. `standalone` — rendered without portal chrome on its own host/path.
+         * @description A surface the app can be served on. NOT mutually exclusive — see `AppManifest.modes`, which is the multi-valued form. `portal` — mounted inside the host shell at `/app/:slug` with chrome. `standalone` — rendered without portal chrome on its own host/path (`routing.host`). This is the surface a mobile TWA/APK wraps, and the only one that can be, because an app store needs a URL that stands on its own. `embed` — rendered inside a THIRD-PARTY page via an SDK, with neither portal chrome nor FuzeFront navigation. An embed-only product is not a portal destination and may not register a menu entry at all.
          * @enum {string}
          */
-        AppMode: "portal" | "standalone";
+        AppMode: "portal" | "standalone" | "embed";
         /**
          * @description Lifecycle status. registered → activated → suspended.
          * @enum {string}
@@ -265,7 +265,23 @@ export interface components {
         Nav: {
             section?: components["schemas"]["NavSection"];
             /**
-             * @description Rank WITHIN the section, ascending. Ties break on `slug` so ordering is always total and stable. Leave unset (999) to sort after apps that care.
+             * @description Rank WITHIN the section — or within the suite, when `suite` is declared. Ascending. Ties break on `slug` so ordering is always total and stable. Leave unset (999) to sort after apps that care.
+             * @default 999
+             */
+            order: number;
+            suite?: components["schemas"]["Suite"];
+        };
+        /**
+         * @description Groups sibling apps that are surfaces of ONE product into a single named menu group. A repo that ships several independently-mountable surfaces — FuzeHub's talent / recruiter / ventures / marketplace / admin remotes — must register one app per surface, because `roles`, `visibility`, `integration` and `nav` are all per-surface and a single row cannot hold five of each. Without this key those five register as five unrelated top-level entries and the product disappears as a concept.
+         *     Each sibling carries its own copy rather than the platform holding a central suite table, for the same reason `nav.section` is self-declared: onboarding a product must never require a FuzeFront edit. Siblings are expected to agree; the host resolves disagreement deterministically (lowest `order` wins, ties on the alphabetically-first `slug`) instead of picking arbitrarily.
+         */
+        Suite: {
+            /** @description Stable group key, shared verbatim by every sibling. Apps with the same `id` in the same `section` render as one group. */
+            id: components["schemas"]["Slug"];
+            /** @description Display name of the group (e.g. "FuzeHub"). */
+            label: string;
+            /**
+             * @description Rank of the GROUP within its section — distinct from `nav.order`, which ranks this app within the group. Sorting is section → suite.order → nav.order.
              * @default 999
              */
             order: number;
@@ -292,6 +308,42 @@ export interface components {
             path?: string;
             /** @description Standalone-only: a dedicated host (e.g. `clock.fuzefront.com`). When omitted, standalone apps are path-based under the main app host. */
             host?: string;
+        };
+        /** @description Identity the app needs the platform to provision for it. Today an Authentik application + OIDC provider is created by hand-writing a blueprint under FuzeFront's `deploy/helm/fuzefront/authentik/blueprints/`, which means onboarding a product's identity requires an edit INSIDE FuzeFront — the same coupling that `nav` removed for the side menu and `policy` removed for authz. Declaring it here lets the product own it. */
+        Auth: {
+            oidc?: components["schemas"]["AuthOidc"];
+        };
+        /** @description An OIDC client for this app. Describes only what the PRODUCT knows; every secret stays on the platform side. */
+        AuthOidc: {
+            /** @description Authentik application slug. Defaults to the app's own `slug` when omitted. The server MUST reject a value claimed by a different app — a manifest is self-declared at registration, so an unchecked slug would let one product bind itself to another product's identity. */
+            applicationSlug?: components["schemas"]["Slug"];
+            /**
+             * @description `public` (PKCE, no secret) is for clients that cannot hold one — a browser-only SPA or a mobile/TWA build. Anything with a server keeps `confidential`.
+             * @default confidential
+             * @enum {string}
+             */
+            clientType: "confidential" | "public";
+            /** @description Exact callback URIs. HTTPS only, except loopback for local dev. NO wildcards: a redirect URI is where the authorization code is delivered, so a permissive entry is a token-theft primitive, not a convenience. The server SHOULD additionally require each host to be one the app already declares (`routing.host`, or its integration URL). */
+            redirectUris: string[];
+            postLogoutRedirectUris?: string[];
+            /**
+             * @description Scopes the client requests. `openid` is implied and always granted.
+             * @default [
+             *       "openid",
+             *       "email",
+             *       "profile"
+             *     ]
+             */
+            scopes: string[];
+            /** @description Maps an OIDC claim to the field the app expects, e.g. `{ "sub": "userId", "groups": "roles" }`. */
+            claims?: {
+                [key: string]: string;
+            };
+            /** @description Where the platform finds this client's secret — a (Sealed)Secret reference, NEVER the value. The manifest is committed to a product repo AND served back on read, so a literal secret here would be published twice over. There is deliberately no field to put one in. */
+            secretRef?: {
+                name: string;
+                key: string;
+            };
         };
         /** @description Platform infrastructure the (typically standalone) app opts into. Portal apps implicitly get auth + api; this block is mainly meaningful for standalone apps that selectively use FuzeFront infra. */
         Infra: {
@@ -326,7 +378,13 @@ export interface components {
             menuLabel: string;
             description?: string;
             icon?: components["schemas"]["Icon"];
+            /**
+             * @deprecated
+             * @description DEPRECATED — single-surface form, superseded by `modes`. A product can genuinely serve more than one surface (portal in the browser, standalone for its own host and for a mobile wrapper), which this scalar cannot say. Still REQUIRED so existing manifests keep validating; when both are present `modes` wins and `mode` MUST be its first entry.
+             */
             mode: components["schemas"]["AppMode"];
+            /** @description Every surface this app supports, in preference order — the first entry is how the host serves it by default. `["portal", "standalone"]` is the common case: mounted in the shell on desktop/web, and separately reachable on its own host so a mobile build has something to wrap. Omit to fall back to `[mode]`. */
+            modes?: components["schemas"]["AppMode"][];
             /**
              * @description Shipped with the platform; cannot be deleted, only suspended.
              * @default false
@@ -335,6 +393,7 @@ export interface components {
             integration: components["schemas"]["Integration"];
             chrome?: components["schemas"]["Chrome"];
             nav?: components["schemas"]["Nav"];
+            auth?: components["schemas"]["Auth"];
             routing?: components["schemas"]["Routing"];
             infra?: components["schemas"]["Infra"];
             visibility?: components["schemas"]["Visibility"];

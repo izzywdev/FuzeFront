@@ -47,18 +47,33 @@ jq empty "$MANIFEST" 2>/dev/null || die "$MANIFEST is not valid JSON"
 SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
 [ -n "$SLUG" ] || die "manifest has no .slug"
 
-# nav placement is what orders the app in the portal's side menu. Not fatal if
-# absent (the platform defaults it to the 'platform' section, last) but it almost
-# always means someone forgot, so say so loudly rather than silently sorting last.
-NAV_SECTION="$(jq -r '.nav.section // empty' "$MANIFEST")"
-if [ -z "$NAV_SECTION" ]; then
-  log "WARNING: manifest declares no .nav.section — this app will sort LAST in the side menu."
+# ---- suite surfaces ----------------------------------------------------------
+# A repo may ship SEVERAL independently-mountable surfaces of one product — e.g.
+# FuzeHub's talent / recruiter / ventures / marketplace remotes. Each needs its own
+# registry row, because `roles`, `visibility`, `integration` and `nav` are per-surface
+# and one row cannot hold five of each. Before this, such a repo could only register
+# one of them and the rest silently vanished from the portal.
+#
+# manifest.json stays the PRIMARY surface and keeps owning the product-level
+# attachments (policy, billing) — those are per-product, not per-surface, so binding
+# them to a fixed slug removes any ambiguity about which sibling they belong to.
+# Additional surfaces go in apps/ and are registered identically. They group in the
+# menu by declaring the same nav.suite.id.
+APPS_DIR="${REGISTRATION_DIR}/apps"
+MANIFESTS="$MANIFEST"
+if [ -d "$APPS_DIR" ]; then
+  # Sorted so the registration order is deterministic across pods and replicas.
+  for _extra in $(find "$APPS_DIR" -maxdepth 1 -name '*.json' | sort); do
+    MANIFESTS="${MANIFESTS} ${_extra}"
+  done
 fi
 
 API="${FUZEFRONT_API_URL%/}/api/v1/app-registry"
 AUTH="Authorization: Bearer ${FUZEFRONT_REGISTRATION_TOKEN}"
 
-log "slug=${SLUG} section=${NAV_SECTION:-<unset>} api=${API}"
+_count=0
+for _m in $MANIFESTS; do _count=$((_count + 1)); done
+log "primary=${SLUG} surfaces=${_count} api=${API}"
 
 # ---- helpers -----------------------------------------------------------------
 # Emits the HTTP status on stdout and writes the body to $2. Retries transient
@@ -93,6 +108,31 @@ http() {
 BODY="$(mktemp)"
 # shellcheck disable=SC2064  # expand BODY now, on purpose
 trap "rm -f '$BODY'" EXIT
+
+# ---- 1+2. register + activate, once per surface ------------------------------
+# Run for the primary manifest and for every apps/*.json sibling. A failure on ANY
+# surface is fatal, exactly as before: a suite that comes up missing two of its five
+# entries is a broken product, not a degraded one, and the whole point of the init
+# container is that the pod must not serve in that state.
+register_surface() {
+  MANIFEST="$1"
+
+  jq empty "$MANIFEST" 2>/dev/null || die "$MANIFEST is not valid JSON"
+  SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
+  [ -n "$SLUG" ] || die "$MANIFEST has no .slug"
+
+  # nav placement is what orders the app in the portal's side menu. Not fatal if
+  # absent (the platform defaults it to the 'platform' section, last) but it almost
+  # always means someone forgot, so say so loudly rather than silently sorting last.
+  NAV_SECTION="$(jq -r '.nav.section // empty' "$MANIFEST")"
+  if [ -z "$NAV_SECTION" ]; then
+    log "WARNING: ${SLUG} declares no .nav.section — it will sort LAST in the side menu."
+  fi
+
+  # Siblings group only if they agree on the suite key verbatim, so a typo silently
+  # splits the group in two. Cheap to surface here, invisible in the rendered menu.
+  NAV_SUITE="$(jq -r '.nav.suite.id // empty' "$MANIFEST")"
+  log "-- ${SLUG} section=${NAV_SECTION:-<unset>} suite=${NAV_SUITE:-<none>}"
 
 # ---- 1. register (idempotent) ------------------------------------------------
 CODE="$(http GET "${API}/apps/${SLUG}" "$BODY")"
@@ -146,6 +186,16 @@ else
     *) die "activate failed: HTTP ${CODE} $(cat "$BODY")" ;;
   esac
 fi
+}
+
+for _manifest in $MANIFESTS; do
+  register_surface "$_manifest"
+done
+
+# Product-level attachments below bind to the PRIMARY manifest, so restore its slug
+# after the loop left SLUG pointing at whichever sibling was registered last.
+MANIFEST="${REGISTRATION_DIR}/manifest.json"
+SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
 
 # ---- 3. AuthZ policy (optional file) -----------------------------------------
 # The product declares its OWN Permit resources/roles with BARE keys; the platform

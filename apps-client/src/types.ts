@@ -16,6 +16,8 @@ export type MenuItem = components['schemas']['MenuItem'];
 /** Side-menu placement: which lifecycle section the app sits in, and its rank there. */
 export type Nav = components['schemas']['Nav'];
 export type NavSection = components['schemas']['NavSection'];
+/** Groups sibling apps that are surfaces of one product into a single menu group. */
+export type Suite = components['schemas']['Suite'];
 /** Self-declared onboarding surfaces submitted by the app at registration. */
 export type ProductPolicy = components['schemas']['ProductPolicy'];
 export type ProductResourceDecl = components['schemas']['ProductResourceDecl'];
