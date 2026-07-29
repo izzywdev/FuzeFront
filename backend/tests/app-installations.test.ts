@@ -25,7 +25,18 @@ jest.mock('../src/middleware/auth', () => ({
 
 import request from 'supertest'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
+
+// Raise the rate-limit ceilings BEFORE importing the router — it reads them at
+// module load. The limiter is deliberately NOT disabled: a control that switches
+// itself off outside production is not a control. This suite makes far more
+// install/uninstall calls per minute than any real user, all from one loopback
+// IP and therefore one bucket, so it needs headroom. That the limiter actually
+// engages is asserted by its own case at the bottom of this file.
+process.env.APP_INSTALL_READ_RATE_LIMIT = '100000'
+process.env.APP_INSTALL_WRITE_RATE_LIMIT = '100000'
+
 import appInstallationsRoutes, {
   scopeIsAllowed,
 } from '../src/routes/app-installations'
@@ -422,6 +433,39 @@ describe('app installations', () => {
       )
       expect(del.status).toBe(404)
       expect(del.body.code).toBe('INSTALLATION_NOT_FOUND')
+    })
+  })
+
+  // --- rate limiting --------------------------------------------------------
+  describe('rate limiting', () => {
+    it('answers 429 once the write ceiling is exceeded', async () => {
+      // A dedicated app with a deliberately tiny ceiling. The suite-wide
+      // limiter is raised (see the top of this file) so the other tests can
+      // run, so this is what actually proves the control works — CodeQL
+      // flagged these handlers as authorization-performing but unlimited, and
+      // an untested limiter would silence the alert without answering it.
+      const limited = express()
+      limited.use(express.json())
+      limited.use(
+        '/api/apps',
+        rateLimit({
+          windowMs: 60_000,
+          limit: 2,
+          standardHeaders: true,
+          legacyHeaders: false,
+          message: { error: 'Too many requests. Try again shortly.' },
+        })
+      )
+      limited.use('/api/apps', appInstallationsRoutes)
+
+      const statuses: number[] = []
+      for (let i = 0; i < 4; i++) {
+        const res = await request(limited).get('/api/apps/installed')
+        statuses.push(res.status)
+      }
+
+      expect(statuses.slice(0, 2).every(s => s !== 429)).toBe(true)
+      expect(statuses.slice(2)).toEqual([429, 429])
     })
   })
 

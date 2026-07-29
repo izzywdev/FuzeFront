@@ -13,12 +13,23 @@ import { NotificationsRepository } from '../src/db/repositories/notifications';
 import { PreferencesRepository } from '../src/db/repositories/preferences';
 import { StreamHub } from '../src/stream/hub';
 
+// TEST-ONLY signing keys, flagged by Semgrep's hardcoded-jwt-secret rule and
+// suppressed deliberately at each site below. They are not credentials: they
+// exist so this suite can mint tokens the middleware under test will verify,
+// they appear nowhere else, and they authenticate nothing outside this
+// process. Production reads JWT_SECRET / NOTIFICATION_INTERNAL_TOKEN from the
+// environment (src/config.ts), and both surfaces fail CLOSED when unset —
+// which is itself asserted in tests/middleware/auth.test.ts.
+
+// nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
 const JWT_SECRET = 'test-secret-for-notification-service';
+// nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
 const INTERNAL_TOKEN = 'internal-test-token';
 
 process.env.JWT_SECRET = JWT_SECRET;
 
 function tokenFor(userId: string): string {
+  // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
   return jwt.sign({ userId }, JWT_SECRET);
 }
 
@@ -100,6 +111,7 @@ describe('notification-service', () => {
 
     it('rejects a token signed with the wrong secret', async () => {
       const { app } = build();
+      // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
       const forged = jwt.sign({ userId: 'user-x' }, 'not-the-secret');
       const res = await request(app)
         .get('/notifications')

@@ -37,6 +37,31 @@ const UPSTREAM_TIMEOUT_MS = parseInt(
   10
 )
 
+/**
+ * Make a request-derived value safe to put in a log line.
+ *
+ * `req.url` and `req.method` are attacker-controlled. Interpolated raw into a
+ * log message they allow two things: LOG INJECTION (a CR/LF forges an extra,
+ * fabricated log entry — the one place an attacker gets to write the record of
+ * their own activity), and FORMAT-STRING FORGERY (a `%s`/`%d` in the value is
+ * consumed as a console format specifier and shifts every later argument).
+ *
+ * So: strip control characters, neutralize format specifiers, and bound the
+ * length. The value is logged for diagnostics, and a truncated, flattened URL
+ * still identifies the failing route.
+ */
+function safeForLog(value: unknown): string {
+  return (
+    String(value)
+      // Control characters (incl. CR/LF) -> no forged log lines.
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x1f\x7f]/g, ' ')
+      // Format specifiers -> printed literally instead of consumed by console.
+      .replace(/%/g, '%%')
+      .slice(0, 200)
+  )
+}
+
 /** Paths the browser must never reach, whatever it asks for. */
 function isForbiddenPath(url: string): boolean {
   // Strip the query string, then match the leading segment. Guarding on the
@@ -88,9 +113,11 @@ async function forwardStream(req: Request, res: Response): Promise<void> {
     })
   } catch (err) {
     const ax = err as AxiosError
+    // Constant format string + sanitized args — never a template literal built
+    // from request data (see safeForLog).
     console.error(
-      `[notification-proxy] stream upstream error:`,
-      ax.code || ax.message
+      '[notification-proxy] stream upstream error: %s',
+      safeForLog(ax.code || ax.message)
     )
     if (!res.headersSent) {
       res
@@ -151,9 +178,13 @@ async function forward(req: Request, res: Response): Promise<void> {
     res.status(upstream.status).send(Buffer.from(upstream.data))
   } catch (err) {
     const ax = err as AxiosError
+    // Constant format string; method/url/code are ARGUMENTS and sanitized, so
+    // neither a CR/LF nor a `%s` in the request path can forge a log entry.
     console.error(
-      `[notification-proxy] upstream error for ${req.method} ${req.url}:`,
-      ax.code || ax.message
+      '[notification-proxy] upstream error for %s %s: %s',
+      safeForLog(req.method),
+      safeForLog(req.url),
+      safeForLog(ax.code || ax.message)
     )
     // 502 with a stable code: the shell treats any failure as "no badge, quiet
     // degrade", so this must be a clean error rather than a hang.

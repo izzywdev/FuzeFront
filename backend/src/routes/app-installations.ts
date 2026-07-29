@@ -18,10 +18,46 @@
 //   4. mode='everyone' additionally requires owner/admin on that org (403). One
 //      member must not be able to push an app into every colleague's launcher.
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 
 const router = express.Router()
+
+// Every route below performs an authorization decision backed by DB lookups
+// (app visibility + org membership), so an unbounded caller can amplify cheap
+// requests into repeated database work — and, because a not-entitled app or org
+// answers 404, an unbounded caller is also exactly the shape of an id-
+// enumeration probe. Same express-rate-limit convention/limits as routes/
+// flags.ts and routes/portal.ts.
+//
+// Both ceilings are env-overridable. The limiter is ALWAYS mounted — it is
+// never skipped by environment, because a security control that switches itself
+// off outside production is not a control. Test suites raise the ceiling
+// instead, and the limiter itself is exercised by its own case in
+// tests/app-installations.test.ts.
+const READ_LIMIT = parseInt(process.env.APP_INSTALL_READ_RATE_LIMIT || '60', 10)
+const WRITE_LIMIT = parseInt(process.env.APP_INSTALL_WRITE_RATE_LIMIT || '30', 10)
+
+// Reads are the generous ceiling: the applications surface fetches them on load.
+export const installReadRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: READ_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// Writes are tighter. A legitimate caller installs or uninstalls apps rarely —
+// 30/min still covers setting up a workspace in one sitting — while bounding
+// both id enumeration and install-spam against an org.
+export const installWriteRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: WRITE_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
 
 export type AppScopeLevel = 'personal' | 'organization' | 'both'
 export type InstallScope = 'personal' | 'organization'
@@ -150,7 +186,7 @@ async function syncInstallCount(appId: string): Promise<void> {
 // and every `everyone` install on that org. Without `organizationId` only the
 // personal installs are returned.
 // ---------------------------------------------------------------------------
-router.get('/installed', authenticateToken, async (req: any, res) => {
+router.get('/installed', installReadRateLimiter, authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id
     const organizationId =
@@ -226,7 +262,7 @@ router.get('/installed', authenticateToken, async (req: any, res) => {
 // caller: their own (personal + org-self) plus every `everyone` install on an
 // org they belong to.
 // ---------------------------------------------------------------------------
-router.get('/:id/installations', authenticateToken, async (req: any, res) => {
+router.get('/:id/installations', installReadRateLimiter, authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id
     const memberOrgIds = await getMemberOrgIds(userId)
@@ -277,7 +313,7 @@ router.get('/:id/installations', authenticateToken, async (req: any, res) => {
 // rather than duplicated (the partial unique indexes in migration 015 are the
 // backstop if two requests race).
 // ---------------------------------------------------------------------------
-router.post('/:id/install', authenticateToken, async (req: any, res) => {
+router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id
     const memberOrgIds = await getMemberOrgIds(userId)
@@ -441,6 +477,7 @@ router.post('/:id/install', authenticateToken, async (req: any, res) => {
 // ---------------------------------------------------------------------------
 router.delete(
   '/:id/install/:installationId',
+  installWriteRateLimiter,
   authenticateToken,
   async (req: any, res) => {
     try {
