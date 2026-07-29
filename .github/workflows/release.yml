@@ -44,6 +44,7 @@ jobs:
     permissions:
       contents: write # commit the tag bump
       packages: write # push to GHCR
+      actions: write # dispatch prod-post-deploy.yml (see the final step)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -347,3 +348,45 @@ jobs:
           done
           echo "::error::could not push the tag bump after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
           exit 1
+
+      # -----------------------------------------------------------------------
+      # Kick off post-deploy verification.
+      #
+      # This is a `gh workflow run` dispatch and NOT a `workflow_run` trigger,
+      # because the event-driven alternatives are both proven dead here:
+      #
+      #   * prod-smoke.yml triggered on `push` to values-prod.yaml, gated
+      #     `if: startsWith(head_commit.message, 'release:')`. The tag-bump
+      #     commit above writes "[skip ci]" into that very message (it must —
+      #     otherwise the bump push re-triggers this workflow forever), and
+      #     GitHub suppresses push-triggered workflows for those commits. The
+      #     two conditions are mutually exclusive, so prod-smoke last actually
+      #     executed on 2026-06-30; every run since is `skipped`.
+      #
+      #   * prod-post-deploy.yml triggered on `workflow_run` of this workflow.
+      #     It is registered and `state: active`, its name matcher is exact,
+      #     and this workflow has completed successfully many times since it
+      #     landed — yet it has ZERO runs, ever.
+      #
+      # workflow_dispatch is explicitly EXEMPT from the GITHUB_TOKEN recursion
+      # guard (the same reasoning auto-merge.yml relies on for dispatching this
+      # workflow), and is immune to the CI-suppression token. Dispatching is the
+      # one path that survives both.
+      #
+      # `if: success()` — never claim a deploy is verified when the build or the
+      # GitOps bump failed. Non-blocking: a dispatch failure must not fail the
+      # release that already shipped, but it IS surfaced as a warning.
+      - name: Dispatch post-deploy verification
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          if gh workflow run prod-post-deploy.yml --ref master \
+               -f release_sha="${SHA}" \
+               -f reason="auto-dispatch after release of ${SHA}"; then
+            echo "Post-deploy verification dispatched for ${SHA}"
+          else
+            echo "::warning::could not dispatch prod-post-deploy.yml — the release SHIPPED but is UNVERIFIED. Run it by hand against master."
+          fi
