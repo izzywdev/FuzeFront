@@ -10,7 +10,7 @@ export function requirePlatformPermission(resource: string, action: string) {
     const authorization = request.header('authorization')
     const baseUrl = process.env.FUZEFRONT_SECURITY_URL?.replace(/\/$/, '')
     if (process.env.FUZEQUALITY_DEV_AUTH_BYPASS === 'true' && process.env.NODE_ENV !== 'production') {
-      identities.set(request, { userId: 'local-developer', tenantId: 'local' })
+      identities.set(request, { userId: 'local-developer', tenantId: 'local', roles: ['admin'] })
       return next()
     }
     if (!authorization?.startsWith('Bearer ')) return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_MISSING' })
@@ -35,4 +35,16 @@ export function requirePlatformPermission(resource: string, action: string) {
       response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
     }
   }
+}
+
+export function requirePlatformAdminPermission(resource: string, action: string) {
+  const requirePermission = requirePlatformPermission(resource, action)
+  return (request: Request, response: Response, next: NextFunction) =>
+    requirePermission(request, response, () => {
+      const identity = requestIdentity(request)
+      if (!identity?.roles?.includes('admin')) {
+        return response.status(403).json({ error: 'Platform administrator access required', code: 'PLATFORM_ADMIN_REQUIRED' })
+      }
+      next()
+    })
 }

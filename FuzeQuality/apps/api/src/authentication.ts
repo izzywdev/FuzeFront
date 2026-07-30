@@ -30,6 +30,7 @@ export function isPlatformAuthenticatedRequest(method: string, path: string) {
     '/api/v1/coverage/',
     '/api/v1/test-implementations/',
     '/api/v1/suggestions/',
+    '/api/v1/admin/',
   ]
   return exact.includes(path) || prefixes.some(prefix => path.startsWith(prefix))
 }

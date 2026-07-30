@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import type {
   Flow,
+  AdminContextAudit,
   Portfolio,
   Repository,
   RepositoryInput,
@@ -23,6 +24,7 @@ export interface CatalogStore {
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
+  recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -41,6 +43,7 @@ const emptyPortfolio = (): Portfolio => ({
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
+  private adminContextAudits: AdminContextAudit[] = []
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -170,6 +173,12 @@ export class MemoryCatalogStore implements CatalogStore {
   async updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>) {
     const item = this.implementations.find(candidate => candidate.id === id)
     if (item) Object.assign(item, value, { updatedAt: new Date().toISOString() })
+  }
+
+  async recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>) {
+    const audit = { ...input, id: randomUUID(), createdAt: new Date().toISOString() }
+    this.adminContextAudits.push(audit)
+    return audit
   }
 }
 
@@ -329,6 +338,18 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE id=$1`,
       [id, value.status, value.workflowUrl, value.pullRequestUrl, value.error],
     )
+  }
+
+  async recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit> {
+    const id = randomUUID()
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.admin_context_audits
+       (id, actor_id, source_tenant_id, target_tenant_id, reason, correlation_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING created_at`,
+      [id, input.actorId, input.sourceTenantId, input.targetTenantId, input.reason, input.correlationId]
+    )
+    return { ...input, id, createdAt: result.rows[0].created_at.toISOString() }
   }
 
   private mapTestImplementation(row: Record<string, any>): TestImplementationRequest {

@@ -22,10 +22,13 @@ describe('FuzeQuality platform-authenticated request allowlist', () => {
     expect(isPlatformAuthenticatedRequest('POST', '/api/v1/repositories/id/scans')).toBe(true)
     expect(isPlatformAuthenticatedRequest('POST', '/api/v1/test-implementations')).toBe(true)
     expect(isPlatformAuthenticatedRequest('GET', '/api/v1/requirements')).toBe(true)
+    expect(isPlatformAuthenticatedRequest('GET', '/api/v1/admin/organizations')).toBe(true)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/admin/organizations/tenant-a/context')).toBe(true)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/suggestions/id/decision')).toBe(true)
   })
 
   it('does not admit internal worker or unrelated unguarded routes', () => {
     expect(isPlatformAuthenticatedRequest('POST', '/api/v1/internal/scans/results')).toBe(false)
-    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/suggestions/id/decision')).toBe(false)
+    expect(isPlatformAuthenticatedRequest('POST', '/api/v1/unscoped-operation')).toBe(false)
   })
 })
