@@ -39,8 +39,8 @@ FrontFuse uses a hub-and-spoke architecture where:
 
 ### Prerequisites
 
-- Node.js 18+ and npm
-- React 18+ knowledge
+- Node.js 24+ (Active LTS) and npm
+- React 19+ knowledge
 - Basic understanding of Module Federation
 - Git for version control
 
@@ -262,11 +262,11 @@ export default defineConfig({
       shared: {
         react: {
           singleton: true,
-          requiredVersion: '^18.0.0',
+          requiredVersion: '^19.0.0',
         },
         'react-dom': {
           singleton: true,
-          requiredVersion: '^18.0.0',
+          requiredVersion: '^19.0.0',
         },
         '@frontfuse/sdk': {
           singleton: true,

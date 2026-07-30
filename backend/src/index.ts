@@ -14,6 +14,12 @@ import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
 import flagsRoutes from './routes/flags'
+import portalRoutes from './routes/portal'
+import { resolvePortalContext } from './middleware/portalContext'
+import { ensureRootPortal } from './repositories/portalRepository'
+import { syncPermitSchemaFromRegistry } from './permit/sync-permit-schema'
+import permitClient from './config/permit'
+import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
@@ -133,6 +139,13 @@ app.use((req, res, next) => {
 app.use(metrics.middleware)
 // Expose /metrics for the Prometheus scrape.
 metrics.registerEndpoint(app)
+
+// FF-EPIC-10-S1 — resolves req.portal from Host / `/p/<slug>` / root for every
+// request, BEFORE authenticateToken so JWT/session portal binding (S3) and the
+// public /api/v1/portal/context boot endpoint (S2) can read it. Gated by
+// `fuzefront.platform.multi-tenant-portals` (default OFF) — a pure no-op while
+// the flag is off, so this line changes no existing route's behavior.
+app.use(resolvePortalContext)
 
 // Setup Swagger documentation
 try {
@@ -283,6 +296,9 @@ app.use('/api/organizations', organizationsRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.
 app.use('/api/flags', flagsRoutes)
+// Portal context boot + the caller's own portal (FF-EPIC-10-S2). Both routes
+// are individually flag-gated (404 when off) — see routes/portal.ts.
+app.use('/api/v1/portal', portalRoutes)
 // Billing proxy: browser -> backend -> fuzefront-billing-service:3006 (adds the
 // internal token). Webhook subroute is mounted separately above (raw body).
 app.use('/api/v1/billing', billingRoutes)
@@ -540,6 +556,60 @@ async function startServer() {
     // Install the OpenFeature/Unleash provider. Non-fatal: on failure flags
     // fall back to their in-code fail-safe defaults.
     await initFeatureFlags('fuzefront-host')
+
+    // FF-EPIC-09-S1 — idempotently ensure the seeded root portal exists. Runs
+    // regardless of the multi-tenant-portals flag (it only creates dormant
+    // rows nothing reads while the flag is off). Non-fatal: on a completely
+    // fresh install (no users yet) this self-heals on a later boot; any other
+    // failure (e.g. the AC4 orphaned-root-portal case) is logged, not fatal —
+    // it must never block the whole platform from starting.
+    try {
+      const root = await ensureRootPortal()
+      console.log(
+        root
+          ? `✅ Root portal ensured (${root.id})`
+          : 'ℹ️  Root portal not seeded yet (no users exist)'
+      )
+    } catch (error) {
+      console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
+    }
+
+    // Push the environment-level Permit policy (resources/actions/roles from
+    // permit/schema.ts, incl. the ReBAC Organization.parent relation and the
+    // derived `org-admin` role). This was previously reachable ONLY via
+    // `npm run permit:schema` and the test suite, so a schema change reached
+    // Permit only when somebody remembered to run it — and the derived role the
+    // org hierarchy depends on could silently not exist in the environment.
+    // Non-fatal: Permit being unreachable must not stop the platform booting;
+    // authorization already fails closed.
+    try {
+      const legacyPolicies = [
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./permit/products/fuzemarket.policy').default,
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./permit/products/mendys-datasets.policy').default,
+      ]
+      await syncPermitSchemaFromRegistry(permitClient as any, legacyPolicies)
+      console.log('✅ Permit schema synced')
+    } catch (error) {
+      console.error('⚠️  Permit schema sync failed (non-fatal):', error)
+    }
+
+    // Grant the ReBAC `org-admin` role on the ROOT organization to platform
+    // administrators. Without a grant at the root there is nothing for the
+    // schema's parent→child derivation to derive FROM, so wiring the hierarchy
+    // alone would still leave staff unable to administer tenants.
+    // Non-fatal for the same reason as above.
+    try {
+      const granted = await ensureRootOrgAdmins()
+      console.log(
+        granted.length > 0
+          ? `✅ Root org-admin ensured for ${granted.length} administrator(s)`
+          : 'ℹ️  No platform administrators to grant root org-admin to yet'
+      )
+    } catch (error) {
+      console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
+    }
 
     // Start consuming billing.subscription.changed to project plan-tier/status
     // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.

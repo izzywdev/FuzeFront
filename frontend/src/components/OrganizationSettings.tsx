@@ -5,7 +5,10 @@ interface Organization {
   id: string
   name: string
   slug: string
-  type: 'personal' | 'team' | 'enterprise'
+  // Mirrors the backend `organization_type_enum` (migrations 004 + 009).
+  // PUT /api/organizations/:id runs the same validator as POST, so submitting
+  // a 'team'/'enterprise' type here was rejected with a 400.
+  type: 'platform' | 'organization' | 'personal'
   description?: string
   owner_id: string
   is_active: boolean
@@ -231,7 +234,7 @@ export function OrganizationSettings({
                 onChange={e =>
                   setFormData(prev => ({
                     ...prev,
-                    type: e.target.value as 'personal' | 'team' | 'enterprise',
+                    type: e.target.value as Organization['type'],
                   }))
                 }
                 style={{
@@ -243,9 +246,8 @@ export function OrganizationSettings({
                   color: 'var(--text-primary)',
                 }}
               >
+                <option value="organization">Organization</option>
                 <option value="personal">Personal</option>
-                <option value="team">Team</option>
-                <option value="enterprise">Enterprise</option>
               </select>
             ) : (
               <div

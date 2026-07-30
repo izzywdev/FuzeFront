@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes, ReactNode } from "react";
+import { CSSProperties, HTMLAttributes, JSX, ReactNode } from "react";
 
 export interface AnnouncementBarProps extends HTMLAttributes<HTMLDivElement> {
   /** Short uppercase badge label rendered before the message (e.g. "New", "Beta"). */

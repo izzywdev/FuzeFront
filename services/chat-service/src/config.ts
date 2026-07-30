@@ -33,8 +33,6 @@ export interface Config {
   redisUrl: string;
 
   // AI provider keys (optional — injected by Helm when secret.* non-empty)
-  anthropicApiKey?: string;
-  openaiApiKey?: string;
   litellmMasterKey?: string;
 
   // Rate-limit settings (defaults align with §10f: 20/60/100 per minute)
@@ -58,7 +56,7 @@ export function loadConfig(): Config {
     nodeEnv: process.env.NODE_ENV || 'development',
 
     litellmUrl: process.env.LITELLM_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000',
-    chromaUrl: process.env.CHROMA_URL || 'http://chromadb.fuzeinfra.svc.cluster.local:8000',
+    chromaUrl: process.env.CHROMA_URL || 'http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000',
     backendUrl: process.env.BACKEND_URL || 'http://fuzefront-backend:3001',
     permitPdpUrl: process.env.PERMIT_PDP_URL || 'http://fuzefront-permit-pdp:7000',
 
@@ -78,8 +76,6 @@ export function loadConfig(): Config {
     // Falls back to constructing from fuzeinfra redis defaults.
     redisUrl: process.env.REDIS_URL || 'redis://redis.fuzeinfra.svc.cluster.local:6379',
 
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
     litellmMasterKey: process.env.LITELLM_MASTER_KEY,
 
     rateLimit: {

@@ -1,4 +1,4 @@
-FROM node:22-alpine AS dependencies
+FROM node:24-alpine AS dependencies
 RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
 COPY FuzeQuality/package.json ./

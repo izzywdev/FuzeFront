@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode } from "react";
+import { CSSProperties, JSX, ReactNode } from "react";
 
 export interface AlertProps {
   tone?: "error" | "warning" | "success" | "info";

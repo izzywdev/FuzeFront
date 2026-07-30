@@ -15,4 +15,4 @@ export interface ThemeToggleProps
   onToggle?: (next: "dark" | "light", event: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
-export function ThemeToggle(props: ThemeToggleProps): JSX.Element;
+export function ThemeToggle(props: ThemeToggleProps): React.JSX.Element;

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- base: install production deps only ----------
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
@@ -15,7 +15,7 @@ COPY services/email-service/package.json services/email-service/package-lock.jso
 RUN cd services/email-service && npm ci --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
-FROM node:18-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY shared/package.json ./shared/
 COPY services/email-service/package.json services/email-service/package-lock.json ./services/email-service/
@@ -34,7 +34,7 @@ RUN cd shared && npm run build
 RUN cd services/email-service && npm run build
 
 # ---------- production ----------
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache dumb-init && \

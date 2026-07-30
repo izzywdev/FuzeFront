@@ -3,6 +3,12 @@ import { Alert } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
+import {
+  ORGANIZATION_TYPE,
+  newSlugSuffix,
+  organizationErrorMessage,
+  slugForName,
+} from '../utils/organization'
 
 /**
  * CreateOrganizationPage — Plan G.
@@ -10,16 +16,6 @@ import { useAppContext } from '../lib/shared'
  * Provides a form to create a new (non-personal) organization.
  * Auto-derives slug from name, dispatches SET_ORGANIZATIONS + SET_ACTIVE_ORGANIZATION on success.
  */
-
-function deriveSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-_]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
 
 function CreateOrganizationPage() {
   const { t } = useLanguage()
@@ -30,13 +26,17 @@ function CreateOrganizationPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  // Stable per-mount fallback so a name with no slug-able characters (Hebrew,
+  // Arabic, CJK — all shipped locales) still yields a slug the API accepts,
+  // and so the derived value doesn't churn on every keystroke.
+  const [slugSuffix] = useState(newSlugSuffix)
 
   // Auto-derive slug from name unless user has manually edited slug
   useEffect(() => {
     if (!slugManuallyEdited) {
-      setSlug(deriveSlug(name))
+      setSlug(name.trim() ? slugForName(name, slugSuffix) : '')
     }
-  }, [name, slugManuallyEdited])
+  }, [name, slugManuallyEdited, slugSuffix])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,7 +44,11 @@ function CreateOrganizationPage() {
     setLoading(true)
     setError('')
     try {
-      const org = await createOrganization({ name: name.trim(), slug: slug || deriveSlug(name.trim()), type: 'organization' })
+      const org = await createOrganization({
+        name: name.trim(),
+        slug: slug.trim() || slugForName(name.trim(), slugSuffix),
+        type: ORGANIZATION_TYPE,
+      })
       // Append org to org list + set active
       dispatch({
         type: 'SET_ORGANIZATIONS',
@@ -53,7 +57,9 @@ function CreateOrganizationPage() {
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: org.id })
       setSuccess(true)
     } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? t('error'))
+      // Include the backend's `details[]` — "Validation failed" on its own tells
+      // the user nothing about which field the API rejected.
+      setError(organizationErrorMessage(err, t('error')))
     } finally {
       setLoading(false)
     }

@@ -116,6 +116,63 @@ set +e; run_register; RC=$?; set -e
 check "survives 2 transient 500s" "$RC" "0"
 cleanup; SERVER_PID=""
 
+# ---- 7. suite: apps/*.json siblings each register and activate ----------------
+# The failure this guards against is silent: before apps/ support, a repo shipping
+# several surfaces registered only the primary and the rest simply never appeared in
+# the portal — no error, no log line, just a product missing four of its five entries.
+mkdir -p "${REG}/apps"
+cat > "${REG}/apps/talent.json" <<'JSON'
+{
+  "manifestVersion": "1",
+  "slug": "testapp-talent",
+  "name": "TestApp Talent",
+  "menuLabel": "Talent",
+  "mode": "portal",
+  "modes": ["portal", "standalone"],
+  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/talent/remoteEntry.js", "scope": "testappTalent", "module": "./App" },
+  "nav": { "section": "build", "order": 10, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
+  "visibility": "organization"
+}
+JSON
+cat > "${REG}/apps/recruiter.json" <<'JSON'
+{
+  "manifestVersion": "1",
+  "slug": "testapp-recruiter",
+  "name": "TestApp Recruiter",
+  "menuLabel": "Recruiter",
+  "mode": "portal",
+  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/recruiter/remoteEntry.js", "scope": "testappRecruiter", "module": "./App" },
+  "nav": { "section": "build", "order": 20, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
+  "visibility": "organization"
+}
+JSON
+
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register; RC=$?; set -e
+check "suite run exits 0" "$RC" "0"
+SCALLS="$(cat "${WORK}/calls.txt")"
+echo "$SCALLS" | grep -q '^POST /api/v1/app-registry/apps/testapp-talent/activate$' \
+  && ok "registers+activates sibling 1" || notok "registers+activates sibling 1"
+echo "$SCALLS" | grep -q '^POST /api/v1/app-registry/apps/testapp-recruiter/activate$' \
+  && ok "registers+activates sibling 2" || notok "registers+activates sibling 2"
+# Product-level attachments must stay on the PRIMARY slug, not drift onto whichever
+# sibling happened to be registered last.
+echo "$SCALLS" | grep -q '^PUT /api/v1/app-registry/apps/testapp/policy$' \
+  && ok "policy still binds to the primary slug" || notok "policy still binds to the primary slug"
+SIBPOL="$(echo "$SCALLS" | grep -c '/apps/testapp-recruiter/policy' || true)"
+check "does NOT submit policy per sibling" "$SIBPOL" "0"
+cleanup; SERVER_PID=""
+
+# ---- 8. a broken sibling is FATAL (no half-registered suite) ------------------
+echo 'not json' > "${REG}/apps/broken.json"
+start_server
+set +e; run_register; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "invalid sibling manifest exits NON-ZERO"; else notok "invalid sibling manifest exits NON-ZERO (got 0)"; fi
+rm -f "${REG}/apps/broken.json"
+cleanup; SERVER_PID=""
+rm -rf "${REG}/apps"
+
 # ---- 6. missing required env is fatal ----------------------------------------
 set +e
 REGISTRATION_DIR="$REG" FUZEFRONT_API_URL="" FUZEFRONT_REGISTRATION_TOKEN="x" sh "$SCRIPT" >/dev/null 2>&1

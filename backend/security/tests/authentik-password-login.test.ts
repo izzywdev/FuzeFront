@@ -8,7 +8,11 @@
  * the redirect flow's tests isolate openid-client.
  */
 
-jest.mock('../src/services/oidc', () => ({
+jest.mock('../src/services/oidc', () => {
+  // getOidcService() replaced the former `oidcService` singleton (the client is
+  // now resolved per tenant). Expose both, backed by the SAME object, so the
+  // assertions below still address what the code under test receives.
+  const mod: any = ({
   oidcService: {
     isConfigured: jest.fn().mockReturnValue(true),
     isInitialized: jest.fn().mockReturnValue(true),
@@ -24,7 +28,10 @@ jest.mock('../src/services/oidc', () => ({
       roles: ['user'],
     }),
   },
-}))
+})
+  mod.getOidcService = () => mod.oidcService
+  return mod
+})
 
 import {
   authentikPasswordLogin,
@@ -32,7 +39,10 @@ import {
   AuthentikUnavailableError,
   UnsupportedFlowStageError,
 } from '../src/services/authentikPassword'
-import { oidcService } from '../src/services/oidc'
+import { getOidcService } from '../src/services/oidc'
+
+/** The mocked client the code under test resolves via getOidcService(). */
+const oidcService: any = getOidcService()
 
 const REDIRECT_URI = 'http://fuzefront.test.local/api/auth/oidc/callback'
 
@@ -306,5 +316,209 @@ describe('authentikPasswordLogin()', () => {
     await expect(
       authentikPasswordLogin('e2e@test.local', 'pw')
     ).rejects.toBeInstanceOf(UnsupportedFlowStageError)
+  })
+
+  // ── Whole-request budget ──────────────────────────────────────────────────
+  //
+  // The per-hop timeout bounds each individual fetch, but a login is a CHAIN.
+  // Every hop used to get a FRESH full-length budget, so the server's worst
+  // case ran far past the browser's own LOGIN_TIMEOUT_MS — the client aborted
+  // first and the user got a bare "timeout of 15000ms exceeded" with no status
+  // and no message, while the labelled server-side diagnostics never got to
+  // exist. These pin the chain-level bound that makes the server answer first.
+
+  it('abandons the chain with a labelled error once the whole-request budget is spent', async () => {
+    process.env.AUTHENTIK_LOGIN_DEADLINE_MS = '150'
+    jest.resetModules()
+    const { authentikPasswordLogin: login, AuthentikUnavailableError: Unavailable } =
+      require('../src/services/authentikPassword')
+
+    // Each hop is individually well under the per-hop cap; it is their SUM
+    // that blows the budget. Authentik keeps redirecting inside the flow.
+    fetchMock.mockImplementation(
+      async () =>
+        new Promise(resolve =>
+          setTimeout(
+            () =>
+              resolve(
+                mkRes({
+                  status: 302,
+                  location:
+                    'http://auth.example.test/api/v3/flows/executor/default-authentication-flow/?query=',
+                })
+              ),
+            60
+          )
+        )
+    )
+
+    const err = await login('e2e@test.local', 'pw').catch((e: Error) => e)
+
+    expect(err).toBeInstanceOf(Unavailable)
+    // The message names the budget and the stage, so prod logs point at the
+    // stall instead of the client reporting an anonymous abort.
+    expect((err as Error).message).toMatch(/150ms budget before flow\.step/)
+    delete process.env.AUTHENTIK_LOGIN_DEADLINE_MS
+  })
+
+  it('clamps a hop to the time remaining rather than giving it a fresh full timeout', async () => {
+    process.env.AUTHENTIK_LOGIN_DEADLINE_MS = '400'
+    process.env.AUTHENTIK_FLOW_TIMEOUT_MS = '10000'
+    jest.resetModules()
+    const { authentikPasswordLogin: login } = require('../src/services/authentikPassword')
+
+    // First hop burns most of the budget, then a hop hangs forever. Without
+    // clamping, the hang would get the full 10s per-hop cap and outlive the
+    // browser; with it, the abort fires within what is LEFT of the 400ms.
+    fetchMock
+      .mockImplementationOnce(
+        async () =>
+          new Promise(resolve =>
+            setTimeout(
+              () => resolve(mkRes({ json: { component: 'ak-stage-identification' } })),
+              250
+            )
+          )
+      )
+      .mockImplementationOnce(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => {
+              const e = new Error('aborted')
+              e.name = 'AbortError'
+              reject(e)
+            })
+          })
+      )
+
+    const started = Date.now()
+    await expect(login('e2e@test.local', 'pw')).rejects.toThrow(/timed out/)
+    // Comfortably below the 10s per-hop cap — proof the clamp, not the cap, won.
+    expect(Date.now() - started).toBeLessThan(3000)
+
+    delete process.env.AUTHENTIK_LOGIN_DEADLINE_MS
+    delete process.env.AUTHENTIK_FLOW_TIMEOUT_MS
+  })
+
+  it('bounds the token exchange by the remaining budget, not openid-client’s own timeout', async () => {
+    // handleCallback is openid-client's stage: OIDC_HTTP_TIMEOUT_MS (15s) per
+    // call, twice (token + userinfo). Left alone it outlasts the whole login
+    // budget on its own and the browser aborts first again.
+    process.env.AUTHENTIK_LOGIN_DEADLINE_MS = '300'
+    jest.resetModules()
+    const { authentikPasswordLogin: login } = require('../src/services/authentikPassword')
+    const { oidcService: oidc } = require('../src/services/oidc')
+
+    oidc.handleCallback.mockReturnValueOnce(new Promise(() => {})) // never settles
+
+    fetchMock
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      .mockResolvedValueOnce(
+        mkRes({ status: 302, location: `${REDIRECT_URI}?code=c8&state=st` })
+      )
+
+    const started = Date.now()
+    await expect(login('e2e@test.local', 'pw')).rejects.toThrow(
+      /oidc\.tokenExchange exceeded the remaining/
+    )
+    // Well inside the browser's 15s bound instead of openid-client's 2x15s.
+    expect(Date.now() - started).toBeLessThan(3000)
+
+    delete process.env.AUTHENTIK_LOGIN_DEADLINE_MS
+  })
+
+  it('reports a slow hop at WARN, naming the stage, on a login that still succeeds', async () => {
+    // The per-hop timings existed only at logger.debug, and LOG_LEVEL defaults
+    // to info in prod — so the one piece of evidence needed to find the slow
+    // hop was switched off exactly when it mattered. A slow SUCCESS must be
+    // visible without a LOG_LEVEL change or a redeploy.
+    process.env.AUTHENTIK_SLOW_HOP_WARN_MS = '50'
+    jest.resetModules()
+    const { authentikPasswordLogin: login } = require('../src/services/authentikPassword')
+    const { logger } = require('../src/lib/logger')
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined)
+
+    const slow = (res: Response) =>
+      new Promise(resolve => setTimeout(() => resolve(res), 80))
+
+    fetchMock
+      .mockImplementationOnce(() =>
+        slow(mkRes({ json: { component: 'ak-stage-identification' } }))
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      .mockResolvedValueOnce(
+        mkRes({ status: 302, location: `${REDIRECT_URI}?code=c7&state=st` })
+      )
+
+    // The login SUCCEEDS — the warning is the whole point, not an error path.
+    await expect(login('e2e@test.local', 'pw')).resolves.toBeDefined()
+
+    const slowHops = warn.mock.calls.filter(
+      ([, msg]) => msg === 'authentikPassword: SLOW hop'
+    )
+    expect(slowHops).toHaveLength(1)
+    // Names the exact stage, so prod logs point at the culprit directly.
+    expect((slowHops[0][0] as any).label).toMatch(/flow\.step .*hop=0 GET/)
+    expect((slowHops[0][0] as any).elapsedMs).toBeGreaterThanOrEqual(50)
+
+    warn.mockRestore()
+    delete process.env.AUTHENTIK_SLOW_HOP_WARN_MS
+  })
+
+  it('releases the response body of every hop it only reads headers from', async () => {
+    // undici keeps the socket checked out until the body is consumed or
+    // cancelled. Redirect hops read only `location`, and authorize hops never
+    // read a body at all — so an un-cancelled body pins that connection for the
+    // rest of the request and later hops queue behind their own predecessors.
+    const cancels: string[] = []
+    const withBody = (label: string, res: Response) =>
+      Object.defineProperty(res, 'body', {
+        value: {
+          cancel: async () => {
+            cancels.push(label)
+          },
+        },
+        configurable: true,
+      })
+
+    fetchMock
+      // flow hop that only yields a Location
+      .mockResolvedValueOnce(
+        withBody(
+          'flow-redirect',
+          mkRes({
+            status: 302,
+            location:
+              'http://auth.example.test/api/v3/flows/executor/default-authentication-flow/?query=',
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      // authorize hop — body never read on any path
+      .mockResolvedValueOnce(
+        withBody(
+          'authorize',
+          mkRes({ status: 302, location: `${REDIRECT_URI}?code=c9&state=st` })
+        )
+      )
+
+    await authentikPasswordLogin('e2e@test.local', 'pw123')
+
+    expect(cancels).toEqual(['flow-redirect', 'authorize'])
   })
 })

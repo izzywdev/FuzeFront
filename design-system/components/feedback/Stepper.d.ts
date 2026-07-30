@@ -17,4 +17,4 @@ export interface StepperProps extends React.HTMLAttributes<HTMLOListElement> {
  * steps with `done` / `current` / `pending` state. The current step carries
  * `aria-current="step"`.
  */
-export function Stepper(props: StepperProps): JSX.Element;
+export function Stepper(props: StepperProps): React.JSX.Element;
