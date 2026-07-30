@@ -1,15 +1,50 @@
 name: Prod smoke
 
-# After release.yml bumps image tags in values-prod.yaml (commit message starts
-# with "release:"), Argo CD syncs the new images onto Contabo. This job waits for
-# the rollout, then polls https://app.fuzefront.com/api/health until it returns
-# 200 (or fails after the timeout). Pure black-box check over the public ingress —
-# no cluster credentials needed.
+# Polls https://app.fuzefront.com/api/health until it returns 200 (or fails
+# after the timeout). Pure black-box check over the public ingress — no cluster
+# credentials needed.
+#
+# WHY THIS IS NO LONGER PUSH-TRIGGERED
+# ------------------------------------
+# This workflow used to trigger on `push` to deploy/helm/fuzefront/values-prod.yaml,
+# gated `if: startsWith(github.event.head_commit.message, 'release:')`. Those two
+# conditions are mutually exclusive and the workflow was therefore DEAD:
+# release.yml writes its tag-bump commit as "release: fuzefront images <sha>
+# [skip ci]" — it must carry the suppression token, or the bump push re-triggers
+# release.yml forever — and GitHub does not start push-triggered workflows for
+# commits carrying it. So the only commits that satisfied the `if:` were exactly
+# the commits whose push event never fired.
+#
+# Evidence: the last real execution was 2026-06-30 (5 successful runs, all on
+# hand-written release commits with no suppression token). Every one of the 25
+# runs since is `skipped`, and no run exists for ANY automated release commit.
+# Production went ~4 weeks with no automated post-deploy health check.
+#
+# It is now a reusable workflow called by prod-post-deploy.yml (which release.yml
+# dispatches), plus workflow_dispatch for manual use.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'deploy/helm/fuzefront/values-prod.yaml'
+  workflow_call:
+    inputs:
+      url:
+        description: 'Health endpoint to poll'
+        type: string
+        required: false
+        default: 'https://app.fuzefront.com/api/health'
+      wait_seconds:
+        description: 'Seconds to wait for Argo to roll out before polling'
+        type: number
+        required: false
+        default: 90
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Health endpoint to poll'
+        required: false
+        default: 'https://app.fuzefront.com/api/health'
+      wait_seconds:
+        description: 'Seconds to wait for Argo to roll out before polling'
+        required: false
+        default: '90'
 
 permissions:
   contents: read
@@ -22,17 +57,17 @@ jobs:
   smoke:
     name: Poll /api/health
     runs-on: ubuntu-latest
-    # Only run for release tag-bump commits (skip unrelated values-prod edits).
-    if: startsWith(github.event.head_commit.message, 'release:')
+    timeout-minutes: 15
     steps:
       - name: Wait for Argo to roll out, then poll health
         env:
-          URL: https://app.fuzefront.com/api/health
+          URL: ${{ inputs.url || 'https://app.fuzefront.com/api/health' }}
+          WAIT: ${{ inputs.wait_seconds || 90 }}
         run: |
           echo "Smoke target: $URL"
           # Give Argo CD time to detect the git change and roll the Deployments.
-          echo "Waiting 90s for Argo CD sync + rollout..."
-          sleep 90
+          echo "Waiting ${WAIT}s for Argo CD sync + rollout..."
+          sleep "$WAIT"
 
           # Poll for up to ~5 min (30 attempts × 10s).
           attempts=30

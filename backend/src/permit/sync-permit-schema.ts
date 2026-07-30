@@ -91,6 +91,26 @@ export async function syncPermitSchemaWithProducts(
 }
 
 /**
+ * Sync the environment schema MERGED WITH every product policy — the base
+ * schema plus legacy in-tree policies plus registry-registered ones.
+ *
+ * Extracted so the boot path and the CLI entry below share one definition.
+ * Syncing the base schema ALONE would omit product policies, and a role that
+ * isn't in the synced schema just denies — silently.
+ */
+export async function syncPermitSchemaFromRegistry(
+  permit: PermitSchemaClient,
+  legacy: ProductPolicy[],
+  log: (m: string) => void = console.log
+): Promise<void> {
+  const registered = await loadRegisteredProductPolicies()
+  // A registered policy for the same product supersedes its legacy in-tree copy.
+  const registeredKeys = new Set(registered.map(p => p.product))
+  const kept = legacy.filter(p => !registeredKeys.has(p.product))
+  await syncPermitSchemaWithProducts(permit, [...kept, ...registered], log)
+}
+
+/**
  * Reads every product policy REGISTERED BY A PRODUCT ITSELF
  * (PUT /api/v1/app-registry/apps/{slug}/policy → `apps.policy`).
  *

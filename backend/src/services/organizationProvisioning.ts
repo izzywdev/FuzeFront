@@ -5,6 +5,11 @@ import { createTenantInPermit } from '../utils/permit/tenant-management'
 import { syncUserToPermit } from '../utils/permit/user-sync'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import {
+  createOrganizationResourceInstance,
+  setOrganizationParent,
+} from '../utils/permit/resource-instances'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
+import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
@@ -22,6 +27,17 @@ import type { Knex } from 'knex'
 export const PROVISIONING_STEPS = [
   'permit_user_sync',
   'permit_tenant_create',
+  // The ReBAC hierarchy. `permit/schema.ts` declares Organization.relations.parent
+  // and an `org-admin` role derived parent→child, which is what lets platform
+  // staff administer every tenant without a per-tenant assignment. The helpers
+  // that realize it (createOrganizationResourceInstance / setOrganizationParent)
+  // existed with ZERO callers anywhere in the repo, so no resource instance and
+  // no `parent` tuple was ever created: the schema declared a derivation with
+  // nothing to derive from, and it failed closed and silently. `parent_id` was
+  // validated, permission-checked and stored, then handed to Permit only as a
+  // tenant ATTRIBUTE — never as a relationship tuple.
+  'permit_org_instance',
+  'permit_org_parent',
   'permit_role_assign',
   'welcome_email',
 ] as const
@@ -32,6 +48,10 @@ export type ProvisioningStep = (typeof PROVISIONING_STEPS)[number]
 export interface ProvisioningPermitClient {
   syncUser(org: Organization, ownerEmail: string): Promise<void>
   createTenant(org: Organization): Promise<void>
+  /** Create the `Organization:<id>` resource instance the ReBAC roles hang off. */
+  createOrgInstance(org: Organization): Promise<void>
+  /** Link a child org to `parentOrgId` via the `parent` relation. */
+  linkParent(org: Organization, parentOrgId: string): Promise<void>
   assignOwnerRole(org: Organization): Promise<void>
 }
 
@@ -57,6 +77,14 @@ export const defaultPermitClient: ProvisioningPermitClient = {
   async createTenant(org) {
     // createTenantInPermit throws on real failure, returns true on success/409.
     await createTenantInPermit(org)
+  },
+  async createOrgInstance(org) {
+    const ok = await createOrganizationResourceInstance(org.id)
+    if (!ok) throw new Error('createOrganizationResourceInstance returned false')
+  },
+  async linkParent(org, parentOrgId) {
+    const ok = await setOrganizationParent(org.id, parentOrgId)
+    if (!ok) throw new Error('setOrganizationParent returned false')
   },
   async assignOwnerRole(org) {
     const ok = await assignOrganizationRole(org.owner_id, org.id, 'owner')
@@ -225,6 +253,52 @@ async function runStep(
     case 'permit_tenant_create':
       await deps.permit.createTenant(org)
       break
+    case 'permit_org_instance':
+      await deps.permit.createOrgInstance(org)
+      break
+    case 'permit_org_parent': {
+      // Explicit parent wins; otherwise every non-root org hangs off the root
+      // platform org, which is what makes the schema's parent→child `org-admin`
+      // derivation reach the whole tree. The root org itself has no parent —
+      // linking it to itself would create a self-referential tuple.
+      const explicitParent = org.parent_id ?? null
+      const parentId =
+        explicitParent ?? (org.id === ROOT_ORG_ID ? null : ROOT_ORG_ID)
+      if (!parentId || parentId === org.id) break
+
+      // Don't point a tuple at an Organization instance that does not exist —
+      // on a DB predating migration 015 the root org may be under a different
+      // id, or absent entirely (test DBs, fresh installs).
+      const parentExists = await deps.db('organizations')
+        .where({ id: parentId })
+        .first()
+
+      if (!parentExists) {
+        // An EXPLICIT parent that is missing is a real inconsistency the caller
+        // asked for — fail the step so it is recorded and retried.
+        if (explicitParent) {
+          throw new Error(
+            `parent organization ${explicitParent} not found — cannot link ${org.id}`
+          )
+        }
+        // The IMPLIED root parent being absent must NOT wedge org creation:
+        // the link is an enhancement, and failing here would leave every new
+        // org stuck in `failed` on any DB without a root org. Authorization
+        // still fails closed (no derived org-admin); only the derivation is
+        // missing, and the reconciler re-runs this step on the next login.
+        // Constant format string + arguments — see rootOrgAdmin.ts.
+        console.warn(
+          '[provisioning] root organization %s not found — skipping parent ' +
+            'link for %s (will retry on the next reconcile)',
+          parentId,
+          org.id
+        )
+        break
+      }
+
+      await deps.permit.linkParent(org, parentId)
+      break
+    }
     case 'permit_role_assign':
       await deps.permit.assignOwnerRole(org)
       break

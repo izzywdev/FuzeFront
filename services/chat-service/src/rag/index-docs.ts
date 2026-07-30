@@ -21,12 +21,11 @@ import { GLOBAL_DOCS_COLLECTION } from '../rag/retriever';
 /** Recursively collect Markdown files under `dir`. */
 async function collectMarkdown(dir: string): Promise<string[]> {
   const out: string[] = [];
-  let entries: Awaited<ReturnType<typeof fs.readdir>>;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
+  // Infer the element type from the call rather than annotating with
+  // `Awaited<ReturnType<typeof fs.readdir>>` — that resolves to readdir's Buffer
+  // overload under @types/node 24 (Dirent became generic), typing entry.name as
+  // Buffer. Inferring from the default (utf8) call yields Dirent<string>.
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {

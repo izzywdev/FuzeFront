@@ -21,7 +21,8 @@ import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { db as defaultDb } from '../../config/database'
-import { oidcService as defaultOidc } from '../../services/oidc'
+import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
+import { currentTenant } from './tenants'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
 import {
@@ -212,7 +213,7 @@ export function emailVerificationEnabled(): boolean {
 
 export interface AuthentikProviderDeps {
   db: Db
-  oidc: typeof defaultOidc
+  oidc: OIDCServiceLike
   passwordLoginFn: (email: string, password: string) => Promise<BrokeredUser>
   /** Drives Authentik enrollment + OIDC sync; returns the synced user projection. */
   signupFn: (input: SignupInput) => Promise<BrokeredUser>
@@ -251,7 +252,23 @@ function maskContact(v: string): string {
 
 export class AuthentikIdentityProvider implements IdentityProvider {
   private db: Db
-  private oidc: typeof defaultOidc
+  /**
+   * Injected override (tests). Left undefined in production so `oidc` resolves
+   * the CURRENT tenant's client on each access — this provider is constructed
+   * once, outside any request, so binding an instance here would permanently
+   * pin it to whichever tenant happened to be ambient at construction.
+   */
+  private oidcOverride?: OIDCServiceLike
+
+  /**
+   * The OIDC client for the tenant serving the CURRENT request, resolved on
+   * every access rather than captured once. An injected override always wins,
+   * so tests are unaffected.
+   */
+  private get oidc(): OIDCServiceLike {
+    return this.oidcOverride ?? getOidcService()
+  }
+
   private passwordLoginFn: (email: string, password: string) => Promise<BrokeredUser>
   private signupFn: (input: SignupInput) => Promise<BrokeredUser>
   private notifications: NotificationClient
@@ -270,7 +287,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   constructor(deps: Partial<AuthentikProviderDeps> = {}) {
     this.db = deps.db ?? defaultDb
-    this.oidc = deps.oidc ?? defaultOidc
+    this.oidcOverride = deps.oidc
     this.passwordLoginFn =
       deps.passwordLoginFn ??
       (async (email, password) => {
@@ -715,7 +732,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   async issueM2MToken(input: M2MTokenInput): Promise<M2MToken> {
     if (this.issueM2MFn) return this.issueM2MFn(input)
     // client-credentials grant against the global token endpoint.
-    const issuer = process.env.AUTHENTIK_ISSUER_URL || 'http://localhost:9000/application/o/fuzefront/'
+    const issuer = currentTenant('issuer').issuerUrl
     const tokenEndpoint = new URL('/application/o/token/', new URL(issuer).origin).toString()
     const body = new URLSearchParams({
       grant_type: 'client_credentials',

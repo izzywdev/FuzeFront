@@ -68,7 +68,10 @@ jest.mock('../src/services/organizationProvisioning', () => ({
 }))
 
 // ─── Imports (after mock declarations) ─────────────────────────────────────
-import { oidcService } from '../src/services/oidc'
+import { getOidcService } from '../src/services/oidc'
+
+/** Resolved from the registry; legacy single-tenant mode yields the one client. */
+const oidcService: any = getOidcService()
 import { db } from '../src/config/database'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
 import authRouter from '../src/routes/auth'
