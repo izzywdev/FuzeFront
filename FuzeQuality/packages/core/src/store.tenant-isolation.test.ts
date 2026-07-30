@@ -24,4 +24,25 @@ describe('MemoryCatalogStore tenant isolation', () => {
     expect(portfolio.flows).toEqual([])
     expect(portfolio.suggestions).toEqual([])
   })
+
+  it('creates an immutable audit record when a platform administrator enters tenant context', async () => {
+    const store = new MemoryCatalogStore()
+    const audit = await store.recordAdminContext({
+      actorId: 'platform-admin',
+      sourceTenantId: 'platform',
+      targetTenantId: 'tenant-a',
+      reason: 'Review QA gaps',
+      correlationId: 'correlation-1',
+    })
+
+    expect(audit).toMatchObject({
+      actorId: 'platform-admin',
+      sourceTenantId: 'platform',
+      targetTenantId: 'tenant-a',
+      reason: 'Review QA gaps',
+      correlationId: 'correlation-1',
+    })
+    expect(audit.id).toBeTruthy()
+    expect(new Date(audit.createdAt).toString()).not.toBe('Invalid Date')
+  })
 })

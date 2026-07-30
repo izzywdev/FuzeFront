@@ -1,10 +1,13 @@
 import express from 'express'
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
   testImplementationRequestSchema,
+  type OrganizationQualitySummary,
+  type Portfolio,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
@@ -21,7 +24,7 @@ import {
 } from '@fuzequality/github-app'
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
-import { requestIdentity, requirePlatformPermission } from './platform-authorization'
+import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import {
   buildImplementationManifest,
@@ -44,6 +47,40 @@ const mayReviewSuggestions = requirePlatformPermission('fuzequality.suggestion',
 const maySyncRequirements = requirePlatformPermission('fuzequality.requirement', 'sync')
 const mayCreateTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'create')
 const mayReadTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'read')
+const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.platform-administration', 'read')
+const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
+
+function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary[] {
+  const staleAfter = Number(process.env.FUZEQUALITY_STALE_AFTER_MS ?? 86_400_000)
+  const now = Date.now()
+  const tenantIds = [...new Set(portfolio.repositories.map(repository => repository.tenantId).filter(Boolean))] as string[]
+  return tenantIds.map(organizationId => {
+    const repositories = portfolio.repositories.filter(repository => repository.tenantId === organizationId)
+    const repositoryIds = new Set(repositories.map(repository => repository.id))
+    const operations = portfolio.operations.filter(item => repositoryIds.has(item.repositoryId))
+    const surfaces = portfolio.surfaces.filter(item => repositoryIds.has(item.repositoryId))
+    const tests = portfolio.tests.filter(item => repositoryIds.has(item.repositoryId))
+    const subjectIds = new Set([...operations.map(item => item.id), ...surfaces.map(item => item.id)])
+    const expectations = portfolio.expectations.filter(item => subjectIds.has(item.subjectId) && item.priority !== 'not-applicable')
+    const covered = expectations.filter(item => item.coverage.startsWith('covered')).length
+    const scans = repositories.flatMap(repository => repository.lastScanAt ? [Date.parse(repository.lastScanAt)] : [])
+    return {
+      organizationId,
+      repositories: repositories.length,
+      apiOperations: operations.length,
+      frontendSurfaces: surfaces.length,
+      tests: tests.length,
+      expectations: expectations.length,
+      coveredExpectations: covered,
+      gaps: expectations.filter(item => item.coverage === 'gap').length,
+      openFindings: portfolio.findings.filter(item => item.status === 'open' && (!item.repositoryId || repositoryIds.has(item.repositoryId))).length,
+      failedScans: repositories.filter(item => item.lastScanStatus === 'failed').length,
+      staleScans: repositories.filter(item => !item.lastScanAt || now - Date.parse(item.lastScanAt) > staleAfter).length,
+      coveragePercent: expectations.length ? Math.round((covered / expectations.length) * 100) : 0,
+      latestScanAt: scans.length ? new Date(Math.max(...scans)).toISOString() : undefined,
+    }
+  }).sort((left, right) => right.gaps - left.gaps || left.organizationId.localeCompare(right.organizationId))
+}
 
 app.use(express.json({
   limit: '2mb',
@@ -94,6 +131,31 @@ app.get('/metrics', async (_request, response) => {
 app.get('/api/v1/portfolio', mayReadCatalog, async (request, response) =>
   response.json(await store.portfolio(requestIdentity(request)!.tenantId))
 )
+app.get('/api/v1/admin/organizations', mayAdministerPlatform, async (_request, response) =>
+  response.json(organizationSummaries(await store.portfolio()))
+)
+app.post('/api/v1/admin/organizations/:tenantId/context', mayAdministerPlatform, async (request, response) => {
+  const parsed = adminContextSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten(), code: 'CONTEXT_REASON_REQUIRED' })
+  const targetTenantId = Array.isArray(request.params.tenantId) ? request.params.tenantId[0] : request.params.tenantId
+  const identity = requestIdentity(request)!
+  const portfolio = await store.portfolio(targetTenantId)
+  if (!portfolio.repositories.length) return response.status(404).json({ error: 'Organization catalog not found', code: 'ORGANIZATION_NOT_FOUND' })
+  const audit = await store.recordAdminContext({
+    actorId: identity.userId,
+    sourceTenantId: identity.tenantId,
+    targetTenantId,
+    reason: parsed.data.reason,
+    correlationId: request.header('x-correlation-id') ?? undefined,
+  })
+  response.json({
+    organizationId: targetTenantId,
+    mode: 'read-only',
+    auditId: audit.id,
+    enteredAt: audit.createdAt,
+    portfolio,
+  })
+})
 app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const repository = await store.repository(repositoryId)

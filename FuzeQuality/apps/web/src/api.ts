@@ -1,4 +1,9 @@
-import type { Portfolio, TestImplementationRequest } from '@fuzequality/contracts'
+import type {
+  AdminTenantContext,
+  OrganizationQualitySummary,
+  Portfolio,
+  TestImplementationRequest,
+} from '@fuzequality/contracts'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem('authToken')
@@ -45,4 +50,11 @@ export const api = {
     }),
   testImplementation: (id: string) =>
     request<TestImplementationRequest>(`/api/v1/test-implementations/${id}`),
+  platformOrganizations: () =>
+    request<OrganizationQualitySummary[]>('/api/v1/admin/organizations'),
+  enterOrganizationContext: (organizationId: string, reason: string) =>
+    request<AdminTenantContext>(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/context`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 }
