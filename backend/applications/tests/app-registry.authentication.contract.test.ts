@@ -2,12 +2,12 @@ import express from 'express'
 import request from 'supertest'
 import appRegistryRouter from '../src/routes/app-registry'
 
-describe('GET /api/v1/app-registry/apps authentication contract', () => {
+describe('POST /api/v1/app-registry/apps authentication contract', () => {
   it('rejects a request with no authentication', async () => {
     const app = express()
     app.use('/api/v1/app-registry', appRegistryRouter)
 
-    const response = await request(app).get('/api/v1/app-registry/apps')
+    const response = await request(app).post('/api/v1/app-registry/apps')
 
     expect(response.status).toBe(401)
     expect(response.type).toMatch(/json/)
