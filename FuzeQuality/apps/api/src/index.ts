@@ -38,17 +38,64 @@ const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
-const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 'read')
-const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
-const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
-const mayReadCatalog = requirePlatformPermission('fuzequality.catalog', 'read')
-const mayReadRequirements = requirePlatformPermission('fuzequality.requirement', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.suggestion', 'review')
-const maySyncRequirements = requirePlatformPermission('fuzequality.requirement', 'sync')
-const mayCreateTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'create')
-const mayReadTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'read')
-const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.platform-administration', 'read')
+const mayReadRepositories = requirePlatformPermission('fuzequality.Repository', 'read')
+const mayManageRepositories = requirePlatformPermission('fuzequality.Repository', 'onboard')
+const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
+const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
+const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
+const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
+const maySyncRequirements = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
+const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
+const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
+const mayManageOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'manage')
+const mayManageRepositoryAdministration = requirePlatformPermission('fuzequality.RepositoryAdministration', 'manage')
+const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')
 const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
+const organizationRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
+const invitationSchema = z.object({
+  email: z.string().trim().email(),
+  role: organizationRoleSchema,
+}).strict()
+const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const repositoryAdministrationSchema = z.object({
+  ownership: z.object({
+    team: z.string().trim().min(1).max(100),
+    contact: z.string().trim().email().optional(),
+  }).optional(),
+  jiraBindings: z.array(z.object({
+    project: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,19}$/),
+    component: z.string().trim().min(1).max(255).optional(),
+  })).max(100),
+  storybookBaseUrl: z.string().trim().url().refine(value => new URL(value).protocol === 'https:').optional(),
+}).strict()
+
+async function proxyOrganizationSecurity(
+  request: express.Request,
+  response: express.Response,
+  path: string,
+  init?: RequestInit
+) {
+  const baseUrl = process.env.FUZEFRONT_SECURITY_URL?.replace(/\/$/, '')
+  const authorization = request.header('authorization')
+  if (!baseUrl || !authorization) {
+    return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  }
+  try {
+    const upstream = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        authorization,
+        accept: 'application/json',
+        ...(init?.body ? { 'content-type': 'application/json' } : {}),
+      },
+    })
+    const body = await upstream.json().catch(() => ({ error: 'Platform security returned an invalid response' }))
+    response.status(upstream.status).json(body)
+  } catch {
+    response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  }
+}
 
 function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary[] {
   const staleAfter = Number(process.env.FUZEQUALITY_STALE_AFTER_MS ?? 86_400_000)
@@ -155,6 +202,52 @@ app.post('/api/v1/admin/organizations/:tenantId/context', mayAdministerPlatform,
     enteredAt: audit.createdAt,
     portfolio,
   })
+})
+app.get('/api/v1/organization/members', mayReadOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  const query = new URLSearchParams()
+  for (const key of ['page', 'pageSize', 'search']) {
+    if (typeof request.query[key] === 'string') query.set(key, request.query[key])
+  }
+  const suffix = query.size ? `?${query.toString()}` : ''
+  await proxyOrganizationSecurity(request, response, `/api/organizations/${encodeURIComponent(identity.tenantId)}/members${suffix}`)
+})
+app.get('/api/v1/organization/roles', mayReadOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  await proxyOrganizationSecurity(request, response, `/api/organizations/${encodeURIComponent(identity.tenantId)}/roles`)
+})
+app.post('/api/v1/organization/invitations', mayManageOrganizationAccess, async (request, response) => {
+  const parsed = invitationSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/invitations`,
+    { method: 'POST', body: JSON.stringify(parsed.data) }
+  )
+})
+app.put('/api/v1/organization/members/:memberId', mayManageOrganizationAccess, async (request, response) => {
+  const parsed = memberRoleSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  const memberId = Array.isArray(request.params.memberId) ? request.params.memberId[0] : request.params.memberId
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/members/${encodeURIComponent(memberId)}`,
+    { method: 'PUT', body: JSON.stringify(parsed.data) }
+  )
+})
+app.delete('/api/v1/organization/members/:memberId', mayManageOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  const memberId = Array.isArray(request.params.memberId) ? request.params.memberId[0] : request.params.memberId
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/members/${encodeURIComponent(memberId)}`,
+    { method: 'DELETE' }
+  )
 })
 app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -265,6 +358,15 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     const result = publicAccessError(error)
     response.status(result.status).json(result.body)
   }
+})
+app.patch('/api/v1/repositories/:id/administration', mayManageRepositoryAdministration, async (request, response) => {
+  const parsed = repositoryAdministrationSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.updateRepositoryAdministration(repositoryId, identity.tenantId, parsed.data)
+  if (!repository) return response.status(404).json({ error: 'Repository not found', code: 'REPOSITORY_NOT_FOUND' })
+  response.json(repository)
 })
 
 app.get('/api/v1/catalog/apis', mayReadCatalog, async (request, response) =>

@@ -57,4 +57,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  organizationMembers: () =>
+    request<{ items?: OrganizationMember[]; members?: OrganizationMember[] } | OrganizationMember[]>('/api/v1/organization/members'),
+  organizationRoles: () =>
+    request<unknown>('/api/v1/organization/roles'),
+  inviteOrganizationMember: (email: string, role: OrganizationRole) =>
+    request('/api/v1/organization/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }),
+  updateOrganizationMember: (memberId: string, role: OrganizationRole) =>
+    request(`/api/v1/organization/members/${encodeURIComponent(memberId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }),
+  removeOrganizationMember: (memberId: string) =>
+    request(`/api/v1/organization/members/${encodeURIComponent(memberId)}`, { method: 'DELETE' }),
+  updateRepositoryAdministration: (
+    repositoryId: string,
+    value: Pick<Portfolio['repositories'][number], 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ) => request<Portfolio['repositories'][number]>(`/api/v1/repositories/${repositoryId}/administration`, {
+    method: 'PATCH',
+    body: JSON.stringify(value),
+  }),
+}
+
+export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
+export type OrganizationMember = {
+  id: string
+  userId?: string
+  user_id?: string
+  email?: string
+  name?: string
+  displayName?: string
+  role: OrganizationRole
+  status?: string
 }

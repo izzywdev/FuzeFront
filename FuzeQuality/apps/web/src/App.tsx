@@ -22,9 +22,13 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Save,
   ShieldCheck,
   Sparkles,
   TestTube2,
+  Trash2,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react'
 import type {
@@ -39,11 +43,11 @@ import type {
   TestExpectation,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import { api } from './api'
+import { api, type OrganizationMember, type OrganizationRole } from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
-type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'administration'
+type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'organization' | 'administration'
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -52,6 +56,7 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'frontend', label: 'Frontend inventory', icon: Layers3 },
   { id: 'requirements', label: 'Requirements & flows', icon: Network },
   { id: 'review', label: 'AI review queue', icon: Sparkles },
+  { id: 'organization', label: 'Organization', icon: Users },
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
 
@@ -432,6 +437,93 @@ function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<
   return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Evidence-backed proposals never affect authoritative coverage until you decide." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div></div><div className="review-actions"><button className="reject-button" onClick={() => decide(item.id, 'reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => decide(item.id, 'confirm')}><Check size={16} /> Confirm</button></div></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
 }
 
+function RepositoryAdministrationCard({ repository, reload }: { repository: Repository; reload: () => Promise<void> }) {
+  const [team, setTeam] = useState(repository.ownership?.team ?? '')
+  const [contact, setContact] = useState(repository.ownership?.contact ?? '')
+  const [jiraProject, setJiraProject] = useState(repository.jiraBindings[0]?.project ?? '')
+  const [jiraComponent, setJiraComponent] = useState(repository.jiraBindings[0]?.component ?? '')
+  const [storybookBaseUrl, setStorybookBaseUrl] = useState(repository.storybookBaseUrl ?? '')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  async function save() {
+    setBusy(true); setSaved(false)
+    try {
+      await api.updateRepositoryAdministration(repository.id, {
+        ownership: team ? { team, contact: contact || undefined } : undefined,
+        jiraBindings: jiraProject ? [{ project: jiraProject.toUpperCase(), component: jiraComponent || undefined }] : [],
+        storybookBaseUrl: storybookBaseUrl || undefined,
+      })
+      setSaved(true)
+      await reload()
+    } finally { setBusy(false) }
+  }
+  return <article className="repository-admin-card">
+    <div className="repository-admin-title"><div className="repo-mark">{repository.name.slice(0, 2).toUpperCase()}</div><div><strong>{repository.name}</strong><small>{repository.owner}</small></div>{saved && <span>Saved</span>}</div>
+    <div className="repository-admin-fields">
+      <label>Owning team<input value={team} onChange={event => setTeam(event.target.value)} placeholder="Platform" /></label>
+      <label>Owner contact<input value={contact} onChange={event => setContact(event.target.value)} type="email" placeholder="team@example.com" /></label>
+      <label>Jira project<input value={jiraProject} onChange={event => setJiraProject(event.target.value)} placeholder="FQ" /></label>
+      <label>Jira component<input value={jiraComponent} onChange={event => setJiraComponent(event.target.value)} placeholder="Catalog" /></label>
+      <label className="wide-field">Storybook URL<input value={storybookBaseUrl} onChange={event => setStorybookBaseUrl(event.target.value)} type="url" placeholder="https://storybook.example.com" /></label>
+    </div>
+    <button className="secondary-button" disabled={busy} onClick={save}><Save size={14} /> {busy ? 'Saving…' : 'Save bindings'}</button>
+  </article>
+}
+
+function OrganizationSettings({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
+  const roles: OrganizationRole[] = ['owner', 'admin', 'member', 'viewer']
+  const [members, setMembers] = useState<OrganizationMember[]>([])
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<OrganizationRole>('member')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  async function loadMembers() {
+    setLoading(true)
+    try {
+      const result = await api.organizationMembers()
+      setMembers(Array.isArray(result) ? result : result.items ?? result.members ?? [])
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { void loadMembers() }, [])
+  async function invite(event: FormEvent) {
+    event.preventDefault()
+    await api.inviteOrganizationMember(email, role)
+    setEmail('')
+    await loadMembers()
+  }
+  async function updateRole(member: OrganizationMember, nextRole: OrganizationRole) {
+    await api.updateOrganizationMember(member.id, nextRole)
+    await loadMembers()
+  }
+  async function remove(member: OrganizationMember) {
+    if (!window.confirm(`Remove ${member.email ?? member.name ?? member.id} from this organization?`)) return
+    await api.removeOrganizationMember(member.id)
+    await loadMembers()
+  }
+  return <>
+    <PageHeading eyebrow="Tenant administration" title="Organization access & integrations" detail="Membership delegates to FuzeFront security. FuzeQuality owns only QA repository ownership and integration bindings." />
+    <section className="organization-settings-grid">
+      <article className="panel">
+        <div className="panel-heading"><div><p className="eyebrow">FuzeFront security</p><h2>Members & roles</h2></div><span className="header-badge"><Users /> {members.length}</span></div>
+        <form className="member-invite" onSubmit={invite}><input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="teammate@example.com" required /><select value={role} onChange={event => setRole(event.target.value as OrganizationRole)}>{roles.map(item => <option key={item}>{item}</option>)}</select><button className="primary-button"><UserPlus size={15} /> Invite</button></form>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="member-list">
+          {members.map(member => <div className="member-row" key={member.id}><div><strong>{member.displayName ?? member.name ?? member.email ?? member.userId ?? member.user_id ?? member.id}</strong><small>{member.email ?? member.status ?? 'Active member'}</small></div><select value={member.role} onChange={event => updateRole(member, event.target.value as OrganizationRole)}>{roles.map(item => <option key={item}>{item}</option>)}</select><button className="icon-button danger-button" onClick={() => remove(member)} aria-label="Remove member"><Trash2 size={14} /></button></div>)}
+          {!loading && !members.length && <div className="empty-state"><Users /><strong>No members returned</strong><span>Membership remains authoritative in FuzeFront security.</span></div>}
+          {loading && <div className="loading-row"><RefreshCw className="spin" size={15} /> Loading members…</div>}
+        </div>
+      </article>
+      <article className="panel">
+        <div className="panel-heading"><div><p className="eyebrow">QA source ownership</p><h2>Repositories & bindings</h2></div><span className="header-badge"><GitBranch /> {data.repositories.length}</span></div>
+        <div className="repository-admin-list">{data.repositories.map(repository => <RepositoryAdministrationCard key={repository.id} repository={repository} reload={reload} />)}</div>
+      </article>
+    </section>
+  </>
+}
+
 function OrganizationAdministration({ organizations }: { organizations: OrganizationQualitySummary[] }) {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState<AdminTenantContext>()
@@ -506,5 +598,5 @@ export function App() {
   useEffect(() => { void reload() }, [])
   const visibleNavigation = useMemo(() => navigation.filter(item => item.id !== 'administration' || organizations), [organizations])
   const active = useMemo(() => visibleNavigation.find(item => item.id === view), [view, visibleNavigation])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
 }

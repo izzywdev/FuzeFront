@@ -23,8 +23,12 @@ declare module 'lucide-react' {
   export const Plus: LucideIcon
   export const RefreshCw: LucideIcon
   export const Search: LucideIcon
+  export const Save: LucideIcon
   export const ShieldCheck: LucideIcon
   export const Sparkles: LucideIcon
   export const TestTube2: LucideIcon
+  export const Trash2: LucideIcon
+  export const UserPlus: LucideIcon
+  export const Users: LucideIcon
   export const X: LucideIcon
 }
