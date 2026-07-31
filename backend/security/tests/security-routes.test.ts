@@ -61,6 +61,10 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
     ]),
     revokeOtherSessions: jest.fn().mockResolvedValue(undefined),
     revokeSession: jest.fn().mockResolvedValue(undefined),
+    unlinkSocial: jest.fn().mockResolvedValue({
+      providers: [],
+      hasPassword: true,
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -98,6 +102,54 @@ describe('GET /identity/connections', () => {
 
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('DELETE /social/:provider/link', () => {
+  it('returns 200 application/json for an authorized unlink without a 403 forbidden result', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(provider.unlinkSocial).toHaveBeenCalledWith('tok', 'google')
+  })
+  it('returns 401 application/json when unlinking without authentication', async () => {
+    // @fuzequality api unlinkSocial
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/social/google/link')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 application/json for an unknown provider resource', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider({
+      unlinkSocial: jest.fn().mockRejectedValue(new NotFoundError('provider not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/unknown-provider/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 409 application/json when unlinking would remove the last sign-in method', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider({
+      unlinkSocial: jest.fn().mockRejectedValue(new ConflictError('last sign-in method')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 when the required provider path parameter is missing', async () => {
+    // @fuzequality api unlinkSocial
+    const res = await request(makeApp(fakeProvider()))
+      .delete('/api/v1/security/social//link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
   })
 })
 
