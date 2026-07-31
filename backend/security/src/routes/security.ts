@@ -566,6 +566,9 @@ router.post('/verify/email/start', async (req: Request, res: Response) => {
 
 router.post('/verify/email/confirm', async (req: Request, res: Response) => {
   try {
+    if (!req.body?.token && !req.body?.code) {
+      throw new InvalidInputError('token or code is required')
+    }
     const status = await getIdentityProvider().confirmEmailVerification({
       token: req.body?.token,
       code: req.body?.code,

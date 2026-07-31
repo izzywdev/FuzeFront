@@ -900,38 +900,254 @@ describe('MFA step-up', () => {
 })
 
 describe('contact verification', () => {
-  it('email start 202', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/email/start').send({ email: 'e@e.com' })
-    expect(res.status).toBe(202)
+  it('starts email verification with a declared 202 response for a valid application/json request', async () => {
+    // @fuzequality api startEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/start')
+      .send({ email: 'e@e.com' })
+      .expect(202)
+    expect(res.text).toBe('')
   })
-  it('email confirm returns VerificationStatus', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/email/confirm').send({ token: 't' })
-    expect(res.status).toBe(200)
+
+  it('returns 400 application/json when the email verification request is invalid', async () => {
+    // @fuzequality api startEmailVerification
+    const provider = fakeProvider({
+      startEmailVerification: jest.fn().mockRejectedValue(new InvalidInputError('Invalid email')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/verify/email/start')
+      .send({ email: 'not-an-email' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain email verification content type with 400 application/json', async () => {
+    // @fuzequality api startEmailVerification
+    const provider = fakeProvider({
+      startEmailVerification: jest.fn().mockRejectedValue(new InvalidInputError('Email is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/verify/email/start')
+      .set('Content-Type', 'text/plain')
+      .send('email=e@e.com')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('confirms email verification with a declared 200 application/json VerificationStatus response', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .send({ token: 'verification-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.emailVerified).toBe(true)
   })
-  it('phone start requires bearer + phone', async () => {
-    const noAuth = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').send({ phone: '+1555' })
-    expect(noAuth.status).toBe(401)
-    const noPhone = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').set('Authorization', 'Bearer tok').send({})
-    expect(noPhone.status).toBe(400)
-    const ok = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').set('Authorization', 'Bearer tok').send({ phone: '+1555' })
-    expect(ok.status).toBe(202)
+
+  it('returns 400 application/json when both required token-or-code alternatives are missing', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .send({})
+      .expect(400)
+    expect(res.type).toMatch(/json/)
   })
-  it('status requires bearer', async () => {
-    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/verify/status')
-    expect(res.status).toBe(401)
+
+  it('rejects an unsupported text/plain email confirmation content type with 400 application/json', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .set('Content-Type', 'text/plain')
+      .send('token=verification-token')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('starts phone verification with a declared 202 response for an authorized application/json request without 403', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .send({ phone: '+1555' })
+      .expect(202)
+    expect(res.text).toBe('')
+  })
+
+  it('returns 401 application/json when starting phone verification without authentication', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .send({ phone: '+1555' })
+      .expect(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required phone is missing', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain phone verification content type with 400 application/json', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('phone=+1555')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('confirms phone verification with a declared 200 application/json VerificationStatus response', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ phone: '+1555', code: '123456' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ emailVerified: false, phoneVerified: true, phone: '+1555' })
+  })
+
+  it('returns 400 application/json when the required phone is missing from confirmation', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ code: '123456' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required code is missing from confirmation', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ phone: '+1555' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain phone confirmation content type with 400 application/json', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .set('Content-Type', 'text/plain')
+      .send('phone=+1555&code=123456')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns a declared 200 application/json verification status for an authorized caller without 403', async () => {
+    // @fuzequality api getVerificationStatus
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/verify/status')
+      .set('Authorization', 'Bearer tok')
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ emailVerified: true, phoneVerified: false })
+  })
+
+  it('returns 401 application/json when verification status is requested without authentication', async () => {
+    // @fuzequality api getVerificationStatus
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/verify/status')
+      .expect(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
 describe('M2M tokens', () => {
-  it('issue requires clientId/clientSecret', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/tokens').send({ clientId: 'c' })
-    expect(res.status).toBe(400)
+  it('issues a token with a 200 application/json response for valid application/json credentials', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1', clientSecret: 'secret-1', scope: 'read' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ accessToken: 'a', tokenType: 'Bearer', expiresIn: 3600 })
   })
-  it('introspect is fail-closed (never throws)', async () => {
+
+  it('rejects invalid client credentials with a 401 application/json response', async () => {
+    // @fuzequality api issueToken
+    const provider = fakeProvider({
+      issueM2MToken: jest.fn().mockRejectedValue(new UnauthorizedError('Invalid client credentials')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1', clientSecret: 'wrong-secret' })
+      .expect(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required clientId is missing', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientSecret: 'secret-1' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required clientSecret is missing', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain token request content type with 400 application/json', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .set('Content-Type', 'text/plain')
+      .send('clientId=client-1&clientSecret=secret-1')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns a 200 application/json active introspection result for an application/json token request', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .send({ token: 'active-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: true, subject: 'u1' })
+  })
+
+  it('introspect is fail-closed with a 200 application/json response when the provider throws', async () => {
+    // @fuzequality api introspectToken
     const p = fakeProvider({ introspectToken: jest.fn().mockRejectedValue(new Error('boom')) })
-    const res = await request(makeApp(p)).post('/api/v1/security/tokens/introspect').send({ token: 'x' })
-    expect(res.status).toBe(200)
+    const res = await request(makeApp(p))
+      .post('/api/v1/security/tokens/introspect')
+      .send({ token: 'unknown-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.active).toBe(false)
+  })
+
+  it('returns inactive when the required token is missing', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .send({})
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: false })
+  })
+
+  it('fails closed for an unsupported text/plain introspection request content type', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .set('Content-Type', 'text/plain')
+      .send('token=unknown-token')
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: false })
   })
 })
