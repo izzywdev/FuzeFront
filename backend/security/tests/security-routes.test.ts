@@ -353,13 +353,62 @@ describe('MFA factor management', () => {
     expect(res.status).toBe(400)
     expect(res.type).toMatch(/json/)
   })
-  it('activate requires a code (400) and returns the factor (200)', async () => {
-    const app = makeApp(fakeProvider())
-    const bad = await request(app).post('/api/v1/security/mfa/factors/f1/activate').set('Authorization', 'Bearer tok').send({})
-    expect(bad.status).toBe(400)
-    const ok = await request(app).post('/api/v1/security/mfa/factors/f1/activate').set('Authorization', 'Bearer tok').send({ code: '123456' })
-    expect(ok.status).toBe(200)
-    expect(ok.body.status).toBe('active')
+  it('activate returns 200 application/json for an authorized application/json factor without a 403 forbidden result', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.status).toBe('active')
+  })
+  it('activate returns 400 application/json when the code is missing', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 401 application/json without authentication', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .send({ code: '123456' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 404 application/json for an unknown factor resource', async () => {
+    // @fuzequality api activateMfaFactor
+    const provider = fakeProvider({
+      activateFactor: jest.fn().mockRejectedValue(new NotFoundError('factor not found')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors/unknown-factor/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 404 when the required factorId path parameter is missing', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors//activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(404)
+  })
+  it('activate rejects unsupported text/plain content with 400 application/json', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('code=123456')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
   })
   it('DELETE factor returns 204 for an authorized factor lifecycle without a 403 forbidden result', async () => {
     // @fuzequality api removeMfaFactor
