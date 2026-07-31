@@ -202,7 +202,7 @@ describe('GET /api/v1/portal/current — flag OFF', () => {
 })
 
 describe('GET /api/v1/portal/current — flag ON (FF-EPIC-10-S3 JWT/session binding)', () => {
-  it('returns the caller\'s own portal resolved from the token portal_id claim', async () => {
+  it('200 returns the caller\'s own portal resolved from the token portal_id claim', async () => {
     // @fuzequality api getCurrentPortal
     flagEnabled = true
     await createPortal({ slug: ROOT_PORTAL_SLUG, isRoot: true })
