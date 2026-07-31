@@ -415,6 +415,7 @@ describe('lifecycle register → activate → suspend', () => {
     expect(act2.body.status).toBe('activated')
     expect(emitted.find(e => e.type === 'activated')).toBeFalsy()
 
+    // @fuzequality api suspendApp
     const susp = await request(app).post('/api/v1/app-registry/apps/market/suspend').set(asUser(userA))
     expect(susp.status).toBe(200)
     expect(susp.body.status).toBe('suspended')
@@ -432,6 +433,21 @@ describe('lifecycle register → activate → suspend', () => {
     // @fuzequality api activateApp
     const res = await request(app)
       .post('/api/v1/app-registry/apps//activate')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects suspension with 401 when authentication is missing', async () => {
+    // @fuzequality api suspendApp
+    const res = await request(app).post('/api/v1/app-registry/apps/market/suspend')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not suspend an item when the required slug path parameter is missing', async () => {
+    // @fuzequality api suspendApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//suspend')
       .set(asUser(userA))
     expect(res.status).toBe(404)
   })
