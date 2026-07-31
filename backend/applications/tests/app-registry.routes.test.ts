@@ -594,6 +594,42 @@ describe('getApp BOLA', () => {
   })
 })
 
+describe('updateApp', () => {
+  it('updates an app with a declared 200 response for a valid manifest', async () => {
+    // @fuzequality api updateApp
+    await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(userA))
+      .send({ manifest: manifest('market'), organizationId: orgA })
+
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market')
+      .set(asUser(userA))
+      .send(manifest('market', { name: 'Updated Market' }))
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.manifest.name).toBe('Updated Market')
+  })
+
+  it('rejects app updates with 401 when authentication is missing', async () => {
+    // @fuzequality api updateApp
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market')
+      .send(manifest('market'))
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not perform an item update when the required slug path parameter is missing', async () => {
+    // @fuzequality api updateApp
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+      .send(manifest('market'))
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('listApps BOLA + pagination', () => {
   it('only lists apps visible to the caller', async () => {
     // @fuzequality api listApps
