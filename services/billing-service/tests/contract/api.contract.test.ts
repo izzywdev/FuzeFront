@@ -310,6 +310,7 @@ describe('billing-service contract :: cancelSubscription (DELETE /subscriptions/
 
 describe('billing-service contract :: createSetupIntent (POST /setup-intent)', () => {
   it('200 {clientSecret} on success', async () => {
+    // @fuzequality api createSetupIntent
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.stripe.setupIntents.create.mockResolvedValue({ client_secret: 'seti_secret_xyz' });
     const res = await request(app)
@@ -343,6 +344,7 @@ describe('billing-service contract :: createSetupIntent (POST /setup-intent)', (
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api createSetupIntent
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).post(`${BASE}/setup-intent`).send({ entityType: 'user', entityId: USER_ID });
     expect(res.status).toBe(401);
