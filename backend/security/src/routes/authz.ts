@@ -266,6 +266,8 @@ router.post('/tenants/:id/members', async (req: Request, res: Response) => {
 router.delete('/tenants/:id/members/:userId', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const tenant = await getAuthorizationProvider().getTenant(req.params.id)
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   await getAuthorizationProvider().removeMember(req.params.id, req.params.userId)
   res.status(204).end()
 })

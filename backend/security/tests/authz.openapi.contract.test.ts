@@ -41,6 +41,7 @@ const authorizationProvider = {
     page: { nextCursor: null, hasMore: false },
   }),
   addMember: jest.fn().mockResolvedValue({ userId: 'user-2', roles: ['viewer'] }),
+  removeMember: jest.fn().mockResolvedValue(undefined),
 }
 
 beforeEach(() => {
@@ -55,6 +56,52 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('DELETE /api/v1/security/tenants/:tenantId/members/:userId', () => {
+    it('returns 204 for an authorized idempotent member lifecycle removal without a 403 forbidden result', async () => {
+      // @fuzequality api removeTenantMember
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(204)
+      expect(response.text).toBe('')
+      expect(authorizationProvider.removeMember).toHaveBeenCalledWith('tenant-1', 'user-2')
+    })
+
+    it('returns 401 application/json when removing a member without authentication', async () => {
+      // @fuzequality api removeTenantMember
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/user-2')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api removeTenantMember
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/unknown-tenant/members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('does not match when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api removeTenantMember
+      await request(buildApp())
+        .delete('/api/v1/security/tenants//members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+
+    it('does not match when the required userId path parameter is missing', async () => {
+      // @fuzequality api removeTenantMember
+      await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+  })
+
   describe('POST /api/v1/security/tenants/:tenantId/members', () => {
     it('returns 201 application/json for an authorized application/json member without a 403 forbidden result', async () => {
       // @fuzequality api addTenantMember
