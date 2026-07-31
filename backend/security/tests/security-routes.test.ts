@@ -412,6 +412,14 @@ describe('social login boundary', () => {
     expect(res.status).toBe(302)
     expect(res.headers.location).toContain('error=authentication_failed')
   })
+  it('Google broker callback returns 302 to the app with an opaque code', async () => {
+    // @fuzequality api googleBrokerCallback
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/social/google/callback?code=google-code&state=st')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('code=opaque')
+    expect(res.headers.location).not.toContain('token=')
+  })
 })
 
 describe('POST /signup', () => {
