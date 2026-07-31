@@ -35,6 +35,7 @@ const authorizationProvider = {
     page: { nextCursor: null, hasMore: false },
   }),
   createTenant: jest.fn().mockResolvedValue({ id: 'tenant-2', name: 'Tenant Two' }),
+  getTenant: jest.fn().mockResolvedValue({ id: 'tenant-1', name: 'Tenant One' }),
 }
 
 beforeEach(() => {
@@ -49,6 +50,47 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/tenants/:tenantId', () => {
+    it('returns 200 application/json for an authorized tenant lifecycle lookup without a 403 forbidden result', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ id: 'tenant-1', name: 'Tenant One' })
+    })
+
+    it('returns 401 application/json when a tenant is read without authentication', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api getTenant
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/unknown-tenant')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('NOT_FOUND')
+    })
+
+    it('routes to tenant listing when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(authorizationProvider.listTenants).toHaveBeenCalled()
+      expect(authorizationProvider.getTenant).not.toHaveBeenCalled()
+    })
+  })
+
   describe('POST /api/v1/security/tenants', () => {
     it('returns 201 application/json for an authorized application/json tenant without a 403 forbidden result', async () => {
       // @fuzequality api createTenant
