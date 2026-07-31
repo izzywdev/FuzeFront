@@ -137,12 +137,82 @@ describe('custom hostname API — against FuzeInfra stub', () => {
     expect(second.provider?.id).toBe(first.provider?.id);
   });
 
+  it('creates a custom hostname with the declared 201 response and returns 200 on idempotent replay', async () => {
+    // @fuzequality api createCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('create');
+    const request = () =>
+      fetch(`${BASE_URL}/custom-hostnames`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain }),
+      });
+
+    const created = await request();
+    expect(created.status).toBe(201);
+    expect(created.headers.get('content-type')).toMatch(/json/);
+
+    const replay = await request();
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('rejects custom-hostname creation with 401 when authentication is missing', async () => {
+    // @fuzequality api createCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: uniqueDomain('unauthenticated') }),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
   it('returns 204 when deleting a domain that was never registered', async () => {
+    // @fuzequality api deleteCustomHostname
     if (!reachable) return;
     // Idempotent by contract, so best-effort cleanup never needs a pre-check.
     await expect(
       client().deleteCustomHostname('never-registered-anywhere.example.com')
     ).resolves.toBeUndefined();
+  });
+
+  it('deletes an owned custom hostname with the declared 204 response', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('delete');
+    await client().createCustomHostname(domain);
+    const res = await fetch(`${BASE_URL}/custom-hostnames/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+  });
+
+  it('rejects custom-hostname deletion with 401 when authentication is missing', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const res = await fetch(
+      `${BASE_URL}/custom-hostnames/${encodeURIComponent(uniqueDomain('unauthenticated-delete'))}`,
+      { method: 'DELETE' }
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('does not delete an item when the required domain path parameter is missing', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames/`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect([404, 405]).toContain(res.status);
   });
 
   it('surfaces all three verification records, ordered and labelled', async () => {
@@ -214,5 +284,38 @@ describe('custom hostname API — against FuzeInfra stub', () => {
 
     expect(err).toBeInstanceOf(CustomHostnameApiError);
     expect(err!.code).toBe('not_found');
+  });
+
+  it('gets an owned custom hostname with the declared 200 response', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('get');
+    await client().createCustomHostname(domain);
+    const res = await fetch(`${BASE_URL}/custom-hostnames/${encodeURIComponent(domain)}`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+    expect((await res.json()).domain).toBe(domain);
+  });
+
+  it('rejects custom-hostname lookup with 401 when authentication is missing', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const res = await fetch(
+      `${BASE_URL}/custom-hostnames/${encodeURIComponent(uniqueDomain('unauthenticated-get'))}`
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('does not perform an item lookup when the required domain path parameter is missing', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames/`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(Array.isArray((await res.json()).items)).toBe(true);
   });
 });
