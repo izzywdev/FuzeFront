@@ -74,7 +74,8 @@ function mirrorRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('POST /payments/checkout — one-time payment-mode Checkout Session', () => {
-  it('200 {sessionId, url}; creates a payment-mode session from price_data line items', async () => {
+  it('200 returns the declared payment checkout response with sessionId and url', async () => {
+    // @fuzequality api createPaymentCheckoutSession
     const { app, stubs } = buildApp({
       internalToken: INTERNAL_TOKEN,
       stubs: { ...orgCustomerStub() },
@@ -225,12 +226,14 @@ describe('POST /payments/checkout — one-time payment-mode Checkout Session', (
   });
 
   it('401 when the internal token is missing', async () => {
+    // @fuzequality api createPaymentCheckoutSession
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
     const res = await request(app).post(URL).set(actorOrgHeaders(ORG_ID)).send(validBody());
     expect(res.status).toBe(401);
   });
 
-  it('401 when the proxy actor-context headers are absent (CRITICAL-2)', async () => {
+  it('401 when X-Billing-Actor-User-Id, X-Billing-Entity-Type, and X-Billing-Entity-Id headers are missing', async () => {
+    // @fuzequality api createPaymentCheckoutSession
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
     const res = await request(app)
       .post(URL)
