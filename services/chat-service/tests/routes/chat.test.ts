@@ -178,6 +178,7 @@ describe('POST /chat/stream', () => {
 
 describe('GET /chat/conversations', () => {
   it('lists the authenticated users conversations', async () => {
+    // @fuzequality api listConversations
     const { app, deps } = buildApp();
     const res = await request(app)
       .get('/chat/conversations')
