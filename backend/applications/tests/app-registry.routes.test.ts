@@ -692,7 +692,7 @@ describe('getApp BOLA', () => {
     expect(theirs.status).toBe(404)
   })
 
-  it('a public app is visible cross-org', async () => {
+  it('returns 200 when a public app is visible cross-org', async () => {
     // @fuzequality api getApp
     store.rows.push({
       slug: 'pub', name: 'Pub', status: 'activated', mode: 'portal', builtin: false,
