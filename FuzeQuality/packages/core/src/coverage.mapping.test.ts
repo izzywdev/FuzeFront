@@ -46,4 +46,17 @@ describe('API test evidence mapping', () => {
     ])
     expect(expectations.find(item => item.kind === 'happy-path')?.coverage).toBe('gap')
   })
+
+  it('does not require unsupported-content-type rejection for a bodyless POST operation', () => {
+    const bodylessPost = {
+      ...operation,
+      operationId: 'logout',
+      method: 'post',
+      path: '/auth/logout',
+      requestContentTypes: [],
+    }
+
+    expect(buildApiExpectations(bodylessPost, []).map(item => item.kind))
+      .not.toContain('invalid-content-type')
+  })
 })

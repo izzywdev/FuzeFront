@@ -760,7 +760,8 @@ paths:
       parameters:
         - name: subject
           in: query
-          required: true
+          required: false
+          description: Defaults to the authenticated caller when omitted.
           schema: { type: string }
         - name: tenant
           in: query
