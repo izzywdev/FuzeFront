@@ -35,6 +35,7 @@ function orgCustomerStub() {
 
 describe('POST /checkout — hosted Stripe Checkout Session', () => {
   it('200 {url, sessionId}; creates a subscription-mode session for the resolved price + customer', async () => {
+    // @fuzequality api createCheckoutSession
     const { app, stubs } = buildApp({
       internalToken: INTERNAL_TOKEN,
       stubs: { ...orgCustomerStub() },
@@ -123,7 +124,8 @@ describe('POST /checkout — hosted Stripe Checkout Session', () => {
     expect(res.status).toBe(401);
   });
 
-  it('401 when the proxy actor-context headers are absent (CRITICAL-2)', async () => {
+  it('401 when X-Billing-Actor-User-Id, X-Billing-Entity-Type, and X-Billing-Entity-Id headers are missing (CRITICAL-2)', async () => {
+    // @fuzequality api createCheckoutSession
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN, stubs: { ...orgCustomerStub() } });
     const res = await request(app)
       .post(URL)

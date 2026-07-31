@@ -84,6 +84,14 @@ describe('custom hostname API — against FuzeInfra stub', () => {
     expect(res.ok).toBe(true);
   });
 
+  it('returns the declared 200 response from GET /readyz', async () => {
+    // @fuzequality api readyz
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/readyz`);
+    expect(res.status).toBe(200);
+    expect(res.ok).toBe(true);
+  });
+
   it('rejects a domain inside fuzefront.com with 422 validation_error', async () => {
     if (!reachable) return;
     // These are already served by the static wildcard Ingress rule. Sending
