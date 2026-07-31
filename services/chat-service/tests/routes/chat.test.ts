@@ -71,7 +71,7 @@ describe('POST /chat/stream', () => {
     await request(app).post('/chat/stream').send({ messages: [], orgId: ORG_ID }).expect(401);
   });
 
-  it('streams SSE events ending in done and persists + bills', async () => {
+  it('200 streams SSE events ending in done and persists + bills', async () => {
     // @fuzequality api streamChat
     const { app, deps } = buildApp();
     const res = await request(app)
