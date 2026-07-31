@@ -157,19 +157,22 @@ describe('Authentication Routes', () => {
       if (sessionId) await db('sessions').where('id', sessionId).del()
     })
 
-    it('should return user info with valid token', async () => {
+    it('returns a 200 application/json user response without a 403 forbidden authorization result', async () => {
+      // @fuzequality api getCurrentUser
       const response = await request(app)
         .get('/api/auth/user')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body).toHaveProperty('user')
       expect(response.body.user.email).toBe(ADMIN_EMAIL)
       expect(response.body.user.roles).toContain('admin')
       expect(response.body.user).toHaveProperty('id')
     })
 
-    it('should reject request without token', async () => {
+    it('returns 401 when the current-user request is made without authentication', async () => {
+      // @fuzequality api getCurrentUser
       const response = await request(app).get('/api/auth/user').expect(401)
       expect(response.body.error).toBe('Access denied. No token provided.')
     })
