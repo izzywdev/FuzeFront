@@ -313,12 +313,28 @@ describe('POST /chat/feedback', () => {
 
 describe('POST /chat/confirm/:id', () => {
   it('confirms a pending tool for the authenticated user', async () => {
+    // @fuzequality api confirmTool
     const { app, deps } = buildApp();
     await request(app)
       .post('/chat/confirm/conf-1')
       .set('Authorization', `Bearer ${token()}`)
       .expect(200);
     expect(deps.confirmations.confirm).toHaveBeenCalledWith('conf-1', USER_ID);
+  });
+
+  it('returns 401 when confirmation authentication is missing', async () => {
+    // @fuzequality api confirmTool
+    const { app } = buildApp();
+    await request(app).post('/chat/confirm/conf-1').expect(401);
+  });
+
+  it('does not confirm a tool when the required id path parameter is missing', async () => {
+    // @fuzequality api confirmTool
+    const { app } = buildApp();
+    await request(app)
+      .post('/chat/confirm/')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(404);
   });
 
   it('404 when the confirmation is unknown or not owned', async () => {
