@@ -6,7 +6,11 @@ const INTERNAL_TOKEN = 'payment-internal-token';
 function fakeProvider() {
   return {
     name: 'test',
-    createCustomer: jest.fn(),
+    createCustomer: jest.fn().mockResolvedValue({
+      providerCustomerId: 'customer-1',
+      email: 'owner@example.com',
+      name: 'Example Owner',
+    }),
     getCustomer: jest.fn(),
     listInvoices: jest.fn(),
     createCheckoutSession: jest.fn().mockResolvedValue({
@@ -44,6 +48,36 @@ describe('POST /api/v1/payments/checkout-sessions', () => {
     const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
       .post('/api/v1/payments/checkout-sessions')
       .send({ mode: 'subscription' })
+      .expect(401);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.error).toBe('unauthorized');
+  });
+});
+
+describe('POST /api/v1/payments/customers', () => {
+  it('creates a customer with the declared 201 application/json response', async () => {
+    // @fuzequality api createCustomer
+    const provider = fakeProvider();
+    const res = await request(createApp({ provider, internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/customers')
+      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .send({
+        externalId: 'organization-1',
+        email: 'owner@example.com',
+        name: 'Example Owner',
+      })
+      .expect(201);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.customer.providerCustomerId).toBe('customer-1');
+  });
+
+  it('returns 401 application/json when customer creation authentication is missing', async () => {
+    // @fuzequality api createCustomer
+    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/customers')
+      .send({ externalId: 'organization-1' })
       .expect(401);
 
     expect(res.type).toMatch(/json/);
