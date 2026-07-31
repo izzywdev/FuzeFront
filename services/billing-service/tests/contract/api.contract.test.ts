@@ -45,6 +45,7 @@ describe('billing-service contract :: getHealth (GET /health)', () => {
 
 describe('billing-service contract :: getPlans (GET /plans)', () => {
   it('200 {plans: Plan[]} — public, no auth required', async () => {
+    // @fuzequality api getPlans
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).get(`${BASE}/plans`); // no Authorization header
     expect(res.status).toBe(200);
