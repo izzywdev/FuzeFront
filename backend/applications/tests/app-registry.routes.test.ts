@@ -565,7 +565,7 @@ describe('onboarding: policy + billing profile', () => {
     expect([403, 404]).toContain(res.status)
   })
 
-  it('stores a valid billing profile', async () => {
+  it('returns 200 when storing a valid billing profile', async () => {
     // @fuzequality api putAppBillingProfile
     await seedApp('market', orgA, userA)
     const res = await request(app)
