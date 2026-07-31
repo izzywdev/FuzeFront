@@ -51,4 +51,9 @@ describe('app registry authentication contract', () => {
     const response = await request(buildApp()).delete('/api/v1/app-registry/apps/clock')
     expectUnauthenticated(response)
   })
+
+  it('rejects an unauthenticated POST /api/v1/app-registry/apps/:slug/activate request', async () => {
+    const response = await request(buildApp()).post('/api/v1/app-registry/apps/clock/activate')
+    expectUnauthenticated(response)
+  })
 })
