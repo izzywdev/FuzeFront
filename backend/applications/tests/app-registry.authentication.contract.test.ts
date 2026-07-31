@@ -2,8 +2,20 @@ import express from 'express'
 import request from 'supertest'
 import appRegistryRouter from '../src/routes/app-registry'
 
+jest.mock('../src/app-registry/service', () => ({
+  appRegistryService: {
+    getHeartbeatToken: jest.fn().mockResolvedValue('expected-heartbeat-token'),
+    findBySlug: jest.fn().mockResolvedValue({
+      slug: 'clock',
+      organizationId: 'org-test',
+      manifest: { name: 'Clock' },
+    }),
+  },
+}))
+
 function buildApp() {
   const app = express()
+  app.use(express.json())
   app.use('/api/v1/app-registry', appRegistryRouter)
   return app
 }
@@ -60,5 +72,17 @@ describe('app registry authentication contract', () => {
   it('rejects an unauthenticated POST /api/v1/app-registry/apps/:slug/suspend request', async () => {
     const response = await request(buildApp()).post('/api/v1/app-registry/apps/clock/suspend')
     expectUnauthenticated(response)
+  })
+
+  it('rejects an unauthenticated POST /api/v1/app-registry/apps/:slug/heartbeat request', async () => {
+    const response = await request(buildApp())
+      .post('/api/v1/app-registry/apps/clock/heartbeat')
+      .send({ status: 'online' })
+    expect(response.status).toBe(401)
+    expect(response.type).toMatch(/json/)
+    expect(response.body).toEqual({
+      error: 'unauthorized',
+      message: 'Invalid app heartbeat token',
+    })
   })
 })
