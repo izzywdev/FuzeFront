@@ -742,7 +742,7 @@ describe('updateApp', () => {
 })
 
 describe('listApps BOLA + pagination', () => {
-  it('only lists apps visible to the caller', async () => {
+  it('returns 200 with only the apps visible to the caller', async () => {
     // @fuzequality api listApps
     store.rows.push(
       mkRow('a1', orgA, 'organization'),
