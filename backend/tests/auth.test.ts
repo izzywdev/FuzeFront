@@ -222,7 +222,8 @@ describe('Authentication Routes', () => {
       await db('sessions').where('user_id', userId).del()
     })
 
-    it('should log out only the current session, leaving other sessions intact', async () => {
+    it('returns 200 for an authorized ordinary user without a 403 forbidden response', async () => {
+      // @fuzequality api logout
       // A second, independent login for the same user (e.g. another device).
       const second = await request(app)
         .post('/api/auth/login')
@@ -245,7 +246,8 @@ describe('Authentication Routes', () => {
       await db('sessions').where('id', otherSessionId).del() // cleanup
     })
 
-    it('should reject logout without token', async () => {
+    it('returns 401 when logout is attempted without authentication', async () => {
+      // @fuzequality api logout
       const response = await request(app).post('/api/auth/logout').expect(401)
       expect(response.body.error).toBe('Access denied. No token provided.')
     })
