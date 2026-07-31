@@ -15,6 +15,7 @@ import {
   ConflictError,
   UnauthorizedError,
   InvalidInputError,
+  NotFoundError,
 } from '../src/providers/authentik/AuthentikIdentityProvider'
 import type { IdentityProvider, BrokeredSession } from '../src/providers/IdentityProvider'
 
@@ -47,6 +48,10 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
     startPhoneVerification: jest.fn().mockResolvedValue(undefined),
     confirmPhoneVerification: jest.fn().mockResolvedValue({ emailVerified: false, phoneVerified: true, phone: '+1555' }),
     getVerificationStatus: jest.fn().mockResolvedValue({ emailVerified: true, phoneVerified: false }),
+    getIdentityConnections: jest.fn().mockResolvedValue({
+      providers: [{ provider: 'google' }],
+      hasPassword: true,
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -61,6 +66,31 @@ function makeApp(p: IdentityProvider) {
 }
 
 afterEach(() => setIdentityProvider(null))
+
+describe('GET /identity/connections', () => {
+  it('returns 200 application/json connections for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api getIdentityConnections
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/identity/connections')
+      .set('Authorization', 'Bearer tok')
+
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({
+      providers: [{ provider: 'google' }],
+      hasPassword: true,
+    })
+  })
+
+  it('returns 401 application/json when identity connections are requested without authentication', async () => {
+    // @fuzequality api getIdentityConnections
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/identity/connections')
+
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
 
 describe('POST /session (password login)', () => {
   it('returns an authenticated SessionResult on success', async () => {
@@ -205,7 +235,8 @@ describe('GET /methods', () => {
 
   const methods = () => request(makeApp(fakeProvider())).get('/api/v1/security/methods')
 
-  it('nothing configured: only totp; email/sms verification reported OFF', async () => {
+  it('returns 200 application/json methods when only totp is configured', async () => {
+    // @fuzequality api getAuthMethods
     const res = await methods()
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({
@@ -271,27 +302,142 @@ describe('GET /methods', () => {
 })
 
 describe('MFA factor management', () => {
-  it('GET /mfa/factors returns an { items } envelope', async () => {
+  it('GET /mfa/factors returns 200 application/json for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api listMfaFactors
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/mfa/factors').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(Array.isArray(res.body.items)).toBe(true)
   })
-  it('POST /mfa/factors enrolls (201 with material)', async () => {
+  it('GET /mfa/factors returns 401 application/json without authentication', async () => {
+    // @fuzequality api listMfaFactors
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/mfa/factors')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('POST /mfa/factors returns 201 application/json for an authorized application/json enrollment without a 403 forbidden result', async () => {
+    // @fuzequality api enrollMfaFactor
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/factors').set('Authorization', 'Bearer tok').send({ type: 'totp' })
     expect(res.status).toBe(201)
+    expect(res.type).toMatch(/json/)
     expect(res.body.provisioningUri).toBeDefined()
   })
-  it('activate requires a code (400) and returns the factor (200)', async () => {
-    const app = makeApp(fakeProvider())
-    const bad = await request(app).post('/api/v1/security/mfa/factors/f1/activate').set('Authorization', 'Bearer tok').send({})
-    expect(bad.status).toBe(400)
-    const ok = await request(app).post('/api/v1/security/mfa/factors/f1/activate').set('Authorization', 'Bearer tok').send({ code: '123456' })
-    expect(ok.status).toBe(200)
-    expect(ok.body.status).toBe('active')
+  it('POST /mfa/factors returns 401 application/json without authentication', async () => {
+    // @fuzequality api enrollMfaFactor
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/factors').send({ type: 'totp' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
-  it('DELETE factor returns 204', async () => {
+  it('POST /mfa/factors returns 400 application/json for a malformed enrollment request', async () => {
+    // @fuzequality api enrollMfaFactor
+    const provider = fakeProvider({
+      enrollFactor: jest.fn().mockRejectedValue(new InvalidInputError('type is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('POST /mfa/factors rejects unsupported text/plain content with 400 application/json', async () => {
+    // @fuzequality api enrollMfaFactor
+    const provider = fakeProvider({
+      enrollFactor: jest.fn().mockRejectedValue(new InvalidInputError('type is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('type=totp')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 200 application/json for an authorized application/json factor without a 403 forbidden result', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.status).toBe('active')
+  })
+  it('activate returns 400 application/json when the code is missing', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 401 application/json without authentication', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .send({ code: '123456' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 404 application/json for an unknown factor resource', async () => {
+    // @fuzequality api activateMfaFactor
+    const provider = fakeProvider({
+      activateFactor: jest.fn().mockRejectedValue(new NotFoundError('factor not found')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors/unknown-factor/activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('activate returns 404 when the required factorId path parameter is missing', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors//activate')
+      .set('Authorization', 'Bearer tok')
+      .send({ code: '123456' })
+    expect(res.status).toBe(404)
+  })
+  it('activate rejects unsupported text/plain content with 400 application/json', async () => {
+    // @fuzequality api activateMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/factors/f1/activate')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('code=123456')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('DELETE factor returns 204 for an authorized factor lifecycle without a 403 forbidden result', async () => {
+    // @fuzequality api removeMfaFactor
     const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/mfa/factors/f1').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(204)
+  })
+  it('DELETE factor returns 401 application/json without authentication', async () => {
+    // @fuzequality api removeMfaFactor
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/mfa/factors/f1')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('DELETE factor returns 404 application/json for an unknown factor resource', async () => {
+    // @fuzequality api removeMfaFactor
+    const provider = fakeProvider({
+      removeFactor: jest.fn().mockRejectedValue(new NotFoundError('factor not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/mfa/factors/unknown-factor')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('DELETE factor returns 404 when the required factorId path parameter is missing', async () => {
+    // @fuzequality api removeMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .delete('/api/v1/security/mfa/factors/')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
   })
   it('recovery-codes returns codes once', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/recovery-codes').set('Authorization', 'Bearer tok')
@@ -301,10 +447,38 @@ describe('MFA factor management', () => {
 })
 
 describe('MFA step-up', () => {
-  it('challenge returns 202 ack', async () => {
+  it('returns 202 application/json for an application/json MFA challenge', async () => {
+    // @fuzequality api challengeMfa
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/challenge').send({ challengeId: 'ch', factorId: 'f1' })
     expect(res.status).toBe(202)
+    expect(res.type).toMatch(/json/)
     expect(res.body.delivered).toBe(true)
+  })
+  it('returns 400 application/json when the MFA challenge request is malformed', async () => {
+    // @fuzequality api challengeMfa
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/challenge').send({ challengeId: 'ch' })
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain MFA challenge content type with 400 application/json', async () => {
+    // @fuzequality api challengeMfa
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/challenge')
+      .set('Content-Type', 'text/plain')
+      .send('challengeId=ch&factorId=f1')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 401 application/json when the MFA challenge is unauthorized', async () => {
+    // @fuzequality api challengeMfa
+    const provider = fakeProvider({
+      challengeMfa: jest.fn().mockRejectedValue(new UnauthorizedError('expired challenge')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/challenge')
+      .send({ challengeId: 'expired', factorId: 'f1' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
   it('verify returns a LoginResponse on success', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/verify').send({ challengeId: 'ch', factorId: 'f1', code: '123456' })
