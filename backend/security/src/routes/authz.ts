@@ -282,6 +282,8 @@ router.get('/tenants/:id/roles', async (req: Request, res: Response) => {
 router.put('/tenants/:id/members/:userId/roles', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const tenant = await getAuthorizationProvider().getTenant(req.params.id)
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const roles = Array.isArray(req.body?.roles) ? req.body.roles.map(String) : null
   if (!roles) return res.status(400).json({ error: 'roles[] is required', code: 'MALFORMED' })
   try {
