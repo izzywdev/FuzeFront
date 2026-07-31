@@ -65,6 +65,11 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
       providers: [],
       hasPassword: true,
     }),
+    startSocialLink: jest.fn().mockResolvedValue({
+      redirectUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      state: 'link-state',
+      codeVerifier: 'link-verifier',
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -148,6 +153,55 @@ describe('DELETE /social/:provider/link', () => {
     // @fuzequality api unlinkSocial
     const res = await request(makeApp(fakeProvider()))
       .delete('/api/v1/security/social//link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('POST /social/:provider/link', () => {
+  it('returns 200 application/json for an authorized link without a 403 forbidden result', async () => {
+    // @fuzequality api linkSocial
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.redirectUrl).toContain('accounts.google.com')
+    expect(provider.startSocialLink).toHaveBeenCalledWith('tok', 'google')
+  })
+  it('returns 401 application/json when linking without authentication', async () => {
+    // @fuzequality api linkSocial
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/social/google/link')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 400 application/json for an unsupported provider', async () => {
+    // @fuzequality api linkSocial
+    const provider = fakeProvider({
+      startSocialLink: jest.fn().mockRejectedValue(new InvalidInputError('unsupported provider')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/social/unsupported/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 409 application/json when the provider is already linked', async () => {
+    // @fuzequality api linkSocial
+    const provider = fakeProvider({
+      startSocialLink: jest.fn().mockRejectedValue(new ConflictError('already linked')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 when the required provider path parameter is missing', async () => {
+    // @fuzequality api linkSocial
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/social//link')
       .set('Authorization', 'Bearer tok')
     expect(res.status).toBe(404)
   })
@@ -432,7 +486,8 @@ describe('POST /session/exchange', () => {
 })
 
 describe('social login boundary', () => {
-  it('302s to a SAME-HOST idp path — never an internal identity host', async () => {
+  it('start returns 302 to a same-host identity path without exposing an internal host', async () => {
+    // @fuzequality api startSocialLogin
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/google/start')
     expect(res.status).toBe(302)
     expect(res.headers.location).toBe('/api/auth/idp/application/o/authorize/?x=1')
@@ -444,6 +499,20 @@ describe('social login boundary', () => {
     expect([res.headers['set-cookie']].flat().join(';')).toMatch(
       /sec_social_state=/
     )
+  })
+  it('start returns 400 application/json for an unknown id provider resource', async () => {
+    // @fuzequality api startSocialLogin
+    const provider = fakeProvider({
+      startSocialLogin: jest.fn().mockRejectedValue(new InvalidInputError('unsupported provider')),
+    })
+    const res = await request(makeApp(provider)).get('/api/v1/security/social/unknown-provider/start')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('start returns 404 when the required provider path parameter is missing', async () => {
+    // @fuzequality api startSocialLogin
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social//start')
+    expect(res.status).toBe(404)
   })
   it('callback returns 302 with required code and state to a FuzeFront opaque code', async () => {
     // @fuzequality api socialCallback

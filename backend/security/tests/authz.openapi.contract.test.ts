@@ -30,6 +30,20 @@ const authorizationProvider = {
     items: [],
     page: { nextCursor: null, hasMore: false },
   }),
+  listTenants: jest.fn().mockResolvedValue({
+    items: [{ id: 'tenant-1', name: 'Tenant One' }],
+    page: { nextCursor: null, hasMore: false },
+  }),
+  createTenant: jest.fn().mockResolvedValue({ id: 'tenant-2', name: 'Tenant Two' }),
+  getTenant: jest.fn().mockResolvedValue({ id: 'tenant-1', name: 'Tenant One' }),
+  listMembers: jest.fn().mockResolvedValue({
+    items: [{ userId: 'user-2', roles: ['viewer'] }],
+    page: { nextCursor: null, hasMore: false },
+  }),
+  addMember: jest.fn().mockResolvedValue({ userId: 'user-2', roles: ['viewer'] }),
+  removeMember: jest.fn().mockResolvedValue(undefined),
+  assignRoles: jest.fn().mockResolvedValue({ userId: 'user-2', roles: ['admin'] }),
+  listRoles: jest.fn().mockResolvedValue([{ key: 'viewer', name: 'Viewer' }]),
 }
 
 beforeEach(() => {
@@ -44,6 +58,386 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/tenants/:tenantId/roles', () => {
+    it('returns 200 application/json for an authorized tenant role listing without a 403 forbidden result', async () => {
+      // @fuzequality api listTenantRoles
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ roles: [{ key: 'viewer', name: 'Viewer' }] })
+    })
+
+    it('returns 401 application/json when listing tenant roles without authentication', async () => {
+      // @fuzequality api listTenantRoles
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/roles')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api listTenantRoles
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/missing-tenant/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('NOT_FOUND')
+    })
+
+    it('returns 404 when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api listTenantRoles
+      await request(buildApp())
+        .get('/api/v1/security/tenants//roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+  })
+
+  describe('PUT /api/v1/security/tenants/:tenantId/members/:userId/roles', () => {
+    it('returns 200 application/json for an authorized application/json role assignment without a 403 forbidden result', async () => {
+      // @fuzequality api assignMemberRoles
+      const response = await request(buildApp())
+        .put('/api/v1/security/tenants/tenant-1/members/user-2/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ roles: ['admin'] })
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ userId: 'user-2', roles: ['admin'] })
+    })
+
+    it('returns 401 application/json when assigning roles without authentication', async () => {
+      // @fuzequality api assignMemberRoles
+      const response = await request(buildApp())
+        .put('/api/v1/security/tenants/tenant-1/members/user-2/roles')
+        .send({ roles: ['admin'] })
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 400 application/json when roles are missing', async () => {
+      // @fuzequality api assignMemberRoles
+      const response = await request(buildApp())
+        .put('/api/v1/security/tenants/tenant-1/members/user-2/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .send({})
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+      // @fuzequality api assignMemberRoles
+      const response = await request(buildApp())
+        .put('/api/v1/security/tenants/tenant-1/members/user-2/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .set('Content-Type', 'text/plain')
+        .send('roles=admin')
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api assignMemberRoles
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .put('/api/v1/security/tenants/unknown-tenant/members/user-2/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ roles: ['admin'] })
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('does not match when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api assignMemberRoles
+      await request(buildApp())
+        .put('/api/v1/security/tenants//members/user-2/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ roles: ['admin'] })
+        .expect(404)
+    })
+
+    it('does not match when the required userId path parameter is missing', async () => {
+      // @fuzequality api assignMemberRoles
+      await request(buildApp())
+        .put('/api/v1/security/tenants/tenant-1/members//roles')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ roles: ['admin'] })
+        .expect(404)
+    })
+  })
+
+  describe('DELETE /api/v1/security/tenants/:tenantId/members/:userId', () => {
+    it('returns 204 for an authorized idempotent member lifecycle removal without a 403 forbidden result', async () => {
+      // @fuzequality api removeTenantMember
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(204)
+      expect(response.text).toBe('')
+      expect(authorizationProvider.removeMember).toHaveBeenCalledWith('tenant-1', 'user-2')
+    })
+
+    it('returns 401 application/json when removing a member without authentication', async () => {
+      // @fuzequality api removeTenantMember
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/user-2')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api removeTenantMember
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .delete('/api/v1/security/tenants/unknown-tenant/members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('does not match when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api removeTenantMember
+      await request(buildApp())
+        .delete('/api/v1/security/tenants//members/user-2')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+
+    it('does not match when the required userId path parameter is missing', async () => {
+      // @fuzequality api removeTenantMember
+      await request(buildApp())
+        .delete('/api/v1/security/tenants/tenant-1/members/')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+  })
+
+  describe('POST /api/v1/security/tenants/:tenantId/members', () => {
+    it('returns 201 application/json for an authorized application/json member without a 403 forbidden result', async () => {
+      // @fuzequality api addTenantMember
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants/tenant-1/members')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ userId: 'user-2', roles: ['viewer'] })
+        .expect(201)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ userId: 'user-2', roles: ['viewer'] })
+    })
+
+    it('returns 401 application/json when adding a member without authentication', async () => {
+      // @fuzequality api addTenantMember
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants/tenant-1/members')
+        .send({ userId: 'user-2' })
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 400 application/json for a malformed member request', async () => {
+      // @fuzequality api addTenantMember
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants/tenant-1/members')
+        .set('Authorization', 'Bearer valid-token')
+        .send({})
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+      // @fuzequality api addTenantMember
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants/tenant-1/members')
+        .set('Authorization', 'Bearer valid-token')
+        .set('Content-Type', 'text/plain')
+        .send('userId=user-2')
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api addTenantMember
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants/unknown-tenant/members')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ userId: 'user-2' })
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('does not match when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api addTenantMember
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants//members')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ userId: 'user-2' })
+        .expect(404)
+      expect(authorizationProvider.addMember).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('GET /api/v1/security/tenants/:tenantId/members', () => {
+    it('returns 200 application/json members for an authorized tenant without a 403 forbidden result', async () => {
+      // @fuzequality api listTenantMembers
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/members')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.items).toEqual([{ userId: 'user-2', roles: ['viewer'] }])
+    })
+
+    it('returns 401 application/json when tenant members are listed without authentication', async () => {
+      // @fuzequality api listTenantMembers
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/members')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api listTenantMembers
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/unknown-tenant/members')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('does not match the members route when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api listTenantMembers
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants//members')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(authorizationProvider.listMembers).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('GET /api/v1/security/tenants/:tenantId', () => {
+    it('returns 200 application/json for an authorized tenant lifecycle lookup without a 403 forbidden result', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ id: 'tenant-1', name: 'Tenant One' })
+    })
+
+    it('returns 401 application/json when a tenant is read without authentication', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api getTenant
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/unknown-tenant')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('NOT_FOUND')
+    })
+
+    it('routes to tenant listing when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api getTenant
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(authorizationProvider.listTenants).toHaveBeenCalled()
+      expect(authorizationProvider.getTenant).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('POST /api/v1/security/tenants', () => {
+    it('returns 201 application/json for an authorized application/json tenant without a 403 forbidden result', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'Tenant Two' })
+        .expect(201)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ id: 'tenant-2', name: 'Tenant Two' })
+    })
+
+    it('returns 401 application/json when creating a tenant without authentication', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .send({ name: 'Tenant Two' })
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 400 application/json when the tenant name is missing', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({})
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .set('Content-Type', 'text/plain')
+        .send('name=Tenant Two')
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 502 application/json when the authorization provider rejects tenant creation', async () => {
+      // @fuzequality api createTenant
+      authorizationProvider.createTenant.mockRejectedValueOnce(new Error('provider unavailable'))
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'Tenant Two' })
+        .expect(502)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('PROVIDER_ERROR')
+    })
+  })
+
+  describe('GET /api/v1/security/tenants', () => {
+    it('returns 200 application/json tenants for an authorized caller without a 403 forbidden result', async () => {
+      // @fuzequality api listTenants
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.items).toEqual([{ id: 'tenant-1', name: 'Tenant One' }])
+      expect(authorizationProvider.listTenants).toHaveBeenCalledWith('user-1', {
+        limit: undefined,
+        cursor: undefined,
+      })
+    })
+
+    it('returns 401 application/json when tenants are listed without authentication', async () => {
+      // @fuzequality api listTenants
+      const response = await request(buildApp()).get('/api/v1/security/tenants').expect(401)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+  })
+
   describe('GET /api/v1/security/authz/permissions', () => {
     it('returns 200 application/json permissions for the authorized caller without a 403 forbidden result', async () => {
       // @fuzequality api getPermissions

@@ -371,9 +371,8 @@ paths:
       description: >-
         Starts a server-brokered handshake to link the named social provider to
         the authenticated account. Like login, the browser only ever transits
-        the app host and the provider's own consent host. Returns either a 302
-        redirect to the consent flow, or `{ redirectUrl }` for the SPA to
-        navigate to. On completion the provider returns to
+        the app host and the provider's own consent host. Returns
+        `{ redirectUrl }` for the SPA to navigate to. On completion the provider returns to
         `GET /v1/security/social/callback`, which links (rather than signs in)
         when an authenticated link handshake is in progress.
       security:
@@ -392,11 +391,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SocialLinkStart'
-        '302':
-          description: Redirect to the social provider consent flow.
-          headers:
-            Location:
-              schema: { type: string }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -932,6 +926,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
       x-pagination-reason: Singleton creation.
   /v1/security/tenants/{tenantId}:
