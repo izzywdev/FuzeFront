@@ -71,7 +71,7 @@ describe('POST /chat/stream', () => {
     await request(app).post('/chat/stream').send({ messages: [], orgId: ORG_ID }).expect(401);
   });
 
-  it('streams SSE events ending in done and persists + bills', async () => {
+  it('200 streams SSE events ending in done and persists + bills', async () => {
     // @fuzequality api streamChat
     const { app, deps } = buildApp();
     const res = await request(app)
@@ -179,7 +179,7 @@ describe('POST /chat/stream', () => {
 });
 
 describe('GET /chat/conversations', () => {
-  it('lists the authenticated users conversations', async () => {
+  it('200 lists the authenticated users conversations', async () => {
     // @fuzequality api listConversations
     const { app, deps } = buildApp();
     const res = await request(app)
@@ -224,7 +224,7 @@ describe('GET /chat/conversations', () => {
 });
 
 describe('GET /chat/conversations/:id', () => {
-  it('returns the conversation with the newest message page by default', async () => {
+  it('200 returns the conversation with the newest message page by default', async () => {
     // @fuzequality api getConversation
     const { app, deps } = buildApp();
     const res = await request(app)
@@ -311,7 +311,7 @@ describe('GET /chat/conversations/:id', () => {
 });
 
 describe('POST /chat/feedback', () => {
-  it('records feedback for the authenticated user', async () => {
+  it('200 records feedback for the authenticated user', async () => {
     // @fuzequality api submitFeedback
     const { app, deps } = buildApp();
     await request(app)
@@ -342,7 +342,7 @@ describe('POST /chat/feedback', () => {
 });
 
 describe('POST /chat/confirm/:id', () => {
-  it('confirms a pending tool for the authenticated user', async () => {
+  it('200 confirms a pending tool for the authenticated user', async () => {
     // @fuzequality api confirmTool
     const { app, deps } = buildApp();
     await request(app)
