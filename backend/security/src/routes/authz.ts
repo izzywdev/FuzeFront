@@ -275,6 +275,8 @@ router.delete('/tenants/:id/members/:userId', async (req: Request, res: Response
 router.get('/tenants/:id/roles', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const tenant = await getAuthorizationProvider().getTenant(req.params.id)
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const roles = await getAuthorizationProvider().listRoles(req.params.id)
   res.status(200).json({ roles })
 })

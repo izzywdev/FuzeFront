@@ -43,6 +43,7 @@ const authorizationProvider = {
   addMember: jest.fn().mockResolvedValue({ userId: 'user-2', roles: ['viewer'] }),
   removeMember: jest.fn().mockResolvedValue(undefined),
   assignRoles: jest.fn().mockResolvedValue({ userId: 'user-2', roles: ['admin'] }),
+  listRoles: jest.fn().mockResolvedValue([{ key: 'viewer', name: 'Viewer' }]),
 }
 
 beforeEach(() => {
@@ -57,6 +58,45 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/tenants/:tenantId/roles', () => {
+    it('returns 200 application/json for an authorized tenant role listing without a 403 forbidden result', async () => {
+      // @fuzequality api listTenantRoles
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ roles: [{ key: 'viewer', name: 'Viewer' }] })
+    })
+
+    it('returns 401 application/json when listing tenant roles without authentication', async () => {
+      // @fuzequality api listTenantRoles
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/tenant-1/roles')
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 404 application/json for an unknown tenant resource', async () => {
+      // @fuzequality api listTenantRoles
+      authorizationProvider.getTenant.mockResolvedValueOnce(null)
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants/missing-tenant/roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('NOT_FOUND')
+    })
+
+    it('returns 404 when the required tenantId path parameter is missing', async () => {
+      // @fuzequality api listTenantRoles
+      await request(buildApp())
+        .get('/api/v1/security/tenants//roles')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(404)
+    })
+  })
+
   describe('PUT /api/v1/security/tenants/:tenantId/members/:userId/roles', () => {
     it('returns 200 application/json for an authorized application/json role assignment without a 403 forbidden result', async () => {
       // @fuzequality api assignMemberRoles
