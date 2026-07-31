@@ -18,6 +18,7 @@ const identityProvider = {
 const authorizationProvider = {
   check: jest.fn().mockResolvedValue(false),
   bulkCheck: jest.fn().mockResolvedValue([true, false]),
+  getPermissions: jest.fn().mockResolvedValue(['app:read', 'app:update']),
   grant: jest.fn().mockResolvedValue({
     id: 'grant-1',
     subject: 'user-2',
@@ -43,6 +44,41 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/authz/permissions', () => {
+    it('returns 200 application/json permissions for the authorized caller without a 403 forbidden result', async () => {
+      // @fuzequality api getPermissions
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/permissions?tenant=tenant-1')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ permissions: ['app:read', 'app:update'] })
+      expect(authorizationProvider.getPermissions).toHaveBeenCalledWith('user-1', 'tenant-1')
+    })
+
+    it('returns 401 application/json when permissions are requested without authentication', async () => {
+      // @fuzequality api getPermissions
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/permissions?tenant=tenant-1')
+        .expect(401)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+
+    it('returns 400 application/json when the required query tenant is missing', async () => {
+      // @fuzequality api getPermissions
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/permissions')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(400)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('MALFORMED')
+    })
+  })
+
   describe('POST /api/v1/security/authz/grants', () => {
     it('returns 201 application/json for an authorized application/json grant without a 403 forbidden result', async () => {
       // @fuzequality api createGrant
