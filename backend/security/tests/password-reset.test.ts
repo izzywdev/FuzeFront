@@ -375,12 +375,23 @@ describe('password-reset routes', () => {
     await request(app()).post('/v1/security/session/password/reset-request').send({}).expect(400)
   })
 
-  it('reset-confirm returns { reset: true } on success', async () => {
+  it('reset-confirm returns 200 application/json for a valid application/json request', async () => {
+    // @fuzequality api confirmPasswordReset
     const res = await request(app())
       .post('/v1/security/session/password/reset-confirm')
       .send({ token: 'tok', newPassword: 'N3wPassw0rd!' })
       .expect(200)
     expect(res.body).toEqual({ reset: true })
+  })
+
+  it('reset-confirm rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api confirmPasswordReset
+    const res = await request(app())
+      .post('/v1/security/session/password/reset-confirm')
+      .set('Content-Type', 'text/plain')
+      .send('token=tok&newPassword=N3wPassw0rd!')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
   })
 
   it('reset-confirm 400s on an invalid token', async () => {
