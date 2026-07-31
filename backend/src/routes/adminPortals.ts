@@ -1,8 +1,17 @@
 import express, { NextFunction, Request, Response } from 'express'
 import type { Knex } from 'knex'
+import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
-import { getPortalDomains, rowToPortal, type PortalStatus } from '../repositories/portalRepository'
+import {
+  generatePortalId,
+  getPortalDomains,
+  rowToPortal,
+  type BillingMode,
+  type PortalBranding,
+  type PortalIdentityPolicy,
+  type PortalStatus,
+} from '../repositories/portalRepository'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
 
@@ -13,6 +22,15 @@ export interface AdminPortalStore {
     limit: number
     cursor?: string
   }): Promise<{ items: ReturnType<typeof rowToPortal>[]; nextCursor: string | null }>
+  create(input: {
+    actorUserId: string
+    name: string
+    slug: string
+    ownerEmail: string
+    billingMode: BillingMode
+    branding?: PortalBranding
+    identityPolicy?: PortalIdentityPolicy
+  }): Promise<ReturnType<typeof rowToPortal>>
 }
 
 function encodeCursor(id: string): string {
@@ -54,6 +72,60 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
         nextCursor: hasMore ? encodeCursor(pageRows[pageRows.length - 1].id) : null,
       }
     },
+    async create(input) {
+      const organizationId = uuidv4()
+      const portalId = generatePortalId()
+      await database.transaction(async transaction => {
+        await transaction('organizations').insert({
+          id: organizationId,
+          name: input.name,
+          slug: input.slug,
+          parent_id: null,
+          owner_id: input.actorUserId,
+          type: 'organization',
+          settings: JSON.stringify({}),
+          metadata: JSON.stringify({ portalId }),
+          is_active: true,
+          provisioning_state: 'pending',
+        })
+        await transaction('organization_memberships').insert({
+          id: uuidv4(),
+          user_id: input.actorUserId,
+          organization_id: organizationId,
+          role: 'owner',
+          status: 'active',
+          joined_at: new Date(),
+          permissions: JSON.stringify({}),
+          metadata: JSON.stringify({ invitedOwnerEmail: input.ownerEmail }),
+        })
+        await transaction('portals').insert({
+          id: portalId,
+          organization_id: organizationId,
+          slug: input.slug,
+          name: input.name,
+          status: 'provisioned-pending-invite',
+          billing_mode: input.billingMode,
+          branding: JSON.stringify(input.branding ?? { name: input.name }),
+          identity_policy: JSON.stringify(input.identityPolicy ?? {
+            allowPasswordLogin: true,
+            allowSelfSignup: false,
+          }),
+          owner_email: input.ownerEmail,
+          is_root: false,
+        })
+        await transaction('portal_domains').insert({
+          id: uuidv4(),
+          portal_id: portalId,
+          domain: `${input.slug}.fuzefront.com`,
+          kind: 'subdomain',
+          is_primary: true,
+          verification_status: 'verified',
+          tls_status: 'pending',
+        })
+      })
+      const row = await database('portals').where({ id: portalId }).first()
+      return rowToPortal(row, await getPortalDomains(portalId, database))
+    },
   }
 }
 
@@ -81,6 +153,41 @@ export function createAdminPortalRouter(deps: {
       items: result.items,
       page: { nextCursor: result.nextCursor },
     })
+  })
+
+  router.post('/', authenticate, authorize, async (request: any, response) => {
+    const body = request.body ?? {}
+    const fields: Array<{ path: string; message: string }> = []
+    if (typeof body.name !== 'string' || body.name.trim().length < 1 || body.name.length > 120) {
+      fields.push({ path: 'name', message: 'name must contain 1 to 120 characters' })
+    }
+    if (typeof body.slug !== 'string' || !/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(body.slug)) {
+      fields.push({ path: 'slug', message: 'slug must be a lowercase URL-safe identifier' })
+    }
+    if (typeof body.ownerEmail !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.ownerEmail)) {
+      fields.push({ path: 'ownerEmail', message: 'ownerEmail must be a valid email address' })
+    }
+    if (fields.length) {
+      return response.status(400).json({ error: 'validation_error', fields })
+    }
+
+    try {
+      const portal = await store.create({
+        actorUserId: request.user.id,
+        name: body.name.trim(),
+        slug: body.slug,
+        ownerEmail: body.ownerEmail,
+        billingMode: body.billingMode ?? 'free',
+        branding: body.branding,
+        identityPolicy: body.identityPolicy,
+      })
+      return response.status(201).json(portal)
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        return response.status(409).json({ error: 'SLUG_TAKEN' })
+      }
+      throw error
+    }
   })
 
   return router
