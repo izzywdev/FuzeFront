@@ -224,7 +224,7 @@ describe('GET /chat/conversations', () => {
 });
 
 describe('GET /chat/conversations/:id', () => {
-  it('returns the conversation with the newest message page by default', async () => {
+  it('200 returns the conversation with the newest message page by default', async () => {
     // @fuzequality api getConversation
     const { app, deps } = buildApp();
     const res = await request(app)
