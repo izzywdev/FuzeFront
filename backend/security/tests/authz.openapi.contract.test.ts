@@ -30,6 +30,10 @@ const authorizationProvider = {
     items: [],
     page: { nextCursor: null, hasMore: false },
   }),
+  listTenants: jest.fn().mockResolvedValue({
+    items: [{ id: 'tenant-1', name: 'Tenant One' }],
+    page: { nextCursor: null, hasMore: false },
+  }),
 }
 
 beforeEach(() => {
@@ -44,6 +48,30 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/tenants', () => {
+    it('returns 200 application/json tenants for an authorized caller without a 403 forbidden result', async () => {
+      // @fuzequality api listTenants
+      const response = await request(buildApp())
+        .get('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.items).toEqual([{ id: 'tenant-1', name: 'Tenant One' }])
+      expect(authorizationProvider.listTenants).toHaveBeenCalledWith('user-1', {
+        limit: undefined,
+        cursor: undefined,
+      })
+    })
+
+    it('returns 401 application/json when tenants are listed without authentication', async () => {
+      // @fuzequality api listTenants
+      const response = await request(buildApp()).get('/api/v1/security/tenants').expect(401)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+  })
+
   describe('GET /api/v1/security/authz/permissions', () => {
     it('returns 200 application/json permissions for the authorized caller without a 403 forbidden result', async () => {
       // @fuzequality api getPermissions
