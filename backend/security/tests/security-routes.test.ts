@@ -217,11 +217,18 @@ describe('GET /session (me) — bearer enforcement', () => {
 })
 
 describe('DELETE /session (logout)', () => {
-  it('returns 204 and is idempotent', async () => {
+  it('returns 204 for an authorized idempotent logout without a 403 forbidden result', async () => {
+    // @fuzequality api deleteSession
     const p = fakeProvider()
     const res = await request(makeApp(p)).delete('/api/v1/security/session').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(204)
     expect(p.logout).toHaveBeenCalledWith('tok')
+  })
+  it('returns 401 application/json when logout is requested without authentication', async () => {
+    // @fuzequality api deleteSession
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/session')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
