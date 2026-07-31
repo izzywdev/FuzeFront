@@ -78,7 +78,8 @@ describe('GET /api/auth/oidc/login (OIDC not configured)', () => {
 })
 
 describe('GET /api/auth/oidc/callback error cases', () => {
-  it('redirects with error=oidc_error when error query param is present', async () => {
+  it('returns a declared 302 redirect when the provider reports an authentication failure', async () => {
+    // @fuzequality api oidcCallback
     const res = await request(app)
       .get('/api/auth/oidc/callback?error=access_denied&state=abc')
 
@@ -86,7 +87,8 @@ describe('GET /api/auth/oidc/callback error cases', () => {
     expect(res.headers.location).toContain('error=oidc_error')
   })
 
-  it('redirects with error=missing_parameters when code is absent', async () => {
+  it('returns 302 with missing_parameters when required query code is missing', async () => {
+    // @fuzequality api oidcCallback
     const res = await request(app)
       .get('/api/auth/oidc/callback?state=abc')
 
@@ -94,7 +96,8 @@ describe('GET /api/auth/oidc/callback error cases', () => {
     expect(res.headers.location).toContain('error=missing_parameters')
   })
 
-  it('redirects with error=missing_parameters when state is absent', async () => {
+  it('returns 302 with missing_parameters when required query state is missing', async () => {
+    // @fuzequality api oidcCallback
     const res = await request(app)
       .get('/api/auth/oidc/callback?code=somecode')
 
@@ -102,7 +105,8 @@ describe('GET /api/auth/oidc/callback error cases', () => {
     expect(res.headers.location).toContain('error=missing_parameters')
   })
 
-  it('redirects to some URL on authentication failure (code+state present but OIDC misconfigured)', async () => {
+  it('handles a callback containing code and state with a controlled 302 response', async () => {
+    // @fuzequality api oidcCallback
     const res = await request(app)
       .get('/api/auth/oidc/callback?code=badcode&state=badstate')
 
