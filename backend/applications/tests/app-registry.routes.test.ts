@@ -478,6 +478,7 @@ describe('onboarding: policy + billing profile', () => {
   }
 
   it('stores a valid policy and reports what was synced', async () => {
+    // @fuzequality api putAppPolicy
     await seedApp('market', orgA, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
@@ -485,6 +486,24 @@ describe('onboarding: policy + billing profile', () => {
       .send(validPolicy)
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({ slug: 'market', resources: 1, roles: 1 })
+  })
+
+  it('rejects policy writes with 401 when authentication is missing', async () => {
+    // @fuzequality api putAppPolicy
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .send(validPolicy)
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not write policy when the required slug path parameter is missing', async () => {
+    // @fuzequality api putAppPolicy
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps//policy')
+      .set(asUser(userA))
+      .send(validPolicy)
+    expect(res.status).toBe(404)
   })
 
   it('rejects a permission referencing an action the policy never declares', async () => {
