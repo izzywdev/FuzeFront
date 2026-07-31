@@ -42,6 +42,7 @@ describe('GET /api/v1/admin/portals', () => {
       list: jest.fn().mockResolvedValue({ items: [portal], nextCursor: 'next-page' }),
       create: jest.fn(),
       get: jest.fn(),
+      update: jest.fn(),
     }
     const response = await request(appWith(store))
       .get('/api/v1/admin/portals?status=active&limit=10')
@@ -66,6 +67,7 @@ describe('GET /api/v1/admin/portals', () => {
       list: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
       create: jest.fn(),
       get: jest.fn(),
+      update: jest.fn(),
     }
     const response = await request(appWith(store)).get('/api/v1/admin/portals')
 
@@ -82,6 +84,7 @@ describe('POST /api/v1/admin/portals', () => {
       list: jest.fn(),
       create: jest.fn().mockResolvedValue(created),
       get: jest.fn(),
+      update: jest.fn(),
     }
     const response = await request(appWith(store))
       .post('/api/v1/admin/portals')
@@ -101,7 +104,7 @@ describe('POST /api/v1/admin/portals', () => {
 
   it('401 when authentication is missing', async () => {
     // @fuzequality api createPortal
-    const store: AdminPortalStore = { list: jest.fn(), create: jest.fn(), get: jest.fn() }
+    const store: AdminPortalStore = { list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn() }
     const response = await request(appWith(store))
       .post('/api/v1/admin/portals')
       .send({ name: 'Acme', slug: 'acme', ownerEmail: 'owner@example.com' })
@@ -118,6 +121,7 @@ describe('GET /api/v1/admin/portals/:portalId', () => {
       list: jest.fn(),
       create: jest.fn(),
       get: jest.fn().mockResolvedValue(portal),
+      update: jest.fn(),
     }
     const response = await request(appWith(store))
       .get('/api/v1/admin/portals/prt_acme')
@@ -130,7 +134,7 @@ describe('GET /api/v1/admin/portals/:portalId', () => {
 
   it('401 when authentication is missing', async () => {
     // @fuzequality api getPortal
-    const store: AdminPortalStore = { list: jest.fn(), create: jest.fn(), get: jest.fn() }
+    const store: AdminPortalStore = { list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn() }
     const response = await request(appWith(store)).get('/api/v1/admin/portals/prt_acme')
 
     expect(response.status).toBe(401)
@@ -143,6 +147,7 @@ describe('GET /api/v1/admin/portals/:portalId', () => {
       list: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
       create: jest.fn(),
       get: jest.fn(),
+      update: jest.fn(),
     }
     const response = await request(appWith(store))
       .get('/api/v1/admin/portals/')
@@ -150,5 +155,55 @@ describe('GET /api/v1/admin/portals/:portalId', () => {
 
     expect(response.status).toBe(200)
     expect(store.get).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/v1/admin/portals/:portalId', () => {
+  it('200 returns the declared updated portal response', async () => {
+    // @fuzequality api updatePortal
+    const updated = { ...portal, name: 'Acme Updated' }
+    const store: AdminPortalStore = {
+      list: jest.fn(),
+      create: jest.fn(),
+      get: jest.fn(),
+      update: jest.fn().mockResolvedValue(updated),
+    }
+    const response = await request(appWith(store))
+      .patch('/api/v1/admin/portals/prt_acme')
+      .set('Authorization', 'Bearer test')
+      .send({ name: 'Acme Updated' })
+
+    expect(response.status).toBe(200)
+    expect(response.body.name).toBe('Acme Updated')
+    expect(store.update).toHaveBeenCalledWith('prt_acme', expect.objectContaining({
+      name: 'Acme Updated',
+    }))
+  })
+
+  it('401 when authentication is missing', async () => {
+    // @fuzequality api updatePortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .patch('/api/v1/admin/portals/prt_acme')
+      .send({ name: 'Acme Updated' })
+
+    expect(response.status).toBe(401)
+    expect(store.update).not.toHaveBeenCalled()
+  })
+
+  it('does not update a portal when the required portalId path parameter is missing', async () => {
+    // @fuzequality api updatePortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .patch('/api/v1/admin/portals/')
+      .set('Authorization', 'Bearer test')
+      .send({ name: 'Acme Updated' })
+
+    expect(response.status).toBe(404)
+    expect(store.update).not.toHaveBeenCalled()
   })
 })

@@ -32,6 +32,13 @@ export interface AdminPortalStore {
     identityPolicy?: PortalIdentityPolicy
   }): Promise<ReturnType<typeof rowToPortal>>
   get(portalId: string): Promise<ReturnType<typeof rowToPortal> | null>
+  update(portalId: string, patch: {
+    name?: string
+    status?: PortalStatus
+    billingMode?: BillingMode
+    branding?: PortalBranding
+    identityPolicy?: PortalIdentityPolicy
+  }): Promise<ReturnType<typeof rowToPortal> | null>
 }
 
 function encodeCursor(id: string): string {
@@ -132,6 +139,26 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       if (!row) return null
       return rowToPortal(row, await getPortalDomains(portalId, database))
     },
+    async update(portalId, patch) {
+      const existing = await database('portals').where({ id: portalId }).first()
+      if (!existing) return null
+      if (existing.is_root && patch.status === 'suspended') {
+        const error = new Error('ROOT_PORTAL_PROTECTED') as Error & { code: string }
+        error.code = 'ROOT_PORTAL_PROTECTED'
+        throw error
+      }
+      const changes: Record<string, unknown> = { updated_at: new Date() }
+      if (patch.name !== undefined) changes.name = patch.name
+      if (patch.status !== undefined) changes.status = patch.status
+      if (patch.billingMode !== undefined) changes.billing_mode = patch.billingMode
+      if (patch.branding !== undefined) changes.branding = JSON.stringify(patch.branding)
+      if (patch.identityPolicy !== undefined) {
+        changes.identity_policy = JSON.stringify(patch.identityPolicy)
+      }
+      await database('portals').where({ id: portalId }).update(changes)
+      const row = await database('portals').where({ id: portalId }).first()
+      return rowToPortal(row, await getPortalDomains(portalId, database))
+    },
   }
 }
 
@@ -202,6 +229,40 @@ export function createAdminPortalRouter(deps: {
       return response.status(404).json({ error: 'NOT_FOUND' })
     }
     return response.status(200).json(portal)
+  })
+
+  router.patch('/:portalId', authenticate, authorize, async (request, response) => {
+    const body = request.body ?? {}
+    const allowed = ['name', 'status', 'billingMode', 'branding', 'identityPolicy']
+    const supplied = Object.keys(body)
+    if (!supplied.length || supplied.some(key => !allowed.includes(key))) {
+      return response.status(400).json({
+        error: 'validation_error',
+        fields: [{ path: '', message: 'provide at least one supported mutable field' }],
+      })
+    }
+    if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 120)) {
+      return response.status(400).json({
+        error: 'validation_error',
+        fields: [{ path: 'name', message: 'name must contain 1 to 120 characters' }],
+      })
+    }
+    try {
+      const updated = await store.update(request.params.portalId, {
+        name: body.name?.trim(),
+        status: body.status,
+        billingMode: body.billingMode,
+        branding: body.branding,
+        identityPolicy: body.identityPolicy,
+      })
+      if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
+      return response.status(200).json(updated)
+    } catch (error: any) {
+      if (error?.code === 'ROOT_PORTAL_PROTECTED') {
+        return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
+      }
+      throw error
+    }
   })
 
   return router
