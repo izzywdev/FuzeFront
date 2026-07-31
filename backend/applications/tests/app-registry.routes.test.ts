@@ -520,10 +520,26 @@ describe('onboarding: policy + billing profile', () => {
 
 describe('deleteApp', () => {
   it('deletes a non-builtin app (204)', async () => {
+    // @fuzequality api deleteApp
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
       .send({ manifest: manifest('market'), organizationId: orgA })
     const res = await request(app).delete('/api/v1/app-registry/apps/market').set(asUser(userA))
     expect(res.status).toBe(204)
+  })
+
+  it('rejects deletion with 401 when authentication is missing', async () => {
+    // @fuzequality api deleteApp
+    const res = await request(app).delete('/api/v1/app-registry/apps/market')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 404 when the required slug path parameter is missing', async () => {
+    // @fuzequality api deleteApp
+    const res = await request(app)
+      .delete('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
   })
 
   it('returns 403 when deleting a builtin app', async () => {
