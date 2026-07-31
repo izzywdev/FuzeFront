@@ -2103,6 +2103,9 @@ components:
           type: string
         code:
           type: string
+      anyOf:
+        - required: [token]
+        - required: [code]
     PhoneVerifyConfirmRequest:
       type: object
       properties:

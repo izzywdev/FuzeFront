@@ -933,10 +933,33 @@ describe('contact verification', () => {
       .expect(400)
     expect(res.type).toMatch(/json/)
   })
-  it('email confirm returns VerificationStatus', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/email/confirm').send({ token: 't' })
-    expect(res.status).toBe(200)
+  it('confirms email verification with a declared 200 application/json VerificationStatus response', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .send({ token: 'verification-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.emailVerified).toBe(true)
+  })
+
+  it('returns 400 application/json when both required token-or-code alternatives are missing', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .send({})
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain email confirmation content type with 400 application/json', async () => {
+    // @fuzequality api confirmEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/confirm')
+      .set('Content-Type', 'text/plain')
+      .send('token=verification-token')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
   })
   it('phone start requires bearer + phone', async () => {
     const noAuth = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').send({ phone: '+1555' })
