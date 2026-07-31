@@ -961,13 +961,44 @@ describe('contact verification', () => {
       .expect(400)
     expect(res.type).toMatch(/json/)
   })
-  it('phone start requires bearer + phone', async () => {
-    const noAuth = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').send({ phone: '+1555' })
-    expect(noAuth.status).toBe(401)
-    const noPhone = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').set('Authorization', 'Bearer tok').send({})
-    expect(noPhone.status).toBe(400)
-    const ok = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/phone/start').set('Authorization', 'Bearer tok').send({ phone: '+1555' })
-    expect(ok.status).toBe(202)
+  it('starts phone verification with a declared 202 response for an authorized application/json request without 403', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .send({ phone: '+1555' })
+      .expect(202)
+    expect(res.text).toBe('')
+  })
+
+  it('returns 401 application/json when starting phone verification without authentication', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .send({ phone: '+1555' })
+      .expect(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required phone is missing', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain phone verification content type with 400 application/json', async () => {
+    // @fuzequality api startPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/start')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('phone=+1555')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
   })
   it('status requires bearer', async () => {
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/verify/status')

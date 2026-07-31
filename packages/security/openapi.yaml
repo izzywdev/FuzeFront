@@ -1386,6 +1386,8 @@ paths:
       summary: Send an SMS verification code
       operationId: startPhoneVerification
       description: Sends an SMS OTP to the supplied phone number.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1397,6 +1399,8 @@ paths:
           description: SMS code dispatched.
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton send action.
   /v1/security/verify/phone/confirm:
