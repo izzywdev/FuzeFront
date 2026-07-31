@@ -41,4 +41,9 @@ describe('app registry authentication contract', () => {
     const response = await request(buildApp()).put('/api/v1/app-registry/apps/clock/policy')
     expectUnauthenticated(response)
   })
+
+  it('rejects an unauthenticated PUT /api/v1/app-registry/apps/:slug/billing-profile request', async () => {
+    const response = await request(buildApp()).put('/api/v1/app-registry/apps/clock/billing-profile')
+    expectUnauthenticated(response)
+  })
 })
