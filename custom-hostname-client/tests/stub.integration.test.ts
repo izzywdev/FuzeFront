@@ -137,6 +137,41 @@ describe('custom hostname API — against FuzeInfra stub', () => {
     expect(second.provider?.id).toBe(first.provider?.id);
   });
 
+  it('creates a custom hostname with the declared 201 response and returns 200 on idempotent replay', async () => {
+    // @fuzequality api createCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('create');
+    const request = () =>
+      fetch(`${BASE_URL}/custom-hostnames`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain }),
+      });
+
+    const created = await request();
+    expect(created.status).toBe(201);
+    expect(created.headers.get('content-type')).toMatch(/json/);
+
+    const replay = await request();
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('rejects custom-hostname creation with 401 when authentication is missing', async () => {
+    // @fuzequality api createCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: uniqueDomain('unauthenticated') }),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
   it('returns 204 when deleting a domain that was never registered', async () => {
     if (!reachable) return;
     // Idempotent by contract, so best-effort cleanup never needs a pre-check.
