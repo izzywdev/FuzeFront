@@ -76,6 +76,14 @@ const uniqueDomain = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 10)}.corpabc.test`;
 
 describe('custom hostname API — against FuzeInfra stub', () => {
+  it('returns the declared 200 response from GET /healthz', async () => {
+    // @fuzequality api healthz
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/healthz`);
+    expect(res.status).toBe(200);
+    expect(res.ok).toBe(true);
+  });
+
   it('rejects a domain inside fuzefront.com with 422 validation_error', async () => {
     if (!reachable) return;
     // These are already served by the static wildcard Ingress rule. Sending
