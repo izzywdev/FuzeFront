@@ -813,8 +813,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
       x-pagination-reason: Singleton grant creation.
     delete:
@@ -1500,6 +1500,12 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    ProviderError:
+      description: The configured identity or authorization provider rejected the operation.
       content:
         application/json:
           schema:
