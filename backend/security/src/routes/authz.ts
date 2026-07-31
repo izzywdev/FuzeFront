@@ -234,6 +234,8 @@ router.get('/tenants/:id', async (req: Request, res: Response) => {
 router.get('/tenants/:id/members', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const tenant = await getAuthorizationProvider().getTenant(req.params.id)
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const page = await getAuthorizationProvider().listMembers(req.params.id, {
     limit: req.query.limit ? Number(req.query.limit) : undefined,
     cursor: req.query.cursor ? String(req.query.cursor) : undefined,
