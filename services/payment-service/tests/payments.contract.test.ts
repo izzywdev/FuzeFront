@@ -25,7 +25,10 @@ function fakeProvider() {
       url: 'https://payments.example/checkout-1',
       status: 'open',
     }),
-    setupPaymentMethod: jest.fn(),
+    setupPaymentMethod: jest.fn().mockResolvedValue({
+      clientSecret: 'setup-secret',
+      providerSetupId: 'setup-1',
+    }),
     parseWebhook: jest.fn(),
     parseInvoiceEvent: jest.fn(),
   } as any;
@@ -151,5 +154,30 @@ describe('GET /api/v1/payments/customers/:customerId/invoices', () => {
       .get('/api/v1/payments/customers//invoices')
       .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
       .expect(404);
+  });
+});
+
+describe('POST /api/v1/payments/payment-methods/setup', () => {
+  it('creates a payment-method setup with the declared 201 application/json response', async () => {
+    // @fuzequality api setupPaymentMethod
+    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/payment-methods/setup')
+      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .send({ customerId: 'customer-1', usage: 'off_session' })
+      .expect(201);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.setup.providerSetupId).toBe('setup-1');
+  });
+
+  it('returns 401 application/json when payment-method setup authentication is missing', async () => {
+    // @fuzequality api setupPaymentMethod
+    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/payment-methods/setup')
+      .send({ customerId: 'customer-1' })
+      .expect(401);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
