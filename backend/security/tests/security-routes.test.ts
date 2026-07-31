@@ -402,16 +402,52 @@ describe('social login boundary', () => {
 })
 
 describe('POST /signup', () => {
-  it('201 with session on success', async () => {
+  it('returns 201 application/json for a valid application/json signup', async () => {
+    // @fuzequality api signup
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/signup').send({ email: 'n@e.com', password: 'pw' })
     expect(res.status).toBe(201)
+    expect(res.type).toMatch(/json/)
     expect(res.body.token).toBe('tok')
   })
-  it('409 on conflict', async () => {
+  it('returns 409 application/json when signup conflicts with an existing account', async () => {
+    // @fuzequality api signup
     const p = fakeProvider({ signup: jest.fn().mockRejectedValue(new ConflictError()) })
     const res = await request(makeApp(p)).post('/api/v1/security/signup').send({ email: 'dup@e.com', password: 'pw' })
     expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
     expect(res.body.code).toBe('CONFLICT')
+  })
+  it('returns 400 application/json for a malformed signup request', async () => {
+    // @fuzequality api signup
+    const provider = fakeProvider({
+      signup: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider)).post('/api/v1/security/signup').send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api signup
+    const provider = fakeProvider({
+      signup: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/signup')
+      .set('Content-Type', 'text/plain')
+      .send('email=n@e.com&password=pw')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 503 application/json when the identity provider is unavailable', async () => {
+    // @fuzequality api signup
+    const unavailable = new Error('provider unavailable')
+    unavailable.name = 'AuthentikUnavailableError'
+    const provider = fakeProvider({ signup: jest.fn().mockRejectedValue(unavailable) })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/signup')
+      .send({ email: 'n@e.com', password: 'pw' })
+    expect(res.status).toBe(503)
+    expect(res.type).toMatch(/json/)
   })
 })
 
