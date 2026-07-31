@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -97,7 +97,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -120,7 +120,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -131,7 +131,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -171,7 +171,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -184,7 +184,7 @@ smsService:
 provisioningService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -219,7 +219,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -476,7 +476,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: b9e2fa05fd7d
+    tag: 95253f9b2965
   affinity:
     nodeAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
