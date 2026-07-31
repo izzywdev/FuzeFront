@@ -553,6 +553,7 @@ describe('getApp BOLA', () => {
 
 describe('listApps BOLA + pagination', () => {
   it('only lists apps visible to the caller', async () => {
+    // @fuzequality api listApps
     store.rows.push(
       mkRow('a1', orgA, 'organization'),
       mkRow('b1', orgB, 'organization'),
@@ -562,6 +563,13 @@ describe('listApps BOLA + pagination', () => {
     expect(res.status).toBe(200)
     const slugs = res.body.apps.map((a: any) => a.slug).sort()
     expect(slugs).toEqual(['a1', 'p1']) // b1 (orgB private/org) hidden
+  })
+
+  it('rejects list requests with 401 when authentication is missing', async () => {
+    // @fuzequality api listApps
+    const res = await request(app).get('/api/v1/app-registry/apps')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 
   it('paginates with limit and nextCursor', async () => {
