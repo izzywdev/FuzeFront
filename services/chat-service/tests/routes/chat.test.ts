@@ -310,6 +310,7 @@ describe('GET /chat/conversations/:id', () => {
 
 describe('POST /chat/feedback', () => {
   it('records feedback for the authenticated user', async () => {
+    // @fuzequality api submitFeedback
     const { app, deps } = buildApp();
     await request(app)
       .post('/chat/feedback')
@@ -317,6 +318,15 @@ describe('POST /chat/feedback', () => {
       .send({ messageId: 'm1', rating: 'positive' })
       .expect(200);
     expect(deps.feedback.submit).toHaveBeenCalledWith('m1', USER_ID, 'positive');
+  });
+
+  it('returns 401 when feedback authentication is missing', async () => {
+    // @fuzequality api submitFeedback
+    const { app } = buildApp();
+    await request(app)
+      .post('/chat/feedback')
+      .send({ messageId: 'm1', rating: 'positive' })
+      .expect(401);
   });
 
   it('400 on an invalid rating', async () => {
