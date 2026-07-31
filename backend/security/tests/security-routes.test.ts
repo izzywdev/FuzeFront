@@ -47,6 +47,10 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
     startPhoneVerification: jest.fn().mockResolvedValue(undefined),
     confirmPhoneVerification: jest.fn().mockResolvedValue({ emailVerified: false, phoneVerified: true, phone: '+1555' }),
     getVerificationStatus: jest.fn().mockResolvedValue({ emailVerified: true, phoneVerified: false }),
+    getIdentityConnections: jest.fn().mockResolvedValue({
+      providers: [{ provider: 'google' }],
+      hasPassword: true,
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -61,6 +65,31 @@ function makeApp(p: IdentityProvider) {
 }
 
 afterEach(() => setIdentityProvider(null))
+
+describe('GET /identity/connections', () => {
+  it('returns 200 application/json connections for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api getIdentityConnections
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/identity/connections')
+      .set('Authorization', 'Bearer tok')
+
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({
+      providers: [{ provider: 'google' }],
+      hasPassword: true,
+    })
+  })
+
+  it('returns 401 application/json when identity connections are requested without authentication', async () => {
+    // @fuzequality api getIdentityConnections
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/identity/connections')
+
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
 
 describe('POST /session (password login)', () => {
   it('returns an authenticated SessionResult on success', async () => {
