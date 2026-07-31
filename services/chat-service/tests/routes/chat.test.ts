@@ -311,7 +311,7 @@ describe('GET /chat/conversations/:id', () => {
 });
 
 describe('POST /chat/feedback', () => {
-  it('records feedback for the authenticated user', async () => {
+  it('200 records feedback for the authenticated user', async () => {
     // @fuzequality api submitFeedback
     const { app, deps } = buildApp();
     await request(app)
