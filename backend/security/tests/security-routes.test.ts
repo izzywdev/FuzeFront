@@ -15,6 +15,7 @@ import {
   ConflictError,
   UnauthorizedError,
   InvalidInputError,
+  NotFoundError,
 } from '../src/providers/authentik/AuthentikIdentityProvider'
 import type { IdentityProvider, BrokeredSession } from '../src/providers/IdentityProvider'
 
@@ -360,9 +361,34 @@ describe('MFA factor management', () => {
     expect(ok.status).toBe(200)
     expect(ok.body.status).toBe('active')
   })
-  it('DELETE factor returns 204', async () => {
+  it('DELETE factor returns 204 for an authorized factor lifecycle without a 403 forbidden result', async () => {
+    // @fuzequality api removeMfaFactor
     const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/mfa/factors/f1').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(204)
+  })
+  it('DELETE factor returns 401 application/json without authentication', async () => {
+    // @fuzequality api removeMfaFactor
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/mfa/factors/f1')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('DELETE factor returns 404 application/json for an unknown factor resource', async () => {
+    // @fuzequality api removeMfaFactor
+    const provider = fakeProvider({
+      removeFactor: jest.fn().mockRejectedValue(new NotFoundError('factor not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/mfa/factors/unknown-factor')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('DELETE factor returns 404 when the required factorId path parameter is missing', async () => {
+    // @fuzequality api removeMfaFactor
+    const res = await request(makeApp(fakeProvider()))
+      .delete('/api/v1/security/mfa/factors/')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
   })
   it('recovery-codes returns codes once', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/recovery-codes').set('Authorization', 'Bearer tok')
