@@ -488,14 +488,38 @@ describe('MFA step-up', () => {
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
   })
-  it('verify returns a LoginResponse on success', async () => {
+  it('verify returns 200 application/json for an application/json LoginResponse', async () => {
+    // @fuzequality api verifyMfa
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/verify').send({ challengeId: 'ch', factorId: 'f1', code: '123456' })
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.token).toBe('tok')
   })
-  it('verify 400 when code missing', async () => {
+  it('verify returns 400 application/json when the code is missing', async () => {
+    // @fuzequality api verifyMfa
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/verify').send({ challengeId: 'ch', factorId: 'f1' })
     expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('verify rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api verifyMfa
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/verify')
+      .set('Content-Type', 'text/plain')
+      .send('challengeId=ch&factorId=f1&code=123456')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('verify returns 401 application/json for an unauthorized or expired challenge', async () => {
+    // @fuzequality api verifyMfa
+    const provider = fakeProvider({
+      verifyMfa: jest.fn().mockRejectedValue(new UnauthorizedError('expired challenge')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/verify')
+      .send({ challengeId: 'expired', factorId: 'f1', code: '123456' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
