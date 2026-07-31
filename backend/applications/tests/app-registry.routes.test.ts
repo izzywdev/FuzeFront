@@ -432,6 +432,20 @@ describe('lifecycle register → activate → suspend', () => {
     expect(res.body.status).toBe('activated')
   })
 
+  it('returns 200 when suspending an activated app', async () => {
+    // @fuzequality api suspendApp
+    await seedApp('market', orgA, userA)
+    await request(app)
+      .post('/api/v1/app-registry/apps/market/activate')
+      .set(asUser(userA))
+      .expect(200)
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/suspend')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('suspended')
+  })
+
   it('rejects activation with 401 when authentication is missing', async () => {
     // @fuzequality api activateApp
     const res = await request(app).post('/api/v1/app-registry/apps/market/activate')
