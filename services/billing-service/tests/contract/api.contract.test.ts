@@ -154,6 +154,7 @@ describe('billing-service contract :: createSubscription (POST /subscriptions)',
 
 describe('billing-service contract :: getSubscription (GET /subscriptions/{id})', () => {
   it('200 {subscription} when the mirror exists', async () => {
+    // @fuzequality api getSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionRepo.findByStripeId.mockResolvedValue(makeSubscription());
     const res = await request(app)
@@ -174,9 +175,19 @@ describe('billing-service contract :: getSubscription (GET /subscriptions/{id})'
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api getSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).get(`${BASE}/subscriptions/sub_test123`);
     expect(res.status).toBe(401);
+  });
+
+  it('does not get a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api getSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .get(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .expect(401);
   });
 });
 
