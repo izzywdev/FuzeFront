@@ -250,4 +250,37 @@ describe('custom hostname API — against FuzeInfra stub', () => {
     expect(err).toBeInstanceOf(CustomHostnameApiError);
     expect(err!.code).toBe('not_found');
   });
+
+  it('gets an owned custom hostname with the declared 200 response', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('get');
+    await client().createCustomHostname(domain);
+    const res = await fetch(`${BASE_URL}/custom-hostnames/${encodeURIComponent(domain)}`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+    expect((await res.json()).domain).toBe(domain);
+  });
+
+  it('rejects custom-hostname lookup with 401 when authentication is missing', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const res = await fetch(
+      `${BASE_URL}/custom-hostnames/${encodeURIComponent(uniqueDomain('unauthenticated-get'))}`
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('does not perform an item lookup when the required domain path parameter is missing', async () => {
+    // @fuzequality api getCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames/`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(Array.isArray((await res.json()).items)).toBe(true);
+  });
 });
