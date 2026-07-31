@@ -304,6 +304,45 @@ describe('GET /sessions', () => {
   })
 })
 
+describe('DELETE /sessions/:id', () => {
+  it('returns 204 for an authorized idempotent session lifecycle revoke without a 403 forbidden result', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/session-2')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeSession).toHaveBeenCalledWith('tok', 'session-2')
+  })
+  it('returns 401 application/json when a session is revoked without authentication', async () => {
+    // @fuzequality api revokeSession
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/sessions/session-2')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 application/json for an unknown session resource', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider({
+      revokeSession: jest.fn().mockRejectedValue(new NotFoundError('session not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/unknown-session')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('routes to bulk revoke when the required id path parameter is missing', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeOtherSessions).toHaveBeenCalledWith('tok')
+    expect(provider.revokeSession).not.toHaveBeenCalled()
+  })
+})
+
 describe('POST /session/exchange', () => {
   it('returns 400 application/json when the exchange code is missing', async () => {
     // @fuzequality api exchangeSessionCode
