@@ -203,14 +203,18 @@ describe('POST /session (password login)', () => {
 })
 
 describe('GET /session (me) — bearer enforcement', () => {
-  it('401 without a bearer token', async () => {
+  it('returns 401 application/json without authentication', async () => {
+    // @fuzequality api getSession
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/session')
     expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
     expect(res.body.code).toBe('NO_TOKEN')
   })
-  it('returns identity + user with a bearer token', async () => {
+  it('returns 200 application/json identity and user for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api getSession
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/session').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.identity.userId).toBe('u1')
     expect(res.body.user.email).toBe('u@e.com')
   })
