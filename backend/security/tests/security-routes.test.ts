@@ -149,10 +149,12 @@ describe('POST /password', () => {
 })
 
 describe('POST /session (password login)', () => {
-  it('returns an authenticated SessionResult on success', async () => {
+  it('returns 200 application/json for a valid application/json authenticated SessionResult', async () => {
+    // @fuzequality api createSession
     const app = makeApp(fakeProvider())
     const res = await request(app).post('/api/v1/security/session').send({ email: 'u@e.com', password: 'pw' })
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.status).toBe('authenticated')
     expect(res.body.token).toBe('tok')
     expect(res.body.user.id).toBe('u1')
@@ -170,12 +172,34 @@ describe('POST /session (password login)', () => {
     expect(res.body.token).toBeUndefined()
   })
 
-  it('maps invalid credentials to 401 fail-closed', async () => {
+  it('returns 401 application/json for invalid credentials', async () => {
+    // @fuzequality api createSession
     const err = new UnauthorizedError('bad')
     const p = fakeProvider({ passwordLogin: jest.fn().mockRejectedValue(err) })
     const res = await request(makeApp(p)).post('/api/v1/security/session').send({ email: 'x', password: 'y' })
     expect(res.status).toBe(401)
     expect(res.body.code).toBeDefined()
+  })
+  it('returns 400 application/json for a malformed login request', async () => {
+    // @fuzequality api createSession
+    const provider = fakeProvider({
+      passwordLogin: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider)).post('/api/v1/security/session').send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api createSession
+    const provider = fakeProvider({
+      passwordLogin: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/session')
+      .set('Content-Type', 'text/plain')
+      .send('email=u@e.com&password=pw')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
   })
 
   // A provider outage is a SERVICE condition, not a credential verdict. These
@@ -184,6 +208,7 @@ describe('POST /session (password login)', () => {
   // and the outage hid inside auth-failure metrics.
   for (const name of ['AuthentikUnavailableError', 'UnsupportedFlowStageError']) {
     it(`maps ${name} to 503 PROVIDER_UNAVAILABLE, not 401`, async () => {
+      // @fuzequality api createSession
       const err = new Error('provider is having a bad day')
       err.name = name
       const p = fakeProvider({ passwordLogin: jest.fn().mockRejectedValue(err) })
