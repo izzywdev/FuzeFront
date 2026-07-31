@@ -193,6 +193,7 @@ describe('billing-service contract :: getSubscription (GET /subscriptions/{id})'
 
 describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{id})', () => {
   it('200 {subscription} on a valid plan change', async () => {
+    // @fuzequality api updateSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionService.update.mockResolvedValue(makeSubscription({ priceId: 'price_pro' }));
     const res = await request(app)
@@ -250,9 +251,20 @@ describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api updateSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).patch(`${BASE}/subscriptions/sub_test123`).send({ priceId: 'price_pro' });
     expect(res.status).toBe(401);
+  });
+
+  it('does not update a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api updateSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .patch(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .send({ priceId: 'price_pro' })
+      .expect(404);
   });
 });
 
