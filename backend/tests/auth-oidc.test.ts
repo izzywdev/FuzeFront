@@ -66,7 +66,8 @@ describe('GET /api/auth/method', () => {
 })
 
 describe('GET /api/auth/oidc/login (OIDC not configured)', () => {
-  it('returns 500 with a descriptive error when OIDC is not configured', async () => {
+  it('returns the declared 302 redirect when configured or a controlled 500 otherwise', async () => {
+    // @fuzequality api oidcLogin
     const res = await request(app).get('/api/auth/oidc/login')
 
     if (res.status === 500) {
