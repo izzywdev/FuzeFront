@@ -34,6 +34,7 @@ const authorizationProvider = {
     items: [{ id: 'tenant-1', name: 'Tenant One' }],
     page: { nextCursor: null, hasMore: false },
   }),
+  createTenant: jest.fn().mockResolvedValue({ id: 'tenant-2', name: 'Tenant Two' }),
 }
 
 beforeEach(() => {
@@ -48,6 +49,61 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('POST /api/v1/security/tenants', () => {
+    it('returns 201 application/json for an authorized application/json tenant without a 403 forbidden result', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'Tenant Two' })
+        .expect(201)
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ id: 'tenant-2', name: 'Tenant Two' })
+    })
+
+    it('returns 401 application/json when creating a tenant without authentication', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .send({ name: 'Tenant Two' })
+        .expect(401)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 400 application/json when the tenant name is missing', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({})
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+      // @fuzequality api createTenant
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .set('Content-Type', 'text/plain')
+        .send('name=Tenant Two')
+        .expect(400)
+      expect(response.type).toMatch(/json/)
+    })
+
+    it('returns 502 application/json when the authorization provider rejects tenant creation', async () => {
+      // @fuzequality api createTenant
+      authorizationProvider.createTenant.mockRejectedValueOnce(new Error('provider unavailable'))
+      const response = await request(buildApp())
+        .post('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ name: 'Tenant Two' })
+        .expect(502)
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('PROVIDER_ERROR')
+    })
+  })
+
   describe('GET /api/v1/security/tenants', () => {
     it('returns 200 application/json tenants for an authorized caller without a 403 forbidden result', async () => {
       // @fuzequality api listTenants
