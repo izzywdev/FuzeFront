@@ -262,14 +262,38 @@ describe('DELETE /session (logout)', () => {
 })
 
 describe('POST /session/exchange', () => {
-  it('400 when code missing', async () => {
+  it('returns 400 application/json when the exchange code is missing', async () => {
+    // @fuzequality api exchangeSessionCode
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/session/exchange').send({})
     expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
   })
-  it('exchanges an opaque code for an authenticated session', async () => {
+  it('returns 200 application/json for a valid application/json opaque exchange code', async () => {
+    // @fuzequality api exchangeSessionCode
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/session/exchange').send({ code: 'opaque' })
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.status).toBe('authenticated')
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api exchangeSessionCode
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/session/exchange')
+      .set('Content-Type', 'text/plain')
+      .send('code=opaque')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 401 application/json for an unauthorized or expired exchange code', async () => {
+    // @fuzequality api exchangeSessionCode
+    const provider = fakeProvider({
+      exchangeCode: jest.fn().mockRejectedValue(new UnauthorizedError('expired code')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/session/exchange')
+      .send({ code: 'expired' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
