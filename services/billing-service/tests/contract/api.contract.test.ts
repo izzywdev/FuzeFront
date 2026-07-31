@@ -122,6 +122,7 @@ describe('billing-service contract :: createSubscription (POST /subscriptions)',
   });
 
   it('401 Unauthorized when the internal token is missing', async () => {
+    // @fuzequality api createSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .post(`${BASE}/subscriptions`)
