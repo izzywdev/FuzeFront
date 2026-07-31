@@ -17,6 +17,11 @@ export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
+  updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
   saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
@@ -95,6 +100,17 @@ export class MemoryCatalogStore implements CatalogStore {
       lastScanStatus: 'never',
     }
     this.data.repositories.push(repository)
+    return repository
+  }
+
+  async updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ) {
+    const repository = await this.repository(id, tenantId)
+    if (!repository) return undefined
+    Object.assign(repository, value)
     return repository
   }
 
@@ -267,6 +283,22 @@ export class PostgresCatalogStore implements CatalogStore {
       [tenantId, input.owner, input.name, canonicalUrl, input.defaultBranch, input.kind, input.installationId, input]
     )
     return (await this.repository(result.rows[0].id, tenantId))!
+  }
+
+  async updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ) {
+    const result = await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET config = config || $3::jsonb, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 AND enabled = true
+       RETURNING id`,
+      [id, tenantId, JSON.stringify(value)]
+    )
+    if (!result.rowCount) return undefined
+    return this.repository(id, tenantId)
   }
 
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {

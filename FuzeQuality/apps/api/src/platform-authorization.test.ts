@@ -27,12 +27,12 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.repository', 'create')(request, response, next)
+    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
-      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality.repository' }, action: 'create',
+      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality.Repository' }, action: 'onboard',
     })
   })
 
@@ -43,7 +43,7 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.repository', 'create')(request, response, next)
+    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(503)
@@ -59,7 +59,7 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('fuzequality.platform-administration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.roles).toContain('admin')
@@ -74,7 +74,7 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('fuzequality.platform-administration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)

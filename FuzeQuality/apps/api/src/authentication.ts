@@ -13,7 +13,7 @@ export function isPublicRequest(method: string, path: string) {
  * the worker service token.
  */
 export function isPlatformAuthenticatedRequest(method: string, path: string) {
-  if (!['GET', 'POST'].includes(method)) return false
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false
   const exact = [
     '/api/v1/portfolio',
     '/api/v1/repositories',
@@ -25,6 +25,7 @@ export function isPlatformAuthenticatedRequest(method: string, path: string) {
     '/api/v1/jira/sync',
   ]
   const prefixes = [
+    '/api/v1/organization/',
     '/api/v1/repositories/',
     '/api/v1/catalog/',
     '/api/v1/coverage/',

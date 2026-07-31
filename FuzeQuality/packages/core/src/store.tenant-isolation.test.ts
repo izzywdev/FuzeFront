@@ -45,4 +45,20 @@ describe('MemoryCatalogStore tenant isolation', () => {
     expect(audit.id).toBeTruthy()
     expect(new Date(audit.createdAt).toString()).not.toBe('Invalid Date')
   })
+
+  it('updates repository administration only inside the caller tenant', async () => {
+    const repository = { id: 'repo-a', tenantId: 'tenant-a', owner: 'fuze', name: 'A', canonicalUrl: 'https://github.com/fuze/A', defaultBranch: 'main', kind: 'service' as const, enabled: true, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], lastScanStatus: 'complete' as const }
+    const store = new MemoryCatalogStore({ repositories: [repository] })
+    const value = {
+      ownership: { team: 'Payments' },
+      jiraBindings: [{ project: 'PAY', component: 'Checkout' }],
+      storybookBaseUrl: 'https://storybook.example.com',
+    }
+
+    expect(await store.updateRepositoryAdministration('repo-a', 'tenant-b', value)).toBeUndefined()
+    expect((await store.repository('repo-a', 'tenant-a'))?.ownership).toBeUndefined()
+
+    const updated = await store.updateRepositoryAdministration('repo-a', 'tenant-a', value)
+    expect(updated).toMatchObject(value)
+  })
 })

@@ -180,6 +180,11 @@ button:disabled { cursor: wait; opacity: .55; }
 .organization-table article:first-of-type { border-top: 0; }
 .organization-table strong, .organization-table b, .organization-table small { display: block; }.organization-table strong { color: var(--cyan); }.organization-table b { font: 600 17px 'Space Grotesk'; }.organization-table small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .organization-risk b { color: var(--coral); }
+.organization-settings-grid { display: grid; grid-template-columns: minmax(360px, .8fr) minmax(540px, 1.2fr); gap: 20px; }
+.member-invite { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; margin-bottom: 16px; }.member-invite input, .member-invite select, .member-row select, .repository-admin-fields input { min-width: 0; padding: 9px 10px; border: 1px solid #294359; background: #07131e; color: var(--text); }
+.member-list { display: grid; }.member-row { display: grid; grid-template-columns: 1fr 110px auto; align-items: center; gap: 9px; padding: 11px 0; border-top: 1px solid #172b3d; }.member-row strong, .member-row small { display: block; }.member-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }.danger-button { color: var(--coral); }.loading-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: var(--muted); }
+.repository-admin-list { display: grid; gap: 12px; max-height: 680px; overflow: auto; }.repository-admin-card { padding: 15px; border: 1px solid var(--line); background: #091724; }.repository-admin-title { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-bottom: 13px; }.repository-admin-title strong, .repository-admin-title small { display: block; }.repository-admin-title small { color: var(--muted); }.repository-admin-title > span { color: var(--cyan); font: 9px 'IBM Plex Mono'; text-transform: uppercase; }
+.repository-admin-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }.repository-admin-fields label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; }.repository-admin-fields .wide-field { grid-column: 1 / -1; }
 
 @media (max-width: 720px) {
   .preview-drawer { padding: 21px 16px; }
@@ -188,4 +193,5 @@ button:disabled { cursor: wait; opacity: .55; }
   .storybook-frame { height: 60vh; }
   .tenant-context-banner { top: 0; grid-template-columns: auto 1fr; }.tenant-context-banner button { grid-column: 1 / -1; }
   .organization-table { overflow-x: auto; }.organization-table-head, .organization-table article { min-width: 920px; }
+  .organization-settings-grid { grid-template-columns: 1fr; }.member-invite { grid-template-columns: 1fr; }.repository-admin-fields { grid-template-columns: 1fr; }.repository-admin-fields .wide-field { grid-column: auto; }
 }

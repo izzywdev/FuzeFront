@@ -25,11 +25,33 @@
         "create": { "name": "Create" },
         "read": { "name": "Read" }
       }
+    },
+    {
+      "key": "OrganizationAccess",
+      "name": "Organization access",
+      "actions": {
+        "read": { "name": "Read" },
+        "manage": { "name": "Manage" }
+      }
+    },
+    {
+      "key": "RepositoryAdministration",
+      "name": "Repository administration",
+      "actions": {
+        "manage": { "name": "Manage" }
+      }
+    },
+    {
+      "key": "PlatformAdministration",
+      "name": "Platform administration",
+      "actions": {
+        "read": { "name": "Read" }
+      }
     }
   ],
   "roles": [
-    { "key": "viewer", "name": "Viewer", "permissions": ["Repository:read", "Evidence:read"] },
-    { "key": "analyst", "name": "Analyst", "permissions": ["Repository:read", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create"] },
-    { "key": "admin", "name": "Admin", "permissions": ["Repository:read", "Repository:onboard", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create"] }
+    { "key": "viewer", "name": "Viewer", "permissions": ["Repository:read", "Evidence:read", "OrganizationAccess:read"] },
+    { "key": "analyst", "name": "Analyst", "permissions": ["Repository:read", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create", "OrganizationAccess:read"] },
+    { "key": "admin", "name": "Admin", "permissions": ["Repository:read", "Repository:onboard", "Repository:scan", "Evidence:read", "Evidence:export", "TestImplementation:read", "TestImplementation:create", "OrganizationAccess:read", "OrganizationAccess:manage", "RepositoryAdministration:manage", "PlatformAdministration:read"] }
   ]
 }
