@@ -29,7 +29,12 @@ function fakeProvider() {
       clientSecret: 'setup-secret',
       providerSetupId: 'setup-1',
     }),
-    parseWebhook: jest.fn(),
+    parseWebhook: jest.fn().mockReturnValue({
+      provider: 'stripe',
+      providerEventId: 'event-1',
+      type: 'invoice.paid',
+      data: {},
+    }),
     parseInvoiceEvent: jest.fn(),
   } as any;
 }
@@ -179,5 +184,31 @@ describe('POST /api/v1/payments/payment-methods/setup', () => {
 
     expect(res.type).toMatch(/json/);
     expect(res.body.error).toBe('unauthorized');
+  });
+});
+
+describe('POST /api/v1/payments/webhooks/:provider', () => {
+  it('receives a provider webhook with the declared 200 application/json response', async () => {
+    // @fuzequality api receiveWebhook
+    const provider = fakeProvider();
+    const res = await request(createApp({ provider, internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/webhooks/stripe')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid-signature')
+      .send(JSON.stringify({ id: 'event-1', type: 'invoice.paid' }))
+      .expect(200);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body).toEqual({ received: true, handled: true });
+    expect(provider.parseWebhook).toHaveBeenCalled();
+  });
+
+  it('does not dispatch a webhook when the required provider path parameter is missing', async () => {
+    // @fuzequality api receiveWebhook
+    await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .post('/api/v1/payments/webhooks/')
+      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .send('{}')
+      .expect(404);
   });
 });
