@@ -301,6 +301,7 @@ beforeEach(() => {
 
 describe('registerApp', () => {
   it('registers an app (201) in status registered and emits app.registered', async () => {
+    // @fuzequality api registerApp
     const res = await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
@@ -310,6 +311,15 @@ describe('registerApp', () => {
     expect(res.body.status).toBe('registered')
     expect(res.headers['x-app-heartbeat-token']).toBeTruthy()
     expect(emitted.find(e => e.type === 'registered')).toBeTruthy()
+  })
+
+  it('rejects registration with 401 when authentication is missing', async () => {
+    // @fuzequality api registerApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .send({ manifest: manifest('market'), organizationId: orgA })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 
   it('rejects an invalid manifest with 400 validation_error', async () => {
