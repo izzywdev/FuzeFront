@@ -56,6 +56,15 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
       providers: [{ provider: 'google' }],
       hasPassword: true,
     }),
+    listSessions: jest.fn().mockResolvedValue([
+      { id: 'sess', current: true, createdAt: '2026-07-31T00:00:00.000Z' },
+    ]),
+    revokeOtherSessions: jest.fn().mockResolvedValue(undefined),
+    revokeSession: jest.fn().mockResolvedValue(undefined),
+    unlinkSocial: jest.fn().mockResolvedValue({
+      providers: [],
+      hasPassword: true,
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -93,6 +102,54 @@ describe('GET /identity/connections', () => {
 
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('DELETE /social/:provider/link', () => {
+  it('returns 200 application/json for an authorized unlink without a 403 forbidden result', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(provider.unlinkSocial).toHaveBeenCalledWith('tok', 'google')
+  })
+  it('returns 401 application/json when unlinking without authentication', async () => {
+    // @fuzequality api unlinkSocial
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/social/google/link')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 application/json for an unknown provider resource', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider({
+      unlinkSocial: jest.fn().mockRejectedValue(new NotFoundError('provider not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/unknown-provider/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 409 application/json when unlinking would remove the last sign-in method', async () => {
+    // @fuzequality api unlinkSocial
+    const provider = fakeProvider({
+      unlinkSocial: jest.fn().mockRejectedValue(new ConflictError('last sign-in method')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/social/google/link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 when the required provider path parameter is missing', async () => {
+    // @fuzequality api unlinkSocial
+    const res = await request(makeApp(fakeProvider()))
+      .delete('/api/v1/security/social//link')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
   })
 })
 
@@ -261,15 +318,116 @@ describe('DELETE /session (logout)', () => {
   })
 })
 
+describe('DELETE /sessions', () => {
+  it('returns 204 for an authorized idempotent bulk revoke without a 403 forbidden result', async () => {
+    // @fuzequality api revokeOtherSessions
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeOtherSessions).toHaveBeenCalledWith('tok')
+  })
+  it('returns 401 application/json when bulk revoke is requested without authentication', async () => {
+    // @fuzequality api revokeOtherSessions
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/sessions')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('GET /sessions', () => {
+  it('returns 200 application/json sessions for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api listSessions
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .get('/api/v1/security/sessions')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.items).toHaveLength(1)
+    expect(provider.listSessions).toHaveBeenCalledWith('tok')
+  })
+  it('returns 401 application/json when sessions are listed without authentication', async () => {
+    // @fuzequality api listSessions
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/sessions')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('DELETE /sessions/:id', () => {
+  it('returns 204 for an authorized idempotent session lifecycle revoke without a 403 forbidden result', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/session-2')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeSession).toHaveBeenCalledWith('tok', 'session-2')
+  })
+  it('returns 401 application/json when a session is revoked without authentication', async () => {
+    // @fuzequality api revokeSession
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/sessions/session-2')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 404 application/json for an unknown session resource', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider({
+      revokeSession: jest.fn().mockRejectedValue(new NotFoundError('session not found')),
+    })
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/unknown-session')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(404)
+    expect(res.type).toMatch(/json/)
+  })
+  it('routes to bulk revoke when the required id path parameter is missing', async () => {
+    // @fuzequality api revokeSession
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions/')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeOtherSessions).toHaveBeenCalledWith('tok')
+    expect(provider.revokeSession).not.toHaveBeenCalled()
+  })
+})
+
 describe('POST /session/exchange', () => {
-  it('400 when code missing', async () => {
+  it('returns 400 application/json when the exchange code is missing', async () => {
+    // @fuzequality api exchangeSessionCode
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/session/exchange').send({})
     expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
   })
-  it('exchanges an opaque code for an authenticated session', async () => {
+  it('returns 200 application/json for a valid application/json opaque exchange code', async () => {
+    // @fuzequality api exchangeSessionCode
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/session/exchange').send({ code: 'opaque' })
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.status).toBe('authenticated')
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api exchangeSessionCode
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/session/exchange')
+      .set('Content-Type', 'text/plain')
+      .send('code=opaque')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 401 application/json for an unauthorized or expired exchange code', async () => {
+    // @fuzequality api exchangeSessionCode
+    const provider = fakeProvider({
+      exchangeCode: jest.fn().mockRejectedValue(new UnauthorizedError('expired code')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/session/exchange')
+      .send({ code: 'expired' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
@@ -287,25 +445,82 @@ describe('social login boundary', () => {
       /sec_social_state=/
     )
   })
-  it('callback 302s back to the app with a FuzeFront opaque ?code= (no token in URL)', async () => {
+  it('callback returns 302 with required code and state to a FuzeFront opaque code', async () => {
+    // @fuzequality api socialCallback
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?code=prov&state=st')
     expect(res.status).toBe(302)
     expect(res.headers.location).toMatch(/[?&]code=opaque/)
     expect(res.headers.location).not.toMatch(/token=/)
   })
+  it('callback returns a controlled 302 when the required code query parameter is missing', async () => {
+    // @fuzequality api socialCallback
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?state=st')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('error=authentication_failed')
+  })
+  it('callback returns a controlled 302 when the required state query parameter is missing', async () => {
+    // @fuzequality api socialCallback
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?code=prov')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('error=authentication_failed')
+  })
+  it('Google broker callback returns 302 to the app with an opaque code', async () => {
+    // @fuzequality api googleBrokerCallback
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/social/google/callback?code=google-code&state=st')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('code=opaque')
+    expect(res.headers.location).not.toContain('token=')
+  })
 })
 
 describe('POST /signup', () => {
-  it('201 with session on success', async () => {
+  it('returns 201 application/json for a valid application/json signup', async () => {
+    // @fuzequality api signup
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/signup').send({ email: 'n@e.com', password: 'pw' })
     expect(res.status).toBe(201)
+    expect(res.type).toMatch(/json/)
     expect(res.body.token).toBe('tok')
   })
-  it('409 on conflict', async () => {
+  it('returns 409 application/json when signup conflicts with an existing account', async () => {
+    // @fuzequality api signup
     const p = fakeProvider({ signup: jest.fn().mockRejectedValue(new ConflictError()) })
     const res = await request(makeApp(p)).post('/api/v1/security/signup').send({ email: 'dup@e.com', password: 'pw' })
     expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
     expect(res.body.code).toBe('CONFLICT')
+  })
+  it('returns 400 application/json for a malformed signup request', async () => {
+    // @fuzequality api signup
+    const provider = fakeProvider({
+      signup: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider)).post('/api/v1/security/signup').send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api signup
+    const provider = fakeProvider({
+      signup: jest.fn().mockRejectedValue(new InvalidInputError('email and password are required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/signup')
+      .set('Content-Type', 'text/plain')
+      .send('email=n@e.com&password=pw')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 503 application/json when the identity provider is unavailable', async () => {
+    // @fuzequality api signup
+    const unavailable = new Error('provider unavailable')
+    unavailable.name = 'AuthentikUnavailableError'
+    const provider = fakeProvider({ signup: jest.fn().mockRejectedValue(unavailable) })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/signup')
+      .send({ email: 'n@e.com', password: 'pw' })
+    expect(res.status).toBe(503)
+    expect(res.type).toMatch(/json/)
   })
 })
 
