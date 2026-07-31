@@ -301,10 +301,18 @@ describe('GET /methods', () => {
 })
 
 describe('MFA factor management', () => {
-  it('GET /mfa/factors returns an { items } envelope', async () => {
+  it('GET /mfa/factors returns 200 application/json for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api listMfaFactors
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/mfa/factors').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(Array.isArray(res.body.items)).toBe(true)
+  })
+  it('GET /mfa/factors returns 401 application/json without authentication', async () => {
+    // @fuzequality api listMfaFactors
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/mfa/factors')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
   it('POST /mfa/factors enrolls (201 with material)', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/factors').set('Authorization', 'Bearer tok').send({ type: 'totp' })
