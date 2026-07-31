@@ -18,6 +18,7 @@ const identityProvider = {
 const authorizationProvider = {
   check: jest.fn().mockResolvedValue(false),
   bulkCheck: jest.fn().mockResolvedValue([true, false]),
+  revoke: jest.fn().mockResolvedValue(undefined),
 }
 
 beforeEach(() => {
@@ -32,6 +33,42 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('DELETE /api/v1/security/authz/grants', () => {
+    it('returns 204 for an authorized application/json revoke without a 403 forbidden result', async () => {
+      // @fuzequality api revokeGrant
+      await request(buildApp())
+        .delete('/api/v1/security/authz/grants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ grantId: 'grant-1' })
+        .expect(204)
+
+      expect(authorizationProvider.revoke).toHaveBeenCalledWith({ grantId: 'grant-1' })
+    })
+
+    it('returns 401 when grant revocation is attempted without authentication', async () => {
+      // @fuzequality api revokeGrant
+      const response = await request(buildApp())
+        .delete('/api/v1/security/authz/grants')
+        .send({ grantId: 'grant-1' })
+        .expect(401)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+
+    it('returns 400 for a malformed grant revocation request', async () => {
+      // @fuzequality api revokeGrant
+      const response = await request(buildApp())
+        .delete('/api/v1/security/authz/grants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({})
+        .expect(400)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('MALFORMED')
+    })
+  })
+
   describe('POST /api/v1/security/authz/check', () => {
     it('returns a 200 application/json response for an application/json request with a forbidden authorization decision', async () => {
       // @fuzequality api authzCheck
