@@ -225,7 +225,7 @@ describe('Authentication Routes', () => {
       await db('sessions').where('user_id', userId).del()
     })
 
-    it('returns 200 for an authorized ordinary user without a 403 forbidden response', async () => {
+    it('returns 200 application/json for an authorized ordinary user without a 403 forbidden response', async () => {
       // @fuzequality api logout
       // A second, independent login for the same user (e.g. another device).
       const second = await request(app)
