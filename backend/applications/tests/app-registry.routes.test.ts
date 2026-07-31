@@ -422,6 +422,30 @@ describe('lifecycle register → activate → suspend', () => {
     expect(emitted.find(e => e.type === 'suspended')).toBeTruthy()
   })
 
+  it('returns 200 when activating a registered app', async () => {
+    // @fuzequality api activateApp
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/activate')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('activated')
+  })
+
+  it('returns 200 when suspending an activated app', async () => {
+    // @fuzequality api suspendApp
+    await seedApp('market', orgA, userA)
+    await request(app)
+      .post('/api/v1/app-registry/apps/market/activate')
+      .set(asUser(userA))
+      .expect(200)
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/suspend')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('suspended')
+  })
+
   it('rejects activation with 401 when authentication is missing', async () => {
     // @fuzequality api activateApp
     const res = await request(app).post('/api/v1/app-registry/apps/market/activate')
@@ -477,7 +501,7 @@ describe('onboarding: policy + billing profile', () => {
     roles: [{ key: 'seller', name: 'Seller', permissions: ['Listing:update'] }],
   }
 
-  it('stores a valid policy and reports what was synced', async () => {
+  it('returns 200 when storing a valid policy and reports what was synced', async () => {
     // @fuzequality api putAppPolicy
     await seedApp('market', orgA, userA)
     const res = await request(app)
@@ -541,7 +565,7 @@ describe('onboarding: policy + billing profile', () => {
     expect([403, 404]).toContain(res.status)
   })
 
-  it('stores a valid billing profile', async () => {
+  it('returns 200 when storing a valid billing profile', async () => {
     // @fuzequality api putAppBillingProfile
     await seedApp('market', orgA, userA)
     const res = await request(app)
@@ -692,7 +716,7 @@ describe('getApp BOLA', () => {
     expect(theirs.status).toBe(404)
   })
 
-  it('a public app is visible cross-org', async () => {
+  it('returns 200 when a public app is visible cross-org', async () => {
     // @fuzequality api getApp
     store.rows.push({
       slug: 'pub', name: 'Pub', status: 'activated', mode: 'portal', builtin: false,
@@ -742,7 +766,7 @@ describe('updateApp', () => {
 })
 
 describe('listApps BOLA + pagination', () => {
-  it('only lists apps visible to the caller', async () => {
+  it('returns 200 with only the apps visible to the caller', async () => {
     // @fuzequality api listApps
     store.rows.push(
       mkRow('a1', orgA, 'organization'),
