@@ -534,7 +534,7 @@ describe('deleteApp', () => {
     expect(res.type).toMatch(/json/)
   })
 
-  it('returns 404 when the required slug path parameter is missing', async () => {
+  it('does not perform an item lookup when the required slug path parameter is missing', async () => {
     // @fuzequality api deleteApp
     const res = await request(app)
       .delete('/api/v1/app-registry/apps/')
@@ -556,6 +556,22 @@ describe('deleteApp', () => {
 })
 
 describe('getApp BOLA', () => {
+  it('rejects app lookup with 401 when authentication is missing', async () => {
+    // @fuzequality api getApp
+    const res = await request(app).get('/api/v1/app-registry/apps/market')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 404 when the required slug path parameter is missing', async () => {
+    // @fuzequality api getApp
+    const res = await request(app)
+      .get('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.apps).toEqual([])
+  })
+
   it('hides a cross-org private app as 404', async () => {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
       .send({ manifest: manifest('market', { visibility: 'private' }), organizationId: orgA })
@@ -566,6 +582,7 @@ describe('getApp BOLA', () => {
   })
 
   it('a public app is visible cross-org', async () => {
+    // @fuzequality api getApp
     store.rows.push({
       slug: 'pub', name: 'Pub', status: 'activated', mode: 'portal', builtin: false,
       organization_id: orgA, visibility: 'public',
