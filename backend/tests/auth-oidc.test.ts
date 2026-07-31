@@ -28,9 +28,11 @@ beforeAll(async () => {
 })
 
 describe('GET /api/auth/method', () => {
-  it('returns 200 with a methods array that always includes "local"', async () => {
+  it('returns a 200 application/json response with a methods array that always includes "local"', async () => {
+    // @fuzequality api getAuthMethod
     const res = await request(app).get('/api/auth/method').expect(200)
 
+    expect(res.type).toMatch(/json/)
     expect(Array.isArray(res.body.methods)).toBe(true)
     expect(res.body.methods).toContain('local')
   })
