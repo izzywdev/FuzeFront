@@ -402,6 +402,7 @@ describe('lifecycle register → activate → suspend', () => {
   it('activates then suspends, with idempotent no-ops', async () => {
     await seedApp('market', orgA, userA)
 
+    // @fuzequality api activateApp
     const act = await request(app).post('/api/v1/app-registry/apps/market/activate').set(asUser(userA))
     expect(act.status).toBe(200)
     expect(act.body.status).toBe('activated')
@@ -418,6 +419,21 @@ describe('lifecycle register → activate → suspend', () => {
     expect(susp.status).toBe(200)
     expect(susp.body.status).toBe('suspended')
     expect(emitted.find(e => e.type === 'suspended')).toBeTruthy()
+  })
+
+  it('rejects activation with 401 when authentication is missing', async () => {
+    // @fuzequality api activateApp
+    const res = await request(app).post('/api/v1/app-registry/apps/market/activate')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not activate an item when the required slug path parameter is missing', async () => {
+    // @fuzequality api activateApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//activate')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
   })
 
   it('forbids activation by a cross-org caller (BOLA mutate)', async () => {
