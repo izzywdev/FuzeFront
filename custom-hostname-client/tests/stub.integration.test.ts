@@ -173,11 +173,46 @@ describe('custom hostname API — against FuzeInfra stub', () => {
   });
 
   it('returns 204 when deleting a domain that was never registered', async () => {
+    // @fuzequality api deleteCustomHostname
     if (!reachable) return;
     // Idempotent by contract, so best-effort cleanup never needs a pre-check.
     await expect(
       client().deleteCustomHostname('never-registered-anywhere.example.com')
     ).resolves.toBeUndefined();
+  });
+
+  it('deletes an owned custom hostname with the declared 204 response', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const domain = uniqueDomain('delete');
+    await client().createCustomHostname(domain);
+    const res = await fetch(`${BASE_URL}/custom-hostnames/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+  });
+
+  it('rejects custom-hostname deletion with 401 when authentication is missing', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const res = await fetch(
+      `${BASE_URL}/custom-hostnames/${encodeURIComponent(uniqueDomain('unauthenticated-delete'))}`,
+      { method: 'DELETE' }
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('does not delete an item when the required domain path parameter is missing', async () => {
+    // @fuzequality api deleteCustomHostname
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/custom-hostnames/`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect([404, 405]).toContain(res.status);
   });
 
   it('surfaces all three verification records, ordered and labelled', async () => {
