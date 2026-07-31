@@ -1039,9 +1039,22 @@ describe('contact verification', () => {
     expect(res.type).toMatch(/json/)
   })
 
-  it('status requires bearer', async () => {
-    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/verify/status')
-    expect(res.status).toBe(401)
+  it('returns a declared 200 application/json verification status for an authorized caller without 403', async () => {
+    // @fuzequality api getVerificationStatus
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/verify/status')
+      .set('Authorization', 'Bearer tok')
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ emailVerified: true, phoneVerified: false })
+  })
+
+  it('returns 401 application/json when verification status is requested without authentication', async () => {
+    // @fuzequality api getVerificationStatus
+    const res = await request(makeApp(fakeProvider()))
+      .get('/api/v1/security/verify/status')
+      .expect(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
