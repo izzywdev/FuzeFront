@@ -31,6 +31,7 @@ export interface AdminPortalStore {
     branding?: PortalBranding
     identityPolicy?: PortalIdentityPolicy
   }): Promise<ReturnType<typeof rowToPortal>>
+  get(portalId: string): Promise<ReturnType<typeof rowToPortal> | null>
 }
 
 function encodeCursor(id: string): string {
@@ -126,6 +127,11 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       const row = await database('portals').where({ id: portalId }).first()
       return rowToPortal(row, await getPortalDomains(portalId, database))
     },
+    async get(portalId) {
+      const row = await database('portals').where({ id: portalId }).first()
+      if (!row) return null
+      return rowToPortal(row, await getPortalDomains(portalId, database))
+    },
   }
 }
 
@@ -188,6 +194,14 @@ export function createAdminPortalRouter(deps: {
       }
       throw error
     }
+  })
+
+  router.get('/:portalId', authenticate, authorize, async (request, response) => {
+    const portal = await store.get(request.params.portalId)
+    if (!portal) {
+      return response.status(404).json({ error: 'NOT_FOUND' })
+    }
+    return response.status(200).json(portal)
   })
 
   return router
