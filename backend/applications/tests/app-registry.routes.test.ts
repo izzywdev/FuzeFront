@@ -625,6 +625,47 @@ describe('deleteApp', () => {
   })
 })
 
+describe('heartbeatApp', () => {
+  async function registerHeartbeatApp() {
+    const registered = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(userA))
+      .send({ manifest: manifest('market'), organizationId: orgA })
+    return registered.headers['x-app-heartbeat-token']
+  }
+
+  it('accepts an authenticated heartbeat with a declared 200 application/json response', async () => {
+    // @fuzequality api heartbeatApp
+    const heartbeatToken = await registerHeartbeatApp()
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/heartbeat')
+      .set('Authorization', `Bearer ${heartbeatToken}`)
+      .send({ status: 'online', metadata: { version: '1.0.0' } })
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.accepted).toBe(true)
+  })
+
+  it('rejects a heartbeat with 401 when authentication is missing', async () => {
+    // @fuzequality api heartbeatApp
+    await registerHeartbeatApp()
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/heartbeat')
+      .send({ status: 'online' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not accept a heartbeat when the required slug path parameter is missing', async () => {
+    // @fuzequality api heartbeatApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//heartbeat')
+      .set('Authorization', 'Bearer invalid')
+      .send({ status: 'online' })
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('getApp BOLA', () => {
   it('rejects app lookup with 401 when authentication is missing', async () => {
     // @fuzequality api getApp
