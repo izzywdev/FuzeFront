@@ -974,10 +974,45 @@ describe('M2M tokens', () => {
     expect(res.type).toMatch(/json/)
   })
 
-  it('introspect is fail-closed (never throws)', async () => {
+  it('returns a 200 application/json active introspection result for an application/json token request', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .send({ token: 'active-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: true, subject: 'u1' })
+  })
+
+  it('introspect is fail-closed with a 200 application/json response when the provider throws', async () => {
+    // @fuzequality api introspectToken
     const p = fakeProvider({ introspectToken: jest.fn().mockRejectedValue(new Error('boom')) })
-    const res = await request(makeApp(p)).post('/api/v1/security/tokens/introspect').send({ token: 'x' })
-    expect(res.status).toBe(200)
+    const res = await request(makeApp(p))
+      .post('/api/v1/security/tokens/introspect')
+      .send({ token: 'unknown-token' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.active).toBe(false)
+  })
+
+  it('returns inactive when the required token is missing', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .send({})
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: false })
+  })
+
+  it('fails closed for an unsupported text/plain introspection request content type', async () => {
+    // @fuzequality api introspectToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens/introspect')
+      .set('Content-Type', 'text/plain')
+      .send('token=unknown-token')
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ active: false })
   })
 })

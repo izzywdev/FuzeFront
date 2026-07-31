@@ -1147,8 +1147,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenIntrospection'
-        '400':
-          $ref: '#/components/responses/BadRequest'
       x-pagination: exempt
       x-pagination-reason: Singleton introspection.
   # ─────────────────────────────── MFA: factors ─────────────────────────────
