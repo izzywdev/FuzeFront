@@ -16,6 +16,7 @@ const identityProvider = {
 }
 
 const authorizationProvider = {
+  check: jest.fn().mockResolvedValue(false),
   bulkCheck: jest.fn().mockResolvedValue([true, false]),
 }
 
@@ -31,6 +32,56 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('POST /api/v1/security/authz/check', () => {
+    it('returns a 200 application/json response for an application/json request with a forbidden authorization decision', async () => {
+      // @fuzequality api authzCheck
+      const response = await request(buildApp())
+        .post('/api/v1/security/authz/check')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ tenant: 'tenant-1', resource: { type: 'App' }, action: 'delete' })
+        .expect(200)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({ allow: false })
+    })
+
+    it('returns 401 when authz check is called without authentication', async () => {
+      // @fuzequality api authzCheck
+      const response = await request(buildApp())
+        .post('/api/v1/security/authz/check')
+        .send({ tenant: 'tenant-1', resource: { type: 'App' }, action: 'read' })
+        .expect(401)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+
+    it('returns 400 for a malformed authz check request', async () => {
+      // @fuzequality api authzCheck
+      const response = await request(buildApp())
+        .post('/api/v1/security/authz/check')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ tenant: 'tenant-1' })
+        .expect(400)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('MALFORMED')
+    })
+
+    it('rejects an unsupported text/plain authz check content type with 400', async () => {
+      // @fuzequality api authzCheck
+      const response = await request(buildApp())
+        .post('/api/v1/security/authz/check')
+        .set('Authorization', 'Bearer valid-token')
+        .set('Content-Type', 'text/plain')
+        .send('tenant=tenant-1')
+        .expect(400)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('MALFORMED')
+    })
+  })
+
   describe('POST /api/v1/security/authz/bulk-check', () => {
     it('returns a 200 application/json response for an application/json batch including a forbidden authorization decision', async () => {
       // @fuzequality api authzBulkCheck
