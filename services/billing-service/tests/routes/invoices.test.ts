@@ -94,7 +94,8 @@ function rawStripeInvoice(overrides: Record<string, unknown> = {}) {
 }
 
 describe('GET /invoices — provider-backed, DB-served invoice history', () => {
-  it('200 maps stored rows to the neutral shape (id=uuid) and passes the opaque nextCursor through', async () => {
+  it('200 returns the declared invoice list response and maps stored rows to the neutral shape', async () => {
+    // @fuzequality api listInvoices
     const listByCustomer = jest.fn().mockResolvedValue({
       rows: [rawRow(), rawRow({ id: 'aaaa1111-1111-4111-8111-111111111111', number: null })],
       nextCursor: 'b3BhcXVlLWN1cnNvcg==',
@@ -150,7 +151,8 @@ describe('GET /invoices — provider-backed, DB-served invoice history', () => {
     expect(listByCustomer).not.toHaveBeenCalled();
   });
 
-  it('401 when the proxy actor-context headers are absent', async () => {
+  it('401 when X-Billing-Actor-User-Id, X-Billing-Entity-Type, and X-Billing-Entity-Id headers are missing', async () => {
+    // @fuzequality api listInvoices
     const listByCustomer = jest.fn();
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
@@ -167,6 +169,7 @@ describe('GET /invoices — provider-backed, DB-served invoice history', () => {
   });
 
   it('401 when the internal token is missing', async () => {
+    // @fuzequality api listInvoices
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
       stubs: { ...orgCustomerRepoStub() },
