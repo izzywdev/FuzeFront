@@ -400,7 +400,7 @@ describe('MFA factor management', () => {
       .send({ code: '123456' })
     expect(res.status).toBe(404)
   })
-  it('activate rejects unsupported text/plain content with 400 application/json', async () => {
+  it('activate rejects an unsupported text/plain content type with 400 application/json', async () => {
     // @fuzequality api activateMfaFactor
     const res = await request(makeApp(fakeProvider()))
       .post('/api/v1/security/mfa/factors/f1/activate')
