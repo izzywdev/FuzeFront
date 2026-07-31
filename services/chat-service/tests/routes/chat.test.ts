@@ -342,7 +342,7 @@ describe('POST /chat/feedback', () => {
 });
 
 describe('POST /chat/confirm/:id', () => {
-  it('confirms a pending tool for the authenticated user', async () => {
+  it('200 confirms a pending tool for the authenticated user', async () => {
     // @fuzequality api confirmTool
     const { app, deps } = buildApp();
     await request(app)
