@@ -250,3 +250,46 @@ describe('POST /api/v1/admin/portals/:portalId/suspend', () => {
     expect(store.update).not.toHaveBeenCalled()
   })
 })
+
+describe('POST /api/v1/admin/portals/:portalId/resume', () => {
+  it('200 resumes the portal and returns the declared response', async () => {
+    // @fuzequality api resumePortal
+    const active = { ...portal, status: 'active' as const }
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(),
+      update: jest.fn().mockResolvedValue(active),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals/prt_acme/resume')
+      .set('Authorization', 'Bearer test')
+
+    expect(response.status).toBe(200)
+    expect(response.body.status).toBe('active')
+    expect(store.update).toHaveBeenCalledWith('prt_acme', { status: 'active' })
+  })
+
+  it('401 when authentication is missing', async () => {
+    // @fuzequality api resumePortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals/prt_acme/resume')
+
+    expect(response.status).toBe(401)
+    expect(store.update).not.toHaveBeenCalled()
+  })
+
+  it('does not resume a portal when the required portalId path parameter is missing', async () => {
+    // @fuzequality api resumePortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals//resume')
+      .set('Authorization', 'Bearer test')
+
+    expect(response.status).toBe(404)
+    expect(store.update).not.toHaveBeenCalled()
+  })
+})

@@ -278,6 +278,12 @@ export function createAdminPortalRouter(deps: {
     }
   })
 
+  router.post('/:portalId/resume', authenticate, authorize, async (request, response) => {
+    const updated = await store.update(request.params.portalId, { status: 'active' })
+    if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
+    return response.status(200).json(updated)
+  })
+
   return router
 }
 
