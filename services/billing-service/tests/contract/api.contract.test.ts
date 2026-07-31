@@ -270,6 +270,7 @@ describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{
 
 describe('billing-service contract :: cancelSubscription (DELETE /subscriptions/{id})', () => {
   it('200 {subscription} with cancellation scheduled', async () => {
+    // @fuzequality api cancelSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionService.cancel.mockResolvedValue(makeSubscription({ cancelAtPeriodEnd: true }));
     const res = await request(app)
@@ -291,9 +292,19 @@ describe('billing-service contract :: cancelSubscription (DELETE /subscriptions/
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api cancelSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).delete(`${BASE}/subscriptions/sub_test123`);
     expect(res.status).toBe(401);
+  });
+
+  it('does not cancel a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api cancelSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .delete(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .expect(404);
   });
 });
 
