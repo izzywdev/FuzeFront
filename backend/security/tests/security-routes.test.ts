@@ -234,7 +234,8 @@ describe('GET /methods', () => {
 
   const methods = () => request(makeApp(fakeProvider())).get('/api/v1/security/methods')
 
-  it('nothing configured: only totp; email/sms verification reported OFF', async () => {
+  it('returns 200 application/json methods when only totp is configured', async () => {
+    // @fuzequality api getAuthMethods
     const res = await methods()
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({
