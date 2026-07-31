@@ -19,6 +19,10 @@ const authorizationProvider = {
   check: jest.fn().mockResolvedValue(false),
   bulkCheck: jest.fn().mockResolvedValue([true, false]),
   revoke: jest.fn().mockResolvedValue(undefined),
+  listGrants: jest.fn().mockResolvedValue({
+    items: [],
+    page: { nextCursor: null, hasMore: false },
+  }),
 }
 
 beforeEach(() => {
@@ -33,6 +37,49 @@ afterEach(() => {
 })
 
 describe('Security API OpenAPI authorization contracts', () => {
+  describe('GET /api/v1/security/authz/grants', () => {
+    it('returns a 200 application/json page for the caller subject without a 403 forbidden authorization result', async () => {
+      // @fuzequality api listGrants
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/grants?tenant=tenant-1')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body).toEqual({
+        items: [],
+        page: { nextCursor: null, hasMore: false },
+      })
+      expect(authorizationProvider.listGrants).toHaveBeenCalledWith({
+        subject: 'user-1',
+        tenant: 'tenant-1',
+        limit: undefined,
+        cursor: undefined,
+      })
+    })
+
+    it('returns 401 when grants are listed without authentication', async () => {
+      // @fuzequality api listGrants
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/grants?tenant=tenant-1')
+        .expect(401)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('AUTH_REQUIRED')
+    })
+
+    it('returns 400 when the required query tenant is missing', async () => {
+      // @fuzequality api listGrants
+      const response = await request(buildApp())
+        .get('/api/v1/security/authz/grants')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(400)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.code).toBe('MALFORMED')
+    })
+  })
+
   describe('DELETE /api/v1/security/authz/grants', () => {
     it('returns 204 for an authorized application/json revoke without a 403 forbidden result', async () => {
       // @fuzequality api revokeGrant
