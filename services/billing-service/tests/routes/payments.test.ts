@@ -404,7 +404,8 @@ describe('POST /payments/checkout — one-time payment-mode Checkout Session', (
 });
 
 describe('GET /payments/sessions/:sessionId — reconciliation polling', () => {
-  it('200 {payment} when the mirror row exists and belongs to the authorized entity', async () => {
+  it('200 returns the declared payment-session response for the authorized entity', async () => {
+    // @fuzequality api getPaymentSession
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.payments.getBySessionId.mockResolvedValue(mirrorRow({ status: 'paid' }));
 
@@ -438,12 +439,32 @@ describe('GET /payments/sessions/:sessionId — reconciliation polling', () => {
     expect(res.body.payment).toBeUndefined();
   });
 
-  it('401 without actor-context headers', async () => {
+  it('401 when X-Billing-Actor-User-Id, X-Billing-Entity-Type, and X-Billing-Entity-Id headers are missing', async () => {
+    // @fuzequality api getPaymentSession
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .get(SESSION_URL('cs_test_session'))
       .set(...authHeader());
     expect(res.status).toBe(401);
+  });
+
+  it('401 when authentication is missing', async () => {
+    // @fuzequality api getPaymentSession
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    const res = await request(app)
+      .get(SESSION_URL('cs_test_session'))
+      .set(actorOrgHeaders(ORG_ID, USER_ID));
+    expect(res.status).toBe(401);
+  });
+
+  it('404 when the required sessionId path parameter is missing', async () => {
+    // @fuzequality api getPaymentSession
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    const res = await request(app)
+      .get('/api/v1/billing/payments/sessions/')
+      .set(...authHeader())
+      .set(actorOrgHeaders(ORG_ID, USER_ID));
+    expect(res.status).toBe(404);
   });
 
   it('404 when neither the mirror row nor the Stripe session exists', async () => {
