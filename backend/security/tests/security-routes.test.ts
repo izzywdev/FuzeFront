@@ -284,6 +284,26 @@ describe('DELETE /sessions', () => {
   })
 })
 
+describe('GET /sessions', () => {
+  it('returns 200 application/json sessions for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api listSessions
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .get('/api/v1/security/sessions')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.items).toHaveLength(1)
+    expect(provider.listSessions).toHaveBeenCalledWith('tok')
+  })
+  it('returns 401 application/json when sessions are listed without authentication', async () => {
+    // @fuzequality api listSessions
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/sessions')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
+
 describe('POST /session/exchange', () => {
   it('returns 400 application/json when the exchange code is missing', async () => {
     // @fuzequality api exchangeSessionCode
