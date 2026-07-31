@@ -501,7 +501,7 @@ describe('onboarding: policy + billing profile', () => {
     roles: [{ key: 'seller', name: 'Seller', permissions: ['Listing:update'] }],
   }
 
-  it('stores a valid policy and reports what was synced', async () => {
+  it('returns 200 when storing a valid policy and reports what was synced', async () => {
     // @fuzequality api putAppPolicy
     await seedApp('market', orgA, userA)
     const res = await request(app)
