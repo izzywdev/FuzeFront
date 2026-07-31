@@ -439,10 +439,18 @@ describe('MFA factor management', () => {
       .set('Authorization', 'Bearer tok')
     expect(res.status).toBe(404)
   })
-  it('recovery-codes returns codes once', async () => {
+  it('recovery-codes returns 200 application/json once for an authorized caller without a 403 forbidden result', async () => {
+    // @fuzequality api regenerateRecoveryCodes
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/recovery-codes').set('Authorization', 'Bearer tok')
     expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
     expect(res.body.codes).toEqual(['c1', 'c2'])
+  })
+  it('recovery-codes returns 401 application/json without authentication', async () => {
+    // @fuzequality api regenerateRecoveryCodes
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/recovery-codes')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 })
 
