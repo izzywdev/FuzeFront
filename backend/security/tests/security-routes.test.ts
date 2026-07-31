@@ -331,10 +331,38 @@ describe('MFA factor management', () => {
 })
 
 describe('MFA step-up', () => {
-  it('challenge returns 202 ack', async () => {
+  it('returns 202 application/json for an application/json MFA challenge', async () => {
+    // @fuzequality api challengeMfa
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/challenge').send({ challengeId: 'ch', factorId: 'f1' })
     expect(res.status).toBe(202)
+    expect(res.type).toMatch(/json/)
     expect(res.body.delivered).toBe(true)
+  })
+  it('returns 400 application/json when the MFA challenge request is malformed', async () => {
+    // @fuzequality api challengeMfa
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/challenge').send({ challengeId: 'ch' })
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain MFA challenge content type with 400 application/json', async () => {
+    // @fuzequality api challengeMfa
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/mfa/challenge')
+      .set('Content-Type', 'text/plain')
+      .send('challengeId=ch&factorId=f1')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 401 application/json when the MFA challenge is unauthorized', async () => {
+    // @fuzequality api challengeMfa
+    const provider = fakeProvider({
+      challengeMfa: jest.fn().mockRejectedValue(new UnauthorizedError('expired challenge')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/challenge')
+      .send({ challengeId: 'expired', factorId: 'f1' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
   it('verify returns a LoginResponse on success', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/verify').send({ challengeId: 'ch', factorId: 'f1', code: '123456' })
