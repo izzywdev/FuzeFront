@@ -223,6 +223,7 @@ describe('GET /chat/conversations', () => {
 
 describe('GET /chat/conversations/:id', () => {
   it('returns the conversation with the newest message page by default', async () => {
+    // @fuzequality api getConversation
     const { app, deps } = buildApp();
     const res = await request(app)
       .get('/chat/conversations/c1')
@@ -238,6 +239,22 @@ describe('GET /chat/conversations/:id', () => {
     expect(res.body.messages).toHaveLength(1);
     expect(res.body.hasMoreBefore).toBe(false);
     expect(res.body.hasMoreAfter).toBe(false);
+  });
+
+  it('returns 401 when conversation lookup authentication is missing', async () => {
+    // @fuzequality api getConversation
+    const { app } = buildApp();
+    await request(app).get('/chat/conversations/c1').expect(401);
+  });
+
+  it('does not perform an item lookup when the required id path parameter is missing', async () => {
+    // @fuzequality api getConversation
+    const { app } = buildApp();
+    const res = await request(app)
+      .get('/chat/conversations/')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
   it('forwards before/limit cursors and clamps limit to 200', async () => {
