@@ -309,6 +309,16 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      await client.query(
+        `UPDATE fuzequality.test_expectations
+         SET active=false, updated_at=now()
+         WHERE (subject_type='api-operation' AND subject_id IN (
+           SELECT id FROM fuzequality.api_operations WHERE repository_id=$1
+         )) OR (subject_type='frontend-surface' AND subject_id IN (
+           SELECT id FROM fuzequality.frontend_surfaces WHERE repository_id=$1
+         ))`,
+        [result.repository.id]
+      )
       await client.query('UPDATE fuzequality.api_operations SET active=false WHERE repository_id=$1', [result.repository.id])
       await client.query('UPDATE fuzequality.frontend_surfaces SET active=false WHERE repository_id=$1', [result.repository.id])
       await client.query('UPDATE fuzequality.test_cases SET active=false WHERE repository_id=$1', [result.repository.id])
