@@ -246,6 +246,11 @@ router.get('/tenants/:id/members', async (req: Request, res: Response) => {
 router.post('/tenants/:id/members', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const tenant = await getAuthorizationProvider().getTenant(req.params.id)
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
+  if (!req.body?.userId && !req.body?.email) {
+    return res.status(400).json({ error: 'userId or email is required', code: 'MALFORMED' })
+  }
   try {
     const member = await getAuthorizationProvider().addMember(req.params.id, {
       userId: req.body?.userId,
