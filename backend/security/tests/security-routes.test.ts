@@ -924,10 +924,56 @@ describe('contact verification', () => {
 })
 
 describe('M2M tokens', () => {
-  it('issue requires clientId/clientSecret', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/tokens').send({ clientId: 'c' })
-    expect(res.status).toBe(400)
+  it('issues a token with a 200 application/json response for valid application/json credentials', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1', clientSecret: 'secret-1', scope: 'read' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ accessToken: 'a', tokenType: 'Bearer', expiresIn: 3600 })
   })
+
+  it('rejects invalid client credentials with a 401 application/json response', async () => {
+    // @fuzequality api issueToken
+    const provider = fakeProvider({
+      issueM2MToken: jest.fn().mockRejectedValue(new UnauthorizedError('Invalid client credentials')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1', clientSecret: 'wrong-secret' })
+      .expect(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required clientId is missing', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientSecret: 'secret-1' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required clientSecret is missing', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .send({ clientId: 'client-1' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain token request content type with 400 application/json', async () => {
+    // @fuzequality api issueToken
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/tokens')
+      .set('Content-Type', 'text/plain')
+      .send('clientId=client-1&clientSecret=secret-1')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
   it('introspect is fail-closed (never throws)', async () => {
     const p = fakeProvider({ introspectToken: jest.fn().mockRejectedValue(new Error('boom')) })
     const res = await request(makeApp(p)).post('/api/v1/security/tokens/introspect').send({ token: 'x' })
