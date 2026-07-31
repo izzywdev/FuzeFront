@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import type { Knex } from 'knex'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
@@ -51,6 +52,14 @@ function decodeCursor(cursor: string): string | null {
   } catch {
     return null
   }
+}
+
+function validEmail(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length < 3 || value.length > 320 || /\s/.test(value)) {
+    return false
+  }
+  const at = value.indexOf('@')
+  return at > 0 && at === value.lastIndexOf('@') && value.indexOf('.', at + 2) > at + 1
 }
 
 export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
@@ -171,8 +180,15 @@ export function createAdminPortalRouter(deps: {
   const store = deps.store ?? createAdminPortalStore()
   const authenticate = deps.authenticate ?? authenticateToken
   const authorize = deps.authorize ?? requireRole(['admin'])
+  const adminRateLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Try again shortly.' },
+  })
 
-  router.get('/', authenticate, authorize, async (request, response) => {
+  router.get('/', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(request.query.limit ?? '25'), 10) || 25))
     const status = typeof request.query.status === 'string'
       ? request.query.status as PortalStatus
@@ -188,7 +204,7 @@ export function createAdminPortalRouter(deps: {
     })
   })
 
-  router.post('/', authenticate, authorize, async (request: any, response) => {
+  router.post('/', adminRateLimiter, authenticate, authorize, async (request: any, response) => {
     const body = request.body ?? {}
     const fields: Array<{ path: string; message: string }> = []
     if (typeof body.name !== 'string' || body.name.trim().length < 1 || body.name.length > 120) {
@@ -197,7 +213,7 @@ export function createAdminPortalRouter(deps: {
     if (typeof body.slug !== 'string' || !/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(body.slug)) {
       fields.push({ path: 'slug', message: 'slug must be a lowercase URL-safe identifier' })
     }
-    if (typeof body.ownerEmail !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.ownerEmail)) {
+    if (!validEmail(body.ownerEmail)) {
       fields.push({ path: 'ownerEmail', message: 'ownerEmail must be a valid email address' })
     }
     if (fields.length) {
@@ -223,7 +239,7 @@ export function createAdminPortalRouter(deps: {
     }
   })
 
-  router.get('/:portalId', authenticate, authorize, async (request, response) => {
+  router.get('/:portalId', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const portal = await store.get(request.params.portalId)
     if (!portal) {
       return response.status(404).json({ error: 'NOT_FOUND' })
@@ -231,7 +247,7 @@ export function createAdminPortalRouter(deps: {
     return response.status(200).json(portal)
   })
 
-  router.patch('/:portalId', authenticate, authorize, async (request, response) => {
+  router.patch('/:portalId', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const body = request.body ?? {}
     const allowed = ['name', 'status', 'billingMode', 'branding', 'identityPolicy']
     const supplied = Object.keys(body)
@@ -265,7 +281,7 @@ export function createAdminPortalRouter(deps: {
     }
   })
 
-  router.post('/:portalId/suspend', authenticate, authorize, async (request, response) => {
+  router.post('/:portalId/suspend', adminRateLimiter, authenticate, authorize, async (request, response) => {
     try {
       const updated = await store.update(request.params.portalId, { status: 'suspended' })
       if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
@@ -278,7 +294,7 @@ export function createAdminPortalRouter(deps: {
     }
   })
 
-  router.post('/:portalId/resume', authenticate, authorize, async (request, response) => {
+  router.post('/:portalId/resume', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const updated = await store.update(request.params.portalId, { status: 'active' })
     if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
     return response.status(200).json(updated)
