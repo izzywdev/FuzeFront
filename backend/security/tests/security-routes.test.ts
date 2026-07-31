@@ -56,6 +56,11 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
       providers: [{ provider: 'google' }],
       hasPassword: true,
     }),
+    listSessions: jest.fn().mockResolvedValue([
+      { id: 'sess', current: true, createdAt: '2026-07-31T00:00:00.000Z' },
+    ]),
+    revokeOtherSessions: jest.fn().mockResolvedValue(undefined),
+    revokeSession: jest.fn().mockResolvedValue(undefined),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -256,6 +261,24 @@ describe('DELETE /session (logout)', () => {
   it('returns 401 application/json when logout is requested without authentication', async () => {
     // @fuzequality api deleteSession
     const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/session')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('DELETE /sessions', () => {
+  it('returns 204 for an authorized idempotent bulk revoke without a 403 forbidden result', async () => {
+    // @fuzequality api revokeOtherSessions
+    const provider = fakeProvider()
+    const res = await request(makeApp(provider))
+      .delete('/api/v1/security/sessions')
+      .set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(204)
+    expect(provider.revokeOtherSessions).toHaveBeenCalledWith('tok')
+  })
+  it('returns 401 application/json when bulk revoke is requested without authentication', async () => {
+    // @fuzequality api revokeOtherSessions
+    const res = await request(makeApp(fakeProvider())).delete('/api/v1/security/sessions')
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
   })
