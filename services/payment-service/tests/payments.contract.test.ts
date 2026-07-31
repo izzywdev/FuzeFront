@@ -16,7 +16,10 @@ function fakeProvider() {
       email: 'owner@example.com',
       name: 'Example Owner',
     }),
-    listInvoices: jest.fn(),
+    listInvoices: jest.fn().mockResolvedValue({
+      items: [{ providerInvoiceId: 'invoice-1', status: 'paid', amountDue: 1000, currency: 'usd' }],
+      nextCursor: null,
+    }),
     createCheckoutSession: jest.fn().mockResolvedValue({
       providerSessionId: 'checkout-1',
       url: 'https://payments.example/checkout-1',
@@ -115,6 +118,37 @@ describe('GET /api/v1/payments/customers/:customerId', () => {
     // @fuzequality api getCustomer
     await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
       .get('/api/v1/payments/customers/')
+      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .expect(404);
+  });
+});
+
+describe('GET /api/v1/payments/customers/:customerId/invoices', () => {
+  it('lists customer invoices with the declared 200 application/json response', async () => {
+    // @fuzequality api listInvoices
+    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .get('/api/v1/payments/customers/customer-1/invoices')
+      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .expect(200);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.items).toHaveLength(1);
+  });
+
+  it('returns 401 application/json when invoice-list authentication is missing', async () => {
+    // @fuzequality api listInvoices
+    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .get('/api/v1/payments/customers/customer-1/invoices')
+      .expect(401);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body.error).toBe('unauthorized');
+  });
+
+  it('does not list invoices when the required customerId path parameter is missing', async () => {
+    // @fuzequality api listInvoices
+    await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+      .get('/api/v1/payments/customers//invoices')
       .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
       .expect(404);
   });
