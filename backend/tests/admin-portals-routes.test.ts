@@ -207,3 +207,46 @@ describe('PATCH /api/v1/admin/portals/:portalId', () => {
     expect(store.update).not.toHaveBeenCalled()
   })
 })
+
+describe('POST /api/v1/admin/portals/:portalId/suspend', () => {
+  it('200 suspends the portal and returns the declared response', async () => {
+    // @fuzequality api suspendPortal
+    const suspended = { ...portal, status: 'suspended' as const }
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(),
+      update: jest.fn().mockResolvedValue(suspended),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals/prt_acme/suspend')
+      .set('Authorization', 'Bearer test')
+
+    expect(response.status).toBe(200)
+    expect(response.body.status).toBe('suspended')
+    expect(store.update).toHaveBeenCalledWith('prt_acme', { status: 'suspended' })
+  })
+
+  it('401 when authentication is missing', async () => {
+    // @fuzequality api suspendPortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals/prt_acme/suspend')
+
+    expect(response.status).toBe(401)
+    expect(store.update).not.toHaveBeenCalled()
+  })
+
+  it('does not suspend a portal when the required portalId path parameter is missing', async () => {
+    // @fuzequality api suspendPortal
+    const store: AdminPortalStore = {
+      list: jest.fn(), create: jest.fn(), get: jest.fn(), update: jest.fn(),
+    }
+    const response = await request(appWith(store))
+      .post('/api/v1/admin/portals//suspend')
+      .set('Authorization', 'Bearer test')
+
+    expect(response.status).toBe(404)
+    expect(store.update).not.toHaveBeenCalled()
+  })
+})

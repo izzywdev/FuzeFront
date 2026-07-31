@@ -265,6 +265,19 @@ export function createAdminPortalRouter(deps: {
     }
   })
 
+  router.post('/:portalId/suspend', authenticate, authorize, async (request, response) => {
+    try {
+      const updated = await store.update(request.params.portalId, { status: 'suspended' })
+      if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
+      return response.status(200).json(updated)
+    } catch (error: any) {
+      if (error?.code === 'ROOT_PORTAL_PROTECTED') {
+        return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
+      }
+      throw error
+    }
+  })
+
   return router
 }
 
