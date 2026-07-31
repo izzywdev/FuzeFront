@@ -1000,6 +1000,45 @@ describe('contact verification', () => {
       .expect(400)
     expect(res.type).toMatch(/json/)
   })
+
+  it('confirms phone verification with a declared 200 application/json VerificationStatus response', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ phone: '+1555', code: '123456' })
+      .expect(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body).toEqual({ emailVerified: false, phoneVerified: true, phone: '+1555' })
+  })
+
+  it('returns 400 application/json when the required phone is missing from confirmation', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ code: '123456' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 400 application/json when the required code is missing from confirmation', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .send({ phone: '+1555' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain phone confirmation content type with 400 application/json', async () => {
+    // @fuzequality api confirmPhoneVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/phone/confirm')
+      .set('Content-Type', 'text/plain')
+      .send('phone=+1555&code=123456')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
   it('status requires bearer', async () => {
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/verify/status')
     expect(res.status).toBe(401)
