@@ -52,12 +52,14 @@ describe('Authentication Routes', () => {
   // tests/setup.ts. Do NOT destroy it here or other suites lose their handle.
 
   describe('POST /api/auth/login', () => {
-    it('should login with valid credentials and create a session', async () => {
+    it('returns a 200 application/json response for a valid application/json login request', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
         .expect(200)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body).toHaveProperty('token')
       expect(response.body).toHaveProperty('user')
       expect(response.body).toHaveProperty('sessionId')
@@ -77,12 +79,14 @@ describe('Authentication Routes', () => {
       await db('sessions').where('id', response.body.sessionId).del()
     })
 
-    it('should reject invalid credentials', async () => {
+    it('returns a 401 application/json response for invalid credentials', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: 'wrongpassword' })
         .expect(401)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body.error).toBe('Invalid credentials')
     })
 
@@ -95,13 +99,27 @@ describe('Authentication Routes', () => {
       expect(response.body.error).toBe('Invalid credentials')
     })
 
-    it('should require password', async () => {
+    it('returns a 400 application/json response when the password is missing', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL })
         .expect(400)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body.error).toBe('Email and password required')
+    })
+
+    it('rejects an unsupported text/plain content type with 415', async () => {
+      // @fuzequality api login
+      const response = await request(app)
+        .post('/api/auth/login')
+        .set('Content-Type', 'text/plain')
+        .send(`email=${ADMIN_EMAIL}&password=${ADMIN_PASSWORD}`)
+        .expect(415)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.error).toBe('Content-Type must be application/json')
     })
 
     it('should require email', async () => {

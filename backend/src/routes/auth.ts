@@ -232,6 +232,10 @@ router.post('/login', async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   const startTime = Date.now()
 
+  if (!req.is('application/json')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json' })
+  }
+
   console.log(`🔐 [${requestId}] Login request received:`, {
     timestamp: new Date().toISOString(),
     ip: req.ip || req.connection.remoteAddress,
