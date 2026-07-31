@@ -72,6 +72,7 @@ describe('POST /chat/stream', () => {
   });
 
   it('streams SSE events ending in done and persists + bills', async () => {
+    // @fuzequality api streamChat
     const { app, deps } = buildApp();
     const res = await request(app)
       .post('/chat/stream')
@@ -79,6 +80,7 @@ describe('POST /chat/stream', () => {
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID });
 
     expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.status).toBe(200);
     expect(res.text).toContain('"type":"rag_sources"');
     expect(res.text).toContain('"type":"text_delta"');
     expect(res.text).toContain('"type":"done"');
