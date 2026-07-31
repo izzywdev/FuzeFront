@@ -130,7 +130,10 @@ function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary
 }
 
 app.use(express.json({
-  limit: '2mb',
+  // A normalized inventory for the current FuzeFront repository is ~2.4 MB.
+  // Keep this above the scanner's bounded payload while still rejecting
+  // unexpectedly large webhook and user-request bodies.
+  limit: '5mb',
   verify: (request, _response, buffer) => {
     ;(request as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer)
   },
