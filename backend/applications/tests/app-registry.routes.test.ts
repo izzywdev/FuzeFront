@@ -542,6 +542,7 @@ describe('onboarding: policy + billing profile', () => {
   })
 
   it('stores a valid billing profile', async () => {
+    // @fuzequality api putAppBillingProfile
     await seedApp('market', orgA, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/billing-profile')
@@ -549,6 +550,24 @@ describe('onboarding: policy + billing profile', () => {
       .send({ productKey: 'market', currencies: ['usd'] })
     expect(res.status).toBe(200)
     expect(res.body.productKey).toBe('market')
+  })
+
+  it('rejects billing-profile writes with 401 when authentication is missing', async () => {
+    // @fuzequality api putAppBillingProfile
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/billing-profile')
+      .send({ productKey: 'market', currencies: ['usd'] })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not write a billing profile when the required slug path parameter is missing', async () => {
+    // @fuzequality api putAppBillingProfile
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps//billing-profile')
+      .set(asUser(userA))
+      .send({ productKey: 'market', currencies: ['usd'] })
+    expect(res.status).toBe(404)
   })
 
   it('rejects a malformed billing productKey', async () => {
