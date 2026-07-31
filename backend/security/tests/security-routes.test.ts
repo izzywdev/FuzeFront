@@ -393,11 +393,24 @@ describe('social login boundary', () => {
       /sec_social_state=/
     )
   })
-  it('callback 302s back to the app with a FuzeFront opaque ?code= (no token in URL)', async () => {
+  it('callback returns 302 with required code and state to a FuzeFront opaque code', async () => {
+    // @fuzequality api socialCallback
     const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?code=prov&state=st')
     expect(res.status).toBe(302)
     expect(res.headers.location).toMatch(/[?&]code=opaque/)
     expect(res.headers.location).not.toMatch(/token=/)
+  })
+  it('callback returns a controlled 302 when the required code query parameter is missing', async () => {
+    // @fuzequality api socialCallback
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?state=st')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('error=authentication_failed')
+  })
+  it('callback returns a controlled 302 when the required state query parameter is missing', async () => {
+    // @fuzequality api socialCallback
+    const res = await request(makeApp(fakeProvider())).get('/api/v1/security/social/callback?code=prov')
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('error=authentication_failed')
   })
 })
 

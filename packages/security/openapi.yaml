@@ -532,12 +532,12 @@ paths:
           schema: { type: string }
       responses:
         '302':
-          description: Redirect back to the app with a FuzeFront opaque `?code=`.
+          description: >-
+            Redirect back to the app with a FuzeFront opaque `?code=` on
+            success, or a neutral `error=authentication_failed` on rejection.
           headers:
             Location:
               schema: { type: string }
-        '401':
-          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Redirect action; no collection.
   /v1/security/social/google/callback:
