@@ -353,6 +353,7 @@ describe('billing-service contract :: createSetupIntent (POST /setup-intent)', (
 
 describe('billing-service contract :: addCredits (POST /credits)', () => {
   it('201 {id, endingBalance} on success', async () => {
+    // @fuzequality api addCredits
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.stripe.customers.createBalanceTransaction.mockResolvedValue({
       id: 'cbtxn_1',
@@ -407,12 +408,14 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api addCredits
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).post(`${BASE}/credits`).send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
     expect(res.status).toBe(401);
   });
 
-  it('403 Forbidden with a valid token but WITHOUT admin context (HIGH-1)', async () => {
+  it('403 Forbidden when the X-Billing-Actor-Is-Admin header is missing (HIGH-1)', async () => {
+    // @fuzequality api addCredits
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .post(`${BASE}/credits`)
