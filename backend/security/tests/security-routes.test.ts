@@ -52,6 +52,10 @@ function fakeProvider(overrides: Partial<IdentityProvider> = {}): IdentityProvid
       providers: [{ provider: 'google' }],
       hasPassword: true,
     }),
+    setPassword: jest.fn().mockResolvedValue({
+      providers: [{ provider: 'google' }],
+      hasPassword: true,
+    }),
     provisionM2MClient: jest.fn(),
   }
   return { ...base, ...overrides } as IdentityProvider
@@ -88,6 +92,58 @@ describe('GET /identity/connections', () => {
       .get('/api/v1/security/identity/connections')
 
     expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+})
+
+describe('POST /password', () => {
+  it('returns 200 application/json for an authorized application/json password request without a 403 forbidden result', async () => {
+    // @fuzequality api setPassword
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/password')
+      .set('Authorization', 'Bearer tok')
+      .send({ newPassword: 'N3wPassw0rd!' })
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.hasPassword).toBe(true)
+  })
+  it('returns 401 application/json when setting a password without authentication', async () => {
+    // @fuzequality api setPassword
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/password')
+      .send({ newPassword: 'N3wPassw0rd!' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 400 application/json when newPassword is missing', async () => {
+    // @fuzequality api setPassword
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/password')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('returns 409 application/json when a password already exists', async () => {
+    // @fuzequality api setPassword
+    const provider = fakeProvider({
+      setPassword: jest.fn().mockRejectedValue(new ConflictError('password exists')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/password')
+      .set('Authorization', 'Bearer tok')
+      .send({ newPassword: 'N3wPassw0rd!' })
+    expect(res.status).toBe(409)
+    expect(res.type).toMatch(/json/)
+  })
+  it('rejects an unsupported text/plain content type with 400 application/json', async () => {
+    // @fuzequality api setPassword
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/password')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('newPassword=N3wPassw0rd!')
+    expect(res.status).toBe(400)
     expect(res.type).toMatch(/json/)
   })
 })
