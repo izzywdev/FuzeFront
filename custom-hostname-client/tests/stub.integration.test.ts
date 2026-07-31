@@ -76,6 +76,14 @@ const uniqueDomain = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 10)}.corpabc.test`;
 
 describe('custom hostname API — against FuzeInfra stub', () => {
+  it('returns the declared 200 response from GET /healthz', async () => {
+    // @fuzequality api healthz
+    if (!reachable) return;
+    const res = await fetch(`${BASE_URL}/healthz`);
+    expect(res.status).toBe(200);
+    expect(res.ok).toBe(true);
+  });
+
   it('rejects a domain inside fuzefront.com with 422 validation_error', async () => {
     if (!reachable) return;
     // These are already served by the static wildcard Ingress rule. Sending
@@ -93,6 +101,7 @@ describe('custom hostname API — against FuzeInfra stub', () => {
   });
 
   it('returns 401 unauthorized for a bad bearer token', async () => {
+    // @fuzequality api listCustomHostnames
     if (!reachable) return;
     const bad = new CustomHostnameClient({ baseUrl: BASE_URL, token: 'not-the-token' });
     const err = await bad
@@ -102,6 +111,17 @@ describe('custom hostname API — against FuzeInfra stub', () => {
 
     expect(err).toBeInstanceOf(CustomHostnameApiError);
     expect(err!.code).toBe('unauthorized');
+  });
+
+  it('lists the caller custom hostnames with the declared 200 response', async () => {
+    // @fuzequality api listCustomHostnames
+    if (!reachable) return;
+    const domain = uniqueDomain('list');
+    await client().createCustomHostname(domain);
+    const result = await client().listCustomHostnames({ limit: 100 });
+
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items.map((item) => item.domain)).toContain(domain);
   });
 
   it('is idempotent: re-POSTing a known domain returns the existing record', async () => {
