@@ -340,7 +340,7 @@ describe('MFA factor management', () => {
     expect(res.status).toBe(400)
     expect(res.type).toMatch(/json/)
   })
-  it('POST /mfa/factors rejects unsupported text/plain content with 400 application/json', async () => {
+  it('POST /mfa/factors rejects an unsupported text/plain content type with 400 application/json', async () => {
     // @fuzequality api enrollMfaFactor
     const provider = fakeProvider({
       enrollFactor: jest.fn().mockRejectedValue(new InvalidInputError('type is required')),
