@@ -900,9 +900,38 @@ describe('MFA step-up', () => {
 })
 
 describe('contact verification', () => {
-  it('email start 202', async () => {
-    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/email/start').send({ email: 'e@e.com' })
-    expect(res.status).toBe(202)
+  it('starts email verification with a declared 202 response for a valid application/json request', async () => {
+    // @fuzequality api startEmailVerification
+    const res = await request(makeApp(fakeProvider()))
+      .post('/api/v1/security/verify/email/start')
+      .send({ email: 'e@e.com' })
+      .expect(202)
+    expect(res.text).toBe('')
+  })
+
+  it('returns 400 application/json when the email verification request is invalid', async () => {
+    // @fuzequality api startEmailVerification
+    const provider = fakeProvider({
+      startEmailVerification: jest.fn().mockRejectedValue(new InvalidInputError('Invalid email')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/verify/email/start')
+      .send({ email: 'not-an-email' })
+      .expect(400)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('rejects an unsupported text/plain email verification content type with 400 application/json', async () => {
+    // @fuzequality api startEmailVerification
+    const provider = fakeProvider({
+      startEmailVerification: jest.fn().mockRejectedValue(new InvalidInputError('Email is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/verify/email/start')
+      .set('Content-Type', 'text/plain')
+      .send('email=e@e.com')
+      .expect(400)
+    expect(res.type).toMatch(/json/)
   })
   it('email confirm returns VerificationStatus', async () => {
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/verify/email/confirm').send({ token: 't' })
