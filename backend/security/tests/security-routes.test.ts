@@ -314,10 +314,43 @@ describe('MFA factor management', () => {
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
   })
-  it('POST /mfa/factors enrolls (201 with material)', async () => {
+  it('POST /mfa/factors returns 201 application/json for an authorized application/json enrollment without a 403 forbidden result', async () => {
+    // @fuzequality api enrollMfaFactor
     const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/factors').set('Authorization', 'Bearer tok').send({ type: 'totp' })
     expect(res.status).toBe(201)
+    expect(res.type).toMatch(/json/)
     expect(res.body.provisioningUri).toBeDefined()
+  })
+  it('POST /mfa/factors returns 401 application/json without authentication', async () => {
+    // @fuzequality api enrollMfaFactor
+    const res = await request(makeApp(fakeProvider())).post('/api/v1/security/mfa/factors').send({ type: 'totp' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+  it('POST /mfa/factors returns 400 application/json for a malformed enrollment request', async () => {
+    // @fuzequality api enrollMfaFactor
+    const provider = fakeProvider({
+      enrollFactor: jest.fn().mockRejectedValue(new InvalidInputError('type is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors')
+      .set('Authorization', 'Bearer tok')
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
+  })
+  it('POST /mfa/factors rejects unsupported text/plain content with 400 application/json', async () => {
+    // @fuzequality api enrollMfaFactor
+    const provider = fakeProvider({
+      enrollFactor: jest.fn().mockRejectedValue(new InvalidInputError('type is required')),
+    })
+    const res = await request(makeApp(provider))
+      .post('/api/v1/security/mfa/factors')
+      .set('Authorization', 'Bearer tok')
+      .set('Content-Type', 'text/plain')
+      .send('type=totp')
+    expect(res.status).toBe(400)
+    expect(res.type).toMatch(/json/)
   })
   it('activate requires a code (400) and returns the factor (200)', async () => {
     const app = makeApp(fakeProvider())
