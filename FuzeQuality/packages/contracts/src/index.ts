@@ -302,6 +302,40 @@ export type Portfolio = {
   suggestions: Suggestion[]
 }
 
+export type OrganizationQualitySummary = {
+  organizationId: string
+  repositories: number
+  apiOperations: number
+  frontendSurfaces: number
+  tests: number
+  expectations: number
+  coveredExpectations: number
+  gaps: number
+  openFindings: number
+  failedScans: number
+  staleScans: number
+  coveragePercent: number
+  latestScanAt?: string
+}
+
+export type AdminTenantContext = {
+  organizationId: string
+  mode: 'read-only'
+  auditId: string
+  enteredAt: string
+  portfolio: Portfolio
+}
+
+export type AdminContextAudit = {
+  id: string
+  actorId: string
+  sourceTenantId: string
+  targetTenantId: string
+  reason: string
+  correlationId?: string
+  createdAt: string
+}
+
 export const testImplementationRequestSchema = z.object({
   repositoryId: z.string().uuid(),
   sourceRevision: z.string().regex(/^[0-9a-f]{40}$/i),

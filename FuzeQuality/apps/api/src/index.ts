@@ -1,10 +1,13 @@
 import express from 'express'
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
   testImplementationRequestSchema,
+  type OrganizationQualitySummary,
+  type Portfolio,
 } from '@fuzequality/contracts'
 import {
   apiCoverageCatalog,
@@ -21,7 +24,7 @@ import {
 } from '@fuzequality/github-app'
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
-import { requestIdentity, requirePlatformPermission } from './platform-authorization'
+import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import {
   buildImplementationManifest,
@@ -35,15 +38,102 @@ const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
-const mayReadRepositories = requirePlatformPermission('fuzequality.repository', 'read')
-const mayManageRepositories = requirePlatformPermission('fuzequality.repository', 'create')
-const mayScanRepositories = requirePlatformPermission('fuzequality.repository', 'scan')
-const mayReadCatalog = requirePlatformPermission('fuzequality.catalog', 'read')
-const mayCreateTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'create')
-const mayReadTestImplementation = requirePlatformPermission('fuzequality.test-implementation', 'read')
+const mayReadRepositories = requirePlatformPermission('fuzequality.Repository', 'read')
+const mayManageRepositories = requirePlatformPermission('fuzequality.Repository', 'onboard')
+const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
+const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
+const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
+const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
+const maySyncRequirements = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
+const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
+const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
+const mayManageOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'manage')
+const mayManageRepositoryAdministration = requirePlatformPermission('fuzequality.RepositoryAdministration', 'manage')
+const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')
+const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
+const organizationRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
+const invitationSchema = z.object({
+  email: z.string().trim().email(),
+  role: organizationRoleSchema,
+}).strict()
+const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const repositoryAdministrationSchema = z.object({
+  ownership: z.object({
+    team: z.string().trim().min(1).max(100),
+    contact: z.string().trim().email().optional(),
+  }).optional(),
+  jiraBindings: z.array(z.object({
+    project: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,19}$/),
+    component: z.string().trim().min(1).max(255).optional(),
+  })).max(100),
+  storybookBaseUrl: z.string().trim().url().refine(value => new URL(value).protocol === 'https:').optional(),
+}).strict()
+
+async function proxyOrganizationSecurity(
+  request: express.Request,
+  response: express.Response,
+  path: string,
+  init?: RequestInit
+) {
+  const baseUrl = process.env.FUZEFRONT_SECURITY_URL?.replace(/\/$/, '')
+  const authorization = request.header('authorization')
+  if (!baseUrl || !authorization) {
+    return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  }
+  try {
+    const upstream = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        authorization,
+        accept: 'application/json',
+        ...(init?.body ? { 'content-type': 'application/json' } : {}),
+      },
+    })
+    const body = await upstream.json().catch(() => ({ error: 'Platform security returned an invalid response' }))
+    response.status(upstream.status).json(body)
+  } catch {
+    response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  }
+}
+
+function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary[] {
+  const staleAfter = Number(process.env.FUZEQUALITY_STALE_AFTER_MS ?? 86_400_000)
+  const now = Date.now()
+  const tenantIds = [...new Set(portfolio.repositories.map(repository => repository.tenantId).filter(Boolean))] as string[]
+  return tenantIds.map(organizationId => {
+    const repositories = portfolio.repositories.filter(repository => repository.tenantId === organizationId)
+    const repositoryIds = new Set(repositories.map(repository => repository.id))
+    const operations = portfolio.operations.filter(item => repositoryIds.has(item.repositoryId))
+    const surfaces = portfolio.surfaces.filter(item => repositoryIds.has(item.repositoryId))
+    const tests = portfolio.tests.filter(item => repositoryIds.has(item.repositoryId))
+    const subjectIds = new Set([...operations.map(item => item.id), ...surfaces.map(item => item.id)])
+    const expectations = portfolio.expectations.filter(item => subjectIds.has(item.subjectId) && item.priority !== 'not-applicable')
+    const covered = expectations.filter(item => item.coverage.startsWith('covered')).length
+    const scans = repositories.flatMap(repository => repository.lastScanAt ? [Date.parse(repository.lastScanAt)] : [])
+    return {
+      organizationId,
+      repositories: repositories.length,
+      apiOperations: operations.length,
+      frontendSurfaces: surfaces.length,
+      tests: tests.length,
+      expectations: expectations.length,
+      coveredExpectations: covered,
+      gaps: expectations.filter(item => item.coverage === 'gap').length,
+      openFindings: portfolio.findings.filter(item => item.status === 'open' && (!item.repositoryId || repositoryIds.has(item.repositoryId))).length,
+      failedScans: repositories.filter(item => item.lastScanStatus === 'failed').length,
+      staleScans: repositories.filter(item => !item.lastScanAt || now - Date.parse(item.lastScanAt) > staleAfter).length,
+      coveragePercent: expectations.length ? Math.round((covered / expectations.length) * 100) : 0,
+      latestScanAt: scans.length ? new Date(Math.max(...scans)).toISOString() : undefined,
+    }
+  }).sort((left, right) => right.gaps - left.gaps || left.organizationId.localeCompare(right.organizationId))
+}
 
 app.use(express.json({
-  limit: '2mb',
+  // A normalized inventory for the current FuzeFront repository is ~2.4 MB.
+  // Keep this above the scanner's bounded payload while still rejecting
+  // unexpectedly large webhook and user-request bodies.
+  limit: '5mb',
   verify: (request, _response, buffer) => {
     ;(request as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer)
   },
@@ -88,7 +178,80 @@ app.get('/metrics', async (_request, response) => {
   )
 })
 
-app.get('/api/v1/portfolio', async (_request, response) => response.json(await store.portfolio()))
+app.get('/api/v1/portfolio', mayReadCatalog, async (request, response) =>
+  response.json(await store.portfolio(requestIdentity(request)!.tenantId))
+)
+app.get('/api/v1/admin/organizations', mayAdministerPlatform, async (_request, response) =>
+  response.json(organizationSummaries(await store.portfolio()))
+)
+app.post('/api/v1/admin/organizations/:tenantId/context', mayAdministerPlatform, async (request, response) => {
+  const parsed = adminContextSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten(), code: 'CONTEXT_REASON_REQUIRED' })
+  const targetTenantId = Array.isArray(request.params.tenantId) ? request.params.tenantId[0] : request.params.tenantId
+  const identity = requestIdentity(request)!
+  const portfolio = await store.portfolio(targetTenantId)
+  if (!portfolio.repositories.length) return response.status(404).json({ error: 'Organization catalog not found', code: 'ORGANIZATION_NOT_FOUND' })
+  const audit = await store.recordAdminContext({
+    actorId: identity.userId,
+    sourceTenantId: identity.tenantId,
+    targetTenantId,
+    reason: parsed.data.reason,
+    correlationId: request.header('x-correlation-id') ?? undefined,
+  })
+  response.json({
+    organizationId: targetTenantId,
+    mode: 'read-only',
+    auditId: audit.id,
+    enteredAt: audit.createdAt,
+    portfolio,
+  })
+})
+app.get('/api/v1/organization/members', mayReadOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  const query = new URLSearchParams()
+  for (const key of ['page', 'pageSize', 'search']) {
+    if (typeof request.query[key] === 'string') query.set(key, request.query[key])
+  }
+  const suffix = query.size ? `?${query.toString()}` : ''
+  await proxyOrganizationSecurity(request, response, `/api/organizations/${encodeURIComponent(identity.tenantId)}/members${suffix}`)
+})
+app.get('/api/v1/organization/roles', mayReadOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  await proxyOrganizationSecurity(request, response, `/api/organizations/${encodeURIComponent(identity.tenantId)}/roles`)
+})
+app.post('/api/v1/organization/invitations', mayManageOrganizationAccess, async (request, response) => {
+  const parsed = invitationSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/invitations`,
+    { method: 'POST', body: JSON.stringify(parsed.data) }
+  )
+})
+app.put('/api/v1/organization/members/:memberId', mayManageOrganizationAccess, async (request, response) => {
+  const parsed = memberRoleSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  const memberId = Array.isArray(request.params.memberId) ? request.params.memberId[0] : request.params.memberId
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/members/${encodeURIComponent(memberId)}`,
+    { method: 'PUT', body: JSON.stringify(parsed.data) }
+  )
+})
+app.delete('/api/v1/organization/members/:memberId', mayManageOrganizationAccess, async (request, response) => {
+  const identity = requestIdentity(request)!
+  const memberId = Array.isArray(request.params.memberId) ? request.params.memberId[0] : request.params.memberId
+  await proxyOrganizationSecurity(
+    request,
+    response,
+    `/api/organizations/${encodeURIComponent(identity.tenantId)}/members/${encodeURIComponent(memberId)}`,
+    { method: 'DELETE' }
+  )
+})
 app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const repository = await store.repository(repositoryId)
@@ -198,6 +361,15 @@ app.post('/api/v1/repositories/:id/scans', mayScanRepositories, async (request, 
     const result = publicAccessError(error)
     response.status(result.status).json(result.body)
   }
+})
+app.patch('/api/v1/repositories/:id/administration', mayManageRepositoryAdministration, async (request, response) => {
+  const parsed = repositoryAdministrationSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const identity = requestIdentity(request)!
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.updateRepositoryAdministration(repositoryId, identity.tenantId, parsed.data)
+  if (!repository) return response.status(404).json({ error: 'Repository not found', code: 'REPOSITORY_NOT_FOUND' })
+  response.json(repository)
 })
 
 app.get('/api/v1/catalog/apis', mayReadCatalog, async (request, response) =>
@@ -329,17 +501,20 @@ app.post('/api/v1/internal/test-implementations/:id/status', async (request, res
   })
   response.status(202).json({ accepted: true })
 })
-app.get('/api/v1/requirements', async (_request, response) =>
-  response.json((await store.portfolio()).requirements)
+app.get('/api/v1/requirements', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).requirements)
 )
-app.get('/api/v1/flows', async (_request, response) => response.json((await store.portfolio()).flows))
-app.get('/api/v1/suggestions', async (_request, response) =>
-  response.json((await store.portfolio()).suggestions)
+app.get('/api/v1/flows', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).flows)
 )
-app.post('/api/v1/suggestions/:id/decision', async (request, response) => {
+app.get('/api/v1/suggestions', mayReadRequirements, async (request, response) =>
+  response.json((await store.portfolio(requestIdentity(request)!.tenantId)).suggestions)
+)
+app.post('/api/v1/suggestions/:id/decision', mayReviewSuggestions, async (request, response) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
-  const suggestion = await store.decideSuggestion(request.params.id, parsed.data.decision)
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const suggestion = await store.decideSuggestion(suggestionId, parsed.data.decision)
   if (!suggestion) return response.status(404).json({ error: 'Suggestion not found' })
   await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
@@ -365,7 +540,7 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
   response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
 })
 
-app.post('/api/v1/jira/sync', async (request, response) => {
+app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
     scopeId: request.body?.scopeId ?? 'default',
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',

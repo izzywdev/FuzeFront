@@ -6,6 +6,7 @@ declare module 'lucide-react' {
   export const ArrowRight: LucideIcon
   export const BookOpen: LucideIcon
   export const Braces: LucideIcon
+  export const Building2: LucideIcon
   export const Check: LucideIcon
   export const ChevronRight: LucideIcon
   export const CircleDot: LucideIcon
@@ -16,12 +17,18 @@ declare module 'lucide-react' {
   export const Eye: LucideIcon
   export const ExternalLink: LucideIcon
   export const Layers3: LucideIcon
+  export const LockKeyhole: LucideIcon
+  export const LogOut: LucideIcon
   export const Network: LucideIcon
   export const Plus: LucideIcon
   export const RefreshCw: LucideIcon
   export const Search: LucideIcon
+  export const Save: LucideIcon
   export const ShieldCheck: LucideIcon
   export const Sparkles: LucideIcon
   export const TestTube2: LucideIcon
+  export const Trash2: LucideIcon
+  export const UserPlus: LucideIcon
+  export const Users: LucideIcon
   export const X: LucideIcon
 }

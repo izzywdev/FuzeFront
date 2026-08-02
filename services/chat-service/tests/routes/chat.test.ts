@@ -71,7 +71,8 @@ describe('POST /chat/stream', () => {
     await request(app).post('/chat/stream').send({ messages: [], orgId: ORG_ID }).expect(401);
   });
 
-  it('streams SSE events ending in done and persists + bills', async () => {
+  it('200 streams SSE events ending in done and persists + bills', async () => {
+    // @fuzequality api streamChat
     const { app, deps } = buildApp();
     const res = await request(app)
       .post('/chat/stream')
@@ -79,6 +80,7 @@ describe('POST /chat/stream', () => {
       .send({ messages: [{ role: 'user', content: 'hi' }], orgId: ORG_ID });
 
     expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.status).toBe(200);
     expect(res.text).toContain('"type":"rag_sources"');
     expect(res.text).toContain('"type":"text_delta"');
     expect(res.text).toContain('"type":"done"');
@@ -177,7 +179,8 @@ describe('POST /chat/stream', () => {
 });
 
 describe('GET /chat/conversations', () => {
-  it('lists the authenticated users conversations', async () => {
+  it('200 lists the authenticated users conversations', async () => {
+    // @fuzequality api listConversations
     const { app, deps } = buildApp();
     const res = await request(app)
       .get('/chat/conversations')
@@ -221,7 +224,8 @@ describe('GET /chat/conversations', () => {
 });
 
 describe('GET /chat/conversations/:id', () => {
-  it('returns the conversation with the newest message page by default', async () => {
+  it('200 returns the conversation with the newest message page by default', async () => {
+    // @fuzequality api getConversation
     const { app, deps } = buildApp();
     const res = await request(app)
       .get('/chat/conversations/c1')
@@ -237,6 +241,22 @@ describe('GET /chat/conversations/:id', () => {
     expect(res.body.messages).toHaveLength(1);
     expect(res.body.hasMoreBefore).toBe(false);
     expect(res.body.hasMoreAfter).toBe(false);
+  });
+
+  it('returns 401 when conversation lookup authentication is missing', async () => {
+    // @fuzequality api getConversation
+    const { app } = buildApp();
+    await request(app).get('/chat/conversations/c1').expect(401);
+  });
+
+  it('does not perform an item lookup when the required id path parameter is missing', async () => {
+    // @fuzequality api getConversation
+    const { app } = buildApp();
+    const res = await request(app)
+      .get('/chat/conversations/')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
   it('forwards before/limit cursors and clamps limit to 200', async () => {
@@ -291,7 +311,8 @@ describe('GET /chat/conversations/:id', () => {
 });
 
 describe('POST /chat/feedback', () => {
-  it('records feedback for the authenticated user', async () => {
+  it('200 records feedback for the authenticated user', async () => {
+    // @fuzequality api submitFeedback
     const { app, deps } = buildApp();
     await request(app)
       .post('/chat/feedback')
@@ -299,6 +320,15 @@ describe('POST /chat/feedback', () => {
       .send({ messageId: 'm1', rating: 'positive' })
       .expect(200);
     expect(deps.feedback.submit).toHaveBeenCalledWith('m1', USER_ID, 'positive');
+  });
+
+  it('returns 401 when feedback authentication is missing', async () => {
+    // @fuzequality api submitFeedback
+    const { app } = buildApp();
+    await request(app)
+      .post('/chat/feedback')
+      .send({ messageId: 'm1', rating: 'positive' })
+      .expect(401);
   });
 
   it('400 on an invalid rating', async () => {
@@ -312,13 +342,29 @@ describe('POST /chat/feedback', () => {
 });
 
 describe('POST /chat/confirm/:id', () => {
-  it('confirms a pending tool for the authenticated user', async () => {
+  it('200 confirms a pending tool for the authenticated user', async () => {
+    // @fuzequality api confirmTool
     const { app, deps } = buildApp();
     await request(app)
       .post('/chat/confirm/conf-1')
       .set('Authorization', `Bearer ${token()}`)
       .expect(200);
     expect(deps.confirmations.confirm).toHaveBeenCalledWith('conf-1', USER_ID);
+  });
+
+  it('returns 401 when confirmation authentication is missing', async () => {
+    // @fuzequality api confirmTool
+    const { app } = buildApp();
+    await request(app).post('/chat/confirm/conf-1').expect(401);
+  });
+
+  it('does not confirm a tool when the required id path parameter is missing', async () => {
+    // @fuzequality api confirmTool
+    const { app } = buildApp();
+    await request(app)
+      .post('/chat/confirm/')
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(404);
   });
 
   it('404 when the confirmation is unknown or not owned', async () => {

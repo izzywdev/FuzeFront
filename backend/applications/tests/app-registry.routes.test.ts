@@ -301,6 +301,7 @@ beforeEach(() => {
 
 describe('registerApp', () => {
   it('registers an app (201) in status registered and emits app.registered', async () => {
+    // @fuzequality api registerApp
     const res = await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
@@ -310,6 +311,15 @@ describe('registerApp', () => {
     expect(res.body.status).toBe('registered')
     expect(res.headers['x-app-heartbeat-token']).toBeTruthy()
     expect(emitted.find(e => e.type === 'registered')).toBeTruthy()
+  })
+
+  it('rejects registration with 401 when authentication is missing', async () => {
+    // @fuzequality api registerApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .send({ manifest: manifest('market'), organizationId: orgA })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 
   it('rejects an invalid manifest with 400 validation_error', async () => {
@@ -392,6 +402,7 @@ describe('lifecycle register → activate → suspend', () => {
   it('activates then suspends, with idempotent no-ops', async () => {
     await seedApp('market', orgA, userA)
 
+    // @fuzequality api activateApp
     const act = await request(app).post('/api/v1/app-registry/apps/market/activate').set(asUser(userA))
     expect(act.status).toBe(200)
     expect(act.body.status).toBe('activated')
@@ -404,10 +415,65 @@ describe('lifecycle register → activate → suspend', () => {
     expect(act2.body.status).toBe('activated')
     expect(emitted.find(e => e.type === 'activated')).toBeFalsy()
 
+    // @fuzequality api suspendApp
     const susp = await request(app).post('/api/v1/app-registry/apps/market/suspend').set(asUser(userA))
     expect(susp.status).toBe(200)
     expect(susp.body.status).toBe('suspended')
     expect(emitted.find(e => e.type === 'suspended')).toBeTruthy()
+  })
+
+  it('returns 200 when activating a registered app', async () => {
+    // @fuzequality api activateApp
+    await seedApp('market', orgA, userA)
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/activate')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('activated')
+  })
+
+  it('returns 200 when suspending an activated app', async () => {
+    // @fuzequality api suspendApp
+    await seedApp('market', orgA, userA)
+    await request(app)
+      .post('/api/v1/app-registry/apps/market/activate')
+      .set(asUser(userA))
+      .expect(200)
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/suspend')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('suspended')
+  })
+
+  it('rejects activation with 401 when authentication is missing', async () => {
+    // @fuzequality api activateApp
+    const res = await request(app).post('/api/v1/app-registry/apps/market/activate')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not activate an item when the required slug path parameter is missing', async () => {
+    // @fuzequality api activateApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//activate')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects suspension with 401 when authentication is missing', async () => {
+    // @fuzequality api suspendApp
+    const res = await request(app).post('/api/v1/app-registry/apps/market/suspend')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not suspend an item when the required slug path parameter is missing', async () => {
+    // @fuzequality api suspendApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//suspend')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
   })
 
   it('forbids activation by a cross-org caller (BOLA mutate)', async () => {
@@ -435,7 +501,8 @@ describe('onboarding: policy + billing profile', () => {
     roles: [{ key: 'seller', name: 'Seller', permissions: ['Listing:update'] }],
   }
 
-  it('stores a valid policy and reports what was synced', async () => {
+  it('returns 200 when storing a valid policy and reports what was synced', async () => {
+    // @fuzequality api putAppPolicy
     await seedApp('market', orgA, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
@@ -443,6 +510,24 @@ describe('onboarding: policy + billing profile', () => {
       .send(validPolicy)
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({ slug: 'market', resources: 1, roles: 1 })
+  })
+
+  it('rejects policy writes with 401 when authentication is missing', async () => {
+    // @fuzequality api putAppPolicy
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/policy')
+      .send(validPolicy)
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not write policy when the required slug path parameter is missing', async () => {
+    // @fuzequality api putAppPolicy
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps//policy')
+      .set(asUser(userA))
+      .send(validPolicy)
+    expect(res.status).toBe(404)
   })
 
   it('rejects a permission referencing an action the policy never declares', async () => {
@@ -480,7 +565,8 @@ describe('onboarding: policy + billing profile', () => {
     expect([403, 404]).toContain(res.status)
   })
 
-  it('stores a valid billing profile', async () => {
+  it('returns 200 when storing a valid billing profile', async () => {
+    // @fuzequality api putAppBillingProfile
     await seedApp('market', orgA, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/billing-profile')
@@ -488,6 +574,24 @@ describe('onboarding: policy + billing profile', () => {
       .send({ productKey: 'market', currencies: ['usd'] })
     expect(res.status).toBe(200)
     expect(res.body.productKey).toBe('market')
+  })
+
+  it('rejects billing-profile writes with 401 when authentication is missing', async () => {
+    // @fuzequality api putAppBillingProfile
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market/billing-profile')
+      .send({ productKey: 'market', currencies: ['usd'] })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not write a billing profile when the required slug path parameter is missing', async () => {
+    // @fuzequality api putAppBillingProfile
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps//billing-profile')
+      .set(asUser(userA))
+      .send({ productKey: 'market', currencies: ['usd'] })
+    expect(res.status).toBe(404)
   })
 
   it('rejects a malformed billing productKey', async () => {
@@ -510,10 +614,26 @@ describe('onboarding: policy + billing profile', () => {
 
 describe('deleteApp', () => {
   it('deletes a non-builtin app (204)', async () => {
+    // @fuzequality api deleteApp
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
       .send({ manifest: manifest('market'), organizationId: orgA })
     const res = await request(app).delete('/api/v1/app-registry/apps/market').set(asUser(userA))
     expect(res.status).toBe(204)
+  })
+
+  it('rejects deletion with 401 when authentication is missing', async () => {
+    // @fuzequality api deleteApp
+    const res = await request(app).delete('/api/v1/app-registry/apps/market')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not perform an item lookup when the required slug path parameter is missing', async () => {
+    // @fuzequality api deleteApp
+    const res = await request(app)
+      .delete('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+    expect(res.status).toBe(404)
   })
 
   it('returns 403 when deleting a builtin app', async () => {
@@ -529,7 +649,64 @@ describe('deleteApp', () => {
   })
 })
 
+describe('heartbeatApp', () => {
+  async function registerHeartbeatApp() {
+    const registered = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(userA))
+      .send({ manifest: manifest('market'), organizationId: orgA })
+    return registered.headers['x-app-heartbeat-token']
+  }
+
+  it('accepts an authenticated heartbeat with a declared 200 application/json response', async () => {
+    // @fuzequality api heartbeatApp
+    const heartbeatToken = await registerHeartbeatApp()
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/heartbeat')
+      .set('Authorization', `Bearer ${heartbeatToken}`)
+      .send({ status: 'online', metadata: { version: '1.0.0' } })
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.accepted).toBe(true)
+  })
+
+  it('rejects a heartbeat with 401 when authentication is missing', async () => {
+    // @fuzequality api heartbeatApp
+    await registerHeartbeatApp()
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps/market/heartbeat')
+      .send({ status: 'online' })
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not accept a heartbeat when the required slug path parameter is missing', async () => {
+    // @fuzequality api heartbeatApp
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps//heartbeat')
+      .set('Authorization', 'Bearer invalid')
+      .send({ status: 'online' })
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('getApp BOLA', () => {
+  it('rejects app lookup with 401 when authentication is missing', async () => {
+    // @fuzequality api getApp
+    const res = await request(app).get('/api/v1/app-registry/apps/market')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('returns 404 when the required slug path parameter is missing', async () => {
+    // @fuzequality api getApp
+    const res = await request(app)
+      .get('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+    expect(res.status).toBe(200)
+    expect(res.body.apps).toEqual([])
+  })
+
   it('hides a cross-org private app as 404', async () => {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
       .send({ manifest: manifest('market', { visibility: 'private' }), organizationId: orgA })
@@ -539,7 +716,8 @@ describe('getApp BOLA', () => {
     expect(theirs.status).toBe(404)
   })
 
-  it('a public app is visible cross-org', async () => {
+  it('returns 200 when a public app is visible cross-org', async () => {
+    // @fuzequality api getApp
     store.rows.push({
       slug: 'pub', name: 'Pub', status: 'activated', mode: 'portal', builtin: false,
       organization_id: orgA, visibility: 'public',
@@ -551,8 +729,45 @@ describe('getApp BOLA', () => {
   })
 })
 
+describe('updateApp', () => {
+  it('updates an app with a declared 200 response for a valid manifest', async () => {
+    // @fuzequality api updateApp
+    await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(userA))
+      .send({ manifest: manifest('market'), organizationId: orgA })
+
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market')
+      .set(asUser(userA))
+      .send(manifest('market', { name: 'Updated Market' }))
+    expect(res.status).toBe(200)
+    expect(res.type).toMatch(/json/)
+    expect(res.body.manifest.name).toBe('Updated Market')
+  })
+
+  it('rejects app updates with 401 when authentication is missing', async () => {
+    // @fuzequality api updateApp
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/market')
+      .send(manifest('market'))
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
+  })
+
+  it('does not perform an item update when the required slug path parameter is missing', async () => {
+    // @fuzequality api updateApp
+    const res = await request(app)
+      .put('/api/v1/app-registry/apps/')
+      .set(asUser(userA))
+      .send(manifest('market'))
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('listApps BOLA + pagination', () => {
-  it('only lists apps visible to the caller', async () => {
+  it('returns 200 with only the apps visible to the caller', async () => {
+    // @fuzequality api listApps
     store.rows.push(
       mkRow('a1', orgA, 'organization'),
       mkRow('b1', orgB, 'organization'),
@@ -562,6 +777,13 @@ describe('listApps BOLA + pagination', () => {
     expect(res.status).toBe(200)
     const slugs = res.body.apps.map((a: any) => a.slug).sort()
     expect(slugs).toEqual(['a1', 'p1']) // b1 (orgB private/org) hidden
+  })
+
+  it('rejects list requests with 401 when authentication is missing', async () => {
+    // @fuzequality api listApps
+    const res = await request(app).get('/api/v1/app-registry/apps')
+    expect(res.status).toBe(401)
+    expect(res.type).toMatch(/json/)
   })
 
   it('paginates with limit and nextCursor', async () => {

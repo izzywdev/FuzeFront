@@ -18,7 +18,8 @@ import { buildApp, INTERNAL_TOKEN } from './helpers';
 const URL = '/api/v1/billing/webhooks/stripe';
 
 describe('billing-service contract :: receiveStripeWebhook', () => {
-  it('400 text/plain when Stripe-Signature header is missing', async () => {
+  it('400 text/plain when the required X-Provider-Signature header is missing', async () => {
+    // @fuzequality api receiveProviderWebhook
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .post(URL)
@@ -42,7 +43,8 @@ describe('billing-service contract :: receiveStripeWebhook', () => {
     expect(res.text).toContain('Webhook Error');
   });
 
-  it('200 {received:true} on a valid event and records the dedup row (id, type, payload)', async () => {
+  it('200 returns the declared received response for a valid provider event', async () => {
+    // @fuzequality api receiveProviderWebhook
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     const event = {
       id: 'evt_checkout_1',
@@ -66,6 +68,17 @@ describe('billing-service contract :: receiveStripeWebhook', () => {
       'checkout.session.completed',
       event,
     );
+  });
+
+  it('rejects the request when the required provider path parameter is missing', async () => {
+    // @fuzequality api receiveProviderWebhook
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    const res = await request(app)
+      .post('/api/v1/billing/webhooks/')
+      .set('Content-Type', 'application/json')
+      .set('X-Provider-Signature', 'good-sig')
+      .send(Buffer.from('{}'));
+    expect(res.status).toBe(401);
   });
 
   it('200 {received:true, duplicate:true} on a duplicate delivery, without re-processing', async () => {
