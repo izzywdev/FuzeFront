@@ -1,4 +1,5 @@
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
@@ -557,8 +558,19 @@ function decodeMemberCursor(cursor: string): { joinedAt: string; membershipId: s
   }
 }
 
+// FF-EPIC-11-S2 — rate-limit the members directory read (CodeQL
+// js/missing-rate-limiting). Same config as adminPortals.ts's adminRateLimiter.
+const membersRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
 router.get(
   '/:id/members',
+  membersRateLimiter,
   authenticateToken,
   PermissionMiddleware.canReadOrganization,
   async (req: any, res) => {

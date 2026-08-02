@@ -7,11 +7,23 @@
 // `db('users')` read to this file without doing the same (see
 // `tests/scope-to-portal-guard.test.ts`).
 import express, { Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import { resolvePortalScopeDecision, applyPortalScope } from '../utils/scopeToPortal'
 
 const router = express.Router()
+
+// FF-EPIC-11-S2 — rate-limit these authenticated directory reads
+// (CodeQL js/missing-rate-limiting). Same config as adminPortals.ts's
+// adminRateLimiter: 120 req/min per client, standard RateLimit headers.
+const readLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
@@ -69,7 +81,7 @@ const LIST_COLUMNS = ['id', 'email', 'first_name', 'last_name', 'home_portal_id'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // GET /api/users — list, portal-scoped, cursor-paginated.
-router.get('/', authenticateToken, async (req: any, res: Response) => {
+router.get('/', readLimiter, authenticateToken, async (req: any, res: Response) => {
   try {
     const limit = clampLimit(req.query.limit)
     const cursor = req.query.cursor ? String(req.query.cursor) : undefined
@@ -113,7 +125,7 @@ router.get('/', authenticateToken, async (req: any, res: Response) => {
 
 // GET /api/users/search?q= — search by email/first/last name, portal-scoped,
 // cursor-paginated. Mounted BEFORE /:id so "search" is never captured as an id.
-router.get('/search', authenticateToken, async (req: any, res: Response) => {
+router.get('/search', readLimiter, authenticateToken, async (req: any, res: Response) => {
   try {
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : ''
     if (!q) {
@@ -170,7 +182,7 @@ router.get('/search', authenticateToken, async (req: any, res: Response) => {
 // GET /api/users/:id — profile by id, portal-scoped. A cross-portal id (or a
 // genuinely nonexistent one) is INDISTINGUISHABLE — both 404 — so a caller can
 // never probe whether an id exists outside their portal (no existence leak).
-router.get('/:id', authenticateToken, async (req: any, res: Response) => {
+router.get('/:id', readLimiter, authenticateToken, async (req: any, res: Response) => {
   try {
     // A malformed id can never resolve to a row — reject BEFORE hitting the DB
     // (a non-uuid literal otherwise throws a Postgres type error, 500ing the
