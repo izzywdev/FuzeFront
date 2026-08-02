@@ -37,6 +37,16 @@ import { seedMockSession } from '../../tests/support/account-vault'
  *   admin creds, which may or may not exist in prod).
  */
 
+// The seeded dev credentials are a LOCAL-ONLY fallback and must never be
+// presented as a production synthetic. `initializeDatabase()` only calls
+// `runSeeds()` when NODE_ENV !== 'production', so `admin@fuzefront.dev` does
+// not exist in prod and never will — the authenticated journey below was
+// therefore PERMANENTLY red against a healthy deploy, reported as "dashboard +
+// Module-Federation apps broken" when the real cause was an unprovisioned test
+// account. A test that cannot pass trains everyone to ignore red.
+const HAS_SYNTHETIC_CREDS = Boolean(
+  process.env.POST_PROD_EMAIL && process.env.POST_PROD_PASSWORD
+)
 const EMAIL = process.env.POST_PROD_EMAIL || 'admin@fuzefront.dev'
 const PASSWORD = process.env.POST_PROD_PASSWORD || 'admin123'
 
@@ -118,16 +128,23 @@ test.describe('FuzeFront live post-prod smoke', () => {
     const googleBtn = page.getByRole('button', { name: /sign in with google/i })
     await expect(googleBtn).toBeVisible({ timeout: 20_000 })
 
-    // Clicking must navigate into the OIDC flow: the SPA calls
-    // /api/auth/oidc/login which 302s to the Authentik authorize endpoint.
-    // Assert we leave the login page toward an authorize URL rather than
+    // Clicking must navigate into the social flow, which 302s on to the
+    // Authentik authorize endpoint. Assert we leave the login page rather than
     // completing a login (read-only synthetic — no credentials driven).
-    const oidcRedirect = page.waitForRequest(
-      req => req.url().includes('/api/auth/oidc/login'),
+    //
+    // The endpoint here MUST track authAPI.startSocialLogin(). This assertion
+    // used to watch `/api/auth/oidc/login`, the legacy backend route — but the
+    // SPA moved to the Security service's social-start endpoint
+    // (services/api.ts: `${SECURITY_BASE}/social/${provider}/start`) and the
+    // spec was never updated. The legacy route still EXISTS on the backend, so
+    // nothing failed to compile and nothing 404'd; the test just watched for a
+    // request the app no longer makes and failed against a healthy production.
+    const socialRedirect = page.waitForRequest(
+      req => /\/api\/v1\/security\/social\/google\/start/.test(req.url()),
       { timeout: 20_000 }
     )
     await googleBtn.click()
-    await oidcRedirect
+    await socialRedirect
   })
 
   test('6. auth backend is reachable (security service routable)', async ({ request }) => {
@@ -141,7 +158,22 @@ test.describe('FuzeFront live post-prod smoke', () => {
     ).toBeLessThan(500)
   })
 
-  test('7. authenticated dashboard + Module-Federation apps load', async ({ page, request }) => {
+  test('7. authenticated dashboard + Module-Federation apps load', async ({ page, request }, testInfo) => {
+    // Skip LOUDLY rather than fail on a credential problem: an unprovisioned
+    // synthetic must not masquerade as a broken dashboard. Set the
+    // POST_PROD_EMAIL / POST_PROD_PASSWORD repo secrets to a dedicated
+    // production account to restore this coverage.
+    test.skip(
+      !HAS_SYNTHETIC_CREDS,
+      'POST_PROD_EMAIL/POST_PROD_PASSWORD not set — no production synthetic account to sign in with. ' +
+        'The seeded dev admin (admin@fuzefront.dev) does not exist in prod (seeds never run there), so this ' +
+        'journey cannot be exercised. This is MISSING COVERAGE, not a passing test.'
+    )
+    testInfo.annotations.push({
+      type: 'coverage',
+      description: 'authenticated journey requires a provisioned production synthetic account',
+    })
+
     const { consoleErrors, pageErrors, failedRequests } = attachErrorCollectors(page)
 
     // Authenticate via the Security API (machine/break-glass path) — the same
