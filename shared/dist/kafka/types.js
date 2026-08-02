@@ -16,6 +16,7 @@ exports.TOPICS = {
     BILLING_PAYMENT_COMPLETED: 'billing.payment.completed',
     BILLING_TRIAL_ENDING: 'billing.trial.ending',
     BILLING_PAYMENT_FAILED: 'billing.payment.failed',
+    PORTAL_CREATED: 'portal.created',
 };
 /** Returns the dead-letter queue topic name for a given topic */
 function dlqTopic(topic) {

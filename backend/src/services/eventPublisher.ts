@@ -7,6 +7,8 @@ import {
   IdentityUserCreatedPayloadV1,
   notifyEmailRequestedSchemaV1,
   NotifyEmailRequestedPayloadV1,
+  portalCreatedSchemaV1,
+  PortalCreatedPayloadV1,
 } from '@fuzefront/shared/kafka'
 
 /**
@@ -25,6 +27,10 @@ export interface EventPublisher {
   ): Promise<void>
   publishNotifyEmailRequested(
     payload: NotifyEmailRequestedPayloadV1,
+    correlationId: string
+  ): Promise<void>
+  publishPortalCreated(
+    payload: PortalCreatedPayloadV1,
     correlationId: string
   ): Promise<void>
 }
@@ -105,6 +111,21 @@ export const defaultEventPublisher: EventPublisher = {
       TOPICS.NOTIFY_EMAIL_REQUESTED,
       envelope(TOPICS.NOTIFY_EMAIL_REQUESTED, payload, correlationId),
       notifyEmailRequestedSchemaV1
+    )
+  },
+
+  async publishPortalCreated(payload, correlationId) {
+    const p = await getProducer()
+    if (!p) {
+      console.log(
+        `ℹ️ Kafka disabled — skipping ${TOPICS.PORTAL_CREATED} publish (outbox holds it)`
+      )
+      return
+    }
+    await p.send(
+      TOPICS.PORTAL_CREATED,
+      envelope(TOPICS.PORTAL_CREATED, payload, correlationId),
+      portalCreatedSchemaV1
     )
   },
 }
