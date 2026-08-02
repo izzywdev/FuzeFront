@@ -34,6 +34,11 @@ const ENV_KEYS = [
   'AUTHENTIK_ADMIN_TOKEN',
   'AUTHENTIK_ENROLLMENT_FLOW_SLUG',
   'SECURITY_GOOGLE_BROKERED',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+  'SECURITY_TENANT_MENDYS_CLIENT_SECRET',
+  'SECURITY_TENANT_MENDYS_ADMIN_TOKEN',
+  'SECURITY_TENANT_MENDYS_GOOGLE_CLIENT_SECRET',
 ]
 
 let saved: Record<string, string | undefined>
@@ -282,5 +287,73 @@ describe('cross-tenant session rejection', () => {
   it('rejects when the request has no tenant context at all', () => {
     const r = assertTenantMatches({} as never, 'mendys')
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('per-tenant secrets are read from env, never from SECURITY_TENANTS', () => {
+  // SECURITY_TENANTS renders into a plain env var (visible in `kubectl describe
+  // pod`), so client secrets and admin tokens must come from separate
+  // per-tenant variables that the chart wires as secretKeyRefs.
+  const NO_SECRETS = JSON.stringify([
+    {
+      id: 'mendys',
+      hosts: ['live.mendysrobotics.com'],
+      issuerUrl: 'https://live.mendysrobotics.com/application/o/mendys-platform/',
+      baseUrl: 'http://authentik-mendys-server:9000',
+      clientId: 'mendys-platform-oidc-client',
+      redirectUri: 'https://live.mendysrobotics.com/api/auth/oidc/callback',
+      enrollmentFlowSlug: 'mendys-enrollment',
+      appBaseUrl: 'https://live.mendysrobotics.com',
+    },
+  ])
+
+  it('resolves clientSecret and adminToken from SECURITY_TENANT_<ID>_* vars', () => {
+    process.env.SECURITY_TENANTS = NO_SECRETS
+    process.env.SECURITY_TENANT_MENDYS_CLIENT_SECRET = 'from-sealed-secret'
+    process.env.SECURITY_TENANT_MENDYS_ADMIN_TOKEN = 'admin-from-sealed-secret'
+    resetTenantRegistryForTests()
+
+    const t = resolveTenantByHost('live.mendysrobotics.com')!
+    expect(t.clientSecret).toBe('from-sealed-secret')
+    expect(t.adminToken).toBe('admin-from-sealed-secret')
+
+    delete process.env.SECURITY_TENANT_MENDYS_CLIENT_SECRET
+    delete process.env.SECURITY_TENANT_MENDYS_ADMIN_TOKEN
+  })
+
+  it('leaves them empty rather than borrowing another tenant\u2019s', () => {
+    process.env.SECURITY_TENANTS = NO_SECRETS
+    process.env.AUTHENTIK_CLIENT_SECRET = 'fuzefront-secret'
+    resetTenantRegistryForTests()
+
+    // The legacy single-tenant env must NOT leak into a declared tenant —
+    // that would authenticate against the wrong directory's client.
+    expect(resolveTenantByHost('live.mendysrobotics.com')!.clientSecret).toBe('')
+  })
+})
+
+describe('per-tenant Google client', () => {
+  it('falls back to the platform-wide client when the tenant declares none', () => {
+    process.env.GOOGLE_CLIENT_ID = 'shared-google-id'
+    process.env.GOOGLE_CLIENT_SECRET = 'shared-google-secret'
+    process.env.SECURITY_TENANTS = TWO_TENANTS
+    resetTenantRegistryForTests()
+
+    const t = resolveTenantByHost('live.mendysrobotics.com')!
+    expect(t.googleClientId).toBe('shared-google-id')
+    expect(t.googleClientSecret).toBe('shared-google-secret')
+  })
+
+  it('prefers the tenant\u2019s own client when declared, so consent is its brand', () => {
+    process.env.GOOGLE_CLIENT_ID = 'shared-google-id'
+    const withOwn = JSON.parse(TWO_TENANTS)
+    withOwn[1].googleClientId = 'mendys-google-id'
+    withOwn[1].googleClientSecret = 'mendys-google-secret'
+    process.env.SECURITY_TENANTS = JSON.stringify(withOwn)
+    resetTenantRegistryForTests()
+
+    expect(resolveTenantByHost('live.mendysrobotics.com')!.googleClientId).toBe('mendys-google-id')
+    // The other tenant is unaffected.
+    expect(resolveTenantByHost('app.fuzefront.com')!.googleClientId).toBe('shared-google-id')
   })
 })
