@@ -22,6 +22,7 @@
  * fail closed with a clear error rather than trying to drive arbitrary stages.
  */
 import { generators } from 'openid-client'
+import { Agent } from 'undici'
 import { getOidcService } from './oidc'
 import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
@@ -187,6 +188,23 @@ function drainBody(res: Response): void {
 }
 
 /**
+ * Every hop in this module lands on the SAME in-cluster Authentik origin
+ * (authentikBaseUrl()) — a handful of times per login, in quick succession.
+ * Node's default fetch dispatcher already pools keep-alive connections, but
+ * with a short keepAliveTimeout tuned for general-purpose traffic; back-to-back
+ * hops separated by CoreDNS's documented multi-second stalls (see recordHop
+ * above) can outlive that default and force a fresh connection — and a fresh
+ * DNS lookup — per hop. A dedicated Agent with a longer keep-alive holds the
+ * socket open across a whole login/signup chain, so at most the FIRST hop pays
+ * for DNS + connect.
+ */
+const authentikAgent = new Agent({
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+  connections: 32,
+})
+
+/**
  * `fetch` with a hard AbortController deadline. On timeout the AbortError is
  * normalised to a labelled AuthentikUnavailableError carrying the elapsed time
  * and the target, so prod logs pinpoint exactly which hop stalled.
@@ -208,7 +226,11 @@ async function fetchWithTimeout(
   const started = Date.now()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      dispatcher: authentikAgent,
+    })
   } catch (err) {
     const e = err as Error
     if (e.name === 'AbortError') {
