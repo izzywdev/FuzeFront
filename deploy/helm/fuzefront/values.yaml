@@ -196,6 +196,58 @@ backend:
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
+  # ── Multi-tenant identity (EMPTY = today's single-tenant behaviour) ──────────
+  #
+  # security-service is the single front door for identity; each tenant sits
+  # behind it on its OWN Authentik instance and therefore its own account
+  # directory. Declaring tenants here maps request host -> instance.
+  #
+  # LEAVING THIS EMPTY IS THE SAFE DEFAULT: the service stays in legacy mode,
+  # synthesises one tenant from the existing AUTHENTIK_* env, and serves every
+  # host exactly as it does today.
+  #
+  # SETTING IT FLIPS ON FAIL-CLOSED HOST MATCHING. An identity request whose
+  # Host matches no declared tenant is rejected with 400 rather than served by
+  # a default — because falling back would authenticate a user against the
+  # WRONG directory, the single failure this split exists to prevent. So the
+  # list must name EVERY host that carries identity traffic, including dev
+  # hostnames and any in-cluster name the SPA or a service calls it on. Miss
+  # one and its logins 400.
+  #
+  # NEVER put a secret in here — this renders into a plain env var. Reference
+  # chart Secret KEYS instead (clientSecretKey / adminTokenKey /
+  # googleClientSecretKey); the chart emits those as secretKeyRefs.
+  #
+  # googleClientSecretKey + googleClientId are OPTIONAL: omit them and the
+  # tenant shares the platform Google client (today's behaviour). Supply them
+  # where the consent screen's branding matters — a tenant whose premise is
+  # that FuzeFront is invisible should not show users a FuzeFront-named consent
+  # screen. Its callback URI (<appBaseUrl>/api/v1/security/social/google/callback)
+  # must be registered in that Google client.
+  #
+  # tenants:
+  #   - id: fuzefront
+  #     hosts: [app.fuzefront.com]
+  #     issuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+  #     baseUrl: http://authentik-server:9000
+  #     clientId: fuzefront-oidc-client
+  #     clientSecretKey: AUTHENTIK_CLIENT_SECRET
+  #     adminTokenKey: AUTHENTIK_BOOTSTRAP_TOKEN
+  #     redirectUri: https://app.fuzefront.com/api/auth/oidc/callback
+  #     enrollmentFlowSlug: fuzefront-enrollment
+  #     appBaseUrl: https://app.fuzefront.com
+  #   - id: mendys
+  #     hosts: [live.mendysrobotics.com, marketplace.mendysrobotics.com]
+  #     issuerUrl: https://live.mendysrobotics.com/application/o/mendys-platform/
+  #     baseUrl: http://authentik-mendys-server:9000
+  #     clientId: mendys-platform-oidc-client
+  #     clientSecretKey: MENDYS_PLATFORM_CLIENT_SECRET
+  #     adminTokenKey: AUTHENTIK_MENDYS_BOOTSTRAP_TOKEN
+  #     redirectUri: https://live.mendysrobotics.com/api/auth/oidc/callback
+  #     enrollmentFlowSlug: mendys-enrollment
+  #     appBaseUrl: https://live.mendysrobotics.com
+  #     googleBrokered: true
+  tenants: []
   image:
     repository: fuzefront/security-service
     tag: local

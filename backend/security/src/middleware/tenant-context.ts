@@ -20,6 +20,8 @@ import { NextFunction, Request, Response } from 'express'
 import { logger } from '../lib/logger'
 import {
   AuthentikTenant,
+  currentTenant,
+  currentTenantOrUndefined,
   isMultiTenant,
   normaliseHost,
   resolveTenantByHost,
@@ -63,6 +65,39 @@ export function tenantContext(req: Request, res: Response, next: NextFunction): 
   // Bind for the remainder of the request so code far from the route — which
   // cannot reasonably take a tenant parameter — reads the right configuration.
   runWithTenant(tenant, () => next())
+}
+
+/**
+ * The tenant id to stamp into a freshly minted session, as the `tid` claim.
+ *
+ * Sessions MUST carry their tenant. Without it a token minted in one directory
+ * is indistinguishable from one minted in another — same signing secret, same
+ * shape — so the only thing standing between the two account directories would
+ * be the request host, which the token holder chooses.
+ */
+export function sessionTenantId(): string {
+  return currentTenant('session tenant claim').id
+}
+
+/**
+ * Ambient-context variant of assertTenantMatches, for callers with no `req`
+ * (the provider verifies session tokens well below the route layer). Same
+ * rules: a mismatch is rejected, and a claimless token is accepted only while
+ * single-tenant, where there is nothing to confuse it with.
+ */
+export function assertAmbientTenant(
+  tokenTenantId: string | undefined
+): { ok: true } | { ok: false; reason: string } {
+  const expected = currentTenantOrUndefined()?.id
+  if (!expected) return { ok: false, reason: 'no tenant context' }
+  if (!tokenTenantId) {
+    if (!isMultiTenant()) return { ok: true }
+    return { ok: false, reason: 'token carries no tenant claim' }
+  }
+  if (tokenTenantId !== expected) {
+    return { ok: false, reason: `token is for tenant "${tokenTenantId}", host serves "${expected}"` }
+  }
+  return { ok: true }
 }
 
 /**

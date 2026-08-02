@@ -130,6 +130,54 @@ spec:
             # values per-env rather than left unset.
             - name: REQUIRE_EMAIL_VERIFICATION
               value: {{ .Values.securityService.requireEmailVerification | default false | quote }}
+            {{- if .Values.securityService.tenants }}
+            # ── Multi-tenant identity ────────────────────────────────────────
+            # security-service fronts several identity tenants, each backed by
+            # its OWN Authentik instance and therefore its own account
+            # directory. SECURITY_TENANTS declares the host -> instance mapping;
+            # the registry (providers/authentik/tenants.ts) parses and validates
+            # it AT BOOT, so a duplicate host claim, a duplicate id or a missing
+            # field crashes the pod instead of silently mis-routing a login.
+            #
+            # Setting this switches the service out of legacy single-tenant
+            # mode, which changes one behaviour deliberately: a request whose
+            # Host matches no declared tenant is REJECTED rather than served by
+            # a default. That means this list must name EVERY host the service
+            # is reached on for identity traffic. Miss one and its logins 400.
+            #
+            # Secrets are NOT inlined here — this is a plain env value, visible
+            # in `kubectl describe pod`. It carries only non-sensitive routing
+            # config (hosts, issuer, in-cluster base, client_id, flow slugs).
+            # Each tenant's client secret and admin token come from the
+            # per-tenant secretKeyRefs emitted below, which the registry reads
+            # as SECURITY_TENANT_<ID>_CLIENT_SECRET / _ADMIN_TOKEN.
+            - name: SECURITY_TENANTS
+              value: {{ .Values.securityService.tenants | toJson | quote }}
+            {{- range .Values.securityService.tenants }}
+            {{- $envId := .id | upper | regexReplaceAll "[^A-Z0-9]" "_" }}
+            {{- if .clientSecretKey }}
+            - name: SECURITY_TENANT_{{ $envId }}_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" $ }}
+                  key: {{ .clientSecretKey }}
+            {{- end }}
+            {{- if .adminTokenKey }}
+            - name: SECURITY_TENANT_{{ $envId }}_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" $ }}
+                  key: {{ .adminTokenKey }}
+            {{- end }}
+            {{- if .googleClientSecretKey }}
+            - name: SECURITY_TENANT_{{ $envId }}_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" $ }}
+                  key: {{ .googleClientSecretKey }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.authentik.oidc.enabled }}
             - name: AUTHENTIK_CLIENT_ID
               valueFrom:
