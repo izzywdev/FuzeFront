@@ -1,4 +1,5 @@
 import { currentTenant, currentTenantOrUndefined } from '../providers/authentik/tenants'
+import { assertTenantMatches, sessionTenantId } from '../middleware/tenant-context'
 import crypto from 'crypto'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
@@ -183,7 +184,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { userId: userRow.id, sessionId },
+      { userId: userRow.id, sessionId, tid: sessionTenantId() },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -331,6 +332,12 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
         userId: string
         sessionId?: string
+        tid?: string
+      }
+      // Cross-tenant logout must not delete another directory's session row.
+      const tenantCheck = assertTenantMatches(req, decoded.tid)
+      if (!tenantCheck.ok) {
+        return res.status(401).json({ error: 'Invalid token' })
       }
       // Invalidate only the current session, not every session the user has.
       if (decoded.sessionId) {
@@ -707,7 +714,7 @@ router.get('/oidc/callback', async (req, res) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Generate JWT token (includes sessionId so logout can target this session)
-    const token = jwt.sign({ userId: user.id, sessionId }, process.env.JWT_SECRET!, {
+    const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, process.env.JWT_SECRET!, {
       expiresIn: '24h',
     })
 

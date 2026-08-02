@@ -23,6 +23,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db as defaultDb } from '../../config/database'
 import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
 import { currentTenant } from './tenants'
+import { assertAmbientTenant, sessionTenantId } from '../../middleware/tenant-context'
 import { authentikPasswordLogin as defaultPasswordLogin } from '../../services/authentikPassword'
 import { runInternalProvision } from '../../services/organizationProvisioning'
 import {
@@ -332,7 +333,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
     const sessionId = uuidv4()
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
-    const token = jwt.sign({ userId: user.id, sessionId }, jwtSecret(), {
+    // `tid` binds the session to the tenant that minted it. Without it a token
+    // from one directory is indistinguishable from one from another (same
+    // signing secret, same shape), leaving only the request host — which the
+    // token holder chooses — between the two account directories.
+    const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, jwtSecret(), {
       expiresIn: '24h',
     })
     await this.db('sessions').insert({
@@ -665,12 +670,23 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
-  private verifySessionToken(token: string): { userId: string; sessionId?: string; iat?: number; exp?: number } {
+  private verifySessionToken(token: string): { userId: string; sessionId?: string; tid?: string; iat?: number; exp?: number } {
+    let decoded: { userId: string; sessionId?: string; tid?: string }
     try {
-      return jwt.verify(token, jwtSecret()) as any
+      decoded = jwt.verify(token, jwtSecret()) as any
     } catch {
       throw new UnauthorizedError('invalid token')
     }
+    // A valid SIGNATURE is not enough: every tenant's sessions are signed with
+    // the same secret, so a token minted in one directory would otherwise be
+    // accepted in another. Reject unless it was minted for the tenant serving
+    // this request. Pre-tenancy tokens (no `tid`) are accepted only while
+    // single-tenant.
+    const check = assertAmbientTenant(decoded.tid)
+    if (!check.ok) {
+      throw new UnauthorizedError('invalid token')
+    }
+    return decoded as any
   }
 
   private async loadUser(userId: string): Promise<BrokeredUser> {

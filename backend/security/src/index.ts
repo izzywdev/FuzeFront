@@ -22,6 +22,7 @@ import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
+import { tenantContext } from './middleware/tenant-context'
 
 dotenv.config()
 
@@ -33,6 +34,26 @@ const app = createExpressApp({ serviceName: 'security-service' })
 app.set('trust proxy', 1)
 const httpServer = createServer(app)
 const startTime = Date.now()
+
+// ── Identity tenant resolution ───────────────────────────────────────────────
+// Resolves the tenant from the request host and makes it ambient for everything
+// downstream. MUST be mounted before any identity-bearing router: the handlers
+// and the services beneath them read their Authentik configuration from the
+// resolved tenant, and in multi-tenant mode there is no default to fall back on.
+//
+// Mounted on the identity surfaces ONLY — /health, /metrics and /internal are
+// deliberately excluded. Those are cluster-internal or probe traffic that
+// arrives on Service DNS and pod IPs rather than a declared tenant host, so
+// requiring a tenant there would fail liveness/readiness the moment a second
+// tenant is declared.
+//
+// In legacy single-tenant mode resolution always succeeds, so mounting this is
+// a no-op for existing deployments.
+app.use('/api/v1/security', tenantContext)
+app.use('/api/auth', tenantContext)
+app.use('/api/organizations', tenantContext)
+app.use('/api/invitations', tenantContext)
+app.use('/api/tokens', tenantContext)
 
 // Provider-agnostic Security API (AuthN surface). New consumers use this.
 app.use('/api/v1/security', securityRoutes)

@@ -51,6 +51,20 @@ export interface AuthentikTenant {
   appBaseUrl: string
   /** Whether the server-brokered social path is active for this tenant. */
   googleBrokered: boolean
+  /**
+   * OPTIONAL per-tenant Google OAuth client. Omit to share the platform-wide
+   * client (GOOGLE_CLIENT_ID/SECRET) — today's behaviour, and fine where the
+   * consent screen's branding does not matter.
+   *
+   * Supply them where it does. A tenant whose whole premise is that FuzeFront
+   * is invisible to it should NOT send its users to a Google consent screen
+   * displaying FuzeFront's application name; giving that tenant its own Google
+   * client is the only way to brand it. This is deliberately configuration, not
+   * a code fork: adding a client later is a values change, and until then the
+   * shared client keeps working.
+   */
+  googleClientId?: string
+  googleClientSecret?: string
 }
 
 /** Thrown when a request arrives on a host no tenant claims (MULTI mode). */
@@ -119,6 +133,8 @@ function legacyTenant(): AuthentikTenant {
     enrollmentFlowSlug: process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment',
     appBaseUrl: appBase,
     googleBrokered: process.env.SECURITY_GOOGLE_BROKERED !== 'false',
+    googleClientId: process.env.GOOGLE_CLIENT_ID || undefined,
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined,
   }
 }
 
@@ -135,6 +151,29 @@ function requireField(raw: RawTenant, field: keyof AuthentikTenant, index: numbe
     )
   }
   return v
+}
+
+/**
+ * Per-tenant secret lookup.
+ *
+ * Secrets must NOT be inlined in SECURITY_TENANTS: that value is a plain env
+ * var, visible in `kubectl describe pod` and in any log that dumps the
+ * environment. Instead each tenant's client secret and admin token are read
+ * from conventional per-tenant variables, which the chart wires from the
+ * Secret via secretKeyRef:
+ *
+ *   SECURITY_TENANT_<ID>_CLIENT_SECRET
+ *   SECURITY_TENANT_<ID>_ADMIN_TOKEN
+ *   SECURITY_TENANT_<ID>_GOOGLE_CLIENT_SECRET
+ *
+ * <ID> is the tenant id upper-cased with non-alphanumerics as underscores.
+ * An inline value in the JSON still wins where one is supplied (local dev and
+ * tests), so this is additive.
+ */
+function tenantSecret(id: string, suffix: string): string | undefined {
+  const key = `SECURITY_TENANT_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${suffix}`
+  const v = process.env[key]
+  return v && v.trim() !== '' ? v : undefined
 }
 
 function parseTenants(json: string): AuthentikTenant[] {
@@ -161,12 +200,20 @@ function parseTenants(json: string): AuthentikTenant[] {
       issuerUrl: requireField(t, 'issuerUrl', i),
       baseUrl: (t.baseUrl || '').replace(/\/$/, ''),
       clientId: requireField(t, 'clientId', i),
-      clientSecret: t.clientSecret ?? '',
+      clientSecret: t.clientSecret || tenantSecret(t.id ?? '', 'CLIENT_SECRET') || '',
       redirectUri: requireField(t, 'redirectUri', i),
-      adminToken: t.adminToken ?? '',
+      adminToken: t.adminToken || tenantSecret(t.id ?? '', 'ADMIN_TOKEN') || '',
       enrollmentFlowSlug: requireField(t, 'enrollmentFlowSlug', i),
       appBaseUrl: requireField(t, 'appBaseUrl', i).replace(/\/$/, ''),
       googleBrokered: t.googleBrokered !== false,
+      // Fall back to the platform-wide Google client when the tenant declares
+      // none, so declaring tenants does not silently break social sign-in.
+      googleClientId: t.googleClientId || process.env.GOOGLE_CLIENT_ID || undefined,
+      googleClientSecret:
+        t.googleClientSecret ||
+        tenantSecret(t.id ?? '', 'GOOGLE_CLIENT_SECRET') ||
+        process.env.GOOGLE_CLIENT_SECRET ||
+        undefined,
     } as AuthentikTenant
   })
 

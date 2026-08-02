@@ -13,6 +13,7 @@
  * Provider-internal: Google is named ONLY here and inside the concrete provider.
  * Nothing above the `IdentityProvider` boundary sees a vendor name.
  */
+import { currentTenant } from '../providers/authentik/tenants'
 import { Issuer, Client, generators, custom } from 'openid-client'
 import { logger } from '../lib/logger'
 
@@ -165,4 +166,40 @@ export class GoogleOidcService {
   }
 }
 
+/**
+ * One Google client per tenant, keyed by tenant id.
+ *
+ * A tenant that declares its own googleClientId/Secret gets a client whose
+ * consent screen carries ITS branding; one that declares none falls back to the
+ * platform-wide credentials, which is exactly today's behaviour. The redirect
+ * URI is derived from the tenant's own appBaseUrl, so each tenant's Google
+ * callback lands on its own host — a tenant-specific URI must be registered in
+ * that client's Authorized redirect URIs.
+ */
+const googleByTenant = new Map<string, GoogleOidcService>()
+
+export function getGoogleOidcService(): GoogleOidcService {
+  const tenant = currentTenant('Google OAuth client')
+  let svc = googleByTenant.get(tenant.id)
+  if (!svc) {
+    svc = new GoogleOidcService({
+      clientId: tenant.googleClientId,
+      clientSecret: tenant.googleClientSecret,
+      redirectUri: `${tenant.appBaseUrl.replace(/\/$/, '')}/api/v1/security/social/google/callback`,
+    })
+    googleByTenant.set(tenant.id, svc)
+  }
+  return svc
+}
+
+/** Drop the per-tenant Google clients. Tests only. */
+export function resetGoogleServicesForTests(): void {
+  googleByTenant.clear()
+}
+
+/**
+ * Backwards-compatible alias. Retained because it is injected as a default dep
+ * and mocked by name in tests; production paths should prefer
+ * getGoogleOidcService() so the client follows the request's tenant.
+ */
 export const googleOidcService = new GoogleOidcService()
