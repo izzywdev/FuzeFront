@@ -8,6 +8,7 @@ import {
 import { db } from '../config/database'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
+import { resolvePortalScopeDecision, applyPortalScope } from '../utils/scopeToPortal'
 
 const router = express.Router()
 
@@ -527,6 +528,118 @@ router.delete(
     } catch (error: any) {
       console.error('Error deactivating organization:', error)
       res.status(500).json({ error: 'Failed to deactivate organization' })
+    }
+  }
+)
+
+// GET /api/organizations/:id/members - list an organization's member users
+// (FF-EPIC-11-S2/S6) — a membership-listing READ path, routed through the
+// SAME central `scopeToPortal` helper as routes/users.ts. An org belongs to at
+// most one portal, so this is defense-in-depth against a member row whose
+// user's `home_portal_id` doesn't (or no longer) match the org's own portal —
+// never a raw, unscoped `users` join.
+const DEFAULT_MEMBERS_LIMIT = 50
+const MAX_MEMBERS_LIMIT = 200
+
+function encodeMemberCursor(row: { joined_at: any; membership_id: string }): string {
+  const joinedAt = row.joined_at ? new Date(row.joined_at).toISOString() : ''
+  return Buffer.from(`${joinedAt}|${row.membership_id}`, 'utf8').toString('base64url')
+}
+
+function decodeMemberCursor(cursor: string): { joinedAt: string; membershipId: string } | null {
+  try {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8')
+    const idx = decoded.indexOf('|')
+    if (idx < 0) return null
+    return { joinedAt: decoded.slice(0, idx), membershipId: decoded.slice(idx + 1) }
+  } catch {
+    return null
+  }
+}
+
+router.get(
+  '/:id/members',
+  authenticateToken,
+  PermissionMiddleware.canReadOrganization,
+  async (req: any, res) => {
+    try {
+      const { id } = req.params
+      const rawLimit = req.query.limit ? parseInt(String(req.query.limit), 10) : NaN
+      const limit =
+        Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.min(rawLimit, MAX_MEMBERS_LIMIT)
+          : DEFAULT_MEMBERS_LIMIT
+      const cursor = req.query.cursor ? String(req.query.cursor) : undefined
+
+      // Resolve the decision BEFORE querying so a 'denied' (missing/malformed
+      // portal context) short-circuits without an unscoped fallback query.
+      const decision = await resolvePortalScopeDecision(req)
+      if (decision.mode === 'denied') {
+        return res.status(403).json({
+          error: 'PORTAL_CONTEXT_REQUIRED',
+          message: 'A valid portal context is required to list members.',
+        })
+      }
+
+      let query = db('organization_memberships as om')
+        .join('users as u', 'u.id', 'om.user_id')
+        .select(
+          'om.id as membership_id',
+          'om.role',
+          'om.status',
+          'om.joined_at',
+          'u.id as user_id',
+          'u.email',
+          'u.first_name',
+          'u.last_name',
+          'u.home_portal_id'
+        )
+        .where('om.organization_id', id)
+        .where('om.status', 'active')
+
+      // Portal-scope the JOINED users rows (column lives on the aliased `u`).
+      query = applyPortalScope(query, decision, 'u.home_portal_id')
+
+      if (cursor) {
+        const c = decodeMemberCursor(cursor)
+        if (!c) {
+          return res.status(400).json({ error: 'INVALID_CURSOR', message: 'Malformed cursor.' })
+        }
+        query = query.andWhere(function (this: any) {
+          this.where('om.joined_at', '>', c.joinedAt).orWhere(function (this: any) {
+            this.where('om.joined_at', '=', c.joinedAt).andWhere('om.id', '>', c.membershipId)
+          })
+        })
+      }
+
+      const rows = await query
+        .orderBy('om.joined_at', 'asc')
+        .orderBy('om.id', 'asc')
+        .limit(limit + 1)
+
+      const hasMore = rows.length > limit
+      const page = hasMore ? rows.slice(0, limit) : rows
+      const nextCursor = hasMore ? encodeMemberCursor(page[page.length - 1]) : null
+
+      res.json({
+        items: page.map((row: any) => ({
+          membershipId: row.membership_id,
+          role: row.role,
+          status: row.status,
+          joinedAt: row.joined_at ? new Date(row.joined_at).toISOString() : null,
+          user: {
+            id: row.user_id,
+            email: row.email,
+            firstName: row.first_name ?? null,
+            lastName: row.last_name ?? null,
+            homePortalId: row.home_portal_id ?? null,
+          },
+        })),
+        page: { nextCursor, hasMore },
+      })
+    } catch (error: any) {
+      console.error('Error listing organization members:', error)
+      res.status(500).json({ error: 'Failed to list organization members' })
     }
   }
 )

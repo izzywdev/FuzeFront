@@ -58,7 +58,10 @@ export const authenticateToken = async (
         'first_name',
         'last_name',
         'default_app_id',
-        'roles'
+        'roles',
+        // FF-EPIC-11-S1 — the caller's own home portal, surfaced on req.user so
+        // downstream reads (e.g. the caller's own profile) never re-derive it.
+        'home_portal_id'
       )
       .where('id', decoded.userId)
       .first()
@@ -85,6 +88,7 @@ export const authenticateToken = async (
       roles: Array.isArray(userRow.roles)
         ? userRow.roles
         : JSON.parse(userRow.roles || '["user"]'),
+      homePortalId: userRow.home_portal_id ?? null,
     }
 
     // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied
