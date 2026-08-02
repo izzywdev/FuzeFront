@@ -272,6 +272,21 @@ securityService:
   googleBrokered: "false"
   # Browser-facing Google callback URL. Dev default here; prod overrides in values-prod.
   googleRedirectUri: "https://auth-dev.fuzefront.com/api/v1/security/social/google/callback"
+  # Ingress NetworkPolicy for fuzefront-security (port 3002). Default ON
+  # (unlike authentik.networkPolicy) because the whole point is to pre-empt a
+  # future default-deny in this namespace breaking mendys-prod's session/authz
+  # calls (FuzeInfra#339). See templates/security-networkpolicy.yaml for why
+  # this enumerates Traefik + intra-namespace alongside the mendys-prod rule.
+  networkPolicy:
+    enabled: true
+    port: 3002
+    # Namespace where Traefik (k3s ingress) runs — source of the
+    # /api/v1/security, /api/auth, /api/organizations, /api/internal
+    # reverse-proxy path (ingress.yaml routes directly to this Service).
+    ingressControllerNamespace: kube-system
+    # mendys-prod's datasets-service authenticates against this Service
+    # in-cluster (session verify + authz check/grants). Issue: FuzeFront#493.
+    mendysProdNamespace: mendys-prod
 
 applicationsService:
   enabled: false
