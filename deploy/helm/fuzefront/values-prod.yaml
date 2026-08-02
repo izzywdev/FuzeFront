@@ -478,6 +478,13 @@ chatService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
     tag: 6568010a0e1c
+  # #499: dedicated database so chat's knex migration ledger never collides
+  # with the backend's `fuzefront_platform` knex_migrations rows (this is the
+  # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
+  # Argo app Degraded/OutOfSync). Same value as the values.yaml default —
+  # listed explicitly here since this is the values file prod actually syncs
+  # from. See values.yaml chatService.dbName for the full rationale.
+  dbName: fuzefront_chat
   affinity:
     nodeAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
