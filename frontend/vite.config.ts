@@ -13,6 +13,14 @@ import { VitePWA } from 'vite-plugin-pwa'
 const identityUiSrc = fileURLToPath(
   new URL('../packages/identity-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) is an unpublished
+// file: workspace package whose dist/ is not built in CI — resolve from
+// SOURCE for bundling, same as identity-ui. frontend/tsconfig.json still
+// resolves it to its built dist/index.d.ts for the type-check (see ci.yml),
+// since it is TSX and imports @fuzefront/design-system.
+const authUiSrc = fileURLToPath(
+  new URL('../packages/auth-ui/src/index.ts', import.meta.url)
+)
 const designSystemSrc = fileURLToPath(
   new URL('../design-system/index.js', import.meta.url)
 )
@@ -98,6 +106,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
       '@fuzefront/i18n': i18nSrc,
       // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.

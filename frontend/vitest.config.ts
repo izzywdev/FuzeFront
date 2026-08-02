@@ -6,6 +6,12 @@ import react from '@vitejs/plugin-react'
 const identityUiSrc = fileURLToPath(
   new URL('../packages/identity-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/auth-ui (AuthPanel) — resolve from SOURCE, mirroring vite.config.ts.
+// Without this, LoginPage.test.tsx (which imports LoginPage -> @fuzefront/auth-ui)
+// fails to resolve, since the package's dist/ is not built in this test run.
+const authUiSrc = fileURLToPath(
+  new URL('../packages/auth-ui/src/index.ts', import.meta.url)
+)
 const designSystemSrc = fileURLToPath(
   new URL('../design-system/index.js', import.meta.url)
 )
@@ -86,6 +92,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/i18n': i18nSrc,
       '@fuzefront/design-system': designSystemSrc,
       // billing-ui + billing-client are resolved from SOURCE (unpublished file:
