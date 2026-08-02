@@ -1,0 +1,49 @@
+name: Onboarding kit tests
+
+# @fuzefront/onboarding-kit is what every consuming product copies into
+# registration/ — its register.sh submits the product's AuthZ policy, and its
+# validate-policy.mjs is the check products run in their own CI. A regression here
+# ships to every product in the family, so it gets its own gate rather than riding
+# along in the monolithic CI job.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/onboarding-kit/**'
+      - '.github/workflows/onboarding-kit-tests.yml'
+  pull_request:
+    paths:
+      - 'packages/onboarding-kit/**'
+      - '.github/workflows/onboarding-kit-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: kit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/onboarding-kit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      # Zero runtime dependencies by design — the kit runs inside a product's init
+      # container, where an npm install is not available.
+      - name: Policy validator
+        run: node --test tests/validate-policy.test.mjs
+
+      - name: register.sh behaviour (fake registry)
+        run: sh tests/register.test.sh
+
+      - name: Manifest schema is not stale
+        run: node scripts/build-schema.mjs --check
+
+      # Every template the kit hands out must itself pass the validator, or the
+      # first thing a product copies is already broken.
+      - name: Templates validate
+        run: node bin/validate-policy.mjs templates/policy.json

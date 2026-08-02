@@ -10,10 +10,12 @@
     "README.md"
   ],
   "bin": {
-    "fuzefront-register": "bin/register.sh"
+    "fuzefront-register": "bin/register.sh",
+    "fuzefront-validate-policy": "bin/validate-policy.mjs"
   },
   "scripts": {
-    "test": "sh tests/register.test.sh",
+    "test": "node --test tests/validate-policy.test.mjs && sh tests/register.test.sh",
+    "test:policy": "node --test tests/validate-policy.test.mjs",
     "lint": "shellcheck bin/register.sh"
   },
   "publishConfig": {
