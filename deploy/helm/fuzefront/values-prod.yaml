@@ -487,6 +487,20 @@ chatService:
                 operator: In
                 values: ["fuzefront-node-2"]
 
+notificationService:
+  # The tag: line MUST stay immediately after repository: — release.yml's GitOps
+  # bump step only rewrites a tag: found on the line directly following a matched
+  # repository: anchor. Seeded empty; the first successful release build writes
+  # a real SHA here.
+  #
+  # notificationService.enabled is still false (see values.yaml). Flip it on
+  # together with secret.notificationInternalToken once a producer service is
+  # ready to publish — the inbox and bell work without the token, but the
+  # /internal/publish fan-out stays disabled until it is set.
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-notification-service
+    tag: ""
+
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +
 # deploy/argocd/applications/unleash.yaml. It is independently-lifecycled

@@ -11,6 +11,7 @@ import {
   type App,
   type RegisterAppRequest,
 } from '@fuzefront/app-registry-client'
+import { getActiveAuthToken } from '../lib/accounts'
 
 /**
  * Centralized binding of the frozen `@fuzefront/app-registry-client` to a
@@ -47,11 +48,9 @@ const AppRegistryContext = createContext<AppRegistryContextValue | undefined>(
 )
 
 function readAuthToken(): string | undefined {
-  try {
-    return localStorage.getItem('authToken') ?? undefined
-  } catch {
-    return undefined
-  }
+  // Via the account vault's single resolver — a direct localStorage read would
+  // attach whichever account wrote the bare key last (lib/accounts.ts rule 2).
+  return getActiveAuthToken() ?? undefined
 }
 
 export function AppRegistryProvider({

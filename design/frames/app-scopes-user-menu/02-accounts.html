@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parallel accounts — Frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-10) var(--space-8) var(--space-16); }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 68ch; }
+  .notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); max-width: 78ch; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes li { margin-bottom: var(--space-2); }
+  h2.sec { font-family: var(--font-display); font-size: var(--text-lg); margin: var(--space-10) 0 var(--space-4); }
+  table.keys { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  table.keys th, table.keys td { text-align: left; padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-color); }
+  table.keys th { font-family: var(--font-mono); font-size: var(--text-2xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
+  table.keys code { font-family: var(--font-mono); color: var(--cyan-400); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="02-accounts">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame (b)</div>
+  <h1>Parallel accounts, and what happens at the cap</h1>
+  <p class="lead">Up to <code>MAX_PARALLEL_ACCOUNTS = 5</code> accounts stay signed in on one browser.
+    Each browser tab is pinned to one account, so two accounts can be used side by side. These are
+    the states the accounts section actually has — not just the happy two-account case.</p>
+
+  <div class="ffs-grid">
+
+    <div class="ffs-case" data-case="cap-reached">
+      <div class="ffs-case__label">At the cap — 5 / 5</div>
+      <div class="ffm-panel" style="width: auto;">
+        <div class="ffm-section" data-section="accounts" style="border-top: 0;">
+          <div class="ffm-section__label">
+            <span>Accounts</span><span class="ffm-section__count" data-account-count>5 / 5</span>
+          </div>
+          <button class="ffm-row" role="menuitemradio" aria-checked="true" data-account="acct-ada">
+            <span class="ffm-avatar">AR</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Ada Rivera</span>
+              <span class="ffm-row__sub">ada@rivera.dev</span></span>
+            <span class="ffm-row__check" aria-hidden="true">✓</span>
+          </button>
+          <button class="ffm-row" role="menuitemradio" aria-checked="false" data-account="acct-consult">
+            <span class="ffm-avatar">AC</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Ada (Consulting)</span>
+              <span class="ffm-row__sub">ada@northwind-consulting.com</span></span>
+          </button>
+          <button class="ffm-row" role="menuitemradio" aria-checked="false" data-account="acct-support">
+            <span class="ffm-avatar">SB</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Support Bot</span>
+              <span class="ffm-row__sub">support@northwind.example</span></span>
+          </button>
+          <button class="ffm-row" role="menuitemradio" aria-checked="false" data-account="acct-qa">
+            <span class="ffm-avatar">QA</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">QA Runner</span>
+              <span class="ffm-row__sub">qa@northwind.example</span></span>
+          </button>
+          <button class="ffm-row" role="menuitemradio" aria-checked="false" data-account="acct-demo">
+            <span class="ffm-avatar">DM</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Demo Tenant</span>
+              <span class="ffm-row__sub">demo@northwind.example</span></span>
+          </button>
+          <button class="ffm-row ffm-row--disabled" role="menuitem" disabled
+                  data-action="add-account" data-guard="max-accounts">
+            <span class="ffm-avatar" aria-hidden="true">＋</span>
+            <span class="ffm-row__main">
+              <span class="ffm-row__title">Add account</span>
+              <span class="ffm-row__sub">Limit of 5 reached — sign out of one first</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <p class="ffs-case__note">Fail-closed: the control is disabled and explains itself, rather than
+        accepting the sign-in and silently evicting an account.</p>
+    </div>
+
+    <div class="ffs-case" data-case="switching">
+      <div class="ffs-case__label">Switching — full teardown</div>
+      <div class="ffm-panel" style="width: auto;">
+        <div class="ffm-section" style="border-top: 0;" data-state="switching">
+          <div class="ffm-section__label"><span>Accounts</span></div>
+          <div style="padding: var(--space-4) var(--space-3); display: flex; gap: var(--space-3); align-items: center;">
+            <span class="ffm-avatar">AC</span>
+            <div style="flex: 1;">
+              <div class="ffs-skel" style="width: 70%;"></div>
+              <div class="ffs-skel" style="width: 45%; margin-top: var(--space-2);"></div>
+            </div>
+          </div>
+          <p class="ffm-note" data-switch-message>Switching to <b>Ada (Consulting)</b>…</p>
+        </div>
+      </div>
+      <p class="ffs-case__note">A switch is a full document reload, not a state update. React state,
+        the app-registry cache, the flag cache, mounted federated remotes and any open stream all die
+        with the document — nothing survives to be read under the wrong identity.</p>
+    </div>
+
+    <div class="ffs-case" data-case="per-account-signout">
+      <div class="ffs-case__label">Sign out of one account</div>
+      <div class="ffm-panel" style="width: auto;">
+        <div class="ffm-section" style="border-top: 0;">
+          <div class="ffm-section__label"><span>Accounts</span></div>
+          <div class="ffm-row" aria-checked="false" data-account="acct-support" data-row-expanded="true">
+            <span class="ffm-avatar">SB</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Support Bot</span>
+              <span class="ffm-row__sub">support@northwind.example</span></span>
+            <button class="ffn-link" data-action="sign-out-account" data-account-id="acct-support">Sign out</button>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">Each row carries its own sign-out. Removing an account revokes its
+        session server-side and erases its entire storage namespace — token, session id, cached user,
+        and its active-organization choice.</p>
+    </div>
+
+    <div class="ffs-case" data-case="expired-account">
+      <div class="ffs-case__label">A parked account's session expired</div>
+      <div class="ffm-panel" style="width: auto;">
+        <div class="ffm-section" style="border-top: 0;">
+          <div class="ffm-section__label"><span>Accounts</span></div>
+          <button class="ffm-row" role="menuitemradio" aria-checked="false"
+                  data-account="acct-demo" data-account-state="expired">
+            <span class="ffm-avatar">DM</span>
+            <span class="ffm-row__main"><span class="ffm-row__title">Demo Tenant</span>
+              <span class="ffm-row__sub">Session expired — sign in again</span></span>
+          </button>
+        </div>
+        <div class="ffs-callout ffs-callout--warning" style="margin: var(--space-3);">
+          Selecting an expired account routes to sign-in for that email; it does not silently drop
+          the account or borrow another account's token.
+        </div>
+      </div>
+      <p class="ffs-case__note">A parked account can expire while another is in use. The roster keeps
+        the entry so the user is told what happened.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Storage namespaces — the isolation contract</h2>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Store</th><th>Scope</th></tr></thead>
+    <tbody>
+      <tr><td><code>ff.accounts</code></td><td>localStorage</td><td>Roster: id, email, display name, added-at. No tokens.</td></tr>
+      <tr><td><code>ff.activeAccountId</code></td><td>localStorage</td><td>Browser-wide default for a new tab.</td></tr>
+      <tr><td><code>ff.activeAccountId</code></td><td>sessionStorage</td><td><b>Per tab.</b> Wins over the default — this is what makes accounts parallel.</td></tr>
+      <tr><td><code>ff.acct.&lt;id&gt;.authToken</code></td><td>localStorage</td><td>Per account.</td></tr>
+      <tr><td><code>ff.acct.&lt;id&gt;.sessionId</code></td><td>localStorage</td><td>Per account.</td></tr>
+      <tr><td><code>ff.acct.&lt;id&gt;.user</code></td><td>localStorage</td><td>Per account.</td></tr>
+      <tr><td><code>ff.acct.&lt;id&gt;.activeOrganizationId</code></td><td>localStorage</td><td>Per account — org choice never crosses accounts.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <ul>
+      <li>Exactly one resolver returns the active token. The axios interceptor, the federated-app
+        loader, the chat widget, the flags client and the account-security page all read through it,
+        so a token can never be read for a non-active account.</li>
+      <li>Legacy unnamespaced <code>authToken</code>/<code>sessionId</code>/<code>user</code>/
+        <code>ff.activeOrganizationId</code> keys are migrated into the active namespace on first
+        load and then deleted, so a stale global key cannot shadow a namespaced one.</li>
+      <li><b>Stated limit:</b> same-origin isolation is a storage and lifecycle boundary, not a
+        browser security boundary. Anything with script execution on the origin can read every
+        namespace, exactly as it could read a single account's token today. This design bounds
+        accidental leakage — stale caches, the wrong token on a request, one account's org list
+        rendering under another — and does not claim to bound a compromised origin.</li>
+    </ul>
+    Test hooks: <code>[data-case]</code> · <code>[data-account-count]</code> ·
+    <code>[data-guard='max-accounts']</code> · <code>[data-action='sign-out-account']</code> ·
+    <code>[data-account-state='expired']</code> · <code>[data-state='switching']</code>.
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption"><b>Frame (b)</b> — parallel accounts &amp; isolation</span>
+  <a href="03-install-scope.html" class="btn btn-primary">Next: install scope →</a>
+</div>
+</body>
+</html>

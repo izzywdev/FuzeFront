@@ -8,6 +8,8 @@ import dotenv from 'dotenv'
 // Import routes
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
+import appInstallationsRoutes from './routes/app-installations'
+import notificationProxyRoutes from './routes/notifications'
 import organizationsRoutes from './routes/organizations'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
@@ -292,6 +294,10 @@ try {
 
 // Routes
 app.use('/api/auth', authRoutes)
+// Installation routes mount FIRST so `/installed` and `/:id/install*` resolve
+// before appsRoutes' own handlers. Express falls through to appsRoutes for
+// every path this router does not define.
+app.use('/api/apps', appInstallationsRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
@@ -308,6 +314,11 @@ app.use('/api/v1/billing', billingRoutes)
 // proxy to the applications-service (routes/app-registry). Mount adapter first so CI
 // env (no applications-service) is served from the local DB, then the proxy handles
 // any requests the adapter passes through via next().
+// Same-origin proxy to the notification-service. The shell's bell talks to
+// /api/v1/notifications/*; this forwards it in-cluster. The service's
+// /internal/* publish surface is blocked here — see routes/notifications.ts.
+app.use('/api/v1/notifications', notificationProxyRoutes)
+
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
 // ingress `/api` catch-all + frontend nginx both route the manifest-shaped

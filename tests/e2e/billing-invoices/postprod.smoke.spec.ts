@@ -60,8 +60,22 @@ async function signIn(page: Page): Promise<void> {
   expect(token, 'platform JWT returned from sign-in').toBeTruthy()
 
   // Seed the token before any app code runs, then load the app authenticated.
+  //
+  // Writes the shell's ACCOUNT VAULT key, not the bare `authToken`. The shell
+  // namespaces every per-account value under `ff.acct.<accountId>.<key>`
+  // (frontend/src/lib/accounts.ts), and the provisional namespace is where a
+  // first sign-in parks its token until `/session` names the account — exactly
+  // this situation. A bare `authToken` would still boot today, but only via the
+  // vault's ONE-TIME legacy migration; a post-production synthetic must not
+  // depend on an upgrade path, or it goes quietly red against prod the day that
+  // migration is retired.
+  //
+  // The literal is duplicated rather than imported because this Playwright
+  // project sits outside `frontend/` and must not reach into the shell's source
+  // tree; frontend/tests/support/account-vault.ts pins the same format for the
+  // specs that can import it.
   await page.addInitScript((jwt) => {
-    window.localStorage.setItem('authToken', jwt as string)
+    window.localStorage.setItem('ff.acct.__provisional__.authToken', jwt as string)
   }, token)
 }
 

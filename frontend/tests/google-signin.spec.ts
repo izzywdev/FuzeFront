@@ -28,6 +28,7 @@
  */
 
 import { test, expect } from '@playwright/test'
+import { readActiveAuthToken } from './support/account-vault'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -182,12 +183,14 @@ test.describe('OIDC / Google Sign-In — pre-production E2E', () => {
     await page.goto('/?code=abc123def456abc123def456abc123de')
 
     // The exchange token should be stored in localStorage.
+    // The exchanged session lands in the account vault, in the provisional
+    // namespace until /session names the account.
     await page.waitForFunction(
-      () => localStorage.getItem('authToken') === 'e2e-test-jwt',
+      () => localStorage.getItem('ff.acct.__provisional__.authToken') === 'e2e-test-jwt',
       { timeout: 8000 }
     )
 
-    const storedToken = await page.evaluate(() => localStorage.getItem('authToken'))
+    const storedToken = await page.evaluate(readActiveAuthToken)
     expect(storedToken).toBe('e2e-test-jwt')
 
     // The app should navigate away from the login page to /dashboard.

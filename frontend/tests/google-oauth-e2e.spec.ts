@@ -15,6 +15,7 @@
  * CI: google-oauth-e2e.yml starts the stack, then runs this file.
  */
 import { test, expect, Page } from '@playwright/test'
+import { readActiveAuthToken } from './support/account-vault'
 
 const TUNNEL_HOSTNAME = process.env.TUNNEL_HOSTNAME ?? 'auth-dev.fuzefront.com'
 const GOOGLE_TEST_EMAIL = process.env.GOOGLE_TEST_EMAIL ?? ''
@@ -81,7 +82,7 @@ test.describe('Google Sign-In E2E — full stack', () => {
     await page.waitForURL('http://localhost:4173/dashboard', { timeout: 15_000 })
 
     // Verify a real JWT was stored (not a mock)
-    const authToken = await page.evaluate(() => localStorage.getItem('authToken'))
+    const authToken = await page.evaluate(readActiveAuthToken)
     expect(authToken).toBeTruthy()
     expect(authToken!.split('.').length).toBe(3) // JWT has 3 dot-separated parts
   })

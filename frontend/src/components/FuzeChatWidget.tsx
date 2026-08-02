@@ -3,6 +3,7 @@ import { ChatServiceClient } from '@fuzefront/chat-client'
 import { ChatWidget } from '@fuzefront/chat-ui'
 import '@fuzefront/chat-ui/styles.css'
 import { useOrganizations } from '../lib/shared'
+import { getActiveAuthToken } from '../lib/accounts'
 
 // Chat-service base URL. Same-origin by default: the in-pod / ingress nginx
 // proxies /chat-api/ -> fuzefront-chat-service:3006/ (see frontend/nginx.conf),
@@ -27,7 +28,7 @@ export function FuzeChatWidget() {
     () =>
       new ChatServiceClient({
         baseUrl: CHAT_BASE_URL,
-        getToken: () => localStorage.getItem('authToken'),
+        getToken: () => getActiveAuthToken(),
       }),
     [],
   )

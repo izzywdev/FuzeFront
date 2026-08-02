@@ -8,6 +8,7 @@ import {
   __federation_method_getRemote,
   __federation_method_unwrapDefault,
 } from 'virtual:__federation__'
+import { getActiveAuthToken } from '../lib/accounts'
 
 interface LoadedModule {
   default: React.ComponentType<any>
@@ -220,10 +221,7 @@ export async function loadApp(appId: string): Promise<LoadedModule> {
   try {
     // Fetch app metadata from the registry. /api/apps requires auth, so send the
     // stored token — a raw fetch without it gets a 401 and breaks app loading.
-    const token =
-      typeof localStorage !== 'undefined'
-        ? localStorage.getItem('authToken')
-        : null
+    const token = getActiveAuthToken()
     const response = await fetch(
       `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apps`,
       token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
