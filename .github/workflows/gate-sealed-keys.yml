@@ -1,0 +1,39 @@
+name: gate-sealed-keys
+
+# Fails a PR that DROPS a previously-sealed key from any deploy/contabo/sealed/*.yaml
+# SealedSecret. This is the guard that was missing when a from-scratch re-seal
+# (50b01ab) silently dropped SMTP_USER/SMTP_PASS and wedged prod email (#500).
+#
+# Runs on every PR (no path filter) so it is safe to add to the branch ruleset's
+# required checks: when a PR touches no sealed files, it passes in seconds.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gate-sealed-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for base comparison)
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608  # v5
+        with:
+          fetch-depth: 0
+
+      - name: Check for SealedSecret key regressions
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --quiet
+          ALLOW=0
+          if echo "$LABELS" | grep -q '"allow-secret-key-removal"'; then
+            ALLOW=1
+            echo "Label 'allow-secret-key-removal' present — intentional removals permitted."
+          fi
+          ALLOW_SEALED_KEY_REMOVAL=$ALLOW \
+            bash deploy/scripts/check-sealed-key-regression.sh "origin/$BASE_REF"
