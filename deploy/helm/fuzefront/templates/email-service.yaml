@@ -59,7 +59,7 @@ spec:
             - name: SMTP_SECURE
               value: {{ $smtp.secure | default false | quote }}
             # Credentials come from the SealedSecret and are NEVER in values.
-            # Hard refs (no `optional`) — an authenticated relay like Zoho rejects
+            # Hard refs (no `optional`) — an authenticated relay like ZeptoMail rejects
             # anonymous mail, so a missing credential must CrashLoop the pod at
             # start, loudly, rather than degrade into dropping mail at runtime.
             - name: SMTP_USER

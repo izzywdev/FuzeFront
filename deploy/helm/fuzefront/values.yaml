@@ -425,7 +425,7 @@ emailService:
     # every message is dropped. That is exactly how signup email-verification and
     # password-reset sat live-dead in prod.
     smtp:
-      host: ""          # e.g. smtp.zoho.com — empty = dev mailhog fallback
+      host: ""          # e.g. smtp.zeptomail.com — empty = dev mailhog fallback
       port: 587
       secure: false     # true for implicit TLS (465); false for STARTTLS (587)
   resources:

@@ -141,11 +141,12 @@ emailService:
       # password reset have both been live-dead in prod: pod healthy, /health
       # green, zero delivery.
       #
-      # Set this to the real relay (Zoho: smtp.zoho.com) ONLY once the owner has
-      # sealed SMTP_USER + SMTP_PASS — the chart mounts them as HARD secretKeyRefs
-      # on this path, so setting a host without sealing them CrashLoops the pod at
-      # start (loud) instead of dropping mail at runtime (silent). That trade is
-      # deliberate. See deploy/contabo/SEAL_PROD_SECRETS.md.
+      # Real relay = ZeptoMail. This host is SET, which mounts SMTP_USER/SMTP_PASS
+      # as HARD secretKeyRefs on this path — so those two keys MUST be sealed into
+      # fuzefront-secrets or the pod wedges in CreateContainerConfigError (loud)
+      # instead of dropping mail at runtime (silent). That trade is deliberate.
+      # (Setting this host before the keys were sealed is exactly what wedged the
+      # rollout in issue #500.) See deploy/contabo/SEAL_PROD_SECRETS.md.
       host: "smtp.zeptomail.com"
       port: 587
       secure: false   # STARTTLS on 587; true for implicit TLS on 465
