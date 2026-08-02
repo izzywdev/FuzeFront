@@ -30,7 +30,7 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "18.19.0",
+    "@types/node": "^24.13.3",
     "openapi-typescript": "^7.4.0",
     "tsup": "^8.0.2",
     "typescript": "5.1.6"

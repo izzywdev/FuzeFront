@@ -32,4 +32,4 @@ export interface TabsProps
   ariaLabel?: string;
 }
 
-export function Tabs(props: TabsProps): JSX.Element;
+export function Tabs(props: TabsProps): React.JSX.Element;

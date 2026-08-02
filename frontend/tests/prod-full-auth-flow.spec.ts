@@ -40,6 +40,7 @@
  *   AUTHN_SIGNUP_EMAIL     fresh email for T1 (optional; a random one is used otherwise)
  */
 import { test, expect, type Page, type Request } from '@playwright/test'
+import { readActiveAuthToken } from './support/account-vault'
 
 // ── The forbidden internal host. The whole boundary guarantee is "this string
 //    never appears as a browser destination". Kept as a single constant so the
@@ -193,7 +194,7 @@ test.describe('AuthN full flow + provider boundary (pre-prod gate)', () => {
     ).toEqual([])
 
     // A real JWT/session was established.
-    const token = await page.evaluate(() => localStorage.getItem('authToken'))
+    const token = await page.evaluate(readActiveAuthToken)
     expect(token, 'session token stored after Google login').toBeTruthy()
   })
 

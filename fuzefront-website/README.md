@@ -19,7 +19,7 @@ The official corporate website for FuzeFront, built with React, Node.js, and dep
 ## 🛠️ Tech Stack
 
 ### Frontend
-- React 18 with TypeScript
+- React 19 with TypeScript
 - Vite for fast development and building
 - Tailwind CSS for styling
 - Framer Motion for animations
@@ -46,7 +46,7 @@ The official corporate website for FuzeFront, built with React, Node.js, and dep
 ## 🏗️ Development Setup
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 24+ (Active LTS)
 - Docker and Docker Compose
 - AWS CLI (for deployment)
 - Terraform (for infrastructure)

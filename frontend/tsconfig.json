@@ -19,6 +19,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@fuzefront/identity-ui": ["../packages/identity-ui/dist/index.d.ts"],
+      "@fuzefront/auth-ui": ["../packages/auth-ui/dist/index.d.ts"],
       "@fuzefront/account-security-ui": ["../packages/account-security-ui/src/index.ts"],
       "@fuzefront/i18n": ["../packages/i18n/dist/index.d.ts"],
       "@fuzefront/chat-ui": ["../packages/chat-ui/dist/index.d.ts"],
@@ -27,6 +28,8 @@
       "@fuzefront/billing-client": ["../billing-client/src/index.ts"],
       "@fuzefront/app-registry-client": ["../apps-client/src/index.ts"],
       "@fuzefront/security-client": ["../packages/security/src/index.ts"],
+      "@fuzefront/portal-branding-ui": ["../packages/portal-branding-ui/src/index.ts"],
+      "@fuzefront/portal-client": ["../portal-client/src/index.ts"],
       "@fuzefront/design-system": ["../design-system/index.d.ts"]
     }
   },

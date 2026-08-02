@@ -1,3 +1,4 @@
+import { currentTenant, currentTenantOrUndefined } from '../providers/authentik/tenants'
 import crypto from 'crypto'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
@@ -7,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
-import { oidcService } from '../services/oidc'
+import { getOidcService } from '../services/oidc'
 import {
   authentikPasswordLogin,
   InvalidCredentialsError,
@@ -365,27 +366,27 @@ router.get('/oidc/login', async (req, res) => {
   console.log('🔐 OIDC login request received', {
     requestId,
     referer: req.get('Referer'),
-    configured: oidcService.isConfigured?.(),
-    initialized: oidcService.isInitialized?.(),
-    issuerUrl: process.env.AUTHENTIK_ISSUER_URL,
-    redirectUri: process.env.AUTHENTIK_REDIRECT_URI,
+    configured: getOidcService().isConfigured?.(),
+    initialized: getOidcService().isInitialized?.(),
+    issuerUrl: currentTenantOrUndefined()?.issuerUrl,
+    redirectUri: currentTenantOrUndefined()?.redirectUri,
     frontendBase: FRONTEND_BASE,
   })
 
   try {
-    if (!oidcService.isConfigured()) {
+    if (!getOidcService().isConfigured()) {
       console.log(`❌ [${requestId}] OIDC not configured`)
       return res.status(500).json({ 
         error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.' 
       })
     }
 
-    if (!oidcService.isInitialized()) {
-      await oidcService.ensureInitialized()
+    if (!getOidcService().isInitialized()) {
+      await getOidcService().ensureInitialized()
     }
 
     const state = uuidv4()
-    const { url, codeVerifier } = oidcService.generateAuthUrl(state)
+    const { url, codeVerifier } = getOidcService().generateAuthUrl(state)
 
     console.log(`🔗 [${requestId}] Redirecting to Authentik:`, url)
     // Persist BOTH the CSRF state and the PKCE code_verifier in HttpOnly cookies
@@ -433,24 +434,24 @@ const signupRedirectRateLimiter = rateLimit({
 router.get('/oidc/signup', signupRedirectRateLimiter, async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   try {
-    if (!oidcService.isConfigured()) {
+    if (!getOidcService().isConfigured()) {
       console.log('❌ OIDC not configured (signup)', { requestId })
       return res.status(500).json({
         error: 'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
       })
     }
 
-    if (!oidcService.isInitialized()) {
-      await oidcService.ensureInitialized()
+    if (!getOidcService().isInitialized()) {
+      await getOidcService().ensureInitialized()
     }
 
     const state = uuidv4()
-    const { url, codeVerifier } = oidcService.generateAuthUrl(state)
+    const { url, codeVerifier } = getOidcService().generateAuthUrl(state)
     // Wrap the authorize URL (same Authentik origin) in the enrollment flow's
     // ?next= — Authentik redirects there after the flow's user-login stage.
     const authorize = new URL(url)
     const enrollSlug =
-      process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+      currentTenant('enrollmentFlowSlug').enrollmentFlowSlug
     const enrollUrl = `${authorize.origin}/if/flow/${encodeURIComponent(enrollSlug)}/?next=${encodeURIComponent(`${authorize.pathname}${authorize.search}`)}`
 
     console.log('🔗 Redirecting to Authentik enrollment', { requestId, enrollUrl })
@@ -524,14 +525,14 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
   console.log('🔐 Authentik password login request', {
     requestId,
     hasEmail: !!email,
-    configured: oidcService.isConfigured?.(),
-    initialized: oidcService.isInitialized?.(),
+    configured: getOidcService().isConfigured?.(),
+    initialized: getOidcService().isInitialized?.(),
   })
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' })
   }
-  if (!oidcService.isConfigured()) {
+  if (!getOidcService().isConfigured()) {
     return res.status(503).json({
       error:
         'OIDC authentication not configured. Please set AUTHENTIK_CLIENT_ID and AUTHENTIK_CLIENT_SECRET.',
@@ -542,12 +543,12 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
     // Lazy re-init mirrors the monolith and /oidc/login: Authentik may not
     // have been ready when this replica booted — self-heal here instead of
     // 503ing until an SSO request happens to re-initialize the client.
-    if (!oidcService.isInitialized()) {
+    if (!getOidcService().isInitialized()) {
       try {
         // ensureInitialized() dedupes concurrent callers onto one in-flight
         // attempt and fails fast during the post-failure cooldown, instead
         // of firing a fresh discovery call per request.
-        await oidcService.ensureInitialized()
+        await getOidcService().ensureInitialized()
       } catch (initErr) {
         console.error('❌ OIDC lazy init failed', JSON.stringify({ requestId, message: (initErr as Error).message?.replace(/[\r\n]+/g, ' ') }))
         return res
@@ -698,7 +699,7 @@ router.get('/oidc/callback', async (req, res) => {
     }
 
     // Handle the callback and get user (PKCE verifier from the cookie)
-    const user = await oidcService.handleCallback(code as string, state as string, codeVerifier)
+    const user = await getOidcService().handleCallback(code as string, state as string, codeVerifier)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
     // Create session id first so it can be embedded in the token
@@ -768,7 +769,7 @@ router.get('/oidc/callback', async (req, res) => {
  *                   type: string
  */
 router.get('/method', (req, res) => {
-  const oidcConfigured = oidcService.isConfigured()
+  const oidcConfigured = getOidcService().isConfigured()
   
   const methods = ['local'] // Always support local auth
   if (oidcConfigured) {

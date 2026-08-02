@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { hasActiveSession } from './support/account-vault'
 
 // Credentials come from the environment so this spec can run against the FULL
 // stack, where the account must exist in the identity provider. Sign-in is
@@ -45,8 +46,10 @@ test.describe('Authentication - Simple', () => {
     await page.waitForLoadState('domcontentloaded')
     await page.waitForTimeout(3000)
 
-    // Verify authentication token is set
-    const hasToken = await page.evaluate(() => !!localStorage.getItem('authToken'))
+    // Verify a session exists for the ACTIVE account. Resolved through the
+    // account vault (src/lib/accounts.ts) — the bare `authToken` key is gone by
+    // design, and a spec asserting on it would pass only if isolation broke.
+    const hasToken = await page.evaluate(hasActiveSession)
     expect(hasToken).toBeTruthy()
 
     // Verify we're no longer on login page

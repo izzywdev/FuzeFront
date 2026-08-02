@@ -44,6 +44,7 @@ jobs:
     permissions:
       contents: write # commit the tag bump
       packages: write # push to GHCR
+      actions: write # dispatch prod-post-deploy.yml (see the final step)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -204,6 +205,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push notification-service
+        # Root build context: the Dockerfile runs `npm ci --workspace=
+        # services/notification-service`, so it needs the root package.json and
+        # lockfile — not just services/notification-service/.
+        #
+        # continue-on-error matches the other auxiliary services, and the `id`
+        # is what lets the bump step below gate on the real outcome instead of
+        # pinning a tag for an image that was never pushed.
+        id: notification_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: services/notification-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-notification-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-notification-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push clock-app (built-in MF remote)
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
@@ -249,8 +271,14 @@ jobs:
           # The expected-rewrite count moves with it so the guard stays exact.
           CHAT_OK=0
           if [ "${{ steps.chat_image.outcome }}" = "success" ]; then CHAT_OK=1; fi
-          EXPECTED=$((7 + CHAT_OK))
-          echo "chat-service image built: ${CHAT_OK} — expecting ${EXPECTED} tag rewrites"
+          # Same treatment for notification-service: continue-on-error, so only
+          # bump its tag when the image actually got pushed.
+          NOTIF_OK=0
+          if [ "${{ steps.notification_image.outcome }}" = "success" ]; then NOTIF_OK=1; fi
+          # 9 always-built images (incl. billing-service + provisioning-service,
+          # added in #442) plus the two continue-on-error ones.
+          EXPECTED=$((9 + CHAT_OK + NOTIF_OK))
+          echo "chat-service image built: ${CHAT_OK}, notification-service: ${NOTIF_OK} — expecting ${EXPECTED} tag rewrites"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
           chmod 600 ~/.ssh/release_bump
@@ -280,7 +308,7 @@ jobs:
           # manually restored LF. Rewritten tag lines preserve the line's
           # original ending so a CRLF file round-trips without a spurious
           # whole-file diff.
-          awk -v sha="$SHA" -v chat="$CHAT_OK" '
+          awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -297,7 +325,10 @@ jobs:
             /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-billing-service\r?$/ { hot=1 }
+            /repository: ghcr\.io\/izzywdev\/fuzefront-provisioning-service\r?$/ { hot=1 }
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
+            notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
@@ -305,8 +336,20 @@ jobs:
           # values, reordered keys, renamed registry path) the awk matches
           # nothing and we would otherwise "succeed" while deploying stale
           # tags (review finding). Exactly EXPECTED core-app tags must be
-          # rewritten: 7 always-built images, plus chat-service only when its
-          # continue-on-error build actually succeeded.
+          # rewritten: 9 always-built images, plus chat-service and
+          # notification-service only when their continue-on-error builds
+          # actually succeeded.
+          #
+          # billing-service and provisioning-service were added to this list
+          # late: both were BUILT on every release and pinned in values-prod,
+          # but had no anchor here, so their tags were never rewritten —
+          # billing froze at 6135e6b5ed77 (2026-06-30) while enabled: true in
+          # prod, and provisioning sat at tag "" having never been deployed.
+          # Same defect as the email/sms one recorded above, third occurrence.
+          # The lesson keeps repeating because the count guard cannot detect a
+          # MISSING anchor (fewer anchors == fewer rewrites == "pass"); it only
+          # catches layout drift. If you add a build step, you MUST add the
+          # anchor and bump this number by hand.
           # The anchor list MUST cover every image this workflow BUILDS. It
           # previously listed only 5 while the build steps produced 7: the
           # email-service and sms-service images were built and pushed on every
@@ -334,3 +377,45 @@ jobs:
           done
           echo "::error::could not push the tag bump after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
           exit 1
+
+      # -----------------------------------------------------------------------
+      # Kick off post-deploy verification.
+      #
+      # This is a `gh workflow run` dispatch and NOT a `workflow_run` trigger,
+      # because the event-driven alternatives are both proven dead here:
+      #
+      #   * prod-smoke.yml triggered on `push` to values-prod.yaml, gated
+      #     `if: startsWith(head_commit.message, 'release:')`. The tag-bump
+      #     commit above writes "[skip ci]" into that very message (it must —
+      #     otherwise the bump push re-triggers this workflow forever), and
+      #     GitHub suppresses push-triggered workflows for those commits. The
+      #     two conditions are mutually exclusive, so prod-smoke last actually
+      #     executed on 2026-06-30; every run since is `skipped`.
+      #
+      #   * prod-post-deploy.yml triggered on `workflow_run` of this workflow.
+      #     It is registered and `state: active`, its name matcher is exact,
+      #     and this workflow has completed successfully many times since it
+      #     landed — yet it has ZERO runs, ever.
+      #
+      # workflow_dispatch is explicitly EXEMPT from the GITHUB_TOKEN recursion
+      # guard (the same reasoning auto-merge.yml relies on for dispatching this
+      # workflow), and is immune to the CI-suppression token. Dispatching is the
+      # one path that survives both.
+      #
+      # `if: success()` — never claim a deploy is verified when the build or the
+      # GitOps bump failed. Non-blocking: a dispatch failure must not fail the
+      # release that already shipped, but it IS surfaced as a warning.
+      - name: Dispatch post-deploy verification
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          if gh workflow run prod-post-deploy.yml --ref master \
+               -f release_sha="${SHA}" \
+               -f reason="auto-dispatch after release of ${SHA}"; then
+            echo "Post-deploy verification dispatched for ${SHA}"
+          else
+            echo "::warning::could not dispatch prod-post-deploy.yml — the release SHIPPED but is UNVERIFIED. Run it by hand against master."
+          fi

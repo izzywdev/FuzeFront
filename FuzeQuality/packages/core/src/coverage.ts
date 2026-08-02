@@ -200,7 +200,10 @@ export function buildApiExpectations(operation: ApiOperation, tests: TestCase[])
     )
   }
 
-  if (['post', 'put', 'patch'].includes(operation.method)) {
+  if (
+    ['post', 'put', 'patch'].includes(operation.method) &&
+    (operation.requestContentTypes ?? []).length > 0
+  ) {
     result.push(
       expectation(
         'api-operation',

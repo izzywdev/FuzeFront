@@ -5,6 +5,11 @@ export interface User {
   roles: string[]
   firstName?: string
   lastName?: string
+  // FF-EPIC-10-S3 — the portal this session/token is bound to (server-issued
+  // `prt_...` id). Set by authenticateToken from the JWT `portal_id` claim
+  // (falling back to the resolved req.portal when absent); undefined when the
+  // multi-tenant-portals flag is OFF, preserving pre-epic behavior.
+  portalId?: string
 }
 
 export interface Organization {
@@ -60,6 +65,13 @@ export interface App {
   description?: string
   organizationId?: string
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
+  /**
+   * Where the app may be INSTALLED — a user's personal space, an organization,
+   * or either. Distinct from `visibility` (who may SEE it) and from
+   * `organizationId` (who OWNS it), and distinct from `scope` above, which is
+   * the Module-Federation remote container name.
+   */
+  scopeLevel?: 'personal' | 'organization' | 'both'
   marketplaceMetadata: Record<string, any>
   isMarketplaceApproved: boolean
   installCount: number

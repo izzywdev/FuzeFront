@@ -37,4 +37,4 @@ export interface DataTableProps extends React.HTMLAttributes<HTMLDivElement> {
   sortDir?: "asc" | "desc";
 }
 
-export function DataTable(props: DataTableProps): JSX.Element;
+export function DataTable(props: DataTableProps): React.JSX.Element;

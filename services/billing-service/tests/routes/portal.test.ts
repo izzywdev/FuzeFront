@@ -63,6 +63,7 @@ const RETURN_URL = 'https://app.fuzefront.com/billing';
 
 describe('POST /portal — Stripe Customer Portal session', () => {
   it('200 {url} on the happy path; creates the session for the resolved customer', async () => {
+    // @fuzequality api createPortalSession
     const create = jest.fn().mockResolvedValue({
       id: 'bps_1',
       url: 'https://billing.stripe.com/p/session/bps_1',
@@ -130,7 +131,8 @@ describe('POST /portal — Stripe Customer Portal session', () => {
     expect(res.status).toBe(400);
   });
 
-  it('401 when the proxy actor-context headers are absent', async () => {
+  it('401 when X-Billing-Actor-User-Id, X-Billing-Entity-Type, and X-Billing-Entity-Id headers are missing', async () => {
+    // @fuzequality api createPortalSession
     const create = jest.fn();
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
@@ -145,6 +147,7 @@ describe('POST /portal — Stripe Customer Portal session', () => {
   });
 
   it('401 when the internal token is missing', async () => {
+    // @fuzequality api createPortalSession
     const { app } = buildApp({
       internalToken: INTERNAL_TOKEN,
       stubs: { ...stripeStub(), ...orgCustomerRepoStub() },

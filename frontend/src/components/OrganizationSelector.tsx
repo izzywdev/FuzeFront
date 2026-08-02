@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzefront/design-system'
+import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {
@@ -7,6 +7,12 @@ import {
   createOrganization,
   type Organization as APIOrganization,
 } from '../services/api'
+import {
+  ORGANIZATION_TYPE,
+  newSlugSuffix,
+  organizationErrorMessage,
+  slugForName,
+} from '../utils/organization'
 
 interface Organization {
   id: string
@@ -43,6 +49,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
   const [newOrgName, setNewOrgName] = useState('')
   const [newOrgDescription, setNewOrgDescription] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -66,12 +73,15 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
     try {
       const apiOrganizations = await getOrganizations()
 
-      // Convert API organization format to component format
+      // Convert API organization format to component format.
+      // There is no `description` column — the backend stores the blurb the
+      // create modal collects under `metadata.description`, so read it back
+      // from there (falling back to a top-level field if one ever appears).
       const formattedOrganizations: Organization[] = apiOrganizations.map(
         (org: APIOrganization) => ({
           id: org.id,
           name: org.name,
-          description: org.description,
+          description: org.description ?? org.metadata?.description,
           role: org.user_role || 'member',
           memberCount: org.member_count,
           createdAt: org.created_at,
@@ -118,22 +128,35 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
     onOrganizationChange?.(org)
   }
 
+  const closeCreateModal = () => {
+    setShowCreateModal(false)
+    setCreateError('')
+  }
+
   const handleCreateOrganization = async () => {
-    if (!newOrgName.trim()) return
+    const name = newOrgName.trim()
+    if (!name) return
 
     setIsCreating(true)
+    setCreateError('')
     try {
+      const description = newOrgDescription.trim()
+      // POST /api/organizations requires a slug and a type from the
+      // organization_type_enum; `description` is not a column. See
+      // utils/organization.ts for why the old `{ description, type: 'team' }`
+      // payload was rejected with a 400 on every attempt.
       const newApiOrg = await createOrganization({
-        name: newOrgName.trim(),
-        description: newOrgDescription.trim() || undefined,
-        type: 'team',
+        name,
+        slug: slugForName(name, newSlugSuffix()),
+        type: ORGANIZATION_TYPE,
+        metadata: description ? { description } : {},
       })
 
       // Convert to component format
       const newOrg: Organization = {
         id: newApiOrg.id,
         name: newApiOrg.name,
-        description: newApiOrg.description,
+        description: newApiOrg.metadata?.description,
         role: 'owner', // Creator becomes owner
         memberCount: 1,
         createdAt: newApiOrg.created_at,
@@ -146,10 +169,14 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
       // Reset form
       setNewOrgName('')
       setNewOrgDescription('')
-      setShowCreateModal(false)
+      closeCreateModal()
     } catch (error) {
       console.error('Failed to create organization:', error)
-      // Could add toast notification here
+      // Surface the failure instead of leaving the modal sitting there looking
+      // like the click did nothing.
+      setCreateError(
+        organizationErrorMessage(error, 'Failed to create organization')
+      )
     } finally {
       setIsCreating(false)
     }
@@ -294,10 +321,12 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
       {/* Create Organization Modal */}
       <Modal
         open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={closeCreateModal}
         title="Create New Organization"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {createError && <Alert tone="error">{createError}</Alert>}
+
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
               Organization Name *
@@ -328,7 +357,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
             <button
-              onClick={() => setShowCreateModal(false)}
+              onClick={closeCreateModal}
               className="btn"
               style={{ background: 'var(--bg-quaternary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
             >

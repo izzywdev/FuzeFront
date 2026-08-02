@@ -1,5 +1,12 @@
 import axios from 'axios'
 import { App } from '../lib/shared'
+import {
+  getActiveAccountId,
+  getActiveAuthToken,
+  setActiveValue,
+  forgetAccount,
+  markAccountExpired,
+} from '../lib/accounts'
 import type {
   AuthMethods,
   SessionResult,
@@ -65,19 +72,33 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 })
 
-// Dedicated, SHORTER timeout for the login/signup submit path. Prod reality:
-// the auth chain normally answers in ~5.5s, but an intermittent slow hop can
-// stretch it to 16-30s before the shared 30s client timeout ever trips — that
-// entire window the submit button sat on "Signing in…" with zero feedback.
-// Bounding just this call lets a slow attempt fail fast with a clear message
-// instead of hanging to the full 30s. Env-overridable for tuning without a
-// redeploy of the timeout value itself.
-const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 15000
+// Dedicated timeout for the login/signup submit path. Prod reality: the auth
+// chain normally answers in ~5.5s, but an intermittent slow hop stretches it
+// well past that.
+//
+// This was 15s, chosen to fail FAST on a slow attempt rather than leave the
+// submit button on "Signing in…". That traded the wrong way: the documented
+// slow path runs 16-30s, so a 15s bound did not fail slow sign-ins fast — it
+// failed sign-ins that would otherwise have SUCCEEDED, and sign-in broke
+// outright. A bound below the known worst case is not a safety net, it is an
+// outage.
+//
+// 45s covers the documented 16-30s worst case with real margin. The wait is
+// not pleasant, but it completes; LoginPage shows a "still working…" hint at
+// 8s so a slow-but-succeeding attempt never looks frozen. The server's own
+// budget (AUTHENTIK_LOGIN_DEADLINE_MS, 40s) sits UNDER this so the server
+// still answers first with a labelled error instead of being raced — keep
+// that ordering if either value is retuned. Env-overridable so the pair can
+// be tightened again, without a rebuild, once the slow hop is actually fixed.
+const LOGIN_TIMEOUT_MS = Number(import.meta.env.VITE_LOGIN_TIMEOUT_MS) || 45000
 
 // Add request timing and enhanced logging
 api.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('authToken')
+    // The ONE token resolver (lib/accounts.ts, rule 2). Reading localStorage
+    // directly here would attach whichever account happened to write the bare
+    // key last — the exact cross-account leak the vault exists to prevent.
+    const token = getActiveAuthToken()
     const requestId = Math.random().toString(36).substr(2, 9)
     ;(config as any).metadata = { startTime: Date.now(), requestId }
 
@@ -188,9 +209,13 @@ api.interceptors.response.use(
     console.groupEnd()
 
     if (error.response?.status === 401) {
-      console.log('🔐 Unauthorized - removing token and reloading')
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('user')
+      console.log('🔐 Unauthorized - clearing the active account session')
+      // Clear only the ACTIVE account. Other signed-in accounts keep their
+      // sessions — one expiring must not sign the user out of the rest.
+      setActiveValue('authToken', null)
+      setActiveValue('user', null)
+      const expiredAccountId = getActiveAccountId()
+      if (expiredAccountId) markAccountExpired(expiredAccountId)
       // Never bounce a visitor who is ALREADY on an auth route.
       //
       // This guard knew about /login but not /signup, which broke sign-up
@@ -252,9 +277,15 @@ export interface EmailAvailability {
 
 // Persist a freshly authenticated session so it survives the post-login page
 // reload and is attached to subsequent requests by the axios interceptor.
+// Written into the ACTIVE account's namespace. The account roster entry itself
+// is created by AccountsContext once `/session` resolves the identity — this
+// only has credentials, not a user id, so it cannot key them itself.
+// Written into the namespace this tab is currently acting as. During an "add
+// account" sign-in that is the provisional namespace, which AccountsContext
+// re-keys onto the real account id as soon as `/session` resolves the identity.
 function persistSession(token?: string, sessionId?: string): void {
-  if (token) localStorage.setItem('authToken', token)
-  if (sessionId) localStorage.setItem('sessionId', sessionId)
+  if (token) setActiveValue('authToken', token)
+  if (sessionId) setActiveValue('sessionId', sessionId)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -355,12 +386,18 @@ export const authAPI = {
     return response.data.user
   },
 
-  // Logout — revoke the current session (idempotent) and clear local state.
+  // Logout — revoke the ACTIVE account's session (idempotent) and erase that
+  // account from the vault. Other signed-in accounts are untouched: signing out
+  // of one identity must not sign the user out of the rest.
   async logout(): Promise<void> {
-    await api.delete(`${SECURITY_BASE}/session`)
-    localStorage.removeItem('authToken')
-    localStorage.removeItem('sessionId')
-    localStorage.removeItem('user')
+    const accountId = getActiveAccountId()
+    try {
+      await api.delete(`${SECURITY_BASE}/session`)
+    } finally {
+      // Erase locally even if the revoke call failed — leaving the token in the
+      // vault after the user asked to sign out is the worse failure.
+      if (accountId) forgetAccount(accountId)
+    }
   },
 
   // Complete a social-login round-trip. The social callback redirects back to
@@ -597,5 +634,97 @@ export const listInvitations = async (orgId: string) => {
   const res = await api.get(`/organizations/${orgId}/invitations`)
   return res.data
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App installations — where an app lands, and for whom.
+//
+// `scopeLevel` is the app's own declaration of where it MAY be installed;
+// `scope` is where this particular installation went. The two are different
+// questions and the API rejects (422) a scope the app's level does not permit.
+// See backend/src/routes/app-installations.ts and migration 017.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AppScopeLevel = 'personal' | 'organization' | 'both'
+export type InstallScope = 'personal' | 'organization'
+export type InstallMode = 'self' | 'everyone'
+
+export interface AppInstallation {
+  id: string
+  appId: string
+  scope: InstallScope
+  mode: InstallMode
+  userId: string | null
+  organizationId: string | null
+  installedBy: string
+  status: 'active' | 'revoked'
+  settings: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AppInstallationsResponse {
+  appId: string
+  scopeLevel: AppScopeLevel
+  installations: AppInstallation[]
+}
+
+export interface InstallAppRequest {
+  scope?: InstallScope
+  organizationId?: string
+  mode?: InstallMode
+  settings?: Record<string, unknown>
+}
+
+/** Installations of one app that are visible to the caller. */
+export const getAppInstallations = async (
+  appId: string
+): Promise<AppInstallationsResponse> => {
+  const res = await api.get<AppInstallationsResponse>(
+    `/apps/${encodeURIComponent(appId)}/installations`
+  )
+  return res.data
+}
+
+/**
+ * Install an app. Idempotent per target: an existing active installation comes
+ * back with `alreadyInstalled: true` rather than being duplicated.
+ */
+export const installApp = async (
+  appId: string,
+  body: InstallAppRequest
+): Promise<{ installation: AppInstallation; alreadyInstalled: boolean }> => {
+  const res = await api.post(`/apps/${encodeURIComponent(appId)}/install`, body)
+  return res.data
+}
+
+/** Soft-revoke an installation. */
+export const uninstallApp = async (
+  appId: string,
+  installationId: string
+): Promise<void> => {
+  await api.delete(
+    `/apps/${encodeURIComponent(appId)}/install/${encodeURIComponent(installationId)}`
+  )
+}
+
+/** The caller's EFFECTIVE installs: personal + their org-self + org-everyone. */
+export const getInstalledApps = async (organizationId?: string) => {
+  const res = await api.get('/apps/installed', {
+    params: organizationId ? { organizationId } : undefined,
+  })
+  return res.data as Array<
+    AppInstallation & {
+      app: {
+        id: string
+        name: string
+        url: string
+        iconUrl?: string
+        isActive: boolean
+        scopeLevel: AppScopeLevel
+      }
+    }
+  >
+}
+
 export default api
 

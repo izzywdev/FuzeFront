@@ -7,6 +7,7 @@ import React, {
   ReactNode,
 } from 'react'
 import type { Organization } from '../services/api'
+import { getActiveValue, setActiveValue } from './accounts'
 
 // Re-export so consumers can import Organization from shared
 export type { Organization }
@@ -17,23 +18,19 @@ export type { Organization }
 // `activeOrganizationId`. Without persistence every reload reset it (the gate
 // forced the personal org), so a user who selected/created an org and then
 // clicked a menu item silently billed their personal org. Persist it here.
-const ACTIVE_ORG_STORAGE_KEY = 'ff.activeOrganizationId'
+//
+// PER ACCOUNT, not per browser. This used to be the bare
+// `ff.activeOrganizationId` key, which two signed-in accounts would share — so
+// switching account would carry the previous account's org selection over, and
+// (since it names an org the new account may not belong to) render the org
+// switcher blank. It now lives in the active account's vault namespace.
 
 export function getPersistedActiveOrganizationId(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE_ORG_STORAGE_KEY)
-  } catch {
-    return null
-  }
+  return getActiveValue('activeOrganizationId')
 }
 
 function persistActiveOrganizationId(id: string | null): void {
-  try {
-    if (id) localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, id)
-    else localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY)
-  } catch {
-    // localStorage unavailable (privacy mode) — degrade gracefully.
-  }
+  setActiveValue('activeOrganizationId', id)
 }
 
 // The session-scoped "workspace provisioned" flag WorkspaceProvisioningGate
@@ -44,33 +41,30 @@ const LAST_AUTHENTICATED_USER_ID_KEY = 'ff.lastAuthenticatedUserId'
 /**
  * BUG 2 fix (org switcher rendering blank for a social/Google login):
  *
- * `ff.activeOrganizationId` (localStorage) and `ff.workspaceReady`
- * (sessionStorage) are keyed per BROWSER, not per account. A user who signs
- * out and a *different* user signs back in on the same browser/tab inherits
- * both stale values: `ff.workspaceReady` short-circuits
- * WorkspaceProvisioningGate straight to "ready" without confirming org
- * membership for the NEW session, and `ff.activeOrganizationId` may point at
- * an org the new user does not belong to at all — leaving
- * `useOrganizations().activeOrganization` unable to resolve (the org list
- * for the new user never contains that id), which is exactly what renders
- * the top-bar org switcher blank.
+ * `ff.workspaceReady` (sessionStorage) is keyed per TAB, not per account, so a
+ * user who signs out and a *different* user signs back in on the same tab
+ * inherits it: the flag short-circuits WorkspaceProvisioningGate straight to
+ * "ready" without confirming org membership for the NEW session.
  *
- * Call this once the authenticated user is known (after login/session
- * restore). If the user id differs from the last-seen one on this browser,
- * clear both stale keys so WorkspaceProvisioningGate performs a full,
- * un-shortcut org fetch + hydration for the new account — the same path a
- * fresh native-login session takes.
+ * Call this once the authenticated user is known (after login/session restore).
+ * If the user id differs from the last-seen one in this tab, clear the flag so
+ * WorkspaceProvisioningGate performs a full, un-shortcut org fetch + hydration
+ * for the new account — the same path a fresh native-login session takes.
+ *
+ * The companion half of the original bug — a stale active-org id pointing at an
+ * org the new account does not belong to — is now structurally impossible:
+ * the active org lives in the account's own vault namespace, so accounts cannot
+ * see each other's selection at all.
  */
 export function resetWorkspaceSessionIfUserChanged(userId: string): void {
   try {
-    const lastUserId = localStorage.getItem(LAST_AUTHENTICATED_USER_ID_KEY)
+    const lastUserId = sessionStorage.getItem(LAST_AUTHENTICATED_USER_ID_KEY)
     if (lastUserId && lastUserId !== userId) {
       sessionStorage.removeItem(WORKSPACE_READY_SESSION_KEY)
-      localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY)
     }
-    localStorage.setItem(LAST_AUTHENTICATED_USER_ID_KEY, userId)
+    sessionStorage.setItem(LAST_AUTHENTICATED_USER_ID_KEY, userId)
   } catch {
-    // localStorage/sessionStorage unavailable (privacy mode) — degrade gracefully.
+    // sessionStorage unavailable (privacy mode) — degrade gracefully.
   }
 }
 
@@ -108,9 +102,12 @@ export interface App {
   isHealthy?: boolean
   integrationType: 'module-federation' | 'iframe' | 'web-component'
   remoteUrl?: string
+  /** Module-Federation remote container name. NOT the install scope. */
   scope?: string
   module?: string
   description?: string
+  /** Where this app MAY be installed. Defaults to 'both' server-side. */
+  scopeLevel?: 'personal' | 'organization' | 'both'
 }
 
 export interface MenuItem {

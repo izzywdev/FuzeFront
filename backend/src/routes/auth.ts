@@ -15,6 +15,8 @@ import {
   UnsupportedFlowStageError,
 } from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
+import { getRootPortal } from '../repositories/portalRepository'
+import { getRequestPortalsEnabled } from '../utils/portalFlag'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
 
@@ -29,6 +31,97 @@ setInterval(() => {
 }, CODE_TTL_MS).unref()
 
 const router = express.Router()
+
+// Checks the `organization_memberships` table for an ACTIVE membership row —
+// same query shape already used for this exact purpose elsewhere (see
+// routes/apps.ts's object-level authorization). Fails CLOSED on a DB error
+// (a membership-check failure must never be treated as "is a member").
+async function isActiveOrgMember(userId: string, organizationId: string): Promise<boolean> {
+  const membership = await db('organization_memberships')
+    .where('user_id', userId)
+    .where('organization_id', organizationId)
+    .where('status', 'active')
+    .first()
+  return !!membership
+}
+
+// The result of resolving a login's portal binding. `ok: false` means the
+// login must be REJECTED outright — no token minted, no session created —
+// because the authenticating user is not an active member of the resolved
+// tenant portal's organization (see the cross-tenant-login fix below).
+type PortalLoginBinding =
+  | { ok: true; portalId?: string; organizationId?: string; portalName?: string }
+  | { ok: false; portalName?: string }
+
+// ─── FF-EPIC-10-S3 — JWT/session portal binding ──────────────────────────────
+//
+// Resolves the portal a freshly-minted token/session should be bound to: the
+// Host-resolved portal (req.portal, set by the global resolvePortalContext
+// middleware) if present, else the seeded root portal. Resolves to `{ok:
+// true}` (no-op) when the master flag is OFF, so token payload / session
+// columns are byte-for-byte unchanged from pre-epic behavior.
+//
+// Root cause A fix (gate-code-review round 4) — reuses
+// getRequestPortalsEnabled (utils/portalFlag.ts), the ONE shared helper every
+// request-path consumer must go through, instead of re-implementing its own
+// copy of the "read req.portalsFlagEnabled, else fall back" ternary. Two
+// independent evaluations of a per-user-targeted flag can legitimately
+// disagree (this exact function regressed once already after
+// authenticateToken was fixed in isolation — see utils/portalFlag.ts's
+// doc-comment on why this can no longer happen per-callsite).
+async function resolvePortalBindingForLogin(
+  req: express.Request,
+  userId: string
+): Promise<PortalLoginBinding> {
+  const enabled = await getRequestPortalsEnabled(req)
+  if (!enabled) return { ok: true }
+
+  const resolved = req.portal
+  if (resolved) {
+    // Do NOT rebind sessions.active_organization_id to the ROOT/platform
+    // portal's org for a root-portal / main-domain login. A regular user
+    // logging in on the main app host is very likely NOT a member of the
+    // platform org; force-setting active_organization_id there would
+    // silently rebind the session's active org on EVERY main-domain login
+    // once the flag is ON — violating "flag-off/main-domain behavior is
+    // byte-for-byte unchanged." `portalId` is still bound for the root
+    // portal (a legitimate, non-tenant-specific binding, consistent with
+    // authenticateToken's legacy-token policy); only `organizationId` is
+    // withheld for root. No membership check applies to root — it isn't a
+    // tenant org.
+    if (resolved.is_root) {
+      return { ok: true, portalId: resolved.id }
+    }
+    // Cross-tenant login authorization fix — a tenant-host login only
+    // verified GLOBAL user credentials (any valid FuzeFront account can log
+    // in); it never checked the user is a member of the RESOLVED portal's
+    // org. Without this check, user A (a member of org X only) POSTing
+    // valid credentials to tenant B's Host would have their session's
+    // active org silently set to B's org and their token bound to portal
+    // B — scoping every later request to an org they don't belong to. Same
+    // silent-rebind class already closed for the root portal above, not
+    // previously applied to tenant portals. Fail CLOSED: reject the login
+    // outright (no token minted, no session created) rather than bind an
+    // unverified membership.
+    const isMember = await isActiveOrgMember(userId, resolved.organization_id).catch(() => false)
+    if (!isMember) {
+      return { ok: false, portalName: resolved.name ?? resolved.slug }
+    }
+    return {
+      ok: true,
+      portalId: resolved.id,
+      organizationId: resolved.organization_id,
+    }
+  }
+  // Only reached when nothing resolved for this request (bootstrap mode, or
+  // resolvePortalContext didn't run upstream). `.catch()` so a portals-table
+  // hiccup degrades to "no portal bound" rather than breaking login itself.
+  // The fallback is always the ROOT portal, so — same reasoning as above —
+  // organizationId is never set here either, and no membership check applies.
+  const root = await getRootPortal(db).catch(() => undefined)
+  if (!root) return { ok: true }
+  return { ok: true, portalId: root.id }
+}
 
 // ─── Fire-and-forget provisioning tracker ────────────────────────────────────
 //
@@ -139,6 +232,10 @@ router.post('/login', async (req, res) => {
   const requestId = uuidv4().substring(0, 8)
   const startTime = Date.now()
 
+  if (!req.is('application/json')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json' })
+  }
+
   console.log(`🔐 [${requestId}] Login request received:`, {
     timestamp: new Date().toISOString(),
     ip: req.ip || req.connection.remoteAddress,
@@ -204,6 +301,32 @@ router.post('/login', async (req, res) => {
 
     console.log(`✅ [${requestId}] Password verified, generating token...`)
 
+    // FF-EPIC-10-S3 — {ok:true} no-op when the multi-tenant-portals flag is
+    // OFF. Resolved BEFORE minting anything: a tenant-host login where the
+    // user isn't an active member of that portal's org is rejected outright
+    // (fail closed) — no session id, no token, no session row.
+    const portalBinding = await resolvePortalBindingForLogin(req, userRow.id)
+    if (!portalBinding.ok) {
+      // Constant format string + %s (Semgrep js/unsafe-formatstring) — a
+      // template literal used as the format string with a trailing arg is
+      // flagged even though `requestId` is server-generated here; keep the
+      // same established pattern as the rest of this file's sanitized logs.
+      console.log(
+        '❌ [%s] Login rejected — user is not a member of the resolved portal:',
+        requestId,
+        {
+          userId: userRow.id,
+          responseTime: Date.now() - startTime,
+        }
+      )
+      return res.status(403).json({
+        error: 'FORBIDDEN_PORTAL',
+        message: portalBinding.portalName
+          ? `This account isn't part of ${portalBinding.portalName}.`
+          : "This account isn't part of this portal.",
+      })
+    }
+
     // Create the session id first so it can be embedded in the token; this lets
     // logout invalidate only THIS session rather than all of the user's sessions.
     const sessionId = uuidv4()
@@ -211,7 +334,11 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { userId: userRow.id, sessionId },
+      {
+        userId: userRow.id,
+        sessionId,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -230,6 +357,9 @@ router.post('/login', async (req, res) => {
       id: sessionId,
       user_id: userRow.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     // Debug logging for roles parsing
@@ -549,13 +679,34 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
 
     const user = await authentikPasswordLogin(email, password)
 
+    // FF-EPIC-10-S3 — {ok:true} no-op when the multi-tenant-portals flag is
+    // OFF. Resolved BEFORE minting anything: a tenant-host login where the
+    // user isn't an active member of that portal's org is rejected outright.
+    const portalBinding = await resolvePortalBindingForLogin(req, user.id)
+    if (!portalBinding.ok) {
+      console.log('❌ Authentik login rejected — user is not a member of the resolved portal', {
+        requestId,
+        userId: user.id,
+      })
+      return res.status(403).json({
+        error: 'FORBIDDEN_PORTAL',
+        message: portalBinding.portalName
+          ? `This account isn't part of ${portalBinding.portalName}.`
+          : "This account isn't part of this portal.",
+      })
+    }
+
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     // This IS FuzeFront's identity service — the issuer of platform tokens
     // (same mint as /login and the OIDC callback), not a product self-minting.
     // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const token = jwt.sign(
-      { userId: user.id, sessionId },
+      {
+        userId: user.id,
+        sessionId,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -563,6 +714,9 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     selfHealProvisioningOnLogin(user.id)
@@ -649,6 +803,24 @@ router.get('/oidc/callback', async (req, res) => {
     const user = await oidcService.handleCallback(code as string, state as string)
     console.log(`✅ [${requestId}] User authenticated via OIDC:`, user.email)
 
+    // FF-EPIC-10-S3 — {ok:true} no-op when the multi-tenant-portals flag is
+    // OFF. Resolved BEFORE minting anything: a tenant-host login where the
+    // user isn't an active member of that portal's org is rejected outright
+    // — redirected back with an error query param, matching this route's
+    // existing error-handling convention (missing_parameters, oidc_error, ...).
+    const portalBinding = await resolvePortalBindingForLogin(req, user.id)
+    if (!portalBinding.ok) {
+      // user.email comes from the OIDC identity provider's response — strip
+      // CR/LF before logging (same convention as this file's existing OIDC
+      // error logs a few lines up) so it can't forge additional log lines.
+      console.log(
+        '❌ [%s] OIDC login rejected — user is not a member of the resolved portal: %s',
+        requestId,
+        String(user.email).replace(/[\r\n]+/g, ' ')
+      )
+      return res.redirect(`${FRONTEND_BASE}/?error=forbidden_portal`)
+    }
+
     // Create session id first so it can be embedded in the token
     const sessionId = uuidv4()
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
@@ -656,7 +828,13 @@ router.get('/oidc/callback', async (req, res) => {
     // Generate JWT token — include standard OIDC claims (sub, email) alongside
     // the internal userId/sessionId so consumers can inspect identity claims.
     const token = jwt.sign(
-      { userId: user.id, sessionId, sub: user.id, email: user.email },
+      {
+        userId: user.id,
+        sessionId,
+        sub: user.id,
+        email: user.email,
+        ...(portalBinding.portalId ? { portalId: portalBinding.portalId } : {}),
+      },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }
     )
@@ -665,6 +843,9 @@ router.get('/oidc/callback', async (req, res) => {
       id: sessionId,
       user_id: user.id,
       expires_at: expiresAt,
+      ...(portalBinding.organizationId
+        ? { active_organization_id: portalBinding.organizationId }
+        : {}),
     })
 
     console.log(`🎉 [${requestId}] OIDC login successful for:`, user.email)

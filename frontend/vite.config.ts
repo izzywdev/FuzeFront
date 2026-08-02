@@ -13,6 +13,14 @@ import { VitePWA } from 'vite-plugin-pwa'
 const identityUiSrc = fileURLToPath(
   new URL('../packages/identity-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) is an unpublished
+// file: workspace package whose dist/ is not built in CI — resolve from
+// SOURCE for bundling, same as identity-ui. frontend/tsconfig.json still
+// resolves it to its built dist/index.d.ts for the type-check (see ci.yml),
+// since it is TSX and imports @fuzefront/design-system.
+const authUiSrc = fileURLToPath(
+  new URL('../packages/auth-ui/src/index.ts', import.meta.url)
+)
 const designSystemSrc = fileURLToPath(
   new URL('../design-system/index.js', import.meta.url)
 )
@@ -56,6 +64,17 @@ const appRegistryClientSrc = fileURLToPath(
 const securityClientSrc = fileURLToPath(
   new URL('../packages/security/src/index.ts', import.meta.url)
 )
+// @fuzefront/portal-client (top-level portal-client/) is the generated portal
+// API client + contract types (contract-designer, FF-EPIC-10) and
+// @fuzefront/portal-branding-ui (packages/portal-branding-ui) is the white-label
+// tenant portal shell/login UI built against it (FF-EPIC-13). Neither's dist/ is
+// built in CI — resolve both from SOURCE, same as billing-client/billing-ui.
+const portalClientSrc = fileURLToPath(
+  new URL('../portal-client/src/index.ts', import.meta.url)
+)
+const portalBrandingUiSrc = fileURLToPath(
+  new URL('../packages/portal-branding-ui/src/index.ts', import.meta.url)
+)
 // @fuzefront/account-security-ui (packages/account-security-ui) is an unpublished
 // file: workspace package whose dist/ is not built in CI — resolve from SOURCE,
 // same as identity-ui. It is design-system-first and consumes only the generated
@@ -87,6 +106,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
+      '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
       '@fuzefront/i18n': i18nSrc,
       // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.
@@ -97,6 +117,8 @@ export default defineConfig({
       '@fuzefront/billing-client': billingClientSrc,
       '@fuzefront/app-registry-client': appRegistryClientSrc,
       '@fuzefront/security-client': securityClientSrc,
+      '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
+      '@fuzefront/portal-client': portalClientSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
@@ -133,8 +155,8 @@ export default defineConfig({
       // federation boundary — a singleton mismatch would let the remote pull its
       // own React copy and crash on "Invalid hook call" / hang on the spinner.
       shared: {
-        react: { singleton: true, requiredVersion: '^18.0.0' } as any,
-        'react-dom': { singleton: true, requiredVersion: '^18.0.0' } as any,
+        react: { singleton: true, requiredVersion: '^19.0.0' } as any,
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' } as any,
       },
     }),
     VitePWA({

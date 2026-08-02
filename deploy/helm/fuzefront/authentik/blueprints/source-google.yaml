@@ -118,6 +118,25 @@ entries:
   # renders. Patch it here, in the SAME file and AFTER the source entry, so the
   # !Find lookups resolve in one pass (fuzefront-enrollment / fuzefront-recovery
   # come from their own blueprints, which sort earlier alphabetically).
+  #
+  # THIS ENTRY IS THE SOLE OWNER OF THIS STAGE. `source-google-binding.yaml`
+  # used to patch the same `default-authentication-identification` object with a
+  # SUBSET of these fields — only `sources` + `show_source_labels`, omitting
+  # `enrollment_flow`, `recovery_flow` and `user_fields`. Two blueprints managing
+  # one object is a race whose outcome depends on apply order, and the observed
+  # production state was the losing branch: `enroll_url` and `recovery_url` came
+  # back null on the identification challenge, so sign-up and forgot-password
+  # were both dead on the hosted login page while the Google button looked fine.
+  # That file has been deleted; do not reintroduce a second writer. If a field
+  # belongs on this stage, add it HERE.
+  #
+  # NOTE ON HOW THE FIX REACHES THE CLUSTER: deleting a blueprint does NOT make
+  # Authentik revert what it already applied, so removing the other file alone
+  # would leave the stage in its broken state. Authentik re-applies a blueprint
+  # when its file content hash changes, so THIS file must change too for the
+  # corrected stage to be written — which it does (this comment block). Verify
+  # with the `prod-authentik-probe` workflow after the rollout rather than
+  # assuming: enroll_url and recovery_url must both come back non-null.
   - model: authentik_stages_identification.identificationstage
     state: present
     identifiers:

@@ -13,4 +13,4 @@ export interface IntegrationBadgeProps extends React.HTMLAttributes<HTMLSpanElem
   type?: "module-federation" | "iframe" | "web-component" | (string & {});
 }
 
-export function IntegrationBadge(props: IntegrationBadgeProps): JSX.Element;
+export function IntegrationBadge(props: IntegrationBadgeProps): React.JSX.Element;

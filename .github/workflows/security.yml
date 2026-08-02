@@ -67,10 +67,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
@@ -211,10 +211,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install dependencies
@@ -265,7 +265,7 @@ jobs:
         if: steps.snyk-token.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.x'
 
       - name: Install dependencies
         if: steps.snyk-token.outputs.present == 'true'

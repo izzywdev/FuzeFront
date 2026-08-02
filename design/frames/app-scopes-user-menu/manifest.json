@@ -1,0 +1,183 @@
+{
+  "name": "App scopes, consolidated user menu & notifications — approval frames",
+  "description": "Contract-freeze UX artifacts for four shell changes and one new backing service: per-app install scope levels (personal / organization / both) with an install-for-me vs install-for-everyone choice; the organization switcher and language switcher moving out of the top bar into the avatar menu; a multi-account switcher bounded at MAX_PARALLEL_ACCOUNTS=5 with a per-account storage-namespace isolation contract; and the notification bell backed by a real notification-service inbox. Approving these frames approves the interaction model AND the build inventory (flows / components / services) before implementation.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/app-scopes-user-menu-notifications.md",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/notification-service/openapi.yaml",
+    "endpoints": [
+      "POST /api/apps/{id}/install",
+      "DELETE /api/apps/{id}/install/{installationId}",
+      "GET /api/apps/{id}/installations",
+      "GET /api/apps/installed",
+      "GET /api/v1/notifications",
+      "GET /api/v1/notifications/unread-count",
+      "GET /api/v1/notifications/stream",
+      "POST /api/v1/notifications/read-all",
+      "DELETE /api/v1/notifications/{id}"
+    ],
+    "component": "frontend/src/components/UserMenu.tsx → UserMenu"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "user-menu",
+        "orchestrator": "ShellUserMenu",
+        "route": "/"
+      },
+      {
+        "id": "accounts",
+        "orchestrator": "AccountSwitcherSection",
+        "route": "/"
+      },
+      {
+        "id": "install-scope",
+        "orchestrator": "InstallAppDialog",
+        "route": "/apps"
+      },
+      {
+        "id": "notifications",
+        "orchestrator": "NotificationBell",
+        "route": "/"
+      }
+    ],
+    "components": [
+      "UserMenu",
+      "AccountSwitcherSection",
+      "OrganizationSwitcherSection",
+      "LanguageSection",
+      "InstallAppDialog",
+      "NotificationBell",
+      "NotificationPanel",
+      "NotificationItem"
+    ],
+    "designSystemAdditions": [
+      "none — these frames are composed entirely from primitives already in @fuzefront/design-system (Avatar, Badge, Modal, Select, Skeleton, StatusCallout, EmptyState, Spinner). No new base primitive is required, so no foundation PR precedes implementation."
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-user-menu",
+      "file": "01-user-menu.html",
+      "label": "(a) Consolidated user menu",
+      "route": "/",
+      "flow": "user-menu",
+      "summary": "The avatar menu carrying the account header, the account switcher, the organization switcher, the language selector and the account actions — with the org and language controls removed from the top bar.",
+      "acceptanceNotes": "Top bar renders ONLY hamburger, brand, app selector, theme toggle, bell and avatar — [data-topbar-control] must not include an organization or language control. The menu panel exposes four sections in order: accounts, organizations, language, actions. Exactly one [data-account] and one [data-organization] row carries aria-checked='true'. The account count renders 'n / 5'. The Admin action row is present only when the ACTIVE account has the admin role. Switching organization changes the active org for the active account only and does not alter any other account's stored org.",
+      "testHooks": [
+        "[data-frame='01-user-menu']",
+        "[data-panel='user-menu']",
+        "[data-section='accounts']",
+        "[data-section='organizations']",
+        "[data-section='language']",
+        "[data-section='actions']",
+        "[data-account]",
+        "[data-organization]",
+        "[data-account-count]",
+        "[data-control='language-select']",
+        "[data-action='add-account']",
+        "[data-action='create-organization']",
+        "[data-action='sign-out']",
+        "[data-topbar-control='user-menu']",
+        "[data-topbar-control='notifications']"
+      ]
+    },
+    {
+      "id": "02-accounts",
+      "file": "02-accounts.html",
+      "label": "(b) Parallel accounts & isolation",
+      "route": "/",
+      "flow": "accounts",
+      "summary": "The account section's real states: at the 5-account cap, mid-switch teardown, per-account sign-out, and a parked account whose session expired — plus the storage-namespace table that is the isolation contract.",
+      "acceptanceNotes": "At 5 accounts the add-account control is DISABLED and carries [data-guard='max-accounts'] with an explanation; it must not accept a sixth sign-in and silently evict. Switching performs a full document reload — no soft in-place identity swap. Per-account sign-out revokes that session server-side and erases that account's ENTIRE ff.acct.<id>.* namespace, leaving other accounts signed in. Selecting an expired account ([data-account-state='expired']) routes to sign-in for that email and never falls back to another account's token. The per-tab sessionStorage active-account id takes precedence over the localStorage default, so two tabs can hold different accounts simultaneously.",
+      "testHooks": [
+        "[data-frame='02-accounts']",
+        "[data-case='cap-reached']",
+        "[data-case='switching']",
+        "[data-case='per-account-signout']",
+        "[data-case='expired-account']",
+        "[data-account-count]",
+        "[data-guard='max-accounts']",
+        "[data-action='sign-out-account']",
+        "[data-account-state='expired']",
+        "[data-state='switching']"
+      ]
+    },
+    {
+      "id": "03-install-scope",
+      "file": "03-install-scope.html",
+      "label": "(c) Install scope & mode",
+      "route": "/apps",
+      "flow": "install-scope",
+      "summary": "The install dialog for each scopeLevel: 'both' asks personal vs organization then self vs everyone; 'organization' with a plain member disables install-for-everyone; 'personal' asks nothing; an already-installed app offers uninstall instead.",
+      "acceptanceNotes": "The mode group ([data-group='mode']) renders only when [data-scope='organization'] is selected; choosing the personal scope hides it. For a caller without owner/admin on the target org the everyone card is aria-disabled with [data-guard='requires-org-admin'] — the API also returns 403, so the UI guard is convenience, not the enforcement. A scope not permitted by the app's scopeLevel is a 422. An app the caller cannot see is a 404, never a 403. Re-opening an installed app shows [data-guard='already-installed'] and the uninstall action instead of a second install.",
+      "testHooks": [
+        "[data-frame='03-install-scope']",
+        "[data-dialog='install-app']",
+        "[data-scope-level='both']",
+        "[data-scope-level='personal']",
+        "[data-scope-level='organization']",
+        "[data-scope='personal']",
+        "[data-scope='organization']",
+        "[data-mode='self']",
+        "[data-mode='everyone']",
+        "[data-guard='requires-org-admin']",
+        "[data-guard='already-installed']",
+        "[data-action='install']",
+        "[data-action='uninstall']",
+        "[data-action='cancel']"
+      ]
+    },
+    {
+      "id": "04-notifications",
+      "file": "04-notifications.html",
+      "label": "(d) Notifications",
+      "route": "/",
+      "flow": "notifications",
+      "summary": "The notification panel populated with mixed read/unread items, the loading / empty / error states, the four badge states including the degraded one, and a live SSE arrival.",
+      "acceptanceNotes": "Unread items are distinguished by more than color — leading dot plus tinted surface. The badge caps at '99+'. When the service is unreachable the bell shows NO badge and the panel shows the error with a retry: a notification outage degrades quiet and must never break the shell. Live arrivals prepend and increment the badge; on SSE reconnect the client re-fetches the unread count so an event missed during a drop self-heals. Read and seen are distinct — opening the panel marks seen (clears the badge), it does not mark every item read.",
+      "testHooks": [
+        "[data-frame='04-notifications']",
+        "[data-panel='notifications']",
+        "[data-state='ready']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-bell]",
+        "[data-badge]",
+        "[data-notification]",
+        "[data-read='false']",
+        "[data-read='true']",
+        "[data-action='mark-all-read']",
+        "[data-action='archive']",
+        "[data-action='retry']",
+        "[data-arrival='live']"
+      ]
+    },
+    {
+      "id": "05-states",
+      "file": "05-states.html",
+      "label": "(e) Cross-cutting states",
+      "route": "/",
+      "flow": "user-menu",
+      "summary": "Menu opened before org data arrives, an account in no organization, a failed organization fetch, a language bundle that fails to load, and the mobile sheet variant.",
+      "acceptanceNotes": "Sections fail INDEPENDENTLY — there is no single 'menu failed' state. A failed org fetch shows an in-place error with retry while the accounts, language and sign-out sections stay usable. The accounts section never skeletons: it reads local state, not the network. A language switch that fails reverts the select to the language actually in effect and warns. Below the mobile breakpoint the panel is full-width ([data-variant='sheet']), scrolls internally, and every row keeps a 44px touch target.",
+      "testHooks": [
+        "[data-frame='05-states']",
+        "[data-case='menu-loading']",
+        "[data-case='no-organizations']",
+        "[data-case='org-load-error']",
+        "[data-case='language-error']",
+        "[data-case='mobile-drawer']",
+        "[data-section='organizations'][data-state='loading']",
+        "[data-section='organizations'][data-state='empty']",
+        "[data-section='organizations'][data-state='error']",
+        "[data-section='language'][data-state='error']",
+        "[data-action='retry']",
+        "[data-variant='sheet']"
+      ]
+    }
+  ],
+  "stamp": "b238e064a62697fbabf7b5186d13972df4977eab94ee7ee6bf15a43993103449"
+}

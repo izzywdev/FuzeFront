@@ -26,4 +26,4 @@ export interface UserMenuProps
   onSignOut?: () => void;
 }
 
-export function UserMenu(props: UserMenuProps): JSX.Element | null;
+export function UserMenu(props: UserMenuProps): React.JSX.Element | null;

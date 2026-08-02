@@ -15,14 +15,15 @@
  *   4. challenge "xak-flow-redirect"                    → Authentik session established
  *   5. GET the OIDC authorize URL with the session cookies (implicit consent)
  *      → 302 …/api/auth/oidc/callback?code=…&state=…
- *   6. oidcService.handleCallback(code, state, codeVerifier) → synced User
+ *   6. getOidcService().handleCallback(code, state, codeVerifier) → synced User
  *
  * Only single-factor identification/password flows are supported. Users with
  * MFA or other stages configured must use the browser (Google/SSO) path — we
  * fail closed with a clear error rather than trying to drive arbitrary stages.
  */
 import { generators } from 'openid-client'
-import { oidcService } from './oidc'
+import { getOidcService } from './oidc'
+import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
 import { logger } from '../lib/logger'
 
@@ -39,22 +40,170 @@ import { logger } from '../lib/logger'
 const AUTHENTIK_FLOW_TIMEOUT_MS =
   Number(process.env.AUTHENTIK_FLOW_TIMEOUT_MS) || 10000
 
+/**
+ * WHOLE-REQUEST budget (ms) for one server-brokered sign-in/sign-up.
+ *
+ * The per-hop cap above bounds each INDIVIDUAL fetch, but a login is a CHAIN:
+ * 2-3 flow-executor stages (each following up to 10 redirects) followed by the
+ * authorize→code chain (up to 10 more hops). Every hop used to get a fresh 10s
+ * budget, so the server's worst case ran to minutes while the browser gives the
+ * whole call only LOGIN_TIMEOUT_MS (15s — frontend/src/services/api.ts). The
+ * client therefore always aborted first, and the user got a bare
+ * "timeout of 15000ms exceeded" with no status and no message, while the
+ * labelled server-side diagnostics ("hop timed out", naming the exact stage)
+ * were still waiting to be produced and never reached anyone.
+ *
+ * Bounding the CHAIN — not just each link — is what makes the server answer
+ * first. This MUST stay below the client's bound so a stalled sign-in surfaces
+ * as a real, logged, labelled HTTP response instead of a blind client-side
+ * abort: 40s here against the client's 45s. The margin is for the response
+ * trip, so retune the pair together and never let this cross above it.
+ *
+ * Sized to the documented slow path (16-30s), not to what sign-in SHOULD cost
+ * — a budget below the real worst case rejects logins that would have
+ * succeeded. Tighten both once the underlying slow hop is fixed.
+ * Overridable via AUTHENTIK_LOGIN_DEADLINE_MS.
+ */
+const AUTHENTIK_LOGIN_DEADLINE_MS =
+  Number(process.env.AUTHENTIK_LOGIN_DEADLINE_MS) || 40000
+
+/**
+ * A hop slower than this is reported at WARN, with its label, even when the
+ * login ultimately succeeds.
+ *
+ * Per-hop timings already existed — at `logger.debug`. LOG_LEVEL defaults to
+ * `info` and is not set anywhere in the chart, so in production that detail has
+ * always been switched OFF, and answering "which hop is slow?" required either
+ * a config change or a redeploy. That is why this path has accumulated timeout
+ * band-aids (#362, #371) instead of a diagnosis: the evidence was never in the
+ * logs when the incident happened.
+ *
+ * A slow-hop threshold is the standard fix (a slow-query log): silent on the
+ * fast path, fully detailed exactly when something is wrong — no LOG_LEVEL
+ * change, no redeploy, no spam. Overridable via AUTHENTIK_SLOW_HOP_WARN_MS.
+ */
+const AUTHENTIK_SLOW_HOP_WARN_MS =
+  Number(process.env.AUTHENTIK_SLOW_HOP_WARN_MS) || 1000
+
+/**
+ * A whole sign-in slower than this is reported at WARN even though it
+ * SUCCEEDED. Set above the ~5.5s fast path, well below the client bound — the
+ * gap between them is precisely the band that was silently eating sign-in.
+ */
+const AUTHENTIK_LOGIN_WARN_MS =
+  Number(process.env.AUTHENTIK_LOGIN_WARN_MS) || 8000
+
 /** Monotonic-ish elapsed helper for the per-step timing logs. */
 function since(startMs: number): number {
   return Math.round(Date.now() - startMs)
 }
 
 /**
+ * Record one hop's cost. Always available at debug; promoted to warn when the
+ * hop is slow enough to be the thing worth looking at.
+ *
+ * Leading hypothesis for what this will show, stated so the logs can refute it:
+ * these hops all target the same in-cluster origin, and this pod's own
+ * `dnsConfig` (deploy/helm/.../security.yaml) documents CoreDNS "intermittently
+ * stalls lookups in 5s/10s retry multiples", capped to ~2s by timeout:1 /
+ * attempts:2 — with the note that this service "resolves authentik-server on
+ * every auth flow". A DNS lookup happens per NEW CONNECTION, and the leaked
+ * response bodies (see drainBody) forced a new connection per hop, so the stall
+ * was multiplied by hop count: ~6 hops x ~2s is most of the observed 16-30s.
+ * If that is right, draining bodies lets undici reuse one keep-alive socket per
+ * origin and the stalls collapse to at most one. `elapsedMs` per labelled hop
+ * is what confirms or kills that; if connect/DNS time still dominates, the next
+ * step is an explicit keep-alive dispatcher pinned to the Authentik origin.
+ */
+function recordHop(
+  label: string,
+  elapsedMs: number,
+  fields: Record<string, unknown> = {}
+): void {
+  const entry = { label, elapsedMs, ...fields }
+  if (elapsedMs >= AUTHENTIK_SLOW_HOP_WARN_MS) {
+    logger.warn(entry, 'authentikPassword: SLOW hop')
+    return
+  }
+  logger.debug(entry, 'authentikPassword: hop')
+}
+
+/**
+ * A wall-clock budget shared by every hop of ONE login/signup attempt.
+ *
+ * Each hop asks for `hopBudget()`, which is the smaller of the per-hop cap and
+ * whatever is actually left — so the chain can never outlive the whole-request
+ * deadline no matter how many redirects Authentik asks us to follow.
+ */
+class Deadline {
+  private readonly expiresAt: number
+  private readonly budgetMs: number
+
+  constructor(budgetMs: number = AUTHENTIK_LOGIN_DEADLINE_MS) {
+    this.budgetMs = budgetMs
+    this.expiresAt = Date.now() + budgetMs
+  }
+
+  remainingMs(): number {
+    return this.expiresAt - Date.now()
+  }
+
+  /** Per-hop allowance: never more than the cap, never more than what's left. */
+  hopBudget(cap: number = AUTHENTIK_FLOW_TIMEOUT_MS): number {
+    return Math.min(cap, this.remainingMs())
+  }
+
+  /**
+   * Throw a labelled error if the whole-request budget is already spent, so the
+   * chain stops at a named stage instead of starting a hop it cannot finish.
+   */
+  assertLive(label: string): void {
+    if (this.remainingMs() > 0) return
+    logger.error(
+      { label, budgetMs: this.budgetMs },
+      'authentikPassword: login deadline exceeded'
+    )
+    throw new AuthentikUnavailableError(
+      `sign-in exceeded its ${this.budgetMs}ms budget before ${label}`
+    )
+  }
+}
+
+/**
+ * Release the connection behind a response whose body we are going to discard.
+ *
+ * undici (Node's fetch) keeps the underlying socket checked out until the body
+ * is consumed or cancelled. Every redirect hop below reads only `location` and
+ * moves on, so without this the socket for each hop stayed pinned for the rest
+ * of the request — and subsequent hops to the SAME origin queued behind the
+ * leaked ones. That is exactly the shape of the intermittent multi-second
+ * stalls this module keeps getting timeout band-aids for: not one slow hop, but
+ * hops waiting on connections their own predecessors never gave back.
+ */
+function drainBody(res: Response): void {
+  // `.cancel()` rejects if the body is already disturbed/locked; either way the
+  // connection is no longer ours to hold, so the outcome is not interesting.
+  void res.body?.cancel().catch(() => undefined)
+}
+
+/**
  * `fetch` with a hard AbortController deadline. On timeout the AbortError is
  * normalised to a labelled AuthentikUnavailableError carrying the elapsed time
  * and the target, so prod logs pinpoint exactly which hop stalled.
+ *
+ * Pass a `Deadline` for anything on the login/signup chain so the hop's
+ * allowance is clamped to the whole-request budget rather than getting a fresh
+ * full-length one.
  */
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   label: string,
-  timeoutMs: number = AUTHENTIK_FLOW_TIMEOUT_MS
+  deadline?: Deadline,
+  cap: number = AUTHENTIK_FLOW_TIMEOUT_MS
 ): Promise<Response> {
+  if (deadline) deadline.assertLive(label)
+  const timeoutMs = deadline ? deadline.hopBudget(cap) : cap
   const controller = new AbortController()
   const started = Date.now()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -133,14 +282,16 @@ export class CookieJar {
   }
 }
 
+/**
+ * In-cluster base for THIS tenant's Authentik. Resolved from the tenant rather
+ * than the environment so the server-side flow-executor calls land on the
+ * tenant's own instance (authentik-server vs authentik-mendys-server) instead
+ * of whichever one the process happened to be configured with.
+ */
 export function authentikBaseUrl(): string {
-  if (process.env.AUTHENTIK_BASE_URL) {
-    return process.env.AUTHENTIK_BASE_URL.replace(/\/$/, '')
-  }
-  const issuer =
-    process.env.AUTHENTIK_ISSUER_URL ||
-    'http://localhost:9000/application/o/fuzefront/'
-  return new URL(issuer).origin
+  const tenant = currentTenant('authentikBaseUrl')
+  if (tenant.baseUrl) return tenant.baseUrl.replace(/\/$/, '')
+  return new URL(tenant.issuerUrl).origin
 }
 
 function authFlowSlug(): string {
@@ -148,14 +299,16 @@ function authFlowSlug(): string {
 }
 
 export function redirectUri(): string {
-  return (
-    process.env.AUTHENTIK_REDIRECT_URI ||
-    'http://fuzefront.dev.local/api/auth/oidc/callback'
-  )
+  return currentTenant('redirectUri').redirectUri
 }
 
+/**
+ * Enrollment flow slug inside THIS tenant's Authentik. Each tenant ships its own
+ * enrollment flow (fuzefront-enrollment vs mendys-enrollment), so this must not
+ * fall back to a global default.
+ */
 function enrollmentFlowSlug(): string {
-  return process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment'
+  return currentTenant('enrollmentFlowSlug').enrollmentFlowSlug
 }
 
 export interface FlowChallenge {
@@ -171,7 +324,8 @@ export async function flowRequest(
   base: string,
   slug: string,
   jar: CookieJar,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  deadline?: Deadline
 ): Promise<FlowChallenge> {
   // Authentik commonly answers the first executor request with a 302 that
   // establishes the session cookie (Location points back into the flow), so
@@ -201,7 +355,8 @@ export async function flowRequest(
       res = await fetchWithTimeout(
         url,
         { method, headers, body: payload, redirect: 'manual' },
-        `flow.step slug=${slug} hop=${hop} ${method}`
+        `flow.step slug=${slug} hop=${hop} ${method}`,
+        deadline
       )
     } catch (err) {
       if (err instanceof AuthentikUnavailableError) throw err
@@ -209,14 +364,20 @@ export async function flowRequest(
         `Authentik unreachable at ${base}: ${(err as Error).message}`
       )
     }
-    logger.debug(
-      { slug, hop, method, status: res.status, elapsedMs: since(stepStart) },
-      'authentikPassword: flow.step'
-    )
+    recordHop(`flow.step slug=${slug} hop=${hop} ${method}`, since(stepStart), {
+      slug,
+      hop,
+      method,
+      status: res.status,
+    })
     jar.absorb(res)
 
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
+      // Only `location` is wanted from a redirect — hand the socket back before
+      // issuing the next hop, or it stays checked out for the whole request and
+      // the following hops queue behind it (see drainBody).
+      drainBody(res)
       const nextUrl = new URL(loc, url)
       // The jar carries authentik_session/authentik_csrf — never present those
       // cookies to any host other than Authentik itself.
@@ -279,10 +440,19 @@ export async function authentikPasswordLogin(
   logger.info({ email }, 'authentikPassword: login start')
   try {
     const user = await authentikPasswordLoginInner(email, password)
-    logger.info(
-      { email, elapsedMs: since(loginStart) },
-      'authentikPassword: login succeeded'
-    )
+    const elapsedMs = since(loginStart)
+    // A login that SUCCEEDS at 25s is the failure mode that broke sign-in: it
+    // never errors, so nothing alerts, and it only becomes visible once a
+    // client bound trips underneath it. Report a slow success as loudly as a
+    // slow hop — the per-hop WARNs above then say which stage owned the time.
+    if (elapsedMs >= AUTHENTIK_LOGIN_WARN_MS) {
+      logger.warn(
+        { email, elapsedMs, thresholdMs: AUTHENTIK_LOGIN_WARN_MS },
+        'authentikPassword: SLOW login (succeeded)'
+      )
+    } else {
+      logger.info({ email, elapsedMs }, 'authentikPassword: login succeeded')
+    }
     return user
   } catch (err) {
     logger.error(
@@ -302,15 +472,15 @@ async function authentikPasswordLoginInner(
   email: string,
   password: string
 ): Promise<User> {
-  if (!oidcService.isConfigured()) {
+  if (!getOidcService().isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
   }
-  if (!oidcService.isInitialized()) {
+  if (!getOidcService().isInitialized()) {
     // Lazy re-init: dedupes concurrent callers onto one in-flight attempt and
     // fails fast during the post-failure cooldown (see oidc.ts). Preserves
     // the original error type/message on failure.
     try {
-      await oidcService.ensureInitialized()
+      await getOidcService().ensureInitialized()
     } catch {
       throw new AuthentikUnavailableError('OIDC is not configured/initialized')
     }
@@ -319,9 +489,11 @@ async function authentikPasswordLoginInner(
   const base = authentikBaseUrl()
   const slug = authFlowSlug()
   const jar = new CookieJar()
+  // One budget for the WHOLE chain — flow stages AND the authorize hops below.
+  const deadline = new Deadline()
 
   // ── Drive the authentication flow ─────────────────────────────────────────
-  let challenge = await flowRequest(base, slug, jar)
+  let challenge = await flowRequest(base, slug, jar, undefined, deadline)
   const MAX_STEPS = 6
   let authenticated = false
 
@@ -340,9 +512,15 @@ async function authentikPasswordLoginInner(
       }
       // Combined identification+password stage
       if (challenge.password_fields) body.password = password
-      challenge = await flowRequest(base, slug, jar, body)
+      challenge = await flowRequest(base, slug, jar, body, deadline)
     } else if (component === 'ak-stage-password') {
-      challenge = await flowRequest(base, slug, jar, { component, password })
+      challenge = await flowRequest(
+        base,
+        slug,
+        jar,
+        { component, password },
+        deadline
+      )
     } else if (component === 'ak-stage-access-denied') {
       throw new InvalidCredentialsError()
     } else {
@@ -362,8 +540,9 @@ async function authentikPasswordLoginInner(
     }
   }
 
-  // Complete OIDC code+PKCE with the now-authenticated Authentik session.
-  return completeOidcWithSession(base, jar)
+  // Complete OIDC code+PKCE with the now-authenticated Authentik session, on
+  // whatever is LEFT of the login budget rather than a fresh one.
+  return completeOidcWithSession(base, jar, deadline)
 }
 
 /**
@@ -400,10 +579,11 @@ function toInternalAuthorizeUrl(externalUrl: string, base: string): string {
 
 export async function completeOidcWithSession(
   base: string,
-  jar: CookieJar
+  jar: CookieJar,
+  deadline?: Deadline
 ): Promise<User> {
   const state = generators.state()
-  const { url: authorizeUrl, codeVerifier } = oidcService.generateAuthUrl(state)
+  const { url: authorizeUrl, codeVerifier } = getOidcService().generateAuthUrl(state)
   const target = redirectUri()
 
   let location = toInternalAuthorizeUrl(authorizeUrl, base)
@@ -422,7 +602,8 @@ export async function completeOidcWithSession(
           headers: { Cookie: jar.header(), Accept: 'application/json' },
           redirect: 'manual',
         },
-        `authorize.hop hop=${hop}`
+        `authorize.hop hop=${hop}`,
+        deadline
       )
     } catch (err) {
       if (err instanceof AuthentikUnavailableError) throw err
@@ -430,11 +611,15 @@ export async function completeOidcWithSession(
         `Authorize request failed: ${(err as Error).message}`
       )
     }
-    logger.debug(
-      { hop, status: res.status, elapsedMs: since(hopStart) },
-      'authentikPassword: authorize.hop'
-    )
+    recordHop(`authorize.hop hop=${hop}`, since(hopStart), {
+      hop,
+      status: res.status,
+    })
     jar.absorb(res)
+    // Nothing in this chain ever reads an authorize response BODY — only its
+    // status, cookies and `location`. Release the socket now so the next hop
+    // doesn't queue behind it (see drainBody).
+    drainBody(res)
 
     const next = res.headers.get('location')
     if (!next) {
@@ -477,7 +662,66 @@ export async function completeOidcWithSession(
     'authentikPassword: authorize chain resolved to code; entering token exchange'
   )
   // Token exchange + user sync — identical to the redirect callback path.
-  return oidcService.handleCallback(code, returnedState || state, codeVerifier)
+  //
+  // This stage is openid-client's, not ours, so it obeys OIDC_HTTP_TIMEOUT_MS
+  // (15s) PER CALL and makes two (token, then userinfo) — on its own it can
+  // outlast the whole login budget several times over and put us right back to
+  // the client aborting first. Hold it to what is left of the budget so the
+  // server still answers inside the browser's window with a stage-labelled
+  // error. The underlying HTTP call may run on in the background; the point is
+  // to stop WAITING on it, not to pretend it was cancelled.
+  const exchangeStart = Date.now()
+  const exchange = getOidcService().handleCallback(
+    code,
+    returnedState || state,
+    codeVerifier
+  )
+  const bounded = deadline
+    ? withDeadline(exchange, deadline, 'oidc.tokenExchange')
+    : exchange
+  // Timed like any other hop: this stage is two openid-client round-trips
+  // (token, then userinfo) and is just as capable of being THE slow one, so it
+  // must not be the one stage missing from the timing breakdown.
+  return bounded.finally(() =>
+    recordHop('oidc.tokenExchange', since(exchangeStart))
+  )
+}
+
+/**
+ * Resolve with `work`, or reject with a labelled AuthentikUnavailableError once
+ * the shared budget is spent — whichever happens first.
+ */
+function withDeadline<T>(
+  work: Promise<T>,
+  deadline: Deadline,
+  label: string
+): Promise<T> {
+  const remaining = deadline.remainingMs()
+  if (remaining <= 0) {
+    // Do not leave the already-started work as an unhandled rejection.
+    void work.catch(() => undefined)
+    deadline.assertLive(label)
+  }
+  let timer: NodeJS.Timeout
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      logger.error(
+        { label, remainingMs: remaining },
+        'authentikPassword: stage exceeded the remaining login budget'
+      )
+      reject(
+        new AuthentikUnavailableError(
+          `${label} exceeded the remaining ${remaining}ms of the sign-in budget`
+        )
+      )
+    }, remaining)
+    if (typeof timer.unref === 'function') timer.unref()
+  })
+  // When the timer wins the race, `work` is still in flight; a later rejection
+  // from it would otherwise surface as an unhandled rejection and (under
+  // Node's default) take the process down.
+  void work.catch(() => undefined)
+  return Promise.race([work, expiry]).finally(() => clearTimeout(timer))
 }
 
 /** Thrown when an account already exists for the email (signup conflict). */
@@ -534,12 +778,12 @@ export async function authentikSignup(input: AuthentikSignupInput): Promise<User
 }
 
 async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> {
-  if (!oidcService.isConfigured()) {
+  if (!getOidcService().isConfigured()) {
     throw new AuthentikUnavailableError('OIDC is not configured/initialized')
   }
-  if (!oidcService.isInitialized()) {
+  if (!getOidcService().isInitialized()) {
     try {
-      await oidcService.ensureInitialized()
+      await getOidcService().ensureInitialized()
     } catch {
       throw new AuthentikUnavailableError('OIDC is not configured/initialized')
     }
@@ -551,12 +795,15 @@ async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> 
   const base = authentikBaseUrl()
   const slug = enrollmentFlowSlug()
   const jar = new CookieJar()
+  // Signup drives the same multi-hop chain as login and is bounded by the same
+  // client-side LOGIN_TIMEOUT_MS, so it gets the same whole-request budget.
+  const deadline = new Deadline()
 
   // Derive a username from the local-part when the caller did not supply one.
   const username =
     input.username || input.email.split('@')[0].replace(/[^a-zA-Z0-9_.-]/g, '') || input.email
 
-  let challenge = await flowRequest(base, slug, jar)
+  let challenge = await flowRequest(base, slug, jar, undefined, deadline)
   const MAX_STEPS = 8
   let enrolled = false
 
@@ -582,11 +829,11 @@ async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> 
       if (input.firstName || input.lastName) {
         body.name = [input.firstName, input.lastName].filter(Boolean).join(' ')
       }
-      challenge = await flowRequest(base, slug, jar, body)
+      challenge = await flowRequest(base, slug, jar, body, deadline)
     } else if (component === 'ak-stage-user-login' || component === 'ak-stage-user-write') {
       // Non-interactive stages that occasionally surface a challenge — re-POST
       // the bare component to advance.
-      challenge = await flowRequest(base, slug, jar, { component })
+      challenge = await flowRequest(base, slug, jar, { component }, deadline)
     } else if (component === 'ak-stage-access-denied') {
       throw new EnrollmentConflictError()
     } else {
@@ -616,8 +863,9 @@ async function authentikSignupInner(input: AuthentikSignupInput): Promise<User> 
     throw new UnsupportedFlowStageError(last)
   }
 
-  // Enrollment auto-logged-in → complete OIDC + sync via the shared path.
-  return completeOidcWithSession(base, jar)
+  // Enrollment auto-logged-in → complete OIDC + sync via the shared path, on
+  // whatever is LEFT of the signup budget rather than a fresh one.
+  return completeOidcWithSession(base, jar, deadline)
 }
 
 /** Thrown when the identity store has no account for the address. */
@@ -637,10 +885,10 @@ export class PasswordPolicyError extends Error {
 }
 
 function authentikAdminToken(): string {
-  const token = process.env.AUTHENTIK_ADMIN_TOKEN
+  const token = currentTenant('Authentik admin token').adminToken
   if (!token) {
     throw new AuthentikUnavailableError(
-      'AUTHENTIK_ADMIN_TOKEN is required to set an account password'
+      'An Authentik admin token is required to set an account password, and none is configured for this tenant'
     )
   }
   return token

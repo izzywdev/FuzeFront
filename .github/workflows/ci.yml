@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: ['24.x']
 
     steps:
       - name: Checkout code
@@ -45,6 +45,28 @@ jobs:
       # still resolve from source via the vite/vitest aliases.
       - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
         run: npm run -w @fuzefront/identity-ui build
+
+      # @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) re-exports
+      # @fuzefront/security-client's SessionResult/AuthMethods types, so
+      # security-client's dist must exist before auth-ui's own d.ts build can
+      # resolve them (frontend itself only ever imports security-client TYPES
+      # straight from source via its tsconfig path — see api.ts — so it needs
+      # no build step of its own).
+      - name: Build @fuzefront/security-client (dep for auth-ui build)
+        run: npm run -w @fuzefront/security-client build
+
+      # frontend/tsconfig.json resolves @fuzefront/auth-ui to its built
+      # dist/index.d.ts (like identity-ui/chat-ui/i18n) — same CSSProperties-
+      # clash reasoning as the identity-ui comment above. Bundling/tests still
+      # resolve it from source via the vite/vitest aliases.
+      - name: Build @fuzefront/auth-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/auth-ui build
+
+      - name: auth-ui — type-check (tsc --noEmit)
+        run: npm run -w @fuzefront/auth-ui type-check
+
+      - name: auth-ui — unit tests (vitest)
+        run: npm run -w @fuzefront/auth-ui test
 
       # @fuzefront/chat-ui is consumed by the host frontend (FuzeChatWidget) and
       # has NO vite source alias, so both the frontend type-check (tsconfig →
@@ -102,7 +124,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       # Root install links the @fuzefront/* workspaces (design-system,
@@ -158,7 +180,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install dependencies
@@ -222,7 +244,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       # chat-service IS a root workspace, so `npm ci` installs its deps and links
@@ -246,6 +268,35 @@ jobs:
         # Job entrypoint. These had never run in CI before.
         run: npm run -w @fuzefront/chat-service test
 
+  notification-service-tests:
+    name: Notification service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      # notification-service is a root workspace, so `npm ci` installs its deps.
+      # It depends on no other workspace package, so nothing needs building first.
+      - name: Install workspace
+        run: npm ci
+
+      - name: Type-check notification-service
+        run: npm run -w @fuzefront/notification-service build
+
+      - name: Run notification-service unit tests
+        # Covers the routes (auth derivation, internal-publish fail-closed,
+        # read vs seen), the SSE hub (per-user isolation, stream cap, dead-client
+        # handling) and the auth middleware.
+        run: npm run -w @fuzefront/notification-service test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -258,7 +309,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: frontfuse_test
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -272,7 +323,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Download build artifacts
@@ -318,7 +369,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
           cache: 'npm'
 
       - name: Install root workspace (shared deps)
@@ -395,7 +446,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
 
       - name: Discover OpenAPI specs
         id: discover
@@ -531,7 +582,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '24.x'
 
       - name: Build documentation
         run: |

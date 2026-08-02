@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cross-cutting states — Frame (e)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-10) var(--space-8) var(--space-16); }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 68ch; }
+  .notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); max-width: 78ch; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes li { margin-bottom: var(--space-2); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="05-states">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame (e)</div>
+  <h1>States that are contract, not decoration</h1>
+  <p class="lead">The cases the implementation must handle in the menu itself: loading, no
+    organizations, a failed org fetch, a language that fails to load, and the mobile drawer where
+    the whole menu has to fit a phone.</p>
+
+  <div class="ffs-grid">
+
+    <div class="ffs-case" data-case="menu-loading">
+      <div class="ffs-case__label">Menu opened before data arrives</div>
+      <div class="ffm-panel" style="width: auto;" data-panel="user-menu" data-state="loading">
+        <div class="ffm-head">
+          <div class="ffm-head__name">Ada Rivera</div>
+          <div class="ffm-head__email">ada@rivera.dev</div>
+        </div>
+        <div class="ffm-section" data-section="organizations">
+          <div class="ffm-section__label"><span>Organization</span></div>
+          <div style="padding: var(--space-2) var(--space-3);">
+            <div class="ffs-skel" style="width: 70%;"></div>
+            <div class="ffs-skel" style="width: 50%; margin-top: var(--space-3);"></div>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">The account section renders immediately — it reads local state, not
+        the network. Only the organization list can be pending, so only it skeletons.</p>
+    </div>
+
+    <div class="ffs-case" data-case="no-organizations">
+      <div class="ffs-case__label">Account belongs to no organization</div>
+      <div class="ffm-panel" style="width: auto;" data-panel="user-menu">
+        <div class="ffm-section" style="border-top: 0;" data-section="organizations" data-state="empty">
+          <div class="ffm-section__label"><span>Organization</span></div>
+          <div class="ffs-empty" data-empty>No organizations yet.</div>
+          <button class="ffm-row" role="menuitem" data-action="create-organization">
+            <span class="ffm-row__main"><span class="ffm-row__title">＋ Create organization</span></span>
+          </button>
+        </div>
+      </div>
+      <p class="ffs-case__note">Reachable while workspace provisioning is still catching up. The
+        section does not collapse to nothing — it names the state and offers the way out.</p>
+    </div>
+
+    <div class="ffs-case" data-case="org-load-error">
+      <div class="ffs-case__label">Organization fetch failed</div>
+      <div class="ffm-panel" style="width: auto;" data-panel="user-menu">
+        <div class="ffm-section" style="border-top: 0;" data-section="organizations" data-state="error">
+          <div class="ffm-section__label"><span>Organization</span></div>
+          <div style="padding: var(--space-3);">
+            <div class="ffs-callout ffs-callout--error">
+              <div>
+                Couldn't load organizations.
+                <div style="margin-top: var(--space-2);">
+                  <button class="btn btn-ghost" data-action="retry">Retry</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">The rest of the menu — accounts, language, sign out — stays usable.
+        A failed org fetch must not take the whole identity surface down with it.</p>
+    </div>
+
+    <div class="ffs-case" data-case="language-error">
+      <div class="ffs-case__label">Language bundle failed to load</div>
+      <div class="ffm-panel" style="width: auto;" data-panel="user-menu">
+        <div class="ffm-section" style="border-top: 0;" data-section="language" data-state="error">
+          <div class="ffm-section__label"><span>Language</span></div>
+          <div style="padding: 0 var(--space-3) var(--space-2);">
+            <select class="ffm-select" data-control="language-select" aria-label="Language">
+              <option value="en" selected>English</option>
+              <option value="ar">العربية</option>
+            </select>
+          </div>
+          <div style="padding: var(--space-2) var(--space-3);">
+            <div class="ffs-callout ffs-callout--warning">
+              Couldn't switch to العربية. Still showing English.
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">The selection reverts to the language actually in effect. A control
+        that shows a language the UI is not rendering in is a lie.</p>
+    </div>
+
+    <div class="ffs-case" data-case="mobile-drawer">
+      <div class="ffs-case__label">Mobile — the menu becomes a sheet</div>
+      <div style="max-width: 300px; border: 1px solid var(--border-strong);
+                  border-radius: var(--radius-lg); overflow: hidden;" data-viewport="mobile">
+        <div class="topbar" style="padding: 0 var(--space-3); gap: var(--space-2);">
+          <span style="font-size: var(--text-lg);">☰</span>
+          <div class="wordmark" style="font-size: var(--text-md);"><span class="fuse">Fuze</span>Front</div>
+          <div class="spacer"></div>
+          <div class="ffn-bell" style="width: 30px; height: 30px;">
+            <span aria-hidden="true">🔔</span><span class="ffn-bell__badge">3</span>
+          </div>
+          <div class="avatar" style="width: 28px; height: 28px;">AR</div>
+        </div>
+        <div class="ffm-panel" style="width: 100%; border: 0; border-radius: 0; box-shadow: none;"
+             data-panel="user-menu" data-variant="sheet">
+          <div class="ffm-head">
+            <div class="ffm-head__name">Ada Rivera</div>
+            <div class="ffm-head__email">ada@rivera.dev</div>
+          </div>
+          <div class="ffm-section" data-section="accounts">
+            <div class="ffm-section__label"><span>Accounts</span><span class="ffm-section__count">2 / 5</span></div>
+            <button class="ffm-row" role="menuitemradio" aria-checked="true" data-account="acct-ada">
+              <span class="ffm-avatar">AR</span>
+              <span class="ffm-row__main"><span class="ffm-row__title">Ada Rivera</span></span>
+              <span class="ffm-row__check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+          <div class="ffm-section" data-section="organizations">
+            <div class="ffm-section__label"><span>Organization</span></div>
+            <button class="ffm-row" role="menuitemradio" aria-checked="true" data-organization="org-northwind">
+              <span class="ffm-row__main"><span class="ffm-row__title">Northwind Labs</span></span>
+              <span class="ffm-row__check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">Below the mobile breakpoint the panel is full-width and scrolls
+        internally, and every row keeps a 44px touch target. Consolidating three top-bar controls into
+        the avatar is what makes the bar fit a phone at all.</p>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <ul>
+      <li>Sections fail independently. There is no single “menu failed” state — a section that
+        cannot load says so in place while its siblings keep working.</li>
+      <li>Nothing in these states is color-only: each carries an icon, a label, or a message.</li>
+    </ul>
+    Test hooks: <code>[data-case]</code> ·
+    <code>[data-section='organizations'][data-state='loading'|'empty'|'error']</code> ·
+    <code>[data-section='language'][data-state='error']</code> ·
+    <code>[data-action='retry']</code> · <code>[data-variant='sheet']</code>.
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption"><b>Frame (e)</b> — cross-cutting states</span>
+  <a href="index.html" class="btn btn-ghost">← Back to index</a>
+</div>
+</body>
+</html>

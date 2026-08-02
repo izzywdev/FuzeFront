@@ -6,7 +6,11 @@
 import express from 'express'
 import request from 'supertest'
 
-jest.mock('../src/services/oidc', () => ({
+jest.mock('../src/services/oidc', () => {
+  // getOidcService() replaced the former `oidcService` singleton (the client is
+  // now resolved per tenant). Expose both, backed by the SAME object, so the
+  // assertions below still address what the code under test receives.
+  const mod: any = ({
   oidcService: {
     isConfigured: () => true,
     isInitialized: () => true,
@@ -14,7 +18,10 @@ jest.mock('../src/services/oidc', () => ({
     generateAuthUrl: jest.fn().mockReturnValue({ url: 'http://auth.example.com/auth?state=test-state', codeVerifier: 'mock-code-verifier' }),
     handleCallback: jest.fn().mockResolvedValue({ id: 'u1', email: 'u@e.com', roles: ['user'] }),
   },
-}))
+})
+  mod.getOidcService = () => mod.oidcService
+  return mod
+})
 
 jest.mock('../src/config/database', () => ({
   db: Object.assign(jest.fn(), {
@@ -116,7 +123,8 @@ describe('OIDC state cookie CSRF protection', () => {
     const stateValue = stateCookieStr.split(';')[0].split('=')[1]
     const cvValue = cvCookieStr.split(';')[0].split('=')[1]
 
-    const { oidcService } = require('../src/services/oidc')
+    const { getOidcService } = require('../src/services/oidc')
+    const oidcService = getOidcService()
     const callbackRes = await request(app)
       .get(`/api/auth/oidc/callback?code=authcode&state=${stateValue}`)
       .set('Cookie', `oidc_state=${stateValue}; oidc_cv=${cvValue}`)
