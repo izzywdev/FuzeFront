@@ -9,13 +9,25 @@ import type {
 import { DEFAULT_AUTH_LABELS } from '../types'
 import { GoogleGlyph } from './GoogleGlyph'
 
-/** Password-only, no-social fallback — rendered immediately so the form is never
- * gated on the `getAuthMethods()` round trip. Mirrors LoginPage's fail-open
- * posture: a slow/failed capability fetch degrades to the password form,
- * never to a blank screen. */
+/**
+ * Fallback capability descriptor — rendered immediately so the form is never
+ * gated on the `getAuthMethods()` round trip; a slow/failed capability fetch
+ * degrades to this, never to a blank screen.
+ *
+ * `social: ['google']` mirrors the SECURITY SERVICE'S OWN default
+ * (backend/security/src/routes/security.ts: enabled unless
+ * SECURITY_SOCIAL_GOOGLE=false, which no deploy env sets) — this panel's
+ * `transport` is that service's contract, not a generic unknown backend, so
+ * the fallback should describe what that specific backend actually does by
+ * default, not the safest-sounding guess. `social: []` looked plausible but
+ * was wrong: every time the fetch was slow, raced an unmount, or errored, a
+ * legitimately-enabled Google button silently vanished — "it doesn't show in
+ * some cases," reported against LoginPage, which carried the same bug and is
+ * fixed the same way. If the security-service default ever changes, update
+ * this to match. */
 const FALLBACK_METHODS: AuthMethods = {
   password: true,
-  social: [],
+  social: ['google'],
   mfa: { enabled: false, types: [] },
   verification: { email: false, sms: false },
 }
