@@ -116,9 +116,10 @@ paths:
           schema: { type: string }
       responses:
         '302':
-          description: Redirect back to the app with a session established
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: >-
+            Redirect back to the app. Successful callbacks establish a
+            session; rejected or invalid callbacks carry a controlled error
+            query parameter.
   /auth/method:
     get:
       tags: [auth]

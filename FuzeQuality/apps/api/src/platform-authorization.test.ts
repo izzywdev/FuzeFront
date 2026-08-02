@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NextFunction, Request, Response } from 'express'
-import { requestIdentity, requirePlatformPermission } from './platform-authorization'
+import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 
 function responseDouble() {
   const response = {
@@ -27,12 +27,12 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.repository', 'create')(request, response, next)
+    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
-      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality.repository' }, action: 'create',
+      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality.Repository' }, action: 'onboard',
     })
   })
 
@@ -43,10 +43,44 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.repository', 'create')(request, response, next)
+    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(503)
     expect(response.json).toHaveBeenCalledWith({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  })
+
+  it('allows an authorized FuzeFront platform administrator', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'admin-1', tenantId: 'tenant-1', roles: ['admin'] } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 })))
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(requestIdentity(request)?.roles).toContain('admin')
+  })
+
+  it('denies a tenant administrator without the platform admin role', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'tenant-admin', tenantId: 'tenant-1', roles: ['owner'] } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 })))
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'Platform administrator access required',
+      code: 'PLATFORM_ADMIN_REQUIRED',
+    })
   })
 })

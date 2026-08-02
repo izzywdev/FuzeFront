@@ -52,12 +52,14 @@ describe('Authentication Routes', () => {
   // tests/setup.ts. Do NOT destroy it here or other suites lose their handle.
 
   describe('POST /api/auth/login', () => {
-    it('should login with valid credentials and create a session', async () => {
+    it('returns a 200 application/json response for a valid application/json login request', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })
         .expect(200)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body).toHaveProperty('token')
       expect(response.body).toHaveProperty('user')
       expect(response.body).toHaveProperty('sessionId')
@@ -77,12 +79,14 @@ describe('Authentication Routes', () => {
       await db('sessions').where('id', response.body.sessionId).del()
     })
 
-    it('should reject invalid credentials', async () => {
+    it('returns a 401 application/json response for invalid credentials', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL, password: 'wrongpassword' })
         .expect(401)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body.error).toBe('Invalid credentials')
     })
 
@@ -95,13 +99,27 @@ describe('Authentication Routes', () => {
       expect(response.body.error).toBe('Invalid credentials')
     })
 
-    it('should require password', async () => {
+    it('returns a 400 application/json response when the password is missing', async () => {
+      // @fuzequality api login
       const response = await request(app)
         .post('/api/auth/login')
         .send({ email: ADMIN_EMAIL })
         .expect(400)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body.error).toBe('Email and password required')
+    })
+
+    it('rejects an unsupported text/plain content type with 415', async () => {
+      // @fuzequality api login
+      const response = await request(app)
+        .post('/api/auth/login')
+        .set('Content-Type', 'text/plain')
+        .send(`email=${ADMIN_EMAIL}&password=${ADMIN_PASSWORD}`)
+        .expect(415)
+
+      expect(response.type).toMatch(/json/)
+      expect(response.body.error).toBe('Content-Type must be application/json')
     })
 
     it('should require email', async () => {
@@ -139,19 +157,22 @@ describe('Authentication Routes', () => {
       if (sessionId) await db('sessions').where('id', sessionId).del()
     })
 
-    it('should return user info with valid token', async () => {
+    it('returns a 200 application/json user response without a 403 forbidden authorization result', async () => {
+      // @fuzequality api getCurrentUser
       const response = await request(app)
         .get('/api/auth/user')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200)
 
+      expect(response.type).toMatch(/json/)
       expect(response.body).toHaveProperty('user')
       expect(response.body.user.email).toBe(ADMIN_EMAIL)
       expect(response.body.user.roles).toContain('admin')
       expect(response.body.user).toHaveProperty('id')
     })
 
-    it('should reject request without token', async () => {
+    it('returns 401 when the current-user request is made without authentication', async () => {
+      // @fuzequality api getCurrentUser
       const response = await request(app).get('/api/auth/user').expect(401)
       expect(response.body.error).toBe('Access denied. No token provided.')
     })
@@ -204,7 +225,8 @@ describe('Authentication Routes', () => {
       await db('sessions').where('user_id', userId).del()
     })
 
-    it('should log out only the current session, leaving other sessions intact', async () => {
+    it('returns 200 application/json for an authorized ordinary user without a 403 forbidden response', async () => {
+      // @fuzequality api logout
       // A second, independent login for the same user (e.g. another device).
       const second = await request(app)
         .post('/api/auth/login')
@@ -227,7 +249,8 @@ describe('Authentication Routes', () => {
       await db('sessions').where('id', otherSessionId).del() // cleanup
     })
 
-    it('should reject logout without token', async () => {
+    it('returns 401 when logout is attempted without authentication', async () => {
+      // @fuzequality api logout
       const response = await request(app).post('/api/auth/logout').expect(401)
       expect(response.body.error).toBe('Access denied. No token provided.')
     })

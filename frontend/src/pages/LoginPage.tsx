@@ -154,7 +154,6 @@ function LoginPage() {
       })
     // Runs ONCE on mount — this is a page-load handler (social-callback
     // exchange only now; AuthPanel owns its own auth-methods fetch).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // The AuthTransport injection seam — wraps the existing authAPI so AuthPanel

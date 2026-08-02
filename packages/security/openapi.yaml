@@ -371,9 +371,8 @@ paths:
       description: >-
         Starts a server-brokered handshake to link the named social provider to
         the authenticated account. Like login, the browser only ever transits
-        the app host and the provider's own consent host. Returns either a 302
-        redirect to the consent flow, or `{ redirectUrl }` for the SPA to
-        navigate to. On completion the provider returns to
+        the app host and the provider's own consent host. Returns
+        `{ redirectUrl }` for the SPA to navigate to. On completion the provider returns to
         `GET /v1/security/social/callback`, which links (rather than signs in)
         when an authenticated link handshake is in progress.
       security:
@@ -392,11 +391,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SocialLinkStart'
-        '302':
-          description: Redirect to the social provider consent flow.
-          headers:
-            Location:
-              schema: { type: string }
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -532,12 +526,12 @@ paths:
           schema: { type: string }
       responses:
         '302':
-          description: Redirect back to the app with a FuzeFront opaque `?code=`.
+          description: >-
+            Redirect back to the app with a FuzeFront opaque `?code=` on
+            success, or a neutral `error=authentication_failed` on rejection.
           headers:
             Location:
               schema: { type: string }
-        '401':
-          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Redirect action; no collection.
   /v1/security/social/google/callback:
@@ -760,7 +754,8 @@ paths:
       parameters:
         - name: subject
           in: query
-          required: true
+          required: false
+          description: Defaults to the authenticated caller when omitted.
           schema: { type: string }
         - name: tenant
           in: query
@@ -812,8 +807,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
       x-pagination-reason: Singleton grant creation.
     delete:
@@ -858,7 +853,8 @@ paths:
       parameters:
         - name: subject
           in: query
-          required: true
+          required: false
+          description: Defaults to the authenticated caller when omitted.
           schema: { type: string }
         - name: tenant
           in: query
@@ -930,6 +926,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
       x-pagination-reason: Singleton creation.
   /v1/security/tenants/{tenantId}:
@@ -1149,8 +1147,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenIntrospection'
-        '400':
-          $ref: '#/components/responses/BadRequest'
       x-pagination: exempt
       x-pagination-reason: Singleton introspection.
   # ─────────────────────────────── MFA: factors ─────────────────────────────
@@ -1390,6 +1386,8 @@ paths:
       summary: Send an SMS verification code
       operationId: startPhoneVerification
       description: Sends an SMS OTP to the supplied phone number.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1401,6 +1399,8 @@ paths:
           description: SMS code dispatched.
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton send action.
   /v1/security/verify/phone/confirm:
@@ -1499,6 +1499,12 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    ProviderError:
+      description: The configured identity or authorization provider rejected the operation.
       content:
         application/json:
           schema:
@@ -2101,6 +2107,9 @@ components:
           type: string
         code:
           type: string
+      anyOf:
+        - required: [token]
+        - required: [code]
     PhoneVerifyConfirmRequest:
       type: object
       properties:

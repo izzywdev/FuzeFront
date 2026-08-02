@@ -146,6 +146,25 @@ describe('AuthPanel', () => {
     expect(screen.queryByRole('button', { name: /sign in with google/i })).not.toBeInTheDocument()
   })
 
+  // Regression — "the Google button doesn't show in some cases," reported in
+  // prod. The fallback used while getAuthMethods() is in flight — and again if
+  // it fails outright — declared `social: []`. The security service's actual
+  // default (backend/security/src/routes/security.ts) is Google ENABLED unless
+  // SECURITY_SOCIAL_GOOGLE is explicitly 'false', which no deploy env sets. So
+  // a slow, unmount-raced, or failed fetch silently hid a button that WAS
+  // available. Pins that a failed fetch is no longer indistinguishable from a
+  // server that genuinely disabled Google.
+  it('still shows the Google button when getAuthMethods() fails outright (fallback matches the real default)', async () => {
+    const transport = makeTransport({
+      startSocial: vi.fn().mockResolvedValue(undefined),
+      getAuthMethods: vi.fn().mockRejectedValue(new Error('network error')),
+    })
+    render(<AuthPanel variant="compact" transport={transport} onAuthenticated={vi.fn()} />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument(),
+    )
+  })
+
   it('toggles between sign-in and sign-up labels and clears the name fields context', async () => {
     render(<AuthPanel variant="compact" transport={makeTransport()} onAuthenticated={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument()

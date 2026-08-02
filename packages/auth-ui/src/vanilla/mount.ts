@@ -17,9 +17,16 @@ import type {
 } from '../types'
 import { DEFAULT_AUTH_LABELS } from '../types'
 
+// `social: ['google']` mirrors the security service's own default (enabled
+// unless SECURITY_SOCIAL_GOOGLE=false server-side) — see the matching
+// FALLBACK_METHODS doc-comment in ../components/AuthPanel.tsx for why a
+// fallback of `[]` here silently hid an available Google button on every
+// slow/failed getAuthMethods() call, independent of the `social` opt-in
+// below (which gates whether this host wants social shown AT ALL, not
+// whether the SERVER offers it).
 const FALLBACK_METHODS: AuthMethods = {
   password: true,
-  social: [],
+  social: ['google'],
   mfa: { enabled: false, types: [] },
   verification: { email: false, sms: false },
 }
