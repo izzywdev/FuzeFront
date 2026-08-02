@@ -65,6 +65,13 @@ export interface App {
   description?: string
   organizationId?: string
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
+  /**
+   * Where the app may be INSTALLED — a user's personal space, an organization,
+   * or either. Distinct from `visibility` (who may SEE it) and from
+   * `organizationId` (who OWNS it), and distinct from `scope` above, which is
+   * the Module-Federation remote container name.
+   */
+  scopeLevel?: 'personal' | 'organization' | 'both'
   marketplaceMetadata: Record<string, any>
   isMarketplaceApproved: boolean
   installCount: number

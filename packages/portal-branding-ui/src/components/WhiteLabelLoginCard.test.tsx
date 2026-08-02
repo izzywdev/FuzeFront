@@ -70,10 +70,16 @@ describe('WhiteLabelLoginCard', () => {
     await userEvent.click(screen.getByRole('button', { name: /sign in to corpabc/i }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/security/session', expect.objectContaining({ method: 'POST' })))
-    await waitFor(() => expect(localStorage.getItem('authToken')).toBe('tok_123'))
+    // The session must land in the shell's ACCOUNT VAULT namespace, not at a
+    // bare `authToken` — a bare key is read by nothing and would leave the user
+    // signed in server-side but booted unauthenticated.
+    await waitFor(() =>
+      expect(localStorage.getItem('ff.acct.__provisional__.authToken')).toBe('tok_123')
+    )
+    expect(localStorage.getItem('authToken')).toBeNull()
 
     windowAny.location = originalLocation
-    localStorage.removeItem('authToken')
+    localStorage.removeItem('ff.acct.__provisional__.authToken')
   })
 
   it('renders the cross-portal-reject fail-closed state on a 403 cross_portal_rejected response', async () => {

@@ -57,7 +57,22 @@ export function WhiteLabelLoginCard({ context }: WhiteLabelLoginCardProps) {
         setRejection(null)
         const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
         if (typeof body.token === 'string') {
-          localStorage.setItem('authToken', body.token)
+          // Write into the shell's ACCOUNT VAULT, not the bare `authToken` key.
+          // The host namespaces every per-account value under
+          // `ff.acct.<accountId>.<key>` (frontend/src/lib/accounts.ts), and this
+          // provisional namespace is exactly where a first sign-in parks its
+          // token until `/session` names the account — after the navigation
+          // below, the shell adopts it onto the real account id.
+          //
+          // A bare `authToken` would survive only because the vault's ONE-TIME
+          // legacy migration happens to sweep it at boot. Relying on an upgrade
+          // path as an ongoing write channel is how this breaks silently the day
+          // that migration is retired, so the key is written correctly here.
+          //
+          // The literal is duplicated rather than imported because this package
+          // must not depend on host app code; frontend/src/__tests__/
+          // e2e-account-vault-helper.test.ts pins the same format.
+          localStorage.setItem('ff.acct.__provisional__.authToken', body.token)
         }
         window.location.href = '/dashboard'
       } catch {

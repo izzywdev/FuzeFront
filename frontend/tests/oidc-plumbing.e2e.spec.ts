@@ -32,6 +32,7 @@
  *   cd frontend && npx playwright test tests/oidc-plumbing.e2e.spec.ts
  */
 import { test, expect } from '@playwright/test'
+import { readActiveAuthToken } from './support/account-vault'
 
 const AUTHENTIK_URL = process.env.AUTHENTIK_URL ?? 'http://authentik-server:9000'
 const FRONTEND_URL = process.env.BASE_URL ?? 'http://localhost:4173'
@@ -215,7 +216,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
 
     // The page never navigated to Authentik — the whole exchange was server-side.
     await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 30_000 })
-    const authToken = await page.evaluate(() => localStorage.getItem('authToken'))
+    const authToken = await page.evaluate(readActiveAuthToken)
     expect(authToken).toBeTruthy()
     expect(authToken!.split('.').length).toBe(3)
   })

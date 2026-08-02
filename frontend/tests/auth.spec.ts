@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { hasActiveSession } from './support/account-vault'
 
 test.describe('Authentication', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,18 +28,10 @@ test.describe('Authentication', () => {
     // Wait for the API request to complete
     await page.waitForTimeout(5000)
 
-    // Check if we're redirected or if login was successful
-    // Check for signs of successful authentication.
-    // The app stores the JWT under the key 'authToken' (camelCase) — not the
-    // snake_case variants that were previously checked here (which always
-    // returned false even on successful login).
-    const isLoggedIn = await page.evaluate(() => {
-      return (
-        !!localStorage.getItem('authToken') ||      // primary — set by authAPI.login()
-        !!localStorage.getItem('access_token') ||   // fallback for legacy callers
-        !!sessionStorage.getItem('authToken')        // fallback for session-only flows
-      )
-    })
+    // Check for signs of successful authentication. The session lives in the
+    // account vault under `ff.acct.<accountId>.authToken`, not at a bare key,
+    // so resolve it the same way the app does.
+    const isLoggedIn = await page.evaluate(hasActiveSession)
 
     if (!isLoggedIn) {
       // If no token, check for UI elements that indicate login success

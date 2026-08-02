@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AccountSecurityHub } from '@fuzefront/account-security-ui'
 import { useFlag } from '../platform/featureFlags'
+import { getActiveAuthToken } from '../lib/accounts'
 
 /**
  * Feature-flag gate for the account-security hub
@@ -34,7 +35,7 @@ export default function AccountSecurityPage() {
     [navigate]
   )
 
-  const getToken = useCallback(() => localStorage.getItem('authToken'), [])
+  const getToken = useCallback(() => getActiveAuthToken(), [])
 
   // Flag OFF (default): the hub is not exposed. A null render keeps the route
   // registered without shipping the surface until rollout.
