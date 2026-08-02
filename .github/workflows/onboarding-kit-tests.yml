@@ -26,24 +26,33 @@ jobs:
       run:
         working-directory: packages/onboarding-kit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24.x'
 
-      # Zero runtime dependencies by design — the kit runs inside a product's init
-      # container, where an npm install is not available.
+      # These two run with NOTHING installed, on purpose. bin/register.sh and
+      # bin/validate-policy.mjs execute inside a product's init container where no
+      # npm install is possible, so a dependency creeping into either is a real
+      # break — running them bare is what catches it.
       - name: Policy validator
         run: node --test tests/validate-policy.test.mjs
 
       - name: register.sh behaviour (fake registry)
         run: sh tests/register.test.sh
 
-      - name: Manifest schema is not stale
-        run: node scripts/build-schema.mjs --check
-
       # Every template the kit hands out must itself pass the validator, or the
       # first thing a product copies is already broken.
       - name: Templates validate
         run: node bin/validate-policy.mjs templates/policy.json
+
+      # scripts/build-schema.mjs is a CI/dev generator, not shipped code (it is not
+      # in package.json `files`), so it MAY use a devDependency — js-yaml, to read
+      # the frozen openapi.yaml. Installed LAST, after every bare-run step above, so
+      # it can never mask a dependency sneaking into bin/ and reaching a product.
+      - name: Install dev dependencies (generator only)
+        run: npm install --no-audit --no-fund
+
+      - name: Manifest schema is not stale
+        run: node scripts/build-schema.mjs --check
