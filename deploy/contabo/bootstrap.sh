@@ -42,7 +42,8 @@ cat <<'EOF'
 ==> Bootstrap complete. Next (see deploy/contabo/README.md):
   1. Seal secrets: ghcr-pull, fuzefront-secrets, fuzeinfra-secrets, backup-s3
      (kubeseal), then commit the SealedSecret manifests.
-  2. kubectl apply -f deploy/argocd/project.yaml
-     kubectl apply -f deploy/argocd/app-of-apps.yaml
+  2. kubectl apply -f deploy/argocd/app-of-apps.yaml
+     (the `fuzefront` AppProject is provisioned by FuzeInfra — do NOT apply it from
+      this repo; see FuzeInfra#99 / issue #502)
   3. Argo syncs fuzeinfra + fuzefront; cert-manager issues TLS for app.fuzefront.com.
 EOF

@@ -93,7 +93,8 @@ see [`deploy/contabo/README.md`](../deploy/contabo/README.md) for exact commands
 ### 4. Hand the cluster to GitOps
 
 ```bash
-kubectl apply -f deploy/argocd/project.yaml
+# NOTE: the `fuzefront` AppProject is owned by FuzeInfra (FuzeInfra#99) — do NOT
+# apply a fuzefront AppProject from this repo (issue #502).
 kubectl apply -f deploy/argocd/app-of-apps.yaml
 kubectl apply -f deploy/backup/postgres-backup-cronjob.yaml   # once secrets exist
 ```

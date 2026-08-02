@@ -1,6 +1,8 @@
 # Root "app of apps": apply this once after bootstrap and Argo manages the rest.
-#   kubectl apply -f deploy/argocd/project.yaml
 #   kubectl apply -f deploy/argocd/app-of-apps.yaml
+# NOTE: the `fuzefront` AppProject is owned & provisioned by FuzeInfra (FuzeInfra#99).
+# Do NOT apply a fuzefront AppProject from this repo — re-applying a stale copy would
+# re-widen prod cross-namespace access to fuzeinfra (issue #502).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
