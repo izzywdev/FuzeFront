@@ -15,6 +15,7 @@
     "packages/chat-client",
     "packages/chat-ui",
     "packages/identity-ui",
+    "packages/auth-ui",
     "packages/account-security-ui",
     "packages/portal-branding-ui",
     "portal-client",
@@ -24,7 +25,8 @@
     "packages/security",
     "design-system",
     "services/chat-service",
-    "services/email-service"
+    "services/email-service",
+    "services/notification-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

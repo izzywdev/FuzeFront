@@ -3,6 +3,7 @@ import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
 import { logger } from '../lib/logger';
+import { AuthentikTenant, allTenants, currentTenant, runWithTenant } from '../providers/authentik/tenants';
 
 /**
  * HTTP timeout for every server-side OIDC call (discovery, token grant, userinfo,
@@ -47,13 +48,27 @@ class OIDCService {
   private lastInitAttemptAt = 0;
   private backgroundRetryStarted = false;
 
-  constructor() {
+  /**
+   * ONE INSTANCE PER TENANT. The config comes from the tenant, not from
+   * process.env: each tenant is backed by its own Authentik instance, so a
+   * shared client would run discovery against one directory and then validate
+   * the other's tokens against those keys. The discovery cache, the init
+   * cooldown and the background retry loop are all per-instance for the same
+   * reason — one tenant's Authentik being down must not mark another's client
+   * as failed, or leave it serving a stale issuer.
+   */
+  constructor(private readonly tenant: AuthentikTenant) {
     this.config = {
-      issuerUrl: process.env.AUTHENTIK_ISSUER_URL || 'http://localhost:9000/application/o/fuzefront/',
-      clientId: process.env.AUTHENTIK_CLIENT_ID || '',
-      clientSecret: process.env.AUTHENTIK_CLIENT_SECRET || '',
-      redirectUri: process.env.AUTHENTIK_REDIRECT_URI || 'http://fuzefront.dev.local/api/auth/oidc/callback',
+      issuerUrl: tenant.issuerUrl,
+      clientId: tenant.clientId,
+      clientSecret: tenant.clientSecret,
+      redirectUri: tenant.redirectUri,
     };
+  }
+
+  /** Tenant this client serves — used for log correlation and cache keying. */
+  get tenantId(): string {
+    return this.tenant.id;
   }
 
   async initialize(): Promise<void> {
@@ -83,7 +98,12 @@ class OIDCService {
       // issuer regardless of the request host, so token validation still matches.
       // The authorization_endpoint stays EXTERNAL (it is browser-facing).
       let effectiveIssuer = issuer;
-      const internalBase = process.env.AUTHENTIK_BASE_URL;
+      // Per-tenant in-cluster base. Reading this from the tenant rather than
+      // the environment is what keeps each tenant's server-side calls pointed
+      // at ITS OWN authentik Service (authentik-server vs
+      // authentik-mendys-server) instead of whichever one the process happened
+      // to be configured with.
+      const internalBase = this.tenant.baseUrl || undefined;
       if (internalBase) {
         const toInternal = (u?: string): string | undefined => {
           if (!u) return u;
@@ -295,13 +315,59 @@ class OIDCService {
         'oidc: token exchange completed'
       );
 
-      // Get user info
-      const userinfoStart = Date.now();
-      const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      logger.info(
-        { elapsedMs: Math.round(Date.now() - userinfoStart), email: userinfo.email },
-        'oidc: userinfo retrieved'
-      );
+      // Claims come from the ID TOKEN, not a second HTTP call.
+      //
+      // A sign-in is a chain of SEQUENTIAL round-trips to the identity provider
+      // (flow-executor stages, then authorize -> code, then this token
+      // exchange), and Authentik averages ~1.3s per request with multi-second
+      // spikes — so the round-trip COUNT is the dominant cost, and a redundant
+      // one is pure added latency on every single login.
+      //
+      // `userinfo` was exactly that. The provider blueprint sets
+      // `include_claims_in_id_token: true` and grants the `openid email
+      // profile` scope mappings we request, so the ID token already carries
+      // every field syncUserToDatabase reads: email, email_verified, name,
+      // given_name (see deploy/helm/.../blueprints/provider-oidc.yaml). The
+      // extra endpoint call re-fetched data we were already holding.
+      //
+      // Trust: `client.callback()` has already verified the ID token's
+      // signature, issuer, audience and expiry, so these claims are no less
+      // authoritative than the userinfo response — same provider, same
+      // mappings, one fewer hop.
+      //
+      // FALL BACK, don't assume. If `include_claims_in_id_token` is ever turned
+      // off, or a provider is configured without the profile/email mappings,
+      // `email` will be missing — and email is the natural key user sync
+      // matches on, so guessing would create duplicate accounts. Absent email
+      // means we still make the userinfo call rather than proceed on partial
+      // data.
+      const claimsStart = Date.now();
+      let userinfo: Record<string, unknown> = {};
+      try {
+        userinfo = tokenSet.claims() as Record<string, unknown>;
+      } catch (err) {
+        // A malformed/absent id_token should not be fatal — the fallback below
+        // covers it.
+        logger.warn(
+          { err: (err as Error).message },
+          'oidc: could not read id_token claims; falling back to userinfo'
+        );
+      }
+      if (!userinfo.email) {
+        const userinfoStart = Date.now();
+        userinfo = (await this.client.userinfo(
+          tokenSet.access_token!
+        )) as Record<string, unknown>;
+        logger.info(
+          { elapsedMs: Math.round(Date.now() - userinfoStart) },
+          'oidc: userinfo retrieved (id_token carried no email)'
+        );
+      } else {
+        logger.info(
+          { elapsedMs: Math.round(Date.now() - claimsStart) },
+          'oidc: claims read from id_token (userinfo round-trip skipped)'
+        );
+      }
 
       // Sync user to local database
       const syncStart = Date.now();
@@ -464,4 +530,70 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
     }
 }
 
-export const oidcService = new OIDCService();
+/**
+ * One OIDCService per tenant, keyed by tenant id and created on first use.
+ *
+ * Keyed by id rather than by host: several hosts may map to one tenant
+ * (live./marketplace.mendysrobotics.com), and they must share a single
+ * discovery cache and a single init/backoff state rather than racing each
+ * other into duplicate discovery calls.
+ */
+const byTenant = new Map<string, OIDCService>();
+
+/**
+ * Structural type of the OIDC client, so consumers can depend on the shape
+ * (and inject fakes in tests) without importing the class or being bound to a
+ * particular tenant's instance.
+ */
+export type OIDCServiceLike = OIDCService;
+
+/** The OIDC client for an explicit tenant. */
+export function getOidcServiceFor(tenant: AuthentikTenant): OIDCService {
+  let svc = byTenant.get(tenant.id);
+  if (!svc) {
+    svc = new OIDCService(tenant);
+    byTenant.set(tenant.id, svc);
+  }
+  return svc;
+}
+
+/**
+ * The OIDC client for the tenant serving the current request.
+ *
+ * Replaces the former `oidcService` singleton, which was constructed at import
+ * time from process.env and therefore could only ever address one Authentik.
+ * Throws outside a tenant context rather than guessing — see tenants.ts.
+ */
+export function getOidcService(): OIDCService {
+  return getOidcServiceFor(currentTenant('OIDC client'));
+}
+
+/** Drop the per-tenant instances. Tests only. */
+export function resetOidcServicesForTests(): void {
+  byTenant.clear();
+}
+
+/**
+ * Warm every configured tenant at boot: initialise its client and start its
+ * self-heal loop. Previously this was a single implicit client; with several
+ * tenants each needs its own, and one tenant's Authentik being down must not
+ * prevent the others from coming up — so failures are logged, not thrown.
+ */
+export async function initializeAllTenants(): Promise<void> {
+  await Promise.all(
+    allTenants().map(async (tenant) => {
+      const svc = getOidcServiceFor(tenant);
+      try {
+        await runWithTenant(tenant, () => svc.initialize());
+        logger.info({ tenant: tenant.id }, 'oidc: tenant client initialized');
+      } catch (error) {
+        logger.warn(
+          { tenant: tenant.id, err: (error as Error).message },
+          'oidc: tenant client failed to initialize; background retry will self-heal'
+        );
+      } finally {
+        svc.startBackgroundRetry();
+      }
+    })
+  );
+}

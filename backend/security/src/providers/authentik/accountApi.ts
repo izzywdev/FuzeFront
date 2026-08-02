@@ -11,6 +11,7 @@
  * receives a permissive default (e.g. "no connections", which would let the
  * last-sign-in-method guard wave through an account lockout).
  */
+import { currentTenant } from './tenants'
 
 /** A social source connection as Authentik models it. */
 export interface OAuthConnection {
@@ -23,19 +24,23 @@ export interface OAuthConnection {
 }
 
 function baseUrl(): string {
+  const tenant = currentTenant('Authentik base URL')
   return (
-    process.env.AUTHENTIK_BASE_URL ||
-    process.env.AUTHENTIK_ISSUER_URL?.replace(/\/application\/o\/.*$/, '') ||
+    tenant.baseUrl ||
+    tenant.issuerUrl.replace(/\/application\/o\/.*$/, '') ||
     'http://localhost:9000'
   ).replace(/\/$/, '')
 }
 
 function adminToken(): string {
-  const token = process.env.AUTHENTIK_ADMIN_TOKEN
+  // Per-tenant: this token grants admin access to ONE Authentik instance.
+  // Presenting one tenant's token to another's API would either fail or —
+  // worse — succeed against the wrong directory.
+  const token = currentTenant('Authentik admin token').adminToken
   if (!token) {
     // Fail-closed: without admin credentials we cannot read connection state,
     // and guessing it is exactly how an account gets locked out.
-    throw new Error('AUTHENTIK_ADMIN_TOKEN is not configured')
+    throw new Error('Authentik admin token is not configured for this tenant')
   }
   return token
 }

@@ -30,7 +30,8 @@ function makeApp(p: IdentityProvider) {
 afterEach(() => setIdentityProvider(null))
 
 describe('GET /email-available', () => {
-  it('200 { available:true } when no account exists', async () => {
+  it('returns 200 application/json when the email is available', async () => {
+    // @fuzequality api getEmailAvailable
     const p = fakeProvider(false)
     const res = await request(makeApp(p)).get('/api/v1/security/email-available?email=fresh@example.com')
     expect(res.status).toBe(200)
@@ -54,7 +55,8 @@ describe('GET /email-available', () => {
     expect(p.emailExists).toHaveBeenCalledWith('alice@example.com')
   })
 
-  it('400 on a malformed email', async () => {
+  it('returns 400 application/json for an invalid email format', async () => {
+    // @fuzequality api getEmailAvailable
     const p = fakeProvider(false)
     const res = await request(makeApp(p)).get('/api/v1/security/email-available?email=not-an-email')
     expect(res.status).toBe(400)
@@ -62,14 +64,16 @@ describe('GET /email-available', () => {
     expect(p.emailExists).not.toHaveBeenCalled()
   })
 
-  it('400 when the email param is missing', async () => {
+  it('returns 400 application/json when the required email query parameter is missing', async () => {
+    // @fuzequality api getEmailAvailable
     const p = fakeProvider(false)
     const res = await request(makeApp(p)).get('/api/v1/security/email-available')
     expect(res.status).toBe(400)
     expect(res.body.code).toBe('MALFORMED')
   })
 
-  it('429 once the per-IP rate limit is exceeded (enumeration guard)', async () => {
+  it('returns 429 application/json once the per-IP rate limit is exceeded', async () => {
+    // @fuzequality api getEmailAvailable
     // Limit is 20/min/IP. supertest reuses one ephemeral client port per call,
     // but req.ip resolves to the loopback address for all of them, so the 21st
     // request within the window trips the limiter.

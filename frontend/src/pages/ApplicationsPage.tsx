@@ -1,6 +1,15 @@
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AppCard, Badge } from '@fuzefront/design-system'
 import { useRegisteredApps } from '../platform/appRegistry'
+import { useOrganizations, type App as BackendApp } from '../lib/shared'
+import {
+  appsAPI,
+  getInstalledApps,
+  uninstallApp,
+  type AppScopeLevel,
+} from '../services/api'
+import InstallAppDialog from '../components/InstallAppDialog'
 import {
   iconImageUrl,
   iconGlyph,
@@ -18,6 +27,205 @@ function ApplicationsPage() {
   const navigate = useNavigate()
   const { apps, loading, error } = useRegisteredApps()
 
+  return (
+    <>
+      <ApplicationsLauncher
+        apps={apps}
+        loading={loading}
+        error={error}
+        navigate={navigate}
+      />
+      {/* The install surface speaks the backend apps API (which carries the app
+          id and its scopeLevel). The launcher above speaks the app-registry
+          contract, whose App schema is `additionalProperties: false` and
+          therefore carries no backend id — the two are deliberately separate
+          reads rather than a fragile slug-matched join. */}
+      <InstalledAppsSection />
+    </>
+  )
+}
+
+/**
+ * Apps installed into the caller's personal space or the active organization,
+ * with the install / uninstall controls.
+ *
+ * Frames: design/frames/app-scopes-user-menu/03-install-scope.html.
+ */
+function InstalledAppsSection() {
+  const { activeOrganizationId } = useOrganizations()
+  const [available, setAvailable] = useState<BackendApp[]>([])
+  const [installedAppIds, setInstalledAppIds] = useState<Set<string>>(new Set())
+  const [status, setStatus] = useState<'loading' | 'idle' | 'error'>('loading')
+  const [dialogApp, setDialogApp] = useState<{
+    id: string
+    name: string
+    scopeLevel: AppScopeLevel
+  } | null>(null)
+  const [installationByApp, setInstallationByApp] = useState<
+    Record<string, { id: string; mode: string }>
+  >({})
+
+  const load = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const [apps, installs] = await Promise.all([
+        appsAPI.getApps() as Promise<BackendApp[]>,
+        getInstalledApps(activeOrganizationId ?? undefined),
+      ])
+      setAvailable(Array.isArray(apps) ? apps : [])
+      setInstalledAppIds(new Set(installs.map(i => i.appId)))
+      setInstallationByApp(
+        Object.fromEntries(
+          installs.map(i => [i.appId, { id: i.id, mode: i.mode }])
+        )
+      )
+      setStatus('idle')
+    } catch (err) {
+      console.error('Failed to load app installations:', err)
+      setStatus('error')
+    }
+  }, [activeOrganizationId])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  if (status === 'error') {
+    return (
+      <p style={{ color: 'var(--error-color)', fontSize: 'var(--text-sm)' }}>
+        Couldn&apos;t load installed applications.
+      </p>
+    )
+  }
+
+  return (
+    <section style={{ maxWidth: '900px', marginTop: 'var(--space-10)' }}>
+      <h2
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 'var(--text-xl)',
+          margin: '0 0 var(--space-2)',
+        }}
+      >
+        Install applications
+      </h2>
+      <p style={{ color: 'var(--text-secondary)', margin: '0 0 var(--space-5)' }}>
+        Each app declares whether it can live in your personal space, in an
+        organization, or either. Installing asks only what the app leaves open.
+      </p>
+
+      {status === 'loading' && (
+        <p style={{ color: 'var(--text-tertiary)' }}>Loading…</p>
+      )}
+
+      {status === 'idle' && available.length === 0 && (
+        <p style={{ color: 'var(--text-tertiary)' }}>
+          No applications available to install.
+        </p>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+        {available.map(app => {
+          const installed = installedAppIds.has(app.id)
+          const installation = installationByApp[app.id]
+          const scopeLevel: AppScopeLevel = app.scopeLevel ?? 'both'
+
+          return (
+            <div
+              key={app.id}
+              data-app-row={app.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-4)',
+                padding: 'var(--space-4)',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontWeight: 'var(--weight-medium)',
+                  }}
+                >
+                  {app.name}
+                </div>
+                {app.description && (
+                  <div
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      fontSize: 'var(--text-sm)',
+                      marginTop: 'var(--space-1)',
+                    }}
+                  >
+                    {app.description}
+                  </div>
+                )}
+              </div>
+
+              <Badge data-scope-level={scopeLevel}>{scopeLevel}</Badge>
+
+              {installed && installation ? (
+                <button
+                  className="btn btn-ghost"
+                  data-action="uninstall"
+                  data-app-id={app.id}
+                  onClick={async () => {
+                    try {
+                      await uninstallApp(app.id, installation.id)
+                    } catch (err) {
+                      console.error('Uninstall failed:', err)
+                    }
+                    void load()
+                  }}
+                >
+                  Uninstall
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  data-action="open-install"
+                  data-app-id={app.id}
+                  onClick={() =>
+                    setDialogApp({ id: app.id, name: app.name, scopeLevel })
+                  }
+                >
+                  Install
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {dialogApp && (
+        <InstallAppDialog
+          open
+          appId={dialogApp.id}
+          appName={dialogApp.name}
+          scopeLevel={dialogApp.scopeLevel}
+          onClose={() => setDialogApp(null)}
+          onChanged={() => void load()}
+        />
+      )}
+    </section>
+  )
+}
+
+function ApplicationsLauncher({
+  apps,
+  loading,
+  error,
+  navigate,
+}: {
+  apps: ReturnType<typeof useRegisteredApps>['apps']
+  loading: boolean
+  error: string | null
+  navigate: ReturnType<typeof useNavigate>
+}) {
   return (
     <div style={{ maxWidth: '900px' }}>
       <h1

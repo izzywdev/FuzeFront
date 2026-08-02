@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import type {
   Flow,
+  AdminContextAudit,
   Portfolio,
   Repository,
   RepositoryInput,
@@ -16,6 +17,11 @@ export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
+  updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
   saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
@@ -23,6 +29,7 @@ export interface CatalogStore {
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
+  recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -41,6 +48,7 @@ const emptyPortfolio = (): Portfolio => ({
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
+  private adminContextAudits: AdminContextAudit[] = []
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -63,6 +71,11 @@ export class MemoryCatalogStore implements CatalogStore {
       expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
       findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
       diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
+      // Requirement intelligence predates tenant ownership. Fail closed until
+      // FQ-182 migrates Jira scopes and their graph to an organization.
+      requirements: [],
+      flows: [],
+      suggestions: [],
     }
   }
 
@@ -87,6 +100,17 @@ export class MemoryCatalogStore implements CatalogStore {
       lastScanStatus: 'never',
     }
     this.data.repositories.push(repository)
+    return repository
+  }
+
+  async updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ) {
+    const repository = await this.repository(id, tenantId)
+    if (!repository) return undefined
+    Object.assign(repository, value)
     return repository
   }
 
@@ -166,6 +190,12 @@ export class MemoryCatalogStore implements CatalogStore {
     const item = this.implementations.find(candidate => candidate.id === id)
     if (item) Object.assign(item, value, { updatedAt: new Date().toISOString() })
   }
+
+  async recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>) {
+    const audit = { ...input, id: randomUUID(), createdAt: new Date().toISOString() }
+    this.adminContextAudits.push(audit)
+    return audit
+  }
 }
 
 export class PostgresCatalogStore implements CatalogStore {
@@ -231,6 +261,11 @@ export class PostgresCatalogStore implements CatalogStore {
     result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
     result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
     result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
+    // Requirement intelligence predates tenant ownership. Never expose the
+    // legacy global graph through an organization-scoped portfolio.
+    result.requirements = []
+    result.flows = []
+    result.suggestions = []
     return result
   }
 
@@ -250,6 +285,22 @@ export class PostgresCatalogStore implements CatalogStore {
     return (await this.repository(result.rows[0].id, tenantId))!
   }
 
+  async updateRepositoryAdministration(
+    id: string,
+    tenantId: string,
+    value: Pick<RepositoryInput, 'ownership' | 'jiraBindings' | 'storybookBaseUrl'>
+  ) {
+    const result = await this.pool.query(
+      `UPDATE fuzequality.repositories
+       SET config = config || $3::jsonb, updated_at = now()
+       WHERE id = $1 AND tenant_id = $2 AND enabled = true
+       RETURNING id`,
+      [id, tenantId, JSON.stringify(value)]
+    )
+    if (!result.rowCount) return undefined
+    return this.repository(id, tenantId)
+  }
+
   async setRepositoryStatus(id: string, status: Repository['lastScanStatus']) {
     await this.pool.query('UPDATE fuzequality.repositories SET last_scan_status=$2, updated_at=now() WHERE id=$1', [id, status])
   }
@@ -258,6 +309,16 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      await client.query(
+        `UPDATE fuzequality.test_expectations
+         SET active=false, updated_at=now()
+         WHERE (subject_type='api-operation' AND subject_id IN (
+           SELECT id FROM fuzequality.api_operations WHERE repository_id=$1
+         )) OR (subject_type='frontend-surface' AND subject_id IN (
+           SELECT id FROM fuzequality.frontend_surfaces WHERE repository_id=$1
+         ))`,
+        [result.repository.id]
+      )
       await client.query('UPDATE fuzequality.api_operations SET active=false WHERE repository_id=$1', [result.repository.id])
       await client.query('UPDATE fuzequality.frontend_surfaces SET active=false WHERE repository_id=$1', [result.repository.id])
       await client.query('UPDATE fuzequality.test_cases SET active=false WHERE repository_id=$1', [result.repository.id])
@@ -319,6 +380,18 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE id=$1`,
       [id, value.status, value.workflowUrl, value.pullRequestUrl, value.error],
     )
+  }
+
+  async recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit> {
+    const id = randomUUID()
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.admin_context_audits
+       (id, actor_id, source_tenant_id, target_tenant_id, reason, correlation_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING created_at`,
+      [id, input.actorId, input.sourceTenantId, input.targetTenantId, input.reason, input.correlationId]
+    )
+    return { ...input, id, createdAt: result.rows[0].created_at.toISOString() }
   }
 
   private mapTestImplementation(row: Record<string, any>): TestImplementationRequest {

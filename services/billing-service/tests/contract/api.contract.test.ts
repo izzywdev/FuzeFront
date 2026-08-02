@@ -45,6 +45,7 @@ describe('billing-service contract :: getHealth (GET /health)', () => {
 
 describe('billing-service contract :: getPlans (GET /plans)', () => {
   it('200 {plans: Plan[]} — public, no auth required', async () => {
+    // @fuzequality api getPlans
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).get(`${BASE}/plans`); // no Authorization header
     expect(res.status).toBe(200);
@@ -121,6 +122,7 @@ describe('billing-service contract :: createSubscription (POST /subscriptions)',
   });
 
   it('401 Unauthorized when the internal token is missing', async () => {
+    // @fuzequality api createSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .post(`${BASE}/subscriptions`)
@@ -152,6 +154,7 @@ describe('billing-service contract :: createSubscription (POST /subscriptions)',
 
 describe('billing-service contract :: getSubscription (GET /subscriptions/{id})', () => {
   it('200 {subscription} when the mirror exists', async () => {
+    // @fuzequality api getSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionRepo.findByStripeId.mockResolvedValue(makeSubscription());
     const res = await request(app)
@@ -172,14 +175,25 @@ describe('billing-service contract :: getSubscription (GET /subscriptions/{id})'
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api getSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).get(`${BASE}/subscriptions/sub_test123`);
     expect(res.status).toBe(401);
+  });
+
+  it('does not get a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api getSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .get(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .expect(401);
   });
 });
 
 describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{id})', () => {
   it('200 {subscription} on a valid plan change', async () => {
+    // @fuzequality api updateSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionService.update.mockResolvedValue(makeSubscription({ priceId: 'price_pro' }));
     const res = await request(app)
@@ -237,14 +251,26 @@ describe('billing-service contract :: updateSubscription (PATCH /subscriptions/{
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api updateSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).patch(`${BASE}/subscriptions/sub_test123`).send({ priceId: 'price_pro' });
     expect(res.status).toBe(401);
+  });
+
+  it('does not update a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api updateSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .patch(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .send({ priceId: 'price_pro' })
+      .expect(404);
   });
 });
 
 describe('billing-service contract :: cancelSubscription (DELETE /subscriptions/{id})', () => {
   it('200 {subscription} with cancellation scheduled', async () => {
+    // @fuzequality api cancelSubscription
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.subscriptionService.cancel.mockResolvedValue(makeSubscription({ cancelAtPeriodEnd: true }));
     const res = await request(app)
@@ -266,14 +292,25 @@ describe('billing-service contract :: cancelSubscription (DELETE /subscriptions/
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api cancelSubscription
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).delete(`${BASE}/subscriptions/sub_test123`);
     expect(res.status).toBe(401);
+  });
+
+  it('does not cancel a subscription when the required subscriptionId path parameter is missing', async () => {
+    // @fuzequality api cancelSubscription
+    const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
+    await request(app)
+      .delete(`${BASE}/subscriptions/`)
+      .set(...authHeader())
+      .expect(404);
   });
 });
 
 describe('billing-service contract :: createSetupIntent (POST /setup-intent)', () => {
   it('200 {clientSecret} on success', async () => {
+    // @fuzequality api createSetupIntent
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.stripe.setupIntents.create.mockResolvedValue({ client_secret: 'seti_secret_xyz' });
     const res = await request(app)
@@ -307,6 +344,7 @@ describe('billing-service contract :: createSetupIntent (POST /setup-intent)', (
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api createSetupIntent
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).post(`${BASE}/setup-intent`).send({ entityType: 'user', entityId: USER_ID });
     expect(res.status).toBe(401);
@@ -315,6 +353,7 @@ describe('billing-service contract :: createSetupIntent (POST /setup-intent)', (
 
 describe('billing-service contract :: addCredits (POST /credits)', () => {
   it('201 {id, endingBalance} on success', async () => {
+    // @fuzequality api addCredits
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     stubs.stripe.customers.createBalanceTransaction.mockResolvedValue({
       id: 'cbtxn_1',
@@ -369,12 +408,14 @@ describe('billing-service contract :: addCredits (POST /credits)', () => {
   });
 
   it('401 Unauthorized without token', async () => {
+    // @fuzequality api addCredits
     const { app } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app).post(`${BASE}/credits`).send({ entityType: 'organization', entityId: ORG_ID, amount: 500 });
     expect(res.status).toBe(401);
   });
 
-  it('403 Forbidden with a valid token but WITHOUT admin context (HIGH-1)', async () => {
+  it('403 Forbidden when the X-Billing-Actor-Is-Admin header is missing (HIGH-1)', async () => {
+    // @fuzequality api addCredits
     const { app, stubs } = buildApp({ internalToken: INTERNAL_TOKEN });
     const res = await request(app)
       .post(`${BASE}/credits`)

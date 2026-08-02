@@ -100,6 +100,12 @@ secret:
   # (POST /internal/provision), called by Plan D's provisioning-service.
   # DEV ONLY default — override with a long random value in real deployments.
   internalProvisionSecret: "dev-internal-provision-secret-change-me"
+  # Shared service token for notification-service's /internal/publish fan-out.
+  # EMPTY BY DEFAULT and that is deliberate: with no token the service disables
+  # the publish surface entirely rather than exposing an unauthenticated
+  # write-into-any-inbox endpoint. Set it (sealed, in prod) when a producer
+  # service needs to publish.
+  notificationInternalToken: ""
   # Authentik (DEV ONLY — override). Secret key must be long/random in real use.
   authentikSecretKey: "dev-authentik-secret-key-change-me-0123456789abcdef0123"
   authentikBootstrapPassword: "admin123"
@@ -419,6 +425,48 @@ chatService:
     enabled: false
     # Directory inside the chat-service image that holds the docs to index.
     docsDir: "/app/services/chat-service/docs"
+
+# The notification inbox behind the shell's bell. Owns its own Postgres tables
+# (notifications / notification_preferences / notification_deliveries) in the
+# shared platform database, and is reached SAME-ORIGIN through the host
+# backend's /api/v1/notifications proxy — the browser never calls it directly.
+notificationService:
+  enabled: false
+  # NOTE ON REPLICAS: the SSE hub is IN-PROCESS, so with replicas > 1 a live
+  # push only reaches clients attached to the same pod. That degrades to a
+  # delayed badge, which the client's reconnect + unread-count refetch corrects;
+  # the inbox read is always authoritative from Postgres. Cross-pod fan-out
+  # (Redis pub/sub) is the additive fix when scaling past one replica.
+  replicas: 1
+  # Port 3008: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+  # 3005=provisioning, 3006=chat, 3007=billing.
+  port: 3008
+  image:
+    repository: fuzefront/notification-service
+    tag: local
+  # SSE comment-frame interval. Must stay below the ingress/proxy idle timeout,
+  # or a live stream is reaped and the client silently stops receiving events.
+  sseHeartbeatMs: 25000
+  # Per-user concurrent stream cap. Bounds a client stuck in a reconnect loop
+  # from pinning every socket on the pod.
+  maxStreamsPerUser: 5
+  rateLimit:
+    windowMs: 60000
+    # Generous — the badge polls and the panel opens often. This exists to stop
+    # a runaway client, not to shape normal traffic. The SSE stream is exempt.
+    max: 240
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # notification-db-migrate Job: runs the knex migrations as a
+  # pre-install/pre-upgrade hook, before the service starts. Nothing else
+  # creates these tables. Idempotent — leave on whenever the service is enabled.
+  migrate:
+    enabled: true
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.

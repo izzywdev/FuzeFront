@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { readActiveAuthToken } from './support/account-vault'
 
 // Real user path proving the built-in Clock federated app actually MOUNTS (issue
 // #132): sign in, open the 9-dots launcher, click the Clock card, and verify the
@@ -59,10 +60,12 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
     { timeout: 10000 }
   )
 
-  // Dump org API response for diagnostics — before trying to click the launcher
-  const orgsResp = await page.evaluate(async () => {
+  // Dump org API response for diagnostics — before trying to click the launcher.
+  // The token comes from the account vault (`ff.acct.<accountId>.authToken`),
+  // resolved the same way the app resolves it — see tests/support/account-vault.ts.
+  const activeToken = await page.evaluate(readActiveAuthToken)
+  const orgsResp = await page.evaluate(async (token: string | null) => {
     try {
-      const token = localStorage.getItem('authToken')
       const r = await fetch('http://localhost:3001/api/organizations', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
@@ -71,12 +74,12 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
     } catch (e: any) {
       return { status: -1, body: String(e) }
     }
-  })
+  }, activeToken)
   console.log('[DIAG] /api/organizations response:', JSON.stringify(orgsResp))
-  console.log('[DIAG] authToken in localStorage:', await page.evaluate(() => {
-    const t = localStorage.getItem('authToken')
-    return t ? t.substring(0, 30) + '...' : 'null'
-  }))
+  console.log(
+    '[DIAG] active-account token:',
+    activeToken ? activeToken.substring(0, 30) + '...' : 'null'
+  )
 
   // --- open the 9-dots launcher and click the Clock card (the real path) ---
   await page.locator('button.app-grid-button').click()

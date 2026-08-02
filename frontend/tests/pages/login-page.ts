@@ -1,4 +1,5 @@
 import { type Page, type Locator, expect } from '@playwright/test'
+import { hasActiveSession } from '../support/account-vault'
 
 export class LoginPage {
   readonly page: Page
@@ -84,19 +85,9 @@ export class LoginPage {
     // Wait a bit for localStorage to be updated
     await this.page.waitForTimeout(500)
     
-    // Check localStorage for auth tokens (including the actual token name used by the app)
-    return await this.page.evaluate(() => {
-      return !!(
-        localStorage.getItem('authToken') ||  // This is the actual token name used by the app
-        localStorage.getItem('authToken') ||
-        localStorage.getItem('access_token') ||
-        localStorage.getItem('token') ||
-        sessionStorage.getItem('authToken') ||
-        sessionStorage.getItem('auth_token') ||
-        sessionStorage.getItem('access_token') ||
-        sessionStorage.getItem('token')
-      )
-    })
+    // The session lives in the account vault (`ff.acct.<accountId>.authToken`),
+    // resolved through the same per-tab active-account rule the app uses.
+    return await this.page.evaluate(hasActiveSession)
   }
 
   async hasSuccessIndicators(): Promise<boolean> {

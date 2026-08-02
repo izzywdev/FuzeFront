@@ -6,6 +6,7 @@ import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
 import { resources } from './i18n/resources'
+import { migrateLegacySession } from './lib/accounts'
 import App from './App.tsx'
 // Design-system token scales (spacing / type / radii / motion) the DS
 // components — e.g. the <Select> rendered by @fuzefront/i18n's
@@ -91,6 +92,12 @@ window.addEventListener('unhandledrejection', event => {
 
 // Initialize enhanced console
 enhanceConsole()
+
+// Move any pre-multi-account session into the account vault BEFORE anything
+// reads a token. Running this after the first API call would let a bare
+// `authToken` be read once by code paths the vault is meant to own — see
+// lib/accounts.ts, rule 1 of the isolation model.
+migrateLegacySession()
 
 // Keep the PWA service worker checking for updates while the tab is open —
 // see registerServiceWorker.ts for why this is required (autoUpdate alone
