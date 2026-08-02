@@ -30,6 +30,14 @@ on:
       - 'services/sms-service/**'
       - 'services/provisioning-service/**'
       - 'services/billing-service/**'
+      # Added in the same change that discovered the gap: #432 added the
+      # "Build & push chat-service" step below, but never added chat-service's
+      # own path here, so a change confined to services/chat-service/** (not
+      # touching packages/**, deploy/helm/fuzefront/**, or this file) would
+      # merge green and NEVER trigger a release — the exact same silent-ship
+      # failure mode the packages/** comment above describes, just for a
+      # different path. This was live for every commit between #432 and now.
+      - 'services/chat-service/**'
       - 'clock-app/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
