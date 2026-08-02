@@ -39,13 +39,25 @@ declare global {
 }
 
 /**
- * Prefer Express's `req.hostname`, which already honours the trust-proxy
- * setting, and fall back to the raw Host header. X-Forwarded-Host is NOT read
- * directly: behind the ingress it is caller-supplied, and letting it pick the
- * tenant would let a client choose which directory to authenticate against.
+ * The host used to select the tenant — the RAW `Host` header, deliberately.
+ *
+ * Do NOT use Express's `req.hostname` here. The service runs with
+ * `trust proxy` enabled (it needs it for `req.ip`), and under that setting
+ * `req.hostname` resolves from **X-Forwarded-Host** in preference to `Host`.
+ * X-Forwarded-Host is caller-supplied unless every proxy in front overwrites
+ * it, so selecting the tenant from it lets a client pick which account
+ * directory to authenticate against by adding one header — which is precisely
+ * the boundary this middleware exists to hold. A regression test covers it
+ * (tests/tenant-session-roundtrip.test.ts), because the earlier version of
+ * this function did exactly that and the accompanying comment claimed it did
+ * not.
+ *
+ * `Host` is what the ingress routes on, so it is also the correct key: a
+ * request only reaches this service on a given host because a rule matched
+ * that host.
  */
 function requestHost(req: Request): string {
-  return normaliseHost(req.hostname || req.headers.host)
+  return normaliseHost(req.headers.host)
 }
 
 export function tenantContext(req: Request, res: Response, next: NextFunction): void {

@@ -1,0 +1,68 @@
+{{- /*
+  Ingress NetworkPolicy for fuzefront-security (port 3002).
+
+  WHY THIS POLICY LISTS MORE THAN THE mendys-prod RULE
+  -----------------------------------------------------
+  Same k3s NetworkPolicy semantics as authentik-networkpolicy.yaml: FuzeFront
+  ships no default-deny ingress NetworkPolicy, so fuzefront-security currently
+  accepts ALL ingress. k3s enforces NetworkPolicy via its built-in controller,
+  so as soon as ANY policy's podSelector matches fuzefront-security, that pod
+  flips to "deny all ingress except what this policy's rules allow". A
+  standalone mendys-prod->3002 allow-rule would therefore silently break:
+    - Traefik->fuzefront-security  (ingress.yaml reverse-proxies /api/v1/security,
+      /api/auth, /api/organizations, /api/internal here)
+    - intra-fuzefront              (e.g. provisioning-service calling
+      http://fuzefront-security:3002 in-cluster)
+  So the mendys-prod rule is authored ALONGSIDE those existing allowances —
+  enabling this policy is additive to who can already reach security-service,
+  not a lockdown.
+
+  Origin: FuzeInfra#339 hand-off (mendys-prod `datasets-service` verifies
+  sessions via /api/v1/security/session and authz via /authz/check +
+  /authz/grants, all on this host:port). The policy MUST live in the
+  fuzefront namespace because a NetworkPolicy podSelector only matches pods
+  in its own namespace. Issue: FuzeFront#493.
+*/}}
+{{- if and .Values.securityService.enabled .Values.securityService.networkPolicy.enabled }}
+{{- $np := .Values.securityService.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fuzefront-security-ingress
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: security-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: security-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik (k3s ingress controller) -> the reverse-proxy path.
+    # kube-system carries the kubernetes.io/metadata.name label (k8s >= 1.21 / k3s).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # Intra-fuzefront: any pod in this namespace (e.g. provisioning-service's
+    # server-side session verification call).
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # NEW — the reason this policy exists: mendys-prod's datasets-service
+    # authenticates against fuzefront-security in-cluster.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.mendysProdNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+{{- end }}
