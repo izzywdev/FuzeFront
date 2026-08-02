@@ -78,7 +78,11 @@ function field(
   const input = el('input')
   input.id = id
   input.type = type
-  input.autocomplete = autoComplete
+  // Set via the attribute rather than the `.autocomplete` property: the DOM
+  // lib types that property as the strict `AutoFill` token union, which a
+  // plain `string` parameter can't satisfy (TS2322). The attribute accepts
+  // any token string and the property getter reflects it either way.
+  input.setAttribute('autocomplete', autoComplete)
   input.style.width = '100%'
   input.style.boxSizing = 'border-box'
   input.style.padding = 'var(--space-3)'

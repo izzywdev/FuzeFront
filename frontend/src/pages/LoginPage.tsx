@@ -1,56 +1,93 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
-import type { AuthMethods, SessionResult, EmailAvailability } from '../services/api'
-import {
-  Button,
-  Input,
-  Alert,
-  SeamDivider,
-  FieldStatus,
-  PasswordChecklist,
-} from '@fuzefront/design-system'
-import type { FieldStatusState } from '@fuzefront/design-system'
+import type { SessionResult } from '../services/api'
+import { Alert } from '@fuzefront/design-system'
+import { AuthPanel } from '@fuzefront/auth-ui'
+import type {
+  AuthTransport,
+  AuthPanelMode,
+  AuthenticatedSession,
+  MfaRequiredChallenge,
+} from '@fuzefront/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
-// Official Google "G" mark palette — these exact values are mandated by
-// Google's brand identity guidelines for third-party sign-in buttons and must
-// NOT be themed or tokenized (they are a trademark asset, not UI styling).
-const GOOGLE_BRAND = {
-  red: '#EA4335', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
-  blue: '#4285F4', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
-  yellow: '#FBBC05', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
-  green: '#34A853', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
+/**
+ * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
+ *
+ * All email/password/signup/Google/MFA form markup + state now live ONCE in
+ * AuthPanel (packages/auth-ui). This page only supplies:
+ *   - the page chrome (FuzeFront logo + the `.auth-form` card wrapper),
+ *   - the `AuthTransport` that wires AuthPanel to the existing `authAPI`,
+ *   - i18n labels via `useLanguage()` (AuthPanel never imports useLanguage
+ *     itself — it only renders injected strings),
+ *   - the page-load social-callback exchange (`?code=`/`?error=` from the
+ *     provider's redirect back to the app) — this is page-load ROUTING, not a
+ *     form-submit concern, so it stays here rather than moving into AuthPanel.
+ *
+ * KNOWN GAP vs. the pre-refactor page (tracked for a fast-follow to
+ * @fuzefront/auth-ui, not fixed here): AuthPanel v0.1.0 does not yet implement
+ * the signup confirm-password field, the password-policy checklist gating
+ * submit, or the inline email-availability check that the old LoginPage had.
+ * Those are UI capabilities the reusable component does not yet expose — they
+ * are NOT reintroduced as one-off LoginPage markup (that would refork the
+ * logic AuthPanel is meant to own). See the PR description for the follow-up.
+ */
+
+// `variant="compact"` — `.auth-form` (frontend/src/index.css) is ALREADY the
+// card chrome (max-width, padding, border, shadow, seam accent). AuthPanel's
+// `variant="full"` would wrap the form in its own CenteredCard, nesting a card
+// inside a card. `compact` renders just the form/social/toggle innards, which
+// is what belongs inside the page's own card.
+const PANEL_VARIANT = 'compact' as const
+
+/**
+ * Reproduces the previous `handleCredentialsSubmit` catch block's error-message
+ * taxonomy (timeout / provider-outage 503 / rejected-credentials 401 / network
+ * / 500 / fallback) so AuthPanel — which just surfaces `Error.message` as-is —
+ * shows the exact same wording as before. Kept here (not in AuthPanel) because
+ * it is a mapping of THIS app's axios/Security-API error shapes, not a
+ * generic UI concern.
+ */
+function mapAuthError(err: any): string {
+  const isTimeout = err?.code === 'ECONNABORTED' || err?.name === 'CanceledError'
+  const isNetworkError = !isTimeout && (err?.code === 'NETWORK_ERROR' || !err?.response)
+  const status = err?.response?.status
+
+  if (isTimeout) {
+    // The request was bounded and did not answer in time — this is NOT "you
+    // typed the wrong password"; word it as a service condition.
+    return 'Sign-in is taking longer than expected — the service may be busy. Please try again.'
+  }
+  if (status === 503) {
+    // The Security API distinguishes a provider outage from a rejected
+    // credential (503 PROVIDER_UNAVAILABLE vs 401) — say the true thing and
+    // nothing else, never mention credentials.
+    return err?.response?.data?.code === 'PROVIDER_UNAVAILABLE'
+      ? 'The sign-in service is temporarily unavailable. Your details are fine — please try again in a moment.'
+      : err?.response?.data?.error ||
+          'The sign-in service is temporarily unavailable. Please try again in a moment.'
+  }
+  if (status === 401) {
+    // Genuinely means "these credentials were rejected" (outage moved to 503
+    // above). Deliberately doesn't name WHICH field is wrong.
+    return 'Incorrect email or password. Please try again.'
+  }
+  if (isNetworkError) {
+    return (
+      (err?.message || 'Authentication failed') +
+      ' (Network connection failed — check if the service is running)'
+    )
+  }
+  if (status === 500) {
+    return (
+      (err?.response?.data?.error || err?.message || 'Authentication failed') +
+      ' (Server error — please try again shortly)'
+    )
+  }
+  return err?.response?.data?.error || err?.message || 'Authentication failed'
 }
-
-// Fallback capability descriptor, used when GET /methods hasn't resolved yet
-// or fails outright — the form must still be usable without it. `social:
-// ['google']` mirrors the SERVER'S OWN default (routes/security.ts: enabled
-// unless SECURITY_SOCIAL_GOOGLE=false, which is not set in any deploy env).
-//
-// This was `social: []` — plausible-looking ("if we don't know, assume
-// nothing's configured"), but wrong: it doesn't describe an unknown provider,
-// it describes the SPECIFIC, known default this app actually deploys with. A
-// fallback that disagrees with the real default only ever LOOKS right on the
-// happy path (methods resolves before anyone notices), and is silently wrong
-// every time that fetch is slow, races an unmount, or errors — which reads to
-// users as "the Google button disappeared," intermittently, for no visible
-// reason. If the real default ever changes, update this to match — it must
-// describe reality, not the safest-sounding guess.
-const FALLBACK_METHODS: AuthMethods = {
-  password: true,
-  social: ['google'],
-  mfa: { enabled: false, types: [] },
-  verification: { email: false, sms: false },
-}
-
-/** Which sign-in action is in flight. Per-action (not a single boolean) so the
- * button the user clicked shows ITS progress label while the others merely
- * disable — a shared flag made every button flip to "Redirecting…" at once. */
-type PendingAction = 'credentials' | 'google' | 'signup' | null
-
-type FormMode = 'signin' | 'signup'
 
 function LoginPage() {
   const { t } = useLanguage()
@@ -59,45 +96,29 @@ function LoginPage() {
   // like /apps/signup-widget. This only works because api.ts no longer redirects
   // /signup -> /login on the boot probe's 401 (see AUTH_ROUTE_RE) — that
   // redirect used to erase the path before this ever ran.
-  const [mode, setMode] = useState<FormMode>(
+  const [mode] = useState<AuthPanelMode>(
     /^\/signup\b/.test(window.location.pathname) ? 'signup' : 'signin'
   )
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  // Inline email-availability signal (signup only). `idle` = nothing to show yet;
-  // `checking` while debounced request is in flight; `success` = free to use;
-  // `error` = already taken. A failed/undeployed endpoint resolves to `idle`
-  // (fail-open) so it never blocks account creation.
-  const [emailStatus, setEmailStatus] = useState<FieldStatusState>('idle')
-  const [pending, setPending] = useState<PendingAction>(null)
-  const loading = pending !== null
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  // Subtle "still working…" hint shown once a credentials submit has been in
-  // flight for a while, so a slow-but-succeeding sign-in (occasionally well
-  // past the ~5.5s fast path) doesn't read as frozen before the bounded
-  // timeout in api.ts either resolves or fails it.
-  const [showStillWorking, setShowStillWorking] = useState(false)
-  const stillWorkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Start from the password-only fallback so the sign-in form is ALWAYS
-  // rendered immediately — never gated on the auth-methods fetch. `getAuthMethods`
-  // is progressive enhancement: when it resolves it upgrades this to advertise
-  // Google/MFA. Previously this was `null` and the whole form was hidden until the
-  // fetch resolved; when that request HUNG (its 30s timeout, not a rejection, so
-  // the catch never ran) the login page rendered blank and was unusable.
-  const [authMethods, setAuthMethods] = useState<AuthMethods>(FALLBACK_METHODS)
   const { setUser } = useCurrentUser()
 
+  // Page-load social-callback outcome (the OAuth provider redirecting back
+  // with `?code=`/`?error=`) is a SEPARATE concern from AuthPanel's own
+  // form-submit error/notice — AuthPanel has no prop to surface an
+  // externally-sourced result, and this is page-load routing, not a panel
+  // concern, per the refactor plan. Rendered as its own Alert above the panel.
+  const [callbackError, setCallbackError] = useState('')
+  const [callbackNotice, setCallbackNotice] = useState('')
+
   // Route an authenticated Security-API session into the app: hydrate the
-  // current user then land on the dashboard. A `SessionResult` may instead be an
-  // `mfa_required` challenge (step-up) — surfaced as a notice here; the full
-  // step-up UI is a separate, flagged screen.
+  // current user then land on the dashboard. Always re-fetches via
+  // getCurrentUser() rather than trusting a session's `user` field directly —
+  // that field is typed `unknown` in the frozen security contract (both on the
+  // callback-exchange SessionResult and on AuthPanel's AuthenticatedSession),
+  // while getCurrentUser() already returns the shape this app's `User` expects.
+  // A `SessionResult` may instead be an `mfa_required` challenge (step-up).
   const completeSession = async (result: SessionResult): Promise<void> => {
     if (result.status === 'mfa_required') {
-      setNotice(
+      setCallbackNotice(
         'Additional verification is required to finish signing in. Please complete the verification step to continue.'
       )
       return
@@ -108,7 +129,7 @@ function LoginPage() {
       window.location.href = '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
-      setError('Signed in, but failed to load your profile. Please retry.')
+      setCallbackError('Signed in, but failed to load your profile. Please retry.')
     }
   }
 
@@ -117,223 +138,79 @@ function LoginPage() {
   useEffect(() => {
     authAPI
       .handleAuthCallback()
-      .then(({ result, error: callbackError }) => {
-        if (callbackError) {
-          setError(`Authentication failed: ${callbackError}`)
-          loadAuthMethods()
+      .then(({ result, error: callbackErr }) => {
+        if (callbackErr) {
+          setCallbackError(`Authentication failed: ${callbackErr}`)
           return
         }
         if (result) {
           void completeSession(result)
-          return
         }
-        loadAuthMethods()
       })
       .catch(err => {
         // Backstop: a rejected promise must never freeze the page.
         console.error('Unexpected error in auth-callback handler:', err)
-        setError('Authentication encountered an unexpected error. Please try again.')
-        loadAuthMethods()
+        setCallbackError('Authentication encountered an unexpected error. Please try again.')
       })
-    // Runs ONCE on mount — this is a page-load handler (social-callback exchange
-    // + auth-method fetch). setUser is a stable ref; a mount-only effect is the
-    // correct shape for a page-load handler regardless.
+    // Runs ONCE on mount — this is a page-load handler (social-callback
+    // exchange only now; AuthPanel owns its own auth-methods fetch).
   }, [])
 
-  const loadAuthMethods = async () => {
-    try {
-      const methods = await authAPI.getAuthMethods()
-      setAuthMethods(methods)
-    } catch (err) {
-      console.error('Failed to load auth methods:', err)
-      setAuthMethods(FALLBACK_METHODS)
-    }
-  }
-
-  // Debounced inline email-availability check (signup only). Waits ~400ms after
-  // the last keystroke, skips obviously-incomplete addresses, and cancels the
-  // in-flight request when the email changes again. Any failure fails open
-  // (status → idle) so the check can ship before its backend endpoint deploys.
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  useEffect(() => {
-    if (mode !== 'signup') {
-      setEmailStatus('idle')
-      return
-    }
-    if (!EMAIL_RE.test(email)) {
-      setEmailStatus('idle')
-      return
-    }
-    const controller = new AbortController()
-    const handle = setTimeout(() => {
-      setEmailStatus('checking')
-      authAPI
-        .checkEmailAvailability(email, controller.signal)
-        .then((res: EmailAvailability) => {
-          if (controller.signal.aborted) return
-          // null = unknown (fail-open) → show no signal, don't block.
-          setEmailStatus(
-            res.available === true ? 'success' : res.available === false ? 'error' : 'idle'
-          )
-        })
-        .catch(() => {
-          // Cancelled or failed — fail open.
-          if (!controller.signal.aborted) setEmailStatus('idle')
-        })
-    }, 400)
-    return () => {
-      clearTimeout(handle)
-      controller.abort()
-    }
-  }, [email, mode])
-
-  // Credentials submit — password sign-in OR account creation, both brokered by
-  // FuzeFront's own Security API. The user only ever sees FuzeFront-branded UI;
-  // the identity engine behind it is a swappable server-side adapter.
-  const handleCredentialsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setPending('credentials')
-    setError('')
-    setNotice('')
-    setShowStillWorking(false)
-
-    // Show a quiet "still working…" hint if the request is still in flight
-    // after 8s — the fast path (~5.5s) never sees this; a slow-but-succeeding
-    // attempt gets reassurance instead of looking frozen before the bounded
-    // LOGIN_TIMEOUT_MS in api.ts resolves it either way.
-    if (stillWorkingTimer.current) clearTimeout(stillWorkingTimer.current)
-    stillWorkingTimer.current = setTimeout(() => setShowStillWorking(true), 8000)
-
-    try {
-      if (mode === 'signup') {
-        const { token, user } = await authAPI.signup({
-          email,
-          password,
-          firstName: firstName || undefined,
-          lastName: lastName || undefined,
-        })
-        if (token && user) {
-          setUser(user)
-          window.location.href = '/dashboard'
-        } else {
-          throw new Error('Invalid response from server')
+  // The AuthTransport injection seam — wraps the existing authAPI so AuthPanel
+  // never imports an HTTP client directly. `login`/`signup` translate a
+  // rejected axios call into the same friendly wording the old inline
+  // catch block produced (see mapAuthError); AuthPanel just renders
+  // `Error.message` as-is.
+  const transport = useMemo<AuthTransport>(
+    () => ({
+      login: async req => {
+        try {
+          return await authAPI.login(req)
+        } catch (err) {
+          throw new Error(mapAuthError(err))
         }
-        return
-      }
+      },
+      signup: async req => {
+        try {
+          const res = await authAPI.signup(req)
+          if (!res?.token || !res?.user) {
+            throw new Error('Invalid response from server')
+          }
+          return {
+            status: 'authenticated',
+            token: res.token,
+            sessionId: res.sessionId,
+            user: res.user,
+          }
+        } catch (err) {
+          throw new Error(mapAuthError(err))
+        }
+      },
+      getAuthMethods: () => authAPI.getAuthMethods(),
+      startSocial: provider => authAPI.startSocialLogin(provider),
+    }),
+    []
+  )
 
-      const result = await authAPI.login({ email, password })
-      await completeSession(result)
-    } catch (err: any) {
-      console.error('Authentication error:', err)
-      const isTimeout = err.code === 'ECONNABORTED' || err.name === 'CanceledError'
-      const isNetworkError = !isTimeout && (err.code === 'NETWORK_ERROR' || !err.response)
-      const status = err.response?.status
-
-      let errorMessage: string
-      if (isTimeout) {
-        // The sign-in request was bounded and did not answer in time — this is
-        // NOT "you typed the wrong password"; word it as a service condition.
-        errorMessage =
-          'Sign-in is taking longer than expected — the service may be busy. Please try again.'
-      } else if (status === 503) {
-        // The Security API now distinguishes a provider outage from a rejected
-        // credential (503 PROVIDER_UNAVAILABLE vs 401). It previously returned
-        // 401 for BOTH, which forced the hedged wording below and told users
-        // their password might be wrong during what was actually an incident.
-        // With an unambiguous signal, say the true thing and nothing else — do
-        // not mention credentials at all.
-        errorMessage =
-          err.response?.data?.code === 'PROVIDER_UNAVAILABLE'
-            ? 'The sign-in service is temporarily unavailable. Your details are fine — please try again in a moment.'
-            : err.response?.data?.error ||
-              'The sign-in service is temporarily unavailable. Please try again in a moment.'
-      } else if (status === 401) {
-        // Now genuinely means "these credentials were rejected" — the provider
-        // outage case moved to 503 above. Still worded without certainty about
-        // WHICH field is wrong, which is deliberate: naming the field tells an
-        // attacker whether the email exists.
-        errorMessage = 'Incorrect email or password. Please try again.'
-      } else if (isNetworkError) {
-        errorMessage =
-          (err.message || 'Authentication failed') +
-          ' (Network connection failed — check if the service is running)'
-      } else if (status === 500) {
-        errorMessage =
-          (err.response?.data?.error || err.message || 'Authentication failed') +
-          ' (Server error — please try again shortly)'
-      } else {
-        errorMessage =
-          err.response?.data?.error || err.message || 'Authentication failed'
-      }
-      setError(errorMessage)
-    } finally {
-      if (stillWorkingTimer.current) {
-        clearTimeout(stillWorkingTimer.current)
-        stillWorkingTimer.current = null
-      }
-      setShowStillWorking(false)
-      // Always un-stick the button — this runs on every exit path (success
-      // return, thrown error, timeout) so "Signing in…" never persists.
-      setPending(null)
-    }
+  const handleAuthenticated = (session: AuthenticatedSession) => {
+    void completeSession(session)
   }
 
-  // The social redirect leaves the page, so `pending` normally never resets. If
-  // the navigation target hangs (the sign-in service isn't answering), the page
-  // would sit on "Redirecting…" forever — recover after a grace period.
-  const redirectWatchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    return () => {
-      if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
-      if (stillWorkingTimer.current) clearTimeout(stillWorkingTimer.current)
-    }
-  }, [])
+  // AuthPanel already shows its own MFA notice (from `labels.mfaNotice`,
+  // identical wording to the callback path above) when a form submit resolves
+  // to a challenge — nothing further to surface here.
+  const handleMfaRequired = (_challenge: MfaRequiredChallenge) => {}
 
-  const handleGoogleLogin = () => {
-    setPending('google')
-    setError('')
-    setNotice('')
-    Promise.resolve()
-      .then(() => authAPI.startSocialLogin('google'))
-      .then(() => {
-        if (redirectWatchdog.current) clearTimeout(redirectWatchdog.current)
-        redirectWatchdog.current = setTimeout(() => {
-          setPending(null)
-          setError('The sign-in service is not responding. Please try again in a moment.')
-        }, 12000)
-      })
-      .catch((err: any) => {
-        console.error('Social sign-in redirect error:', err)
-        setError('Failed to start sign-in')
-        setPending(null)
-      })
-  }
-
-  const toggleMode = () => {
-    setMode(m => (m === 'signin' ? 'signup' : 'signin'))
-    setError('')
-    setNotice('')
-    // Confirm-password + availability signal are signup-only; clear them so a
-    // stale mismatch/taken state can't leak across a mode switch.
-    setConfirmPassword('')
-    setEmailStatus('idle')
-  }
-
-  const socialEnabled = Boolean(authMethods?.social?.includes('google'))
-  const passwordEnabled = authMethods?.password !== false
-
-  // Signup-only validation. Confirm-password must match once the user has begun
-  // typing it; the password itself must satisfy the policy before submit. Email
-  // availability is a soft signal — `error` (taken) blocks, but `idle`/unknown
-  // never does (fail-open).
-  const passwordsMatch = password === confirmPassword
-  const showConfirmMismatch =
-    mode === 'signup' && confirmPassword.length > 0 && !passwordsMatch
-  const passwordValid =
-    mode === 'signup' ? PasswordChecklist.meetsPolicy(password) : true
-  const signupBlocked =
-    mode === 'signup' &&
-    (!passwordValid || !passwordsMatch || confirmPassword.length === 0 || emailStatus === 'error')
+  // Only the mode-toggle strings were ever routed through t() on this page —
+  // the heading/subtitle were always literal English, which is exactly
+  // AuthPanel's default copy, so no override is needed for those.
+  const labels = useMemo(
+    () => ({
+      toggleToSignUpPrompt: t('signUpMessage'),
+      toggleToSignUpCta: t('signUp'),
+    }),
+    [t]
+  )
 
   return (
     <div className="auth-form">
@@ -345,223 +222,28 @@ function LoginPage() {
           marginBottom: 'var(--space-6, 24px)',
         }}
       >
-        <img
-          src={FuzeFrontLogo}
-          alt="FuzeFront"
-          style={{ height: '48px', width: 'auto', marginRight: 'var(--space-3, 12px)' }}
-        />
-        <h2 style={{ margin: 0 }}>Welcome to FuzeFront</h2>
+        <img src={FuzeFrontLogo} alt="FuzeFront" style={{ height: '48px', width: 'auto' }} />
       </div>
-      <p style={{ color: 'var(--text-secondary)' }}>
-        {mode === 'signin'
-          ? 'Sign in to access your microfrontend platform'
-          : 'Create your account to get started'}
-      </p>
 
-      {error && (
+      {callbackError && (
         <Alert tone="error" title="Authentication Error" style={{ marginBottom: 'var(--space-4, 16px)' }}>
-          {error}
+          {callbackError}
         </Alert>
       )}
-      {notice && (
+      {callbackNotice && (
         <Alert tone="info" style={{ marginBottom: 'var(--space-4, 16px)' }}>
-          {notice}
+          {callbackNotice}
         </Alert>
       )}
 
-      {/* Credentials form — the DEFAULT sign-in/sign-up UI, brokered entirely by
-          FuzeFront's own Security API (same-origin /api/v1/security). No identity
-          provider is named or contacted by the browser. */}
-      {passwordEnabled && (
-        <form onSubmit={handleCredentialsSubmit}>
-          {mode === 'signup' && (
-            <div style={{ display: 'flex', gap: 'var(--space-3, 12px)' }}>
-              <Input
-                id="firstName"
-                label="First name"
-                value={firstName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFirstName(e.target.value)}
-                autoComplete="given-name"
-                style={{ flex: 1 }}
-              />
-              <Input
-                id="lastName"
-                label="Last name"
-                value={lastName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLastName(e.target.value)}
-                autoComplete="family-name"
-                style={{ flex: 1 }}
-              />
-            </div>
-          )}
-
-          <Input
-            id="email"
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-            autoComplete="email"
-            aria-describedby="email-status"
-            required
-          />
-          {mode === 'signup' && (
-            <FieldStatus
-              id="email-status"
-              state={emailStatus}
-              message={
-                emailStatus === 'checking'
-                  ? 'Checking availability…'
-                  : emailStatus === 'success'
-                    ? 'This email is available'
-                    : emailStatus === 'error'
-                      ? 'An account already uses this email'
-                      : ''
-              }
-              action={
-                emailStatus === 'error' ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setMode('signin')}
-                  >
-                    Sign in instead
-                  </Button>
-                ) : null
-              }
-            />
-          )}
-
-          <Input
-            id="password"
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            aria-describedby={mode === 'signup' ? 'password-policy' : undefined}
-            required
-          />
-          {mode === 'signup' && (
-            <PasswordChecklist id="password-policy" value={password} />
-          )}
-
-          {mode === 'signup' && (
-            <div style={{ marginBlockStart: 'var(--space-3)' }}>
-              <Input
-                id="confirmPassword"
-                label="Confirm password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setConfirmPassword(e.target.value)
-                }
-                autoComplete="new-password"
-                error={showConfirmMismatch ? 'Passwords do not match' : ''}
-                required
-              />
-            </div>
-          )}
-
-          <Button
-            type="submit"
-            variant="primary"
-            fullWidth
-            disabled={loading || signupBlocked}
-          >
-            {pending === 'credentials'
-              ? mode === 'signup'
-                ? 'Creating account…'
-                : 'Signing in…'
-              : mode === 'signup'
-                ? 'Create account'
-                : 'Sign In'}
-          </Button>
-          {pending === 'credentials' && showStillWorking && (
-            <p
-              role="status"
-              style={{
-                marginBlockStart: 'var(--space-2, 8px)',
-                color: 'var(--text-tertiary)',
-                fontSize: 'var(--text-sm, 14px)',
-                textAlign: 'center',
-              }}
-            >
-              Still working — the sign-in service is taking a little longer than usual…
-            </p>
-          )}
-        </form>
-      )}
-
-      {/* Social sign-in — brokered through FuzeFront's Security API; the platform
-          starts a same-host authorize flow and the browser never talks to any
-          provider directly. Shown only when the capability descriptor advertises
-          the provider. */}
-      {socialEnabled && (
-        <div style={{ marginTop: 'var(--space-4, 16px)' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-3, 12px)',
-              margin: 'var(--space-4, 16px) 0',
-            }}
-          >
-            <SeamDivider style={{ flex: 1 }} />
-            <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm, 14px)' }}>or</span>
-            <SeamDivider style={{ flex: 1 }} />
-          </div>
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            aria-label="Sign in with Google"
-            style={{
-              width: '100%',
-              padding: 'var(--space-3, 12px)',
-              backgroundColor: 'var(--bg-primary)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md, 6px)',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: 'var(--text-md, 16px)',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 'var(--space-2, 10px)',
-            }}
-          >
-            {/* Official Google "G" mark — see GOOGLE_BRAND above. */}
-            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-              <path fill={GOOGLE_BRAND.red} d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-              <path fill={GOOGLE_BRAND.blue} d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-              <path fill={GOOGLE_BRAND.yellow} d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-              <path fill={GOOGLE_BRAND.green} d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-            </svg>
-            {pending === 'google' ? 'Redirecting to Google…' : 'Sign in with Google'}
-          </button>
-        </div>
-      )}
-
-      {/* Mode toggle — sign-up / sign-in both happen on this page, brokered by
-          the Security API (no external enrollment redirect). */}
-      <div
-        style={{
-          marginTop: 'var(--space-6, 24px)',
-          paddingTop: 'var(--space-6, 24px)',
-          borderTop: '1px solid var(--border-color)',
-          textAlign: 'center',
-        }}
-      >
-        <p style={{ margin: '0 0 var(--space-3, 12px)', color: 'var(--text-secondary)', fontSize: 'var(--text-base, 0.9rem)' }}>
-          {mode === 'signin' ? t('signUpMessage') : 'Already have an account?'}
-        </p>
-        <Button type="button" variant="secondary" fullWidth disabled={loading} onClick={toggleMode}>
-          {mode === 'signin' ? t('signUp') : 'Back to sign in'}
-        </Button>
-      </div>
+      <AuthPanel
+        variant={PANEL_VARIANT}
+        mode={mode}
+        transport={transport}
+        onAuthenticated={handleAuthenticated}
+        onMfaRequired={handleMfaRequired}
+        labels={labels}
+      />
     </div>
   )
 }
