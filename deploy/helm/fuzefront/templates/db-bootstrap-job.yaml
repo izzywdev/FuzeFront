@@ -43,11 +43,25 @@ spec:
               value: {{ .Values.fuzeinfra.postgres.port | quote }}
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
+            {{- /*
+            Additional databases co-located on this Postgres that other
+            components own but which the bootstrap Job still creates + grants to
+            the shared `database.user` role (see db-bootstrap.ts EXTRA_DATABASES
+            handling): Authentik's own DB, and — since #499 — chat-service's own
+            `fuzefront_chat` DB, so its knex migration ledger can never collide
+            with the backend's (see chatService.dbName in values.yaml). Comma-
+            separated, only the enabled ones are listed.
+            */}}
+            {{- $extraDbs := list }}
             {{- if .Values.authentik.enabled }}
-            # Authentik needs its own DB (chart: authentik.dbName "must pre-exist").
-            # The bootstrap creates + grants it here so Authentik can connect + migrate.
+            {{- $extraDbs = append $extraDbs .Values.authentik.dbName }}
+            {{- end }}
+            {{- if .Values.chatService.enabled }}
+            {{- $extraDbs = append $extraDbs .Values.chatService.dbName }}
+            {{- end }}
+            {{- if $extraDbs }}
             - name: EXTRA_DATABASES
-              value: {{ .Values.authentik.dbName | quote }}
+              value: {{ join "," $extraDbs | quote }}
             {{- end }}
             # The least-privilege runtime role this Job creates. Must match the
             # DB_USER the backend Deployment connects with.
