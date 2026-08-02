@@ -24,12 +24,23 @@ const GOOGLE_BRAND = {
   green: '#34A853', // ds-conformance-allow: third-party brand mark (Google identity guidelines)
 }
 
-// Neutral fallback capability descriptor — password-only. Used when the Security
-// API can't be reached so the form is still usable. No provider is named: the
-// browser only ever knows FuzeFront's own /api/v1/security surface.
+// Fallback capability descriptor, used when GET /methods hasn't resolved yet
+// or fails outright — the form must still be usable without it. `social:
+// ['google']` mirrors the SERVER'S OWN default (routes/security.ts: enabled
+// unless SECURITY_SOCIAL_GOOGLE=false, which is not set in any deploy env).
+//
+// This was `social: []` — plausible-looking ("if we don't know, assume
+// nothing's configured"), but wrong: it doesn't describe an unknown provider,
+// it describes the SPECIFIC, known default this app actually deploys with. A
+// fallback that disagrees with the real default only ever LOOKS right on the
+// happy path (methods resolves before anyone notices), and is silently wrong
+// every time that fetch is slow, races an unmount, or errors — which reads to
+// users as "the Google button disappeared," intermittently, for no visible
+// reason. If the real default ever changes, update this to match — it must
+// describe reality, not the safest-sounding guess.
 const FALLBACK_METHODS: AuthMethods = {
   password: true,
-  social: [],
+  social: ['google'],
   mfa: { enabled: false, types: [] },
   verification: { email: false, sms: false },
 }

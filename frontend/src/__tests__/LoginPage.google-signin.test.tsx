@@ -160,6 +160,31 @@ describe('LoginPage — social / Google Sign-In UI', () => {
     expect(screen.queryByRole('button', { name: /sign in with google/i })).not.toBeInTheDocument()
   })
 
+  // ── 1c: Regression — the fallback must match the server's real default ────
+  //
+  // "The Google button doesn't show in some cases" was reported in prod. The
+  // fallback rendered while GET /methods is in flight — and used again if that
+  // call ever fails — declared `social: []`. The security service's actual
+  // default (routes/security.ts) is Google ENABLED unless SECURITY_SOCIAL_GOOGLE
+  // is explicitly set to 'false', which no deploy env does. So any time that
+  // fetch was slow, raced an unmount, or errored outright, a legitimately
+  // available Google button silently vanished — intermittently, with nothing
+  // resembling an error to explain it. This test pins the fix: the button must
+  // survive a failed capability fetch, not just a slow-then-successful one.
+  it('still shows the Google button when GET /methods fails outright (fallback matches the real default)', async () => {
+    vi.mocked(authAPI.getAuthMethods).mockRejectedValue(new Error('network error'))
+
+    render(<LoginPage />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    })
+
+    expect(
+      screen.getByRole('button', { name: /sign in with google/i })
+    ).toBeInTheDocument()
+  })
+
   // ── 1b: Regression — auth methods fetched ONCE, not in a render loop ─────
 
   it('fetches auth methods exactly once (no re-render loop)', async () => {

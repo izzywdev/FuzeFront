@@ -87,6 +87,22 @@ describe('vanilla mount()', () => {
     expect(socialWrap.style.display).toBe('block')
   })
 
+  // Regression — the fallback used while getAuthMethods() is in flight (and
+  // again if it fails) must match the security service's real default (Google
+  // enabled), not silently disagree with it — see the FALLBACK_METHODS
+  // doc-comment in ./mount.ts. Opting into `social: true` here is what a host
+  // that WANTS the button would set; a failed fetch must not then hide it.
+  it('still shows the Google button when getAuthMethods() fails outright and social is opted in', async () => {
+    const transport = makeTransport({
+      startSocial: vi.fn().mockResolvedValue(undefined),
+      getAuthMethods: vi.fn().mockRejectedValue(new Error('network error')),
+    })
+    mount(container, { transport, onAuthenticated: vi.fn(), social: true })
+    await new Promise((r) => setTimeout(r, 0))
+    const socialWrap = container.querySelector('.fzf-auth-panel__social') as HTMLElement
+    expect(socialWrap.style.display).toBe('block')
+  })
+
   it('unmount() removes the rendered markup', () => {
     const handle = mount(container, { transport: makeTransport(), onAuthenticated: vi.fn() })
     expect(container.querySelector('.fzf-auth-panel')).toBeTruthy()
