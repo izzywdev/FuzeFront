@@ -27,3 +27,4 @@ __exportStar(require("./identity.session.issued"), exports);
 __exportStar(require("./identity.session.revoked"), exports);
 __exportStar(require("./notify.email.requested"), exports);
 __exportStar(require("./notify.email.status"), exports);
+__exportStar(require("./portal.created"), exports);
