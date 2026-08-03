@@ -11,6 +11,7 @@ import appsRoutes from './routes/apps'
 import appInstallationsRoutes from './routes/app-installations'
 import notificationProxyRoutes from './routes/notifications'
 import organizationsRoutes from './routes/organizations'
+import usersRoutes from './routes/users'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
@@ -300,6 +301,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/apps', appInstallationsRoutes)
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
+app.use('/api/users', usersRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.
 app.use('/api/flags', flagsRoutes)

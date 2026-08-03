@@ -27,6 +27,12 @@ declare global {
       // host that may map to a SUSPENDED portal). Always undefined/false on a
       // fresh request unless this exact request's resolution degraded.
       portalResolutionDegraded?: boolean
+      // FF-EPIC-11-S6 — the fuzefront.identity.portal-scoped-users flag decision
+      // for THIS request, cached by utils/identityFlag.ts's
+      // getRequestPortalScopingEnabled so a request that calls scopeToPortal
+      // more than once (e.g. a count query + a data query) evaluates the flag
+      // exactly once. Undefined until first read.
+      portalScopingFlagEnabled?: boolean
     }
   }
 }
