@@ -7,6 +7,8 @@ import {
   requireOwnership,
 } from '../middleware/permissions'
 import { db } from '../config/database'
+import { enqueueEvent } from '@fuzefront/core'
+import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
@@ -180,6 +182,32 @@ router.post('/', authenticateToken, async (req: any, res) => {
         permissions: JSON.stringify({}),
         metadata: JSON.stringify({}),
       })
+
+      // Emit lifecycle events via the transactional outbox — persisted in the
+      // SAME transaction as the org+membership rows, so downstream services are
+      // notified iff the create actually committed (the relay publishes later).
+      await enqueueEvent(
+        trx,
+        TOPICS.IDENTITY_ORG_CREATED,
+        {
+          organizationId,
+          slug: input.slug,
+          name: input.name,
+          type: input.type,
+          parentId: input.parent_id ?? null,
+          ownerId: req.user.id,
+          isActive: true,
+          settings: input.settings,
+          metadata: input.metadata,
+        },
+        `identity-org-created-${organizationId}`
+      )
+      await enqueueEvent(
+        trx,
+        TOPICS.IDENTITY_MEMBERSHIP_ADDED,
+        { organizationId, userId: req.user.id, role: 'owner' },
+        `identity-membership-added-${uuidv4()}`
+      )
     })
 
     // Fetch the created organization
@@ -472,21 +500,39 @@ router.put(
         }
       }
 
-      // Update organization
-      await db('organizations')
-        .where('id', id)
-        .update({
-          name: input.name,
-          slug: input.slug,
-          settings: JSON.stringify(input.settings),
-          metadata: JSON.stringify(input.metadata),
-          updated_at: new Date(),
-        })
+      // Update organization + emit identity.org.updated in one transaction so
+      // the event commits atomically with the change (see enqueueEvent).
+      let updatedOrganization: any
+      await db.transaction(async trx => {
+        await trx('organizations')
+          .where('id', id)
+          .update({
+            name: input.name,
+            slug: input.slug,
+            settings: JSON.stringify(input.settings),
+            metadata: JSON.stringify(input.metadata),
+            updated_at: new Date(),
+          })
 
-      // Fetch updated organization
-      const updatedOrganization = await db('organizations')
-        .where('id', id)
-        .first()
+        updatedOrganization = await trx('organizations').where('id', id).first()
+
+        await enqueueEvent(
+          trx,
+          TOPICS.IDENTITY_ORG_UPDATED,
+          {
+            organizationId: updatedOrganization.id,
+            slug: updatedOrganization.slug,
+            name: updatedOrganization.name,
+            type: updatedOrganization.type,
+            parentId: updatedOrganization.parent_id ?? null,
+            ownerId: updatedOrganization.owner_id ?? null,
+            isActive: !!updatedOrganization.is_active,
+            settings: parseJsonb(updatedOrganization.settings),
+            metadata: parseJsonb(updatedOrganization.metadata),
+          },
+          `identity-org-updated-${uuidv4()}`
+        )
+      })
 
       const result: Organization = {
         id: updatedOrganization.id,
@@ -554,10 +600,26 @@ router.delete(
         })
       }
 
-      // Deactivate organization (soft delete)
-      await db('organizations').where('id', id).update({
-        is_active: false,
-        updated_at: new Date(),
+      // Deactivate organization (soft delete) + emit identity.org.deleted in
+      // one transaction. cascade:'soft' — consumers deactivate their per-org
+      // state (Permit tenant, billing, portals) rather than hard-purging.
+      await db.transaction(async trx => {
+        const org = await trx('organizations').where('id', id).first()
+        await trx('organizations').where('id', id).update({
+          is_active: false,
+          updated_at: new Date(),
+        })
+        await enqueueEvent(
+          trx,
+          TOPICS.IDENTITY_ORG_DELETED,
+          {
+            organizationId: id,
+            slug: org?.slug ?? '',
+            ownerId: org?.owner_id ?? null,
+            cascade: 'soft',
+          },
+          `identity-org-deleted-${uuidv4()}`
+        )
       })
 
       res.json({ message: 'Organization deactivated successfully' })
