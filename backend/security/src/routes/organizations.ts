@@ -282,9 +282,11 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const sortField = validSortFields.includes(sort) ? sort : 'name'
     const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc'
 
-    // Build query
+    // Build query. Also project the caller's own membership role (via the
+    // left-join below) as `user_role` so the UI can show "your role" and
+    // distinguish a real member from someone merely seeing a platform org.
     let query = db('organizations')
-      .select('organizations.*')
+      .select('organizations.*', 'organization_memberships.role as user_role')
       .leftJoin('organization_memberships', function () {
         this.on(
           'organizations.id',
@@ -354,8 +356,14 @@ router.get('/', authenticateToken, async (req: any, res) => {
       .limit(limitNum)
       .offset(offset)
 
-    // Transform results
-    const transformedOrganizations: Organization[] = organizations.map(org => ({
+    // Transform results. `user_role` is the caller's own role in each org, or
+    // `null` when they are NOT a member (they can still see `platform`-type orgs
+    // without belonging to them). An owner always resolves to 'owner' even if a
+    // membership row is somehow missing.
+    type OrgRole = OrganizationMembership['role']
+    const transformedOrganizations: Array<
+      Organization & { user_role: OrgRole | null }
+    > = organizations.map(org => ({
       id: org.id,
       name: org.name,
       slug: org.slug,
@@ -367,6 +375,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
       is_active: org.is_active,
       created_at: org.created_at,
       updated_at: org.updated_at,
+      user_role:
+        (org.user_role as OrgRole | null) ??
+        (org.owner_id === req.user.id ? 'owner' : null),
     }))
 
     res.json({
@@ -395,9 +406,11 @@ router.get(
     try {
       const { id } = req.params
 
-      // Check if user has access to this organization
+      // Check if user has access to this organization. Project the caller's own
+      // membership role (via the left-join) as `user_role`, mirroring the list
+      // endpoint so the UI can show the role and detect non-membership.
       const organization = await db('organizations')
-        .select('organizations.*')
+        .select('organizations.*', 'organization_memberships.role as user_role')
         .leftJoin('organization_memberships', function () {
           this.on(
             'organizations.id',
@@ -431,7 +444,8 @@ router.get(
           .json({ error: 'Organization not found or access denied' })
       }
 
-      const result: Organization = {
+      type OrgRole = OrganizationMembership['role']
+      const result: Organization & { user_role: OrgRole | null } = {
         id: organization.id,
         name: organization.name,
         slug: organization.slug,
@@ -443,6 +457,9 @@ router.get(
         is_active: organization.is_active,
         created_at: organization.created_at,
         updated_at: organization.updated_at,
+        user_role:
+          (organization.user_role as OrgRole | null) ??
+          (organization.owner_id === req.user.id ? 'owner' : null),
       }
 
       res.json(result)
