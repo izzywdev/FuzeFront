@@ -35,6 +35,16 @@ metadata:
   name: MendysRobotics Platform OIDC Provider
   labels:
     blueprints.goauthentik.io/instantiate: "true"
+    # RE-APPLY MARKER (#514 / FuzeInfra#495): this label's value is a parsed part
+    # of the blueprint, so bumping it changes the blueprint content hash and forces
+    # Authentik's runner to RE-APPLY (upsert) the entries below. Needed because the
+    # LIVE mendys-platform provider was created from an OLDER blueprint (before
+    # authorization_flow + grant_types were added) and the ConfigMap had not changed
+    # since — so authorize returned `invalid_request`. The provider entry below
+    # already carries the correct authorization_flow, grant_types, invalidation_flow
+    # and strict redirect_uris; re-applying upserts them onto the stale provider.
+    # To force another re-apply in future, bump the date suffix.
+    fuzefront.io/blueprint-reapply: "2026-08-03-invalid-request-514"
 entries:
   # ── Authorization flow (implicit consent) ────────────────────────────────────
   # An empty authorization flow = implicit consent in Authentik. The blueprint

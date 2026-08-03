@@ -64,6 +64,15 @@ spec:
             # empty value disables emission and the service still runs.
             - name: KAFKA_BROKERS
               value: {{ .Values.applicationsService.kafka.brokers | quote }}
+            # Pre-shared Bearer token for MFE consumer self-registration. Optional:
+            # when absent (or key not yet in prod SealedSecret) the middleware
+            # falls through to platform OIDC session auth — no service impact.
+            - name: CONSUMER_REGISTRATION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: CONSUMER_REGISTRATION_SECRET
+                  optional: true
             # Permit.io authorization for the registry write paths. PERMIT_API_KEY
             # is the shared key from fuzefront-secrets (created/sealed for the
             # whole chart); PERMIT_PDP_URL points at the in-cluster PDP.
