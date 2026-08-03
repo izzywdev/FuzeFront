@@ -180,6 +180,27 @@ describe('resolveGraph — rejections', () => {
     expectCode(() => resolveGraph({ type: 'customer', lid: 7 }, opts), 'MALFORMED_LID')
   })
 
+  it('bounds lid to the LocalId shape the contract publishes', () => {
+    // lid values come back as idMap KEYS — the one place client-controlled text
+    // reaches a response — and the published LocalId schema declares 1-64 chars.
+    // A bound the implementation does not enforce is not a bound.
+    expectCode(
+      () => resolveGraph({ type: 'customer', lid: 'x'.repeat(65) }, opts),
+      'MALFORMED_LID'
+    )
+    expectCode(
+      () => resolveGraph({ type: 'customer', lid: '<script>alert(1)</script>' }, opts),
+      'MALFORMED_LID'
+    )
+    expectCode(() => resolveGraph({ type: 'customer', lid: 'a b' }, opts), 'MALFORMED_LID')
+
+    // The useful shapes still work.
+    for (const lid of ['1', 'x'.repeat(64), 'new-customer', 'order.2', 'ns:item_3']) {
+      const { idMap } = resolveGraph({ type: 'customer', lid }, opts)
+      expect(idMap[lid]).toMatch(/^cus_/)
+    }
+  })
+
   it('bounds graph size', () => {
     const nodes = Array.from({ length: 6 }, (_, i) => ({ type: 'invoice', lid: `n${i}` }))
     expectCode(() => resolveGraph({ nodes }, { aggregate: AGGREGATE, maxNodes: 5 }), 'GRAPH_TOO_LARGE')

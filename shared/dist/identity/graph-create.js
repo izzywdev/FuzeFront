@@ -33,6 +33,14 @@ const id_1 = require("./id");
 const registry_1 = require("./registry");
 /** Reference token: `lid:<local>`. */
 const LID_REF = /^lid:(.+)$/;
+/**
+ * Permitted shape of a local id, matching the `LocalId` schema published in the
+ * contract (1-64 chars). Enforced here because `lid` values are echoed back to
+ * the caller as `idMap` KEYS — the one place client-controlled text crosses into
+ * a response — and because a contract that declares a bound the implementation
+ * does not enforce is not a bound at all.
+ */
+const LID_FORMAT = /^[A-Za-z0-9_.:-]{1,64}$/;
 class GraphCreateError extends Error {
     constructor(code, path, message) {
         super(message);
@@ -80,8 +88,8 @@ function resolveGraph(body, options) {
         }
         if ('lid' in value) {
             const lid = value.lid;
-            if (typeof lid !== 'string' || lid.length === 0) {
-                throw new GraphCreateError('MALFORMED_LID', path, 'lid must be a non-empty string');
+            if (typeof lid !== 'string' || !LID_FORMAT.test(lid)) {
+                throw new GraphCreateError('MALFORMED_LID', path, 'lid must be 1-64 characters of [A-Za-z0-9_.:-]');
             }
             if (Object.prototype.hasOwnProperty.call(idMap, lid)) {
                 throw new GraphCreateError('DUPLICATE_LID', path, `lid ${JSON.stringify(lid)} is declared twice`);

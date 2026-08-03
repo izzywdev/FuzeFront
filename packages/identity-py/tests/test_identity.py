@@ -230,6 +230,20 @@ class TestResolveGraph:
             resolve_graph(deep, AGGREGATE, max_depth=4)
         assert excinfo.value.code == "GRAPH_TOO_DEEP"
 
+    @pytest.mark.parametrize("lid", ["x" * 65, "<script>alert(1)</script>", "a b", ""])
+    def test_bounds_lid_to_the_published_localid_shape(self, lid):
+        # lid values come back as idMap KEYS — the one place client-controlled
+        # text reaches a response — and the published LocalId schema declares
+        # 1-64 chars. Must match the TypeScript LID_FORMAT exactly.
+        with pytest.raises(GraphCreateError) as excinfo:
+            resolve_graph({"type": "customer", "lid": lid}, AGGREGATE)
+        assert excinfo.value.code == "MALFORMED_LID"
+
+    @pytest.mark.parametrize("lid", ["1", "x" * 64, "new-customer", "order.2", "ns:item_3"])
+    def test_accepts_useful_lid_shapes(self, lid):
+        _, id_map = resolve_graph({"type": "customer", "lid": lid}, AGGREGATE)
+        assert id_map[lid].startswith("cus_")
+
     def test_reports_the_path(self):
         with pytest.raises(GraphCreateError) as excinfo:
             resolve_graph(

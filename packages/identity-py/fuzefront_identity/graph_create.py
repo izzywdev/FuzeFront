@@ -25,6 +25,13 @@ from .registry import is_entity_type
 
 _LID_REF = re.compile(r"^lid:(.+)$")
 
+# Permitted shape of a local id, matching the ``LocalId`` schema published in the
+# contract (1-64 chars) and the TypeScript LID_FORMAT. Enforced because ``lid``
+# values are echoed back as ``idMap`` KEYS — the one place client-controlled text
+# crosses into a response — and because a contract that declares a bound the
+# implementation does not enforce is not a bound at all.
+_LID_FORMAT = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
 DEFAULT_MAX_NODES = 500
 DEFAULT_MAX_DEPTH = 32
 
@@ -88,8 +95,10 @@ def resolve_graph(
 
         if "lid" in value:
             lid = value["lid"]
-            if not isinstance(lid, str) or not lid:
-                raise GraphCreateError("MALFORMED_LID", path, "lid must be a non-empty string")
+            if not isinstance(lid, str) or not _LID_FORMAT.match(lid):
+                raise GraphCreateError(
+                    "MALFORMED_LID", path, "lid must be 1-64 characters of [A-Za-z0-9_.:-]"
+                )
             if lid in id_map:
                 raise GraphCreateError("DUPLICATE_LID", path, f"lid {lid!r} is declared twice")
             node_count += 1
