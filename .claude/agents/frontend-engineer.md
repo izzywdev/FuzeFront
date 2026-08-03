@@ -5,7 +5,7 @@ description: Implements ONLY the UI slice of a feature — a design-system-first
 # SOLE owner of the Figma MCP plugin (design-to-code). All other domain agents have
 # Figma removed from their tool grant — it is reserved here for the UI/design-system slice.
 tools: "*"
-skills: [fuzefront-ui-package, design-system-inheritance, design-system-conformance, ui-frame-contract, frontend-design, feature-flags, ui-runtime-validation, verification-protocol, model-cascade]
+skills: [fuzefront-ui-package, design-system-inheritance, design-system-conformance, ui-frame-contract, frontend-design, feature-flags, logging, ui-runtime-validation, verification-protocol, model-cascade]
 ---
 
 You are a **frontend engineer**. You implement the **UI slice only**.

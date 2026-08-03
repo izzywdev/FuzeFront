@@ -80,6 +80,40 @@
     "metadata": {
       "type": "object",
       "description": "Passed through as agent `metadata` (free-form tracking)."
+    },
+    "a2a": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "OPTIONAL A2A discoverability/publication block. Mirrors the frozen contract FuzeAgent/agent-templates/contracts/a2a/v1/schema/role-a2a-extension.schema.json. Every field has a derived default, so no existing role.json needs it. The card projection reads role/name/description/services/metadata/coordinator regardless; this block only lets a role improve discoverability (examples/tags) or opt out of publication.",
+      "properties": {
+        "publish": {
+          "type": "boolean",
+          "default": true,
+          "description": "false hides this role from the public card. Still reachable on the EXTENDED card if the caller is allowlisted (authz.md §5)."
+        },
+        "extendedOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "true publishes this skill ONLY on the authenticated extended card, never on the anonymous /.well-known/agent-card.json. Use for skills whose mere existence is sensitive."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra tags merged with the derived tags. Derived tags are never removed."
+        },
+        "examples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Example prompts a caller can send to this skill — the primary signal a calling agent uses to decide fit. Absent examples make a skill effectively undiscoverable."
+        },
+        "inputModes": { "type": "array", "items": { "type": "string" } },
+        "outputModes": { "type": "array", "items": { "type": "string" } },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OAuth scopes required for THIS skill, projected into the skill's securityRequirements."
+        }
+      }
     }
   }
 }
