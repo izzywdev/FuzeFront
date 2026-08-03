@@ -342,10 +342,34 @@ chatService:
   # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
   # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
   # LiteLLM + ChromaDB are reachable in fuzeinfra.
+  migrate:
+    enabled: false
   docIndexer:
     enabled: false
     # Directory inside the chat-service image that holds the docs to index.
     docsDir: "/app/services/chat-service/docs"
+
+notificationService:
+  enabled: false
+  replicas: 1
+  port: 3009
+  image:
+    repository: fuzefront/notification-service
+    tag: local
+  sseHeartbeatMs: 30000
+  maxStreamsPerUser: 5
+  rateLimit:
+    windowMs: 60000
+    max: 100
+  migrate:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
@@ -518,6 +542,13 @@ authentik:
     useTls: false
     useSSL: false
     timeout: 10
+  adminIngress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+  networkPolicy:
+    enabled: false
   # Placement for the Authentik server + worker (empty → global.scheduling).
   nodeSelector: {}
   affinity: {}
@@ -599,3 +630,10 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+
+# Cloudflare cache purge — disabled by default; prod enables via values-prod.yaml.
+cloudflare:
+  cachePurge:
+    enabled: false
+    zoneId: ""
+    sealedToken: ""
