@@ -32,20 +32,28 @@ jobs:
         with:
           node-version: '24.x'
 
-      # These two run with NOTHING installed, on purpose. bin/register.sh and
-      # bin/validate-policy.mjs execute inside a product's init container where no
-      # npm install is possible, so a dependency creeping into either is a real
-      # break — running them bare is what catches it.
+      # These run with NOTHING installed, on purpose. bin/register.sh and the
+      # bin/validate-*.mjs validators execute inside a product's init container or its
+      # CI where no npm install is possible, so a dependency creeping into any of them
+      # is a real break — running them bare is what catches it.
       - name: Policy validator
         run: node --test tests/validate-policy.test.mjs
+
+      - name: Registration fleet-policy validator
+        run: node --test tests/validate-registration.test.mjs
 
       - name: register.sh behaviour (fake registry)
         run: sh tests/register.test.sh
 
-      # Every template the kit hands out must itself pass the validator, or the
-      # first thing a product copies is already broken.
+      # Every template the kit hands out must itself pass the validators, or the
+      # first thing a product copies is already broken. This is not hypothetical: the
+      # template shipped `mode: portal` with no `modes` and no `routing.host`, so every
+      # product that copied it inherited a registration that can never serve a mobile
+      # app. That is the origin of the portal-only defect across the fleet.
       - name: Templates validate
-        run: node bin/validate-policy.mjs templates/policy.json
+        run: |
+          node bin/validate-policy.mjs templates/policy.json
+          node bin/validate-registration.mjs templates
 
       # scripts/build-schema.mjs is a CI/dev generator, not shipped code (it is not
       # in package.json `files`), so it MAY use a devDependency — js-yaml, to read
