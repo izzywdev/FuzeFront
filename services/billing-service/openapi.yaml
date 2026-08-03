@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Billing Service API
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     REST API for the FuzeFront billing-service. Bridges platform entities
     (users / organizations, referenced by `(entityType, entityId)` only) to
@@ -117,6 +117,8 @@ paths:
                 $ref: '#/components/schemas/CreateSubscriptionResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
@@ -179,6 +181,8 @@ paths:
                     $ref: '#/components/schemas/BillingSubscription'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
@@ -242,6 +246,8 @@ paths:
                     description: provider SetupIntent client secret for the Payment Element.
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
@@ -293,6 +299,8 @@ paths:
                 $ref: '#/components/schemas/CheckoutSessionResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -356,6 +364,8 @@ paths:
                 $ref: '#/components/schemas/PaymentCheckoutResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -473,6 +483,8 @@ paths:
                     description: Resulting customer balance in cents (negative = credit).
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -535,6 +547,8 @@ paths:
                 $ref: '#/components/schemas/InvoiceListResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '502':
@@ -618,6 +632,8 @@ paths:
                 $ref: '#/components/schemas/PortalSessionResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -781,6 +797,16 @@ components:
         format: uuid
 
   responses:
+    IdentityError:
+      description: >-
+        The create body violates the server-owned identifier standard — it
+        supplied an `id`, or its `lid` graph is malformed or reaches outside
+        billing's aggregate. Returned by the graph-create middleware mounted in
+        `src/app.ts`, before the route handler runs.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphCreateError'
     Unauthorized:
       description: Missing or invalid internal token, or missing actor context.
       content:
@@ -826,6 +852,64 @@ components:
       type: string
       enum: [user, organization]
       description: Which platform entity owns the billing relationship.
+
+    LocalId:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: >-
+        A document-scoped local id (`lid`) for an entity being created in this
+        request, so siblings can reference it before the server has minted the
+        real id. Reference it elsewhere in the same body as `"lid:<value>"`.
+
+        NEVER persisted, and NEVER the entity's `id` — the owning service mints
+        ids and a create body carrying an `id` is rejected 422
+        (governance/identifier-standard.md 1). Prior art: JSON:API 1.1 `lid`,
+        SCIM `bulkId` (RFC 7644 3.7.2), OData $batch Content-ID.
+
+        A `lid` may only declare an entity billing OWNS (customer, subscription,
+        payment, invoice, credit); anything else is 422 CROSS_AGGREGATE_LID,
+        because a graph spanning services cannot be created atomically.
+      examples: ['1', 'new-customer']
+
+    IdMap:
+      type: object
+      additionalProperties:
+        type: string
+      description: >-
+        Maps every `lid` in the request to the id the server minted for it, so
+        the creator never loses what it created. Added automatically to the JSON
+        response of any create that used `lid` — routes do not populate it.
+      examples:
+        - { '1': 'cus_01h455vb4pex5vsknk084sn02q', '2': 'inv_01h456wc5qfy6wtlom195to13r' }
+
+    GraphCreateError:
+      type: object
+      additionalProperties: false
+      required: [error, code, message, path]
+      description: 422 returned when a create graph violates the identifier standard.
+      properties:
+        error:
+          type: string
+          enum: [unprocessable_entity]
+        code:
+          type: string
+          enum:
+            - CLIENT_SUPPLIED_ID
+            - UNKNOWN_LID
+            - DUPLICATE_LID
+            - MALFORMED_LID
+            - MISSING_TYPE
+            - UNKNOWN_TYPE
+            - CROSS_AGGREGATE_LID
+            - GRAPH_TOO_LARGE
+            - GRAPH_TOO_DEEP
+        message:
+          type: string
+        path:
+          type: string
+          description: Location of the offending node; empty string is the document root.
+          examples: ['/invoices/0']
 
     PlanTier:
       type: string
