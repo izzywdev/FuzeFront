@@ -9,6 +9,7 @@ jest.mock('../src/config/permit', () => ({
 }))
 
 import * as portalFlagModule from '../src/utils/portalFlag'
+import * as identityFlagModule from '../src/utils/identityFlag'
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import {
   resolvePortalContext,
@@ -45,6 +46,15 @@ beforeAll(() => {
   jest.spyOn(portalFlagModule, 'isMultiTenantPortalsEnabled').mockImplementation(
     async () => flagEnabled
   )
+  // FF-EPIC-11-S5 — this file predates the home_portal_id-based login
+  // rejection and isn't testing it (tests/auth-portal-login-home-portal.test.ts
+  // owns that). Pin the identity flag OFF so this file's ADMIN_USER_ID logins
+  // keep exercising ONLY the membership-based check they were written
+  // against; without this, isPortalScopedUsersEnabled's own S6 AC4
+  // fail-closed-to-ENFORCED default (utils/identityFlag.ts — no
+  // @fuzefront/feature-flags package resolvable in this sandbox) would
+  // silently turn S5 ON here too and reject logins this file asserts succeed.
+  jest.spyOn(identityFlagModule, 'isPortalScopedUsersEnabled').mockResolvedValue(false)
 })
 
 // This file's bootstrap-mode/login tests exercise the REAL login route,
