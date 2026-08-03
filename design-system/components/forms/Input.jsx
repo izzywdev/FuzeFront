@@ -134,7 +134,11 @@ export function Input({
             // Keep focus on the field: a mousedown on the button would otherwise
             // blur the input (losing the focus ring) before the click fires.
             onMouseDown={(e) => e.preventDefault()}
-            aria-label={revealed ? "Hide password" : "Show password"}
+            // Accessible name comes from the visually-hidden <span> below, NOT an
+            // aria-label: an aria-label of "Show password" is also matched by
+            // Testing Library's getByLabelText(/password/i), so it collided with
+            // the password field itself in consumer tests. Text content gives the
+            // same accessible name (getByRole name) without that false match.
             aria-pressed={revealed}
             aria-controls={fieldId}
             title={revealed ? "Hide password" : "Show password"}
@@ -166,6 +170,21 @@ export function Input({
               e.currentTarget.style.boxShadow = "none";
             }}
           >
+            <span
+              style={{
+                position: "absolute",
+                width: "1px",
+                height: "1px",
+                padding: 0,
+                margin: "-1px",
+                overflow: "hidden",
+                clip: "rect(0 0 0 0)",
+                whiteSpace: "nowrap",
+                border: 0,
+              }}
+            >
+              {revealed ? "Hide password" : "Show password"}
+            </span>
             {revealed ? <EyeOffIcon /> : <EyeIcon />}
           </button>
         )}
