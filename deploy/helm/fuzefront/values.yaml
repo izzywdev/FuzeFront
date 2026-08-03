@@ -142,6 +142,13 @@ secret:
   # --set or a gitignored values file locally; in prod it comes from the
   # fuzefront-secrets SealedSecret. NEVER commit a real token here.
   featureFlagsClientToken: ""
+  notificationInternalToken: ""
+  mendysDatasetsClientSecret: ""
+  mendysPlatformClientSecret: ""
+  authentikMendysSecretKey: ""
+  authentikMendysBootstrapPassword: ""
+  authentikMendysBootstrapToken: ""
+  authentikMendysDbPassword: ""
 
 backend:
   image:
@@ -155,6 +162,11 @@ backend:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
   # Per-service placement overrides (empty → falls back to global.scheduling).
+  featureFlags:
+    unleashUrl: ""
+    appName: "backend"
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: ""
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -176,6 +188,11 @@ securityService:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  adminEmail: ""
+  requireEmailVerification: false
+  googleBrokered: false
+  googleRedirectUri: ""
+  tenants: []
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -207,6 +224,7 @@ applicationsService:
     appName: "applications-service"
     # Key in fuzefront-secrets holding the scoped Unleash client token.
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -288,6 +306,7 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
+    smtp: ""
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -329,6 +348,7 @@ chatService:
   permitPdpUrl: "http://fuzefront-permit-pdp:7000"
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  dbName: "chat"
   # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
   embeddingModel: "text-embedding-3-small"
   # Resource requests/limits. Local/dev single replica; prod overrides upward.
@@ -417,6 +437,7 @@ billingService:
   secretName: billing-secrets
   meterFlushIntervalSec: 60
   permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
     enabled: true
@@ -529,6 +550,9 @@ authentik:
     redirectUri: "" # https://fuzefront.dev.local/api/auth/oidc/callback
     backendHostAliasIP: "" # ingress-nginx ClusterIP (kubectl -n ingress-nginx get svc)
     caConfigMap: "" # configmap holding ca.crt for NODE_EXTRA_CA_CERTS
+    internalUrl: ""
+    enrollmentFlowSlug: ""
+    idpProxyPrefix: ""
   # SMTP for Authentik transactional email (enrollment verification, password reset).
   # Leave all fields empty (default) to keep email disabled — Authentik will log a
   # warning but won't crash. Supply real values via --set or an existingSecret in prod.
@@ -560,6 +584,7 @@ ingress:
   host: fuzefront.dev.local
   # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
   annotations: {}
+  wildcardHost: ""
   tls:
     enabled: false
     # Defaults to "<host>-tls" when empty.
