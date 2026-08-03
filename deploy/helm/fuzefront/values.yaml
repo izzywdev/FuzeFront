@@ -637,3 +637,31 @@ cloudflare:
     enabled: false
     zoneId: ""
     sealedToken: ""
+
+customHostnameApi:
+  enabled: false
+  baseUrl: ""
+  profile: ""
+  secret:
+    name: ""
+    key: ""
+
+paymentService:
+  enabled: false
+  replicas: 1
+  port: 3010
+  image:
+    repository: fuzefront/payment-service
+    tag: local
+  provider: ""
+  secretName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+
+authentikMendys:
+  enabled: false
