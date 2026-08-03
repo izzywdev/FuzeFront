@@ -895,11 +895,73 @@ kafkaTopics:
   # Each topic: name (required), partitions, replicationFactor, retentionMs.
   # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
   topics:
-    # --- identity (security-service → provisioning-service) ---
+    # --- identity (security-service → provisioning-service + lifecycle consumers) ---
+    # Keep in sync with the @fuzefront/shared TOPICS constant. DLQ companions
+    # (dlqTopic() = "<t>.dlq") accompany every consumed topic.
     - name: identity.user.created
       partitions: 3
       replicationFactor: 1
       retentionMs: 604800000
+    - name: identity.user.created.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000 # 14d — keep failures longer for triage
+    - name: identity.user.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.user.updated.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.user.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.user.deleted.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.org.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.org.created.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.org.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.org.updated.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.org.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.org.deleted.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.membership.added
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.membership.added.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
+    - name: identity.membership.removed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+    - name: identity.membership.removed.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 1209600000
     # --- notifications (backend/security → email-service) ---
     - name: notify.email.requested
       partitions: 3
