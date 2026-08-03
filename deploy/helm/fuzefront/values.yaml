@@ -164,6 +164,8 @@ backend:
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
+  networkPolicy:
+    enabled: false
   image:
     repository: fuzefront/security-service
     tag: local
