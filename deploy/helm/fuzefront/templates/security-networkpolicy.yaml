@@ -48,14 +48,14 @@ spec:
               kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
     # Intra-fuzefront: any pod in this namespace (e.g. provisioning-service's
     # server-side session verification call).
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
     # NEW — the reason this policy exists: mendys-prod's datasets-service
     # authenticates against fuzefront-security in-cluster.
     - from:
@@ -64,5 +64,5 @@ spec:
               kubernetes.io/metadata.name: {{ $np.mendysProdNamespace | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
 {{- end }}

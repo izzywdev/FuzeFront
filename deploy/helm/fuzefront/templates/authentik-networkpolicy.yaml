@@ -43,13 +43,13 @@ spec:
               kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
     # Intra-fuzefront: any pod in this namespace (backend/security OIDC discovery, etc.).
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
     # NEW — the reason this policy exists: fuzeagent A2A pods fetch JWKS/discovery
     # in-cluster (avoids the Cloudflare-tunnel hairpin timeout).
     - from:
@@ -58,5 +58,5 @@ spec:
               kubernetes.io/metadata.name: {{ $np.fuzeagentNamespace | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | int }}
 {{- end }}
