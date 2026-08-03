@@ -297,8 +297,13 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
         invitation.role as 'owner' | 'admin' | 'member' | 'viewer'
       )
     } catch (permitErr) {
+      // Constant format string + %s args (Semgrep unsafe-formatstring): a
+      // non-literal template as the format string lets an injected specifier
+      // forge log output.
       console.error(
-        `Permit role assignment failed for user ${user.id} in org ${invitation.organization_id} (non-fatal):`,
+        'Permit role assignment failed for user %s in org %s (non-fatal):',
+        user.id,
+        invitation.organization_id,
         permitErr
       )
     }

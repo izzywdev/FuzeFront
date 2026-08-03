@@ -693,7 +693,19 @@ router.get(
 const ALLOWED_INVITE_ROLES = ['admin', 'member', 'viewer']
 
 function isValidInviteEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  // Linear, non-backtracking validation (CodeQL js/redos): the regex
+  // /^[^\s@]+@[^\s@]+\.[^\s@]+$/ is polynomial on the attacker-controlled
+  // invite email — `.` is itself in `[^\s@]`, so the two groups around the
+  // literal `\.` overlap and a near-match backtracks superlinearly. Structural
+  // indexOf/slice checks preserve the exact accept/reject semantics with no
+  // backtracking (matches adminPortals.ts's linear validEmail).
+  if (typeof email !== 'string' || email.length === 0 || email.length > 254) return false
+  if (/\s/.test(email)) return false // single-char class, linear
+  const at = email.indexOf('@')
+  if (at <= 0 || at !== email.lastIndexOf('@')) return false // exactly one '@', not leading
+  const domain = email.slice(at + 1)
+  const dot = domain.indexOf('.')
+  return dot > 0 && dot < domain.length - 1 // '.' present, char on each side
 }
 
 // FF-EPIC-11-S3 — rate-limit every new invitation route (CodeQL
