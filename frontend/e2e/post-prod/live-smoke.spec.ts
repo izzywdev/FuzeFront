@@ -32,23 +32,31 @@ import { seedMockSession } from '../../tests/support/account-vault'
  * genuinely breaks. The API path remains as
  * the platform's machine/break-glass authentication.
  *
- * Credentials come from env so we never hard-code secrets in the repo:
- *   POST_PROD_EMAIL / POST_PROD_PASSWORD  (fallback to the documented seeded
- *   admin creds, which may or may not exist in prod).
+ * The synthetic account SELF-PROVISIONS: test 7 asks whether it exists, creates
+ * it if not, and signs in if it does. Nothing is provisioned by hand, and a
+ * rebuilt prod database heals on the next run instead of going permanently red.
  */
 
-// The seeded dev credentials are a LOCAL-ONLY fallback and must never be
-// presented as a production synthetic. `initializeDatabase()` only calls
-// `runSeeds()` when NODE_ENV !== 'production', so `admin@fuzefront.dev` does
-// not exist in prod and never will — the authenticated journey below was
-// therefore PERMANENTLY red against a healthy deploy, reported as "dashboard +
-// Module-Federation apps broken" when the real cause was an unprovisioned test
-// account. A test that cannot pass trains everyone to ignore red.
-const HAS_SYNTHETIC_CREDS = Boolean(
-  process.env.POST_PROD_EMAIL && process.env.POST_PROD_PASSWORD
-)
-const EMAIL = process.env.POST_PROD_EMAIL || 'admin@fuzefront.dev'
-const PASSWORD = process.env.POST_PROD_PASSWORD || 'admin123'
+// The synthetic's ADDRESS is not a credential, so it lives here rather than in
+// a secret. Fixing it in code is what makes the account stable across runs and
+// discoverable when someone wonders what it is.
+const EMAIL = process.env.POST_PROD_EMAIL || 'postprod-smoke@fuzefront.com'
+
+// The PASSWORD has no in-repo fallback, deliberately.
+//
+// izzywdev/FuzeFront is a PUBLIC repository. A literal here would publish a
+// working production login to anyone who clones it — permanently, in git
+// history — and MFA is not enforced, so the password alone would be enough to
+// use it. The previous fallback (`admin123`) was survivable ONLY because
+// `admin@fuzefront.dev` does not exist in prod: `initializeDatabase()` calls
+// `runSeeds()` when NODE_ENV !== 'production', so the seeded admin is
+// local-only. A real password with a real account behind it is a different
+// thing entirely, and self-provisioning creates exactly that account.
+//
+// Absent → test 7 SKIPS loudly as missing coverage. It must never fall back to
+// a guessable value and report green.
+const PASSWORD = process.env.POST_PROD_PASSWORD
+const HAS_SYNTHETIC_CREDS = Boolean(PASSWORD)
 
 // Console/network errors that indicate a real federation / mixed-content /
 // CSP regression. We collect these per-test and assert on them where relevant.
@@ -165,27 +173,82 @@ test.describe('FuzeFront live post-prod smoke', () => {
     // production account to restore this coverage.
     test.skip(
       !HAS_SYNTHETIC_CREDS,
-      'POST_PROD_EMAIL/POST_PROD_PASSWORD not set — no production synthetic account to sign in with. ' +
-        'The seeded dev admin (admin@fuzefront.dev) does not exist in prod (seeds never run there), so this ' +
-        'journey cannot be exercised. This is MISSING COVERAGE, not a passing test.'
+      `POST_PROD_PASSWORD not set — cannot provision or sign in as ${EMAIL}. ` +
+        'The password has no in-repo fallback on purpose: this repository is public, so a literal would ' +
+        'publish a working production login. This is MISSING COVERAGE, not a passing test.'
     )
     testInfo.annotations.push({
       type: 'coverage',
-      description: 'authenticated journey requires a provisioned production synthetic account',
+      description: 'authenticated journey requires the POST_PROD_PASSWORD secret',
     })
 
     const { consoleErrors, pageErrors, failedRequests } = attachErrorCollectors(page)
 
     // Authenticate via the Security API (machine/break-glass path) — the same
     // surface the SPA uses, so this smoke fails if real sign-in is broken.
-    const loginResp = await request.post('/api/v1/security/session', {
-      data: { email: EMAIL, password: PASSWORD },
+    // SELF-PROVISIONING. Ask whether the synthetic exists, create it if not,
+    // sign in if it does — so account creation is part of the smoke run rather
+    // than a manual prerequisite, and a rebuilt prod database heals itself on
+    // the next run instead of going permanently red.
+    //
+    // Both branches exercise a real production surface the SPA also uses:
+    // signup on the first run, sign-in on every run after. This still fails if
+    // either genuinely breaks.
+    const availResp = await request.get('/api/v1/security/email-available', {
+      params: { email: EMAIL },
     })
     expect(
-      loginResp.status(),
-      `POST /api/v1/security/session -> ${loginResp.status()} (401/403 = creds rejected: POST_PROD_EMAIL/POST_PROD_PASSWORD not provisioned in prod; 5xx = backend error)`
+      availResp.status(),
+      `GET /api/v1/security/email-available -> ${availResp.status()} ` +
+        '(429 = per-IP rate limit of 20/min, likely concurrent smoke runs; 5xx = backend error)'
     ).toBe(200)
-    const loginBody = await loginResp.json()
+    const { available } = await availResp.json()
+
+    let loginBody: { status?: string; token?: string }
+
+    if (available) {
+      const signupResp = await request.post('/api/v1/security/signup', {
+        data: { email: EMAIL, password: PASSWORD, firstName: 'Post-prod', lastName: 'Smoke' },
+      })
+
+      if (signupResp.status() === 409) {
+        // Not a failure: two runners can race between the availability check
+        // and the signup, and the loser must fall through to signing in.
+        const raceLogin = await request.post('/api/v1/security/session', {
+          data: { email: EMAIL, password: PASSWORD },
+        })
+        expect(
+          raceLogin.status(),
+          `signup raced (409) and the follow-up sign-in returned ${raceLogin.status()} — ` +
+            'a 401 here means the existing account has a DIFFERENT password than POST_PROD_PASSWORD'
+        ).toBe(200)
+        loginBody = await raceLogin.json()
+      } else {
+        expect(
+          signupResp.status(),
+          `POST /api/v1/security/signup -> ${signupResp.status()} while creating ${EMAIL} ` +
+            '(400 = password rejected by policy; 503 = signup disabled or backend down)'
+        ).toBe(201)
+        // Signup returns a LoginResponse, so a fresh account is already signed in.
+        loginBody = await signupResp.json()
+        testInfo.annotations.push({
+          type: 'provisioned',
+          description: `created the production synthetic ${EMAIL} on this run`,
+        })
+      }
+    } else {
+      // Steady state: the account exists, so this is the real sign-in path.
+      const loginResp = await request.post('/api/v1/security/session', {
+        data: { email: EMAIL, password: PASSWORD },
+      })
+      expect(
+        loginResp.status(),
+        `POST /api/v1/security/session -> ${loginResp.status()} — ${EMAIL} EXISTS but its ` +
+          'credentials were rejected, so POST_PROD_PASSWORD does not match the account. Reset it in ' +
+          'prod and update the secret; do NOT hard-code a password here (public repo). 5xx = backend error.'
+      ).toBe(200)
+      loginBody = await loginResp.json()
+    }
     expect(
       loginBody.status,
       'break-glass account must not require MFA step-up, or this synthetic cannot sign in'
