@@ -359,7 +359,8 @@ router.get('/', authenticateToken, async (req: any, res) => {
     // Transform results. `user_role` is the caller's own role in each org, or
     // `null` when they are NOT a member (they can still see `platform`-type orgs
     // without belonging to them). An owner always resolves to 'owner' even if a
-    // membership row is somehow missing.
+    // membership row is somehow missing — the owner is authoritative over any
+    // stale/absent membership row.
     type OrgRole = OrganizationMembership['role']
     const transformedOrganizations: Array<
       Organization & { user_role: OrgRole | null }
