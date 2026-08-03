@@ -2,12 +2,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   effectiveModes,
   validateSurfaces,
   validatePolicyWiring,
+  validateSlugConvention,
   validateRegistrationDir,
 } from '../bin/validate-registration.mjs'
 
@@ -92,6 +94,95 @@ test('a manifest with no mode and no modes is rejected outright', () => {
   const errors = validateSurfaces({})
   assert.equal(errors.length, 1)
   assert.match(errors[0], /neither/)
+})
+
+// ---- slug convention ----------------------------------------------------------------
+// The owner's rule: a Fuze product registers WITHOUT the prefix — slug `service`, name
+// `Service`. Twelve of thirteen products got this wrong; FuzePicker (slug `picker`) shows
+// the convention already existed and was simply never enforced.
+
+test('a `fuze`-prefixed slug is REJECTED and the message names the replacement', () => {
+  const errors = validateSlugConvention({ slug: 'fuzeservice', name: 'Service' })
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors[0], /slug "fuzeservice" starts with "fuze"/)
+  assert.match(errors[0], /use "service"/)
+})
+
+test('the message says the mistake is UNFIXABLE, because that is the whole point', () => {
+  // A slug typo is normally a one-line edit. This one costs a register-then-delete
+  // migration that orphans Permit grants and CASCADE-deletes installation rows, so the
+  // error has to say so — otherwise it reads as pedantry and gets argued with.
+  const [error] = validateSlugConvention({ slug: 'fuzeplan' })
+  assert.match(error, /immutable/)
+})
+
+test('a `Fuze`-prefixed NAME is rejected too — the rule covers both halves', () => {
+  const errors = validateSlugConvention({ slug: 'service', name: 'FuzeService' })
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors[0], /name "FuzeService"/)
+  assert.match(errors[0], /use "Service"/)
+})
+
+test('slug AND name both prefixed produces BOTH violations, not just the first', () => {
+  // The real fuzeservice/FuzeService shape. Reporting one at a time means two build
+  // cycles to fix one manifest.
+  assert.equal(validateSlugConvention({ slug: 'fuzeservice', name: 'FuzeService' }).length, 2)
+})
+
+test('the conformant form passes', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'service', name: 'Service' }), [])
+})
+
+test('picker/FuzePicker: the slug is already right, only the name is flagged', () => {
+  // Measured current state — FuzePicker registers as `picker`. Exactly one violation.
+  const errors = validateSlugConvention({ slug: 'picker', name: 'FuzePicker' })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /name "FuzePicker"/)
+})
+
+test('fuzecontact/Contact: the name is already right, only the slug is flagged', () => {
+  const errors = validateSlugConvention({ slug: 'fuzecontact', name: 'Contact' })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /slug "fuzecontact"/)
+})
+
+test('a hyphenated prefix (`fuze-market`) is caught too', () => {
+  assert.equal(validateSlugConvention({ slug: 'fuze-market' }).length, 1)
+})
+
+test('bare `fuze` is rejected — no product de-prefixes to it', () => {
+  // De-prefixing "FuzeX" yields "x", so there is no product for which `fuze` is the
+  // correct short slug. Allowing it as "not really a prefix" would be a loophole.
+  assert.equal(validateSlugConvention({ slug: 'fuze' }).length, 1)
+})
+
+test('a slug merely CONTAINING fuze is fine — the rule is anchored to the start', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'defuze', name: 'Defuze' }), [])
+})
+
+test('a missing slug/name is not this check\'s problem', () => {
+  // Shape is the schema's job. Reporting "slug is absent" here would duplicate the
+  // contract and produce two errors for one mistake.
+  assert.deepEqual(validateSlugConvention({}), [])
+})
+
+test('THE SHIPPED TEMPLATE is itself conformant', () => {
+  // templates/ is what every product copies, so a violation there propagates to the
+  // whole fleet before anyone notices. It happens to be clean today (`myapp`, not
+  // `fuzemyapp`) — this pins that, so the gate can never be undermined by the one
+  // manifest it does not otherwise get run against.
+  const templates = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates')
+  assert.deepEqual(validateRegistrationDir(templates), [])
+})
+
+test('the slug rule is wired into the end-to-end directory check', () => {
+  const dir = makeDir({
+    'manifest.json': { ...PORTAL_STANDALONE, slug: 'fuzeservice', name: 'FuzeService' },
+    'policy.json': { product: 'fuzeservice' },
+  })
+  const errors = validateRegistrationDir(dir)
+  assert.equal(errors.length, 2, errors.join('\n'))
+  assert.match(errors.join('\n'), /starts with "fuze"/)
 })
 
 test('missing policy.json is reported', () => {
