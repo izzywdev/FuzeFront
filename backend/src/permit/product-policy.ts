@@ -53,7 +53,15 @@ export interface ProductRoleDecl {
 }
 
 const PRODUCT_KEY_RE = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/
-const BARE_KEY_RE = /^[A-Za-z][A-Za-z0-9_-]*$/
+// A bare key may NOT contain `_`. PRODUCT_NS_SEP is `_`, so `<product>_<BareKey>` has
+// to split cleanly at the first underscore; a bare key of `Vault_Asset` namespaces to
+// `fuzekeys_Vault_Asset`, which no consumer can unambiguously split back. The frozen
+// contract (services/app-registry-service/openapi.yaml → ProductResourceDecl.key) and
+// the ingress Zod schema (applications/src/app-registry/onboarding.schema.ts) already
+// ban it; this regex used to ALLOW it, so a policy written straight to `apps.policy`
+// (or stored before the ingress schema existed) passed validateProductPolicy and
+// produced an unsplittable key. Three copies of one rule must agree.
+const BARE_KEY_RE = /^[A-Za-z][A-Za-z0-9-]*$/
 
 export class ProductPolicyError extends Error {}
 

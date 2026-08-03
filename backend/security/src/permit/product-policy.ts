@@ -49,7 +49,10 @@ export interface ProductRoleDecl {
 }
 
 const PRODUCT_KEY_RE = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/
-const BARE_KEY_RE = /^[A-Za-z][A-Za-z0-9_-]*$/
+// No `_` — it is the `<product>_<BareKey>` namespace separator and the key must split
+// cleanly at the first one. Mirrors backend/src/permit/product-policy.ts and the
+// frozen ProductResourceDecl.key pattern in the app-registry OpenAPI contract.
+const BARE_KEY_RE = /^[A-Za-z][A-Za-z0-9-]*$/
 
 export class ProductPolicyError extends Error {}
 

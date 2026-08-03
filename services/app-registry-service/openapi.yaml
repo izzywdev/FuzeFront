@@ -264,6 +264,15 @@ paths:
         the platform source tree and adding it to a hardcoded sync list — a step that
         was invisible to the product team and silently skipped the provider when
         forgotten. Idempotent (full replace). Requires `apps:write`.
+
+
+        ACCEPTANCE IS NOT PROPAGATION. A 200 means the policy was validated and
+        STORED. It is pushed to the policy provider by the platform's schema sync,
+        which runs on FuzeFront backend boot and as a post-install/post-upgrade Helm
+        job — so a policy submitted between those events is live in the registry but
+        not yet in the provider, and its roles deny until the next sync. Check
+        `GET /health` on the platform backend (the `permit` block) to see which
+        registered policies the last sync actually applied, and which it rejected.
       requestBody:
         required: true
         content:
@@ -271,7 +280,9 @@ paths:
             schema: { $ref: '#/components/schemas/ProductPolicy' }
       responses:
         '200':
-          description: Policy accepted and synced.
+          description: >-
+            Policy validated and stored. NOT yet pushed to the policy provider — see
+            the propagation note above.
           content:
             application/json:
               schema:
@@ -282,10 +293,10 @@ paths:
                   slug: { $ref: '#/components/schemas/Slug' }
                   resources:
                     type: integer
-                    description: Count of namespaced resources synced.
+                    description: Count of resources accepted in the submitted policy.
                   roles:
                     type: integer
-                    description: Count of namespaced roles synced.
+                    description: Count of roles accepted in the submitted policy.
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
