@@ -1,11 +1,9 @@
 import express, { NextFunction, Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import type { Knex } from 'knex'
-import { v4 as uuidv4 } from 'uuid'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
-  generatePortalId,
   getPortalDomains,
   rowToPortal,
   type BillingMode,
@@ -13,6 +11,7 @@ import {
   type PortalIdentityPolicy,
   type PortalStatus,
 } from '../repositories/portalRepository'
+import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
 
@@ -90,58 +89,36 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       }
     },
     async create(input) {
-      const organizationId = uuidv4()
-      const portalId = generatePortalId()
-      await database.transaction(async transaction => {
-        await transaction('organizations').insert({
-          id: organizationId,
+      // FF-EPIC-09-S2 — drives the resumable, advisory-locked provisioning
+      // pipeline (org -> Permit tenant -> ReBAC instance/parent-link -> portal
+      // row -> default subdomain -> owner invite) instead of a single bare
+      // insert. Idempotent/resumable on retry for the same slug, serializes
+      // concurrent same-slug requests (-> SlugTakenError), and emits
+      // `portal.created` exactly once at the provisioned-pending-invite
+      // checkpoint regardless of whether the owner-invite step itself
+      // succeeds. See services/portalProvisioning.ts.
+      const result = await provisionPortal(
+        {
           name: input.name,
           slug: input.slug,
-          parent_id: null,
-          owner_id: input.actorUserId,
-          type: 'organization',
-          settings: JSON.stringify({}),
-          metadata: JSON.stringify({ portalId }),
-          is_active: true,
-          provisioning_state: 'pending',
-        })
-        await transaction('organization_memberships').insert({
-          id: uuidv4(),
-          user_id: input.actorUserId,
-          organization_id: organizationId,
-          role: 'owner',
-          status: 'active',
-          joined_at: new Date(),
-          permissions: JSON.stringify({}),
-          metadata: JSON.stringify({ invitedOwnerEmail: input.ownerEmail }),
-        })
-        await transaction('portals').insert({
-          id: portalId,
-          organization_id: organizationId,
-          slug: input.slug,
-          name: input.name,
-          status: 'provisioned-pending-invite',
-          billing_mode: input.billingMode,
-          branding: JSON.stringify(input.branding ?? { name: input.name }),
-          identity_policy: JSON.stringify(input.identityPolicy ?? {
-            allowPasswordLogin: true,
-            allowSelfSignup: false,
-          }),
-          owner_email: input.ownerEmail,
-          is_root: false,
-        })
-        await transaction('portal_domains').insert({
-          id: uuidv4(),
-          portal_id: portalId,
-          domain: `${input.slug}.fuzefront.com`,
-          kind: 'subdomain',
-          is_primary: true,
-          verification_status: 'verified',
-          tls_status: 'pending',
-        })
-      })
-      const row = await database('portals').where({ id: portalId }).first()
-      return rowToPortal(row, await getPortalDomains(portalId, database))
+          ownerEmail: input.ownerEmail,
+          billingMode: input.billingMode,
+          branding: input.branding,
+          identityPolicy: input.identityPolicy,
+        },
+        input.actorUserId,
+        { db: database }
+      )
+
+      if (!result.ok || !result.portal) {
+        const error = new Error(
+          result.error ?? `Portal provisioning for slug '${input.slug}' did not complete`
+        ) as Error & { code: string; failedStep?: string }
+        error.code = 'PROVISIONING_FAILED'
+        error.failedStep = result.failedStep
+        throw error
+      }
+      return result.portal
     },
     async get(portalId) {
       const row = await database('portals').where({ id: portalId }).first()
@@ -232,7 +209,7 @@ export function createAdminPortalRouter(deps: {
       })
       return response.status(201).json(portal)
     } catch (error: any) {
-      if (error?.code === '23505') {
+      if (error instanceof SlugTakenError || error?.code === '23505') {
         return response.status(409).json({ error: 'SLUG_TAKEN' })
       }
       throw error

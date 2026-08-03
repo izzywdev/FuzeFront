@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -97,7 +97,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -120,7 +120,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -131,7 +131,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -141,11 +141,12 @@ emailService:
       # password reset have both been live-dead in prod: pod healthy, /health
       # green, zero delivery.
       #
-      # Set this to the real relay (Zoho: smtp.zoho.com) ONLY once the owner has
-      # sealed SMTP_USER + SMTP_PASS — the chart mounts them as HARD secretKeyRefs
-      # on this path, so setting a host without sealing them CrashLoops the pod at
-      # start (loud) instead of dropping mail at runtime (silent). That trade is
-      # deliberate. See deploy/contabo/SEAL_PROD_SECRETS.md.
+      # Real relay = ZeptoMail. This host is SET, which mounts SMTP_USER/SMTP_PASS
+      # as HARD secretKeyRefs on this path — so those two keys MUST be sealed into
+      # fuzefront-secrets or the pod wedges in CreateContainerConfigError (loud)
+      # instead of dropping mail at runtime (silent). That trade is deliberate.
+      # (Setting this host before the keys were sealed is exactly what wedged the
+      # rollout in issue #500.) See deploy/contabo/SEAL_PROD_SECRETS.md.
       host: "smtp.zeptomail.com"
       port: 587
       secure: false   # STARTTLS on 587; true for implicit TLS on 465
@@ -171,7 +172,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -184,7 +185,7 @@ smsService:
 provisioningService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -219,7 +220,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -476,7 +477,14 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
+  # #499: dedicated database so chat's knex migration ledger never collides
+  # with the backend's `fuzefront_platform` knex_migrations rows (this is the
+  # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
+  # Argo app Degraded/OutOfSync). Same value as the values.yaml default —
+  # listed explicitly here since this is the values file prod actually syncs
+  # from. See values.yaml chatService.dbName for the full rationale.
+  dbName: fuzefront_chat
   affinity:
     nodeAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
@@ -499,7 +507,7 @@ notificationService:
   # /internal/publish fan-out stays disabled until it is set.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 178b8b9e636e
+    tag: b8b03f312faf
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +

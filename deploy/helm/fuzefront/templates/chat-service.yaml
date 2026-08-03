@@ -42,8 +42,11 @@ spec:
               value: {{ .Values.fuzeinfra.postgres.host | quote }}
             - name: DB_PORT
               value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            # Dedicated DB (#499) — NOT database.name (the shared backend
+            # fuzefront_platform). Provisioned by db-bootstrap-job.yaml via
+            # EXTRA_DATABASES, owned by the same runtime role below.
             - name: DB_NAME
-              value: {{ .Values.database.name | quote }}
+              value: {{ .Values.chatService.dbName | quote }}
             - name: DB_USER
               value: {{ .Values.database.user | quote }}
             - name: DB_PASSWORD

@@ -23,8 +23,10 @@ Argo app-of-apps registration, FuzeInfra prod) is already live.
 
 ```bash
 # 0. Fetch the cluster's sealed-secrets public cert (once)
+#    (the old sealed-secrets.fuzeinfra.fuzefront.com host no longer resolves —
+#     prod is canonical, and seal-secret.sh fetches this same URL automatically)
 CERT=/tmp/ff-sealed.pem
-curl -fsSL https://sealed-secrets.fuzeinfra.fuzefront.com/v1/cert.pem -o "$CERT"
+curl -fsSL https://sealed-secrets.prod.fuzefront.com/v1/cert.pem -o "$CERT"
 
 # 1. fuzefront-secrets (Opaque) — fill every value with the REAL secret
 #    DB_SUPERUSER_PASSWORD : the FuzeInfra Postgres superuser password (must be real)
@@ -101,15 +103,20 @@ shipped.
 The chart now wires SMTP from `emailService.email.smtp` (host/port/secure — NOT
 secret, they live in values) plus these two keys from the SealedSecret:
 
+Prod uses **ZeptoMail** (`emailService.email.smtp.host: smtp.zeptomail.com`,
+port 587, STARTTLS — already set in `values-prod.yaml`, which is the source of
+truth; the "Zoho" wording that used to be here was stale):
+
 | Key | Where to get it | Used by |
 |-----|-----------------|---------|
-| `SMTP_USER` | Zoho mailbox / app-specific user for the sending domain (e.g. `noreply@fuzefront.com`) | email-service → SMTP relay |
-| `SMTP_PASS` | Zoho **app-specific password** (not the account password; generate one per app) | email-service → SMTP relay |
+| `SMTP_USER` | ZeptoMail → Mail Agent → SMTP credentials: the SMTP **username** for the `fuzefront.com` sending domain | email-service → SMTP relay |
+| `SMTP_PASS` | ZeptoMail → Mail Agent → SMTP credentials: the generated **send-mail token** (NOT your ZeptoMail account password) | email-service → SMTP relay |
 
 Both are mounted with **hard** `secretKeyRef`s (no `optional: true`) on the SMTP
-provider path — deliberately. An authenticated relay like Zoho rejects anonymous
-mail, so a missing credential must stop the pod at start rather than degrade back
-into silently dropping mail. Sealing these keys and setting the host go together.
+provider path — deliberately. An authenticated relay like ZeptoMail rejects
+anonymous mail, so a missing credential must stop the pod at start rather than
+degrade back into silently dropping mail. Sealing these keys and setting the host
+go together.
 
 **The chart will not let you enable verification without a sender.** Setting
 `securityService.requireEmailVerification: true` while
@@ -119,21 +126,35 @@ turning verification on with no deliverable sender locks out *every* new signup
 renders, on+no-host fails, on+host renders with SMTP env.
 
 ```bash
-# Seal the two SMTP credentials in place (does not disturb other keys).
+# Seal the two SMTP credentials in place (does not disturb the other keys).
+# NOTE the flags: --in / --scope / --manifest are the ONLY flags seal-secret.sh
+# accepts (there is no --from-file or --into). --scope is REQUIRED here: the
+# script defaults to name=billing-secrets, so without it the value seals into the
+# wrong secret and the controller can never decrypt it into fuzefront-secrets.
 for KEY in SMTP_USER SMTP_PASS; do
   read -rsp "value for ${KEY}: " V; echo
   printf '%s' "$V" | tr -d '[:space:]' > /tmp/smtp-val.txt
   deploy/scripts/seal-secret.sh "$KEY" \
-    --from-file /tmp/smtp-val.txt \
-    --into deploy/contabo/sealed/fuzefront-secrets.yaml
+    --in /tmp/smtp-val.txt \
+    --scope fuzefront/fuzefront-secrets \
+    --manifest deploy/contabo/sealed/fuzefront-secrets.yaml
+  rm -f /tmp/smtp-val.txt
 done
-rm -f /tmp/smtp-val.txt
+
+git add deploy/contabo/sealed/fuzefront-secrets.yaml
+git commit -m "secrets(prod): seal SMTP_USER + SMTP_PASS for email-service"
+git push
 ```
 
 **Go-live for email verification + password reset — in this order:**
 1. **Owner** seals `SMTP_USER` + `SMTP_PASS` (above).
-2. Set `emailService.email.smtp.host` (e.g. `smtp.zoho.com`), `port: 587`,
-   `secure: false` in `values-prod.yaml` via GitOps.
+2. Set `emailService.email.smtp.host` (`smtp.zeptomail.com`), `port: 587`,
+   `secure: false` in `values-prod.yaml` via GitOps. **This is already set** — so
+   once step 1 lands, the wedged rollout self-heals on the next sync; restart it
+   with `kubectl -n fuzefront rollout restart deployment/fuzefront-email-service`
+   if you don't want to wait. (Because the host is set but the two keys were never
+   sealed, the new ReplicaSet currently sits in `CreateContainerConfigError` — the
+   hard `secretKeyRef`s cannot resolve. That is issue #500.)
 3. **Prove the sender end-to-end** — a real message delivered to a real inbox.
    Password reset starts working at this step (it needs no flag; it only needs
    `EMAIL_SERVICE_URL`, which is already wired).

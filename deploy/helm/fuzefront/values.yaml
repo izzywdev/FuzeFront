@@ -425,7 +425,7 @@ emailService:
     # every message is dropped. That is exactly how signup email-verification and
     # password-reset sat live-dead in prod.
     smtp:
-      host: ""          # e.g. smtp.zoho.com — empty = dev mailhog fallback
+      host: ""          # e.g. smtp.zeptomail.com — empty = dev mailhog fallback
       port: 587
       secure: false     # true for implicit TLS (465); false for STARTTLS (587)
   resources:
@@ -462,6 +462,22 @@ chatService:
   litellmUrl: "http://litellm.fuzeinfra.svc.cluster.local:4000"
   # ChromaDB vector store in fuzeinfra namespace (enabled via fuzeinfra Argo values).
   chromaUrl: "http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000"
+  # Dedicated database for chat-service's OWN knex migration ledger (#499).
+  # chat-service used to share `database.name` (the backend's fuzefront_platform)
+  # and self-migrate via knex on the same Postgres instance/DB. That put its
+  # small migration dir and the backend's ~18-file dir in the SAME
+  # `knex_migrations` table: whichever service's migrate Job ran last saw the
+  # OTHER service's files as "missing" and knex's validateMigrationList aborted
+  # — the crash-loop that stuck the whole `fuzefront` Argo Application
+  # Degraded/OutOfSync. Isolating chat onto its own database gives it its own
+  # `knex_migrations` row set with zero collision risk.
+  #
+  # Provisioned by the shared db-bootstrap Job (templates/db-bootstrap-job.yaml)
+  # via the same EXTRA_DATABASES mechanism already used for `authentik.dbName` —
+  # owned by the existing least-privilege `database.user` role (fuzefront_user),
+  # not a new role, since this DB has no other tenant to isolate FROM at the
+  # role level (only the migration ledger needed isolating).
+  dbName: fuzefront_chat
   # FuzeFront backend for user/org lookups.
   backendUrl: "http://fuzefront-backend:3001"
   # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs

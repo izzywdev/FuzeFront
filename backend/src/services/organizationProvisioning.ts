@@ -100,7 +100,9 @@ function getDeps(overrides?: Partial<ProvisioningDeps>): ProvisioningDeps {
   }
 }
 
-function rowToOrganization(row: any): Organization {
+// Exported so services/portalProvisioning.ts (FF-EPIC-09-S2) can reuse the
+// exact same row<->Organization mapping instead of duplicating it.
+export function rowToOrganization(row: any): Organization {
   return {
     id: row.id,
     name: row.name,
