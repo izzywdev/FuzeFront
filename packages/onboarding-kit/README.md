@@ -103,13 +103,46 @@ node scripts/build-schema.mjs           # regenerate
 node scripts/build-schema.mjs --check   # fail if stale
 ```
 
+## Validating `policy.json` in your CI
+
+```bash
+npx fuzefront-validate-policy registration/policy.json
+# or, from a checkout of the kit:
+node bin/validate-policy.mjs registration/policy.json
+```
+
+**Run this in your own repo's CI.** Zero dependencies, exits non-zero on a bad policy.
+
+A policy problem is uniquely hard to notice at runtime, which is why it is worth a
+build step:
+
+- A policy the platform **rejects** (`400`) is rejected inside an init container at
+  deploy time — the error is in a pod log nobody is tailing.
+- A policy the platform **accepts** but whose role references an action the document
+  never declares is worse: nothing errors anywhere. Permit creates the role and it
+  simply grants nothing, so the symptom is *"our users have no permissions"*, which
+  reads as a bug in your app.
+
+The validator enforces the frozen `ProductPolicy` contract:
+
+- keys are **bare** (`Ticket`, not `fuzeservice_Ticket`) and contain **no `_`** — `_`
+  is the `<slug>_<Key>` namespace separator the platform adds
+- the document is **strict**: an unknown top-level key (even `$comment`) is a `400`
+- every `Resource:action` in every role resolves to a resource **and** an action
+  declared in the same file
+- `product`, if present, agrees with the sibling `manifest.json` slug
+
+It also warns (without failing) about actions or whole resources that no role grants.
+
 ## Tests
 
 ```bash
+npm test                                # both suites
+node --test tests/validate-policy.test.mjs
 sh tests/register.test.sh
 ```
 
-Runs `register.sh` against a fake registry and asserts the properties the init
-container depends on: cold-start registers **and** activates, a re-run is idempotent,
-policy and billing are submitted, a bad token **exits non-zero**, and transient 5xx
-responses are retried rather than fatal.
+`register.test.sh` runs `register.sh` against a fake registry and asserts the
+properties the init container depends on: cold-start registers **and** activates, a
+re-run is idempotent, policy and billing are submitted, a bad token **exits
+non-zero**, and transient 5xx responses are retried rather than fatal.

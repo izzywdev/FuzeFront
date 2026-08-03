@@ -217,6 +217,76 @@ Expected FuzeMarket outcomes once AuthZ is live:
 
 ---
 
+## Step 4b — Declare the roles you are checking (`registration/policy.json`)
+
+Step 4 checks `Listing:update`. Something has to have told the platform that
+`Listing` and `update` and `seller` exist. That something is a file in **your**
+repo — you never call a policy vendor, and you never open a PR against FuzeFront.
+
+Ship `registration/policy.json` next to your `manifest.json`, using **bare** keys:
+
+```json
+{
+  "name": "FuzeMarket",
+  "resources": [
+    { "key": "Listing", "name": "Listing",
+      "actions": { "read": { "name": "Read" }, "update": { "name": "Update" } } }
+  ],
+  "roles": [
+    { "key": "seller", "name": "Seller", "permissions": ["Listing:read", "Listing:update"] }
+  ]
+}
+```
+
+`register.sh` (from `@fuzefront/onboarding-kit`, running as your init container)
+`PUT`s it to `/api/v1/app-registry/apps/{slug}/policy` on every deploy. The platform
+namespaces your keys as `<slug>_<Key>` — `fuzemarket_Listing`, `fuzemarket_seller` —
+so your `Listing` never collides with another product's, then merges them into the
+platform schema and pushes that to the policy provider.
+
+Rules the platform enforces, in the order they will bite you:
+
+1. **Keys are bare and contain no `_`.** `_` is the namespace separator. Write
+   `VaultAsset`, never `Vault_Asset`, and never `fuzemarket_Listing`.
+2. **The document is strict.** Any key other than `product` / `name` / `resources` /
+   `roles` is a `400`. That includes a well-meant `$comment`.
+3. **Every `Resource:action` in a role must resolve inside this same file.** A
+   reference to something you did not declare does not error at runtime — the role is
+   created and simply grants nothing.
+4. **`product`, if you include it, must equal your manifest slug.** Omit it and the
+   slug is used.
+
+Validate it in your own CI, so a mistake fails your build rather than an init
+container at deploy:
+
+```bash
+npx fuzefront-validate-policy registration/policy.json
+```
+
+### Acceptance is not propagation
+
+A `200` from the policy endpoint means **validated and stored**. It is pushed to the
+policy provider by the platform's schema sync, which runs on FuzeFront backend boot
+and as a post-install/post-upgrade job — so between your deploy and that sync, your
+roles exist in the registry and deny in production.
+
+To see what the last sync actually applied:
+
+```bash
+curl -s https://app.fuzefront.com/health | jq .permit
+```
+
+- `outcome: "ok"` and your slug in `registeredProducts` — your policy is live.
+- your slug in `rejectedProducts` — it was stored but failed validation at sync
+  time; the `reason` says why, and **your product currently has no roles**.
+- `outcome: "registry_unavailable"` — a platform-side problem; no product policy was
+  applied. Raise it against FuzeFront, not your own service.
+
+If `authz/check` denies everything for a role you know you declared, check this
+endpoint **before** debugging your own code.
+
+---
+
 ## Step 5 — Manage tenants, members, roles, and grants
 
 Assign roles and manage org membership through the API (again, contract-frozen /
@@ -260,6 +330,9 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 | --- | --- | --- |
 | `401` on `/session` GET | Missing/expired token | Send `Authorization: Bearer <token>`; re-login on expiry. |
 | `authz/check` always `{ allow: false }` | Fail-closed on error, or the AuthZ rollout isn't live yet | Confirm the AuthZ endpoints are enabled; check `subject`/`tenant`/`resource.type`/`action` are all set. |
+| One role denies everything, others work | The role references a resource/action your `policy.json` never declared — it grants nothing, silently | `npx fuzefront-validate-policy registration/policy.json` (Step 4b). |
+| **Every** role denies, right after a deploy | Your policy was stored but not yet synced, or the sync dropped it | `curl -s <host>/health \| jq .permit` — look for your slug in `registeredProducts` vs `rejectedProducts` (Step 4b). |
+| Your slug is in neither list on `/health` | `register.sh` never submitted the policy — an old vendored copy has no policy step, or the file is misnamed | The file must be exactly `registration/policy.json`; re-vendor `register.sh` from `@fuzefront/onboarding-kit`. |
 | `identity.tenantId` is `null` | Legacy token mode, tenant unresolved | Fail closed on tenant-scoped authz; do not default a tenant. |
 | Social login loops / no `code` | Absolute or cross-origin `redirectTo` | Use a **same-origin, app-relative** `redirectTo`; absolute URLs are rejected. |
 | `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN`. |
@@ -275,6 +348,10 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 - [ ] Login/signup handles the `authenticated` **and** `mfa_required` `SessionResult`.
 - [ ] Identity resolved via `GET /session` — no raw JWT/JWKS parsing.
 - [ ] `tenantId === null` fails closed on tenant-scoped authz.
+- [ ] `registration/policy.json` declares every resource/action/role you check, with bare keys.
+- [ ] `npx fuzefront-validate-policy registration/policy.json` runs in your CI.
+- [ ] Your vendored `register.sh` actually submits it (grep for `apps/${SLUG}/policy`).
+- [ ] Your slug appears in `registeredProducts` on the platform's `/health` → `permit`.
 - [ ] Every protected action re-checked via `POST /authz/check` (AuthZ-rollout gated).
 - [ ] Roles/grants managed via `/authz/grants` + `/tenants/*`, not a vendor SDK.
 </content>

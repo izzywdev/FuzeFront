@@ -531,6 +531,20 @@ components:
           type: array
           description: Public SSO provider ids offered on this portal (e.g. `google`, `okta`).
           items: { type: string }
+        allowPlatformAdminSupportAccess:
+          type: boolean
+          default: false
+          description: >-
+            FF-EPIC-11-S5 — internal/admin-only opt-in allowing a platform
+            (root-org) administrator to authenticate into this tenant portal
+            for support purposes, bypassing the normal home-portal-based
+            cross-portal login rejection. Every exercise of this path is
+            audit-logged. Default false/absent — a portal must explicitly
+            opt in. Never returned on the PUBLIC, pre-auth
+            `GET /api/v1/portal/context` boot payload (only surfaced on
+            authenticated admin portal-management responses) — despite
+            sharing this schema, that specific projection whitelists only
+            the fields above.
 
     PortalSsoProvider:
       type: object

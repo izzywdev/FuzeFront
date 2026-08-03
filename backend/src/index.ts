@@ -21,7 +21,11 @@ import portalRoutes from './routes/portal'
 import adminPortalRoutes from './routes/adminPortals'
 import { resolvePortalContext } from './middleware/portalContext'
 import { ensureRootPortal } from './repositories/portalRepository'
-import { syncPermitSchemaFromRegistry } from './permit/sync-permit-schema'
+import {
+  syncPermitSchemaFromRegistry,
+  loadLegacyProductPolicies,
+  getPermitSyncStatus,
+} from './permit/sync-permit-schema'
 import permitClient from './config/permit'
 import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
@@ -368,13 +372,26 @@ app.get('/api/user', (req, res) => {
 // Health check
 const startTime = Date.now()
 
-// Main health check endpoint (without /api prefix)
-app.get('/health', async (req, res) => {
+// One builder for both routes below. They were byte-identical copies; a third
+// copy of the same object is how one of them silently stops reporting a field.
+//
+// The `permit` block is the ONLY signal that the AuthZ schema sync did or did not
+// include self-registered product policies. Every failure on that path is
+// deliberately soft (the platform must boot; one bad policy must not block the
+// rest; authorization already fails closed) — and the symptom of a silent drop is
+// "this product's users have no permissions", which reads as a product bug. A
+// product team can now answer it themselves:
+//     curl -s https://app.fuzefront.com/health | jq .permit
+// The HTTP status stays 200 regardless, so the k8s probes on this path are
+// unaffected — a stale Permit schema must not restart the pod.
+export async function buildHealthPayload() {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const dbHealthy = await checkDatabaseHealth()
+  const permit = getPermitSyncStatus()
+  const permitHealthy = permit.outcome === 'ok' && permit.rejectedProducts.length === 0
 
-  res.json({
-    status: dbHealthy ? 'ok' : 'degraded',
+  return {
+    status: dbHealthy && permitHealthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     uptime: uptime,
     version: process.env.npm_package_version || '1.0.0',
@@ -385,35 +402,22 @@ app.get('/health', async (req, res) => {
       host: process.env.DB_HOST || 'localhost',
       database: process.env.DB_NAME || 'fuzefront_platform',
     },
+    permit,
     memory: {
       used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
     },
-  })
+  }
+}
+
+// Main health check endpoint (without /api prefix)
+app.get('/health', async (req, res) => {
+  res.json(await buildHealthPayload())
 })
 
 // Add /api/health endpoint to match frontend expectations
 app.get('/api/health', async (req, res) => {
-  const uptime = Math.floor((Date.now() - startTime) / 1000)
-  const dbHealthy = await checkDatabaseHealth()
-
-  res.json({
-    status: dbHealthy ? 'ok' : 'degraded',
-    timestamp: new Date().toISOString(),
-    uptime: uptime,
-    version: process.env.npm_package_version || '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
-    database: {
-      status: dbHealthy ? 'connected' : 'disconnected',
-      type: 'PostgreSQL',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'fuzefront_platform',
-    },
-    memory: {
-      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
-    },
-  })
+  res.json(await buildHealthPayload())
 })
 
 // Error handling middleware
@@ -598,14 +602,25 @@ async function startServer() {
     // Non-fatal: Permit being unreachable must not stop the platform booting;
     // authorization already fails closed.
     try {
-      const legacyPolicies = [
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        require('./permit/products/fuzemarket.policy').default,
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        require('./permit/products/mendys-datasets.policy').default,
-      ]
-      await syncPermitSchemaFromRegistry(permitClient as any, legacyPolicies)
-      console.log('✅ Permit schema synced')
+      const status = await syncPermitSchemaFromRegistry(
+        permitClient as any,
+        loadLegacyProductPolicies()
+      )
+      console.log(
+        `✅ Permit schema synced (${status.resources} resources, ${status.roles} roles, ` +
+          `${status.registeredProducts.length} registered product(s))`
+      )
+      // Fail-soft is right here — the platform must boot even if Permit or the
+      // registry is down — but the outcome is now recorded and served on /health,
+      // so "the sync quietly dropped every product policy" is an observable state
+      // and not just a line that scrolled past in a pod log.
+      if (status.outcome !== 'ok') {
+        console.error(
+          `⚠️  Permit schema sync degraded (${status.outcome}) — registered product ` +
+            `policies were NOT applied; affected products have no roles in Permit. ` +
+            `See GET /health → permit.`
+        )
+      }
     } catch (error) {
       console.error('⚠️  Permit schema sync failed (non-fatal):', error)
     }
