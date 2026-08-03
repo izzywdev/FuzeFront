@@ -38,6 +38,29 @@ export interface PortalIdentityPolicy {
   allowSelfSignup: boolean
   mfaRequired?: boolean
   ssoProviders?: string[]
+  /**
+   * FF-EPIC-11-S5 — INTERNAL/admin-only opt-in allowing a platform (root-org)
+   * administrator to authenticate into THIS tenant portal for support
+   * purposes, bypassing the normal home_portal_id-based cross-portal login
+   * rejection (`resolvePortalBindingForLogin`, `routes/auth.ts`). Every
+   * exercise of this path is audit-logged.
+   *
+   * Absent/undefined ⇒ false (default OFF — a portal must explicitly opt in;
+   * see `services/portalProvisioning.ts`'s + this module's own
+   * `DEFAULT_IDENTITY_POLICY`, neither of which sets this key). A portal's
+   * caller must never infer permissiveness from a missing/malformed
+   * `identity_policy` column — see `getPortalIdentityPolicy` below, which
+   * fails closed to the default (this field absent) on any parse failure.
+   *
+   * Deliberately NOT surfaced on the PUBLIC pre-auth boot payload
+   * (`rowToPortalContext` / `GET /api/v1/portal/context`) — that projection
+   * explicitly whitelists only the fields `services/portal-service/openapi.yaml`'s
+   * `PortalIdentityPolicy` schema documents as public; this field is
+   * additive to that schema but intentionally excluded from that specific
+   * projection so an unauthenticated visitor can never discover whether a
+   * portal has support access enabled.
+   */
+  allowPlatformAdminSupportAccess?: boolean
 }
 
 export interface PortalDomainDto {
@@ -124,6 +147,19 @@ function parseJsonColumnWithDefaults<T extends Record<string, any>>(
   return { ...fallback, ...parsed }
 }
 
+/**
+ * Parses a raw `portals` row's `identity_policy` column into a fully-shaped
+ * `PortalIdentityPolicy`, fail-closed on missing/malformed JSON (falls back
+ * to `DEFAULT_IDENTITY_POLICY`, which never sets `allowPlatformAdminSupportAccess`
+ * — so a broken column can never be read as permissive). The single shared
+ * parser every non-DTO consumer (e.g. the FF-EPIC-11-S5 cross-portal login
+ * support-access check in `routes/auth.ts`) should use rather than
+ * re-implementing jsonb parsing ad hoc.
+ */
+export function getPortalIdentityPolicy(row: { identity_policy?: unknown }): PortalIdentityPolicy {
+  return parseJsonColumnWithDefaults(row.identity_policy, DEFAULT_IDENTITY_POLICY)
+}
+
 /** Generates a server-issued portal id matching `^prt_[A-Za-z0-9]{1,40}$`. */
 export function generatePortalId(): string {
   return `prt_${uuidv4().replace(/-/g, '')}`
@@ -185,7 +221,17 @@ export function rowToPortalContext(row: any): PortalContextDto {
     slug,
     isRoot: !!row.is_root,
     branding,
-    identityPolicy,
+    // FF-EPIC-11-S5 — explicitly whitelisted to the PUBLIC contract fields
+    // only (services/portal-service/openapi.yaml's PortalIdentityPolicy
+    // schema). `identityPolicy` here is the fully-parsed internal shape and
+    // may carry admin-only fields (e.g. allowPlatformAdminSupportAccess) that
+    // must never reach this unauthenticated pre-auth boot payload.
+    identityPolicy: {
+      allowPasswordLogin: identityPolicy.allowPasswordLogin,
+      allowSelfSignup: identityPolicy.allowSelfSignup,
+      mfaRequired: identityPolicy.mfaRequired,
+      ssoProviders: identityPolicy.ssoProviders,
+    },
     authEntry: {
       loginUrl: `${base}/login`,
       signupUrl: identityPolicy.allowSelfSignup ? `${base}/signup` : null,

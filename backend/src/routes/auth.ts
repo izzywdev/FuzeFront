@@ -15,10 +15,22 @@ import {
   UnsupportedFlowStageError,
 } from '../services/authentikPassword'
 import { runInternalProvision } from '../services/organizationProvisioning'
-import { getRootPortal } from '../repositories/portalRepository'
+import { getRootPortal, getPortalIdentityPolicy } from '../repositories/portalRepository'
 import { getRequestPortalsEnabled } from '../utils/portalFlag'
+import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
+import { checkOrganizationPermission } from '../utils/permit/permission-check'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
+
+// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
+// an embedded newline could forge additional fake log lines). Mirrors
+// middleware/auth.ts's identically-named helper; every value below that
+// ultimately traces back to request-controlled input (email, a decoded
+// user/portal id) is passed through this before being logged, even where
+// it's already been validated/looked up, as defense in depth against
+// CodeQL's conservative taint tracking.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
 
 const CODE_TTL_MS = 60_000
 interface PendingCode { token: string; sessionId: string; expiresAt: number }
@@ -48,10 +60,104 @@ async function isActiveOrgMember(userId: string, organizationId: string): Promis
 // The result of resolving a login's portal binding. `ok: false` means the
 // login must be REJECTED outright — no token minted, no session created —
 // because the authenticating user is not an active member of the resolved
-// tenant portal's organization (see the cross-tenant-login fix below).
+// tenant portal's organization (see the cross-tenant-login fix below), or
+// (FF-EPIC-11-S5) because their home_portal_id doesn't match the resolved
+// tenant portal and no support-access exception applies. `reason` is a
+// stable, machine-readable, LOGGABLE code — never shown verbatim as the only
+// thing surfaced to the caller, but always logged server-side (and included
+// in the JSON/redirect error) so support/debug can tell the rejection
+// classes apart instead of lumping every 403 into one generic bucket.
+type PortalRejectionReason =
+  | 'NOT_A_MEMBER'
+  | 'HOME_PORTAL_MISMATCH'
+  | 'SUPPORT_ACCESS_NOT_ALLOWED'
+
 type PortalLoginBinding =
   | { ok: true; portalId?: string; organizationId?: string; portalName?: string }
-  | { ok: false; portalName?: string }
+  | { ok: false; portalName?: string; reason: PortalRejectionReason }
+
+// This repo's tsconfig runs with `strict: false` (no `strictNullChecks`),
+// under which plain `if (!portalBinding.ok)` does NOT reliably narrow a
+// boolean-discriminated union to its `ok: false` member (verified: TS 5.9
+// only narrows this pattern with strictNullChecks on) — so every call site
+// below narrows via this explicit type predicate instead of the discriminant
+// check inline, exactly so `portalBinding.reason` type-checks.
+function isPortalLoginRejected(
+  binding: PortalLoginBinding
+): binding is Extract<PortalLoginBinding, { ok: false }> {
+  return binding.ok === false
+}
+
+// Builds the 403 FORBIDDEN_PORTAL JSON body shared by /login and
+// /oidc/password (the redirect-based /oidc/callback builds its own query
+// string from the same `reason`/`portalName`). Kept in one place so the
+// wording for the FF-EPIC-11-S5 home-portal-mismatch case (a CLEAR "account
+// not valid for this portal" message, distinct from the plain membership
+// rejection's wording) stays consistent across both JSON call sites.
+function forbiddenPortalBody(binding: Extract<PortalLoginBinding, { ok: false }>) {
+  const name = binding.portalName
+  const message =
+    binding.reason === 'NOT_A_MEMBER'
+      ? name
+        ? `This account isn't part of ${name}.`
+        : "This account isn't part of this portal."
+      : name
+        ? `This account is not valid for ${name}.`
+        : 'This account is not valid for this portal.'
+  return { error: 'FORBIDDEN_PORTAL', reason: binding.reason, message }
+}
+
+// FF-EPIC-11-S5 — the authenticating user's home_portal_id (migration 019;
+// NULL = root/platform user). A tight, single-purpose lookup (mirrors
+// isActiveOrgMember just above) rather than threading the full user row
+// through every login site: the Authentik/OIDC call sites (oidc/password,
+// oidc/callback) only hand back a `User` DTO that doesn't carry this column
+// at all (see services/authentikPassword.ts / services/oidc.ts).
+async function getUserHomePortalId(userId: string): Promise<string | null> {
+  const row = await db('users').select('home_portal_id').where('id', userId).first()
+  return row?.home_portal_id ?? null
+}
+
+// FF-EPIC-11-S5 — resolves whether a home-portal-mismatched login should
+// nonetheless be ALLOWED as a master-admin support-access login: the caller
+// must (a) hold the SAME platform-admin authority `utils/scopeToPortal.ts`'s
+// 'bypass' mode and `services/rootOrgAdmin.ts` use (Permit ReBAC `org-admin`
+// on the ROOT organization, checked via `checkOrganizationPermission(userId,
+// 'manage', ROOT_ORG_ID)` — deliberately not a second authority model), AND
+// (b) the RESOLVED tenant portal's own `identity_policy.allowPlatformAdminSupportAccess`
+// must be explicitly `true` (fail CLOSED on missing/malformed identity_policy
+// — `getPortalIdentityPolicy` never treats a broken column as permissive).
+// A platform admin is NOT enough on its own: a portal must opt in. On
+// success this AUDIT-LOGS the access (constant format string + oneLine() —
+// same CodeQL js/log-injection/js/unsafe-formatstring convention as the
+// rest of this file) so it's distinguishable from a normal tenant login.
+async function resolveSupportAccessDecision(
+  userId: string,
+  portal: { id: string; organization_id: string; identity_policy?: unknown }
+): Promise<{ allowed: boolean; isPlatformAdmin: boolean }> {
+  let isPlatformAdmin = false
+  try {
+    isPlatformAdmin = await checkOrganizationPermission(userId, 'manage', ROOT_ORG_ID)
+  } catch {
+    // Fail-safe: a Permit error denies support access (falls through to the
+    // ordinary HOME_PORTAL_MISMATCH rejection below), never grants it.
+    isPlatformAdmin = false
+  }
+  if (!isPlatformAdmin) return { allowed: false, isPlatformAdmin: false }
+
+  const identityPolicy = getPortalIdentityPolicy(portal)
+  if (identityPolicy.allowPlatformAdminSupportAccess !== true) {
+    return { allowed: false, isPlatformAdmin: true }
+  }
+
+  console.log(
+    '🛡️ [SUPPORT-ACCESS] Platform admin authenticated into tenant portal via identity_policy.allowPlatformAdminSupportAccess: userId=%s portalId=%s organizationId=%s',
+    oneLine(userId),
+    oneLine(portal.id),
+    oneLine(portal.organization_id)
+  )
+  return { allowed: true, isPlatformAdmin: true }
+}
 
 // ─── FF-EPIC-10-S3 — JWT/session portal binding ──────────────────────────────
 //
@@ -104,8 +210,50 @@ async function resolvePortalBindingForLogin(
     // outright (no token minted, no session created) rather than bind an
     // unverified membership.
     const isMember = await isActiveOrgMember(userId, resolved.organization_id).catch(() => false)
+
+    // ─── FF-EPIC-11-S5 — home_portal_id-based cross-portal login rejection ──
+    //
+    // Layered ONTO the membership check above, not a replacement for it —
+    // and gated by its OWN flag (`fuzefront.identity.portal-scoped-users`,
+    // the SAME one every other portal-scoped-identity enforcement path uses
+    // — see utils/identityFlag.ts), independently of the multi-tenant-portals
+    // flag already gating everything above. OFF ⇒ today's behavior: only the
+    // membership check applies (unchanged since #424).
+    //
+    // Membership alone is not a sufficient cross-portal guard: a user can
+    // legitimately hold an active `organization_memberships` row on more than
+    // one org (e.g. a consultant added to several client orgs) while still
+    // having exactly ONE home portal. Without this check, that user's
+    // credentials would silently authenticate them into every portal whose
+    // org they happen to be a member of, not just their home. `home_portal_id
+    // === resolved.id` is the authoritative match; anything else — including
+    // a root-homed account (`home_portal_id === null`, which trivially never
+    // equals a non-root `resolved.id`) — is a cross-portal login and gets NO
+    // implicit bypass. The one exception is the master-admin support-access
+    // path resolved below, which requires BOTH Permit platform-admin
+    // authority AND this portal's own explicit identity_policy opt-in.
+    const scopingEnabled = await getRequestPortalScopingEnabled(req)
+    if (scopingEnabled) {
+      const homePortalId = await getUserHomePortalId(userId)
+      if (homePortalId !== resolved.id) {
+        const support = await resolveSupportAccessDecision(userId, resolved)
+        if (support.allowed) {
+          return {
+            ok: true,
+            portalId: resolved.id,
+            organizationId: resolved.organization_id,
+          }
+        }
+        return {
+          ok: false,
+          portalName: resolved.name ?? resolved.slug,
+          reason: support.isPlatformAdmin ? 'SUPPORT_ACCESS_NOT_ALLOWED' : 'HOME_PORTAL_MISMATCH',
+        }
+      }
+    }
+
     if (!isMember) {
-      return { ok: false, portalName: resolved.name ?? resolved.slug }
+      return { ok: false, portalName: resolved.name ?? resolved.slug, reason: 'NOT_A_MEMBER' }
     }
     return {
       ok: true,
@@ -306,25 +454,25 @@ router.post('/login', async (req, res) => {
     // user isn't an active member of that portal's org is rejected outright
     // (fail closed) — no session id, no token, no session row.
     const portalBinding = await resolvePortalBindingForLogin(req, userRow.id)
-    if (!portalBinding.ok) {
+    if (isPortalLoginRejected(portalBinding)) {
       // Constant format string + %s (Semgrep js/unsafe-formatstring) — a
       // template literal used as the format string with a trailing arg is
       // flagged even though `requestId` is server-generated here; keep the
       // same established pattern as the rest of this file's sanitized logs.
+      // `reason` (FF-EPIC-11-S5) is a fixed, server-computed enum value —
+      // included so support/debug can tell a plain membership rejection
+      // apart from a home_portal_id mismatch or a denied support-access
+      // attempt, instead of one generic "login rejected" bucket.
       console.log(
-        '❌ [%s] Login rejected — user is not a member of the resolved portal:',
+        '❌ [%s] Login rejected — reason=%s:',
         requestId,
+        portalBinding.reason,
         {
           userId: userRow.id,
           responseTime: Date.now() - startTime,
         }
       )
-      return res.status(403).json({
-        error: 'FORBIDDEN_PORTAL',
-        message: portalBinding.portalName
-          ? `This account isn't part of ${portalBinding.portalName}.`
-          : "This account isn't part of this portal.",
-      })
+      return res.status(403).json(forbiddenPortalBody(portalBinding))
     }
 
     // Create the session id first so it can be embedded in the token; this lets
@@ -683,17 +831,13 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
     // OFF. Resolved BEFORE minting anything: a tenant-host login where the
     // user isn't an active member of that portal's org is rejected outright.
     const portalBinding = await resolvePortalBindingForLogin(req, user.id)
-    if (!portalBinding.ok) {
-      console.log('❌ Authentik login rejected — user is not a member of the resolved portal', {
+    if (isPortalLoginRejected(portalBinding)) {
+      // reason (FF-EPIC-11-S5) — see /login's identical log-line comment above.
+      console.log('❌ Authentik login rejected — reason=%s', portalBinding.reason, {
         requestId,
         userId: user.id,
       })
-      return res.status(403).json({
-        error: 'FORBIDDEN_PORTAL',
-        message: portalBinding.portalName
-          ? `This account isn't part of ${portalBinding.portalName}.`
-          : "This account isn't part of this portal.",
-      })
+      return res.status(403).json(forbiddenPortalBody(portalBinding))
     }
 
     const sessionId = uuidv4()
@@ -809,16 +953,20 @@ router.get('/oidc/callback', async (req, res) => {
     // — redirected back with an error query param, matching this route's
     // existing error-handling convention (missing_parameters, oidc_error, ...).
     const portalBinding = await resolvePortalBindingForLogin(req, user.id)
-    if (!portalBinding.ok) {
+    if (isPortalLoginRejected(portalBinding)) {
       // user.email comes from the OIDC identity provider's response — strip
       // CR/LF before logging (same convention as this file's existing OIDC
       // error logs a few lines up) so it can't forge additional log lines.
+      // reason (FF-EPIC-11-S5) — see /login's identical log-line comment above.
       console.log(
-        '❌ [%s] OIDC login rejected — user is not a member of the resolved portal: %s',
+        '❌ [%s] OIDC login rejected — reason=%s: %s',
         requestId,
-        String(user.email).replace(/[\r\n]+/g, ' ')
+        portalBinding.reason,
+        oneLine(user.email)
       )
-      return res.redirect(`${FRONTEND_BASE}/?error=forbidden_portal`)
+      return res.redirect(
+        `${FRONTEND_BASE}/?error=forbidden_portal&reason=${encodeURIComponent(portalBinding.reason)}`
+      )
     }
 
     // Create session id first so it can be embedded in the token
