@@ -40,7 +40,19 @@ export function extractForwardHeaders(ctx: CallerContext): Record<string, string
     const key = k.toLowerCase();
     if (!FORWARDED_HEADERS.includes(key)) continue;
     const value = Array.isArray(v) ? v[0] : v;
-    if (typeof value === 'string' && value.length > 0) out[key] = value;
+    // defineProperty rather than `out[key] = value`: writes an own data property
+    // without consulting the prototype chain. `key` is already constrained by the
+    // FORWARDED_HEADERS allowlist above, so this cannot currently be reached with
+    // a prototype key — but the allowlist is one edit away from being widened,
+    // and this way the safety does not depend on remembering that.
+    if (typeof value === 'string' && value.length > 0) {
+      Object.defineProperty(out, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
   }
   return out;
 }
@@ -76,7 +88,17 @@ export function buildRequest(
       if (Array.isArray(raw)) raw.forEach(v => query.append(p.name, String(v)));
       else query.append(p.name, value);
     } else {
-      headers[p.name] = value;
+      // Same reasoning as extractForwardHeaders: an own data property written
+      // without touching the prototype chain. `p.name` has already passed
+      // assertSafeKey() when the spec was parsed, so this is belt-and-braces —
+      // but that guard lives in another module, and a header name is
+      // spec-supplied input reaching an object key.
+      Object.defineProperty(headers, p.name, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
 
