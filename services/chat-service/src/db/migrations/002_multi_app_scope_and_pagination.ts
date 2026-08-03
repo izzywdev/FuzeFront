@@ -58,12 +58,13 @@ export async function down(knex: Knex): Promise<void> {
   await knex.raw(`ALTER TABLE chat_audit_log ALTER COLUMN org_id TYPE UUID USING org_id::uuid`);
   await knex.raw(`ALTER TABLE chat_feedback ALTER COLUMN user_id TYPE UUID USING user_id::uuid`);
 
-  await knex.raw(
-    `ALTER TABLE chat_conversations
-       ADD CONSTRAINT chat_conversations_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id)`,
-  );
-  await knex.raw(
-    `ALTER TABLE chat_conversations
-       ADD CONSTRAINT chat_conversations_org_id_fkey FOREIGN KEY (org_id) REFERENCES organizations(id)`,
-  );
+  // Deliberately NOT re-adding chat_conversations_user_id_fkey /
+  // chat_conversations_org_id_fkey (FOREIGN KEY ... REFERENCES users(id) /
+  // organizations(id)). Migration 001 already dropped these cross-service FKs
+  // (#519) so chat can migrate in its own isolated `fuzefront_chat` database,
+  // which has no `users`/`organizations` tables at all — re-adding them here
+  // would make `down()` fail outright in that database (undefined_table) and
+  // would reintroduce the exact cross-service coupling #519 removed. If a
+  // rollback ever needs referential integrity again, it must be re-designed
+  // against chat's own tenant model (app_id-scoped), not the backend's tables.
 }

@@ -472,11 +472,18 @@ chatService:
   # Degraded/OutOfSync. Isolating chat onto its own database gives it its own
   # `knex_migrations` row set with zero collision risk.
   #
-  # Provisioned by the shared db-bootstrap Job (templates/db-bootstrap-job.yaml)
-  # via the same EXTRA_DATABASES mechanism already used for `authentik.dbName` —
-  # owned by the existing least-privilege `database.user` role (fuzefront_user),
-  # not a new role, since this DB has no other tenant to isolate FROM at the
-  # role level (only the migration ledger needed isolating).
+  # #499 follow-up (decoupling): this database USED to be provisioned by the
+  # shared db-bootstrap Job (templates/db-bootstrap-job.yaml) via its
+  # EXTRA_DATABASES mechanism — the same one still used for `authentik.dbName`.
+  # That meant the central/backend bootstrap had to know chat-service's
+  # database name, which is exactly the cross-service coupling the platform is
+  # removing. chat-service now creates + owns this database itself via its own
+  # pre-sync hook (templates/chat-db-bootstrap-job.yaml, hook-weight -4,
+  # running services/chat-service/src/db/bootstrap.ts as the FuzeInfra
+  # Postgres superuser) — after the central db-bootstrap (-5, which still
+  # creates the shared runtime role `fuzefront_user`) and before
+  # chat-db-migrate (-3). Ownership of the runtime *role* is not yet
+  # decoupled — only the *database* — see the TODO in db-bootstrap-job.yaml.
   dbName: fuzefront_chat
   # FuzeFront backend for user/org lookups.
   backendUrl: "http://fuzefront-backend:3001"

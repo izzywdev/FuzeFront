@@ -13,11 +13,12 @@ metadata:
     # turn fails on the first INSERT — nothing else in the chart ran these
     # migrations, and index.ts does not self-migrate.
     #
-    # Weight -3 puts it after the shared db-bootstrap (which ensures the
-    # dedicated `fuzefront_chat` database — see chatService.dbName — and the
-    # runtime role exist) and before the workload. Idempotent: knex tracks
-    # applied migrations in knex_migrations, so re-running on upgrade is a
-    # no-op.
+    # Weight -3 puts it after fuzefront-chat-db-bootstrap (-4, which creates +
+    # owns the dedicated `fuzefront_chat` database — see chatService.dbName
+    # and templates/chat-db-bootstrap-job.yaml — decoupled from the central
+    # fuzefront-db-bootstrap Job at -5 since #499's follow-up) and before the
+    # workload. Idempotent: knex tracks applied migrations in knex_migrations,
+    # so re-running on upgrade is a no-op.
     #
     # #499: this Job used to run against the SHARED backend database
     # (database.name = fuzefront_platform). Its knex ledger then collided with
