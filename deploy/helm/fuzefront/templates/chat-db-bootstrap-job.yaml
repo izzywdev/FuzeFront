@@ -1,0 +1,85 @@
+{{- if .Values.chatService.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-chat-db-bootstrap
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-db-bootstrap
+  annotations:
+    # #499 follow-up (decoupling): chat-service now owns creating its OWN
+    # `fuzefront_chat` database, rather than the central fuzefront-db-bootstrap
+    # Job creating it via EXTRA_DATABASES (see db-bootstrap-job.yaml). This Job
+    # runs chat-service's own privileged bootstrap script
+    # (services/chat-service/src/db/bootstrap.ts) as the FuzeInfra Postgres
+    # SUPERUSER — the ONLY place chat needs CREATEDB-equivalent privilege.
+    #
+    # Hook-weight ordering (lower runs first):
+    #   -5  fuzefront-db-bootstrap       (creates the shared runtime role
+    #                                     `fuzefront_user`, plus the backend's
+    #                                     own database)
+    #   -4  fuzefront-chat-db-bootstrap  (THIS Job — creates `fuzefront_chat`
+    #                                     and grants/owns it to the already-
+    #                                     existing `fuzefront_user` role)
+    #   -3  fuzefront-chat-db-migrate    (runs chat's knex migrations against
+    #                                     the now-existing, now-owned database)
+    #
+    # This Job does NOT create the runtime role — that stays centrally owned
+    # for now (see the bootstrap script's header comment). It only owns the
+    # *database*, which is what removes the central Job's knowledge of
+    # chat-service's database name.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: chat-db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: chat-db-bootstrap
+          # Same image as chat-service, so dist/db/bootstrap.js ships with it.
+          image: "{{ .Values.chatService.image.repository }}:{{ .Values.chatService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/db/bootstrap.js"]
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            # Chat's own database — NOT database.name (the shared backend
+            # fuzefront_platform). Must match chat-db-migrate-job.yaml and
+            # chat-service.yaml's DB_NAME.
+            - name: DB_NAME
+              value: {{ .Values.chatService.dbName | quote }}
+            # The least-privilege runtime role this Job grants ownership to.
+            # Must already exist (created by fuzefront-db-bootstrap at hook
+            # weight -5) and match the DB_USER chat-service connects with.
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            # Privileged bootstrap credentials (the FuzeInfra Postgres
+            # superuser). Same source as the central db-bootstrap Job — chat
+            # does not introduce a new privileged credential, it reuses the
+            # existing one already sealed into this chart's Secret.
+            - name: DB_SUPERUSER
+              value: {{ .Values.database.bootstrap.superuser.username | quote }}
+            - name: DB_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
+                  key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+{{- end }}

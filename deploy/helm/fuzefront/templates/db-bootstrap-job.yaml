@@ -47,17 +47,24 @@ spec:
             Additional databases co-located on this Postgres that other
             components own but which the bootstrap Job still creates + grants to
             the shared `database.user` role (see db-bootstrap.ts EXTRA_DATABASES
-            handling): Authentik's own DB, and — since #499 — chat-service's own
-            `fuzefront_chat` DB, so its knex migration ledger can never collide
-            with the backend's (see chatService.dbName in values.yaml). Comma-
-            separated, only the enabled ones are listed.
+            handling): Authentik's own DB. Comma-separated, only the enabled
+            ones are listed.
+
+            #499 follow-up (decoupling): chat-service's `fuzefront_chat` DB
+            USED to be listed here (see history), which meant this central/
+            backend bootstrap had to know chat-service's database name. That
+            coupling has been removed — chat-service now creates + owns
+            `fuzefront_chat` itself via its own pre-sync hook
+            (templates/chat-db-bootstrap-job.yaml, hook-weight -4, running
+            after this Job's -5 and before chat-db-migrate's -3). Do not
+            re-add chatService.dbName here.
+
+            TODO(decouple): authentik should own its own bootstrap too, the
+            same way chat-service now does — tracked as a separate follow-up.
             */}}
             {{- $extraDbs := list }}
             {{- if .Values.authentik.enabled }}
             {{- $extraDbs = append $extraDbs .Values.authentik.dbName }}
-            {{- end }}
-            {{- if .Values.chatService.enabled }}
-            {{- $extraDbs = append $extraDbs .Values.chatService.dbName }}
             {{- end }}
             {{- if $extraDbs }}
             - name: EXTRA_DATABASES
