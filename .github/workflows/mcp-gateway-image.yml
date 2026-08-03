@@ -79,7 +79,11 @@ jobs:
       - name: Build & push
         uses: docker/build-push-action@v7
         with:
-          context: packages/mcp-gateway
+          # Repo ROOT, not packages/mcp-gateway. The Dockerfile's COPY paths are
+          # root-relative (`COPY packages/mcp-gateway/package.json …`), so a
+          # narrower context makes every COPY miss. Same convention as
+          # release.yml, which builds `backend/Dockerfile` from `.`.
+          context: .
           file: packages/mcp-gateway/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
