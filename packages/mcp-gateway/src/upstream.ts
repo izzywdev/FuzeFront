@@ -16,6 +16,7 @@
  */
 
 import type { ToolDescriptor } from './spec.js';
+import { getOwn, safeRecord } from './safety.js';
 
 export class MissingIdentityError extends Error {}
 
@@ -34,7 +35,7 @@ export interface CallerContext {
 }
 
 export function extractForwardHeaders(ctx: CallerContext): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out = safeRecord<string>();
   for (const [k, v] of Object.entries(ctx.headers ?? {})) {
     const key = k.toLowerCase();
     if (!FORWARDED_HEADERS.includes(key)) continue;
@@ -52,10 +53,16 @@ export function buildRequest(
 ): { url: string; headers: Record<string, string>; body?: string } {
   let path = tool.path;
   const query = new URLSearchParams();
-  const headers: Record<string, string> = {};
+  // Null-prototype: keyed by spec-supplied header parameter names.
+  const headers = safeRecord<string>();
 
   for (const p of tool.params) {
-    const raw = args[p.name];
+    // OWN-property read only. `args[p.name]` would resolve `constructor` to
+    // Object.prototype.constructor and stringify a function into the URL;
+    // `getOwn` returns undefined for anything the caller did not actually send.
+    // buildTools already rejects prototype-keyed parameter names, so this is the
+    // second of two independent guards rather than the only one.
+    const raw = getOwn(args, p.name);
     if (raw === undefined || raw === null) {
       if (p.required) {
         throw new Error(`Missing required parameter "${p.name}" for tool "${tool.name}".`);
@@ -82,8 +89,9 @@ export function buildRequest(
   const url = `${baseUrl.replace(/\/+$/, '')}${path}${qs ? `?${qs}` : ''}`;
 
   let body: string | undefined;
-  if (tool.bodySchema && args.body !== undefined) {
-    body = JSON.stringify(args.body);
+  const bodyArg = getOwn(args, 'body');
+  if (tool.bodySchema && bodyArg !== undefined) {
+    body = JSON.stringify(bodyArg);
     headers['content-type'] = 'application/json';
   }
 

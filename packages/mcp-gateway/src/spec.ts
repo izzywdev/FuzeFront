@@ -7,6 +7,7 @@
  */
 
 import { classify, type Classification, type Overrides } from './classify.js';
+import { assertSafeKey, getOwn, isForbiddenKey, safeRecord } from './safety.js';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options'] as const;
 
@@ -58,10 +59,27 @@ function resolveRef(doc: OpenApiDoc, node: unknown, seen = new Set<string>()): u
   seen.add(ref);
 
   const parts = ref.slice(2).split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~'));
+
+  // Validate EVERY segment before walking any of them. Checking lazily inside
+  // the loop would only reject a hostile segment when traversal happened to
+  // reach it, so `#/absent/__proto__` would pass simply because `absent` is
+  // missing — the pointer would be judged safe for the wrong reason.
+  for (const p of parts) {
+    // A segment of __proto__/constructor/prototype walks onto Object.prototype
+    // instead of into the document. A spec containing one is hostile or broken,
+    // and either way the tool built from it would describe the JavaScript
+    // runtime rather than the product's API.
+    if (isForbiddenKey(p)) {
+      throw new Error(
+        `Refusing $ref "${ref}": segment "${p}" resolves to the object prototype, not to the document.`
+      );
+    }
+  }
+
   let cur: unknown = doc;
   for (const p of parts) {
     if (!cur || typeof cur !== 'object') return {};
-    cur = (cur as Record<string, unknown>)[p];
+    cur = getOwn(cur, p);
   }
   return resolveRef(doc, cur, seen);
 }
@@ -79,7 +97,9 @@ export function toolNameFor(operationId: unknown, method: string, path: string):
 }
 
 function buildInputSchema(params: ToolParam[], bodySchema?: Record<string, unknown>, bodyRequired = false) {
-  const properties: Record<string, unknown> = {};
+  // Null-prototype accumulator: keyed by spec-supplied parameter names, so a
+  // plain `{}` here would be a prototype-pollution sink.
+  const properties = safeRecord();
   const required: string[] = [];
 
   for (const p of params) {
@@ -121,6 +141,7 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
       const op = opRaw as Record<string, unknown>;
 
       const name = toolNameFor(op.operationId, method, path);
+      assertSafeKey(name, `a tool name (${method.toUpperCase()} ${path})`);
       if (seenNames.has(name)) {
         throw new Error(
           `Duplicate tool name "${name}" (${method.toUpperCase()} ${path}). ` +
@@ -136,6 +157,9 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
         const loc = p.in;
         if (loc !== 'path' && loc !== 'query' && loc !== 'header') continue;
         if (typeof p.name !== 'string') continue;
+        // The parameter name becomes a key in the tool's input schema and is
+        // used to index the caller's arguments, so it must not be a prototype key.
+        assertSafeKey(p.name, `a parameter name on ${method.toUpperCase()} ${path}`);
         params.push({
           name: p.name,
           in: loc,
