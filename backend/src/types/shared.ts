@@ -10,6 +10,16 @@ export interface User {
   // (falling back to the resolved req.portal when absent); undefined when the
   // multi-tenant-portals flag is OFF, preserving pre-epic behavior.
   portalId?: string
+  // FF-EPIC-11-S1 — this user's permanent home portal (`users.home_portal_id`,
+  // `prt_...` id or null for root/platform). Distinct from `portalId` above
+  // (the CURRENT SESSION's bound portal): this is the caller's OWN row value,
+  // surfaced here so downstream reads (e.g. the caller's own profile) never
+  // re-derive it with an extra query. `scopeToPortal` (utils/scopeToPortal.ts)
+  // scopes reads of OTHER users by `portalId` (the session context), not this
+  // field. `null` (not `undefined`) once populated, so "not yet looked up"
+  // (undefined — e.g. authenticateToken didn't run) is distinguishable from
+  // "looked up, root/platform user" (null).
+  homePortalId?: string | null
 }
 
 export interface Organization {
