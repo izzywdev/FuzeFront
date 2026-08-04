@@ -169,6 +169,102 @@ export const heartbeatRequestSchema = z
   })
   .strict()
 
+// ── onboarding: ProductPolicy / BillingProfile ────────────────────────────────
+// 1:1 with the ProductPolicy / BillingProfile schemas in
+// services/app-registry-service/openapi.yaml. Keys are BARE here on purpose —
+// the platform namespaces them by slug (`Listing` → `<slug>_Listing`) at merge
+// time, so `_` is reserved as the namespace separator and rejected in keys.
+const bareKeySchema = z
+  .string()
+  .regex(
+    /^[A-Za-z][A-Za-z0-9-]*$/,
+    'must be a bare key ([A-Za-z][A-Za-z0-9-]*) — `_` is the namespace separator'
+  )
+
+export const productResourceDeclSchema = z
+  .object({
+    key: bareKeySchema,
+    name: z.string(),
+    actions: z.record(z.string(), z.object({ name: z.string() }).strict()),
+  })
+  .strict()
+
+export const productRoleDeclSchema = z
+  .object({
+    key: bareKeySchema,
+    name: z.string(),
+    permissions: z.array(
+      z
+        .string()
+        .regex(
+          /^[A-Za-z][A-Za-z0-9-]*:[A-Za-z][A-Za-z0-9_-]*$/,
+          'must be `<BareResource>:<action>`'
+        )
+    ),
+  })
+  .strict()
+
+export const productPolicySchema = z
+  .object({
+    // Implied by the path slug. Accepted in the body only so a product can be
+    // explicit; the route rejects it when it disagrees with the path — otherwise
+    // write access to one app would install a policy namespaced to another.
+    product: slugSchema.optional(),
+    name: z.string().optional(),
+    resources: z.array(productResourceDeclSchema),
+    roles: z.array(productRoleDeclSchema),
+  })
+  .strict()
+  // Referential integrity, per the contract: "Every referenced resource/action
+  // must exist in this same document." A permission naming an undeclared
+  // resource or action does not fail at sync time — it namespaces cleanly to
+  // `<slug>_Listing:delete` and is simply never matched by anything, so the role
+  // silently grants nothing. Catching it at deploy turns an invisible authz hole
+  // into a registration failure the product team can see.
+  .superRefine((policy, ctx) => {
+    const declared = new Map(
+      policy.resources.map(r => [r.key, new Set(Object.keys(r.actions))])
+    )
+    policy.roles.forEach((role, roleIndex) => {
+      role.permissions.forEach((permission, permIndex) => {
+        const [resourceKey, actionKey] = permission.split(':')
+        const actions = declared.get(resourceKey)
+        if (!actions) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['roles', roleIndex, 'permissions', permIndex],
+            message: `resource '${resourceKey}' is not declared in this policy`,
+          })
+          return
+        }
+        if (!actions.has(actionKey)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['roles', roleIndex, 'permissions', permIndex],
+            message: `action '${actionKey}' is not declared on resource '${resourceKey}'`,
+          })
+        }
+      })
+    })
+  })
+
+export const billingProfileSchema = z
+  .object({
+    productKey: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match ^[a-z0-9][a-z0-9-]*$'),
+    currencies: z
+      .array(z.string().regex(/^[a-z]{3}$/, 'must be a lowercase ISO-4217 code'))
+      .optional(),
+    maxTotalCents: z.number().int().min(1).optional(),
+  })
+  .strict()
+
+export type ProductPolicy = z.infer<typeof productPolicySchema>
+export type BillingProfile = z.infer<typeof billingProfileSchema>
+
 export interface ValidationFieldError {
   path: string
   message: string

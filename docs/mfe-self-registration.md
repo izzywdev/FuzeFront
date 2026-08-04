@@ -85,13 +85,80 @@ or see.
 
 ## Auth token
 
-`FUZEFRONT_REGISTRATION_TOKEN` is a Bearer JWT for a service account with `apps:register`
-scope. Same format as `SEED_API_TOKEN`. Create one service-level token and seal it
-into a `fuzefront-registration` SealedSecret in each MFE's namespace:
+`FUZEFRONT_REGISTRATION_TOKEN` is a **static pre-shared string**. It is not a JWT, it
+is not issued per-product, and there is no service-account system behind it — there is
+nothing to "create a service account with `apps:register` scope" in, and no admin UI
+that mints one. (An earlier version of this page said otherwise. It was wrong, and it
+cost a consuming product a day of probing platform secrets that could never have
+worked.)
+
+The value is **one platform-wide secret**, `CONSUMER_REGISTRATION_SECRET`. The registry
+compares the incoming Bearer against it in
+`backend/applications/src/middleware/consumer-auth.ts`; on a match the request is
+treated as a platform-admin service call and Permit checks are bypassed. On a miss it
+falls through to ordinary Authentik JWT validation, so human sessions are unaffected.
+That single middleware is applied to **every** `/api/v1/app-registry` route, because
+`register.sh` calls `GET`, `POST`, and `PUT` in the course of one registration.
+
+Because it is one shared credential that grants platform-admin on the registry,
+rotating it invalidates every consumer at once — see "Rotation" below.
+
+### 1. Platform side (once per cluster)
+
+Seal the value into `fuzefront-secrets` and enable the seed Job that publishes it.
 
 ```bash
-kubectl create secret generic fuzefront-registration \
-  --namespace=fuzesales \
-  --from-literal=token=<PLATFORM_REGISTRATION_TOKEN> \
-  --dry-run=client -o yaml | kubeseal > sealed-fuzefront-registration.yaml
+# Generate and seal. Plaintext never touches git, chat, or shell history —
+# seal-secret.sh prompts hidden and merges in place, preserving other keys.
+openssl rand -hex 32 | deploy/scripts/seal-secret.sh \
+  CONSUMER_REGISTRATION_SECRET --scope fuzefront/fuzefront-secrets --in -
 ```
+
+`deploy/helm/fuzefront/values-prod.yaml` must also carry
+`secret.consumerRegistrationSecret` (any non-empty placeholder — with
+`secret.existingSecret` set, `templates/secret.yaml` never renders, so the value is a
+**render gate only**). Without it,
+`templates/consumer-registration-seed-job.yaml` and its RBAC do not render at all and
+step 2 has nothing to read.
+
+### 2. Distribution to a consuming product
+
+The `consumer-registration-seed` Job (post-install/post-upgrade) copies the value into
+`Secret/fuzefront-registration`, key `token`, in the **`fuzefront`** namespace. That
+secret is the published hand-off point: a consumer's CI reads it, re-seals it for its
+own namespace, and commits the SealedSecret.
+
+```bash
+# In the consuming product's provisioning workflow (needs read on that one secret):
+TOKEN=$(kubectl -n fuzefront get secret fuzefront-registration \
+  -o jsonpath='{.data.token}' | base64 -d)
+
+kubectl create secret generic fuzefront-registration \
+  --namespace=fuzehub --from-literal=token="$TOKEN" \
+  --dry-run=client -o yaml | kubeseal --format yaml > sealed-fuzefront-registration.yaml
+```
+
+Do **not** probe `fuzefront-secrets` for a likely-looking key. `JWT_SECRET`,
+`SESSION_SECRET`, `AUTHENTIK_BOOTSTRAP_TOKEN`, `INTERNAL_PROVISION_SECRET`,
+`PERMIT_API_KEY` and `AUTHENTIK_SECRET_KEY` all 401 here by design — none of them is
+this credential.
+
+### Diagnosing a 401
+
+If every token 401s, the usual cause is that `CONSUMER_REGISTRATION_SECRET` is **unset
+on the applications pod**. It is mounted `optional: true`
+(`deploy/helm/fuzefront/templates/applications.yaml`), so the pod starts healthy
+without it and the consumer branch is simply never reachable — the middleware degrades
+to JWT-only and rejects every static token. Check:
+
+```bash
+kubectl -n fuzefront get secret fuzefront-secrets \
+  -o jsonpath='{.data.CONSUMER_REGISTRATION_SECRET}' | wc -c   # 0 = not sealed yet
+```
+
+### Rotation
+
+Re-seal the key, `helm upgrade` (which re-runs the seed Job), then re-run each
+consumer's provisioning workflow. Consumers keep working on the old value until their
+own SealedSecret is refreshed, so rotate the platform first and the consumers promptly
+after — a consumer whose pod restarts in between will fail its init container.
