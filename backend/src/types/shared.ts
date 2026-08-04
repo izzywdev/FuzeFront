@@ -75,13 +75,11 @@ export interface App {
   description?: string
   organizationId?: string
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
-  /**
-   * Where the app may be INSTALLED — a user's personal space, an organization,
-   * or either. Distinct from `visibility` (who may SEE it) and from
-   * `organizationId` (who OWNS it), and distinct from `scope` above, which is
-   * the Module-Federation remote container name.
-   */
-  scopeLevel?: 'personal' | 'organization' | 'both'
+  // NOTE: no `scopeLevel` here. The installable scope is owned by the
+  // applications-service (which serves /api/apps in every deployed config) and
+  // is declared once, on the App type in @fuzefront/core. This service neither
+  // reads nor writes apps.scope_level, so re-declaring the field here would be
+  // a second copy of the same concept that nothing keeps in step.
   marketplaceMetadata: Record<string, any>
   isMarketplaceApproved: boolean
   installCount: number

@@ -9,6 +9,22 @@
 // apps.ts route: `/installed`, `/:id/installations` and `/:id/install*` are all
 // new paths.
 //
+// WHY THIS LIVES IN applications-service AND NOT fuzefront-backend
+// ---------------------------------------------------------------
+// The ingress routes `/api/apps` (Prefix) to fuzefront-applications and only
+// the remaining `/api` to fuzefront-backend, and `applicationsService.enabled`
+// is true in BOTH values-local.yaml and values-prod.yaml. This router first
+// shipped on the backend, where nginx's longest-prefix match meant every
+// endpoint below answered 404 in every deployed environment — while the unit
+// tests, which mount the router directly, stayed green. Implementation must
+// follow path ownership; scripts/check-route-ownership.mjs now fails CI if the
+// two ever drift apart again.
+//
+// The schema it reads (apps.scope_level, app_installations) comes from the
+// backend's migration 017, not this service's migration set. Both services
+// share one database, and 017 has already been applied to production, so moving
+// it here would risk a duplicate apply for no benefit.
+//
 // Authorization, fail-closed at every step:
 //   1. The app must be VISIBLE to the caller (member of its owning org, or the
 //      app is public/marketplace). Anything else is a 404, never a 403 — a
