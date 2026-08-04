@@ -160,8 +160,34 @@ def load_allowlist(root: str) -> set[str]:
             with open(p, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     line = line.split("#", 1)[0].strip()
-                    if line:
+                    if line and not line.startswith("src "):
                         allow.add(line.lower())
+    return allow
+
+
+def load_source_allowlist(root: str) -> set[str]:
+    """`src <path>:<line>` entries — sites the source backstop must not count.
+
+    The backstop keys on the ASSIGNMENT TARGET (`id`, `<noun>Id`), which is all a
+    grep-shaped check can see. That misreads `id: uuidv4()` inside
+    `trx('event_outbox').insert({...})`: the row is an outbox record, not an
+    entity, and it has no type to carry. Left uncounted, those inflate the
+    backlog and make the number meaningless — and the backlog number is the only
+    thing standing between the backstop and being ratcheted to enforcing.
+
+    Every entry needs a reason in its comment. This exempts a site from being
+    COUNTED, never from the standard: if the row is an entity, migrate it.
+    """
+    allow = set()
+    for rel in ALLOWLIST_PATHS:
+        p = os.path.join(root, rel)
+        if not os.path.isfile(p):
+            continue
+        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if line.startswith("src "):
+                    allow.add(line[4:].strip().replace("\\", "/"))
     return allow
 
 
@@ -373,6 +399,8 @@ def check_source(root: str) -> list[str]:
     """
     violations: list[str] = []
     files = _candidate_files(root, ["*.ts", "*.py", "**/*.ts", "**/*.py"])
+    exempt_sites = load_source_allowlist(root)
+    used_exemptions: set[str] = set()
 
     for path in files:
         rel = os.path.relpath(path, root).replace("\\", "/")
@@ -392,6 +420,13 @@ def check_source(root: str) -> list[str]:
         for number, line in enumerate(lines, 1):
             if line.lstrip().startswith(("//", "#", "*")):
                 continue
+            site = f"{rel}:{number}"
+            if site in exempt_sites:
+                # Only an actual mint site can consume its exemption; anything
+                # left over at the end is stale and is reported below.
+                if MINT_RE.search(line):
+                    used_exemptions.add(site)
+                continue
             match = MINT_RE.search(line)
             if match:
                 target = match.group("target")
@@ -406,6 +441,16 @@ def check_source(root: str) -> list[str]:
                     f"{rel}:{number} — casts to EntityId, forging the brand the type "
                     f"system relies on; use parseId()/parse_id() instead"
                 )
+
+    # A `src` entry whose line no longer mints anything has DRIFTED — the file
+    # moved under it and it is now silently exempting whatever occupies that
+    # line, which is an exemption nobody granted. Report rather than ignore.
+    for stale in sorted(exempt_sites - used_exemptions):
+        violations.append(
+            f"identifier-allowlist — stale source exemption 'src {stale}': that line "
+            f"no longer mints an id. Re-point it at the real site or delete it; a "
+            f"drifting line number exempts code nobody reviewed"
+        )
     return violations
 
 
@@ -477,6 +522,11 @@ SPINE_PREFIXES = {
     "pay": "FuzeFront",
     "inv": "FuzeFront",
     "crd": "FuzeFront",
+    # identity, continued — see registry.ts
+    "ivt": "FuzeFront",
+    "mbr": "FuzeFront",
+    "ses": "FuzeFront",
+    "mfa": "FuzeFront",
     # messaging — likewise hosted here for the family
     "cnv": "FuzeFront",
     "msg": "FuzeFront",
