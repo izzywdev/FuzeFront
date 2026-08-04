@@ -7,7 +7,7 @@ on:
 jobs:
   notify:
     if: github.event.pull_request.merged == true
-    uses: izzywdev/AITools/.github/workflows/telegram-pr-merged.yml@main
+    uses: izzywdev/AITools/.github/workflows/telegram-pr-merged.yml@f2845cdc3efd603f4abac54acbcbd209661b0d2c # main (pinned snapshot)
     with:
       pr_title: ${{ github.event.pull_request.title }}
       pr_url: ${{ github.event.pull_request.html_url }}
