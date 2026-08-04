@@ -600,3 +600,76 @@ describe('Organization Members', () => {
     })
   })
 })
+
+// GET /api/organizations/:id must project the caller's OWN role as `user_role`
+// so the UI can show "your role" and tell a real member apart from someone who
+// only sees a platform org. `user_role` is null for a non-member; an owner
+// resolves to 'owner' even if the joined membership row is absent.
+describe('Organization user_role projection — GET /:id', () => {
+  let app: express.Application
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    app = buildApp()
+  })
+
+  // Single-org GET runs one query against `organizations` and terminates on
+  // `.first()`. Its left-join surfaces the caller's membership role as
+  // `orgRow.user_role`.
+  function makeOrgGetChain(orgRow: any) {
+    return {
+      select: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      first: jest.fn().mockResolvedValue(orgRow),
+    }
+  }
+
+  const baseOrg = {
+    id: ORG_ID,
+    name: 'Acme',
+    slug: 'acme',
+    parent_id: null,
+    type: 'organization',
+    settings: {},
+    metadata: {},
+    is_active: true,
+    created_at: new Date('2024-01-01').toISOString(),
+    updated_at: new Date('2024-01-01').toISOString(),
+  }
+
+  function wireOrgGet(orgRow: any) {
+    dbMock.mockImplementation((table: string) =>
+      table === 'organizations' ? makeOrgGetChain(orgRow) : makeDbQuery(null)
+    )
+  }
+
+  it('returns the caller membership role as user_role', async () => {
+    wireOrgGet({ ...baseOrg, owner_id: 'someone-else', user_role: 'admin' })
+
+    const res = await request(app).get(`/api/organizations/${ORG_ID}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.user_role).toBe('admin')
+  })
+
+  it('resolves user_role to null for a non-member (visible platform org)', async () => {
+    // No membership row → left-join yields user_role null, and the caller is
+    // not the owner, so it stays null.
+    wireOrgGet({ ...baseOrg, type: 'platform', owner_id: 'someone-else', user_role: null })
+
+    const res = await request(app).get(`/api/organizations/${ORG_ID}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.user_role).toBeNull()
+  })
+
+  it('falls back to owner when the caller owns the org but has no membership row', async () => {
+    wireOrgGet({ ...baseOrg, owner_id: USER_ID, user_role: null })
+
+    const res = await request(app).get(`/api/organizations/${ORG_ID}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.user_role).toBe('owner')
+  })
+})

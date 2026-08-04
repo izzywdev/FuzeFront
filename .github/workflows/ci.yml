@@ -20,10 +20,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -119,10 +119,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -175,10 +175,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -217,7 +217,7 @@ jobs:
         run: cd task-manager-app && npm run build
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-artifacts
           path: |
@@ -297,6 +297,65 @@ jobs:
         # handling) and the auth middleware.
         run: npm run -w @fuzefront/notification-service test
 
+  applications-service-tests:
+    name: Applications service (unit + integration)
+    runs-on: ubuntu-latest
+    needs: build
+
+    # This job did not exist before. The applications-service serves /api/apps in
+    # every deployed configuration, and NO workflow ran its tests — which is how
+    # a suite could sit red on master (a zod narrowing error under
+    # `strict: false`) with nothing reporting it, and how the app-installation
+    # routes could be absent from the service that actually owns the path.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fuzefront_platform
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install workspace
+        run: npm ci
+
+      # applications-service imports @fuzefront/core from its build output.
+      - name: Build @fuzefront/core
+        run: npm run -w @fuzefront/core build
+
+      - name: Type-check applications-service
+        run: npm run -w @fuzefront/applications-service build
+
+      - name: Run applications-service tests
+        # Includes the app-installation suite (27 cases): scope_level vs install
+        # scope, org membership, owner/admin for `everyone`, non-disclosing 404s,
+        # the rate limiter, and the DB CHECK + partial unique indexes.
+        env:
+          NODE_ENV: test
+          USE_POSTGRES: 'true'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: fuzefront_platform
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: test-jwt-secret-key-for-testing-only
+        run: npm run -w @fuzefront/applications-service test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -318,16 +377,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
 
@@ -364,10 +423,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -441,10 +500,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
 
@@ -511,10 +570,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -561,7 +620,7 @@ jobs:
           fi
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always()
         continue-on-error: true
         with:
@@ -581,10 +640,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
 
@@ -595,7 +654,7 @@ jobs:
           cp README.md docs/index.md
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs

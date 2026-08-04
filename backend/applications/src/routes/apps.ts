@@ -19,9 +19,16 @@ interface AppRow {
   module: string
   description: string
   metadata: string
+  // Where the app may be INSTALLED (backend migration 017). Distinct from
+  // `scope` above, which is the Module-Federation remote container name.
+  scope_level: 'personal' | 'organization' | 'both'
   created_at: Date
   updated_at: Date
 }
+
+// Install scope levels an app may declare. Rows written before migration 017
+// read as the column default, 'both'.
+const VALID_SCOPE_LEVELS = ['personal', 'organization', 'both'] as const
 
 // Health check function for individual apps
 async function checkAppHealth(app: AppRow): Promise<boolean> {
@@ -149,6 +156,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
           scope: app.scope,
           module: app.module,
           description: app.description,
+          scopeLevel: app.scope_level ?? 'both',
         }
       })
     )
@@ -265,6 +273,7 @@ router.post(
         scope,
         module,
         description,
+        scopeLevel = 'both',
       } = req.body
 
       // Input sanitization - trim whitespace from string fields
@@ -277,6 +286,7 @@ router.post(
       if (typeof scope === 'string') scope = scope.trim()
       if (typeof module === 'string') module = module.trim()
       if (typeof description === 'string') description = description.trim()
+      if (typeof scopeLevel === 'string') scopeLevel = scopeLevel.trim()
 
       // Basic required field validation
       if (!name || name.length === 0) {
@@ -324,6 +334,15 @@ router.post(
             .status(400)
             .json({ error: 'Icon URL must be a valid HTTP or HTTPS URL' })
         }
+      }
+
+      // Install scope level validation. Declares where the app may be
+      // installed (personal space, an organization, or either); the install
+      // flow asks the user only about the choices this leaves open.
+      if (!VALID_SCOPE_LEVELS.includes(scopeLevel)) {
+        return res.status(400).json({
+          error: `Invalid scopeLevel. Must be one of: ${VALID_SCOPE_LEVELS.join(', ')}`,
+        })
       }
 
       // Integration type validation
@@ -405,6 +424,7 @@ router.post(
         scope,
         module,
         description,
+        scope_level: scopeLevel,
       })
 
       const newApp: App = {
@@ -422,6 +442,7 @@ router.post(
         marketplaceMetadata: {},
         isMarketplaceApproved: false,
         installCount: 0,
+        scopeLevel,
       }
 
       res.status(201).json(newApp)
@@ -542,10 +563,20 @@ router.post('/register', async (req: any, res) => {
       scope,
       module,
       description,
+      scopeLevel = 'both',
     } = req.body
 
     if (!name || !url) {
       return res.status(400).json({ error: 'Name and URL are required' })
+    }
+
+    // Install scope level validation — same contract as POST / above. Self-
+    // registration is unauthenticated, so an invalid value must be rejected
+    // here rather than relied on to fail at the column's enum constraint.
+    if (!VALID_SCOPE_LEVELS.includes(scopeLevel)) {
+      return res.status(400).json({
+        error: `Invalid scopeLevel. Must be one of: ${VALID_SCOPE_LEVELS.join(', ')}`,
+      })
     }
 
     // For module federation, require additional fields
@@ -569,6 +600,7 @@ router.post('/register', async (req: any, res) => {
       scope,
       module,
       description,
+      scope_level: scopeLevel,
     })
 
     const newApp: App = {
@@ -586,6 +618,7 @@ router.post('/register', async (req: any, res) => {
       marketplaceMetadata: {},
       isMarketplaceApproved: false,
       installCount: 0,
+      scopeLevel,
     }
 
     // Emit WebSocket event to notify all connected clients

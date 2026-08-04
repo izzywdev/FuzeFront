@@ -18,7 +18,7 @@ jobs:
       ${{ github.event.workflow_run.conclusion == 'failure' &&
           !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
           github.event.workflow_run.head_branch != 'master' }}
-    uses: izzywdev/AITools/.github/workflows/claude-ci-autofix.yml@main
+    uses: izzywdev/AITools/.github/workflows/claude-ci-autofix.yml@f2845cdc3efd603f4abac54acbcbd209661b0d2c # main (pinned snapshot)
     with:
       run_id: ${{ github.event.workflow_run.id }}
       head_branch: ${{ github.event.workflow_run.head_branch }}
