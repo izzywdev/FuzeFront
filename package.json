@@ -40,7 +40,8 @@
     "build:shared": "npm run build -w shared",
     "test:backend": "npm run test -w backend",
     "type-check:backend": "npm run type-check -w backend",
-    "check:workspace-deps": "node scripts/check-workspace-deps.mjs"
+    "check:workspace-deps": "node scripts/check-workspace-deps.mjs",
+    "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
