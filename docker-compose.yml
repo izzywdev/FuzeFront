@@ -32,6 +32,12 @@ services:
       - PERMIT_API_KEY=${PERMIT_API_KEY}
       - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
       - PERMIT_PDP_URL=http://permit-pdp:7000
+      # This local stack does not run the applications-service, so serve
+      # app-registry reads (GET /api/v1/app-registry/apps) from the backend's
+      # local `apps` table instead of delegating to the (absent) proxy. In prod
+      # this flag is unset, so reads delegate to fuzefront-applications — the
+      # same store writes land in (FuzeFront #533).
+      - APP_REGISTRY_LOCAL_ADAPTER=1
       - AUTHENTIK_ISSUER_URL=${AUTHENTIK_ISSUER_URL}
       - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID}
       - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET}

@@ -477,7 +477,8 @@ export interface Organization {
   createdAt?: string
   updatedAt?: string
   // Snake_case fields returned by the backend / consumed by the UI.
-  user_role?: string
+  // `null` when the caller is not a member of the org (visible platform org).
+  user_role?: string | null
   member_count?: number
   created_at?: string
 }

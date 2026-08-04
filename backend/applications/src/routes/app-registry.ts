@@ -6,12 +6,16 @@
 //   activateApp, suspendApp, heartbeatApp.
 import express from 'express'
 import { randomBytes } from 'crypto'
-import { authenticateToken } from '../middleware/auth'
+// Every route below uses the unified middleware: pre-shared consumer token first,
+// then JWT session. authenticateToken is no longer referenced directly here — it
+// is reached through authenticateConsumerOrSession's fall-through.
 import { authenticateConsumerOrSession } from '../middleware/consumer-auth'
 import {
   appManifestSchema,
   registerAppRequestSchema,
   heartbeatRequestSchema,
+  productPolicySchema,
+  billingProfileSchema,
   toValidationErrorBody,
 } from '../app-registry/manifest.schema'
 import { appRegistryService, canRead, canMutate } from '../app-registry/service'
@@ -56,7 +60,7 @@ async function v1WriteGate(
 }
 
 // ── GET /apps — listApps ──────────────────────────────────────────────────────
-router.get('/apps', authenticateToken, async (req: any, res) => {
+router.get('/apps', authenticateConsumerOrSession, async (req: any, res) => {
   try {
     const caller = await resolveCaller(req.user)
     const status = req.query.status as any
@@ -164,7 +168,15 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
 })
 
 // ── GET /apps/:slug — getApp ──────────────────────────────────────────────────
-router.get('/apps/:slug', authenticateToken, async (req: any, res) => {
+// authenticateConsumerOrSession, not authenticateToken: this is the FIRST call
+// register.sh makes (the idempotency probe — 200 = already registered, 404 =
+// register now), and it presents the same pre-shared CONSUMER_REGISTRATION_SECRET
+// it later uses for POST /apps. With plain JWT auth here the probe 401s and the
+// script's `401|403) die` arm CrashLoopBackOffs the consumer's pod before it can
+// ever reach the register call. Human OIDC sessions are unaffected — the
+// middleware falls through to authenticateToken when the bearer is not the
+// pre-shared secret.
+router.get('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) => {
   try {
     const caller = await resolveCaller(req.user)
     const app = await appRegistryService.findBySlug(req.params.slug)
@@ -179,7 +191,10 @@ router.get('/apps/:slug', authenticateToken, async (req: any, res) => {
 })
 
 // ── PUT /apps/:slug — updateApp ───────────────────────────────────────────────
-router.put('/apps/:slug', authenticateToken, async (req: any, res) => {
+// Consumer-secret capable for the same reason as GET above: register.sh re-PUTs
+// the manifest on every redeploy so manifest edits (new remoteEntry, changed nav
+// placement) are not frozen at first registration.
+router.put('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) => {
   try {
     const caller = await resolveCaller(req.user)
     const existing = await appRegistryService.findBySlug(req.params.slug)
@@ -235,8 +250,119 @@ router.put('/apps/:slug', authenticateToken, async (req: any, res) => {
   }
 })
 
+// ── onboarding writes: policy + billing profile ───────────────────────────────
+// Both were specified in the contract (putAppPolicy / putAppBillingProfile),
+// covered by tests, and given storage by migration 006 + service.setPolicy /
+// service.setBillingProfile — but the routes themselves were never mounted, so
+// every call 404'd. register.sh treats a non-2xx here as fatal, which meant any
+// product shipping a policy.json could not complete registration at all.
+//
+// Shared preamble: resolve the app, hide invisible apps as 404 (BOLA), apply the
+// release gate, then object-level + Permit apps:write. Returns the app on
+// success, or null when it has already written a response.
+async function resolveForOnboardingWrite(
+  req: any,
+  res: express.Response
+): Promise<{ app: any; caller: any } | null> {
+  const caller = await resolveCaller(req.user)
+  const app = await appRegistryService.findBySlug(req.params.slug)
+  if (!app) {
+    notFound(res)
+    return null
+  }
+  if (!canRead(app, caller)) {
+    notFound(res)
+    return null
+  }
+  if (!(await v1WriteGate(caller, app.organizationId, res))) return null
+  if (!canMutate(app, caller)) {
+    forbidden(res)
+    return null
+  }
+  const permitted = await checkAppRegistryPermission({
+    userId: caller.userId,
+    action: 'apps:write',
+    organizationId: app.organizationId,
+    slug: app.slug,
+  })
+  if (!permitted && !caller.isPlatformAdmin) {
+    forbidden(res, 'Missing apps:write scope')
+    return null
+  }
+  return { app, caller }
+}
+
+// ── PUT /apps/:slug/policy — putAppPolicy ─────────────────────────────────────
+router.put('/apps/:slug/policy', authenticateConsumerOrSession, async (req: any, res) => {
+  try {
+    const resolved = await resolveForOnboardingWrite(req, res)
+    if (!resolved) return
+    const { app } = resolved
+
+    const parsed = productPolicySchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
+    }
+    const policy = parsed.data
+
+    // `product` is implied by the path. Honouring a disagreeing body value would
+    // let apps:write on one app install a policy namespaced to a different one.
+    if (policy.product && policy.product !== app.slug) {
+      return res.status(400).json({
+        error: 'validation_error',
+        message: 'policy.product must match the path slug',
+        fields: [{ path: 'product', message: `expected '${app.slug}'` }],
+      })
+    }
+
+    // TODO(platform): storage only. ACCEPTANCE IS NOT PROPAGATION — the roles
+    // declared here stay DENY until the permit-schema sync job reads this column
+    // (FuzeFront backend boot + post-install/post-upgrade Helm job) and pushes
+    // them to Permit. `GET /health` (permit block) reports what the last sync
+    // actually applied. A product registering between syncs is live in the
+    // registry with a policy that is not yet enforced.
+    await appRegistryService.setPolicy(app.slug, policy)
+
+    return res.json({
+      slug: app.slug,
+      resources: policy.resources.length,
+      roles: policy.roles.length,
+    })
+  } catch (err) {
+    console.error('[app-registry] putAppPolicy error:', err)
+    return res.status(500).json({ error: 'internal_error', message: 'Failed to store policy' })
+  }
+})
+
+// ── PUT /apps/:slug/billing-profile — putAppBillingProfile ────────────────────
+router.put('/apps/:slug/billing-profile', authenticateConsumerOrSession, async (req: any, res) => {
+  try {
+    const resolved = await resolveForOnboardingWrite(req, res)
+    if (!resolved) return
+    const { app } = resolved
+
+    const parsed = billingProfileSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return res.status(400).json(toValidationErrorBody((parsed as any).error))
+    }
+    const profile = parsed.data
+
+    // TODO(platform): storage only, same propagation caveat as policy above —
+    // the billing service reads registered profiles to build its productKey
+    // allowlist; a profile stored here is not accepted at checkout until it does.
+    await appRegistryService.setBillingProfile(app.slug, profile)
+
+    return res.json(profile)
+  } catch (err) {
+    console.error('[app-registry] putAppBillingProfile error:', err)
+    return res
+      .status(500)
+      .json({ error: 'internal_error', message: 'Failed to store billing profile' })
+  }
+})
+
 // ── DELETE /apps/:slug — deleteApp ────────────────────────────────────────────
-router.delete('/apps/:slug', authenticateToken, async (req: any, res) => {
+router.delete('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) => {
   try {
     const caller = await resolveCaller(req.user)
     const existing = await appRegistryService.findBySlug(req.params.slug)
@@ -276,7 +402,7 @@ router.post('/apps/:slug/activate', authenticateConsumerOrSession, (req, res) =>
 )
 
 // ── POST /apps/:slug/suspend — suspendApp ─────────────────────────────────────
-router.post('/apps/:slug/suspend', authenticateToken, (req, res) =>
+router.post('/apps/:slug/suspend', authenticateConsumerOrSession, (req, res) =>
   transition(req as any, res, 'suspended')
 )
 
@@ -343,7 +469,7 @@ async function transition(
 
     return res.json(updated)
   } catch (err) {
-    console.error(`[app-registry] ${target} error:`, err)
+    console.error('[app-registry]', target, 'error:', err)
     return res.status(500).json({ error: 'internal_error', message: `Failed to ${target} app` })
   }
 }

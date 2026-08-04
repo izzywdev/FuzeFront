@@ -1,0 +1,16 @@
+{
+  // Mirrors tsconfig.kafka.json: services consume only the identity sub-tree,
+  // so building it alone keeps the React/JSX + socket.io-client dependencies of
+  // the full barrel out of server images.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "jsx": "preserve",
+    "lib": ["es2020"],
+    "types": ["node"],
+    "rootDir": "./src/identity",
+    "outDir": "./dist/identity"
+  },
+  "include": ["src/identity"],
+  "exclude": ["node_modules", "dist"]
+}

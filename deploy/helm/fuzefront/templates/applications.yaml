@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/part-of: fuzefront
         app.kubernetes.io/component: applications-service
       annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-08-04T08:00:00Z"
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.applicationsService.port "root" .) | nindent 8 }}
     spec:
       {{- include "fuzefront.scheduling" (dict "svc" .Values.applicationsService "root" .) | nindent 6 }}

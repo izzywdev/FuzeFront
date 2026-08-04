@@ -1,0 +1,131 @@
+name: gate-line-endings
+
+# Blocks NEW CRLF from entering a repo. Part of the standard workflow stack.
+#
+# WHY THIS EXISTS (a repeated production failure — do not weaken it):
+# FuzeFront's release workflow bumps image tags in values-prod.yaml with an awk that
+# anchors on line content. A CRLF check-in made every $-anchored match miss, the count
+# guard hit 0, and EVERY release died until a human restored the endings by hand. The
+# same class of break has hit a vendored OpenAPI contract (byte diff vs upstream) and
+# CSS (PostCSS "Unexpected }" on balanced braces). CRLF in a committed .sh breaks at
+# runtime, with a \r that does not show up in a diff.
+#
+# WHY .gitattributes IS NOT ENOUGH — the reason this is a gate:
+#   1. It only covers paths someone thought to list. FuzeFront added
+#      `deploy/helm/** text eol=lf` after the first incident but NOT
+#      `.github/workflows/**` — so the workflow the CRLF had broken was itself still
+#      unprotected, and git re-offered CRLF on the very next edit to it.
+#   2. Commits through the GitHub Contents API (bots, agent runs, web edits) BYPASS
+#      .gitattributes entirely — no clean filter runs. Only a check on the committed
+#      blob sees those.
+#
+# SCOPE — deliberately PR-only for the hard failure:
+# Repos carry a large pre-existing backlog (FuzeFront: 207 CRLF blobs at the time this
+# gate was written). Failing on the whole tree would red every PR in the org on day one
+# and would get switched off within a week — a gate nobody can keep enabled protects
+# nothing. So:
+#   • pull_request      -> HARD FAIL, but only on files the PR actually adds/changes.
+#                          Prevents every new regression, needs no big-bang cleanup.
+#   • push to default   -> report the backlog as warnings. Visible, never blocking.
+# Clean a repo up with `git add --renormalize .`; the PR gate keeps it clean after.
+#
+# WHAT IT INSPECTS: the INDEX side of `git ls-files --eol` (i/...) — the bytes actually
+# stored in git, not the working copy, which the runner may have normalised on checkout.
+# Binary blobs (i/-text) are skipped by construction (they report neither crlf nor mixed).
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-line-endings-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-line-endings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check committed blobs for CRLF
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+
+          # Formats that legitimately require CRLF on Windows. Keep this list SHORT —
+          # every entry is a hole in the gate.
+          is_allowed() {
+            case "${1,,}" in
+              *.bat|*.cmd|*.ps1|*.psm1|*.sln|*.vcxproj|*.csproj|*.rc) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # Collect every blob stored with CRLF or mixed endings.
+          # Format: "i/<eol>\tw/<eol>\tattr/<attr>\t<path>"  (path is the last tab field)
+          declare -A bad_eol=()
+          while IFS= read -r line; do
+            case "$line" in
+              i/crlf*|i/mixed*) ;;
+              *) continue ;;
+            esac
+            path="${line##*$'\t'}"
+            is_allowed "$path" && continue
+            bad_eol["$path"]="${line%% *}"
+          done < <(git ls-files --eol)
+
+          if [ "$EVENT" != "pull_request" ]; then
+            # Report-only: surface the backlog without blocking the default branch.
+            if [ "${#bad_eol[@]}" -eq 0 ]; then
+              echo "✅ no CRLF in committed text blobs"
+            else
+              echo "::warning title=gate-line-endings::${#bad_eol[@]} pre-existing file(s) stored with CRLF — run 'git add --renormalize .' to clean up"
+              for p in "${!bad_eol[@]}"; do echo "  ${bad_eol[$p]}  $p"; done | sort -k2
+            fi
+            exit 0
+          fi
+
+          # PR: hard-fail, but only for files this PR adds or modifies.
+          git fetch --no-tags --quiet origin "$BASE_REF" || true
+          changed="$(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" || true)"
+          if [ -z "$changed" ]; then
+            echo "✅ no added/changed files to check"; exit 0
+          fi
+
+          offenders=""
+          count=0
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            if [ -n "${bad_eol[$path]+set}" ]; then
+              offenders+="  ${bad_eol[$path]}  $path"$'\n'
+              count=$((count + 1))
+            fi
+          done <<< "$changed"
+
+          if [ "$count" -eq 0 ]; then
+            echo "✅ no CRLF introduced by this PR ($(wc -l <<< "$changed") file(s) checked)"
+            exit 0
+          fi
+
+          echo "::error title=gate-line-endings::${count} file(s) in this PR are stored with CRLF but must be LF"
+          echo ""
+          echo "$offenders"
+          echo "Line-anchored tooling breaks on CRLF in ways that look like unrelated bugs —"
+          echo "a CRLF check-in has taken down every release in this org before."
+          echo ""
+          echo "Fix, from a clean tree:"
+          echo "  1. Cover the path in .gitattributes, e.g.:  <path-glob> text eol=lf"
+          echo "  2. git add --renormalize . && git commit -m 'chore: normalise line endings to LF'"
+          echo "If a file genuinely needs CRLF, add its extension to is_allowed() above,"
+          echo "with a comment saying why."
+          exit 1

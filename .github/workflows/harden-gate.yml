@@ -345,6 +345,32 @@ jobs:
           pip install -q pyyaml
           python scripts/gate_pagination.py . || true
 
+  gate-identifier:
+    # Server-owned identifier standard (governance/identifier-standard.md).
+    #
+    # The CONTRACT checks are already clean and are ENFORCING: a new create body
+    # declaring an `id`, or a polymorphic reference without its type, fails here.
+    # That is the whole point — the hole must be impossible to open, not merely
+    # reported after it is opened.
+    #
+    # The SOURCE backstop is report-only: ~41 call sites still mint bare uuids
+    # (the P3 backfill), so failing on it today would block every unrelated PR.
+    # Ratchet it to enforcing once that backlog is cleared.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Identifier gate — contracts + cross-language registry parity (enforcing)
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          python scripts/gate_identifier.py .
+          python scripts/gate_identifier.py . --registry-parity
+      - name: Identifier gate — source backstop (report-only)
+        shell: bash
+        run: python scripts/gate_identifier.py . --source || true
+
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
     # report-only and only builds the root package.json — it never fails the actual frontend build,

@@ -451,7 +451,11 @@ jobs:
       - name: Discover OpenAPI specs
         id: discover
         run: |
-          specs=$(find services -maxdepth 2 -type f \( -name 'openapi.yaml' -o -name 'openapi.yml' \) 2>/dev/null || true)
+          # packages/ is searched as well as services/: packages/security and
+          # packages/auth ship contracts too, and being outside this glob is
+          # why packages/security/openapi.yaml drifted (its create schemas were
+          # missing `additionalProperties: false` and nothing flagged it).
+          specs=$(find services packages -maxdepth 2 -type f \( -name 'openapi.yaml' -o -name 'openapi.yml' \) 2>/dev/null || true)
           if [ -z "$specs" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
           else
