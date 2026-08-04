@@ -99,7 +99,7 @@ set timeout=120
 docker inspect --format="{{.State.Health.Status}}" fuzefront-frontend 2>nul | findstr "healthy" >nul
 if !errorlevel! equ 0 (
     echo [SUCCESS] fuzefront-frontend is healthy
-    goto check_taskmanager
+    goto platform_ready
 )
 docker inspect --format="{{.State.Health.Status}}" fuzefront-frontend 2>nul | findstr "unhealthy" >nul
 if !errorlevel! equ 0 (
@@ -119,34 +119,6 @@ set /a timeout=timeout-5
 echo|set /p="."
 goto check_frontend_loop
 
-:check_taskmanager
-REM Check task manager health
-echo [INFO] Checking health of fuzefront-taskmanager...
-set timeout=120
-:check_taskmanager_loop
-docker inspect --format="{{.State.Health.Status}}" fuzefront-taskmanager 2>nul | findstr "healthy" >nul
-if !errorlevel! equ 0 (
-    echo [SUCCESS] fuzefront-taskmanager is healthy
-    goto platform_ready
-)
-docker inspect --format="{{.State.Health.Status}}" fuzefront-taskmanager 2>nul | findstr "unhealthy" >nul
-if !errorlevel! equ 0 (
-    echo [ERROR] fuzefront-taskmanager is unhealthy
-    docker-compose logs fuzefront-taskmanager
-    pause
-    exit /b 1
-)
-if !timeout! leq 0 (
-    echo [ERROR] fuzefront-taskmanager failed to become healthy within 2 minutes
-    docker-compose logs fuzefront-taskmanager
-    pause
-    exit /b 1
-)
-timeout /t 5 /nobreak >nul
-set /a timeout=timeout-5
-echo|set /p="."
-goto check_taskmanager_loop
-
 :platform_ready
 echo.
 echo [SUCCESS] 🎉 FuzeFront Platform is ready!
@@ -154,13 +126,11 @@ echo.
 echo 🌐 Access URLs:
 echo    Frontend:     http://localhost:8080
 echo    Backend API:  http://localhost:3001
-echo    Task Manager: http://localhost:3002
 echo    API Docs:     http://localhost:3001/api-docs
 echo.
 echo 📊 Health Checks:
 echo    Backend:      http://localhost:3001/health
 echo    Frontend:     http://localhost:8080/health
-echo    Task Manager: http://localhost:3002/health
 echo.
 echo 🗄️  Database:
 echo    PostgreSQL:   localhost:5432

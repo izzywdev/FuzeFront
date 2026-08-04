@@ -7,31 +7,6 @@ async function seed(knex) {
     // Insert seed entries for apps
     await knex('apps').insert([
         {
-            id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef',
-            name: 'Task Manager',
-            url: 'http://localhost:3002',
-            icon_url: '/icons/task-manager.svg',
-            is_active: true,
-            integration_type: 'module-federation',
-            description: 'A comprehensive task management application for organizing and tracking work items.',
-            marketplace_metadata: JSON.stringify({
-                category: 'productivity',
-                version: '1.0.0',
-                author: 'FuzeFront Team',
-                permissions: ['tasks:read', 'tasks:write', 'tasks:delete'],
-                remoteUrl: 'http://localhost:3002/remoteEntry.js',
-                scope: 'taskManagerApp',
-                module: './TaskManagerApp',
-            }),
-            visibility: 'organization',
-            is_marketplace_approved: false,
-            install_count: 0,
-            rating: 0.0,
-            review_count: 0,
-            created_at: new Date(),
-            updated_at: new Date(),
-        },
-        {
             id: 'b2c3d4e5-f6a7-8901-2345-678901bcdef0',
             name: 'Dashboard',
             url: 'http://localhost:5173',
