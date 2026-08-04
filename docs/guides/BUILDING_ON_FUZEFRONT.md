@@ -169,7 +169,9 @@ freshly-minted ids, and merges `idMap` into the JSON response.
 
 **Creating linked entities in one request** — label each node with a document-scoped
 `lid` and reference it as `"lid:<n>"`; the response carries `idMap` from each `lid`
-to its real id:
+to its real id. (`order`/`orderLine` below are illustrative — **your entity types
+must be added to the prefix registry first**, and a prefix is permanent once
+shipped, so choose it as deliberately as a table name.)
 
 ```jsonc
 // request
