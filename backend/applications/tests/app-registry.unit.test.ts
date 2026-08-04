@@ -1,6 +1,7 @@
 // Pure unit tests for the app-registry slice — no DB, no Kafka, no network.
 // Covers: BOLA visibility predicates (canRead/canMutate), manifest validation
 // (400 ValidationError shape), and the heartbeat/register request schemas.
+import type { z } from 'zod'
 import {
   appManifestSchema,
   registerAppRequestSchema,
@@ -104,7 +105,14 @@ describe('app-registry manifest validation', () => {
     })
     expect(r.success).toBe(false)
     if (!r.success) {
-      const body = toValidationErrorBody(r.error)
+      // `r.error` is read through an explicit cast, not the `!r.success`
+      // narrowing above. This service compiles with `strict: false`, and with
+      // strictNullChecks off TypeScript will not discriminate zod's
+      // SafeParseSuccess | SafeParseError union on its `success` literal — so
+      // the guard reads correctly to a human but the compiler still sees the
+      // whole union and rejects `.error` (TS2339). The runtime guard is what
+      // makes this safe; the cast only tells tsc what the guard already proved.
+      const body = toValidationErrorBody((r as z.SafeParseError<unknown>).error)
       expect(body.error).toBe('validation_error')
       const paths = body.fields.map(f => f.path)
       expect(paths).toEqual(expect.arrayContaining(['integration.remoteEntry']))

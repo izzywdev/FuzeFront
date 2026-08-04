@@ -1,10 +1,16 @@
 // Integration tests for the app-installation surface
-// (backend/src/routes/app-installations.ts + migration 017).
+// (src/routes/app-installations.ts + the backend's migration 017).
 //
-// These run against the REAL migrated Postgres the global harness
-// (tests/setup.ts) prepares, so the database CHECK constraint and the partial
-// unique indexes are exercised alongside the route logic — the whole point of
-// putting the shape in the schema rather than only in the handler.
+// These run against a REAL Postgres, so the database CHECK constraint and the
+// partial unique indexes are exercised alongside the route logic — the whole
+// point of putting the shape in the schema rather than only in the handler.
+//
+// The schema comes from the BACKEND's migration chain, driven directly in
+// beforeAll rather than copied here. `apps.scope_level` and `app_installations`
+// are created by backend/src/migrations/017; this service owns the ROUTES but
+// not that migration, and 017 has already been applied to production under the
+// backend's `knex_migrations`. Re-declaring the DDL in this service's own chain
+// would be a second definition of one schema that nothing keeps in step.
 //
 // The auth middleware is mocked to a settable current user. That is not a gap:
 // the authorization rules under test (scope permitted by scope_level, org
@@ -37,10 +43,32 @@ import { v4 as uuidv4 } from 'uuid'
 process.env.APP_INSTALL_READ_RATE_LIMIT = '100000'
 process.env.APP_INSTALL_WRITE_RATE_LIMIT = '100000'
 
+// DB coordinates. Defaulted to the same values the backend suite and the CI
+// Postgres service use, and env-overridable so this can point at any throwaway
+// instance.
+process.env.NODE_ENV = process.env.NODE_ENV || 'test'
+process.env.USE_POSTGRES = 'true'
+process.env.DB_HOST = process.env.DB_HOST || 'localhost'
+process.env.DB_PORT = process.env.DB_PORT || '5432'
+process.env.DB_NAME = process.env.DB_NAME || 'fuzefront_platform'
+process.env.DB_USER = process.env.DB_USER || 'postgres'
+process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'postgres'
+
+import path from 'path'
 import appInstallationsRoutes, {
   scopeIsAllowed,
 } from '../src/routes/app-installations'
-import { initializeDatabaseConnection, db } from '../src/config/database'
+import {
+  initializeDatabaseConnection,
+  runMigrations,
+  closeDatabase,
+  db,
+} from '../src/config/database'
+
+// The backend's chain, not this service's — it is where 017 lives. Safe to run
+// from here: every migration in both chains is written idempotently and core
+// sets `disableMigrationsListValidation`, so re-applying is a no-op.
+const BACKEND_MIGRATIONS_DIR = path.resolve(__dirname, '../../src/migrations')
 
 function buildApp(): express.Application {
   const app = express()
@@ -99,6 +127,10 @@ describe('app installations', () => {
   let app: express.Application
 
   beforeAll(async () => {
+    await runMigrations({
+      migrationsTableName: 'knex_migrations',
+      migrationsDir: BACKEND_MIGRATIONS_DIR,
+    })
     initializeDatabaseConnection()
     app = buildApp()
 
@@ -146,6 +178,12 @@ describe('app installations', () => {
       .del()
     await db('organizations').whereIn('id', [ORG_ID, OTHER_ORG_ID]).del()
     await db('users').whereIn('id', [OWNER.id, MEMBER.id, OUTSIDER.id]).del()
+
+    // Release the pool. The backend suite got this from its global
+    // tests/setup.ts; this service has no global teardown, and without it jest
+    // holds the open handle and never exits — the run looks hung rather than
+    // failed, which is worse than a red test.
+    await closeDatabase()
   })
 
   beforeEach(async () => {
