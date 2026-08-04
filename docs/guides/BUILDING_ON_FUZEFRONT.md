@@ -119,6 +119,90 @@ Topics are prefixed (`identity.*`, `notify.*`, `billing.*`) and pre-created in
 prod by the chart's `kafka-topics-job`. Add new topics there + to the shared
 constant together.
 
+### Entity identifiers — your service mints its own, and never accepts one
+
+Family standard: **`governance/identifier-standard.md`** (baseline §4.2), enforced
+by `gate-identifier`. This applies to your service too, not just the platform.
+
+**The rule is two rules**, and either alone leaves a hole:
+
+1. **Your service mints the ids for entities it owns.** A create body must never
+   accept an `id`/`uuid` for the resource being created, and must set
+   `additionalProperties: false`. Fields naming an entity that *already exists*
+   (`organizationId`, `userId`) are references, not identity — those are fine.
+2. **Every polymorphic reference carries its type**, and no lookup resolves a bare id.
+
+Rule 1 alone still loses to an attacker who *learns* an id rather than choosing
+one; rule 2 alone leaves id-squatting and cross-tenant grafting standing. And a
+standing corollary you must not design around: **an id is never a capability** —
+authorization comes from the token and Permit, never from "the caller knew the id".
+
+Ids are `cus_01h455vb4pex5vsknk084sn02q` on the wire (type prefix + UUIDv7 in
+base32) and a native 16-byte `uuid` column underneath. **Treat them as opaque past
+the prefix** — never parse further, never assume a length. FuzeFront reserves the
+right to change id length exactly as Stripe and GitHub have.
+
+```ts
+import { mintId, assertRef, toUuid, graphCreate } from '@fuzefront/shared/identity'
+
+const orderId = mintId('order')                 // ord_01h455…  — the ONLY constructor
+assertRef('organization', body.organizationId)  // offline type check; throws on mismatch
+await db.insert({ id: toUuid(orderId), … })     // native uuid column
+```
+
+```python
+from fuzefront_identity import mint_id, assert_ref, to_uuid, GraphCreateMiddleware
+```
+
+Mount the middleware once and your routes implement none of this:
+
+```ts
+app.use(express.json())
+app.use(graphCreate({ aggregate: new Set(['order', 'orderLine']) }))   // Express
+```
+```python
+app.add_middleware(GraphCreateMiddleware, aggregate={"order", "order_line"})  # ASGI
+```
+
+It rejects a client-supplied `id` with **422**, resolves `lid:` graph references to
+freshly-minted ids, and merges `idMap` into the JSON response.
+
+**Creating linked entities in one request** — label each node with a document-scoped
+`lid` and reference it as `"lid:<n>"`; the response carries `idMap` from each `lid`
+to its real id. (`order`/`orderLine` below are illustrative — **your entity types
+must be added to the prefix registry first**, and a prefix is permanent once
+shipped, so choose it as deliberately as a table name.)
+
+```jsonc
+// request
+{ "type": "order", "lid": "1", "lines": [ { "type": "orderLine", "lid": "2", "orderId": "lid:1" } ] }
+// response
+{ "status": "created", "idMap": { "1": "ord_01h455…", "2": "orl_01h456…" } }
+```
+
+**Two constraints to design around, not discover later:**
+
+- **Mount the middleware AFTER your JSON body parser and AFTER any raw-body webhook
+  route.** Provider webhook payloads (Stripe, and most others) carry an `id`, so a
+  webhook reaching this middleware 422s your entire provider integration.
+- **A `lid` graph is scoped to one service's aggregate.** You cannot create entities
+  another service owns in the same request — a graph spanning services can't be
+  created atomically. Reference them by their existing ids instead.
+
+**TypeScript gets an enforcement Python doesn't.** `EntityId<T>` is a branded type,
+so a raw string off `req.body` will not compile against a repository taking
+`EntityId<'order'>`, and an `EntityId<'order'>` is not assignable to
+`EntityId<'invoice'>`. Type your repository signatures with it. Python has no
+equivalent and relies on the runtime boundary plus the gate, so Python services need
+**more** review discipline here, not less.
+
+> **Install caveat, honestly stated.** These packages are not yet installable from
+> outside this repo. `@fuzefront/*` cannot publish to GitHub Packages at all (no
+> `fuzefront` org exists — see the scope convention above; the correct target is
+> `@izzywdev/fuzefront-identity`), and the Python package has no publish workflow
+> yet. Until both land, copy the standard's rules and follow them; the packages will
+> drop in without an API change.
+
 ---
 
 ## 3. Authentication (Security API)
