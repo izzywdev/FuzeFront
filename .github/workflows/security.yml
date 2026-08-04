@@ -59,6 +59,25 @@ jobs:
         with:
           fail-on-severity: high
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+          # Two CI-ONLY scanners exempted by name, rather than widening
+          # allow-licenses above. Both have been in this workflow all along;
+          # they only became visible when pinning changed their refs, because
+          # Dependency Review evaluates CHANGED dependencies and a floating
+          # `@main` ref never changes.
+          #
+          #   trufflesecurity/trufflehog  — AGPL-3.0
+          #   snyk/actions/node           — no license detected
+          #
+          # Exempted by name and NOT by adding AGPL-3.0 to allow-licenses,
+          # because that list also governs npm dependencies that ship inside the
+          # product, where AGPL copyleft would be a real obligation. These two
+          # are GitHub Actions that run in the pipeline and are never conveyed
+          # with FuzeFront, so the obligation does not attach. Keeping the
+          # distinction means the strict policy still protects what it was
+          # written to protect.
+          allow-dependencies-licenses: >-
+            actions://trufflesecurity/trufflehog,
+            actions://snyk/actions/node
 
   npm-audit:
     name: NPM Security Audit
