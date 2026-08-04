@@ -92,6 +92,18 @@ securityService:
   googleBrokered: "true"
   # Prod browser-facing Google callback URL (app host, not auth-dev).
   googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
+  # Ingress NetworkPolicy allowing mendys-prod's datasets-service to reach
+  # fuzefront-security in-cluster (FuzeFront#493 / FuzeInfra#339). Base
+  # values.yaml default is OFF; enabling here is the deliberate deploy-window
+  # step called out in FuzeInfra#501's fix — the policy was never actually
+  # applied while Argo was stuck on the authentik-server-ingress port:0 bug.
+  #
+  # DEPLOY-WINDOW VERIFY after this syncs: from a mendys-prod pod,
+  #   curl -sv --max-time 5 http://fuzefront-security.fuzefront.svc.cluster.local:3002/api/v1/security/session
+  # should reach the service (not time out / connection-refused), and confirm
+  # the existing Traefik + intra-fuzefront paths to fuzefront-security still work.
+  networkPolicy:
+    enabled: true
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
