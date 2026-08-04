@@ -1,8 +1,21 @@
 import express, { Response, NextFunction } from 'express'
+import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 
 const router = express.Router()
+
+// Per-IP rate limit for the registry read. The route is authenticated and
+// shell-facing (the portal polls it), so a conservative cap adds defense in
+// depth against an unauthenticated flood without affecting normal polling.
+// Placed before authenticateToken so abusive traffic is shed before auth work.
+const appsReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+})
 
 /**
  * Whether this host-backend should answer app-registry READS from its own local
@@ -100,7 +113,7 @@ function rowToRegistryApp(row: any) {
 // explicitly enabled (see localAdapterEnabled). `next()` falls through to
 // routes/app-registry.ts, mounted at this same path in src/index.ts — realizing
 // the pass-through the mount comment there already promises.
-router.get('/apps', authenticateToken, async (req: any, res: Response, next: NextFunction) => {
+router.get('/apps', appsReadLimiter, authenticateToken, async (req: any, res: Response, next: NextFunction) => {
   if (!localAdapterEnabled()) {
     return next()
   }
