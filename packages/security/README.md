@@ -41,4 +41,4 @@ import type { components, Identity, AuthMethods } from '@fuzeone/security-client
 type LoginResponse = components['schemas']['LoginResponse'];
 ```
 
-Published privately to GitHub Packages under `@fuzefront` (`access: restricted`).
+Published privately to GitHub Packages under `@fuzeone` (`access: restricted`).

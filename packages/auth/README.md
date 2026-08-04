@@ -109,11 +109,11 @@ HTTP surface + schemas: [`openapi.yaml`](./openapi.yaml).
 
 ## Install (private registry)
 
-Published privately to **GitHub Packages** under `@fuzefront` (`access: restricted`).
+Published privately to **GitHub Packages** under `@fuzeone` (`access: restricted`).
 Consumers need a scoped `.npmrc`:
 
 ```
-@fuzefront:registry=https://npm.pkg.github.com
+@fuzeone:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 

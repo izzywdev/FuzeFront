@@ -71,7 +71,7 @@ node /tmp/fuzeone-hub/fuzeone/sync.mjs --target /path/to/FuzePlan --check
 
 # 3. apply
 node /tmp/fuzeone-hub/fuzeone/sync.mjs --target /path/to/FuzePlan
-#    options: --scope @fuzefront  --hub izzywdev/FuzeFront  --hub-ref v1  --repo FuzePlan  --dry-run
+#    options: --scope @fuzeone  --hub izzywdev/FuzeFront  --hub-ref v1  --repo FuzePlan  --dry-run
 ```
 Then set the repo secrets it lists (`gh secret set …`), commit on a branch, and open a PR.
 

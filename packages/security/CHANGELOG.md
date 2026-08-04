@@ -89,7 +89,7 @@ contract PR merges.
 - Cursor pagination (family standard) on the two unbounded collection GETs
   (`/tenants`, `/tenants/{id}/members`); every other collection/singleton GET
   is `x-pagination: exempt` with a reason.
-- Private `publishConfig` (GitHub Packages, `@fuzefront`, `access: restricted`) +
+- Private `publishConfig` (GitHub Packages, `@fuzeone`, `access: restricted`) +
   `repository.directory`.
 
 ### Notes

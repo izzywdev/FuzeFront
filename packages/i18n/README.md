@@ -19,7 +19,7 @@ This package is the **runtime** half of the build-time AI-translation model:
 npm install @fuzeone/i18n
 ```
 
-Published privately to GitHub Packages under the `@fuzefront` scope (configure a
+Published privately to GitHub Packages under the `@fuzeone` scope (configure a
 scoped `.npmrc` + `GITHUB_TOKEN`).
 
 ## Usage

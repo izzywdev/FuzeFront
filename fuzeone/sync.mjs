@@ -3,7 +3,7 @@
 // Dependency-free (Node >=18 built-ins only). Idempotent: safe to re-run.
 //
 // Usage:
-//   node fuzeone/sync.mjs [--target DIR] [--scope @fuzefront] [--hub izzywdev/FuzeFront]
+//   node fuzeone/sync.mjs [--target DIR] [--scope @fuzeone] [--hub izzywdev/FuzeFront]
 //                         [--hub-ref v1] [--repo NAME] [--check] [--dry-run]
 //
 // --check    report drift (what would change) and exit non-zero if anything differs; writes nothing.
@@ -43,7 +43,7 @@ const target = resolve(args.target || process.cwd());
 const HUB = args.hub || manifest.hub;
 const vars = {
   REPO: args.repo || basename(target),
-  SCOPE: args.scope || manifest.vars.SCOPE || '@fuzefront',
+  SCOPE: args.scope || manifest.vars.SCOPE || '@fuzeone',
   HUB,
   HUB_REF: args.hubRef || manifest.hubRef,
   // Repo owner (org/user), derived from HUB "owner/repo" — used to template the

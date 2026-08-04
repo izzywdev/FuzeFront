@@ -115,4 +115,4 @@ Tests use OpenFeature's `InMemoryProvider` for the happy path and a mocked /
 hanging / erroring provider for the degradation path, so the suite is
 network-free and deterministic.
 
-License: UNLICENSED (private, GitHub Packages `@fuzefront` scope).
+License: UNLICENSED (private, GitHub Packages `@fuzeone` scope).

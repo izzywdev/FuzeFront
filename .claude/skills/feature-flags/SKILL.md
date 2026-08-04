@@ -95,7 +95,7 @@ A flag is **debt** the moment it's created. At creation, record (in Unleash + th
 3. **Removing a flag** = delete the toggle in Unleash + remove both branches in code (keep the winning path) + drop the test for the dead path. Verify nothing else references the flag key first.
 
 ## Consuming-repo onboarding (point a repo at the family flag service)
-1. Add `@fuzeone/feature-flags` as a dependency (private GitHub Packages, `@fuzefront` scope — scoped `.npmrc` + token).
+1. Add `@fuzeone/feature-flags` as a dependency (private GitHub Packages, `@fuzeone` scope — scoped `.npmrc` + token).
 2. Get a **client token** for your app from `feature-flags-engineer` (a scoped Unleash API token — server token for backend, frontend/proxy token for browser). It's a SealedSecret in your repo, ref'd by env; `devops-engineer` wires it.
 3. Point the provider at **FuzeFront's Unleash** URL (same-origin proxy in the browser; service-DNS for server-side) via config — never hard-code the host.
 4. Pass the standard evaluation context (above) on every evaluation.

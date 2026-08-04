@@ -13,7 +13,7 @@ Consumes the typed `@fuzeone/chat-client` SSE event union
 
 ```jsonc
 // .npmrc
-@fuzefront:registry=https://npm.pkg.github.com
+@fuzeone:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 

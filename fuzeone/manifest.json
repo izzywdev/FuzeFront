@@ -5,7 +5,7 @@
   "hubRef": "v1",
   "vars": {
     "REPO": "(target repo name, auto-detected from --target dir basename)",
-    "SCOPE": "@fuzefront",
+    "SCOPE": "@fuzeone",
     "HUB": "izzywdev/FuzeFront",
     "HUB_REF": "v1"
   },

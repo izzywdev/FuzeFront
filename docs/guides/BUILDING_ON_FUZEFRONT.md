@@ -85,12 +85,12 @@ with the host.
 ## 2. Consume the `@fuzeone/*` packages
 
 FuzeFront publishes reusable packages **privately to GitHub Packages** under the
-`@fuzefront` (and `@izzywdev`) scopes. Consumers authenticate with a scoped
+`@fuzeone` (and `@izzywdev`) scopes. Consumers authenticate with a scoped
 `.npmrc` + a `GITHUB_TOKEN`/PAT that has `read:packages`.
 
 ```ini
 # .npmrc (in the consuming repo; do NOT commit the token)
-@fuzefront:registry=https://npm.pkg.github.com
+@fuzeone:registry=https://npm.pkg.github.com
 @izzywdev:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```

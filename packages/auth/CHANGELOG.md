@@ -78,7 +78,7 @@ verification is a follow-up backend slice.
 - `AUTH_CONTRACT_VERSION` export.
 - OpenAPI 3.1 spec (`openapi.yaml`) documenting the current auth HTTP surface + the `Identity`/error schemas.
 - Kafka Zod event schemas in `@fuzeone/shared`: `identity.session.issued`, `identity.session.revoked` (V1).
-- Private `publishConfig` (GitHub Packages, `@fuzefront`, `access: restricted`) + `repository.directory`.
+- Private `publishConfig` (GitHub Packages, `@fuzeone`, `access: restricted`) + `repository.directory`.
 
 ### Notes
 

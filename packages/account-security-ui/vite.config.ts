@@ -25,7 +25,7 @@ export default defineConfig({
         'react-dom',
         'react/jsx-runtime',
         '@fuzeone/design-system',
-        /^@fuzefront\/design-system\/.*/,
+        /^@fuzeone\/design-system\/.*/,
         '@fuzeone/security-client',
       ],
     },

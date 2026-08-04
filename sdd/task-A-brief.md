@@ -5,7 +5,7 @@ Create the `packages/identity-ui` workspace React/TS library skeleton (no featur
 
 ## Repo context
 - Monorepo. Root `package.json` (`name: frontfuse-platform`, `private: true`) has `workspaces: ["backend","backend/core","backend/security","backend/applications","shared"]`. `lerna.json` has `packages: ["backend","frontend","shared","sdk","task-manager-app","services/email-service","services/sms-service","services/provisioning-service"]`.
-- `.npmrc` already maps `@fuzefront:registry=https://npm.pkg.github.com`.
+- `.npmrc` already maps `@fuzeone:registry=https://npm.pkg.github.com`.
 - The frontend (`@fuzeone/frontend`) uses React 18.3.1, Vite, Vitest (jsdom, globals:true, setupFiles ./src/test/setup.ts).
 - Design tokens are global CSS custom properties (e.g. `var(--accent-color)`, `var(--bg-tertiary)`, `var(--text-primary)`) defined in the host's `frontend/src/index.css`. Components consume them via inline `style={{ color: 'var(--text-primary)' }}` — NO bundled CSS.
 - `design-system/` currently has NO package.json. It ships raw `.jsx` components (each consumes token CSS vars) with sibling `.d.ts`, an auto-generated ESM `design-system/index.js` barrel (`export { Button } from './components/core/Button.jsx'` etc.), and `design-system/_ds_manifest.json`. Available exports include: RoleBadge, Avatar, Badge, Button, IconButton, DataTable, StatusPill, Toast, FileDropZone, Input, Select, Textarea, Modal, SeamDivider, plus more.
@@ -98,7 +98,7 @@ React lib config: target ES2020, lib [ES2020, DOM, DOM.Iterable], module ESNext,
 extends ./tsconfig.json, compilerOptions { noEmit: false, declaration: true, emitDeclarationOnly: true, outDir: dist }, include ["src"], exclude any `*.test.*` and `src/test`.
 
 ### 5. `packages/identity-ui/vite.config.ts` (NEW)
-Library mode: plugin react() + vite-plugin-dts({ insertTypesEntry: true }). build.lib { entry src/index.ts, formats ['es','cjs'], fileName: (fmt) => fmt === 'cjs' ? 'index.cjs' : 'index.js' }. rollupOptions.external: ['react','react-dom','react/jsx-runtime','@fuzeone/design-system', /^@fuzefront\/design-system\/.*/]. Include a `test` block (vitest): environment 'jsdom', globals true, setupFiles ['./src/test/setup.ts'], css false.
+Library mode: plugin react() + vite-plugin-dts({ insertTypesEntry: true }). build.lib { entry src/index.ts, formats ['es','cjs'], fileName: (fmt) => fmt === 'cjs' ? 'index.cjs' : 'index.js' }. rollupOptions.external: ['react','react-dom','react/jsx-runtime','@fuzeone/design-system', /^@fuzeone\/design-system\/.*/]. Include a `test` block (vitest): environment 'jsdom', globals true, setupFiles ['./src/test/setup.ts'], css false.
 
 ### 6. `packages/identity-ui/src/test/setup.ts` (NEW)
 `import '@testing-library/jest-dom'`

@@ -28,7 +28,7 @@ editing.
 
 ## Components (componentized, private)
 
-1. **`@fuzeone/i18n`** — npm package (private; `publishConfig` → GitHub Packages `@fuzefront`,
+1. **`@fuzeone/i18n`** — npm package (private; `publishConfig` → GitHub Packages `@fuzeone`,
    `access: restricted`, `repository` field; wired into the release pipeline). The frontend container
    imports this. Public interface:
    - `<I18nProvider>` — initializes i18next, loads bundled locale JSON, restores the saved language.

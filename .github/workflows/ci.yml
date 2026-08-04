@@ -380,7 +380,7 @@ jobs:
         # @fuzeone/shared via workspace symlinks. Link shared directly first,
         # then install remaining deps (no package-lock.json, so npm install not ci).
         run: |
-          mkdir -p services/email-service/node_modules/@fuzefront
+          mkdir -p services/email-service/node_modules/@fuzeone
           ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzeone/shared
           cd services/email-service && npm install --ignore-scripts
 

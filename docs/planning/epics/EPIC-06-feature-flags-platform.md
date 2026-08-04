@@ -267,7 +267,7 @@ org/tenant id, user id, app). Degrades to defaults when Unleash is unreachable. 
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] Unit tests for BOTH reachable + degraded states, coverage ≥ 80%
 - [ ] Server + web SDK paths covered
-- [ ] Private `publishConfig` (GitHub Packages, `@fuzefront`, restricted) + `repository.directory`, wired into packages-publish
+- [ ] Private `publishConfig` (GitHub Packages, `@fuzeone`, restricted) + `repository.directory`, wired into packages-publish
 - [ ] Evaluation-context conventions match the `feature-flags` skill
 
 #### 📋 Sub-Tasks

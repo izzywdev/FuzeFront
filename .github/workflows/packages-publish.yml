@@ -6,10 +6,25 @@ name: Publish packages (GitHub Packages, private)
 # from commit messages (feat->minor, fix->patch, BREAKING CHANGE->major), and
 # publishes only those. Private packages (apps + deployed services) are skipped.
 #
-# NOTE: GitHub Packages requires the npm scope to match the owning org/user.
-# @fuzeone/* can only publish once this repo is owned by the `fuzefront` GitHub
-# org. The job guard below makes this workflow a no-op under any other owner, so
-# it is safe to merge now and auto-activates after the org transfer.
+# WHY THIS WORKFLOW IS CURRENTLY INERT — read before "fixing" it:
+#
+# GitHub Packages requires an npm scope to match the account that OWNS the repo.
+# This repo is owned by the personal account **izzywdev**. The guard used to test
+# for a `fuzefront` org, which does not exist and never will, so the job could
+# never fire and not one @fuzefront/* package has ever been published.
+#
+# The org that DOES exist is **FuzeOne** (created 2026-07-21, currently zero
+# packages), so the canonical publisher now targets `FuzeOne` / `@fuzeone`.
+# It stays a deliberate no-op until the repos are transferred into the FuzeOne
+# org — a human action, not an automated one. The moment ownership moves, this
+# guard matches and the workflow starts publishing @fuzeone/* with no further
+# change. Until then, the ONLY things that publish anything are the five interim
+# alias publishers (chat-/auth-ui-/design-system-/security-packages-publish.yml
+# and sdk-publish.yml), which ship @izzywdev/fuzefront-* under the personal
+# scope. Do not disable those.
+#
+# github.repository_owner reports the owner's login verbatim ('FuzeOne'); GitHub
+# Actions string == is case-insensitive, so this matches 'fuzeone' too.
 on:
   push:
     branches: [master]
@@ -20,7 +35,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository_owner == 'fuzefront'
+    if: github.repository_owner == 'FuzeOne'
     runs-on: ubuntu-latest
     permissions:
       contents: write # push lerna version commits + tags
@@ -35,7 +50,7 @@ jobs:
         with:
           node-version: '24.x'
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@fuzefront'
+          scope: '@fuzeone'
 
       - name: Install
         run: npm ci || npm install
