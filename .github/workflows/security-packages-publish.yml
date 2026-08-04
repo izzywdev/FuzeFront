@@ -66,18 +66,25 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Pin an explicit .npmrc in the package dir as the closest (winning)
-          # config, so registry + auth are deterministic regardless of ambient
-          # files. Mirrors auth-ui-packages-publish.yml, the one publisher in
-          # this repo that has actually shipped a package.
-          cat > .npmrc <<'NPMRC'
-          @izzywdev:registry=https://npm.pkg.github.com
-          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-          NPMRC
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-security-client
           if npm view "@izzywdev/fuzefront-security-client@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
             echo "@izzywdev/fuzefront-security-client@${VERSION} already published — skipping."
           else
-            npm publish --registry=https://npm.pkg.github.com
+            # A failing `npm view` does NOT prove the version is absent (auth blips,
+            # workspace-config quirks). Without this, that case republishes an existing
+            # version, fails the step, and aborts the job before sibling packages get
+            # their turn — which is what blocked chat-ui@1.2.0 behind an unchanged
+            # chat-client@1.1.0. The registry's own refusal is the authoritative signal.
+            set +e
+            OUT=$(npm publish --registry=https://npm.pkg.github.com 2>&1); RC=$?
+            set -e
+            echo "$OUT"
+            if [ "$RC" -ne 0 ]; then
+              if echo "$OUT" | grep -q "cannot publish over"; then
+                echo "already published at this version - treating as success."
+              else
+                exit "$RC"
+              fi
+            fi
           fi

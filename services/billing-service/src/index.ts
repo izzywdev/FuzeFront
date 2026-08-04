@@ -15,6 +15,7 @@ import { PgEventRepository } from './repositories/event.repository';
 import { PgPaymentRepository } from './repositories/payment.repository';
 import { PgInvoiceRepository } from './repositories/invoice.repository';
 import { PgUsageRepository } from './repositories/usage.repository';
+import { PgRefIndexRepository } from './repositories/ref-index.repository';
 import { CustomerService } from './services/customer.service';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
@@ -22,6 +23,7 @@ import { PermitSyncService, PermitClientLike } from './services/permit.service';
 import { MeteringService } from './services/metering.service';
 import { KafkaBillingEmitter } from './kafka/producer';
 import { startUsageConsumer } from './kafka/consumer';
+import { startRefIndexConsumer } from './kafka/ref-index.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
@@ -59,6 +61,7 @@ async function main() {
   const paymentRepo = new PgPaymentRepository(pool);
   const invoiceRepo = new PgInvoiceRepository(pool);
   const usageRepo = new PgUsageRepository(pool);
+  const refIndex = new PgRefIndexRepository(pool);
 
   // --- Services ---
   const customers = new CustomerService(stripe, customerRepo);
@@ -82,6 +85,16 @@ async function main() {
   // The usage consumer runs in the background; failures dead-letter via producer.
   startUsageConsumer(consumer, metering, producer).catch((err) =>
     console.error('[billing-service] usage consumer failed to start:', err),
+  );
+
+  // --- L1 referential integrity (FFRNT-184) ---
+  // Its OWN consumer group: this consumer replays from the beginning when the
+  // projection is empty, and sharing a group with the usage consumer would
+  // replay billing.usage.recorded too — re-metering usage that was already
+  // billed. Separate groups keep a projection rebuild from touching money.
+  const refIndexConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-ref-index`);
+  startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
+    console.error('[billing-service] ref-index consumer failed to start:', err),
   );
 
   // --- Metering flush loop ---
@@ -139,6 +152,7 @@ async function main() {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     try {
       await consumer.disconnect();
+      await refIndexConsumer.disconnect();
       await producer.disconnect();
       await pool!.end();
     } catch (err) {

@@ -69,12 +69,15 @@ COPY --from=build /app/shared/dist ./shared/dist
 # service (WORKDIR walks up) resolve them.
 COPY --from=base /app/services/billing-service/node_modules ./node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
-# @izzywdev/fuzefront-identity is a file: workspace dep imported by app.ts as a bare
-# specifier, so node resolves it via the base-stage symlink → /app/packages/identity
-# and needs package.json (main: dist/index.js) + dist there. identity has no runtime
-# deps of its own, so shipping its build output is enough. Mirrors the shared/dist copy.
-COPY --from=build /app/packages/identity/dist ./packages/identity/dist
+# @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it —
+# node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
+# The base stage now ships packages/identity/package.json so that link resolves
+# instead of dangling; here we populate its target with the built output. app.ts
+# imports graphCreate at module load, so without this the container dies at boot
+# with "Cannot find module '@izzywdev/fuzefront-identity'". Only dist/ +
+# package.json are needed — exactly what the package publishes.
 COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 
 # Remove declaration files from production image
 RUN find ./services/billing-service/dist -name "*.d.ts" -type f -delete

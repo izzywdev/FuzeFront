@@ -353,6 +353,16 @@ jobs:
     # That is the whole point — the hole must be impossible to open, not merely
     # reported after it is opened.
     #
+    # NAMESPACE and ADOPTION are also enforcing, and they cover holes the other
+    # two cannot see:
+    #   * registry parity is a WITHIN-repo check (TypeScript vs Python). Nothing
+    #     in it stops two products both defining `ord`, which reintroduces the
+    #     cross-type collision one level up. --namespace closes that, locally:
+    #     no cross-repo fetch, no shared state, nothing to keep in sync.
+    #   * every other check asks "is what is here correct". A repo that adopted
+    #     nothing passes all of them vacuously — no contracts means "nothing to
+    #     check". --adoption is the absence check.
+    #
     # The SOURCE backstop is report-only: ~41 call sites still mint bare uuids
     # (the P3 backfill), so failing on it today would block every unrelated PR.
     # Ratchet it to enforcing once that backlog is cleared.
@@ -361,12 +371,21 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
-      - name: Identifier gate — contracts + cross-language registry parity (enforcing)
+      - name: Identifier gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        # Asserts the gate FAILS on a violation, not merely that it passes on a
+        # clean tree. `claude-auto-pr.yml` was green for its whole life because
+        # every run took its early-exit path; the one time it had real work it
+        # failed. Passing is not evidence.
+        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+      - name: Identifier gate — contracts, parity, namespace, adoption (enforcing)
         shell: bash
         run: |
           pip install -q pyyaml
           python scripts/gate_identifier.py .
           python scripts/gate_identifier.py . --registry-parity
+          python scripts/gate_identifier.py . --namespace
+          python scripts/gate_identifier.py . --adoption
       - name: Identifier gate — source backstop (report-only)
         shell: bash
         run: python scripts/gate_identifier.py . --source || true

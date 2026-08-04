@@ -25,6 +25,15 @@ export const ENTITY_PREFIXES = {
   payment: 'pay',
   invoice: 'inv',
   credit: 'crd',
+  // identity — the remaining spine entities the FFRNT-185 rollout mints.
+  // Registered ahead of the call sites so the migration is a per-site edit
+  // rather than a registry change per service. `ivt` not `inv`: invoice already
+  // owns `inv`, and a prefix collision inside one registry would defeat the
+  // whole point of the prefix.
+  invitation: 'ivt',
+  membership: 'mbr',
+  session: 'ses',
+  mfaFactor: 'mfa',
   // messaging
   conversation: 'cnv',
   message: 'msg',
