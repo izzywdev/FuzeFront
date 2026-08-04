@@ -4,7 +4,7 @@ import {
   encodeSuffix,
   uuidToBytes,
   uuidv7Bytes,
-} from '../../src/identity/codec'
+} from '../src/codec'
 import {
   assertRef,
   configureIdentity,
@@ -15,11 +15,11 @@ import {
   parseId,
   toUuid,
   tryParseId,
-} from '../../src/identity/id'
-import { IdentityError } from '../../src/identity/brand'
-import type { EntityId } from '../../src/identity/brand'
-import { ENTITY_PREFIXES, ENTITY_TYPES } from '../../src/identity/registry'
-import type { EntityType } from '../../src/identity/registry'
+} from '../src/id'
+import { IdentityError } from '../src/brand'
+import type { EntityId } from '../src/brand'
+import { ENTITY_PREFIXES, ENTITY_TYPES } from '../src/registry'
+import type { EntityType } from '../src/registry'
 
 beforeEach(() => {
   configureIdentity({ legacyUuidTypes: new Set<EntityType>() })

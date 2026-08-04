@@ -12,22 +12,18 @@
     "./kafka": {
       "types": "./dist/kafka/index.d.ts",
       "default": "./dist/kafka/index.js"
-    },
-    "./identity": {
-      "types": "./dist/identity/index.d.ts",
-      "default": "./dist/identity/index.js"
     }
   },
   "typesVersions": {
     "*": {
-      "kafka": ["./dist/kafka/index.d.ts"],
-      "identity": ["./dist/identity/index.d.ts"]
+      "kafka": [
+        "./dist/kafka/index.d.ts"
+      ]
     }
   },
   "scripts": {
     "build": "tsc",
     "build:kafka": "tsc -p tsconfig.kafka.json",
-    "build:identity": "tsc -p tsconfig.identity.json",
     "dev": "tsc --watch",
     "type-check": "tsc --noEmit",
     "test": "jest"

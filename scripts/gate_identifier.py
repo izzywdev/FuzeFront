@@ -22,7 +22,7 @@ Three check families:
     S2  `as EntityId<...>` casts, which forge the brand the type system relies on
 
   --registry-parity
-    P1  shared/src/identity/registry.ts and
+    P1  packages/identity/src/registry.ts and
         packages/identity-py/fuzefront_identity/registry.py must agree exactly.
         A prefix that differs between them means a reference minted by a Node
         service is rejected by a Python one — a cross-language outage no
@@ -62,7 +62,7 @@ PRUNE_DIRS = {
 
 # Where minting legitimately happens. Everything else must call mintId/mint_id.
 IDENTITY_MODULES = (
-    "shared/src/identity/",
+    "packages/identity/src/",
     "packages/identity-py/fuzefront_identity/",
 )
 
@@ -400,7 +400,7 @@ def check_source(root: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def check_registry_parity(root: str) -> list[str]:
-    ts_path = os.path.join(root, "shared/src/identity/registry.ts")
+    ts_path = os.path.join(root, "packages/identity/src/registry.ts")
     py_path = os.path.join(root, "packages/identity-py/fuzefront_identity/registry.py")
     if not (os.path.isfile(ts_path) and os.path.isfile(py_path)):
         return []

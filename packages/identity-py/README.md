@@ -1,7 +1,7 @@
 # fuzefront-identity
 
 Server-owned entity identifiers and graph-create middleware for **Python**
-FuzeFront microservices. The peer of `@fuzefront/shared/identity` (Node).
+FuzeFront microservices. The peer of `@izzywdev/fuzefront-identity` (Node).
 
 Policy: [`governance/identifier-standard.md`](../../governance/identifier-standard.md).
 
@@ -70,7 +70,7 @@ atomically, so cross-service entities must be referenced by their existing ids.
 The entity-prefix registry and the base32 codec are byte-for-byte identical to
 the TypeScript implementation, and both suites are pinned by the same TypeID spec
 vectors. `tests/test_identity.py::TestCrossLanguageParity` reads
-`shared/src/identity/registry.ts` directly and fails if the two registries drift —
+`packages/identity/src/registry.ts` directly and fails if the two registries drift —
 a mismatch would mean a reference minted by a Node service is rejected by a
 Python one, which no single-language test would catch.
 

@@ -2,7 +2,7 @@
 
 The canonical entity-identifier standard for the Fuze family. Policy owned by `platform-governance`; enforced by **`gate-identifier`** (`scripts/gate_identifier.py`, run from `harden-gate.yml`). Companion to `governance/pagination-standard.md`, which it deliberately mirrors in shape.
 
-Reference implementations: **`@fuzefront/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — see §7.
+Reference implementations: **`@izzywdev/fuzefront-identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — see §7.
 
 ## 1. Rule
 
@@ -61,7 +61,7 @@ Validate the prefix; never parse further, never assume a length, never construct
 
 ### Registry
 
-`shared/src/identity/registry.ts` and `packages/identity-py/fuzefront_identity/registry.py` hold the type→prefix map. Adding a type there is the only way to mint ids for it. **Prefixes are permanent once shipped** — changing one is a wire-breaking change for every stored reference in the family.
+`packages/identity/src/registry.ts` and `packages/identity-py/fuzefront_identity/registry.py` hold the type→prefix map. Adding a type there is the only way to mint ids for it. **Prefixes are permanent once shipped** — changing one is a wire-breaking change for every stored reference in the family.
 
 ## 3. References carry their type
 
