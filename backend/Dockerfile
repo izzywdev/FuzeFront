@@ -11,44 +11,13 @@ FROM node:24-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
-# Copy EVERY workspace manifest named by the root "workspaces" array before
-# installing, then `npm ci`. npm hoists against the FULL set of manifests, so
-# omitting any of them makes the install compute a different tree than the
-# committed lockfile — that is exactly how express-rate-limit went missing from
-# the applications image. `npm ci` then installs the lockfile exactly and fails
-# loudly if lock and manifests drift, instead of silently re-resolving floating
-# ranges against the live registry on every build (FFRNT-254).
-#
-# scripts/check-dockerfile-lockfile.mjs keeps this list in sync with the root
-# workspaces array; it is the only thing standing between here and the next
-# missing-module-at-boot bug.
 COPY package.json package-lock.json ./
-COPY backend/package.json ./backend/
-COPY backend/core/package.json ./backend/core/
-COPY backend/security/package.json ./backend/security/
-COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
-COPY packages/identity/package.json ./packages/identity/
-COPY billing-client/package.json ./billing-client/
-COPY custom-hostname-client/package.json ./custom-hostname-client/
-COPY packages/billing-ui/package.json ./packages/billing-ui/
-COPY packages/chat-client/package.json ./packages/chat-client/
-COPY packages/chat-ui/package.json ./packages/chat-ui/
-COPY packages/identity-ui/package.json ./packages/identity-ui/
-COPY packages/auth-ui/package.json ./packages/auth-ui/
-COPY packages/account-security-ui/package.json ./packages/account-security-ui/
-COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
-COPY portal-client/package.json ./portal-client/
-COPY packages/i18n/package.json ./packages/i18n/
-COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
-COPY packages/security/package.json ./packages/security/
-COPY design-system/package.json ./design-system/
-COPY services/chat-service/package.json ./services/chat-service/
-COPY services/email-service/package.json ./services/email-service/
-COPY services/notification-service/package.json ./services/notification-service/
+COPY custom-hostname-client/package.json ./custom-hostname-client/
+COPY backend/package.json ./backend/
 
-RUN npm ci
+RUN npm install
 
 # Copy source
 COPY shared/ ./shared/

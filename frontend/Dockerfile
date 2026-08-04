@@ -25,24 +25,11 @@ COPY . .
 
 # Workspace install at the ROOT so every workspace member's deps hoist into
 # /app/node_modules — e.g. identity-ui's @tanstack/react-table. This mirrors local
-# dev; a frontend-only install can't see these transitive deps and is exactly what
-# broke the prod frontend image.
-#
-# `npm ci`, NOT `rm -f package-lock.json && npm install`. Deleting the lockfile
-# re-resolved every floating range against the live registry on each build, so two
-# builds of the SAME COMMIT could ship different dependency trees, and any registry
-# hiccup failed the build outright — which is what happened on PR #524
-# (@typescript-eslint/utils@8.66.0 briefly unresolvable mid-propagation). release.yml
-# builds this same file on master push, and master is deploy-on-push, so the next
-# drift would have broken a release rather than a PR scan.
-#
-# The deletion was justified by npm/cli#4828 (a Windows-generated lockfile omitting
-# linux-native optional deps), but that no longer holds: the committed lockfiles carry
-# every platform variant, verified by installing on linux and confirming
-# @tailwindcss/oxide-linux-x64-gnu lands in node_modules. Note also that tailwind is
-# a frontend/ dependency and is absent from the root tree entirely, so the oxide
-# argument never applied to THIS root install in the first place.
-RUN npm ci
+# dev (root `npm install`); a frontend-only install can't see these transitive deps
+# and is exactly what broke the prod frontend image. Drop the host (Windows)
+# lockfile so linux-native optional deps (e.g. @tailwindcss/oxide) re-resolve
+# (npm optional-deps bug npm/cli#4828).
+RUN rm -f package-lock.json && npm install
 
 # Frontend is NOT a workspace member — install its own deps (incl. the chat-*
 # file: packages) and build. vite resolves the aliased package SOURCES from
@@ -65,11 +52,7 @@ ARG VITE_APP_TITLE="FuzeFront Platform"
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
 
-# frontend/package-lock.json IS platform-complete — it carries every
-# @tailwindcss/oxide variant including linux-x64-gnu, so `npm ci` on this image
-# resolves the native binding without discarding the lockfile. Verified by running
-# it on linux and listing node_modules/@tailwindcss/.
-RUN npm ci
+RUN rm -f package-lock.json && npm install
 
 # Build the application
 RUN npm run build

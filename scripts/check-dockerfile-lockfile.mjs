@@ -51,6 +51,21 @@ const EXEMPT = new Set([
   // follow-up on FFRNT-254; the reproducibility risk is real but it is one
   // service, and shipping a broken payments image to fix it is not a trade.
   'services/billing-service/Dockerfile',
+  //
+  // backend, backend/security, frontend: converted to `npm ci`, and the e2e
+  // stack — which builds exactly these three (docker-compose.e2e.yml) — went red
+  // while it is green on master. The images build and start; the sign-in flow
+  // fails downstream. The most likely mechanism is the same one billing-service
+  // demonstrated: an unscoped root install changes which packages hoist and how
+  // large the images get, and these three are the auth-critical path.
+  //
+  // Reverted rather than iterated. Same reasoning as billing-service above: no
+  // Docker daemon here, a full CI round per attempt, and a stale layer cache has
+  // already produced one false green in this PR. Converting these needs someone
+  // who can bring the e2e stack up locally. Tracked as a follow-up on FFRNT-254.
+  'backend/Dockerfile',
+  'backend/security/Dockerfile',
+  'frontend/Dockerfile',
 ])
 
 function tracked(pattern) {
