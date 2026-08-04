@@ -43,7 +43,7 @@
 - **Access services via DNS**: `http://fuzefront.dev.local` not `http://localhost:3010`
 
 ## Docker Compose Rules
-- **NO port mappings** for internal services (frontend, backend, task manager)
+- **NO port mappings** for internal services (frontend, backend)
 - Services connect via internal Docker networks (FuzeInfra, fuzefront)
 - Only expose ports for services that need external access (authentik, permit-pdp)
 - Use environment variables from .env file: `env_file: - .env`

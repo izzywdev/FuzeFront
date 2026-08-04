@@ -69,13 +69,13 @@ FrontFuse uses a hub-and-spoke architecture where:
    npm run dev:frontend
 
    # Terminal 3 - Example app (optional)
-   npm run dev:task-manager
+   cd clock-app && npm run dev
    ```
 
 4. **Access the platform**:
    - Platform: http://localhost:5173
    - API Docs: http://localhost:3001/api-docs
-   - Task Manager Example: http://localhost:3002
+   - Clock App Example: http://localhost:3003
 
 ## Creating Your First App
 

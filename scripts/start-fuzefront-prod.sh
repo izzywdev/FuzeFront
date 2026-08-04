@@ -82,7 +82,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 # Wait for services to be healthy
 print_status "Waiting for services to be healthy..."
-services=("fuzefront-backend-prod" "fuzefront-frontend-prod" "fuzefront-taskmanager-prod")
+services=("fuzefront-backend-prod" "fuzefront-frontend-prod")
 
 for service in "${services[@]}"; do
     print_status "Checking health of $service..."
@@ -118,7 +118,6 @@ print_highlight "=== FUZEFRONT PRODUCTION SERVICES ==="
 echo ""
 echo "🌐 Web Access:"
 echo "   Frontend:     http://localhost:8085"
-echo "   Task Manager: http://localhost:3003"
 echo ""
 echo "🔌 API Access:"
 echo "   Backend API:  http://localhost:3004"
@@ -126,8 +125,7 @@ echo "   API Docs:     http://localhost:3004/api-docs"
 echo ""
 echo "📊 Health Checks:"
 echo "   Backend:      http://localhost:3004/health"
-echo "   Frontend:     http://localhost:8085/health" 
-echo "   Task Manager: http://localhost:3002/health"
+echo "   Frontend:     http://localhost:8085/health"
 echo ""
 echo "🗄️  Database:"
 echo "   PostgreSQL:   localhost:5432"
@@ -143,7 +141,6 @@ echo "   Network:      FuzeInfra (shared infrastructure)"
 echo "   Network:      fuzefront-prod (internal services)"
 echo "   Images:       fuzefront/backend:latest"
 echo "                 fuzefront/frontend:latest"
-echo "                 fuzefront/taskmanager:latest"
 echo ""
 echo "📦 Management Commands:"
 echo "   Stop:         docker-compose -f docker-compose.prod.yml down"

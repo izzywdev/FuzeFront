@@ -79,7 +79,7 @@ docker-compose up -d
 
 # Wait for services to be healthy
 print_status "Waiting for services to be healthy..."
-services=("fuzefront-backend" "fuzefront-frontend" "fuzefront-taskmanager")
+services=("fuzefront-backend" "fuzefront-frontend")
 
 for service in "${services[@]}"; do
     print_status "Checking health of $service..."
@@ -113,13 +113,11 @@ echo ""
 echo "🌐 Access URLs:"
 echo "   Frontend:     http://localhost:8080"
 echo "   Backend API:  http://localhost:3001"
-echo "   Task Manager: http://localhost:3002"
 echo "   API Docs:     http://localhost:3001/api-docs"
 echo ""
 echo "📊 Health Checks:"
 echo "   Backend:      http://localhost:3001/health"
-echo "   Frontend:     http://localhost:8080/health" 
-echo "   Task Manager: http://localhost:3002/health"
+echo "   Frontend:     http://localhost:8080/health"
 echo ""
 echo "🗄️  Database:"
 echo "   PostgreSQL:   localhost:5432"

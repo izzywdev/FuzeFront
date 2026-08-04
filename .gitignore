@@ -84,7 +84,6 @@ android/local.properties
 
 # Vite build output (generated; not committed)
 frontend/dist/
-task-manager-app/dist/
 .claude/worktrees/
 __pycache__/
 

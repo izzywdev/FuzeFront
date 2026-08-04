@@ -138,7 +138,6 @@ jobs:
           run_audit "fuzefront-website/backend"
           run_audit "sdk"
           run_audit "shared"
-          run_audit "task-manager-app"
 
   container-security:
     name: Container Security Scan
@@ -155,7 +154,7 @@ jobs:
       # consume @fuzefront/* workspaces outside their own dir) — mirror
       # release.yml's exact buildx config (context: . + file:) so the scanned
       # image is what actually ships. load: true keeps it in the local daemon
-      # for Trivy. task-manager-app is self-contained.
+      # for Trivy.
       - name: Build backend image for scanning
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -177,16 +176,6 @@ jobs:
             VITE_API_URL=
           tags: frontfuse/frontend:latest
           cache-from: type=gha,scope=frontend-root
-
-      - name: Build task-manager image for scanning
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: task-manager-app
-          file: task-manager-app/Dockerfile
-          push: false
-          load: true
-          tags: frontfuse/task-manager:latest
-          cache-from: type=gha
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

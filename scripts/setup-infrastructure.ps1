@@ -27,7 +27,7 @@ OPTIONS:
 
 ARCHITECTURE:
     - Shared Infrastructure: PostgreSQL, Redis, Traefik (from FuzeInfra)
-    - FuzeFront Core: Backend, Frontend, Task Manager
+    - FuzeFront Core: Backend, Frontend
     - Authentik: OIDC/OAuth2 authentication (uses shared PostgreSQL & Redis)
     - Permit.io: PDP authorization (single container with bundled OPA+OPAL)
 
@@ -132,7 +132,6 @@ function Start-FuzeFrontServices {
     
     Execute-Command "Starting FuzeFront backend" "docker compose up -d fuzefront-backend"
     Execute-Command "Starting FuzeFront frontend" "docker compose up -d fuzefront-frontend"
-    Execute-Command "Starting Task Manager app" "docker compose up -d task-manager-app"
     
     Write-Host "⏳ Waiting for FuzeFront services to be ready..."
     Start-Sleep -Seconds 15
@@ -140,7 +139,6 @@ function Start-FuzeFrontServices {
     Write-Success "FuzeFront core services started"
     Write-Host "   🎯 Backend API: http://localhost:3001" -ForegroundColor Gray
     Write-Host "   🌐 Frontend: http://localhost:5173" -ForegroundColor Gray
-    Write-Host "   📋 Task Manager: http://localhost:3002" -ForegroundColor Gray
 }
 
 function Start-AuthentikServices {
@@ -201,7 +199,6 @@ function Show-ServiceStatus {
     Write-Host "`n📋 Access Information:" -ForegroundColor Yellow
     Write-Host "   🌐 FuzeFront Frontend:  http://localhost:5173" -ForegroundColor White
     Write-Host "   🎯 FuzeFront Backend:   http://localhost:3001" -ForegroundColor White
-    Write-Host "   📋 Task Manager:        http://localhost:3002" -ForegroundColor White
     Write-Host "   🔐 Authentik:           http://auth.fuzefront.local:9000" -ForegroundColor White
     Write-Host "   🛡️  Permit.io PDP:      http://localhost:7766" -ForegroundColor White
     Write-Host "   📊 Shared PostgreSQL:   localhost:5432" -ForegroundColor White
