@@ -42,5 +42,5 @@
     "vitest": "^2.1.0"
   },
   "publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" },
-  "repository": { "type": "git", "url": "https://github.com/fuzefront/FuzeFront.git", "directory": "packages/auth-ui" }
+  "repository": { "type": "git", "url": "https://github.com/izzywdev/FuzeFront.git", "directory": "packages/auth-ui" }
 }
