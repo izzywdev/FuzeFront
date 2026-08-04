@@ -343,7 +343,7 @@ async function transition(
 
     return res.json(updated)
   } catch (err) {
-    console.error(`[app-registry] ${target} error:`, err)
+    console.error('[app-registry]', target, 'error:', err)
     return res.status(500).json({ error: 'internal_error', message: `Failed to ${target} app` })
   }
 }
