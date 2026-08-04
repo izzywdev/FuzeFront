@@ -149,7 +149,21 @@ function renderChart(valuesFile) {
   try {
     return execFileSync(
       'helm',
-      ['template', 'fuzefront', CHART, '-f', path.join(REPO_ROOT, valuesFile)],
+      [
+        'template',
+        'fuzefront',
+        CHART,
+        '-f',
+        path.join(REPO_ROOT, valuesFile),
+        // The chart refuses to render when authentik.oidc is enabled without a
+        // client secret, which is a real guard — values-local.yaml relies on a
+        // secret supplied at deploy time. Same placeholder helm-validate.yml
+        // passes. It touches no Ingress, so it cannot affect what this gate
+        // measures; without it the local overlay simply fails to render and the
+        // gate reports a helm error instead of a routing answer.
+        '--set',
+        'secret.authentikClientSecret=ci-placeholder',
+      ],
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }
     )
   } catch (err) {
@@ -159,25 +173,42 @@ function renderChart(valuesFile) {
   }
 }
 
+// Static patterns. Both were once built with `new RegExp` interpolating the
+// contract's file names, which Semgrep flagged as non-literal-regexp / ReDoS.
+// The inputs are repo-controlled rather than attacker-controlled, so it was not
+// exploitable — but a fixed pattern plus plain string comparison is simply the
+// better way to write this, so the finding is removed rather than suppressed.
+const IMPORT_LINE = /^\s*import\s+(\w+)[^\n]*?from\s+['"]([^'"]+)['"]/
+const APP_USE_CALL = /app\.use\(([^)]*)\)/g
+
+/** Split a call's arguments into identifier-ish tokens for whole-word matching. */
+function tokens(text) {
+  return text.split(/[^\w$]+/).filter(Boolean)
+}
+
 /** Is `routerFile` imported AND mounted by `entrypoint`? */
 function isMounted(entrypoint, routerFile) {
   const abs = path.join(REPO_ROOT, entrypoint)
   if (!existsSync(abs)) return { ok: false, reason: `entrypoint ${entrypoint} does not exist` }
   const src = readFileSync(abs, 'utf8')
 
-  // Match the import by module specifier basename, e.g. './routes/app-installations'.
+  // Match the import by module-specifier basename, e.g. './routes/app-installations'.
   const base = path.basename(routerFile).replace(/\.tsx?$/, '')
-  const importRe = new RegExp(`import\\s+(\\w+)[^\\n]*from\\s+['"][^'"]*/${base}['"]`)
-  const m = src.match(importRe)
-  if (!m) return { ok: false, reason: `${entrypoint} does not import ${base}` }
-
-  const identifier = m[1]
-  // The imported identifier must actually be handed to app.use(...).
-  const useRe = new RegExp(`app\\.use\\([^)]*\\b${identifier}\\b`)
-  if (!useRe.test(src)) {
-    return { ok: false, reason: `${entrypoint} imports ${identifier} but never app.use()s it` }
+  let identifier = null
+  for (const line of src.split('\n')) {
+    const m = line.match(IMPORT_LINE)
+    if (m && (m[2] === base || m[2].endsWith('/' + base))) {
+      identifier = m[1]
+      break
+    }
   }
-  return { ok: true }
+  if (!identifier) return { ok: false, reason: `${entrypoint} does not import ${base}` }
+
+  // The imported identifier must actually be handed to app.use(...).
+  for (const call of src.matchAll(APP_USE_CALL)) {
+    if (tokens(call[1]).includes(identifier)) return { ok: true }
+  }
+  return { ok: false, reason: `${entrypoint} imports ${identifier} but never app.use()s it` }
 }
 
 function main() {
