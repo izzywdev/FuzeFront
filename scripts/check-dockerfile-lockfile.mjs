@@ -34,6 +34,23 @@ const root = process.cwd()
 /** Dockerfiles that legitimately do not install from the root lockfile. */
 const EXEMPT = new Set([
   // Add a path here only with a reason, and prefer fixing the Dockerfile.
+  //
+  // billing-service: FFRNT-254 converted every other image to `npm ci`; this one
+  // resisted four attempts across CI, each revealing a different npm hoisting
+  // behaviour. `stripe` does not hoist to the root tree here — it is pinned
+  // inside the member — and it lands in a different place depending on whether
+  // devDependencies are installed and on which workspace source directories are
+  // present in the image. `cd <member> && npm install` is what the working image
+  // does today.
+  //
+  // Exempted rather than guessed at again: there is no Docker daemon in the dev
+  // environment, so every attempt cost a full CI round and the third one passed
+  // only on a stale layer cache — a false green that made the ordering theory
+  // look correct when it was not. Converting this file needs someone who can
+  // build it locally and inspect the resulting node_modules. Tracked as a
+  // follow-up on FFRNT-254; the reproducibility risk is real but it is one
+  // service, and shipping a broken payments image to fix it is not a trade.
+  'services/billing-service/Dockerfile',
 ])
 
 function tracked(pattern) {
