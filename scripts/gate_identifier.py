@@ -28,11 +28,25 @@ Three check families:
         service is rejected by a Python one — a cross-language outage no
         single-language test can catch.
 
+  --namespace
+    N1  every prefix this repo mints is either its declared namespace's
+        (`hub_ord`) or a spine prefix this repo owns. Parity (P1) is a
+        WITHIN-repo check; nothing there stops two products both defining
+        `ord`, which reintroduces the cross-type collision one level up.
+    N2  the repo declares `identity.namespace` in .fuze/manifest.json
+
+  --adoption
+    A1  a repo that mints entity ids, or ships create operations, must depend
+        on an identity package. The other families are all "is what is here
+        correct" checks; a repo that adopts nothing passes every one of them
+        vacuously. This is the absence check.
+
 Exemptions: an operation may carry `x-client-assigned-id: allowed` (plus
 `x-client-assigned-id-reason`), or the route may be listed in
 governance/identifier-allowlist.txt as `METHOD /path`, one per line.
 
-Usage: gate_identifier.py [root] [--source] [--registry-parity] [--all]
+Usage: gate_identifier.py [root] [--source] [--registry-parity]
+                                 [--namespace] [--adoption] [--all]
 Exit 0 = pass (or no contracts found); exit 1 = violation.
 Requires PyYAML for YAML specs; JSON specs need no extra deps.
 """
@@ -433,11 +447,262 @@ def check_registry_parity(root: str) -> list[str]:
     return violations
 
 
+# ---------------------------------------------------------------------------
+# Namespacing (baseline v1.5.0)
+# ---------------------------------------------------------------------------
+
+# The RESERVED SPINE PREFIXES, and the repo that owns each. Deliberately a
+# constant in this script rather than a per-repo config file: every repo runs
+# the same gate, so extending the list is an edit to a governance-managed script
+# that shows up in review, not a line a repo can quietly add to its own manifest.
+#
+# Spine types stay BARE on purpose. A FuzeHub service holding a user id is
+# holding *FuzeFront's* id — `front_usr_` would misrepresent who owns it. So the
+# shared surface is a short reserved-word list instead of a growing registry
+# every product has to PR into.
+#
+# It is short and it is closed. Everything else namespaces (`hub_ord_`), needs
+# no coordination at all, and is self-allocating because repo names are already
+# unique within the org.
+SPINE_PREFIXES = {
+    # identity / platform spine
+    "usr": "FuzeFront",
+    "org": "FuzeFront",
+    "prt": "FuzeFront",
+    "app": "FuzeFront",
+    # billing — FuzeFront hosts billing-service for the whole family, so a
+    # family invoice is `inv_`. A product's own quote-invoice is `sales_inv_`.
+    "cus": "FuzeFront",
+    "sub": "FuzeFront",
+    "pay": "FuzeFront",
+    "inv": "FuzeFront",
+    "crd": "FuzeFront",
+    # messaging — likewise hosted here for the family
+    "cnv": "FuzeFront",
+    "msg": "FuzeFront",
+    "ntf": "FuzeFront",
+}
+
+TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)
+PY_PREFIX_RE = re.compile(r'^\s*"(\w+)":\s*"([a-z][a-z_]*)",', re.M)
+
+
+def load_manifest(root: str) -> dict:
+    path = os.path.join(root, ".fuze/manifest.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def repo_short_name(manifest: dict) -> str:
+    """`izzywdev/FuzeFront` -> `FuzeFront`."""
+    return str(manifest.get("repo", "")).split("/")[-1]
+
+
+def find_registries(root: str) -> dict[str, dict[str, str]]:
+    """Every `ENTITY_PREFIXES` declaration in the repo, as {file: {type: prefix}}.
+
+    Not hardcoded to the two reference paths: a consuming repo declares its own
+    product types in its own module, and the namespacing rule has to reach those
+    — they are precisely the ones that can collide with another product's.
+    """
+    found: dict[str, dict[str, str]] = {}
+    for path in _candidate_files(root, ["*.ts", "*.py", "**/*.ts", "**/*.py"]):
+        rel = os.path.relpath(path, root).replace("\\", "/")
+        if rel.endswith((".test.ts", ".spec.ts", ".d.ts")) or "/tests/" in f"/{rel}":
+            continue
+        if rel == "scripts/gate_identifier.py":
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+        except OSError:
+            continue
+        if "ENTITY_PREFIXES" not in text:
+            continue
+        block = re.search(r"ENTITY_PREFIXES[^{]*\{(.*?)\n\s*\}", text, re.S)
+        if not block:
+            continue
+        pairs = dict(TS_PREFIX_RE.findall(block.group(1))) or dict(
+            PY_PREFIX_RE.findall(block.group(1))
+        )
+        if pairs:
+            found[rel] = pairs
+    return found
+
+
+def check_namespace(root: str) -> list[str]:
+    """Family-wide prefix uniqueness, checked ENTIRELY LOCALLY.
+
+    `--registry-parity` compares TypeScript to Python *inside one repo*. Nothing
+    there compares one repo to another, so FuzeHub and FuzeSales could each
+    define `ord` and both pass — reintroducing at the family level the exact
+    cross-type collision the standard exists to prevent.
+
+    The fix is not a central registry (a coordination bottleneck on something as
+    routine as adding a table). It is a namespace per product, and because repo
+    names are already unique within the org, that namespace is self-allocating.
+    This check therefore never fetches, never syncs, and cannot be wrong about
+    another repo because it never looks at one.
+    """
+    registries = find_registries(root)
+    if not registries:
+        return []
+
+    manifest = load_manifest(root)
+    identity = manifest.get("identity") if isinstance(manifest.get("identity"), dict) else {}
+    namespace = str(identity.get("namespace", "")).strip()
+    repo = repo_short_name(manifest)
+
+    # N2 — the namespace is DECLARED, never derived from the directory name. A
+    # repo rename would otherwise silently orphan every id already issued, and
+    # that failure surfaces much later as unresolvable references with no
+    # obvious cause.
+    if not namespace:
+        return [
+            f"namespace — .fuze/manifest.json declares no 'identity.namespace', but "
+            f"{', '.join(sorted(registries))} mints entity prefixes; declare it "
+            f"explicitly (identifier-standard.md 2)"
+        ]
+    if not re.fullmatch(r"[a-z][a-z0-9]*", namespace):
+        return [
+            f"namespace — 'identity.namespace' is {namespace!r}; must match "
+            f"^[a-z][a-z0-9]*$ so `<namespace>_<type>` stays a valid TypeID prefix"
+        ]
+
+    violations: list[str] = []
+    for rel, pairs in sorted(registries.items()):
+        for entity_type, prefix in sorted(pairs.items()):
+            owner = SPINE_PREFIXES.get(prefix)
+            if owner is not None:
+                # N1a — a spine prefix, minted by the repo that owns it.
+                if repo and owner.lower() != repo.lower():
+                    violations.append(
+                        f"{rel}: '{entity_type}' mints reserved spine prefix "
+                        f"{prefix!r}, which is owned by {owner}; namespace it as "
+                        f"'{namespace}_{prefix}' (identifier-standard.md 2)"
+                    )
+                continue
+            # N1b — everything else must carry this product's namespace.
+            if not prefix.startswith(f"{namespace}_"):
+                violations.append(
+                    f"{rel}: '{entity_type}' mints bare prefix {prefix!r}; a "
+                    f"product-local type must be namespaced "
+                    f"('{namespace}_{prefix}') or be a reserved spine prefix, "
+                    f"or two products can both define it "
+                    f"(identifier-standard.md 2)"
+                )
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Adoption — the absence check
+# ---------------------------------------------------------------------------
+
+IDENTITY_PACKAGE_RE = re.compile(r"fuzefront[-_]identity|@fuzefront/identity")
+
+
+def _declares_identity_dependency(root: str) -> bool:
+    """Node manifest, Python manifest, or being the reference repo itself."""
+    if os.path.isdir(os.path.join(root, "packages/identity")):
+        return True
+    manifests = _candidate_files(
+        root,
+        ["package.json", "**/package.json", "pyproject.toml", "**/pyproject.toml",
+         "requirements*.txt", "**/requirements*.txt"],
+    )
+    for path in manifests:
+        rel = os.path.relpath(path, root).replace("\\", "/")
+        if "node_modules/" in rel:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+        except OSError:
+            continue
+        if rel.endswith("package.json"):
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            for section in ("dependencies", "devDependencies", "peerDependencies"):
+                for name in (data.get(section) or {}):
+                    if IDENTITY_PACKAGE_RE.search(str(name)):
+                        return True
+        elif IDENTITY_PACKAGE_RE.search(text):
+            return True
+    return False
+
+
+def _has_entity_work(root: str) -> tuple[int, int]:
+    """(mint sites, create operations) — the evidence this repo owns entities."""
+    mint_sites = sum(
+        1
+        for violation in check_source(root)
+        if "minted as a bare uuid" in violation
+    )
+
+    creates = 0
+    for spec_path in find_specs(root):
+        try:
+            spec = load_spec(spec_path)
+        except Exception:
+            continue
+        if not isinstance(spec, dict):
+            continue
+        for path, item in (spec.get("paths") or {}).items():
+            if not isinstance(item, dict):
+                continue
+            for method, operation in item.items():
+                if isinstance(operation, dict) and is_create_operation(
+                    str(method).lower(), str(path), operation
+                ):
+                    creates += 1
+    return mint_sites, creates
+
+
+def check_adoption(root: str) -> list[str]:
+    """Does this repo actually HAVE the standard, or merely not violate it?
+
+    Every other family here asks "is what is present correct". A repo that
+    adopted nothing at all passes all of them: no contracts means "nothing to
+    check", and the source backstop is report-only. Green, and completely
+    unprotected. Only an absence check catches that, and a family standard whose
+    gate is satisfied by non-adoption is not a standard.
+    """
+    if _declares_identity_dependency(root):
+        return []
+    mint_sites, creates = _has_entity_work(root)
+    if not mint_sites and not creates:
+        return []
+    evidence = []
+    if mint_sites:
+        evidence.append(f"{mint_sites} entity-id mint site(s)")
+    if creates:
+        evidence.append(f"{creates} create operation(s)")
+    return [
+        f"adoption — this repo has {' and '.join(evidence)} but declares no "
+        f"dependency on an identity package (@izzywdev/fuzefront-identity or "
+        f"fuzefront-identity); the standard cannot be enforced by a package the "
+        f"repo does not have (identifier-standard.md 9)"
+    ]
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("-")]
     flags = {a for a in argv[1:] if a.startswith("-")}
     root = args[0] if args else "."
     run_all = "--all" in flags
+
+    known = {"--all", "--source", "--registry-parity", "--namespace", "--adoption"}
+    unknown = flags - known
+    if unknown:
+        print(f"gate-identifier: unknown flag(s) {' '.join(sorted(unknown))}", file=sys.stderr)
+        return 2
 
     violations: list[str] = []
     if run_all or not (flags - {"--all"}):
@@ -446,6 +711,10 @@ def main(argv: list[str]) -> int:
         violations += check_source(root)
     if run_all or "--registry-parity" in flags:
         violations += check_registry_parity(root)
+    if run_all or "--namespace" in flags:
+        violations += check_namespace(root)
+    if run_all or "--adoption" in flags:
+        violations += check_adoption(root)
 
     if violations:
         print(f"\ngate-identifier: {len(violations)} violation(s)\n")
