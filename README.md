@@ -29,7 +29,7 @@ This is a monorepo managed with **npm workspaces** containing:
 - **`frontend/`** - React/Vite main platform interface (Module Federation Container)
 - **`shared/`** - Shared types, contexts, and utilities
 - **`sdk/`** - React SDK for microfrontend integration and self-registration
-- **`task-manager-app/`** - Example microfrontend with Module Federation
+- **`clock-app/`** - Example microfrontend with Module Federation
 
 ## 📁 Project Organization
 
@@ -38,7 +38,7 @@ The project follows a clean, organized folder structure:
 ### Core Application Directories
 - **`backend/`** - Main API server and business logic
 - **`frontend/`** - Main platform interface (Module Federation Container)
-- **`task-manager-app/`** - Example microfrontend application
+- **`clock-app/`** - Example microfrontend application
 - **`api-client/`** - Generated API client and types
 - **`sdk/`** - React SDK for microfrontend integration
 - **`shared/`** - Shared utilities and components
@@ -114,7 +114,7 @@ npm run install:all
 npm run db:init
 npm run db:seed
 
-# Start all services including the task manager demo
+# Start all services including the example app demo
 npm run demo
 ```
 
@@ -122,7 +122,7 @@ This starts:
 
 - **Hub Portal** on `http://localhost:5173` (Module Federation Container)
 - **Backend API** on `http://localhost:3001` (App Registry & WebSocket)
-- **Task Manager** on `http://localhost:3002` (Example Micro-frontend)
+- **Clock App** on `http://localhost:3003` (Example Micro-frontend)
 
 ### Option 2: Local Kubernetes (kind)
 
@@ -152,7 +152,7 @@ Add `127.0.0.1 fuzefront.dev.local` to your hosts file, then open `http://fuzefr
 
 ### What You'll See
 
-1. **Task Manager app automatically registers** itself with the hub when started
+1. **Clock App automatically registers** itself with the hub when started
 2. **Real-time notification** appears in the hub when the app registers
 3. **App appears in the 9-dots selector** ready to be loaded
 4. **Click to load the app** using Module Federation (shared React instances)
@@ -171,7 +171,7 @@ The frontend acts as a Module Federation container that:
 
 ### 2. **Apps (Remotes)**
 
-Each app (like task-manager-app) can:
+Each app (like clock-app) can:
 
 - **Self-register** with the hub via REST API
 - **Expose components** via Module Federation
@@ -211,14 +211,13 @@ sequenceDiagram
 ```bash
 # Development
 npm run dev                 # Start backend + frontend
-npm run dev:all             # Start all services including task-manager
+npm run dev:all             # Start all services including clock-app
 npm run dev:backend         # Start backend only
 npm run dev:frontend        # Start frontend only
-npm run dev:task-manager    # Start task manager example
 
 # Building
 npm run build               # Build all packages
-npm run build:all           # Build all including task-manager
+npm run build:all           # Build all including clock-app
 npm run type-check          # Type check all packages
 npm run lint                # Lint all packages
 
@@ -403,7 +402,7 @@ chore(deps): Update dependencies
 
 ### Allowed Scopes
 
-- `backend`, `frontend`, `shared`, `sdk`, `task-manager`
+- `backend`, `frontend`, `shared`, `sdk`
 - `auth`, `ui`, `api`, `websocket`, `heartbeat`
 - `theme`, `i18n`, `build`, `deps`
 
@@ -700,10 +699,10 @@ cd frontend
 npm run dev
 ```
 
-### Task Manager Example App
+### Clock Example App
 
 ```bash
-cd task-manager-app
+cd clock-app
 npm run dev
 ```
 

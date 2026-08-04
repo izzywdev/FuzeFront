@@ -26,7 +26,6 @@ module.exports = {
         'frontend',
         'shared',
         'sdk',
-        'task-manager',
         'auth',
         'ui',
         'api',
