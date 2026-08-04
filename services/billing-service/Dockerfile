@@ -9,6 +9,12 @@ RUN apk add --no-cache dumb-init
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY services/billing-service/package.json ./services/billing-service/
+# app.ts imports @izzywdev/fuzefront-identity (file:../../packages/identity) as a
+# bare specifier. npm must see the target manifest here or it creates a DANGLING
+# symlink in node_modules — the "Cannot find module '@izzywdev/fuzefront-identity'"
+# crashloop. With the manifest present the symlink resolves to /app/packages/identity,
+# which the production stage then populates with the built dist.
+COPY packages/identity/package.json ./packages/identity/
 
 # Install only production deps for billing-service
 RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
@@ -63,6 +69,12 @@ COPY --from=build /app/shared/dist ./shared/dist
 # service (WORKDIR walks up) resolve them.
 COPY --from=base /app/services/billing-service/node_modules ./node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
+# @izzywdev/fuzefront-identity is a file: workspace dep imported by app.ts as a bare
+# specifier, so node resolves it via the base-stage symlink → /app/packages/identity
+# and needs package.json (main: dist/index.js) + dist there. identity has no runtime
+# deps of its own, so shipping its build output is enough. Mirrors the shared/dist copy.
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
 
 # Remove declaration files from production image
 RUN find ./services/billing-service/dist -name "*.d.ts" -type f -delete
