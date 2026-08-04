@@ -32,7 +32,7 @@ else
 fi
 
 # ── Resolve the implicit-consent authorization flow via the Django ORM ────────
-# Prefer Authentik 2026.5.5's built-in flow: Authentik itself configures the
+# Prefer Authentik 2024.12.3's built-in flow: Authentik itself configures the
 # ConsentStage correctly (the valid mode is 'permanent', NOT 'never_require').
 echo "Resolving implicit-consent authorization flow via Python ORM..."
 FLOW_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
@@ -106,7 +106,7 @@ fi
 
 # ── Scope mappings via the Django ORM ─────────────────────────────────────────
 # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET in this
-# Authentik 2026.5.5 setup — the URL pattern is not registered at the Django
+# Authentik 2024.12.3 setup — the URL pattern is not registered at the Django
 # routing layer. Bypass REST entirely and use the ORM.
 echo "Getting scope mapping PKs via Python ORM..."
 SCOPE_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
@@ -139,7 +139,7 @@ if [ -z "$SCOPE_OPENID" ] || [ -z "$SCOPE_EMAIL" ] || [ -z "$SCOPE_PROFILE" ]; t
 fi
 echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
-# ── Invalidation flow (required on the OAuth2 provider in 2026.5.5) ──────────
+# ── Invalidation flow (required on the OAuth2 provider in 2024.12.3) ──────────
 INV_FLOW_RAW=$(curl -s -H "$AUTH" "$BASE/flows/instances/?designation=invalidation")
 INV_FLOW_PK=$(echo "$INV_FLOW_RAW" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
 echo "Invalidation flow lookup: pk=${INV_FLOW_PK:-NOT_FOUND}"
