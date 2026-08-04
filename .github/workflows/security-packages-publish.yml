@@ -54,8 +54,26 @@ jobs:
       - name: Publish @izzywdev/fuzefront-security-client
         working-directory: packages/security
         env:
+          # Both names, deliberately — this is what the 401 was.
+          # npm resolves .npmrc from the package dir UPWARD, and the repo-root
+          # .npmrc is project-level, so it outranks the user-level file
+          # setup-node writes. The root file authenticates with ${GITHUB_TOKEN};
+          # this step only ever set NODE_AUTH_TOKEN, so the variable expanded
+          # EMPTY and every run since 2026-07-31 died with:
+          #   npm error 401 Unauthorized - PUT .../@izzywdev%2ffuzefront-security-client
+          #   unauthenticated: User cannot be authenticated with the token provided
+          # Setting both means auth resolves whichever config wins precedence.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Pin an explicit .npmrc in the package dir as the closest (winning)
+          # config, so registry + auth are deterministic regardless of ambient
+          # files. Mirrors auth-ui-packages-publish.yml, the one publisher in
+          # this repo that has actually shipped a package.
+          cat > .npmrc <<'NPMRC'
+          @izzywdev:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-security-client
           if npm view "@izzywdev/fuzefront-security-client@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
