@@ -10,8 +10,7 @@ RUN apk add --no-cache dumb-init
 # re-resolved floating ranges against the live registry on every build, so two
 # builds of the same commit could ship different dependency trees (FFRNT-254).
 # `npm ci` cannot run from inside a workspace member — the lockfile lives at the
-# root — so the install moves to the root and `-w` keeps it to this service's
-# subtree instead of pulling in every UI workspace's React toolchain.
+# root — so the install moves to the root.
 #
 # Deps therefore land in /app/node_modules rather than
 # /app/services/billing-service/node_modules. That is where they were being
@@ -48,9 +47,17 @@ COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 
-RUN npm ci --omit=dev --ignore-scripts \
-      -w services/billing-service -w shared -w packages/identity \
-      --include-workspace-root
+# A FULL root `npm ci`, not `npm ci -w <member>`. The scoped form installed 610
+# packages but left billing-service's own third-party deps somewhere tsc could
+# not resolve them — the image build failed with "Cannot find module 'express'"
+# for every route file while the workspace symlinks resolved fine. Caught by the
+# image build on the PR, which is the entire reason that job exists.
+#
+# The unscoped form is the one actually verified to place express/pg/stripe in
+# /app/node_modules. It installs more than this service strictly needs, which
+# costs image size; correctness first, and trimming it is a follow-up that must
+# be re-verified against a real build rather than reasoned about.
+RUN npm ci --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -82,9 +89,8 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 
 # devDeps included here (tsc, and shared's toolchain for the kafka sub-tree).
-RUN npm ci --ignore-scripts \
-      -w services/billing-service -w shared -w packages/identity \
-      --include-workspace-root
+# Unscoped for the same reason as the base stage above.
+RUN npm ci --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
@@ -95,7 +101,11 @@ COPY services/billing-service/ ./services/billing-service/
 # React dep), then billing-service. identity supplies the graph-create
 # middleware app.ts mounts; without it the image starts and fails on import.
 RUN cd shared && npm run build:kafka
-RUN cd packages/identity && npm install --ignore-scripts && npm run build
+# No `npm install` here any more: the root `npm ci` above already installed
+# identity's toolchain, and a bare install would re-resolve floating ranges
+# against the live registry — reintroducing, in one line, the exact
+# non-reproducibility this change set exists to remove (FFRNT-254).
+RUN cd packages/identity && npm run build
 RUN cd services/billing-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/001_billing_schema.sql at startup; without this the pod logs
