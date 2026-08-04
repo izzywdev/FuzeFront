@@ -130,14 +130,27 @@ A graph spanning services **cannot be created atomically** — there is no distr
 
 Orders and customers live in different services and different databases. There is no foreign key. Integrity is layered:
 
-| Layer | Mechanism | Cost | Answers |
-|---|---|---|---|
-| **L0** | `assertRef('customer', id)` — prefix check | string compare, offline | *is it the right kind of thing* |
-| **L1** | local `ref_index` projection fed by Kafka `*.created`/`*.deleted` | indexed local lookup | *does it exist* — no RPC, survives the owner being down |
-| **L2** | verify-on-write RPC + negative cache, per-reference opt-in | one call, TTL'd | staleness-intolerant references (money movement) |
-| **L3** | async reconciler over the outbox, quarantining orphans | background | anything above missed |
+| Layer | Mechanism | Cost | Answers | Status |
+|---|---|---|---|---|
+| **L0** | `assertRef('customer', id)` — prefix check | string compare, offline | *is it the right kind of thing* | shipped |
+| **L1** | local `ref_index` projection fed by the `identity.*` / `portal.created` lifecycle events | indexed local lookup | *does it exist* — no RPC, survives the owner being down | shipped |
+| **L2** | verify-on-write RPC + negative cache, per-reference opt-in | one call, TTL'd | staleness-intolerant references (money movement) | not built |
+| **L3** | async reconciler over the outbox, quarantining orphans | background | anything above missed | not built |
 
-**L0 is what makes the rest safe.** L1–L3 answer existence; only L0 answers *kind*, and only L0 needs no network, no cache, and no coherence assumption. L1 is the right default here because the substrate already exists — `shared/src/kafka/` with `TypedProducer` and per-event Zod schemas.
+**L0 is what makes the rest safe.** L1–L3 answer existence; only L0 answers *kind*, and only L0 needs no network, no cache, and no coherence assumption.
+
+### L1 — `assertRefExists`
+
+`assertRefExists(store, type, id, opts)` runs L0 then L1 and returns the branded id, so it drops into a repository call exactly where `assertRef` does. A service supplies a `RefIndexStore`; the reference implementation is `billing.ref_index` (migration `004_ref_index.sql` + `PgRefIndexRepository`), fed by `startRefIndexConsumer`.
+
+It projects the lifecycle events the owning services **already publish**. Nothing new is emitted for integrity: an event contract that only the integrity layer consumes is one nobody maintains. `app.registered` is deliberately not projected — its payload carries no app id.
+
+Two properties matter more than the lookup itself:
+
+- **Default `mode: 'warn'`.** A projection lags, so a genuinely new entity can be referenced before its `*.created` is consumed. Enforcing everywhere converts a consumer hiccup into a user-visible 4xx on valid data. Opt in to `enforce` per reference, as with L2.
+- **`enforce` degrades to `warn` when the projection is stale** (default 5 min). Without that, a Kafka outage makes the projection a reject-everything oracle and takes the write path down with the message bus. Degrading is the right direction *here specifically* because L1 answers existence, not authorization — an id is never a capability, so an unverified reference grants nothing the token and Permit have not already granted. Pass `staleAfterMs: null` to fail closed regardless.
+
+Deleted entities are **tombstoned, never removed**: consumers redeliver and Kafka gives no ordering across partitions, so a redelivered `*.created` must not resurrect a deleted row. An empty projection replays each topic from the beginning to rebuild — safe because every write is idempotent.
 
 ## 6. Exemptions
 
