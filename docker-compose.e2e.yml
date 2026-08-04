@@ -203,6 +203,10 @@ services:
       # no Unleash in the e2e stack, so GET /api/flags would otherwise serve the
       # fail-safe default (OFF). Honored only when NODE_ENV !== production.
       FLAGS_FORCE_ON: fuzefront.account-security.hub
+      # No applications-service in the e2e stack, so serve app-registry reads
+      # from the backend's local `apps` table rather than delegating to the
+      # (absent) proxy. Prod leaves this unset and delegates (FuzeFront #533).
+      APP_REGISTRY_LOCAL_ADAPTER: '1'
       # After the OIDC callback the backend redirects the browser here.
       # Must be host-reachable so the browser (Playwright on the host) can follow.
       FRONTEND_URL: http://localhost:4173
