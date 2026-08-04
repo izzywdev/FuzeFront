@@ -23,3 +23,50 @@
 #   POST /v1/sync/documents      # offline-first editor; ids are uuidv5-namespaced
 #
 # (Empty by default — no exemptions.)
+
+# ---------------------------------------------------------------------------
+# SOURCE exemptions — `src <path>:<line>  # reason`
+# ---------------------------------------------------------------------------
+#
+# The --source backstop keys on the assignment TARGET (`id`, `<noun>Id`), which
+# is all a grep-shaped check can see. It therefore counts `id: uuidv4()` inside
+# `trx('event_outbox').insert({...})` — an outbox ROW id, which is not an entity
+# and has no type to carry. Left uncounted those inflate the backlog, and the
+# backlog number is the only thing standing between the backstop and being
+# ratcheted to enforcing (FFRNT-185).
+#
+# This exempts a site from being COUNTED, never from the standard. If the row is
+# an entity, migrate it instead of listing it here. A stale entry — one whose
+# line no longer mints anything — is reported by the gate, because a silently
+# drifting line number is an exemption nobody granted.
+
+# Outbox rows: infrastructure records of an event, not entities.
+src backend/core/src/events/outbox.ts:34                    # event_outbox row id
+src backend/src/services/organizationProvisioning.ts:322    # event_outbox row id
+src backend/src/services/portalProvisioning.ts:434          # event_outbox row id
+src backend/security/src/services/organizationProvisioning.ts:229  # event_outbox row id
+
+# Provisioning workflow step rows: bookkeeping for a saga, not entities.
+src backend/src/services/organizationProvisioning.ts:230    # organization_provisioning step row
+src backend/security/src/services/organizationProvisioning.ts:183  # organization_provisioning step row
+src backend/src/services/portalProvisioning.ts:151          # portal_provisioning step row
+
+# One-shot credential artifacts. Same family as the token/nonce/verifier targets
+# NON_ENTITY_ID_RE already excludes: they are consumed once, expire, and are
+# never referenced across a service boundary.
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:661   # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1081  # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:884   # mfa_recovery_codes row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:975   # password_resets row
+
+# In-memory only: a Map key for a pending tool confirmation, never persisted and
+# never leaving the process.
+src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
+
+# FuzeQuality is a separate PRODUCT vendored into this tree. Its entities are its
+# own and namespace under its own repo (identifier-standard.md §2), so they are
+# not this registry's to mint. Tracked against FuzeQuality's own adoption.
+src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
+src FuzeQuality/packages/core/src/store.ts:96               # FuzeQuality-owned entity
+src FuzeQuality/packages/core/src/store.ts:195              # FuzeQuality-owned entity
+src FuzeQuality/packages/core/src/store.ts:386              # FuzeQuality-owned entity

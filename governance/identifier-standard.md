@@ -59,9 +59,26 @@ Validate the prefix; never parse further, never assume a length, never construct
 
 **Minting is centralised.** `mintId(type)` / `mint_id(type)` is the only sanctioned constructor. Calling `randomUUID()`/`uuid4()` for an entity id bypasses the registry and produces an untyped id; `gate-identifier --source` flags it.
 
-### Registry
+### Registry — per product, namespaced; no central table
 
 `packages/identity/src/registry.ts` and `packages/identity-py/fuzefront_identity/registry.py` hold the type→prefix map. Adding a type there is the only way to mint ids for it. **Prefixes are permanent once shipped** — changing one is a wire-breaking change for every stored reference in the family.
+
+Each repo keeps its **own** registry. There is deliberately no central one: a registry every product must PR into is a coordination bottleneck on something as routine as adding a table, and it hands out something that is already unique. **Repo names are unique within the org, so a product namespace is self-allocating.**
+
+Uniqueness across the family comes from two tiers instead:
+
+| Kind | Form | Owner | Coordination |
+|---|---|---|---|
+| **Spine** | `usr_`, `org_`, `prt_`, `app_`, the billing set, the messaging set | the spine service that mints them (FuzeFront) | short reserved list; changes ~never |
+| **Product-local** | `hub_ord_`, `sales_quote_` | the owning repo | **none** |
+
+Spine types stay bare on purpose: a FuzeHub service holding a user id is holding *FuzeFront's* id, and `front_usr_` would misrepresent ownership. So the shared surface is a short reserved-word list, not a growing table.
+
+Declare the namespace in **`.fuze/manifest.json`** (`identity.namespace`), never derive it from the repo directory name — a rename would otherwise silently orphan every id already issued, and that failure surfaces much later as unresolvable references with no obvious cause.
+
+No format change is needed: TypeID prefixes are `[a-z_]` and split at the *final* `_`, so `hub_ord_01h455…` round-trips under the shipped codec, and `hub_ord_…` and `sales_ord_…` are structurally distinct.
+
+`gate-identifier --namespace` enforces this **entirely locally** — *does every prefix this repo mints start with its declared namespace, or is it a reserved spine prefix this repo owns?* No cross-repo state, no fetch, no sync; the check cannot be wrong about another repo because it never looks at one. The reserved table lives in the gate script rather than in per-repo config, so extending it is a reviewable governance edit rather than a line a repo adds to its own manifest.
 
 ## 3. References carry their type
 
@@ -113,14 +130,27 @@ A graph spanning services **cannot be created atomically** — there is no distr
 
 Orders and customers live in different services and different databases. There is no foreign key. Integrity is layered:
 
-| Layer | Mechanism | Cost | Answers |
-|---|---|---|---|
-| **L0** | `assertRef('customer', id)` — prefix check | string compare, offline | *is it the right kind of thing* |
-| **L1** | local `ref_index` projection fed by Kafka `*.created`/`*.deleted` | indexed local lookup | *does it exist* — no RPC, survives the owner being down |
-| **L2** | verify-on-write RPC + negative cache, per-reference opt-in | one call, TTL'd | staleness-intolerant references (money movement) |
-| **L3** | async reconciler over the outbox, quarantining orphans | background | anything above missed |
+| Layer | Mechanism | Cost | Answers | Status |
+|---|---|---|---|---|
+| **L0** | `assertRef('customer', id)` — prefix check | string compare, offline | *is it the right kind of thing* | shipped |
+| **L1** | local `ref_index` projection fed by the `identity.*` / `portal.created` lifecycle events | indexed local lookup | *does it exist* — no RPC, survives the owner being down | shipped |
+| **L2** | verify-on-write RPC + negative cache, per-reference opt-in | one call, TTL'd | staleness-intolerant references (money movement) | not built |
+| **L3** | async reconciler over the outbox, quarantining orphans | background | anything above missed | not built |
 
-**L0 is what makes the rest safe.** L1–L3 answer existence; only L0 answers *kind*, and only L0 needs no network, no cache, and no coherence assumption. L1 is the right default here because the substrate already exists — `shared/src/kafka/` with `TypedProducer` and per-event Zod schemas.
+**L0 is what makes the rest safe.** L1–L3 answer existence; only L0 answers *kind*, and only L0 needs no network, no cache, and no coherence assumption.
+
+### L1 — `assertRefExists`
+
+`assertRefExists(store, type, id, opts)` runs L0 then L1 and returns the branded id, so it drops into a repository call exactly where `assertRef` does. A service supplies a `RefIndexStore`; the reference implementation is `billing.ref_index` (migration `004_ref_index.sql` + `PgRefIndexRepository`), fed by `startRefIndexConsumer`.
+
+It projects the lifecycle events the owning services **already publish**. Nothing new is emitted for integrity: an event contract that only the integrity layer consumes is one nobody maintains. `app.registered` is deliberately not projected — its payload carries no app id.
+
+Two properties matter more than the lookup itself:
+
+- **Default `mode: 'warn'`.** A projection lags, so a genuinely new entity can be referenced before its `*.created` is consumed. Enforcing everywhere converts a consumer hiccup into a user-visible 4xx on valid data. Opt in to `enforce` per reference, as with L2.
+- **`enforce` degrades to `warn` when the projection is stale** (default 5 min). Without that, a Kafka outage makes the projection a reject-everything oracle and takes the write path down with the message bus. Degrading is the right direction *here specifically* because L1 answers existence, not authorization — an id is never a capability, so an unverified reference grants nothing the token and Permit have not already granted. Pass `staleAfterMs: null` to fail closed regardless.
+
+Deleted entities are **tombstoned, never removed**: consumers redeliver and Kafka gives no ordering across partitions, so a redelivered `*.created` must not resurrect a deleted row. An empty projection replays each topic from the beginning to rebuild — safe because every write is idempotent.
 
 ## 6. Exemptions
 
@@ -163,6 +193,8 @@ Three layers, weakest last:
 2. **Runtime boundary.** The graph-create middleware rejects `id` in create bodies (422 `CLIENT_SUPPLIED_ID`), resolves `lid`, and mints.
 3. **CI — `gate-identifier`.**
    - **contracts + registry parity: ENFORCING.** A new create body declaring an `id`, or a polymorphic reference without its type, fails the build.
+   - **namespace: ENFORCING.** Parity is a *within-repo* check; `--namespace` is what stops two products both defining `ord`.
+   - **adoption: ENFORCING.** Every other check asks whether what is present is correct, so a repo that adopted nothing passes all of them — "no contracts found, nothing to check" is a green build with zero protection. This is the absence check, and a family standard whose gate is satisfied by non-adoption is not a standard.
    - **source backstop: report-only.** It is grep-shaped and therefore evadable; it flags direct uuid minting for entity ids and `as EntityId` casts. ~41 call sites remain (the §8 backlog), so it ratchets to enforcing once cleared.
 
 Run locally:
@@ -170,6 +202,8 @@ Run locally:
 ```bash
 python scripts/gate_identifier.py .                    # contracts (enforcing)
 python scripts/gate_identifier.py . --registry-parity  # Node/Python registries agree
+python scripts/gate_identifier.py . --namespace        # family-wide prefix uniqueness
+python scripts/gate_identifier.py . --adoption         # the repo actually has the standard
 python scripts/gate_identifier.py . --source           # implementation backstop
 python scripts/gate_identifier.py . --all              # everything
 ```

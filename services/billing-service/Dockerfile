@@ -63,6 +63,18 @@ COPY --from=build /app/shared/dist ./shared/dist
 # service (WORKDIR walks up) resolve them.
 COPY --from=base /app/services/billing-service/node_modules ./node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
+# @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it —
+# node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity,
+# and copying node_modules alone copies a DANGLING link. app.ts imports
+# graphCreate at module load, so without this the container dies at boot with
+# "Cannot find module '@izzywdev/fuzefront-identity'".
+#
+# THIS IS BROKEN ON MASTER TODAY. `npm install` exits 0 with the link's target
+# absent, so nothing surfaced it until the container ran. Verified by replicating
+# the base stage and inspecting the link. Only dist/ + package.json are needed —
+# exactly what the package publishes ("files": ["dist", "README.md"]).
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 
 # Remove declaration files from production image
 RUN find ./services/billing-service/dist -name "*.d.ts" -type f -delete
