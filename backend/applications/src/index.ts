@@ -22,6 +22,7 @@ import {
 } from '@fuzefront/core'
 
 import appsRoutes from './routes/apps'
+import appInstallationsRoutes from './routes/app-installations'
 import appRegistryRoutes from './routes/app-registry'
 import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
@@ -39,6 +40,16 @@ const startTime = Date.now()
 const io = initializeSocketIO(httpServer)
 app.set('io', io)
 
+// Installation routes mount FIRST so `/installed`, `/:id/installations` and
+// `/:id/install*` resolve before appsRoutes' own `/:id` handlers. Express falls
+// through to appsRoutes for every path this router does not define.
+//
+// These live HERE, not on fuzefront-backend, because the ingress routes
+// `/api/apps` (Prefix) to this service and only the remaining `/api` to the
+// backend — and applicationsService.enabled is true in both values-local.yaml
+// and values-prod.yaml. The route must be implemented by whichever service owns
+// the path prefix, which is what scripts/check-route-ownership.mjs now enforces.
+app.use('/api/apps', appInstallationsRoutes)
 app.use('/api/apps', appsRoutes)
 // Frozen versioned app-registry contract surface (services/app-registry-service/
 // openapi.yaml) — mounted ALONGSIDE the legacy /api/apps for back-compat.
