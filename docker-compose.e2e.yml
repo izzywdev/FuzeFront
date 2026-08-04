@@ -310,7 +310,7 @@ services:
       start_period: 30s
 
   # ── Frontend ──────────────────────────────────────────────────────────────
-  # Built from repo root (Dockerfile requires workspace context for @fuzefront/* aliases).
+  # Built from repo root (Dockerfile requires workspace context for @fuzeone/* aliases).
   frontend:
     build:
       context: .

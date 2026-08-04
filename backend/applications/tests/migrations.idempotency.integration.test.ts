@@ -1,6 +1,6 @@
 import path from 'path'
 import { Client } from 'pg'
-import { runMigrations } from '@fuzefront/core'
+import { runMigrations } from '@fuzeone/core'
 
 // C1 — the highest-risk verification. applications-service migrations must run as
 // a clean no-op against a DB that ALREADY has the apps table, app_visibility_enum,

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add opaque, hashed-at-rest API tokens to FuzeFront — both personal access tokens (PAT, acting as the owning user) and org/service tokens (acting as an org principal, surviving user offboarding). Tokens integrate into the existing auth middleware (`backend/src/middleware/auth.ts`) alongside JWT, are scoped through the existing Permit.io policy layer, and are managed via a new section of `@fuzefront/identity-ui`.
+**Goal:** Add opaque, hashed-at-rest API tokens to FuzeFront — both personal access tokens (PAT, acting as the owning user) and org/service tokens (acting as an org principal, surviving user offboarding). Tokens integrate into the existing auth middleware (`backend/src/middleware/auth.ts`) alongside JWT, are scoped through the existing Permit.io policy layer, and are managed via a new section of `@fuzeone/identity-ui`.
 
-**Architecture:** All token logic lives inside `backend/` (new route `backend/src/routes/api-tokens.ts`, new migration `009_create_api_tokens_table.ts`, token service `backend/src/services/api-token.ts`, middleware extension in `auth.ts`). No new microservice is warranted — tokens are a first-class backend concern with no independent scaling needs. The UI is entirely within `@fuzefront/identity-ui` (existing package). The Permit principal for a service token is a synthetic user keyed `svc_token:<token_id>`.
+**Architecture:** All token logic lives inside `backend/` (new route `backend/src/routes/api-tokens.ts`, new migration `009_create_api_tokens_table.ts`, token service `backend/src/services/api-token.ts`, middleware extension in `auth.ts`). No new microservice is warranted — tokens are a first-class backend concern with no independent scaling needs. The UI is entirely within `@fuzeone/identity-ui` (existing package). The Permit principal for a service token is a synthetic user keyed `svc_token:<token_id>`.
 
 **Tech Stack:** Node 18, TypeScript, `crypto` (stdlib — Node built-in, zero-dependency), Knex 3, PostgreSQL, `permitio` 2.4 (already installed), `express-rate-limit` 7 (already installed).
 
@@ -72,7 +72,7 @@ Evaluated `passport-http-bearer`, `express-jwt`, and `oslo` (from Lucia auth). A
 |---|---|---|
 | `backend/src/services/api-token.ts` | Inline in `backend/` | Token logic has no independent lifecycle/scaling from the backend itself. Second consumer would only be a future gateway, which would call the backend's REST API, not import the service. |
 | `backend/src/routes/api-tokens.ts` | Inline in `backend/` | Follows identical pattern to `routes/auth.ts`, `routes/organizations.ts`. |
-| `@fuzefront/identity-ui` UI components | Extend existing package | Token management pages/components slot naturally into the identity-ui micro-frontend alongside org and user settings. No new package boundary needed. |
+| `@fuzeone/identity-ui` UI components | Extend existing package | Token management pages/components slot naturally into the identity-ui micro-frontend alongside org and user settings. No new package boundary needed. |
 
 ---
 
@@ -294,7 +294,7 @@ The `token` field is ONLY present in the creation response. All subsequent GET r
 
 ---
 
-## Management UI (`@fuzefront/identity-ui`)
+## Management UI (`@fuzeone/identity-ui`)
 
 The UI lives in the identity-ui micro-frontend. Coordinate with the identity-ui plan for the exact page/route mount point. These are the component specs.
 
@@ -356,7 +356,7 @@ All components extend existing tokens. No one-off styles.
 | `backend/src/permit/schema.ts` | Add `ApiToken` resource + `create/read/revoke` actions for future fine-grained control (optional, phase 2) |
 | `backend/src/utils/permit/user-sync.ts` | Add `syncServiceTokenToPermit(tokenId, orgId, role)` and `removeServiceTokenFromPermit(tokenId)` |
 
-### New files — `@fuzefront/identity-ui`
+### New files — `@fuzeone/identity-ui`
 | File | Responsibility |
 |---|---|
 | `frontend/identity-ui/src/components/tokens/TokenCreateModal.tsx` | Create + one-time reveal modal |
@@ -432,7 +432,7 @@ Each task: write failing tests first, implement to green, verify.
 - [ ] Apply `express-rate-limit` with `skip` logic (only count 401 responses from `ff_live_` path)
 - [ ] Files: `backend/src/middleware/auth.ts` or new `backend/src/middleware/rate-limit.ts`
 
-### Task 11: `@fuzefront/identity-ui` — API client
+### Task 11: `@fuzeone/identity-ui` — API client
 - [ ] Write tests: `createToken()`, `listTokens()`, `revokeToken()` call correct endpoints
 - [ ] Implement `frontend/identity-ui/src/api/tokens.ts`
 - [ ] Files: `frontend/identity-ui/src/api/tokens.ts`

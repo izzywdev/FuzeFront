@@ -1,6 +1,6 @@
 /**
  * Account-security API client — thin, contract-bound wrapper over the Security
- * API paths the hub reads. All shapes come from `@fuzefront/security-client`.
+ * API paths the hub reads. All shapes come from `@fuzeone/security-client`.
  */
 import { HttpClient, type HttpClientOptions } from './http'
 import type { AccountSecurityClient, AuthMethods, IdentityConnections } from '../types'

@@ -63,7 +63,7 @@ function resolveClient(): FlagClientLike | null {
     // Lazy require so the service does not hard-require the client where the
     // family flag platform is not yet wired; absence → null → safe defaults.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@fuzefront/feature-flags')
+    const mod = require('@fuzeone/feature-flags')
     return typeof mod.getClient === 'function' ? mod.getClient() : null
   } catch {
     return null

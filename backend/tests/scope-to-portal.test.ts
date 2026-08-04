@@ -103,7 +103,7 @@ describe('resolvePortalScopeDecision', () => {
 
   it('IDENTITY DEVIATION (S6 AC4): flag-service unreachable fails CLOSED to ENFORCED, not to OFF', async () => {
     // No override on isPortalScopedUsersEnabled itself here — exercise the
-    // REAL fail-closed behavior (no @fuzefront/feature-flags package resolvable
+    // REAL fail-closed behavior (no @fuzeone/feature-flags package resolvable
     // in this test sandbox -> loadFlagsClient() returns null -> `true`).
     jest.restoreAllMocks()
 

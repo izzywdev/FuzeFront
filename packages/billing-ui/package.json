@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/billing-ui",
+  "name": "@fuzeone/billing-ui",
   "version": "1.0.0",
   "description": "Design-system-first React billing UI for the FuzeFront billing-service (plan picker, Stripe Payment Element checkout, subscription management, usage/credits, payment methods).",
   "license": "UNLICENSED",
@@ -38,14 +38,14 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "@fuzefront/billing-client": "^1.0.0",
+    "@fuzeone/billing-client": "^1.0.0",
     "@stripe/react-stripe-js": "^3.10.0",
     "@stripe/stripe-js": "^3.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@fuzefront/billing-client": "file:../../billing-client",
+    "@fuzeone/billing-client": "file:../../billing-client",
     "@stripe/react-stripe-js": "^3.10.0",
     "@stripe/stripe-js": "^3.5.0",
     "@testing-library/jest-dom": "^6.4.2",

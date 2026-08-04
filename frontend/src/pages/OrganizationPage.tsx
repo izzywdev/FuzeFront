@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../lib/shared'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
-import { IdentityPage } from '@fuzefront/identity-ui'
+import { IdentityPage } from '@fuzeone/identity-ui'
 import {
   getOrganizations,
   getOrganizationMembers,

@@ -3,7 +3,7 @@
 Each MFE self-registers with FuzeFront at pod startup via a Kubernetes init container.
 The registration manifest lives in the MFE's own repo — no FuzeFront coupling.
 
-> **Use [`@fuzefront/onboarding-kit`](../packages/onboarding-kit/README.md).** This
+> **Use [`@fuzeone/onboarding-kit`](../packages/onboarding-kit/README.md).** This
 > document describes the pattern; the kit is the implementation — `register.sh`,
 > valid-as-shipped templates, the Helm init-container snippet, and a generated
 > manifest schema. For a long time this page described a pattern that nothing

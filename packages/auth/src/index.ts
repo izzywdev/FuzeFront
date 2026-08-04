@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — public barrel (CONTRACT FREEZE).
+ * @fuzeone/auth — public barrel (CONTRACT FREEZE).
  *
  * The stable, family-wide authN/authZ client contract. Consumers import the
  * `Identity` shape + `verifyToken`/`requireAuth` here; the underlying token

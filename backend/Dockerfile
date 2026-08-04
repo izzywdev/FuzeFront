@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # IMPORTANT: build context is the REPOSITORY ROOT (see skaffold.yaml), not
-# backend/. This lets the backend consume the @fuzefront/shared workspace
+# backend/. This lets the backend consume the @fuzeone/shared workspace
 # (kafka sub-barrel) the same way services/email-service does. Only the kafka
 # sub-tree of shared is built (npm run build:kafka) so the server image needs no
 # React/DOM toolchain.
@@ -26,13 +26,13 @@ COPY custom-hostname-client/ ./custom-hostname-client/
 COPY backend/ ./backend/
 
 # Build shared kafka sub-tree, then the flag client, then the backend.
-# @fuzefront/feature-flags must be BUILT here: its package `main` points at
+# @fuzeone/feature-flags must be BUILT here: its package `main` points at
 # dist/, and without this the workspace symlink resolves to an empty package —
 # which is why the flag client was absent from the running image and every flag
 # silently took its in-code default.
 RUN cd shared && npm run build:kafka
 RUN cd packages/feature-flags && npm run build
-# Same reason as the flag client above: @fuzefront/custom-hostname-client's
+# Same reason as the flag client above: @fuzeone/custom-hostname-client's
 # `main`/`types` point at dist/, and backend/src/custom-domains imports it
 # STATICALLY. Without this build the workspace symlink resolves to an empty
 # package and the custom-domain layer would be inert in the running image.
@@ -49,7 +49,7 @@ WORKDIR /app
 
 # node_modules from the build stage. The full (dev+prod) root install hoists
 # shared's runtime deps (kafkajs, zod, react) to /app/node_modules — which is
-# where the @fuzefront/shared symlink (and shared/dist/kafka/*) resolves them.
+# where the @fuzeone/shared symlink (and shared/dist/kafka/*) resolves them.
 # A prod-only `--omit=dev` install does NOT hoist them consistently, so we take
 # the build stage's tree as-is. (Image carries devDeps; acceptable for parity.)
 COPY --from=build --chown=backend:nodejs /app/node_modules ./node_modules

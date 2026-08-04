@@ -1,6 +1,6 @@
 name: Custom hostname client tests
 
-# Tests @fuzefront/custom-hostname-client against FuzeInfra's REAL stub provider
+# Tests @fuzeone/custom-hostname-client against FuzeInfra's REAL stub provider
 # rather than a mock of it.
 #
 # The stub is the same FastAPI service that runs in production with

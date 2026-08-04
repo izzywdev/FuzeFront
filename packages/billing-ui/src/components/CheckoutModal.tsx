@@ -6,7 +6,7 @@ import {
   useStripe,
 } from '@stripe/react-stripe-js';
 import type { Stripe, StripeElementsOptions } from '@stripe/stripe-js';
-import type { Plan } from '@fuzefront/billing-client';
+import type { Plan } from '@fuzeone/billing-client';
 import { useBillingI18n } from '../i18n';
 import { Modal } from './Modal';
 import { Button, Notice } from './primitives';

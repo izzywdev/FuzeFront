@@ -3,7 +3,7 @@
 Policy: ``governance/identifier-standard.md``. The service that owns an entity
 mints its id; clients never supply one. Ids are opaque past the prefix.
 
-The Python peer of ``@fuzefront/shared/identity``. Both implementations are
+The Python peer of ``@fuzeone/shared/identity``. Both implementations are
 pinned by the same TypeID spec vectors and the same entity-prefix registry, so a
 reference minted by either is accepted by the other.
 """

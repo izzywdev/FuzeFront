@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { DataTable, RoleBadge, StatusPill, Button } from '@fuzefront/design-system'
+import { DataTable, RoleBadge, StatusPill, Button } from '@fuzeone/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { EmptyState } from '../common/EmptyState'
 import { formatDate, isExpired } from '../common/dates'

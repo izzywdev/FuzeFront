@@ -29,7 +29,7 @@ precedent all exist — the gaps are per-domain bootstrapping and de-branding, n
 
 - **A frozen app-registry contract.** `services/app-registry-service/openapi.yaml` (source of truth)
   + its Zod mirror `backend/applications/src/app-registry/manifest.schema.ts`, exposed as the
-  generated client `@fuzefront/app-registry-client` (repo package `apps-client/`). The `AppManifest`
+  generated client `@fuzeone/app-registry-client` (repo package `apps-client/`). The `AppManifest`
   already carries: `mode` (`portal | standalone`), **`routing.host`** — a dedicated per-app host,
   the contract's own example is `clock.fuzefront.com` — `chrome.{menu,topbar}`, and
   `infra.{auth,billing,api,deployOnFuzeInfra}` (per-app infra opt-in). This is the seam locked mode
@@ -147,7 +147,7 @@ gate** attaches here (see below). Deliverables:
      cert(s) — the same values that must appear in that host's `assetlinks.json`).
    - Constrain: `mode: locked` **requires** `routing.host` and `branding.appName`; a `locked` app's
      `chrome` is ignored (no host chrome exists to configure).
-2. **Regenerate the client** `@fuzefront/app-registry-client` (`openapi-typescript`), so UI / backend /
+2. **Regenerate the client** `@fuzeone/app-registry-client` (`openapi-typescript`), so UI / backend /
    tests share one `mode: 'locked'` + `branding` + `native` type. Spectral-lint the spec clean.
 3. **Add a reference fixture** to `services/app-registry-service/seed/examples.manifests.json` — a
    `fuzesocial` locked manifest (own host, branding, native block) as executable documentation of the
@@ -275,7 +275,7 @@ criterion (retire once the first locked product — FuzeSocial — is GA on its 
 ## Critical files
 
 - **Contract / client:** `services/app-registry-service/openapi.yaml`,
-  `backend/applications/src/app-registry/manifest.schema.ts`, `apps-client/src/` (`@fuzefront/app-registry-client`),
+  `backend/applications/src/app-registry/manifest.schema.ts`, `apps-client/src/` (`@fuzeone/app-registry-client`),
   `services/app-registry-service/seed/examples.manifests.json`.
 - **Frontend boot / surface / branding:** `frontend/src/App.tsx`, `frontend/src/main.tsx`,
   `frontend/src/platform/appManifest.ts` (`appHref`, `standaloneHost`, new `isLocked` / host-resolve),
@@ -295,7 +295,7 @@ criterion (retire once the first locked product — FuzeSocial — is GA on its 
 ## Verification (end-to-end)
 
 1. **Contract:** `spectral lint services/app-registry-service/openapi.yaml` clean; the regenerated
-   `@fuzefront/app-registry-client` type-checks; the Zod mirror accepts the `fuzesocial` locked
+   `@fuzeone/app-registry-client` type-checks; the Zod mirror accepts the `fuzesocial` locked
    fixture and rejects a `locked` manifest missing `routing.host` / `branding.appName`.
 2. **Approved-frames gate (runs now, no stack):** the white-label UX is frozen as static frames in
    `design/frames/locked-app-mode/` (login, locked shell, locked mobile, separate-native-apps) with a

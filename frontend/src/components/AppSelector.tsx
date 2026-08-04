@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { App } from '@fuzefront/app-registry-client'
-import { AppTile } from '@fuzefront/design-system'
+import type { App } from '@fuzeone/app-registry-client'
+import { AppTile } from '@fuzeone/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useRegisteredApps } from '../platform/appRegistry'
 import {

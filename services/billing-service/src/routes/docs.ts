@@ -10,7 +10,7 @@ import { join } from 'path';
  *
  * This is the "launch in Swagger" surface: wherever the service runs it exposes
  * an interactive view of the SAME `openapi.yaml` that generates
- * `@fuzefront/billing-client`. No auth — the contract is not a secret and holds
+ * `@fuzeone/billing-client`. No auth — the contract is not a secret and holds
  * no data. In deploy it is reachable behind the ingress at
  * `<origin>/api/v1/billing/docs`; locally at `http://localhost:3006/api/v1/billing/docs`.
  *

@@ -1,7 +1,7 @@
 # fuzefront-identity
 
 Server-owned entity identifiers and graph-create middleware for **Python**
-FuzeFront microservices. The peer of `@fuzefront/shared/identity` (Node).
+FuzeFront microservices. The peer of `@fuzeone/shared/identity` (Node).
 
 Policy: [`governance/identifier-standard.md`](../../governance/identifier-standard.md).
 

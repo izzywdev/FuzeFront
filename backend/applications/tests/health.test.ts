@@ -1,6 +1,6 @@
 import express from 'express'
 import request from 'supertest'
-import { createExpressApp, attachErrorHandlers } from '@fuzefront/core'
+import { createExpressApp, attachErrorHandlers } from '@fuzeone/core'
 
 describe('applications-service health', () => {
   let app: express.Express

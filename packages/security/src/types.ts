@@ -1,5 +1,5 @@
 /**
- * @fuzefront/security-client — provider-neutral Security contract types.
+ * @fuzeone/security-client — provider-neutral Security contract types.
  *
  * The FuzeFront-owned Security API is provider-agnostic: the identity provider
  * (federation/MFA/enrollment) and authorization engine (policy/ReBAC) are

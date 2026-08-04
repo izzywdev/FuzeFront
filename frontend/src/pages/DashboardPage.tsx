@@ -1,7 +1,7 @@
 import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
-import type { App as RegistryApp } from '@fuzefront/app-registry-client'
+import type { App as RegistryApp } from '@fuzeone/app-registry-client'
 
 /**
  * An app is visible on the dashboard when it is platform-global
@@ -35,7 +35,7 @@ function DashboardPage() {
   const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
   // BUG 2 root cause: this page previously called the legacy `fetchApps()`
-  // (`GET /apps`) instead of the same `@fuzefront/app-registry-client`
+  // (`GET /apps`) instead of the same `@fuzeone/app-registry-client`
   // source (`GET /api/v1/app-registry/apps?status=activated`) the sidebar
   // (SidePanel) already reads via `useRegisteredApps()`. For a Google/social
   // login, the legacy endpoint came back empty even though the registry API

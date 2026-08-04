@@ -1,4 +1,4 @@
-# `@fuzefront/onboarding-kit`
+# `@fuzeone/onboarding-kit`
 
 Everything a product repo needs to register itself with the FuzeFront portal at
 deploy time — **with no manual step and no FuzeFront-side edit**.

@@ -1,6 +1,6 @@
 /**
  * Internal domain types shared across billing-service services, routes, and
- * handlers. The public client-facing types live in `@fuzefront/billing-client`.
+ * handlers. The public client-facing types live in `@fuzeone/billing-client`.
  */
 
 export type EntityType = 'user' | 'organization';

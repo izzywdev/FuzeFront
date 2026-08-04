@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — authz client + requirePermission guard.
+ * @fuzeone/auth — authz client + requirePermission guard.
  *
  * Every test injects a mock fetch; nothing here touches a network. The bias of
  * this suite is deliberate: most cases assert that something is DENIED, because

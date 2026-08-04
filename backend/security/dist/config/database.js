@@ -14,8 +14,8 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// Thin re-export shim. The db config + helpers now live in @fuzefront/core so
+// Thin re-export shim. The db config + helpers now live in @fuzeone/core so
 // every backend service shares one implementation. Copied domain modules import
 // `../config/database` unchanged; this shim forwards to core.
-__exportStar(require("@fuzefront/core"), exports);
+__exportStar(require("@fuzeone/core"), exports);
 //# sourceMappingURL=database.js.map

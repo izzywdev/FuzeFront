@@ -13,8 +13,8 @@ export default defineConfig({
   esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
-      '@fuzefront/design-system': dsRoot + '/index.js',
-      '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/design-system': dsRoot + '/index.js',
+      '@fuzeone/portal-client': portalClientSrc,
     },
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },

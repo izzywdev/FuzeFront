@@ -18,7 +18,7 @@ is executed by the domain agents (`backend-engineer`, `frontend-engineer`, `bill
 | Epic Key | Title | GitHub | Domain | Priority | Status |
 |----------|-------|--------|--------|----------|--------|
 | [FF-EPIC-01](epics/EPIC-01-billing-payments-ux.md) | Billing / Payments UX overhaul | [#119](https://github.com/izzywdev/FuzeFront/issues/119) | Billing | High | Ready |
-| [FF-EPIC-02](epics/EPIC-02-ai-chat-platform.md) | AI Chat platform (`@fuzefront/chat-ui` + chat microservice) | [#120](https://github.com/izzywdev/FuzeFront/issues/120) | AI / Chat | High | Ready |
+| [FF-EPIC-02](epics/EPIC-02-ai-chat-platform.md) | AI Chat platform (`@fuzeone/chat-ui` + chat microservice) | [#120](https://github.com/izzywdev/FuzeFront/issues/120) | AI / Chat | High | Ready |
 | [FF-EPIC-03](epics/EPIC-03-security-org-management-ui.md) | Security / Org-management UI | [#121](https://github.com/izzywdev/FuzeFront/issues/121) | Identity / Security | High | Ready |
 | [FF-EPIC-04](epics/EPIC-04-federated-app-platform.md) | Federated App Platform implementation | [#122](https://github.com/izzywdev/FuzeFront/issues/122) | Platform | Critical | Ready |
 | [FF-EPIC-05](epics/EPIC-05-multi-product-authn-authz.md) | Multi-product AuthN / AuthZ | [#115](https://github.com/izzywdev/FuzeFront/issues/115) | Identity / Security | High | Ready |
@@ -81,7 +81,7 @@ A later script/agent can mechanically create Jira issues from these files:
 |-------|---------|
 | `fuzefront` | Every FuzeFront epic/story (the product label). |
 | `billing` · `chat` · `identity` · `security` · `platform` · `feature-flags` · `devops` · `governance` | Domain routing labels. |
-| `design-system-first` | UI work that must extend `@fuzefront/design-system` (no raw hex/spacing/type). |
+| `design-system-first` | UI work that must extend `@fuzeone/design-system` (no raw hex/spacing/type). |
 | `contract-first` | Work gated on a frozen OpenAPI/event contract before fan-out. |
 | `paginated` | List endpoint/UI subject to the `gate-pagination` standard. |
 | `permit-gated` | AuthZ enforced by Permit.io (real authz, never a UI/feature flag). |

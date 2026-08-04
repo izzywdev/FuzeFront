@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Modal, Button, Toast } from '@fuzefront/design-system'
+import { Modal, Button, Toast } from '@fuzeone/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 
 export interface RevokeConfirmDialogProps {

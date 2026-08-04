@@ -79,7 +79,7 @@ is irreversible; FuzeSocial: publishing a post is public and irreversible. Those
 
 This is the biggest gap between "built" and "adopted".
 
-**`@fuzefront/security-client` v0.2.0 already exists** and is exactly the right
+**`@fuzeone/security-client` v0.2.0 already exists** and is exactly the right
 abstraction — products never name Authentik:
 
 | Concern | Endpoint |
@@ -89,10 +89,10 @@ abstraction — products never name Authentik:
 | social | `/v1/security/social/{provider}/start`, `/social/callback` |
 | password | `/v1/security/password`, `/session/password/reset-*` |
 
-Plus `@fuzefront/identity-ui` for the sign-in/sign-up redirect surface.
+Plus `@fuzeone/identity-ui` for the sign-in/sign-up redirect surface.
 
-**Measured adoption: zero.** No product depends on `@fuzefront/security-client` or
-`@fuzefront/identity-ui`. Worse, three reference Authentik or Permit **directly** — the
+**Measured adoption: zero.** No product depends on `@fuzeone/security-client` or
+`@fuzeone/identity-ui`. Worse, three reference Authentik or Permit **directly** — the
 precise coupling this goal forbids:
 
 | repo | files naming authentik/permit |
@@ -135,7 +135,7 @@ Two distinct surfaces are being conflated and should not be:
 - **The FuzeOne admin surface** — cross-org, cross-user management *of* the product. This
   is a different authority level: it manages tenants, not domain objects.
 
-`@fuzefront/security-client` already exposes what it needs:
+`@fuzeone/security-client` already exposes what it needs:
 `/v1/security/tenants`, `/tenants/{id}/members`, `/tenants/{id}/roles`,
 `/tenants/{id}/members/{userId}/roles`.
 

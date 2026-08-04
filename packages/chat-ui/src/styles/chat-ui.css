@@ -1,11 +1,11 @@
 /* ============================================================
-   @fuzefront/chat-ui — component styles.
+   @fuzeone/chat-ui — component styles.
 
    RULES (enforced by the design-system-first contract):
    - ZERO hard-coded colors / spacing / type. Every value is a
      design-system CSS variable (--bg-*, --text-*, --accent-*,
      --space-*, --radius-*, --font-*, --seam, --shadow-*, …)
-     defined by @fuzefront/design-system / frontend/src/index.css.
+     defined by @fuzeone/design-system / frontend/src/index.css.
    - RTL/LTR mirrors automatically: only LOGICAL properties
      (margin-inline, padding-inline-start, inset-inline-end,
      border-start-*, text-align: start). No left/right.

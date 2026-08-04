@@ -1,4 +1,4 @@
-// Startup wiring for the family flag client (@fuzefront/feature-flags).
+// Startup wiring for the family flag client (@fuzeone/feature-flags).
 //
 // Mirrors backend/src/utils/feature-flags.ts — deliberately duplicated rather
 // than shared, so a missing/broken flag package can never take a service down:
@@ -29,9 +29,9 @@ export async function initFeatureFlags(appName: string): Promise<void> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const flags = require('@fuzefront/feature-flags')
+    const flags = require('@fuzeone/feature-flags')
     if (typeof flags.init !== 'function') {
-      console.log('⚠️  [%s] @fuzefront/feature-flags has no init() — using defaults', appName)
+      console.log('⚠️  [%s] @fuzeone/feature-flags has no init() — using defaults', appName)
       return
     }
     await flags.init(

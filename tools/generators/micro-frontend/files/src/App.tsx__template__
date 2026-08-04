@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlatformProvider } from '@fuzefront/sdk';
+import { PlatformProvider } from '@fuzeone/sdk';
 
 function App() {
   return (

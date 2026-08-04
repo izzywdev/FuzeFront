@@ -2,9 +2,9 @@ import { defineConfig } from 'tsup';
 
 // Dual build: ESM (.js) + CJS (.cjs) + .d.ts for BOTH entries:
 //   index -> server surface (default)
-//   web   -> browser surface (@fuzefront/feature-flags/web)
+//   web   -> browser surface (@fuzeone/feature-flags/web)
 // ESM re-exports stay STATIC so host bundlers (vite/rollup) resolve named
-// exports correctly (same fix as @fuzefront/billing-client / chat-client).
+// exports correctly (same fix as @fuzeone/billing-client / chat-client).
 export default defineConfig({
   entry: ['src/index.ts', 'src/web.ts'],
   format: ['esm', 'cjs'],

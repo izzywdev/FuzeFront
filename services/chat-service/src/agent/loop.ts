@@ -10,7 +10,7 @@
 //   5. Report token usage to the caller (which emits billing.llm.usage).
 //   6. Emit a terminal `done` event.
 //
-// The emitted event union matches @fuzefront/chat-client's documented SSE wire
+// The emitted event union matches @fuzeone/chat-client's documented SSE wire
 // format (text_delta / rag_sources / done / error) — a deliberate deviation from
 // the plan's §6f Vercel-AI-SDK data-stream protocol (flagged in the PR).
 //

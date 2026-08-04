@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/payment-service",
+  "name": "@fuzeone/payment-service",
   "version": "0.1.0",
   "private": true,
   "description": "Vendor-neutral payment gateway for FuzeFront — the seam that absorbs ALL Stripe interaction and exposes a neutral Payment Provider API to billing-service and other consumers. Scaffold/gateway; not yet the live money path.",

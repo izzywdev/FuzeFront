@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/feature-flags",
+  "name": "@fuzeone/feature-flags",
   "version": "1.0.0",
   "description": "OpenFeature-based feature-flags client for FuzeFront, wrapping the Unleash provider with graceful degradation to defaults",
   "main": "dist/index.cjs",

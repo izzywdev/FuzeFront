@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — Express middleware tests (#117).
+ * @fuzeone/auth — Express middleware tests (#117).
  *
  * The middleware is the thing consumers actually mount, so these assert the
  * gate's contract: it never calls next() on an unauthenticated request, it

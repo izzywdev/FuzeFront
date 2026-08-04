@@ -483,7 +483,7 @@ wires the flag; it does not add new business logic.
 - **Blocked By:** FF-EPIC-15-S1 through S6 (the flag gates the whole epic's surface area).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** `@fuzefront/feature-flags` (OpenFeature + Unleash client) is already wired into `billing-service` / the monolith from prior flag work.
+- **Assumption:** `@fuzeone/feature-flags` (OpenFeature + Unleash client) is already wired into `billing-service` / the monolith from prior flag work.
 - **Risk:** A partially-flagged rollout (server gated, UI not) would show reseller UI with no working backend — mitigated by DoD requiring both server and UI gated together.
 
 #### 📎 References

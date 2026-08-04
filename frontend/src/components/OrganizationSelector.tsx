@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzefront/design-system'
+import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzeone/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {

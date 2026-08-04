@@ -1,5 +1,5 @@
 import React from 'react'
-import { Button, SeamDivider } from '@fuzefront/design-system'
+import { Button, SeamDivider } from '@fuzeone/design-system'
 
 export type EmptyStateVariant =
   | 'empty-members'

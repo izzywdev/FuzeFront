@@ -10,7 +10,7 @@ info:
 
     This contract is **derived from the real route handlers** in
     `services/chat-service/src/routes/chat.ts` and `src/app.ts`, and is the
-    single source of truth for `@fuzefront/chat-client`. Changing the API means
+    single source of truth for `@fuzeone/chat-client`. Changing the API means
     amending this file first (see the `api-contract-first` skill).
 
     The `ANTHROPIC_API_KEY` (and any LiteLLM master key) live only in the
@@ -36,7 +36,7 @@ info:
     ### Streaming surface (SSE)
     `POST /chat/stream` returns `text/event-stream`; each `data:` line is one
     JSON `ChatStreamEvent` (the discriminated union in `ChatStreamEvent`). The
-    event shape is intentionally AG-UI-compatible so the `@fuzefront/chat-ui`
+    event shape is intentionally AG-UI-compatible so the `@fuzeone/chat-ui`
     renderer can consume it without translation. The first event of every
     stream is `{ "type": "conversation", "conversationId": ... }` announcing
     the resolved thread so clients can reuse and resume it.

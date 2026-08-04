@@ -1,5 +1,5 @@
 // Feature-flag access for the app-registry slice. Reads flags via the family
-// OpenFeature client (`@fuzefront/feature-flags`) per the feature-flags skill —
+// OpenFeature client (`@fuzeone/feature-flags`) per the feature-flags skill —
 // we CONSUME flags here; the flag platform/taxonomy is owned by
 // feature-flags-engineer.
 //
@@ -54,7 +54,7 @@ function resolveClient(): FlagClientLike | null {
     // Lazy require so the service does not hard-require the client where the
     // family flag platform is not yet wired; absence → null → safe defaults.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@fuzefront/feature-flags')
+    const mod = require('@fuzeone/feature-flags')
     const client = typeof mod.getClient === 'function' ? mod.getClient() : null
     return client
   } catch {

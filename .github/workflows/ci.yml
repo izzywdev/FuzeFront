@@ -36,58 +36,58 @@ jobs:
           cd ../api-client && npm ci
           cd ../task-manager-app && npm ci
 
-      # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
-      # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
-      # dist/index.d.ts (like @fuzefront/design-system), NOT its TSX source — so
+      # Build the @fuzeone/identity-ui d.ts BEFORE the frontend type-check.
+      # frontend/tsconfig.json resolves @fuzeone/identity-ui to its built
+      # dist/index.d.ts (like @fuzeone/design-system), NOT its TSX source — so
       # the frontend's tsc consumes validated types instead of recompiling the
       # package's source under the frontend's separate @types/react + csstype
       # copy (which produced the csstype CSSProperties clash). Bundling/tests
       # still resolve from source via the vite/vitest aliases.
-      - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
-        run: npm run -w @fuzefront/identity-ui build
+      - name: Build @fuzeone/identity-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzeone/identity-ui build
 
-      # @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) re-exports
-      # @fuzefront/security-client's SessionResult/AuthMethods types, so
+      # @fuzeone/auth-ui (AuthPanel, consumed by LoginPage.tsx) re-exports
+      # @fuzeone/security-client's SessionResult/AuthMethods types, so
       # security-client's dist must exist before auth-ui's own d.ts build can
       # resolve them (frontend itself only ever imports security-client TYPES
       # straight from source via its tsconfig path — see api.ts — so it needs
       # no build step of its own).
-      - name: Build @fuzefront/security-client (dep for auth-ui build)
-        run: npm run -w @fuzefront/security-client build
+      - name: Build @fuzeone/security-client (dep for auth-ui build)
+        run: npm run -w @fuzeone/security-client build
 
-      # frontend/tsconfig.json resolves @fuzefront/auth-ui to its built
+      # frontend/tsconfig.json resolves @fuzeone/auth-ui to its built
       # dist/index.d.ts (like identity-ui/chat-ui/i18n) — same CSSProperties-
       # clash reasoning as the identity-ui comment above. Bundling/tests still
       # resolve it from source via the vite/vitest aliases.
-      - name: Build @fuzefront/auth-ui (d.ts for frontend type-check)
-        run: npm run -w @fuzefront/auth-ui build
+      - name: Build @fuzeone/auth-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzeone/auth-ui build
 
       - name: auth-ui — type-check (tsc --noEmit)
-        run: npm run -w @fuzefront/auth-ui type-check
+        run: npm run -w @fuzeone/auth-ui type-check
 
       - name: auth-ui — unit tests (vitest)
-        run: npm run -w @fuzefront/auth-ui test
+        run: npm run -w @fuzeone/auth-ui test
 
-      # @fuzefront/chat-ui is consumed by the host frontend (FuzeChatWidget) and
+      # @fuzeone/chat-ui is consumed by the host frontend (FuzeChatWidget) and
       # has NO vite source alias, so both the frontend type-check (tsconfig →
       # chat-ui/dist/index.d.ts) and `vite build` resolve it from dist. Build its
-      # dependency @fuzefront/chat-client first, then chat-ui.
-      - name: Build @fuzefront/chat-client + chat-ui (for frontend type-check)
+      # dependency @fuzeone/chat-client first, then chat-ui.
+      - name: Build @fuzeone/chat-client + chat-ui (for frontend type-check)
         run: |
-          npm run -w @fuzefront/chat-client build
-          npm run -w @fuzefront/chat-ui build
+          npm run -w @fuzeone/chat-client build
+          npm run -w @fuzeone/chat-ui build
 
-      # @fuzefront/i18n is consumed by the host (main.tsx, contexts, components).
+      # @fuzeone/i18n is consumed by the host (main.tsx, contexts, components).
       # frontend/tsconfig.json resolves it to dist/index.d.ts (like identity-ui),
       # so build it before the frontend type-check. vite/vitest still alias it to
       # source for bundling/tests.
-      - name: Build @fuzefront/i18n (d.ts for frontend type-check)
-        run: npm run -w @fuzefront/i18n build
+      - name: Build @fuzeone/i18n (d.ts for frontend type-check)
+        run: npm run -w @fuzeone/i18n build
 
-      - name: Build @fuzefront/custom-hostname-client (d.ts for backend type-check)
+      - name: Build @fuzeone/custom-hostname-client (d.ts for backend type-check)
         # Its `types` points at dist/, and backend/src/custom-domains imports it
         # statically, so backend's tsc cannot resolve it until this runs.
-        run: npm run -w @fuzefront/custom-hostname-client build
+        run: npm run -w @fuzeone/custom-hostname-client build
 
       - name: Type checking
         run: |
@@ -127,21 +127,21 @@ jobs:
           node-version: '24.x'
           cache: 'npm'
 
-      # Root install links the @fuzefront/* workspaces (design-system,
+      # Root install links the @fuzeone/* workspaces (design-system,
       # identity-ui, security-service, core, shared) as local symlinks, so no
       # GitHub Packages auth is needed here.
       - name: Install dependencies (root workspaces)
         run: npm ci
 
-      # --- @fuzefront/identity-ui -----------------------------------------
+      # --- @fuzeone/identity-ui -----------------------------------------
       - name: identity-ui — type-check (tsc --noEmit)
-        run: npm run -w @fuzefront/identity-ui type-check
+        run: npm run -w @fuzeone/identity-ui type-check
 
       - name: identity-ui — unit tests (vitest)
-        run: npm run -w @fuzefront/identity-ui test
+        run: npm run -w @fuzeone/identity-ui test
 
       - name: identity-ui — library build (es/cjs/d.ts)
-        run: npm run -w @fuzefront/identity-ui build
+        run: npm run -w @fuzeone/identity-ui build
 
       - name: identity-ui — assert build artifacts
         run: |
@@ -150,13 +150,13 @@ jobs:
           test -f packages/identity-ui/dist/index.d.ts
           echo "identity-ui dist artifacts present (es + cjs + d.ts)"
 
-      # --- @fuzefront/security-service (API tokens) -----------------------
+      # --- @fuzeone/security-service (API tokens) -----------------------
       # core + shared/kafka must be built first — the jest moduleNameMapper
       # resolves them from their dist/ output.
       - name: build core + shared (jest deps)
         run: |
-          npm run -w @fuzefront/core build
-          npm run -w @fuzefront/shared build
+          npm run -w @fuzeone/core build
+          npm run -w @fuzeone/shared build
 
       - name: security — API-token jest suite (DB mocked, no Postgres)
         run: |
@@ -190,22 +190,22 @@ jobs:
           cd ../sdk && npm ci
           cd ../task-manager-app && npm ci
 
-      # backend/src/custom-domains imports @fuzefront/custom-hostname-client
+      # backend/src/custom-domains imports @fuzeone/custom-hostname-client
       # statically and its `types` points at dist/, so the workspace symlink
       # resolves to an empty package until this runs. Must precede the backend
-      # build, exactly like @fuzefront/shared's kafka sub-tree.
-      - name: Build @fuzefront/custom-hostname-client (for backend build)
-        run: npm run -w @fuzefront/custom-hostname-client build
+      # build, exactly like @fuzeone/shared's kafka sub-tree.
+      - name: Build @fuzeone/custom-hostname-client (for backend build)
+        run: npm run -w @fuzeone/custom-hostname-client build
 
       - name: Build backend
         run: cd backend && npm run build
 
       # chat-ui is bundled into the host frontend from its dist (no vite source
       # alias), and depends on chat-client — build both before `vite build`.
-      - name: Build @fuzefront/chat-client + chat-ui (for frontend bundle)
+      - name: Build @fuzeone/chat-client + chat-ui (for frontend bundle)
         run: |
-          npm run -w @fuzefront/chat-client build
-          npm run -w @fuzefront/chat-ui build
+          npm run -w @fuzeone/chat-client build
+          npm run -w @fuzeone/chat-ui build
 
       - name: Build frontend
         run: cd frontend && npm run build
@@ -248,25 +248,25 @@ jobs:
           cache: 'npm'
 
       # chat-service IS a root workspace, so `npm ci` installs its deps and links
-      # @fuzefront/shared — no manual symlink needed (unlike the email-service job
+      # @fuzeone/shared — no manual symlink needed (unlike the email-service job
       # below, which predates that). Its Dockerfile relies on the same workspace
       # membership via `npm ci --workspace=services/chat-service`.
       - name: Install workspace
         run: npm ci
 
-      - name: Build @fuzefront/shared
+      - name: Build @fuzeone/shared
         # chat-service imports the Kafka client + billing.llm.usage schema from
         # shared, and tsc resolves it through shared/dist.
-        run: npm run -w @fuzefront/shared build
+        run: npm run -w @fuzeone/shared build
 
       - name: Type-check chat-service
-        run: npm run -w @fuzefront/chat-service build
+        run: npm run -w @fuzeone/chat-service build
 
       - name: Run chat-service unit tests
         # Covers the RAG pipeline, agent loop + tools, Permit gating, repos
         # (incl. the continuous-thread resolution), routes, and the db-migrate
         # Job entrypoint. These had never run in CI before.
-        run: npm run -w @fuzefront/chat-service test
+        run: npm run -w @fuzeone/chat-service test
 
   notification-service-tests:
     name: Notification service (unit)
@@ -289,13 +289,13 @@ jobs:
         run: npm ci
 
       - name: Type-check notification-service
-        run: npm run -w @fuzefront/notification-service build
+        run: npm run -w @fuzeone/notification-service build
 
       - name: Run notification-service unit tests
         # Covers the routes (auth derivation, internal-publish fail-closed,
         # read vs seen), the SSE hub (per-user isolation, stream cap, dead-client
         # handling) and the auth middleware.
-        run: npm run -w @fuzefront/notification-service test
+        run: npm run -w @fuzeone/notification-service test
 
   integration-tests:
     name: Integration Tests
@@ -377,11 +377,11 @@ jobs:
 
       - name: Install email-service deps
         # email-service is not in the root workspace so npm install can't resolve
-        # @fuzefront/shared via workspace symlinks. Link shared directly first,
+        # @fuzeone/shared via workspace symlinks. Link shared directly first,
         # then install remaining deps (no package-lock.json, so npm install not ci).
         run: |
           mkdir -p services/email-service/node_modules/@fuzefront
-          ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzefront/shared
+          ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzeone/shared
           cd services/email-service && npm install --ignore-scripts
 
       - name: Build email-service
@@ -497,7 +497,7 @@ jobs:
         run: |
           echo "::notice title=Contract tier::No services/*/openapi.yaml found yet."
           echo "TODO (contract-first, see CLAUDE.md): freeze + PR an OpenAPI spec per"
-          echo "service, generate the @fuzefront/<svc>-client from it, and this tier"
+          echo "service, generate the @fuzeone/<svc>-client from it, and this tier"
           echo "will Spectral-lint each spec and boot a Prism mock automatically —"
           echo "no workflow edits required (discovery is already wired above)."
 

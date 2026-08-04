@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { I18nProvider } from '@fuzefront/i18n'
+import { I18nProvider } from '@fuzeone/i18n'
 import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -9,10 +9,10 @@ import { resources } from './i18n/resources'
 import { migrateLegacySession } from './lib/accounts'
 import App from './App.tsx'
 // Design-system token scales (spacing / type / radii / motion) the DS
-// components — e.g. the <Select> rendered by @fuzefront/i18n's
+// components — e.g. the <Select> rendered by @fuzeone/i18n's
 // LanguageSelector — depend on. Imported before index.css so the host's own
 // color theme (defined there) still wins where the two overlap.
-import '@fuzefront/design-system/styles.css'
+import '@fuzeone/design-system/styles.css'
 import './index.css'
 import { registerServiceWorker } from './registerServiceWorker'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/app-registry-client",
+  "name": "@fuzeone/app-registry-client",
   "version": "1.0.0",
   "description": "Typed HTTP client + manifest types for the FuzeFront app-registry API",
   "main": "dist/index.cjs",

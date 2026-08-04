@@ -1,5 +1,5 @@
 /**
- * @fuzefront/i18n-translate — build-time AI translation for FuzeFront locales.
+ * @fuzeone/i18n-translate — build-time AI translation for FuzeFront locales.
  *
  * Library entry point. The CLI (`fuzefront-i18n-translate`) is in `cli.ts`.
  */

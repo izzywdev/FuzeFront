@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/portal-client",
+  "name": "@fuzeone/portal-client",
   "version": "1.0.0",
   "description": "Typed HTTP client + types for the FuzeFront multi-tenant portal API (context + master-admin CRUD)",
   "main": "dist/index.cjs",

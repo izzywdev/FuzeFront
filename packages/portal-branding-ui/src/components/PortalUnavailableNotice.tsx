@@ -1,4 +1,4 @@
-import { EmptyState } from '@fuzefront/design-system'
+import { EmptyState } from '@fuzeone/design-system'
 
 /**
  * The suspended-portal fail-closed surface (frame 05, `data-state="suspended"`,

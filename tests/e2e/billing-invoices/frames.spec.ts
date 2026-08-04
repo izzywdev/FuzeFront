@@ -7,7 +7,7 @@ import path from 'node:path'
  * PRE-PRODUCTION verification — the FROZEN approved design frames.
  *
  * Independent front-end verification for the Billing "Invoice history" UI. The
- * React component (`@fuzefront/billing-ui → InvoiceHistoryPanel`) is NOT built
+ * React component (`@fuzeone/billing-ui → InvoiceHistoryPanel`) is NOT built
  * yet — it is gated on UX approval — so this pass pins the *frozen visual +
  * structural contract* the implementation will be checked against, using the
  * static approval frames in `design/frames/billing-invoices/` over `file://`

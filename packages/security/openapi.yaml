@@ -14,7 +14,7 @@ info:
     the authorization engine (policy / ReBAC) are **swappable implementations**
     hidden behind internal adapter interfaces (`IdentityProvider`,
     `AuthorizationProvider`). Consumers, the frontend SPA, and federated remotes
-    know **only** this API and the generated `@fuzefront/security-client` — never
+    know **only** this API and the generated `@fuzeone/security-client` — never
     a vendor. We can switch or blend providers for features/cost without any
     consumer change.
 
@@ -1526,7 +1526,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorBody'
   schemas:
-    # ── AuthN request/response shapes (kept compatible with today's @fuzefront/auth) ──
+    # ── AuthN request/response shapes (kept compatible with today's @fuzeone/auth) ──
     LoginRequest:
       type: object
       additionalProperties: false
@@ -1714,7 +1714,7 @@ components:
       description: >-
         The STABLE normalized identity, invariant across token-format
         migrations. Mirrors the TypeScript `Identity` interface in
-        `@fuzefront/security-client`. Provider-neutral.
+        `@fuzeone/security-client`. Provider-neutral.
       properties:
         userId:
           type: string

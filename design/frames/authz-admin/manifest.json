@@ -1,11 +1,11 @@
 {
   "name": "Access administration — approval frames",
   "description": "Contract-freeze UX artifacts for the vendor-neutral tenant/org access-administration surface (members, roles, invite/add, change-role, remove) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
-    "client": "@fuzefront/security-client",
+    "client": "@fuzeone/security-client",
     "schemas": [
       "Member",
       "MemberCreate",
@@ -24,7 +24,7 @@
       "409 LAST_ADMIN on demote (PUT .../members/{userId}/roles) — does not exist in the contract today",
       "409 LAST_ADMIN on remove (DELETE .../members/{userId}) — does not exist in the contract today"
     ],
-    "component": "@fuzefront/access-admin-ui → AccessAdminFlow",
+    "component": "@fuzeone/access-admin-ui → AccessAdminFlow",
     "featureFlag": "fuzefront.security.access-admin"
   },
   "build": {
@@ -49,7 +49,7 @@
       "AccessDeniedNotice"
     ],
     "packages": [
-      "@fuzefront/access-admin-ui"
+      "@fuzeone/access-admin-ui"
     ]
   },
   "frames": [

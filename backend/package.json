@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/backend",
+  "name": "@fuzeone/backend",
   "version": "1.0.0",
   "description": "FuzeFront platform backend API server",
   "main": "dist/index.js",
@@ -24,9 +24,9 @@
     "version": "echo $npm_package_version"
   },
   "dependencies": {
-    "@fuzefront/custom-hostname-client": "1.0.0",
-    "@fuzefront/feature-flags": "1.0.0",
-    "@fuzefront/shared": "1.0.0",
+    "@fuzeone/custom-hostname-client": "1.0.0",
+    "@fuzeone/feature-flags": "1.0.0",
+    "@fuzeone/shared": "1.0.0",
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.6",

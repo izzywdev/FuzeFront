@@ -7,7 +7,7 @@ import { test, expect, type Page } from '@playwright/test'
  *                     E2E_USER_EMAIL=… E2E_USER_PASSWORD=… \
  *                     npx playwright test -c tests/e2e/billing-invoices/playwright.config.ts -g @postprod )
  *
- * The React component (`@fuzefront/billing-ui → InvoiceHistoryPanel`) now EXISTS
+ * The React component (`@fuzeone/billing-ui → InvoiceHistoryPanel`) now EXISTS
  * and is verified pre-production by `built-component.spec.ts`; this smoke targets
  * the built component's real `data-panel` / `data-testid` selectors on the live
  * `/billing` route. It SKIPS CLEANLY (never a false green, never a hard fail)

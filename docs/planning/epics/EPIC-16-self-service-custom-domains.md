@@ -284,7 +284,7 @@ self-explanatory.
 - **Risk:** The status-combination matrix is large (5 verification states × 3 TLS states) — mitigated by DoD explicitly requiring every combination to be tested, not just the happy path.
 
 #### 📎 References
-- `portal_domains` schema: FF-EPIC-09. Design system: `@fuzefront/design-system`.
+- `portal_domains` schema: FF-EPIC-09. Design system: `@fuzeone/design-system`.
 
 ---
 
@@ -332,7 +332,7 @@ stable at first rollout.
 - **Blocked By:** FF-EPIC-16-S1 through S3 (the flag gates the whole epic's surface area).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** `@fuzefront/feature-flags` client is already wired into the backend from prior flag work (e.g. FF-EPIC-09's master flag).
+- **Assumption:** `@fuzeone/feature-flags` client is already wired into the backend from prior flag work (e.g. FF-EPIC-09's master flag).
 - **Risk:** None beyond the epic's general FuzeInfra dependency, already called out at S2.
 
 #### 📎 References

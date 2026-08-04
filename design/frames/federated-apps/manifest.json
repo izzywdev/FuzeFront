@@ -1,10 +1,10 @@
 {
   "name": "Federated App Platform — approval frames",
   "description": "Contract-freeze UX artifacts for the federated-app platform. Approving these frames approves the App Manifest model before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* attributes.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "contract": {
     "openapi": "services/app-registry-service/openapi.yaml",
-    "client": "@fuzefront/app-registry-client",
+    "client": "@fuzeone/app-registry-client",
     "events": "shared/src/kafka/schemas/app.*",
     "manifestSchema": "components.schemas.AppManifest"
   },

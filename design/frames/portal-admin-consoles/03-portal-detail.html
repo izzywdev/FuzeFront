@@ -74,12 +74,12 @@
 
   <p class="note">
     <b>Contract.</b> Counts + branding + domains come from
-    <code>GET /api/v1/admin/portals/{portalId}</code> (anticipated <code>@fuzefront/portal-client</code>).
+    <code>GET /api/v1/admin/portals/{portalId}</code> (anticipated <code>@fuzeone/portal-client</code>).
     <code>portal_domains</code> carries <code>domain</code>, <code>kind</code>
     (<code>subdomain</code>|<code>path</code>|<code>custom</code>) and verification/TLS status — rendered
     read-only here; add/verify is FF-EPIC-16. Suspend is
     <code>PATCH .../{portalId}</code> <code>{ status: "suspended" }</code>, confirmed via a dialog
-    (states frame, d). User counts reference the real <code>@fuzefront/security-client</code> member
+    (states frame, d). User counts reference the real <code>@fuzeone/security-client</code> member
     surface; app counts reference the anticipated per-portal catalog (<code>portal_apps</code>).
   </p>
 

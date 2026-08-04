@@ -3,18 +3,18 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
-import { Alert } from '@fuzefront/design-system'
-import { AuthPanel } from '@fuzefront/auth-ui'
+import { Alert } from '@fuzeone/design-system'
+import { AuthPanel } from '@fuzeone/auth-ui'
 import type {
   AuthTransport,
   AuthPanelMode,
   AuthenticatedSession,
   MfaRequiredChallenge,
-} from '@fuzefront/auth-ui'
+} from '@fuzeone/auth-ui'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
 
 /**
- * LoginPage — a thin adapter around `@fuzefront/auth-ui`'s `AuthPanel`.
+ * LoginPage — a thin adapter around `@fuzeone/auth-ui`'s `AuthPanel`.
  *
  * All email/password/signup/Google/MFA form markup + state now live ONCE in
  * AuthPanel (packages/auth-ui). This page only supplies:
@@ -27,7 +27,7 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  *     form-submit concern, so it stays here rather than moving into AuthPanel.
  *
  * KNOWN GAP vs. the pre-refactor page (tracked for a fast-follow to
- * @fuzefront/auth-ui, not fixed here): AuthPanel v0.1.0 does not yet implement
+ * @fuzeone/auth-ui, not fixed here): AuthPanel v0.1.0 does not yet implement
  * the signup confirm-password field, the password-policy checklist gating
  * submit, or the inline email-availability check that the old LoginPage had.
  * Those are UI capabilities the reusable component does not yet expose — they

@@ -1,8 +1,8 @@
 /*
- * @fuzefront/auth-ui — layout styles for AuthPanel / the vanilla mount.
+ * @fuzeone/auth-ui — layout styles for AuthPanel / the vanilla mount.
  *
  * Every value here is a design-system token (`var(--*)` from
- * `@fuzefront/design-system`). The DS primitives (Button, Input, Alert,
+ * `@fuzeone/design-system`). The DS primitives (Button, Input, Alert,
  * SeamDivider, CenteredCard) own their own presentation inline; these rules
  * only lay out the wrapper markup around them. Logical properties throughout
  * so the panel mirrors automatically under RTL locales.

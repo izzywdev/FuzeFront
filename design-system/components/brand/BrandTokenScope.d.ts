@@ -41,7 +41,7 @@ export interface BrandTokenScopeProps
 
 /**
  * Applies a validated portal brand accent as a scoped CSS-var override layered
- * over the base `@fuzefront/design-system` tokens, with WCAG 2.1 AA contrast
+ * over the base `@fuzeone/design-system` tokens, with WCAG 2.1 AA contrast
  * fallback and malformed-color rejection (FF-EPIC-13 S3 AC3/AC4).
  */
 export function BrandTokenScope(props: BrandTokenScopeProps): React.JSX.Element;

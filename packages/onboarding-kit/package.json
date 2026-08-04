@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/onboarding-kit",
+  "name": "@fuzeone/onboarding-kit",
   "version": "1.0.0",
   "description": "Drop-in self-registration kit for FuzeFront apps — registration script, manifest schema, policy/billing templates, and the Helm init-container snippet",
   "files": [

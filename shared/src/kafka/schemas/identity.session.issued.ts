@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Topic: `identity.session.issued`
  * Emitted when the identity service issues an auth session token for a
- * principal (local login or OIDC callback). Part of the @fuzefront/auth
+ * principal (local login or OIDC callback). Part of the @fuzeone/auth
  * contract (#117): consumers can react to sessions without parsing tokens.
  *
  * NOTE: never carries the token itself — only non-secret session metadata.

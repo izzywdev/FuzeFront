@@ -1,5 +1,5 @@
 import { handleEmailRequested, HandlerDeps } from '../../src/handlers/email-requested.handler';
-import { FuzeEvent, TOPICS, NotifyEmailRequestedPayloadV1 } from '@fuzefront/shared';
+import { FuzeEvent, TOPICS, NotifyEmailRequestedPayloadV1 } from '@fuzeone/shared';
 
 function makeEvent(overrides: Partial<NotifyEmailRequestedPayloadV1> = {}): FuzeEvent<NotifyEmailRequestedPayloadV1> {
   return {

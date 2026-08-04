@@ -7,7 +7,7 @@
 // tamper-proof, no Unleash token reaches the browser, and no new public host is
 // needed (/api/* is already same-origin routed).
 //
-// Flags are evaluated through @fuzefront/feature-flags (OpenFeature); every
+// Flags are evaluated through @fuzeone/feature-flags (OpenFeature); every
 // failure path returns the flag's declared fail-safe default, so an Unleash
 // outage degrades to "release flags OFF" rather than erroring the shell.
 import { Router, Response } from 'express'
@@ -46,7 +46,7 @@ function loadFlags(): {
 } {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@fuzefront/feature-flags')
+    const mod = require('@fuzeone/feature-flags')
     const catalog: FlagDescriptor[] = Array.isArray(mod.WEB_EXPOSED_FLAGS)
       ? mod.WEB_EXPOSED_FLAGS
       : []

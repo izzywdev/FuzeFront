@@ -21,7 +21,7 @@ export default defineConfig({
         'react',
         'react-dom',
         'react/jsx-runtime',
-        '@fuzefront/design-system',
+        '@fuzeone/design-system',
         /^@fuzefront\/design-system\/.*/,
       ],
     },
@@ -34,7 +34,7 @@ export default defineConfig({
     // Resolve the design-system to its source folder so unit tests don't depend
     // on the npm workspace symlink (which requires GitHub Packages auth to link).
     alias: {
-      '@fuzefront/design-system': dsRoot + '/index.js',
+      '@fuzeone/design-system': dsRoot + '/index.js',
     },
   },
 })

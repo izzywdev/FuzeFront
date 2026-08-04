@@ -1,5 +1,5 @@
 import React, { Component, ReactNode } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert } from '@fuzeone/design-system'
 
 interface Props {
   children: ReactNode

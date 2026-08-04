@@ -1,4 +1,4 @@
-import { FuzeEvent, NotifyEmailRequestedPayloadV1, TypedProducer } from '@fuzefront/shared';
+import { FuzeEvent, NotifyEmailRequestedPayloadV1, TypedProducer } from '@fuzeone/shared';
 import { EmailProvider } from '../providers';
 export interface HandlerDeps {
     provider: EmailProvider;

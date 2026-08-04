@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Mirror `services/email-service` structure exactly: same tsconfig, jest.config, Dockerfile 3-stage pattern, package.json scripts, port naming.
-- No Kafka. sms-service has no `@fuzefront/shared` dependency.
+- No Kafka. sms-service has no `@fuzeone/shared` dependency.
 - Twilio Verify API only — no raw Messaging / A2P-10DLC.
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` come from chart Secret (empty defaults → inert/mock mode).
 - `SMS_AUTH_SECRET` shared-secret header used by Authentik to authenticate requests.
@@ -74,7 +74,7 @@
 
 ```json
 {
-  "name": "@fuzefront/sms-service",
+  "name": "@fuzeone/sms-service",
   "version": "1.0.0",
   "description": "Twilio Verify SMS OTP gateway for FuzeFront MFA",
   "main": "dist/index.js",

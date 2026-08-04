@@ -61,7 +61,7 @@ jobs:
         working-directory: services/billing-service
         # Matches the service Dockerfile (`npm install --ignore-scripts`): this
         # package is standalone (not a workspace member), and no shared build is
-        # needed — jest maps @fuzefront/shared to the TS source via moduleNameMapper.
+        # needed — jest maps @fuzeone/shared to the TS source via moduleNameMapper.
         run: npm install --ignore-scripts
 
       - name: Run invoice DB integration + acceptance suites (real Postgres)

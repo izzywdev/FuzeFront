@@ -1,4 +1,4 @@
-// Copy the component stylesheet into dist so `@fuzefront/chat-ui/styles.css`
+// Copy the component stylesheet into dist so `@fuzeone/chat-ui/styles.css`
 // resolves for consumers. The CSS contains ONLY design-system token references
 // (var(--bg-*), var(--space-*), …) and logical properties — no hard-coded values.
 import { copyFileSync, mkdirSync } from 'node:fs';

@@ -52,7 +52,7 @@ domain: Billing
 > Reuse the existing billing proxy pattern (`backend/src/routes/billing.ts`) → billing-service → Stripe.
 > Same-origin API base (no absolute host). New endpoints `GET /billing/invoices` (paginated per
 > `gate-pagination`) and `POST /billing/portal` (`billingPortal.sessions.create`). All routes
-> org-scoped + BOLA-authorized like the existing billing routes. UI extends `@fuzefront/design-system`
+> org-scoped + BOLA-authorized like the existing billing routes. UI extends `@fuzeone/design-system`
 > ("fuse seam") — no raw hex/spacing/type; add a `PricingCard` primitive to the DS if missing.
 
 ### 📊 Success Metrics
@@ -99,7 +99,7 @@ domain: Billing
 
 #### 📌 Background & Context
 The current `/billing` page renders bare plan boxes. This story replaces them with a proper pricing-card
-grid sourced from the existing plan data, design-system-first (extend `@fuzefront/design-system`).
+grid sourced from the existing plan data, design-system-first (extend `@fuzeone/design-system`).
 
 #### ✅ Acceptance Criteria
 1. **Given** an authenticated Org Admin on `/billing` **When** the plans load **Then** each plan renders as a card with tier name, price + interval, feature bullets, and a clear CTA.
@@ -280,7 +280,7 @@ Ties the three views together into a coherent Billing area in the shell nav, des
 - **Blocked By:** S1, S2, S3 (the three views the tabs host).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** A DS `Tabs` primitive exists or will be added to `@fuzefront/design-system`.
+- **Assumption:** A DS `Tabs` primitive exists or will be added to `@fuzeone/design-system`.
 - **Risk:** Routing collision with existing `/billing` route → reserve `/billing/:tab` namespace.
 
 #### 📎 References

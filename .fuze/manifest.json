@@ -36,8 +36,8 @@
     "note": "Mandated MINIMUMS for this repo and every consuming remote — see the 'Toolchain baseline' section of CLAUDE.md. FuzeFront is the Module-Federation host, so moduleFederationRequiredVersion must be identical here and in every remote or the remote loads its own React copy and fails with 'Invalid hook call'. Raising the floor is fine; lowering it is a breaking change to the family. Declarative only — no CI gate reads this today."
   },
   "designSystem": {
-    "base": "@fuzefront/design-system",
-    "extendsAs": "@fuzefront/design-system",
+    "base": "@fuzeone/design-system",
+    "extendsAs": "@fuzeone/design-system",
     "propagation": {
       "workflow": ".github/workflows/ds-propagate.yml",
       "trigger": "push:master:design-system/**",

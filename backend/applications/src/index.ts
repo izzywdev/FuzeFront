@@ -19,7 +19,7 @@ import {
   initializeDatabaseConnection,
   configureDatabase,
   waitForTable,
-} from '@fuzefront/core'
+} from '@fuzeone/core'
 
 import appsRoutes from './routes/apps'
 import appRegistryRoutes from './routes/app-registry'

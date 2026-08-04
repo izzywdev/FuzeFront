@@ -2,7 +2,7 @@
 
 > **This is not a FuzeFront service.** Nothing here is built, deployed, or run by
 > this repo. It is a pinned copy of a contract FuzeInfra owns, vendored so that
-> `@fuzefront/custom-hostname-client` is generated from a byte-stable input.
+> `@fuzeone/custom-hostname-client` is generated from a byte-stable input.
 
 The real service lives at
 [`izzywdev/FuzeInfra:services/custom-hostname-api/`](https://github.com/izzywdev/FuzeInfra/tree/main/services/custom-hostname-api)

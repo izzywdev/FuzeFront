@@ -1,6 +1,6 @@
 name: Onboarding kit tests
 
-# @fuzefront/onboarding-kit is what every consuming product copies into
+# @fuzeone/onboarding-kit is what every consuming product copies into
 # registration/ — its register.sh submits the product's AuthZ policy, and its
 # validate-policy.mjs is the check products run in their own CI. A regression here
 # ships to every product in the family, so it gets its own gate rather than riding

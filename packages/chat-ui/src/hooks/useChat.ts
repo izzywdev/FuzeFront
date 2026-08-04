@@ -13,7 +13,7 @@ import type {
   ChatMessage,
   ChatServiceClient,
   ConversationMessage,
-} from '@fuzefront/chat-client';
+} from '@fuzeone/chat-client';
 import { chatReducer, initialModel, type ChatModel } from './chatReducer';
 import type { UiMessage } from './types';
 

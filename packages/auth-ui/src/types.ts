@@ -1,12 +1,12 @@
 /**
- * Auth contract types — re-exported from the frozen `@fuzefront/security-client`
+ * Auth contract types — re-exported from the frozen `@fuzeone/security-client`
  * contract (never hand-redefined here). `AuthenticatedSession` and
  * `MfaRequiredChallenge` are the two variants of the generated `SessionResult`
  * discriminated union; the security-client only exports the hand-authored
  * union at the top level, so the variants are derived via `Extract` against
  * that same union rather than reached for separately from `components`.
  */
-import type { SessionResult, AuthMethods } from '@fuzefront/security-client'
+import type { SessionResult, AuthMethods } from '@fuzeone/security-client'
 
 export type { SessionResult, AuthMethods }
 

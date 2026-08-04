@@ -1,7 +1,7 @@
 {
   "name": "White-label tenant portal — shell & login (approval frames)",
   "description": "Contract-freeze UX artifacts for the FuzeFront white-label tenant portal: one shell (topbar + side panel + app grid) and one login, reskinned to the active portal's name/logo/accent from GET /api/v1/portal/context, applied entirely through design-system token overrides (no raw hex). Covers loading (no-flash), error, and the fail-closed cases (suspended portal, unknown-host root fallback, cross-portal login rejection) plus light/dark theming. Approving these frames approves the flows, components, DS primitive, and package in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — approving portal-shell unblocks that flow independently of portal-login.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "epics": [
     "FF-EPIC-13",
     "FF-EPIC-10"
@@ -13,7 +13,7 @@
   "approvedAt": null,
   "contract": {
     "openapi": "services/portal-service/openapi.yaml",
-    "client": "@fuzefront/portal-client",
+    "client": "@fuzeone/portal-client",
     "schemas": [
       "components.schemas.PortalContext",
       "components.schemas.PortalBranding",
@@ -23,10 +23,10 @@
     "endpoints": [
       "GET /api/v1/portal/context"
     ],
-    "component": "@fuzefront/portal-branding-ui → PortalShell / PortalLoginFlow",
+    "component": "@fuzeone/portal-branding-ui → PortalShell / PortalLoginFlow",
     "featureFlag": "fuzefront.platform.multi-tenant-portals",
     "dependsOn": [
-      "FF-EPIC-10-S2: GET /api/v1/portal/context boot endpoint (public/pre-auth) — the contract + @fuzefront/portal-client are authored by contract-designer, not in this frames PR.",
+      "FF-EPIC-10-S2: GET /api/v1/portal/context boot endpoint (public/pre-auth) — the contract + @fuzeone/portal-client are authored by contract-designer, not in this frames PR.",
       "FF-EPIC-09: portals.branding jsonb (name/logo/favicon/accent/tagline) + seeded root portal.",
       "FF-EPIC-10-S1/S3: resolvePortalContext fail-closed (suspended 403, unknown-host root fallback) + portal_id JWT binding (cross-portal rejection)."
     ],
@@ -69,16 +69,16 @@
       "PortalUnavailableNotice"
     ],
     "designSystemPrimitives": [
-      "BrandTokenScope (applies a validated portal accent as scoped CSS-var overrides layered over base @fuzefront/design-system tokens, with WCAG 2.1 AA contrast fallback + malformed-color rejection) — NET-NEW in @fuzefront/design-system; frontend-engineer is the sole editor of design-system/.",
+      "BrandTokenScope (applies a validated portal accent as scoped CSS-var overrides layered over base @fuzeone/design-system tokens, with WCAG 2.1 AA contrast fallback + malformed-color rejection) — NET-NEW in @fuzeone/design-system; frontend-engineer is the sole editor of design-system/.",
       "Logo slot primitive (img with initials/default fallback — never a broken-image icon) — add to the base DS if not already present."
     ],
     "packages": [
-      "@fuzefront/portal-branding-ui"
+      "@fuzeone/portal-branding-ui"
     ],
     "consumes": [
-      "@fuzefront/design-system (base tokens + primitives — extended, never forked)",
+      "@fuzeone/design-system (base tokens + primitives — extended, never forked)",
       "host shell ThemeContext (extended from light/dark-only — not a parallel theming mechanism)",
-      "@fuzefront/portal-client (from contract-designer, FF-EPIC-10)"
+      "@fuzeone/portal-client (from contract-designer, FF-EPIC-10)"
     ]
   },
   "entry": "index.html",

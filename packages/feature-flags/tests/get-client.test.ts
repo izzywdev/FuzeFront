@@ -5,7 +5,7 @@ import { WEB_EXPOSED_FLAGS } from '../src/catalog';
 /**
  * `getClient()` is the export `backend/applications/src/app-registry/flags.ts`
  * (and the host's /api/flags route) resolve via
- * `require('@fuzefront/feature-flags').getClient()`. It was MISSING, so those
+ * `require('@fuzeone/feature-flags').getClient()`. It was MISSING, so those
  * callers got `undefined`, fell back to null, and every flag silently took its
  * in-code default regardless of Unleash. These tests pin the contract.
  */

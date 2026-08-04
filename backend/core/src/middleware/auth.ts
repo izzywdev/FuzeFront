@@ -5,7 +5,7 @@ import { User } from '../types/shared'
 
 /**
  * JWT auth middleware shared by every FuzeFront backend service. Depends only on
- * `db` (the @fuzefront/core knex singleton, configured by the consuming service)
+ * `db` (the @fuzeone/core knex singleton, configured by the consuming service)
  * and `JWT_SECRET`. No Permit / business logic — that stays in the owning
  * service. Verifies the bearer token and loads the user row into `req.user`.
  */

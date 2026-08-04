@@ -3,7 +3,7 @@
  *
  * Regression cover for the prod BUG 2: a Google/social-login user saw
  * "No applications available" on the dashboard while the sidebar (backed by
- * the same `@fuzefront/app-registry-client` registry) correctly listed all 3
+ * the same `@fuzeone/app-registry-client` registry) correctly listed all 3
  * activated apps. Root cause: DashboardPage read a different, legacy
  * `fetchApps()` (`GET /apps`) source instead of `useRegisteredApps()`
  * (`GET /api/v1/app-registry/apps?status=activated`) — the one source that
@@ -18,7 +18,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import type { App as RegistryApp } from '@fuzefront/app-registry-client'
+import type { App as RegistryApp } from '@fuzeone/app-registry-client'
 
 vi.mock('../lib/shared', async () => {
   const actual = await vi.importActual<typeof import('../lib/shared')>(

@@ -454,7 +454,7 @@ export function demoPortfolio(): Partial<Portfolio> {
     {
       id: 'ui:FuzeFront:frontend:route:/settings/billing',
       repositoryId,
-      packageName: '@fuzefront/frontend',
+      packageName: '@fuzeone/frontend',
       kind: 'route',
       name: '/settings/billing',
       sourcePath: 'frontend/src/App.tsx',
@@ -467,7 +467,7 @@ export function demoPortfolio(): Partial<Portfolio> {
     {
       id: 'ui:FuzeFront:billing-ui:component:PlanPicker',
       repositoryId,
-      packageName: '@fuzefront/billing-ui',
+      packageName: '@fuzeone/billing-ui',
       kind: 'component',
       name: 'PlanPicker',
       sourcePath: 'packages/billing-ui/src/PlanPicker.tsx',

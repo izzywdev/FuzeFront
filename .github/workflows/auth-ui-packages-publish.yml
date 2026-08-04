@@ -1,16 +1,16 @@
 # Publish the auth-ui package to GitHub Packages under the @izzywdev scope.
 #
 # GitHub Packages requires the npm scope to match the repository owner, so the
-# canonical @fuzefront/auth-ui name cannot publish until the org transfer
+# canonical @fuzeone/auth-ui name cannot publish until the org transfer
 # completes (see packages-publish.yml, which stays the long-term path and no-ops
 # until then). Consuming apps need auth-ui TODAY, so this workflow publishes the
 # same build under an owner-scoped alias name:
 #
-#   @fuzefront/auth-ui -> @izzywdev/fuzefront-auth-ui
+#   @fuzeone/auth-ui -> @izzywdev/fuzefront-auth-ui
 #
 # Consumers install via an npm alias so their imports keep the canonical name:
 #
-#   "@fuzefront/auth-ui": "npm:@izzywdev/fuzefront-auth-ui@^0.1.0"
+#   "@fuzeone/auth-ui": "npm:@izzywdev/fuzefront-auth-ui@^0.1.0"
 #
 # Once the org transfer lands and packages-publish.yml activates, consumers drop
 # the alias and this workflow is deleted. Publishing is idempotent: a version that
@@ -45,21 +45,21 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@izzywdev'
 
-      # Install the whole workspace so auth-ui's @fuzefront/* deps
+      # Install the whole workspace so auth-ui's @fuzeone/* deps
       # (design-system, security-client) resolve from SOURCE via workspace
       # symlinks. A per-package `npm install --workspaces=false` instead tries to
-      # fetch @fuzefront/design-system@1.0.0 from the registry, which 404s — it
+      # fetch @fuzeone/design-system@1.0.0 from the registry, which 404s — it
       # has never been published (the reason these alias workflows exist).
-      - name: Install workspace (links @fuzefront/* from source)
+      - name: Install workspace (links @fuzeone/* from source)
         run: npm ci --no-audit --no-fund
 
       # Build the in-repo dependencies first (auth-ui imports their built output
       # / types), then auth-ui itself — all via workspace-scoped scripts.
       - name: Build design-system, security-client, then auth-ui
         run: |
-          npm run build -w @fuzefront/design-system
-          npm run build -w @fuzefront/security-client
-          npm run build -w @fuzefront/auth-ui
+          npm run build -w @fuzeone/design-system
+          npm run build -w @fuzeone/security-client
+          npm run build -w @fuzeone/auth-ui
 
       - name: Publish @izzywdev/fuzefront-auth-ui
         working-directory: packages/auth-ui

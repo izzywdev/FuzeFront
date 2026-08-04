@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — `requirePermission()`, the policy-backed Express guard.
+ * @fuzeone/auth — `requirePermission()`, the policy-backed Express guard.
  *
  * Runs AFTER `requireAuth()` and reads `req.identity`. Where `requireRoles()`
  * can only compare role strings the token already carried (coarse RBAC),

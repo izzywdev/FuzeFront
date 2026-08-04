@@ -2,7 +2,7 @@
 // Builds dist/auth-ui.vanilla.js — a zero-dependency IIFE (no React/React-DOM
 // in the bundle) exposing `window.FuzeFrontAuthUI.mount(container, opts)`.
 // Run after the main `vite build` (see package.json `build` script); also
-// copies styles.css into dist so `@fuzefront/auth-ui/styles.css` resolves.
+// copies styles.css into dist so `@fuzeone/auth-ui/styles.css` resolves.
 import { build } from 'esbuild'
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

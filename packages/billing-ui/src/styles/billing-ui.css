@@ -1,11 +1,11 @@
 /* ============================================================
-   @fuzefront/billing-ui — component styles.
+   @fuzeone/billing-ui — component styles.
 
    RULES (enforced by the design-system-first contract):
    - ZERO hard-coded colors / spacing / type. Every value is a
      design-system CSS variable (--bg-*, --text-*, --accent-*,
      --space-*, --radius-*, --font-*, --seam, --shadow-*, …)
-     defined by @fuzefront/design-system / frontend/src/index.css.
+     defined by @fuzeone/design-system / frontend/src/index.css.
    - RTL/LTR mirrors automatically: only LOGICAL properties
      (margin-inline, padding-inline-*, inset-inline-*, border-start-*,
      text-align: start). No left/right.
@@ -488,7 +488,7 @@
 /* ---- Invoice history --------------------------------------- */
 /* Soft status fills. The semantic `*-soft` tokens are derived here from the
    design-system status color tokens via color-mix (tokens-only, no raw
-   hex/rgb) — mirroring @fuzefront/design-system's intended semantic *-soft
+   hex/rgb) — mirroring @fuzeone/design-system's intended semantic *-soft
    ramp. Scoped to the panel so they collapse cleanly if the DS publishes
    global *-soft tokens later. */
 .ffb-invoices {

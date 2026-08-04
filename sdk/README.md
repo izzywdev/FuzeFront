@@ -111,7 +111,7 @@ FuzeFront supports three integration types:
 Apps can register themselves at runtime:
 
 ```typescript
-import { registerWithHub } from '@fuzefront/sdk-react'
+import { registerWithHub } from '@fuzeone/sdk-react'
 
 const appId = await registerWithHub({
   name: 'My App',
@@ -130,7 +130,7 @@ const appId = await registerWithHub({
 Keep your app alive with heartbeats:
 
 ```typescript
-import { createHeartbeat } from '@fuzefront/sdk-react'
+import { createHeartbeat } from '@fuzeone/sdk-react'
 
 const heartbeat = createHeartbeat({
   appId: 'your-app-id',

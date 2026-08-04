@@ -10,7 +10,7 @@ info:
 
     This contract is **derived from the real route handlers** in
     `services/billing-service/src/routes/*` and `src/app.ts` and is the single
-    source of truth for `@fuzefront/billing-client`. Changing the API means
+    source of truth for `@fuzeone/billing-client`. Changing the API means
     amending this file first (see the `api-contract-first` skill).
 
     Card data never flows through this API — only provider ids and client secrets.
@@ -754,7 +754,7 @@ components:
       scheme: bearer
       description: >-
         `BILLING_INTERNAL_TOKEN` presented as a Bearer token by the backend /
-        `@fuzefront/billing-client` on all non-public routes. Verified by
+        `@fuzeone/billing-client` on all non-public routes. Verified by
         `requireInternalToken`.
 
   parameters:

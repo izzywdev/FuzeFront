@@ -36,7 +36,7 @@
  * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
  * None of `/admin/portals`, `/portal/admin`, `/portal/admin/users`,
  * `/portal/admin/catalog`, or `/portal/admin/billing` exist yet, and neither
- * `@fuzefront/portal-admin-ui` nor `@fuzefront/billing-ui`'s PortalBillingFlow is
+ * `@fuzeone/portal-admin-ui` nor `@fuzeone/billing-ui`'s PortalBillingFlow is
  * built. Every test below is EXPECTED to fail today, and it must fail for the
  * RIGHT reason: the panel/table/dialog markers are ABSENT from the DOM — not a
  * harness/config error.
@@ -49,12 +49,12 @@
  * (manifest.frames[].testHooks) — never a fixture id borrowed from the design
  * mockup's sample data (e.g. "prt_northwind"). Where a scenario needs specific
  * data (e.g. a suspended row, a slug conflict), this spec intercepts the
- * ANTICIPATED contract endpoints named in the manifest (`@fuzefront/portal-client`
+ * ANTICIPATED contract endpoints named in the manifest (`@fuzeone/portal-client`
  * — not frozen yet, FF-EPIC-09-S3) with its own controlled fixtures, so the
  * assertions exercise the CONTRACT the frame declares independent of real seed
  * data. The REAL, frozen endpoints this build also consumes
- * (`@fuzefront/security-client`, `@fuzefront/app-registry-client`,
- * `@fuzefront/billing-client`) are intercepted the same way for determinism.
+ * (`@fuzeone/security-client`, `@fuzeone/app-registry-client`,
+ * `@fuzeone/billing-client`) are intercepted the same way for determinism.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
  *   BASE_URL=http://fuzefront.dev.local npx playwright test tests/portal-admin-consoles.red

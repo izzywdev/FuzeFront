@@ -5,8 +5,8 @@ import type {
   AppMode,
   IntegrationType,
   Visibility,
-} from '@fuzefront/app-registry-client'
-import { Input, Select, Button, Badge } from '@fuzefront/design-system'
+} from '@fuzeone/app-registry-client'
+import { Input, Select, Button, Badge } from '@fuzeone/design-system'
 import { useAppRegistry } from '../platform/appRegistry'
 
 const SLUG_RE = /^[a-z0-9-]+$/

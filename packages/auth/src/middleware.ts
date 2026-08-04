@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — Express middleware contract (CONTRACT FREEZE).
+ * @fuzeone/auth — Express middleware contract (CONTRACT FREEZE).
  *
  * `requireAuth()` is the frozen Express middleware every FuzeFront-family
  * service mounts to gate a route. It:

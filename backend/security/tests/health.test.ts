@@ -3,7 +3,7 @@ import request from 'supertest'
 import {
   createExpressApp,
   attachErrorHandlers,
-} from '@fuzefront/core'
+} from '@fuzeone/core'
 
 // Lightweight smoke test: the shared bootstrap produces a working Express app
 // and the health endpoint returns a security-service-shaped payload. No DB

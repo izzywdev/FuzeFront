@@ -11,7 +11,7 @@ module.exports = {
     // `tsc --noEmit`.
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tests/tsconfig.json', isolatedModules: true }],
   },
-  // Map @fuzefront/shared to the kafka sub-barrel (TypeScript source) so ts-jest can compile it.
+  // Map @fuzeone/shared to the kafka sub-barrel (TypeScript source) so ts-jest can compile it.
   // shared dist is ESM (module: esnext); chat-service tests run in CommonJS via ts-jest.
   // The shared kafka source imports kafkajs + zod, and shared has no node_modules of its own,
   // so those must resolve from here.
@@ -21,7 +21,7 @@ module.exports = {
   // not exist. require.resolve walks up from this config and finds the package wherever npm put
   // it, so this holds under both hoisted and nested installs.
   moduleNameMapper: {
-    '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
+    '^@fuzeone/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
     '^kafkajs$': require.resolve('kafkajs'),
     '^zod$': require.resolve('zod'),
   },

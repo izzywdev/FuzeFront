@@ -1,4 +1,4 @@
-import { FuzeEvent, IdentityUserCreatedPayloadV1 } from '@fuzefront/shared/kafka';
+import { FuzeEvent, IdentityUserCreatedPayloadV1 } from '@fuzeone/shared/kafka';
 import { callProvision, HttpClient, nodeFetchClient } from './provision';
 
 export interface HandlerDeps {

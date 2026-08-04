@@ -4,7 +4,7 @@ import {
   TOPICS,
   billingSubscriptionChangedSchemaV1,
   BillingSubscriptionChangedPayloadV1,
-} from '@fuzefront/shared/kafka'
+} from '@fuzeone/shared/kafka'
 import { db } from '../config/database'
 
 /**

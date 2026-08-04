@@ -41,8 +41,8 @@ RUN apk add --no-cache dumb-init && \
     addgroup -S emailservice && adduser -S emailservice -G emailservice -u 1001
 
 COPY --from=base /app/services/email-service/node_modules ./services/email-service/node_modules
-# shared/package.json is required so the @fuzefront/shared workspace symlink
-# (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
+# shared/package.json is required so the @fuzeone/shared workspace symlink
+# (node_modules/@fuzeone/shared -> ../../shared) resolves "main: dist/index.js"
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/services/email-service/dist ./services/email-service/dist
@@ -52,7 +52,7 @@ RUN find ./services/email-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/email-service
 
-# shared/dist/kafka/* (loaded via the @fuzefront/shared symlink) requires kafkajs
+# shared/dist/kafka/* (loaded via the @fuzeone/shared symlink) requires kafkajs
 # and zod. Node.js resolves requires from the real file path (/app/shared/dist/…),
 # which walks up through /app/shared/ — but shared has no node_modules in this
 # image. NODE_PATH adds email-service/node_modules as a fallback search path so

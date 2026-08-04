@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert } from '@fuzeone/design-system'
 import { useAppContext, App } from '../lib/shared'
 import {
   createApp,

@@ -38,12 +38,12 @@
 
 | Option | Fit | DX | Notes |
 |---|---|---|---|
-| **`@fuzefront/core` npm workspace package** | Full | Good — typed, tree-shaken | Mirrors `@fuzefront/shared`. Already a precedent in the repo. |
+| **`@fuzeone/core` npm workspace package** | Full | Good — typed, tree-shaken | Mirrors `@fuzeone/shared`. Already a precedent in the repo. |
 | Copy-paste per service | Low | Bad — drift | Rejected. |
 | Symlinks within monorepo | Low | Fragile | Docker multi-stage build breaks symlinks. |
 | HTTP/gRPC internal API | Partial | High effort | For data, not for shared code like db config. |
 
-**Recommendation:** New `@fuzefront/core` workspace package at `backend/core/`. Strict no-side-effects — pure config, types, and bootstrap utilities.
+**Recommendation:** New `@fuzeone/core` workspace package at `backend/core/`. Strict no-side-effects — pure config, types, and bootstrap utilities.
 
 ### 2c. Migration ownership strategy
 
@@ -87,7 +87,7 @@ All identity, access control, provisioning, and session management:
 | `src/migrations/008_create_fuzefront_user.ts` (tombstone) | `security/src/migrations/008_...` |
 | `src/migrations/009_provisioning_backbone.ts` | `security/src/migrations/009_...` |
 | `src/seeds/001_initial_users.ts` | `security/src/seeds/001_...` |
-| `src/types/shared.ts` (User, Organization, Membership, Session, Permission, CommandEvent, SocketMessage, MenuItem types) | Re-export from `@fuzefront/core` |
+| `src/types/shared.ts` (User, Organization, Membership, Session, Permission, CommandEvent, SocketMessage, MenuItem types) | Re-export from `@fuzeone/core` |
 | `src/types/express.d.ts` | `security/src/types/express.d.ts` |
 
 **Routes exposed by security-service:**
@@ -140,9 +140,9 @@ All app framework logic — registration, Module-Federation remote management, h
 
 **WebSocket:** Socket.IO server lives here. Applications-service owns `/socket.io/`.
 
-**Note on auth middleware:** Applications-service imports `authenticateToken` and `requireRole` from `@fuzefront/core` (where they are re-exported as thin wrappers around JWT + DB lookup). The Permit `permissions.ts` middleware is security-service–only; app-level permission checks remain Permit-based but the middleware module is imported from `@fuzefront/core` (exported by security-service into core at extraction time, or duplicated into core).
+**Note on auth middleware:** Applications-service imports `authenticateToken` and `requireRole` from `@fuzeone/core` (where they are re-exported as thin wrappers around JWT + DB lookup). The Permit `permissions.ts` middleware is security-service–only; app-level permission checks remain Permit-based but the middleware module is imported from `@fuzeone/core` (exported by security-service into core at extraction time, or duplicated into core).
 
-**Decision:** Export `authenticateToken` and `requireRole` from `@fuzefront/core`. They only depend on `db` and `JWT_SECRET`. Move `permissions.ts` (Permit-based) to `security/src/middleware/permissions.ts` and also publish it as an export from a future `@fuzefront/security-client` package if applications-service needs Permit checks; for now applications-service uses JWT-only auth (`requireRole`).
+**Decision:** Export `authenticateToken` and `requireRole` from `@fuzeone/core`. They only depend on `db` and `JWT_SECRET`. Move `permissions.ts` (Permit-based) to `security/src/middleware/permissions.ts` and also publish it as an export from a future `@fuzeone/security-client` package if applications-service needs Permit checks; for now applications-service uses JWT-only auth (`requireRole`).
 
 ---
 
@@ -158,7 +158,7 @@ The thin backend retains port 3001 (no breaking change to existing nginx `proxy_
 
 **Contents of thin backend `src/`:**
 - `index.ts` — minimal Express: health + readiness endpoints, graceful shutdown, CORS, helmet. No domain routes. **Does NOT call `initializeDatabase()` or `runMigrations()`** — the thin backend owns no schema. DB connection is used only for health-check (`checkDatabaseHealth()`).
-- `config/database.ts` — subset: only `checkDatabaseHealth()` + connection (no `runMigrations`, `runSeeds`). Or just import from `@fuzefront/core`.
+- `config/database.ts` — subset: only `checkDatabaseHealth()` + connection (no `runMigrations`, `runSeeds`). Or just import from `@fuzeone/core`.
 - No routes beyond `/health`.
 - No Socket.IO.
 - No Kafka.
@@ -168,13 +168,13 @@ The thin backend retains port 3001 (no breaking change to existing nginx `proxy_
 
 ---
 
-## 4. Shared Package: `@fuzefront/core`
+## 4. Shared Package: `@fuzeone/core`
 
 New workspace package at `backend/core/`:
 
 ```
 backend/core/
-  package.json         name: @fuzefront/core, version: 1.0.0
+  package.json         name: @fuzeone/core, version: 1.0.0
   tsconfig.json
   src/
     config/
@@ -195,16 +195,16 @@ backend/core/
 ```
 
 **`getDatabaseConfig` tableName plumbing (I1 — required):**  
-Today `database.ts` hardcodes `tableName: 'knex_migrations'`. `@fuzefront/core`'s `getDatabaseConfig()` must accept a `migrationsTableName?: string` parameter. Each service passes its own value:
+Today `database.ts` hardcodes `tableName: 'knex_migrations'`. `@fuzeone/core`'s `getDatabaseConfig()` must accept a `migrationsTableName?: string` parameter. Each service passes its own value:
 - security-service: `'knex_migrations'` (default — keeps the existing table name)
 - applications-service: `'knex_migrations_apps'`
 - thin backend: does not call `runMigrations`; tableName is irrelevant
 
 **Consumed by:** security-service, applications-service, thin backend, and (in the future) any new microservice added to FuzeFront.
 
-**NOT in core:** Permit config/utils (security-service only), OIDC service (security-service only), organizationProvisioning (security-service only), Socket.IO (applications-service only), Kafka eventPublisher (security-service for now; shared kafka barrel already in `@fuzefront/shared`).
+**NOT in core:** Permit config/utils (security-service only), OIDC service (security-service only), organizationProvisioning (security-service only), Socket.IO (applications-service only), Kafka eventPublisher (security-service for now; shared kafka barrel already in `@fuzeone/shared`).
 
-**Package boundary:** `@fuzefront/core` exports are intentionally boring: config + types + express bootstrap. Zero business logic. Business logic lives in the owning service.
+**Package boundary:** `@fuzeone/core` exports are intentionally boring: config + types + express bootstrap. Zero business logic. Business logic lives in the owning service.
 
 ---
 
@@ -252,7 +252,7 @@ Each service mirrors the current backend structure:
 backend/
   security/
     Dockerfile
-    package.json            name: @fuzefront/security-service
+    package.json            name: @fuzeone/security-service
     tsconfig.json
     jest.config.js
     src/
@@ -270,7 +270,7 @@ backend/
 
   applications/
     Dockerfile
-    package.json            name: @fuzefront/applications-service
+    package.json            name: @fuzeone/applications-service
     tsconfig.json
     jest.config.js
     src/
@@ -285,7 +285,7 @@ backend/
       types/
 
   core/
-    package.json            name: @fuzefront/core
+    package.json            name: @fuzeone/core
     tsconfig.json
     src/
       config/database.ts    (getDatabaseConfig accepts optional migrationsTableName)
@@ -299,22 +299,22 @@ backend/
   package.json              (updated: no domain deps)
   src/
     index.ts                (health only; does NOT call runMigrations)
-    config/database.ts      → imports from @fuzefront/core
+    config/database.ts      → imports from @fuzeone/core
 ```
 
 ### Dockerfile pattern (security-service example)
 
 ```dockerfile
-# Build stage (root context — needs @fuzefront/shared kafka barrel)
+# Build stage (root context — needs @fuzeone/shared kafka barrel)
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
 COPY backend/security/ ./backend/security/
-RUN npm ci --workspace=@fuzefront/core --workspace=@fuzefront/security-service
-RUN npm run build --workspace=@fuzefront/core
-RUN npm run build --workspace=@fuzefront/security-service
+RUN npm ci --workspace=@fuzeone/core --workspace=@fuzeone/security-service
+RUN npm run build --workspace=@fuzeone/core
+RUN npm run build --workspace=@fuzeone/security-service
 
 # Runtime stage
 FROM node:20-alpine
@@ -327,7 +327,7 @@ CMD ["node", "dist/index.js"]
 
 Each service's Dockerfile sets `NODE_ENV=production` in the runtime stage. The TypeScript build must emit compiled migrations to `dist/migrations/` — verify that `tsconfig.json` includes the `migrations/` directory in `include`. Without this, `runMigrations()` finds no files in production (M3).
 
-The root Dockerfile context (`.`) is kept for all three services (same as the current backend/Dockerfile) so the `@fuzefront/shared` kafka barrel is reachable.
+The root Dockerfile context (`.`) is kept for all three services (same as the current backend/Dockerfile) so the `@fuzeone/shared` kafka barrel is reachable.
 
 ---
 
@@ -597,10 +597,10 @@ When Phase 3 sets `securityService.enabled: true` and `applicationsService.enabl
 **Goal:** Create the shared core package and empty service scaffolds. No routes moved. No ingress changed.
 
 Steps:
-1. Create `backend/core/` with `package.json` (name `@fuzefront/core`), `tsconfig.json`, copy `config/database.ts` (updated to accept `migrationsTableName` parameter), `middleware/auth.ts`, `types/shared.ts`, `types/express.d.ts`, `bootstrap/index.ts`.
+1. Create `backend/core/` with `package.json` (name `@fuzeone/core`), `tsconfig.json`, copy `config/database.ts` (updated to accept `migrationsTableName` parameter), `middleware/auth.ts`, `types/shared.ts`, `types/express.d.ts`, `bootstrap/index.ts`.
 2. Update root `package.json` workspaces to include `backend/core`, `backend/security`, `backend/applications`.
-3. Create `backend/security/` scaffold: `package.json` (deps: `@fuzefront/core`, `@fuzefront/shared`, `express`, `permitio`, `openid-client`, `knex`, `pg`, `kafkajs`, `bcryptjs`, `jsonwebtoken`, `uuid`), `tsconfig.json`, `jest.config.js`, empty `src/index.ts` (health only on :3002).
-4. Create `backend/applications/` scaffold: `package.json` (deps: `@fuzefront/core`, `@fuzefront/shared`, `express`, `knex`, `pg`, `socket.io`, `jsonwebtoken`, `uuid`), `tsconfig.json`, `jest.config.js`, empty `src/index.ts` (health only on :3003).
+3. Create `backend/security/` scaffold: `package.json` (deps: `@fuzeone/core`, `@fuzeone/shared`, `express`, `permitio`, `openid-client`, `knex`, `pg`, `kafkajs`, `bcryptjs`, `jsonwebtoken`, `uuid`), `tsconfig.json`, `jest.config.js`, empty `src/index.ts` (health only on :3002).
+4. Create `backend/applications/` scaffold: `package.json` (deps: `@fuzeone/core`, `@fuzeone/shared`, `express`, `knex`, `pg`, `socket.io`, `jsonwebtoken`, `uuid`), `tsconfig.json`, `jest.config.js`, empty `src/index.ts` (health only on :3003).
 5. Create Dockerfiles for both new services (include `ENV NODE_ENV=production`; ensure `tsconfig.json` emits `dist/migrations/`).
 6. Add Helm templates (`security.yaml`, `applications.yaml`) with `enabled: false`.
 7. Add values entries with `enabled: false`.
@@ -617,7 +617,7 @@ Steps:
 
 Steps:
 1. Copy (not move yet) routes/auth, routes/organizations, routes/internal, services/oidc, services/organizationProvisioning, services/eventPublisher, middleware/auth, middleware/permissions, utils/permit/*, config/permit, permit/schema, migrations 001–009 (with 002 and 006 as no-op tombstones), seeds/001 to `backend/security/src/`.
-2. Update imports in copied files to use `@fuzefront/core` for db config, auth middleware, types.
+2. Update imports in copied files to use `@fuzeone/core` for db config, auth middleware, types.
 3. Wire `backend/security/src/index.ts` to mount the routes and call `initializeDatabase()` (with `migrationsTableName: 'knex_migrations'`) on :3002.
 4. Enable security-service in `values-local.yaml` only.
 5. Deploy locally (`skaffold run`): both `fuzefront-backend:3001` and `fuzefront-security:3002` serve auth/org routes in parallel.
@@ -639,7 +639,7 @@ Steps:
 1. Copy routes/apps, sockets/socketHandler to `backend/applications/src/`.
 2. Write idempotent migrations 001 (`hasTable` guard) and 002 (enum `DO $$` + `hasColumn` guards) in `applications/src/migrations/`.
 3. Write idempotent seed 001_initial_apps (INSERT … ON CONFLICT DO NOTHING).
-4. Update imports to use `@fuzefront/core`.
+4. Update imports to use `@fuzeone/core`.
 5. Wire `backend/applications/src/index.ts`: mount apps routes on :3003, initialize Socket.IO, call `initializeDatabase()` with `migrationsTableName: 'knex_migrations_apps'` and extended `waitForPostgres` that also polls for the `organizations` table.
 6. Enable applications-service in `values-local.yaml`.
 7. Deploy locally.
@@ -688,9 +688,9 @@ Steps:
 
 Steps:
 1. Delete from `backend/src/`: `routes/auth.ts`, `routes/apps.ts`, `routes/organizations.ts`, `routes/internal.ts`, `services/`, `middleware/permissions.ts`, `utils/permit/`, `config/permit.ts`, `permit/`.
-2. Keep in `backend/src/`: `index.ts` (health-only, no `runMigrations`), `config/database.ts` (health check only, re-exported from `@fuzefront/core`), `types/` (re-exports from `@fuzefront/core`).
+2. Keep in `backend/src/`: `index.ts` (health-only, no `runMigrations`), `config/database.ts` (health check only, re-exported from `@fuzeone/core`), `types/` (re-exports from `@fuzeone/core`).
 3. Update `backend/package.json`: remove `permitio`, `openid-client`, `kafkajs`, `socket.io`, `bcryptjs`, `passport*` deps.
-4. Keep `@fuzefront/shared` (transitively needed for health-check Kafka no-op).
+4. Keep `@fuzeone/shared` (transitively needed for health-check Kafka no-op).
 5. Update all import paths in `backend/src/index.ts`.
 6. Run tests.
 
@@ -738,7 +738,7 @@ The migration partitioning strategy is forward-safe: security-service's migratio
 |---|---|---|---|
 | **Migration split causes `knex` validateMigrationList error** on existing deployed DB | Medium | High (service crash at startup) | Security-service keeps ALL nine files 001–009; 002 and 006 are no-op tombstones. No files are missing from the `knex_migrations` perspective. Tested in Phase 1 before any routing changes. |
 | **Applications-service migrations crash on existing DB** (apps table/enum/columns already exist) | Medium | High (service crash at startup) | Migrations are rewritten to be idempotent (hasTable, hasColumn, DO $$ ... EXCEPTION WHEN duplicate_object). Verified in Phase 2 idempotency test before cutover. |
-| **`@fuzefront/core` import cycles** between core and services | Medium | Medium (TS compile fail) | Core has zero imports from services. All arrows point inward: services → core, never core → service. Enforced by `package.json` dep graph. |
+| **`@fuzeone/core` import cycles** between core and services | Medium | Medium (TS compile fail) | Core has zero imports from services. All arrows point inward: services → core, never core → service. Enforced by `package.json` dep graph. |
 | **OIDC callback URL mismatch** after port change | Low | High (SSO broken) | The OIDC callback URL is `AUTHENTIK_REDIRECT_URI` in the Helm values. It uses the ingress host (e.g. `http://fuzefront.dev.local/api/auth/oidc/callback`). The ingress now routes `/api/auth/*` to security-service. URL does not change. The Authentik blueprint also has the redirect URI — if the ingress hostname is the same, no blueprint re-apply is needed. |
 | **WebSocket `app.get('io')` pattern breaks** when apps routes move | Medium | Medium (heartbeat broadcasts silenced) | The `io` is initialized in applications-service's `index.ts` and passed to the router via `app.set('io', io)`. This pattern is self-contained in the service. Verified in Phase 2. |
 | **Frontend `VITE_API_URL` hard-codes paths** that need updating | Low | Low | `VITE_API_URL` is the base URL only (e.g. `https://app.fuzefront.com`). Path routing is handled by the ingress and nginx. No frontend code change needed for Phase 3. |
@@ -786,11 +786,11 @@ fuzefront-backend (thin backend)
   Owns: /health, /api/health, /readiness
   DB: connection for health-check only (checkDatabaseHealth)
 
-@fuzefront/core (workspace package, not deployed)
+@fuzeone/core (workspace package, not deployed)
   Owns: db config (getDatabaseConfig with migrationsTableName param),
         auth middleware (JWT), types, express bootstrap boilerplate
 
-@fuzefront/shared (existing workspace package, not deployed)
+@fuzeone/shared (existing workspace package, not deployed)
   Owns: Kafka client, schemas, frontend hooks, FuzeEvent types
 
 Pre-install db-bootstrap Job (unchanged)

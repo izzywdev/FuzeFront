@@ -36,7 +36,7 @@ In `.github/workflows/release.yml`, add `services/payment-service/**` to the
 Add a build step alongside the other services (e.g. right after the
 "Build and push billing-service" step, BEFORE the "Bump image tags" step).
 
-NOTE the **context**: payment-service is SELF-CONTAINED (no `@fuzefront/shared`
+NOTE the **context**: payment-service is SELF-CONTAINED (no `@fuzeone/shared`
 dependency — its `Dockerfile` does `COPY package.json` + `COPY src/`), so its
 build context is `services/payment-service` (NOT the repo root the workspace
 services use), and the `file:` is `services/payment-service/Dockerfile`.

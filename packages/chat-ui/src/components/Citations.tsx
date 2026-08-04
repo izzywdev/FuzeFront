@@ -1,4 +1,4 @@
-import type { RagSource } from '@fuzefront/chat-client';
+import type { RagSource } from '@fuzeone/chat-client';
 import { useChatI18n } from '../i18n';
 
 export interface CitationsProps {

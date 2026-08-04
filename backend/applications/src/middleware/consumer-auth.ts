@@ -10,7 +10,7 @@
 //      (isPlatformAdmin: true via resolveCaller), so Permit checks are bypassed.
 //
 //   2. HUMANS / ADMIN UI, carrying an Authentik-issued JWT, validated by
-//      authenticateToken from @fuzefront/core.
+//      authenticateToken from @fuzeone/core.
 //
 // Order matters: the constant-time consumer-secret comparison runs FIRST and only
 // falls through to JWT validation on a miss, so a JWT caller is never charged the
@@ -32,7 +32,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { authenticateToken } from './auth'
 
-// Shaped to satisfy @fuzefront/core's User. `email` is required there; this
+// Shaped to satisfy @fuzeone/core's User. `email` is required there; this
 // caller is a service, not a person, so it carries a non-routable sentinel
 // address rather than anything that could collide with a real account.
 const SYNTHETIC_CONSUMER_USER = {

@@ -1,12 +1,12 @@
 {
   "name": "Service tokens (M2M) — approval frames",
   "description": "Contract-freeze UX artifacts for the vendor-neutral machine-to-machine service-token surface (create-scoped → reveal-once secret → list → revoke) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. The reveal-once screen (03) is the most important in the flow.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
     "backingRouter": "backend/security/src/routes/api-tokens.ts",
-    "client": "@fuzefront/security-client",
+    "client": "@fuzeone/security-client",
     "schemas": [
       "ApiToken",
       "ApiTokenCreate",
@@ -22,7 +22,7 @@
       "last_used_at on the token record (frames a, d) — not backed today; column reads '—' until it exists",
       "bring the token CRUD endpoints into the frozen packages/security/openapi.yaml (only POST /v1/security/tokens issue + introspect live there now)"
     ],
-    "component": "@fuzefront/service-tokens-ui → ServiceTokensFlow",
+    "component": "@fuzeone/service-tokens-ui → ServiceTokensFlow",
     "featureFlag": "fuzefront.security.service-tokens"
   },
   "build": {
@@ -48,7 +48,7 @@
       "AccessDeniedNotice"
     ],
     "packages": [
-      "@fuzefront/service-tokens-ui"
+      "@fuzeone/service-tokens-ui"
     ]
   },
   "frames": [

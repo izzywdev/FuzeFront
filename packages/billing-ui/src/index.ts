@@ -1,13 +1,13 @@
 /**
- * @fuzefront/billing-ui — design-system-first React billing UI for the
+ * @fuzeone/billing-ui — design-system-first React billing UI for the
  * FuzeFront billing-service.
  *
  * Consumers must also import the stylesheet once:
- *   import '@fuzefront/billing-ui/styles.css';
+ *   import '@fuzeone/billing-ui/styles.css';
  * and wrap the tree (or the FuzeFront shell already does) so the
- * @fuzefront/design-system token CSS variables are in scope.
+ * @fuzeone/design-system token CSS variables are in scope.
  *
- * All request/response shapes come from the generated @fuzefront/billing-client
+ * All request/response shapes come from the generated @fuzeone/billing-client
  * (source of truth: services/billing-service/openapi.yaml) — never hand-written.
  */
 
@@ -92,4 +92,4 @@ export type {
   EntityType,
   BillingInvoice,
   InvoiceListResponse,
-} from '@fuzefront/billing-client';
+} from '@fuzeone/billing-client';

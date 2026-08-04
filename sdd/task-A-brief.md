@@ -1,22 +1,22 @@
-# Task A — Scaffold `@fuzefront/identity-ui` package + make design-system a workspace package
+# Task A — Scaffold `@fuzeone/identity-ui` package + make design-system a workspace package
 
 ## Goal
-Create the `packages/identity-ui` workspace React/TS library skeleton (no feature code yet, just config + empty barrels + types + a smoke test that passes), and turn the existing `design-system/` directory into a consumable workspace package `@fuzefront/design-system` so identity-ui can import its components.
+Create the `packages/identity-ui` workspace React/TS library skeleton (no feature code yet, just config + empty barrels + types + a smoke test that passes), and turn the existing `design-system/` directory into a consumable workspace package `@fuzeone/design-system` so identity-ui can import its components.
 
 ## Repo context
 - Monorepo. Root `package.json` (`name: frontfuse-platform`, `private: true`) has `workspaces: ["backend","backend/core","backend/security","backend/applications","shared"]`. `lerna.json` has `packages: ["backend","frontend","shared","sdk","task-manager-app","services/email-service","services/sms-service","services/provisioning-service"]`.
 - `.npmrc` already maps `@fuzefront:registry=https://npm.pkg.github.com`.
-- The frontend (`@fuzefront/frontend`) uses React 18.3.1, Vite, Vitest (jsdom, globals:true, setupFiles ./src/test/setup.ts).
+- The frontend (`@fuzeone/frontend`) uses React 18.3.1, Vite, Vitest (jsdom, globals:true, setupFiles ./src/test/setup.ts).
 - Design tokens are global CSS custom properties (e.g. `var(--accent-color)`, `var(--bg-tertiary)`, `var(--text-primary)`) defined in the host's `frontend/src/index.css`. Components consume them via inline `style={{ color: 'var(--text-primary)' }}` — NO bundled CSS.
 - `design-system/` currently has NO package.json. It ships raw `.jsx` components (each consumes token CSS vars) with sibling `.d.ts`, an auto-generated ESM `design-system/index.js` barrel (`export { Button } from './components/core/Button.jsx'` etc.), and `design-system/_ds_manifest.json`. Available exports include: RoleBadge, Avatar, Badge, Button, IconButton, DataTable, StatusPill, Toast, FileDropZone, Input, Select, Textarea, Modal, SeamDivider, plus more.
 
 ## Deliverables
 
 ### 1. `design-system/package.json` (NEW)
-Make design-system a workspace package so identity-ui can `import { Button } from '@fuzefront/design-system'`. It ships raw JSX (consumers transpile via their bundler/test runner):
+Make design-system a workspace package so identity-ui can `import { Button } from '@fuzeone/design-system'`. It ships raw JSX (consumers transpile via their bundler/test runner):
 ```json
 {
-  "name": "@fuzefront/design-system",
+  "name": "@fuzeone/design-system",
   "version": "1.0.0",
   "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
   "type": "module",
@@ -39,7 +39,7 @@ Also create `design-system/index.d.ts` (NEW) that re-exports the types from each
 ### 2. `packages/identity-ui/package.json` (NEW)
 ```json
 {
-  "name": "@fuzefront/identity-ui",
+  "name": "@fuzeone/identity-ui",
   "version": "0.1.0",
   "description": "Reusable identity / org-member / API-token management UI for FuzeFront, on the fuse-seam design system",
   "type": "module",
@@ -64,12 +64,12 @@ Also create `design-system/index.d.ts` (NEW) that re-exports the types from each
     "zod": "3.22.4"
   },
   "peerDependencies": {
-    "@fuzefront/design-system": "^1.0.0",
+    "@fuzeone/design-system": "^1.0.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.0.0",
+    "@fuzeone/design-system": "1.0.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.0",
@@ -98,7 +98,7 @@ React lib config: target ES2020, lib [ES2020, DOM, DOM.Iterable], module ESNext,
 extends ./tsconfig.json, compilerOptions { noEmit: false, declaration: true, emitDeclarationOnly: true, outDir: dist }, include ["src"], exclude any `*.test.*` and `src/test`.
 
 ### 5. `packages/identity-ui/vite.config.ts` (NEW)
-Library mode: plugin react() + vite-plugin-dts({ insertTypesEntry: true }). build.lib { entry src/index.ts, formats ['es','cjs'], fileName: (fmt) => fmt === 'cjs' ? 'index.cjs' : 'index.js' }. rollupOptions.external: ['react','react-dom','react/jsx-runtime','@fuzefront/design-system', /^@fuzefront\/design-system\/.*/]. Include a `test` block (vitest): environment 'jsdom', globals true, setupFiles ['./src/test/setup.ts'], css false.
+Library mode: plugin react() + vite-plugin-dts({ insertTypesEntry: true }). build.lib { entry src/index.ts, formats ['es','cjs'], fileName: (fmt) => fmt === 'cjs' ? 'index.cjs' : 'index.js' }. rollupOptions.external: ['react','react-dom','react/jsx-runtime','@fuzeone/design-system', /^@fuzefront\/design-system\/.*/]. Include a `test` block (vitest): environment 'jsdom', globals true, setupFiles ['./src/test/setup.ts'], css false.
 
 ### 6. `packages/identity-ui/src/test/setup.ts` (NEW)
 `import '@testing-library/jest-dom'`
@@ -153,7 +153,7 @@ describe('identity-ui package', () => {
 ### 11. `lerna.json` — add `"packages/identity-ui"` and `"design-system"` to `packages`.
 
 ## Verification (you MUST run and report output)
-1. `npm install` from repo root — must resolve `@fuzefront/identity-ui` and `@fuzefront/design-system` workspace symlinks (check `ls node_modules/@fuzefront/`). Network 404s on `@fuzefront/*` during install are EXPECTED and OK (packages aren't published); the workspace symlinks are what matter.
+1. `npm install` from repo root — must resolve `@fuzeone/identity-ui` and `@fuzeone/design-system` workspace symlinks (check `ls node_modules/@fuzeone/`). Network 404s on `@fuzeone/*` during install are EXPECTED and OK (packages aren't published); the workspace symlinks are what matter.
 2. From `packages/identity-ui`: `npm test` (vitest run) — smoke test passes.
 3. From `packages/identity-ui`: `npm run type-check` — exits 0.
 
@@ -161,4 +161,4 @@ describe('identity-ui package', () => {
 - Do NOT write any feature/component code beyond what's listed — barrels and types only.
 - Pin the new deps to the EXACT versions given above.
 - Never use `git --no-verify`.
-- Commit with a conventional message: `feat(identity-ui): scaffold @fuzefront/identity-ui package + make design-system a workspace package`.
+- Commit with a conventional message: `feat(identity-ui): scaffold @fuzeone/identity-ui package + make design-system a workspace package`.

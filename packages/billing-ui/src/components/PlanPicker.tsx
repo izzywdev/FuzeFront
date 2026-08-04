@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Plan } from '@fuzefront/billing-client';
+import type { Plan } from '@fuzeone/billing-client';
 import { useBillingI18n } from '../i18n';
 import { PlanCard } from './PlanCard';
 

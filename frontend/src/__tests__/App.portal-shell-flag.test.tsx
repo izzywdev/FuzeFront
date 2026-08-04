@@ -7,7 +7,7 @@
  * with the flag off, today's LoginPage renders completely unchanged — the
  * `feature-flags` skill's "test BOTH states" requirement for a release flag.
  *
- * @fuzefront/portal-branding-ui is mocked wholesale so this stays a fast,
+ * @fuzeone/portal-branding-ui is mocked wholesale so this stays a fast,
  * isolated routing test — its own boot/branding behavior is covered by that
  * package's own component tests (PortalBrandingProvider/BrandingBoundary/
  * PortalShell/PortalLoginFlow .test.tsx).
@@ -52,8 +52,8 @@ vi.mock('../components/WorkspaceProvisioningGate', () => ({
 }))
 
 // Not exercised by the unauthenticated flows this file tests, but Layout.tsx
-// statically imports @fuzefront/chat-client/chat-ui (and Layout now also
-// pulls in @fuzefront/portal-branding-ui) — mocked here purely so Vite's
+// statically imports @fuzeone/chat-client/chat-ui (and Layout now also
+// pulls in @fuzeone/portal-branding-ui) — mocked here purely so Vite's
 // eager ESM resolution of App.tsx's whole import graph doesn't need real
 // workspace builds, mirroring App.authed-login-redirect.test.tsx.
 vi.mock('../components/Layout', () => ({
@@ -69,7 +69,7 @@ vi.mock('../pages/LoginPage', () => ({
 }))
 
 const isMultiTenantPortalsEnabled = vi.fn()
-vi.mock('@fuzefront/portal-branding-ui', () => ({
+vi.mock('@fuzeone/portal-branding-ui', () => ({
   isMultiTenantPortalsEnabled: (...args: unknown[]) => isMultiTenantPortalsEnabled(...args),
   PortalShell: () => <div data-testid="portal-shell">PortalShell</div>,
   PortalLoginFlow: () => <div data-testid="portal-login-flow">PortalLoginFlow</div>,

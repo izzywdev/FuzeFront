@@ -1,6 +1,6 @@
 // chat.ts — chat-service HTTP routes (plan §6a/§6f).
 //
-// Routes (matching @fuzefront/chat-client's contract):
+// Routes (matching @fuzeone/chat-client's contract):
 //   POST /chat/stream            — SSE: conversation -> rag_sources -> text_delta... -> done.
 //                                  Persists user + assistant messages, emits
 //                                  billing.llm.usage, scoped to JWT userId/orgId.

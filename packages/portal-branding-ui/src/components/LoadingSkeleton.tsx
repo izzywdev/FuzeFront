@@ -1,4 +1,4 @@
-import { Skeleton } from '@fuzefront/design-system'
+import { Skeleton } from '@fuzeone/design-system'
 
 /**
  * The neutral boot skeleton (frame 05, `data-state="loading"`) — token-colored

@@ -19,7 +19,7 @@ When a new org or user is created, several services need to react: Permit must g
 | Element | Why it matters | Where |
 |---|---|---|
 | **Kafka** family bus | Single broker, fail-soft everywhere | `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092` |
-| **Typed, versioned event contract** | `FuzeEvent<T>` envelope, `TypedProducer`/`TypedConsumer`, per-topic Zod schemas, `dlqTopic()` | `shared/src/kafka/` (`@fuzefront/shared/kafka`) |
+| **Typed, versioned event contract** | `FuzeEvent<T>` envelope, `TypedProducer`/`TypedConsumer`, per-topic Zod schemas, `dlqTopic()` | `shared/src/kafka/` (`@fuzeone/shared/kafka`) |
 | **Transactional outbox table** | Solves the dual-write problem — you cannot atomically write Postgres *and* publish Kafka | `event_outbox` (migration `009_provisioning_backbone.ts`) |
 | **Idempotent, resumable reconciler** | Self-heal so a lost event never loses provisioning | `organizationProvisioning.ts` (advisory lock) + reconcile-on-login |
 | **A working reference flow** | user create → `identity.user.created` → `provisioning-service` → security `/internal/provision` | `services/provisioning-service/` |

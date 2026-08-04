@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ChatServiceClient } from '@fuzefront/chat-client';
+import type { ChatServiceClient } from '@fuzeone/chat-client';
 import { ChatI18nProvider, useChatI18n, type ChatStrings, type Direction } from '../i18n';
 import { useChat } from '../hooks/useChat';
 import { ChatPanel } from './ChatPanel';

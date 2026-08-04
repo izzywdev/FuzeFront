@@ -7,7 +7,7 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import { DataTable, Avatar, RoleBadge, StatusPill, IconButton, Button } from '@fuzefront/design-system'
+import { DataTable, Avatar, RoleBadge, StatusPill, IconButton, Button } from '@fuzeone/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { EmptyState } from '../common/EmptyState'
 import { RoleSelect } from './RoleSelect'

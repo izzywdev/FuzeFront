@@ -1,9 +1,9 @@
 /**
- * UI-facing chat state model. Derived entirely from the @fuzefront/chat-client
+ * UI-facing chat state model. Derived entirely from the @fuzeone/chat-client
  * SSE event union — this module owns the reduction of stream events into the
  * render model the components consume.
  */
-import type { RagSource } from '@fuzefront/chat-client';
+import type { RagSource } from '@fuzeone/chat-client';
 
 export type { RagSource };
 

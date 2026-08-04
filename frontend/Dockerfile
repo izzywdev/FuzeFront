@@ -3,7 +3,7 @@
 #
 # IMPORTANT: this image builds from the REPO ROOT context (release.yml passes
 # `context: .` + `file: frontend/Dockerfile`), NOT from ./frontend. frontend/
-# vite.config.ts aliases the @fuzefront/* UI packages (i18n, identity-ui,
+# vite.config.ts aliases the @fuzeone/* UI packages (i18n, identity-ui,
 # design-system, chat-ui) to their SOURCE under ../packages/*/src. Those sources
 # live outside frontend/, so the build needs the whole workspace layout. Building
 # with `context: ./frontend` is what broke the prod frontend image: vite resolved
@@ -12,13 +12,13 @@ FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 
-# No GitHub Packages token is needed: every @fuzefront/* package resolves from the
+# No GitHub Packages token is needed: every @fuzeone/* package resolves from the
 # local workspace (members + file: deps + vite source aliases), so the install never
 # hits the private registry. (Verified by a clean local build with no token.) This
 # avoids baking a credential into an image layer/cache that gets pushed to GHCR.
 
 # Copy the whole monorepo (node_modules/.git excluded via .dockerignore). The
-# frontend's vite config aliases the @fuzefront/* UI packages (identity-ui, i18n,
+# frontend's vite config aliases the @fuzeone/* UI packages (identity-ui, i18n,
 # design-system, chat-client, chat-ui) to their SOURCE under ../packages/* and
 # ../design-system, so the build needs the full workspace, not just frontend/.
 COPY . .

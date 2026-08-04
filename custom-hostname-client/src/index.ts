@@ -1,5 +1,5 @@
 /**
- * @fuzefront/custom-hostname-client
+ * @fuzeone/custom-hostname-client
  *
  * Typed client for FuzeInfra's cluster-internal Custom Hostname API — the
  * Cloudflare-for-SaaS-backed provisioning of customer-owned domains

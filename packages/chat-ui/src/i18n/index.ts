@@ -1,7 +1,7 @@
 /**
- * Lightweight i18n + direction layer for @fuzefront/chat-ui.
+ * Lightweight i18n + direction layer for @fuzeone/chat-ui.
  *
- * `@fuzefront/i18n` does not yet exist on this branch. This module mirrors the
+ * `@fuzeone/i18n` does not yet exist on this branch. This module mirrors the
  * interface we expect it to expose (a `dir` + a `t(key)` string lookup) so that
  * when the shared package lands, swapping it in is a one-line import change and
  * the component API does not move. All user-facing strings live here; components

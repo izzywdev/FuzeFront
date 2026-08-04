@@ -370,7 +370,7 @@ deployments see zero behavior change until explicitly opted in.
 - **Related:** FF-EPIC-09-S4 (`fuzefront.platform.multi-tenant-portals` master switch).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** `@fuzefront/feature-flags` client + Unleash instance is already available in this repo (same as FF-EPIC-11-S6).
+- **Assumption:** `@fuzeone/feature-flags` client + Unleash instance is already available in this repo (same as FF-EPIC-11-S6).
 - **Risk:** Divergent fail-open/fail-closed conventions between this flag (fail open) and FF-EPIC-11's identity flag (fail closed) could confuse operators — mitigate by documenting the rationale explicitly in the flag's Unleash description, not just in this ticket.
 
 #### 📎 References

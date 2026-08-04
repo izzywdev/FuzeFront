@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { BillingInvoice, InvoiceListResponse } from '@fuzefront/billing-client';
+import type { BillingInvoice, InvoiceListResponse } from '@fuzeone/billing-client';
 import { useBillingI18n } from '../i18n';
 import { invoiceStatusTone, invoiceStatusLabel } from '../lib/status';
 import { Button } from './primitives';
@@ -13,7 +13,7 @@ export type ListInvoices = (opts: {
 export interface InvoiceHistoryPanelProps {
   /**
    * Feature-flag gate (`fuzefront.billing.invoice-history`, default OFF). The
-   * caller resolves the flag (e.g. via `@fuzefront/feature-flags`) and forwards
+   * caller resolves the flag (e.g. via `@fuzeone/feature-flags`) and forwards
    * the result here so this package stays flag-provider-agnostic and testable.
    * When false the panel renders nothing.
    */

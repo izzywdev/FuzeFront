@@ -1,4 +1,4 @@
-import type { App, AppManifest, Icon } from '@fuzefront/app-registry-client'
+import type { App, AppManifest, Icon } from '@fuzeone/app-registry-client'
 
 /**
  * Presentation + routing helpers derived from the FROZEN app manifest. These

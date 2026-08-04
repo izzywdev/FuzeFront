@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# payment-service — self-contained image (no @fuzefront/shared dependency), so
+# payment-service — self-contained image (no @fuzeone/shared dependency), so
 # the build context is services/payment-service/ (NOT the repo root the
 # workspace services use). Mirrors the clock-app self-contained pattern.
 

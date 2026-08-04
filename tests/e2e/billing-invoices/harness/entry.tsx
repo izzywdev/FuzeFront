@@ -1,10 +1,10 @@
 /**
  * Built-component harness entry — drives the REAL React
- * `@fuzefront/billing-ui → InvoiceHistoryPanel` with a stubbed `listInvoices`.
+ * `@fuzeone/billing-ui → InvoiceHistoryPanel` with a stubbed `listInvoices`.
  *
  * This is bundled at test time by `built-component.spec.ts` (esbuild) into
  * `.harness/bundle.js` and loaded by `.harness/index.html` over `file://`. It is
- * NOT part of `@fuzefront/billing-ui` — it imports the component from source so
+ * NOT part of `@fuzeone/billing-ui` — it imports the component from source so
  * the independent e2e exercises the actual implementation, not the static frame.
  *
  * The scenario is selected from `location.hash` (e.g. `#populated`, `#loadmore`,

@@ -124,7 +124,7 @@ instance (there is no flag/segment config-as-code in this repo); it is owned by
 | Kill-switches given the developer strategy | **0 — deliberately excluded**, see note |
 
 > **Correction to the "fast path" text below:** the value to constrain on is the
-> owner's **`users.id` UUID**, *not* their email. `@fuzefront/feature-flags` maps
+> owner's **`users.id` UUID**, *not* their email. `@fuzeone/feature-flags` maps
 > `userId` → OpenFeature `targetingKey` → the Unleash built-in `userId` context
 > field (`packages/feature-flags/src/context.ts`), and `users.id` is a UUID
 > (`shared/src/kafka/schemas/identity.session.issued.ts` types it `z.string().uuid()`).
@@ -174,7 +174,7 @@ Fixed: added to the build + production stages of `backend/Dockerfile` and
 initialized at startup.
 
 **2. `getClient` was never exported.** `backend/applications/src/app-registry/flags.ts`
-resolves the client via `require('@fuzefront/feature-flags').getClient()`, but the
+resolves the client via `require('@fuzeone/feature-flags').getClient()`, but the
 package exported only `init`/`setContext`/`getBoolean`/`getString`/`getNumber`/
 `close`. `resolveClient()` therefore returned `null` and flags always took their
 default. Fixed: `getClient()` added and pinned by tests.
@@ -224,7 +224,7 @@ Unleash → **Configure → Segments → New segment**, name `developers`. Popul
 cohort by one of:
 
 - **Fast path (works today, no code):** a constraint on context field `userId`
-  (the OpenFeature `targetingKey`, which `@fuzefront/feature-flags` already sets
+  (the OpenFeature `targetingKey`, which `@fuzeone/feature-flags` already sets
   from the caller's user id) — operator `IN`, values = the developer user ids,
   including the platform owner's.
 

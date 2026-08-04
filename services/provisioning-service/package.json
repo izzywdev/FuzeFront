@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/provisioning-service",
+  "name": "@fuzeone/provisioning-service",
   "version": "1.0.0",
   "description": "Kafka consumer that bridges identity.user.created events to security-service /internal/provision",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/shared": "file:../../shared",
+    "@fuzeone/shared": "file:../../shared",
     "express": "^4.19.2",
     "kafkajs": "^2.2.4",
     "zod": "^3.22.4"

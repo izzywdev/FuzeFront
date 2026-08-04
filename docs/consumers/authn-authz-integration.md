@@ -16,7 +16,7 @@ vendor directly.
 1. **The FuzeFront Security API** — a stable, same-origin HTTP surface under
    **`/api/v1/security/*`**. The source of truth is the OpenAPI contract at
    [`packages/security/openapi.yaml`](../../packages/security/openapi.yaml).
-2. **The `@fuzefront/security-client` package** — the generated TypeScript types
+2. **The `@fuzeone/security-client` package** — the generated TypeScript types
    for that contract (including the stable `Identity` shape). Install it from
    GitHub Packages (see the onboarding guide) and import its types.
 
@@ -44,7 +44,7 @@ the browser transits — never as a thing you integrate against.
   identity host.
 - **Identity** — every authenticated caller resolves to the stable, normalized
   **`Identity`** (`{ userId, tenantId, roles, authMode, … }`) from
-  `@fuzefront/security-client`. It is **invariant across token-format
+  `@fuzeone/security-client`. It is **invariant across token-format
   migrations**, so your code never parses raw JWTs or fetches JWKS. Read
   "who am I" from `GET /api/v1/security/session`.
 - **AuthZ** — ask the platform for decisions with
@@ -65,7 +65,7 @@ the browser transits — never as a thing you integrate against.
                   │  same-origin HTTPS      │        FuzeFront platform          │
                   ▼                        │                                    │
         /api/v1/security/*  ──────────────►│   FuzeFront Security API           │
-        (@fuzefront/security-client types) │   (packages/security/openapi.yaml) │
+        (@fuzeone/security-client types) │   (packages/security/openapi.yaml) │
                   ▲                        │        │                           │
    ─ product API ─┘                        │        ▼   internal adapters       │
         Bearer <token>                     │   IdentityProvider  AuthorizationProvider
@@ -173,10 +173,10 @@ session is established (`201` → `LoginResponse`). `409` if the email exists.
 ## 3. Identity — the stable keystone
 
 Every authenticated caller resolves to the normalized `Identity` from
-`@fuzefront/security-client`:
+`@fuzeone/security-client`:
 
 ```ts
-import type { Identity } from '@fuzefront/security-client'
+import type { Identity } from '@fuzeone/security-client'
 
 // Identity = {
 //   userId: string            // stable subject id — always present
@@ -291,7 +291,7 @@ contract; treat it as a future capability.
 | Concern | Location (source of truth) |
 | --- | --- |
 | Contract (all paths + schemas) | `packages/security/openapi.yaml` |
-| Generated + stable client types | `@fuzefront/security-client` (`packages/security/src/`) |
+| Generated + stable client types | `@fuzeone/security-client` (`packages/security/src/`) |
 | `Identity`, `AuthMode`, `AuthMethods`, `Grant`, … | `packages/security/src/types.ts` |
 | Contract version | `SECURITY_CONTRACT_VERSION` (`0.3.0`) |
 

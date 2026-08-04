@@ -24,7 +24,7 @@ const ensurePasswordString = (password: any): string | undefined => {
  *   'knex_migrations' (security-service keeps the original chain's table;
  *   applications-service passes 'knex_migrations_apps').
  * - `migrationsDir` / `seedsDir` — absolute paths to the SERVICE's migration
- *   and seed directories. Because @fuzefront/core is compiled into each
+ *   and seed directories. Because @fuzeone/core is compiled into each
  *   service's node_modules, it cannot derive these from its own __dirname — the
  *   consuming service must supply them (e.g. path.join(__dirname, '../migrations')).
  */

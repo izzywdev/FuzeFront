@@ -1,4 +1,4 @@
-# `@fuzefront/auth` — Token & Claims Contract
+# `@fuzeone/auth` — Token & Claims Contract
 
 This document freezes the token/claims contract for both verification modes and
 the HS256 → OIDC/JWKS migration path. **Consumers code against the stable
@@ -47,7 +47,7 @@ middleware does) to hydrate `tenantId`/`roles`/`email`. Without a resolver,
 `tenantId` is `null` and `roles` is `[]` — safe by fail-closed default.
 
 ```ts
-import { createVerifier, requireAuth } from '@fuzefront/auth';
+import { createVerifier, requireAuth } from '@fuzeone/auth';
 
 const verifier = createVerifier({
   mode: 'legacy-hs256',
@@ -92,7 +92,7 @@ const verifier = createVerifier({
 The `Identity` shape is invariant, so **consumers do not change** across the
 migration. Only the verifier config the host wires changes:
 
-1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@fuzefront/auth` gives interop immediately without waiting on federated token issuance.
+1. **Today — legacy-hs256.** All services verify the current HS256 token; tenant/roles hydrated out-of-band. `@fuzeone/auth` gives interop immediately without waiting on federated token issuance.
 2. **Dual-accept (transition).** The federation provider begins issuing RS256/JWKS tokens carrying `tenantId`+`roles`. A host may run BOTH verifiers and try `federated-jwks` first, falling back to `legacy-hs256`, until all clients present the new token. (The package exposes both verifiers; the dual-accept composition is a small host-side wrapper — a follow-up impl detail, not a contract change.)
 3. **OIDC-only.** Once all tokens are RS256/JWKS, drop `legacy-hs256`, remove `JWT_SECRET` from services, and rely on JWKS. `tenantId`/`roles` now come from the token itself; the out-of-band resolver is retired. **No consumer code change** — they still read `Identity`.
 
@@ -111,7 +111,7 @@ throws `AuthError` (`code` from the `AuthErrorCode` enum). See `openapi.yaml`
 
 ## Events
 
-Session lifecycle is published on Kafka (Zod schemas in `@fuzefront/shared`):
+Session lifecycle is published on Kafka (Zod schemas in `@fuzeone/shared`):
 
 - `identity.session.issued` (V1) — non-secret session metadata (never the token).
 - `identity.session.revoked` (V1) — consumers drop cached identities on revoke.

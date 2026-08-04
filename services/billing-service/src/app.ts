@@ -1,6 +1,6 @@
 import express, { Application, Request, Response } from 'express';
-import { graphCreate } from '@fuzefront/shared/dist/identity';
-import type { EntityType } from '@fuzefront/shared/dist/identity';
+import { graphCreate } from '@fuzeone/shared/dist/identity';
+import type { EntityType } from '@fuzeone/shared/dist/identity';
 import type Stripe from 'stripe';
 import { requireInternalToken } from './middleware/auth';
 import { createWebhookRouter, WebhookDeps } from './routes/webhooks';

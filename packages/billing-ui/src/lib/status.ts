@@ -1,4 +1,4 @@
-import type { SubscriptionStatus } from '@fuzefront/billing-client';
+import type { SubscriptionStatus } from '@fuzeone/billing-client';
 import type { BillingStrings } from '../i18n';
 
 /** Visual tone for a subscription status, mapped to design-system status tokens. */

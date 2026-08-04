@@ -1,7 +1,7 @@
 // Kafka event producer for the app-registry surface. Kafka is the durable
 // system-of-record (the Socket.IO emits stay as a live UI push). Uses the shared
 // TypedProducer + the FROZEN Zod schemas in shared/src/kafka/schemas/app.* (the
-// schema VALUES are resolved at runtime from @fuzefront/shared so emission
+// schema VALUES are resolved at runtime from @fuzeone/shared so emission
 // validates against the single source of truth; payload shapes are mirrored here
 // as structural types so this slice compiles independently of the shared dist
 // regeneration that adds the app.* exports).
@@ -64,7 +64,7 @@ interface ProducerLike {
 
 /**
  * Kafka-backed emitter over the shared TypedProducer. The shared Zod schemas are
- * resolved lazily from @fuzefront/shared so each send is validated against the
+ * resolved lazily from @fuzeone/shared so each send is validated against the
  * frozen contract; if a schema is unavailable we send without local validation
  * (the broker still receives the envelope) rather than dropping the event.
  */
@@ -74,7 +74,7 @@ export class KafkaAppRegistryEmitter implements AppRegistryEventEmitter {
   constructor(private readonly producer: ProducerLike) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const shared = require('@fuzefront/shared/dist/kafka')
+      const shared = require('@fuzeone/shared/dist/kafka')
       this.schemas = {
         [TOPIC.APP_REGISTERED]: shared.appRegisteredSchemaV1,
         [TOPIC.APP_ACTIVATED]: shared.appActivatedSchemaV1,
@@ -187,7 +187,7 @@ export function getAppRegistryEmitter(): AppRegistryEventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Kafka } = require('kafkajs')
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { TypedProducer } = require('@fuzefront/shared/dist/kafka')
+    const { TypedProducer } = require('@fuzeone/shared/dist/kafka')
     const kafka = new Kafka({
       clientId: 'applications-service',
       brokers: brokers.split(',').map((b: string) => b.trim()),

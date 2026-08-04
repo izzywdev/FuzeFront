@@ -10,11 +10,11 @@ import {
   AppRegistryClient,
   type App,
   type RegisterAppRequest,
-} from '@fuzefront/app-registry-client'
+} from '@fuzeone/app-registry-client'
 import { getActiveAuthToken } from '../lib/accounts'
 
 /**
- * Centralized binding of the frozen `@fuzefront/app-registry-client` to a
+ * Centralized binding of the frozen `@fuzeone/app-registry-client` to a
  * SAME-ORIGIN base URL. The host, the registration UI, and the federated
  * loader all read the registry through this provider, so the contract is the
  * single source of truth and there is no second hand-rolled `App` shape.

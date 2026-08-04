@@ -1,13 +1,13 @@
 {
   "name": "Billing Invoice History — approval frames",
   "description": "Contract-freeze UX artifacts for the vendor-neutral, DB-backed invoice history capability. Approving these frames approves the InvoiceHistoryPanel visual + interaction model before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* attributes.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "approved": true,
   "approvedBy": "izzywdev",
   "approvedAt": "2026-07-14",
   "contract": {
     "openapi": "services/billing-service/openapi.yaml",
-    "client": "@fuzefront/billing-client",
+    "client": "@fuzeone/billing-client",
     "schemas": [
       "components.schemas.BillingInvoice",
       "components.schemas.InvoiceListResponse"
@@ -16,7 +16,7 @@
       "GET /api/v1/billing/invoices",
       "POST /api/v1/billing/invoices/sync"
     ],
-    "component": "@fuzefront/billing-ui → InvoiceHistoryPanel",
+    "component": "@fuzeone/billing-ui → InvoiceHistoryPanel",
     "featureFlag": "fuzefront.billing.invoice-history"
   },
   "entry": "index.html",

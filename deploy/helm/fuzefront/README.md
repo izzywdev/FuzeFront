@@ -149,7 +149,7 @@ values before enabling):
 | --- | --- |
 | `UNLEASH_DB_PASSWORD` | password for the `unleash_svc` role (set by the bootstrap Job; used in `DATABASE_URL`) |
 | `INIT_ADMIN_API_TOKENS` | admin/bootstrap API token, format `*:*.<hex>` |
-| `UNLEASH_CLIENT_TOKEN` | client/SDK token (format `[project]:[env].<hex>`), fed to the server as `INIT_CLIENT_API_TOKENS` — this is the token the `@fuzefront/feature-flags` package authenticates with |
+| `UNLEASH_CLIENT_TOKEN` | client/SDK token (format `[project]:[env].<hex>`), fed to the server as `INIT_CLIENT_API_TOKENS` — this is the token the `@fuzeone/feature-flags` package authenticates with |
 
 Seal each (offline, credential-free — FuzeInfra holds the decrypt key):
 
@@ -161,7 +161,7 @@ deploy/scripts/seal-secret.sh UNLEASH_CLIENT_TOKEN  --scope fuzefront/unleash-se
 
 ### Client connection endpoint
 
-The `@fuzefront/feature-flags` package (owned by another agent) connects in-cluster to:
+The `@fuzeone/feature-flags` package (owned by another agent) connects in-cluster to:
 
 ```
 http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api

@@ -1,4 +1,4 @@
-import { SUPPORTED_TEMPLATES } from '@fuzefront/shared/kafka';
+import { SUPPORTED_TEMPLATES } from '@fuzeone/shared/kafka';
 import { renderWelcome } from './welcome';
 import { renderOrgInvite } from './org-invite';
 import { renderMembershipChange } from './membership-change';

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react'
-import { Alert, Button, Input } from '@fuzefront/design-system'
+import { Alert, Button, Input } from '@fuzeone/design-system'
 import type { NormalizedPortalContext } from '../types'
 import { PortalBrandLockup } from './PortalBrandLockup'
 

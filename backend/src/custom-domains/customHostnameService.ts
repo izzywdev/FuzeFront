@@ -1,7 +1,7 @@
 /**
  * The FuzeFront side of self-service custom domains (FF-EPIC-16 / FFRNT-91).
  *
- * Wraps `@fuzefront/custom-hostname-client` with this repo's flag gate and the
+ * Wraps `@fuzeone/custom-hostname-client` with this repo's flag gate and the
  * bits of policy that belong to us rather than to FuzeInfra:
  *
  *   - the default-OFF feature gate (see ./flags),
@@ -46,7 +46,7 @@ import {
   type DnsStatus,
   type TlsStatus,
   type VerificationRecord,
-} from '@fuzefront/custom-hostname-client'
+} from '@fuzeone/custom-hostname-client'
 import { isCustomDomainsEnabled, type FlagContext } from './flags'
 
 /**
@@ -139,7 +139,7 @@ export function toDomainStatePatch(hostname: CustomHostname): DomainStatePatch {
 function orderedRecords(hostname: CustomHostname): VerificationRecord[] {
   // Re-exported from the client so ordering policy lives in exactly one place.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { orderedVerificationRecords } = require('@fuzefront/custom-hostname-client')
+  const { orderedVerificationRecords } = require('@fuzeone/custom-hostname-client')
   return orderedVerificationRecords(hostname)
 }
 

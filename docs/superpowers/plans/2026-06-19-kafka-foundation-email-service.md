@@ -4,7 +4,7 @@
 
 **Goal:** Add a Kafka messaging substrate in `shared/` (versioned event schemas + a KafkaJS client wrapper) and a new `services/email-service` that consumes `notify.email.requested`, renders/sends emails via SendGrid (with SMTP fallback), and emits `notify.email.status`.
 
-**Architecture:** The `@fuzefront/shared` package gains a `kafka/` sub-tree: typed event schemas (versioned with a `version` field discriminated union), a thin `KafkaClient` factory wrapping KafkaJS (injectable for tests), and producer/consumer helpers. `services/email-service` is a standalone Node/TypeScript Express service that uses only the `shared` kafka layer; its Kafka client, email provider, and template renderer are all injected so every handler can be unit-tested without a live broker or SMTP server. Infrastructure wiring (Dockerfile, Helm chart, skaffold artifact, CI release job entry) mirrors the existing `backend` pattern exactly.
+**Architecture:** The `@fuzeone/shared` package gains a `kafka/` sub-tree: typed event schemas (versioned with a `version` field discriminated union), a thin `KafkaClient` factory wrapping KafkaJS (injectable for tests), and producer/consumer helpers. `services/email-service` is a standalone Node/TypeScript Express service that uses only the `shared` kafka layer; its Kafka client, email provider, and template renderer are all injected so every handler can be unit-tested without a live broker or SMTP server. Infrastructure wiring (Dockerfile, Helm chart, skaffold artifact, CI release job entry) mirrors the existing `backend` pattern exactly.
 
 **Tech Stack:** TypeScript 5, KafkaJS 2.2.4, `@sendgrid/mail` 8.1.3, `nodemailer` 6.9.14 (SMTP fallback), `express` 4.19.2, `ts-jest` 29, `jest` 29, `zod` 3.22.4 (schema validation), `node:18-alpine` Docker base.
 
@@ -41,7 +41,7 @@
 ### New files — `services/email-service/`
 | File | Responsibility |
 |------|---------------|
-| `services/email-service/package.json` | npm package `@fuzefront/email-service`; deps + scripts |
+| `services/email-service/package.json` | npm package `@fuzeone/email-service`; deps + scripts |
 | `services/email-service/tsconfig.json` | TS config matching backend conventions |
 | `services/email-service/jest.config.js` | ts-jest config mirroring backend |
 | `services/email-service/Dockerfile` | Multi-stage build mirroring `backend/Dockerfile` |
@@ -85,7 +85,7 @@
 - Create: `shared/src/kafka/index.ts` (empty barrel, filled in later tasks)
 
 **Interfaces:**
-- Produces: `@fuzefront/shared` now lists `kafkajs@2.2.4` and `zod@3.22.4`
+- Produces: `@fuzeone/shared` now lists `kafkajs@2.2.4` and `zod@3.22.4`
 
 - [ ] **Step 1: Add deps to `shared/package.json`**
 
@@ -102,7 +102,7 @@ Add to `"devDependencies"`:
 Full updated `shared/package.json`:
 ```json
 {
-  "name": "@fuzefront/shared",
+  "name": "@fuzeone/shared",
   "version": "1.0.0",
   "description": "Shared state library for FuzeFront platform",
   "main": "dist/index.js",
@@ -514,7 +514,7 @@ git commit -m "feat(shared/kafka): KafkaClient factory, TypedProducer, TypedCons
 
 ```json
 {
-  "name": "@fuzefront/email-service",
+  "name": "@fuzeone/email-service",
   "version": "1.0.0",
   "description": "Kafka consumer that sends transactional emails for FuzeFront",
   "main": "dist/index.js",
@@ -525,7 +525,7 @@ git commit -m "feat(shared/kafka): KafkaClient factory, TypedProducer, TypedCons
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/shared": "1.0.0",
+    "@fuzeone/shared": "1.0.0",
     "@sendgrid/mail": "8.1.3",
     "express": "4.19.2",
     "kafkajs": "2.2.4",
@@ -983,7 +983,7 @@ export function renderMembershipChange(vars: Record<string, unknown>): TemplateR
 - [ ] **Step 6: Create `services/email-service/src/templates/index.ts`**
 
 ```typescript
-import { SUPPORTED_TEMPLATES } from '@fuzefront/shared';
+import { SUPPORTED_TEMPLATES } from '@fuzeone/shared';
 import { renderWelcome } from './welcome';
 import { renderOrgInvite } from './org-invite';
 import { renderMembershipChange } from './membership-change';
@@ -1033,7 +1033,7 @@ git commit -m "feat(email-service): welcome, org-invite, membership-change email
 - Create: `services/email-service/tests/schemas.test.ts`
 
 **Interfaces:**
-- Consumes: `notifyEmailRequestedSchemaV1`, `notifyEmailStatusSchemaV1`, `identityUserCreatedSchemaV1` from `@fuzefront/shared`
+- Consumes: `notifyEmailRequestedSchemaV1`, `notifyEmailStatusSchemaV1`, `identityUserCreatedSchemaV1` from `@fuzeone/shared`
 
 - [ ] **Step 1: Write schema tests**
 
@@ -1045,7 +1045,7 @@ import {
   identityUserCreatedSchemaV1,
   TOPICS,
   dlqTopic,
-} from '@fuzefront/shared';
+} from '@fuzeone/shared';
 
 describe('notifyEmailRequestedSchemaV1', () => {
   it('accepts a valid event payload', () => {
@@ -1152,7 +1152,7 @@ git commit -m "test(email-service): schema validation tests for all three event 
 - Create: `services/email-service/tests/handlers/email-requested.handler.test.ts`
 
 **Interfaces:**
-- Consumes: `NotifyEmailRequestedPayloadV1`, `notifyEmailStatusSchemaV1`, `FuzeEvent`, `TOPICS` from `@fuzefront/shared`; `renderTemplate` from `../templates`; `EmailProvider` from `../providers`; `TypedProducer` from `@fuzefront/shared`
+- Consumes: `NotifyEmailRequestedPayloadV1`, `notifyEmailStatusSchemaV1`, `FuzeEvent`, `TOPICS` from `@fuzeone/shared`; `renderTemplate` from `../templates`; `EmailProvider` from `../providers`; `TypedProducer` from `@fuzeone/shared`
 - Produces: `handleEmailRequested(event: FuzeEvent<NotifyEmailRequestedPayloadV1>, deps: HandlerDeps): Promise<void>`
 
 - [ ] **Step 1: Write failing handler test**
@@ -1160,7 +1160,7 @@ git commit -m "test(email-service): schema validation tests for all three event 
 Create `services/email-service/tests/handlers/email-requested.handler.test.ts`:
 ```typescript
 import { handleEmailRequested, HandlerDeps } from '../../src/handlers/email-requested.handler';
-import { FuzeEvent, TOPICS, NotifyEmailRequestedPayloadV1 } from '@fuzefront/shared';
+import { FuzeEvent, TOPICS, NotifyEmailRequestedPayloadV1 } from '@fuzeone/shared';
 
 function makeEvent(overrides: Partial<NotifyEmailRequestedPayloadV1> = {}): FuzeEvent<NotifyEmailRequestedPayloadV1> {
   return {
@@ -1247,7 +1247,7 @@ import {
   notifyEmailStatusSchemaV1,
   TOPICS,
   TypedProducer,
-} from '@fuzefront/shared';
+} from '@fuzeone/shared';
 import { EmailProvider } from '../providers';
 import { renderTemplate } from '../templates';
 
@@ -1419,7 +1419,7 @@ import {
   TypedConsumer,
   TOPICS,
   notifyEmailRequestedSchemaV1,
-} from '@fuzefront/shared';
+} from '@fuzeone/shared';
 import { loadConfig } from './config';
 import { createProvider } from './providers';
 import { handleEmailRequested } from './handlers/email-requested.handler';
@@ -1883,7 +1883,7 @@ git commit -m "fix: final type/lint corrections after full integration check"
 - [x] `release.yml` image build — Task 14
 - [x] `docker-compose.yml` service — Task 14
 - [x] Unit tests run without live broker — All test tasks use mocks; no KafkaJS instantiation in tests
-- [x] Producer helper in `shared/` for backend to use later — `TypedProducer` is exported from `@fuzefront/shared`
+- [x] Producer helper in `shared/` for backend to use later — `TypedProducer` is exported from `@fuzeone/shared`
 
 **No placeholders found.**
 

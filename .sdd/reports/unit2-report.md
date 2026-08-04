@@ -24,7 +24,7 @@ Added `export * from './billing.llm.usage';` as first line (alphabetical placeme
 
 **Test file chosen:** `services/email-service/tests/schemas.test.ts`
 
-**Rationale:** This is exactly the file the brief specified. It already imports from `@fuzefront/shared` and tests schemas in the same pattern. Added `billingLlmUsageSchemaV1` to the import and added a new `describe('billingLlmUsageSchemaV1')` block with 5 tests:
+**Rationale:** This is exactly the file the brief specified. It already imports from `@fuzeone/shared` and tests schemas in the same pattern. Added `billingLlmUsageSchemaV1` to the import and added a new `describe('billingLlmUsageSchemaV1')` block with 5 tests:
 - accepts a valid payload
 - rejects negative token count
 - rejects a bad userId (not a UUID)

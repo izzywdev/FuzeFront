@@ -7,7 +7,7 @@
     "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
-      "@fuzefront/shared/kafka": ["../shared/dist/kafka/index.d.ts"]
+      "@fuzeone/shared/kafka": ["../shared/dist/kafka/index.d.ts"]
     },
     "strict": false,
     "noImplicitAny": false,

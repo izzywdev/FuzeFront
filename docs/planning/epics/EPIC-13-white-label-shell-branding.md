@@ -49,7 +49,7 @@ or Figma.
 - [ ] Feature 2: Branding boot in the shell — TopBar, SidePanel, and login consume portal-context
       branding (name/logo/favicon), replacing hardcoded values.
 - [ ] Feature 3: Runtime theme-override pipeline — a portal's accent color is applied via
-      `@fuzefront/design-system` token CSS-var overrides (never raw hex), extending `ThemeContext`.
+      `@fuzeone/design-system` token CSS-var overrides (never raw hex), extending `ThemeContext`.
 - [ ] Feature 4: Console-clean runtime validation of the branded shell under a tenant host, gated
       behind a feature flag.
 
@@ -61,7 +61,7 @@ or Figma.
 ### 🏗️ High-Level Architecture Notes
 > Branding is consumed from `GET /api/v1/portal/context` (FF-EPIC-10-S2), which resolves the active
 > portal's `branding` jsonb (FF-EPIC-09 `portals` table). Accent/logo/name land as CSS custom
-> properties layered **over** `@fuzefront/design-system` tokens — `frontend-engineer` owns
+> properties layered **over** `@fuzeone/design-system` tokens — `frontend-engineer` owns
 > `design-system/`; no raw hex/px/type anywhere in feature code. Extend the existing `ThemeContext`
 > (today light/dark-only) rather than building a parallel theming mechanism. Replace the hardcoded
 > branding in `frontend/src/components/TopBar.tsx`. Gate the finished surface with the
@@ -255,7 +255,7 @@ frame from FF-EPIC-13-S1.
 
 #### 📌 Background & Context
 Extends `ThemeContext` (currently light/dark-only) with a runtime CSS-var override layer sourced from
-`branding.accent`, applied over `@fuzefront/design-system` tokens. `frontend-engineer` owns
+`branding.accent`, applied over `@fuzeone/design-system` tokens. `frontend-engineer` owns
 `design-system/`; no raw hex/spacing/type is permitted in feature code — a missing primitive is added
 to the base DS via the design-system skill, never styled one-off.
 
@@ -297,7 +297,7 @@ to the base DS via the design-system skill, never styled one-off.
   mitigate by scoping the override to brand/accent role tokens only, never semantic-state tokens.
 
 #### 📎 References
-- `@fuzefront/design-system` tokens
+- `@fuzeone/design-system` tokens
 - Frame: `design/frames/white-label-portal/tokens.css`
 
 ---

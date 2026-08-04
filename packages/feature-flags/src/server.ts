@@ -145,7 +145,7 @@ export async function getNumber(
  * OpenFeature-shaped facade returned by {@link getClient}.
  *
  * Consumers (e.g. `backend/applications/src/app-registry/flags.ts`) resolve the
- * client via `require('@fuzefront/feature-flags').getClient()` and call
+ * client via `require('@fuzeone/feature-flags').getClient()` and call
  * `getBooleanValue(key, default, context)`. That export was missing, so
  * `resolveClient()` returned null and every flag took its in-code default
  * regardless of Unleash — this restores the contract those callers already

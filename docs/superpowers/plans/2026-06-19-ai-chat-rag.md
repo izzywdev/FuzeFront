@@ -52,7 +52,7 @@ richer AI intent; this plan defines that intent from scratch.
 | Prompt injection | Input sanitized; system prompt structurally separated; RAG snippets labeled |
 | Scale (local/dev) | kind cluster, single replica; production: 2 replicas, HPA on CPU |
 | License | All libraries must be MIT/Apache-2; no AGPL/GPL in the production runtime |
-| i18n | `@fuzefront/chat-ui` ships i18n primitives (en default, consumer-injected strings) |
+| i18n | `@fuzeone/chat-ui` ships i18n primitives (en default, consumer-injected strings) |
 
 ---
 
@@ -142,8 +142,8 @@ requires a re-index (not a code change).
 Three independently-versioned units:
 
 ```
-@fuzefront/chat-ui         # React package — thread + generative-UI components
-@fuzefront/chat-client     # TypeScript HTTP/SSE client for chat-service
+@fuzeone/chat-ui         # React package — thread + generative-UI components
+@fuzeone/chat-client     # TypeScript HTTP/SSE client for chat-service
 services/chat-service      # Backend microservice — RAG, agent loop, LiteLLM, Permit
 ```
 
@@ -157,7 +157,7 @@ secrets pipeline.
 
 ```
 Browser (FuzeFront shell)
-  └─ @fuzefront/chat-ui
+  └─ @fuzeone/chat-ui
        useChat(url: /api/chat/stream)  ← Vercel AI SDK
        generative-UI renderers (cards, confirm dialogs, forms)
        |
@@ -364,7 +364,7 @@ accounting signal for reconciliation.
 
 ---
 
-## 7. `@fuzefront/chat-ui` — Design-System-First Component Spec
+## 7. `@fuzeone/chat-ui` — Design-System-First Component Spec
 
 ### 7a. Design System Foundation (fuse-seam)
 
@@ -499,7 +499,7 @@ Shown when thread is empty:
 ### 7c. Package Public API
 
 ```typescript
-// @fuzefront/chat-ui
+// @fuzeone/chat-ui
 
 export { ChatPanel }           from './components/ChatPanel'
 export { MessageBubble }       from './components/MessageBubble'
@@ -548,7 +548,7 @@ Consumer passes `overrides` to `<ChatPanel>`. Package ships `defaultI18n` (Engli
 
 ---
 
-## 8. `@fuzefront/chat-client` — TypeScript HTTP Client
+## 8. `@fuzeone/chat-client` — TypeScript HTTP Client
 
 ```
 packages/chat-client/
@@ -557,7 +557,7 @@ packages/chat-client/
     types.ts         # shared request/response types
     streaming.ts     # SSE event parser (yields typed events)
   index.ts
-  package.json       # @fuzefront/chat-client, MIT, depends on eventsource-parser
+  package.json       # @fuzeone/chat-client, MIT, depends on eventsource-parser
 ```
 
 ```typescript
@@ -587,7 +587,7 @@ type ChatStreamEvent =
   | { type: 'error'; message: string }
 ```
 
-`useFuzeChat` in `@fuzefront/chat-ui` uses this client internally. Consumers who build custom
+`useFuzeChat` in `@fuzeone/chat-ui` uses this client internally. Consumers who build custom
 UIs (e.g., a microfrontend chat page) use the client directly.
 
 ---
@@ -783,7 +783,7 @@ Following the `email-service` pattern:
   `read` for `docs`, `stream` + `tool:*` for `chat`. Re-run permit-schema-job.
   _Test:_ existing `permit-schema.test.ts` extended; idempotent sync passes with fake client.
 
-### Phase 1: `@fuzefront/chat-client` package
+### Phase 1: `@fuzeone/chat-client` package
 
 - [ ] **T1.1** Scaffold `packages/chat-client/` with TypeScript, jest, eventsource-parser.
   `ChatServiceClient` class with all method stubs; all methods throw `NotImplementedError`.
@@ -852,15 +852,15 @@ Following the `email-service` pattern:
 ### Phase 5: `services/chat-service` — Billing Emitter
 
 - [ ] **T5.1** `billing/emitter.ts` — after each `streamText` call, emit `billing.llm.usage`
-  to Kafka (using `@fuzefront/shared` Kafka producer). Graceful degradation: if Kafka unavailable,
+  to Kafka (using `@fuzeone/shared` Kafka producer). Graceful degradation: if Kafka unavailable,
   log + continue (billing is non-blocking).
   _Test:_ mock Kafka producer; event shape matches `LlmUsageEvent` type; Kafka error does not
   crash the streaming response.
 
-### Phase 6: `@fuzefront/chat-ui` package
+### Phase 6: `@fuzeone/chat-ui` package
 
 - [ ] **T6.1** Scaffold `packages/chat-ui/` — Vite lib build, peer deps: `react`, `ai`,
-  `@fuzefront/chat-client`. Export stubs.
+  `@fuzeone/chat-client`. Export stubs.
   _Test:_ TypeScript compiles; package builds with Vite library mode.
 
 - [ ] **T6.2** `ChatInput` component — Textarea + send button; fuse-seam tokens; a11y.
@@ -889,7 +889,7 @@ Following the `email-service` pattern:
 ### Phase 7: Integration into Shell
 
 - [ ] **T7.1** Replace `frontend/src/contexts/ChatContext.tsx` stub with a thin wrapper that
-  uses `useFuzeChat` from `@fuzefront/chat-ui`. Update `ChatPanel.tsx` to use the package.
+  uses `useFuzeChat` from `@fuzeone/chat-ui`. Update `ChatPanel.tsx` to use the package.
   _Test:_ existing frontend TypeScript compiles; `<ChatPanel>` still renders.
 
 - [ ] **T7.2** Wiring: pass `orgId` from auth context; pass stream URL pointing to chat-service.

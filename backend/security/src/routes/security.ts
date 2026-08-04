@@ -4,7 +4,7 @@
  * Implemented PURELY against the neutral `IdentityProvider` contract (via the
  * env-driven factory) — no vendor is named here. Request/response shapes match
  * the frozen OpenAPI (`packages/security/openapi.yaml`) and the generated
- * `@fuzefront/security-client` types. Fail-closed throughout.
+ * `@fuzeone/security-client` types. Fail-closed throughout.
  *
  * AuthZ endpoints (`/authz/*`, `/tenants/*`) are a SEPARATE, later stream and
  * are intentionally not implemented in this AuthN slice.

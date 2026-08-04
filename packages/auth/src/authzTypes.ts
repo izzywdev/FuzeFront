@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — authorization contract types.
+ * @fuzeone/auth — authorization contract types.
  *
  * PROVIDER-NEUTRAL BY DESIGN. This surface names no authorization vendor and
  * requires no vendor SDK or vendor API key in the consuming service. A consumer

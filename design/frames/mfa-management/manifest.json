@@ -1,12 +1,12 @@
 {
   "name": "MFA management — approval frames",
   "description": "Contract-freeze UX artifacts for two-factor authentication management: enrol an authenticator (TOTP) or phone (text message), one-time recovery codes, remove a method, and the step-up challenge shown mid sign-in. Approving a flow approves its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. No provider name appears in any consumer surface.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
-    "client": "@fuzefront/security-client",
-    "component": "@fuzefront/account-security-ui",
+    "client": "@fuzeone/security-client",
+    "component": "@fuzeone/account-security-ui",
     "featureFlag": "fuzefront.security.mfa-management",
     "schemas": [
       "components.schemas.MfaFactor",
@@ -97,12 +97,12 @@
       "FactorPicker"
     ],
     "packages": [
-      "@fuzefront/account-security-ui"
+      "@fuzeone/account-security-ui"
     ],
     "missingDesignSystemPrimitives": [
       {
         "name": "OtpInput",
-        "reason": "A segmented one-time-code input (6 cells, paste-aware, error state) is not yet in @fuzefront/design-system. frontend-engineer to add it as a foundation primitive; not styled one-off in feature code."
+        "reason": "A segmented one-time-code input (6 cells, paste-aware, error state) is not yet in @fuzeone/design-system. frontend-engineer to add it as a foundation primitive; not styled one-off in feature code."
       }
     ]
   },

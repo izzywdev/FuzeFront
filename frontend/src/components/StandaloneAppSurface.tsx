@@ -1,6 +1,6 @@
 import { useEffect, useState, Suspense } from 'react'
 import type React from 'react'
-import type { App } from '@fuzefront/app-registry-client'
+import type { App } from '@fuzeone/app-registry-client'
 import { useAppRegistry } from '../platform/appRegistry'
 import { loadFederatedAppFromManifest } from '../utils/loadFederatedApp'
 import { FederatedAppErrorBoundary } from './FederatedAppErrorBoundary'

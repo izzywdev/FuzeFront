@@ -19,13 +19,13 @@
  * The manifest `build` block names what MUST exist for these to go GREEN:
  *   flow      account-security  (orchestrator AccountSecurityHub)
  *   route     /account/security
- *   package   @fuzefront/account-security-ui
+ *   package   @fuzeone/account-security-ui
  *   components SecurityHub, SecurityPostureSummary, SecurityCard,
  *             SignInMethodsList, SetPasswordBanner, ConnectedAccountRow,
  *             SecurityCardGridSkeleton, LoadErrorRetry
  *
  * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /account/security and @fuzefront/account-security-ui are NOT built
+ * The route /account/security and @fuzeone/account-security-ui are NOT built
  * yet. Every test below is EXPECTED to fail today, and it must fail for the
  * RIGHT reason: the hub panel / cards / guards are ABSENT from the DOM — not a
  * harness/config error. That RED state is the proof this is TDD (specs written
@@ -34,7 +34,7 @@
  *
  * They are deliberately NOT test.skip / test.fixme — hiding the RED would
  * defeat the entire point. They turn GREEN when frontend-engineer lands
- * @fuzefront/account-security-ui and wires the /account/security route.
+ * @fuzeone/account-security-ui and wires the /account/security route.
  *
  * Selectors are ONLY the data-* hooks the frames declare (manifest.testHooks).
  * No invented selectors. Where a frame is ambiguous the assertion follows what

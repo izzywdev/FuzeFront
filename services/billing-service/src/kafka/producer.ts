@@ -5,7 +5,7 @@ import {
   BillingSubscriptionChangedPayloadV1,
   billingPaymentCompletedSchemaV1,
   BillingPaymentCompletedPayloadV1,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzeone/shared/dist/kafka';
 import { randomUUID } from 'crypto';
 
 /**

@@ -23,7 +23,7 @@ function str(v: unknown): string | null {
  * Normalize whatever `GET /api/v1/portal/context` returned into the shape the
  * UI renders from. Tolerant of two payload shapes on purpose:
  *
- *  1. The frozen `@fuzefront/portal-client` `PortalContext` schema —
+ *  1. The frozen `@fuzeone/portal-client` `PortalContext` schema —
  *     `{ id, slug, isRoot, branding, identityPolicy, authEntry }` — the real
  *     contract, once the server ships it.
  *  2. A minimal `{ portalId, slug, status, branding }` shape (e.g. an

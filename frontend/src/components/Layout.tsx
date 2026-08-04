@@ -5,7 +5,7 @@ import FuzeChatWidget from './FuzeChatWidget'
 import Toaster from './Toaster'
 import { useActiveApp } from '../platform/useActiveApp'
 import { isTopbarHidden } from '../platform/appManifest'
-import { PortalBrandingProvider, PortalThemeScope, usePortalContext } from '@fuzefront/portal-branding-ui'
+import { PortalBrandingProvider, PortalThemeScope, usePortalContext } from '@fuzeone/portal-branding-ui'
 import { useFlag } from '../platform/featureFlags'
 
 interface LayoutProps {
@@ -59,7 +59,7 @@ function PortalScopedLayout({ children }: LayoutProps) {
           <div className="content-area">{children}</div>
         </div>
 
-        {/* AI assistant — real chat-service backed, design-system @fuzefront/chat-ui.
+        {/* AI assistant — real chat-service backed, design-system @fuzeone/chat-ui.
             Replaces the former simulated ChatPanel/ChatContext. */}
         <FuzeChatWidget />
 

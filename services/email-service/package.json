@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/email-service",
+  "name": "@fuzeone/email-service",
   "version": "1.0.0",
   "description": "Kafka consumer that sends transactional emails for FuzeFront",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/shared": "file:../../shared",
+    "@fuzeone/shared": "file:../../shared",
     "@sendgrid/mail": "8.1.3",
     "express": "4.19.2",
     "kafkajs": "2.2.4",

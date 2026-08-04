@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/i18n",
+  "name": "@fuzeone/i18n",
   "version": "1.0.0",
   "description": "Shared FuzeFront internationalization runtime: i18next + react-i18next provider, design-system language selector, and centralized RTL/LTR direction management.",
   "main": "dist/index.js",
@@ -56,7 +56,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@fuzefront/design-system": "^1.0.0",
+    "@fuzeone/design-system": "^1.0.0",
     "i18next": "^23.11.5",
     "react-i18next": "^14.1.2"
   },

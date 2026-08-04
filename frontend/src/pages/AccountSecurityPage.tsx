@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AccountSecurityHub } from '@fuzefront/account-security-ui'
+import { AccountSecurityHub } from '@fuzeone/account-security-ui'
 import { useFlag } from '../platform/featureFlags'
 import { getActiveAuthToken } from '../lib/accounts'
 
@@ -21,7 +21,7 @@ function useAccountSecurityHubFlag(): boolean {
 
 /**
  * Host route wrapper for `/account/security`. Mounts the design-system-first
- * @fuzefront/account-security-ui hub, wiring host navigation + the same-origin
+ * @fuzeone/account-security-ui hub, wiring host navigation + the same-origin
  * bearer token. The hub itself owns all load/error/guard states.
  */
 export default function AccountSecurityPage() {

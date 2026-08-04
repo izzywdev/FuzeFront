@@ -8,7 +8,7 @@
  *   (b) on 5xx-exhaustion → DLQ send is called with the right topic + payload, no throw
  */
 
-import { FuzeEvent, TOPICS, IdentityUserCreatedPayloadV1 } from '@fuzefront/shared/kafka';
+import { FuzeEvent, TOPICS, IdentityUserCreatedPayloadV1 } from '@fuzeone/shared/kafka';
 import { handleUserCreated } from '../src/handler';
 import { HttpClient } from '../src/provision';
 

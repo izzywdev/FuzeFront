@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/<%= projectName %>",
+  "name": "@fuzeone/<%= projectName %>",
   "version": "1.0.0",
   "description": "<%= projectName %> micro-frontend application",
   "private": true,
@@ -19,8 +19,8 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@fuzefront/sdk": "workspace:*",
-    "@fuzefront/shared": "workspace:*"
+    "@fuzeone/sdk": "workspace:*",
+    "@fuzeone/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

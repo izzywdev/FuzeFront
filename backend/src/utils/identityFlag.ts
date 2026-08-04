@@ -22,7 +22,7 @@
  * flag is genuinely (administratively) OFF, it still correctly evaluates to
  * `false` — this only changes what happens when evaluation itself fails.
  *
- * Read via @fuzefront/feature-flags (OpenFeature) per the `feature-flags`
+ * Read via @fuzeone/feature-flags (OpenFeature) per the `feature-flags`
  * skill — never a hand-wired Unleash/OpenFeature call. Loaded lazily (mirrors
  * utils/portalFlag.ts) so a missing/unbuilt package degrades to the fail-safe
  * default rather than crashing route/middleware modules at import time.
@@ -53,7 +53,7 @@ interface FlagsClient {
 function loadFlagsClient(): FlagsClient | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@fuzefront/feature-flags')
+    const mod = require('@fuzeone/feature-flags')
     return typeof mod.getClient === 'function' ? mod.getClient() : null
   } catch {
     return null

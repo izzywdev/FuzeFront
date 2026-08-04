@@ -13,7 +13,7 @@
  *
  * Use `logger.child({ reqId })` (see `withReqId`) to correlate every log line
  * within a request with the `[security-service:xxxx]` id already assigned by
- * `@fuzefront/core`'s `createExpressApp` (req.requestId).
+ * `@fuzeone/core`'s `createExpressApp` (req.requestId).
  */
 import pino from 'pino'
 

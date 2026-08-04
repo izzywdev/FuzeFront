@@ -15,7 +15,7 @@ export default defineConfig({
     'react',
     'react-dom',
     'react/jsx-runtime',
-    '@fuzefront/billing-client',
+    '@fuzeone/billing-client',
     '@stripe/stripe-js',
     '@stripe/react-stripe-js',
   ],
@@ -23,7 +23,7 @@ export default defineConfig({
     return { js: format === 'cjs' ? '.cjs' : '.js' };
   },
   // The design-system-token-only stylesheet ships alongside the JS so consumers
-  // can `import '@fuzefront/billing-ui/styles.css'`.
+  // can `import '@fuzeone/billing-ui/styles.css'`.
   loader: { '.css': 'copy' },
   publicDir: false,
   onSuccess: 'node ./scripts/copy-css.mjs',

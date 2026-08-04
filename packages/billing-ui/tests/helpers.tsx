@@ -1,7 +1,7 @@
 import { render, type RenderOptions } from '@testing-library/react';
 import { type ReactElement, type ReactNode } from 'react';
 import { BillingI18nProvider, type Direction } from '../src/i18n';
-import type { Plan, BillingSubscription } from '@fuzefront/billing-client';
+import type { Plan, BillingSubscription } from '@fuzeone/billing-client';
 
 export function renderWithI18n(
   ui: ReactElement,

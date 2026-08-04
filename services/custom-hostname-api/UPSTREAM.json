@@ -1,5 +1,5 @@
 {
-  "_comment": "This directory is NOT a FuzeFront service. It is a VENDORED COPY of a contract owned by FuzeInfra, pinned to the commit below so a FuzeInfra change cannot silently reshape @fuzefront/custom-hostname-client. See README.md.",
+  "_comment": "This directory is NOT a FuzeFront service. It is a VENDORED COPY of a contract owned by FuzeInfra, pinned to the commit below so a FuzeInfra change cannot silently reshape @fuzeone/custom-hostname-client. See README.md.",
   "repo": "https://github.com/izzywdev/FuzeInfra",
   "ref": "main",
   "commit": "b54442e4356acfab5998c5ae071aba6cb20dc004",
@@ -7,5 +7,5 @@
   "vendoredAt": "2026-07-28",
   "contractVersion": "1.0.0",
   "owner": "FuzeInfra",
-  "consumer": "@fuzefront/custom-hostname-client"
+  "consumer": "@fuzeone/custom-hostname-client"
 }

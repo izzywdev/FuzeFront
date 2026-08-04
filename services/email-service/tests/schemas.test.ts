@@ -5,7 +5,7 @@ import {
   identityUserCreatedSchemaV1,
   TOPICS,
   dlqTopic,
-} from '@fuzefront/shared';
+} from '@fuzeone/shared';
 
 describe('notifyEmailRequestedSchemaV1', () => {
   it('accepts a valid event payload', () => {

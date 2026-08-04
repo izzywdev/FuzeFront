@@ -1,7 +1,7 @@
 /**
- * Lightweight i18n + direction layer for @fuzefront/billing-ui.
+ * Lightweight i18n + direction layer for @fuzeone/billing-ui.
  *
- * `@fuzefront/i18n` is the shared package this is designed to defer to. Until it
+ * `@fuzeone/i18n` is the shared package this is designed to defer to. Until it
  * is wired in on this branch, this module mirrors the interface we expect it to
  * expose (a `dir` + a `t(key)` string lookup + `locale`-aware formatters) so
  * that swapping it in is a one-line import change and the component API does not

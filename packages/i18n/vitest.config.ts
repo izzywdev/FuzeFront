@@ -9,7 +9,7 @@ export default defineConfig({
       // Resolve the design system from local monorepo source so the no-build
       // unit tests render the real DS <Select> (the published package would be
       // resolved from GitHub Packages in CI/Docker installs).
-      '@fuzefront/design-system': r('../../design-system/index.js'),
+      '@fuzeone/design-system': r('../../design-system/index.js'),
     },
     // The DS source lives outside this package's tree and has no node_modules of
     // its own; dedupe ensures its `import "react"` resolves to this package's

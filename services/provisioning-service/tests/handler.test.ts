@@ -1,5 +1,5 @@
 import { handleUserCreated } from '../src/handler';
-import { FuzeEvent, TOPICS, IdentityUserCreatedPayloadV1 } from '@fuzefront/shared/kafka';
+import { FuzeEvent, TOPICS, IdentityUserCreatedPayloadV1 } from '@fuzeone/shared/kafka';
 import { HttpClient } from '../src/provision';
 
 const SECRET = 'test-secret';

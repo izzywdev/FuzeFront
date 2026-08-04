@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — HTTP binding to FuzeFront's Security API authz surface.
+ * @fuzeone/auth — HTTP binding to FuzeFront's Security API authz surface.
  *
  * The consuming service talks HTTP to FuzeFront and nothing else. No policy
  * vendor SDK, no vendor API key, no vendor concepts leak across this boundary —

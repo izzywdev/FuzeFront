@@ -22,11 +22,11 @@
  * The manifest `build` block names what MUST exist for these to go GREEN:
  *   flow portal-shell   orchestrator PortalShell        route /
  *   flow portal-login   orchestrator PortalLoginFlow    route /login
- *   package @fuzefront/portal-branding-ui
+ *   package @fuzeone/portal-branding-ui
  *   components PortalBrandingProvider, PortalThemeScope, BrandedTopBar,
  *              BrandedSidePanel, PortalAppGrid, PortalBrandLockup,
  *              WhiteLabelLoginCard, BrandingBoundary, PortalUnavailableNotice
- *   DS primitive BrandTokenScope (NET-NEW in @fuzefront/design-system)
+ *   DS primitive BrandTokenScope (NET-NEW in @fuzeone/design-system)
  *
  * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
  * Neither `/` (as the branded PortalShell) nor `/login` (as WhiteLabelLoginCard)
@@ -39,7 +39,7 @@
  *
  * They are deliberately NOT test.skip / test.fixme — hiding the RED would
  * defeat the entire point. They turn GREEN when frontend-engineer lands
- * @fuzefront/portal-branding-ui and wires the `/` and `/login` routes to call
+ * @fuzeone/portal-branding-ui and wires the `/` and `/login` routes to call
  * `GET /api/v1/portal/context`.
  *
  * Selectors are ONLY the data-* hooks the frames/manifest declare

@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/custom-hostname-client",
+  "name": "@fuzeone/custom-hostname-client",
   "version": "1.0.0",
   "description": "Typed HTTP client + types for FuzeInfra's cluster-internal Custom Hostname API (Cloudflare for SaaS custom-domain provisioning)",
   "main": "dist/index.cjs",

@@ -15,7 +15,7 @@ const external = [
   'react/jsx-runtime',
   'i18next',
   'react-i18next',
-  '@fuzefront/design-system',
+  '@fuzeone/design-system',
 ]
 
 export default [

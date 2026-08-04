@@ -147,7 +147,7 @@
       <div>
         <h4>Design-system primitives</h4>
         <ul data-inv="designSystemPrimitives">
-          <li><code>BrandTokenScope</code> — <b>NET-NEW in @fuzefront/design-system</b>: applies a
+          <li><code>BrandTokenScope</code> — <b>NET-NEW in @fuzeone/design-system</b>: applies a
             validated portal accent as scoped CSS-var overrides over base tokens, with WCAG-AA
             contrast fallback + malformed-color rejection. Owned by <code>frontend-engineer</code>.</li>
           <li><code>Logo</code> slot primitive (img/initials fallback, never a broken-image icon) —
@@ -155,13 +155,13 @@
         </ul>
         <h4 style="margin-top:var(--space-6)">npm packages</h4>
         <ul data-inv="packages">
-          <li><code>@fuzefront/portal-branding-ui</code> (new private UI package)</li>
+          <li><code>@fuzeone/portal-branding-ui</code> (new private UI package)</li>
         </ul>
         <h4 style="margin-top:var(--space-6)">Consumes (existing — do not rebuild)</h4>
         <ul data-inv="consumes">
-          <li><code>@fuzefront/design-system</code> (base tokens + primitives)</li>
+          <li><code>@fuzeone/design-system</code> (base tokens + primitives)</li>
           <li>host shell <code>ThemeContext</code> (extended, not replaced)</li>
-          <li><code>@fuzefront/portal-client</code> (from contract-designer)</li>
+          <li><code>@fuzeone/portal-client</code> (from contract-designer)</li>
         </ul>
       </div>
     </div>
@@ -172,7 +172,7 @@
   <div class="panel" data-contract>
     <div class="kv">
       <div class="row"><span class="k">endpoint</span><span class="v"><code>GET /api/v1/portal/context</code> → portal id, slug, branding, identity policy, auth entry (FF-EPIC-10-S2, public/pre-auth)</span></div>
-      <div class="row"><span class="k">client</span><span class="v"><code>@fuzefront/portal-client</code> <span class="note" style="margin:0">(authored by contract-designer — dependency, not built here)</span></span></div>
+      <div class="row"><span class="k">client</span><span class="v"><code>@fuzeone/portal-client</code> <span class="note" style="margin:0">(authored by contract-designer — dependency, not built here)</span></span></div>
       <div class="row"><span class="k">branding</span><span class="v"><code>branding.name</code>, <code>branding.logo</code>, <code>branding.favicon</code>, <code>branding.accent</code>, <code>branding.tagline</code> (portals.branding jsonb, FF-EPIC-09)</span></div>
       <div class="row"><span class="k">fail-closed</span><span class="v">suspended → <code>403</code>, unknown host → root fallback (UI) / <code>404</code> (API), cross-portal token → re-auth (FF-EPIC-10-S1/S3)</span></div>
       <div class="row"><span class="k">feature flag</span><span class="v"><code>fuzefront.platform.multi-tenant-portals</code> (reused master switch, default OFF — FF-EPIC-09-S4)</span></div>

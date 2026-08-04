@@ -24,9 +24,9 @@ export default defineConfig({
         'react',
         'react-dom',
         'react/jsx-runtime',
-        '@fuzefront/design-system',
+        '@fuzeone/design-system',
         /^@fuzefront\/design-system\/.*/,
-        '@fuzefront/security-client',
+        '@fuzeone/security-client',
       ],
     },
   },
@@ -36,11 +36,11 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     // Resolve workspace packages to SOURCE so unit tests don't depend on the npm
-    // workspace symlink (which needs GitHub Packages auth). @fuzefront/security-client
+    // workspace symlink (which needs GitHub Packages auth). @fuzeone/security-client
     // is types-only in this package, but alias it so any value import also resolves.
     alias: {
-      '@fuzefront/design-system': dsRoot + '/index.js',
-      '@fuzefront/security-client': securityClientSrc,
+      '@fuzeone/design-system': dsRoot + '/index.js',
+      '@fuzeone/security-client': securityClientSrc,
     },
   },
 })

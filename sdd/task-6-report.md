@@ -22,4 +22,4 @@ SHA: 0d25a0d
 2/2 tests passing (tests/config.test.ts — loadConfig suite)
 
 ## Concerns
-None. Node_modules @fuzefront/shared resolved cleanly via root workspace symlink. No live SendGrid or SMTP server needed.
+None. Node_modules @fuzeone/shared resolved cleanly via root workspace symlink. No live SendGrid or SMTP server needed.

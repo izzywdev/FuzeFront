@@ -1,6 +1,6 @@
 # Chat extraction — architecture, RAG ingestion path, and remaining streams
 
-Tracking issue: **#120** — extract AI Chat into `@fuzefront/chat-ui` (frontend npm
+Tracking issue: **#120** — extract AI Chat into `@fuzeone/chat-ui` (frontend npm
 package) + `chat-service` (backend microservice) with Anthropic + AG-UI + RAG +
 continuous history.
 
@@ -15,7 +15,7 @@ deploy window).
 | Surface | Location | State |
 |---|---|---|
 | Chat microservice | `services/chat-service/` | RAG (Chroma), agent loop + tools, Postgres history repos + migration, SSE streaming, Permit authz, rate-limits, billing emitter, LiteLLM gateway client |
-| Frozen API contract | `services/chat-service/openapi.yaml` | **NEW (this PR)** — single source of truth for `@fuzefront/chat-client` |
+| Frozen API contract | `services/chat-service/openapi.yaml` | **NEW (this PR)** — single source of truth for `@fuzeone/chat-client` |
 | Frontend UI package | `packages/chat-ui/` | DS-first React widget: streaming, RAG citations, confirmation card, feedback, floating launcher |
 | Typed client package | `packages/chat-client/` | HTTP + SSE client, event union types |
 | Deploy templates | `deploy/helm/fuzefront/templates/chat-service.yaml`, `chat-doc-indexer-job.yaml` | Deployment + Service + indexer Job, gated on `chatService.enabled` |
@@ -70,7 +70,7 @@ Write path (offline / on deploy) and read path (per turn):
 handlers** and is the freeze point for the fan-out. The SSE `ChatStreamEvent` union
 is intentionally **AG-UI-compatible** so the renderer consumes it without a
 translation layer. Change the API by amending the spec first, then regenerate
-`@fuzefront/chat-client`.
+`@fuzeone/chat-client`.
 
 ## Remaining streams (NOT in this PR)
 
@@ -89,10 +89,10 @@ behavioral/runtime changes could not be test-verified before a `master`-bound br
      caller's single ongoing thread; `/chat/stream` defaults to it.
    - `MessagesRepository.listForConversation(id, userId, { before, limit })` —
      newest-first cursor pagination (`gate-pagination`), default 50 / max 200.
-   - Update `@fuzefront/chat-client` (`getConversation` params) + contract tests.
+   - Update `@fuzeone/chat-client` (`getConversation` params) + contract tests.
 
 2. **AG-UI rendering** — `frontend-engineer` (sole editor of `design-system/`).
-   `@fuzefront/chat-ui` currently renders with bespoke DS-first components. Adopting
+   `@fuzeone/chat-ui` currently renders with bespoke DS-first components. Adopting
    AG-UI is a deliberate rewrite of a working, tested package, so it is a frontend
    decision rather than a silent swap. The contract is already AG-UI-event-shaped,
    so the renderer can be migrated without backend changes. Keep DS tokens, a11y,

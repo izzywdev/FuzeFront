@@ -1,8 +1,8 @@
 import React, { useState, useEffect, Suspense } from 'react'
-import type { App } from '@fuzefront/app-registry-client'
+import type { App } from '@fuzeone/app-registry-client'
 import { useCurrentUser } from '../lib/shared'
 import { useAppRegistry } from '../platform/appRegistry'
-import { usePortalContext } from '@fuzefront/portal-branding-ui'
+import { usePortalContext } from '@fuzeone/portal-branding-ui'
 import {
   loadFederatedAppFromManifest,
   clearModuleCache,

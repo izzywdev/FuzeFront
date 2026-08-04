@@ -2,7 +2,7 @@
 
 A recipe for wiring a **consumer product** to FuzeFront authentication and
 authorization. You integrate against exactly two things — the **FuzeFront
-Security API** (`/api/v1/security/*`) and the **`@fuzefront/security-client`**
+Security API** (`/api/v1/security/*`) and the **`@fuzeone/security-client`**
 types. You never touch an identity or policy vendor.
 
 The running example is **FuzeMarket**: a marketplace product with resources like
@@ -18,17 +18,17 @@ For the architecture and trust model, read
 - Your product is served **same-origin** with the platform (under
   `app.fuzefront.com` in prod, or local TLS in dev), so `/api/v1/security/*`
   resolves without a cross-origin base URL. Never hard-code an absolute API host.
-- You can read a GitHub Packages token to install a private `@fuzefront/*`
+- You can read a GitHub Packages token to install a private `@fuzeone/*`
   package (below).
 
 ---
 
-## Step 0 — Install `@fuzefront/security-client`
+## Step 0 — Install `@fuzeone/security-client`
 
 The client is published to GitHub Packages. Until this repo moves to the
 `fuzefront` org, it ships under the owner scope as
 **`@izzywdev/fuzefront-security-client`** and is consumed via an npm **alias**, so
-your imports stay `@fuzefront/security-client`. Add a scoped `.npmrc` (do **not**
+your imports stay `@fuzeone/security-client`. Add a scoped `.npmrc` (do **not**
 commit a token — use an env var / CI secret):
 
 ```ini
@@ -43,7 +43,7 @@ then install:
 ```jsonc
 // package.json
 "dependencies": {
-  "@fuzefront/security-client": "npm:@izzywdev/fuzefront-security-client@^0.1.0"
+  "@fuzeone/security-client": "npm:@izzywdev/fuzefront-security-client@^0.1.0"
 }
 ```
 
@@ -57,9 +57,9 @@ import type {
   AuthMethods,
   SessionResult,
   SECURITY_CONTRACT_VERSION,
-} from '@fuzefront/security-client'
+} from '@fuzeone/security-client'
 // generated request/response shapes:
-import type { components } from '@fuzefront/security-client'
+import type { components } from '@fuzeone/security-client'
 type LoginResponse = components['schemas']['LoginResponse']
 type AuthzCheckRequest = components['schemas']['AuthzCheckRequest']
 ```
@@ -238,7 +238,7 @@ Ship `registration/policy.json` next to your `manifest.json`, using **bare** key
 }
 ```
 
-`register.sh` (from `@fuzefront/onboarding-kit`, running as your init container)
+`register.sh` (from `@fuzeone/onboarding-kit`, running as your init container)
 `PUT`s it to `/api/v1/app-registry/apps/{slug}/policy` on every deploy. The platform
 namespaces your keys as `<slug>_<Key>` — `fuzemarket_Listing`, `fuzemarket_seller` —
 so your `Listing` never collides with another product's, then merges them into the
@@ -332,17 +332,17 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 | `authz/check` always `{ allow: false }` | Fail-closed on error, or the AuthZ rollout isn't live yet | Confirm the AuthZ endpoints are enabled; check `subject`/`tenant`/`resource.type`/`action` are all set. |
 | One role denies everything, others work | The role references a resource/action your `policy.json` never declared — it grants nothing, silently | `npx fuzefront-validate-policy registration/policy.json` (Step 4b). |
 | **Every** role denies, right after a deploy | Your policy was stored but not yet synced, or the sync dropped it | `curl -s <host>/health \| jq .permit` — look for your slug in `registeredProducts` vs `rejectedProducts` (Step 4b). |
-| Your slug is in neither list on `/health` | `register.sh` never submitted the policy — an old vendored copy has no policy step, or the file is misnamed | The file must be exactly `registration/policy.json`; re-vendor `register.sh` from `@fuzefront/onboarding-kit`. |
+| Your slug is in neither list on `/health` | `register.sh` never submitted the policy — an old vendored copy has no policy step, or the file is misnamed | The file must be exactly `registration/policy.json`; re-vendor `register.sh` from `@fuzeone/onboarding-kit`. |
 | `identity.tenantId` is `null` | Legacy token mode, tenant unresolved | Fail closed on tenant-scoped authz; do not default a tenant. |
 | Social login loops / no `code` | Absolute or cross-origin `redirectTo` | Use a **same-origin, app-relative** `redirectTo`; absolute URLs are rejected. |
-| `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN`. |
+| `npm install` 401/403 for `@fuzeone/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN`. |
 | Tempted to parse the JWT / fetch JWKS | Wrong layer | Resolve identity via `GET /session` (or `/tokens/introspect`); consume `Identity`. |
 
 ---
 
 ## Checklist
 
-- [ ] `@fuzefront/security-client` installed via a scoped `.npmrc` (token not committed).
+- [ ] `@fuzeone/security-client` installed via a scoped `.npmrc` (token not committed).
 - [ ] Same-origin `/api/v1/security/*` reachable (no absolute API host hard-coded).
 - [ ] Sign-in UI rendered from `GET /methods` (no provider assumptions).
 - [ ] Login/signup handles the `authenticated` **and** `mfa_required` `SessionResult`.

@@ -1,4 +1,4 @@
-# Unit 3 Report — @fuzefront/chat-client
+# Unit 3 Report — @fuzeone/chat-client
 
 ## Status: COMPLETE
 
@@ -33,7 +33,7 @@ All implementation tasks complete, type-check clean, 22/22 tests passing.
 
 | File | Notes |
 |---|---|
-| `package.json` | name `@fuzefront/chat-client`, version `1.0.0`, MIT; exact pins: typescript 5.1.6, jest 29.7.0, ts-jest 29.1.1, @types/node 18.19.0; publishConfig → npm.pkg.github.com; repository field matches sdk shape |
+| `package.json` | name `@fuzeone/chat-client`, version `1.0.0`, MIT; exact pins: typescript 5.1.6, jest 29.7.0, ts-jest 29.1.1, @types/node 18.19.0; publishConfig → npm.pkg.github.com; repository field matches sdk shape |
 | `tsconfig.json` | target ES2020, module commonjs, strict true, outDir dist, declarationMap + sourceMap |
 | `jest.config.js` | ts-jest preset, testEnvironment node, roots tests/, uses tests/tsconfig.json |
 | `tests/tsconfig.json` | extends ../tsconfig.json, rootDir .. to include src |

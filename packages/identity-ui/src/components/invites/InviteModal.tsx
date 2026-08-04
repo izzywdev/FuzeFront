@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Modal, Input, Select, Textarea, Button, Toast, FileDropZone, Badge } from '@fuzefront/design-system'
+import { Modal, Input, Select, Textarea, Button, Toast, FileDropZone, Badge } from '@fuzeone/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { isValidEmail, parseEmailText, parseCsv, type ParsedEmail } from './parseEmails'
 import type { OrgRole } from '../../types'

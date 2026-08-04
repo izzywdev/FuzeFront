@@ -1,13 +1,13 @@
 name: Publish packages (GitHub Packages, private)
 
-# On merge to master, version-bump and publish the reusable @fuzefront/* packages
+# On merge to master, version-bump and publish the reusable @fuzeone/* packages
 # to GitHub Packages (private/restricted). Lerna with conventional commits detects
 # which packages changed since their last release tag, computes the semver bump
 # from commit messages (feat->minor, fix->patch, BREAKING CHANGE->major), and
 # publishes only those. Private packages (apps + deployed services) are skipped.
 #
 # NOTE: GitHub Packages requires the npm scope to match the owning org/user.
-# @fuzefront/* can only publish once this repo is owned by the `fuzefront` GitHub
+# @fuzeone/* can only publish once this repo is owned by the `fuzefront` GitHub
 # org. The job guard below makes this workflow a no-op under any other owner, so
 # it is safe to merge now and auto-activates after the org transfer.
 on:

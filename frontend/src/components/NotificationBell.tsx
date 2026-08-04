@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useT } from '@fuzefront/i18n'
-import { Skeleton, StatusCallout } from '@fuzefront/design-system'
+import { useT } from '@fuzeone/i18n'
+import { Skeleton, StatusCallout } from '@fuzeone/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   Notification,

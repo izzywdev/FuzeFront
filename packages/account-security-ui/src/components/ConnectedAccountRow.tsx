@@ -1,4 +1,4 @@
-import { Badge, Button } from '@fuzefront/design-system'
+import { Badge, Button } from '@fuzeone/design-system'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import { providerDisplayName } from './providers'
 import type { SocialConnection } from '../types'

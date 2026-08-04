@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { BillingInvoice, InvoiceListResponse } from '@fuzefront/billing-client';
+import type { BillingInvoice, InvoiceListResponse } from '@fuzeone/billing-client';
 import { InvoiceHistoryPanel } from '../src/components/InvoiceHistoryPanel';
 import { renderWithI18n } from './helpers';
 

@@ -5,8 +5,8 @@
     "noEmit": true,
     "types": ["node", "jest"],
     "paths": {
-      "@fuzefront/core": ["../core/dist/index.d.ts"],
-      "@fuzefront/shared/kafka": ["../../shared/dist/kafka/index.d.ts"]
+      "@fuzeone/core": ["../core/dist/index.d.ts"],
+      "@fuzeone/shared/kafka": ["../../shared/dist/kafka/index.d.ts"]
     }
   },
   "include": ["../src/**/*", "../tests/**/*"]

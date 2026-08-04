@@ -2,7 +2,7 @@
  * Host-shell feature flags.
  *
  * Flags are fetched ONCE per session from the backend (`GET /api/flags`), which
- * evaluates them server-side through @fuzefront/feature-flags (OpenFeature +
+ * evaluates them server-side through @fuzeone/feature-flags (OpenFeature +
  * Unleash) against the AUTHENTICATED user. The browser deliberately does not
  * talk to Unleash directly:
  *

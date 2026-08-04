@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/sms-service",
+  "name": "@fuzeone/sms-service",
   "version": "1.0.0",
   "description": "Twilio Verify SMS OTP gateway for FuzeFront MFA",
   "main": "dist/index.js",

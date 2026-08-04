@@ -1,6 +1,6 @@
 ---
 key: FF-EPIC-06
-title: Feature flags — deploy Unleash (FuzeFront-hosted) + build @fuzefront/feature-flags (OpenFeature) client
+title: Feature flags — deploy Unleash (FuzeFront-hosted) + build @fuzeone/feature-flags (OpenFeature) client
 label: [fuzefront, feature-flags, platform, devops]
 github: https://github.com/izzywdev/FuzeFront/issues/116
 status: ready
@@ -8,7 +8,7 @@ priority: Medium
 domain: Platform
 ---
 
-## 🎯 Epic: Feature Flags platform (Unleash + @fuzefront/feature-flags)
+## 🎯 Epic: Feature Flags platform (Unleash + @fuzeone/feature-flags)
 
 | Field | Value |
 |-------|-------|
@@ -24,25 +24,25 @@ domain: Platform
 
 ### 📌 Problem Statement
 > The feature-flags governance layer (agent + skill) exists (PR #111 / FuzeSDLC #17) but the runtime is
-> missing: there is no deployed Unleash and no `@fuzefront/feature-flags` client. Until both land, teams
+> missing: there is no deployed Unleash and no `@fuzeone/feature-flags` client. Until both land, teams
 > cannot wrap risky work in flags, the family has no shared flag service, and the "default OFF + test both
 > states" discipline cannot be enforced at runtime.
 
 ### 🎯 Goal
-> FuzeFront hosts Unleash (consuming `fuzeinfra-postgres`) and publishes a private `@fuzefront/feature-flags`
+> FuzeFront hosts Unleash (consuming `fuzeinfra-postgres`) and publishes a private `@fuzeone/feature-flags`
 > OpenFeature client so the family can manage and consume flags through one service.
 
 ### 👥 Target Personas
 - **Platform operator** — runs the FuzeFront-hosted Unleash.
 - **Feature-flags engineer** — administers flags + taxonomy.
-- **Family-product developer** — consumes `@fuzefront/feature-flags` to gate features.
+- **Family-product developer** — consumes `@fuzeone/feature-flags` to gate features.
 
 ### ✅ Features In Scope
 - [ ] Feature 1: Unleash Deployment+Service (`unleashorg/unleash-server`, pinned version, EXTERNAL image — not in release matrix), gated by `unleash.enabled` (default false).
 - [ ] Feature 2: Dedicated `unleash` database + least-priv role on `fuzeinfra-postgres` via a pre-install bootstrap Job (billing-db-bootstrap pattern); secrets (DATABASE_URL + admin token + client token) in a SealedSecret `unleash-secrets`.
 - [ ] Feature 3: Admin UI internal/admin-gated only (never public-unauthenticated); optional Edge/proxy or documented server-API + client-token path.
 - [ ] Feature 4: Argo umbrella wiring (`unleash.enabled` gate) + `values-prod.yaml` entries + node-2 affinity + chart README documenting the connection endpoint+token.
-- [ ] Feature 5: `@fuzefront/feature-flags` client — OpenFeature server+web SDK + Unleash provider, thin API (init + getBoolean/getString/getNumber), Fuze evaluation-context conventions, graceful degradation, private publish + tests.
+- [ ] Feature 5: `@fuzeone/feature-flags` client — OpenFeature server+web SDK + Unleash provider, thin API (init + getBoolean/getString/getNumber), Fuze evaluation-context conventions, graceful degradation, private publish + tests.
 
 ### 🚫 Out of Scope
 - Triggering a prod deploy — PR only; human merges in a deploy window.
@@ -52,7 +52,7 @@ domain: Platform
 ### 🏗️ High-Level Architecture Notes
 > Unleash self-hosted, FuzeFront-hosted, consuming `fuzeinfra-postgres` (consumer model — FuzeFront does
 > not provision the DB engine). DB role via a pre-install bootstrap Job (follow `billing-db-bootstrap`).
-> SDK = OpenFeature + Unleash provider wrapped in `@fuzefront/feature-flags`. Evaluation context:
+> SDK = OpenFeature + Unleash provider wrapped in `@fuzeone/feature-flags`. Evaluation context:
 > `environment`, org/tenant id, user id, app (per the `feature-flags` skill). Degrade to defaults when
 > Unleash is unreachable. EXTERNAL Unleash image — do NOT add to `release.yml`'s build matrix.
 
@@ -60,7 +60,7 @@ domain: Platform
 | Metric | Current Baseline | Target |
 |--------|-----------------|--------|
 | Unleash reachable in-cluster (gated) | None | Deployed behind `unleash.enabled` |
-| `@fuzefront/feature-flags` published privately | No | Yes (restricted, GitHub Packages) |
+| `@fuzeone/feature-flags` published privately | No | Yes (restricted, GitHub Packages) |
 | Graceful degradation when Unleash down | n/a | Returns defaults, no crash |
 | Admin UI exposure | n/a | Internal/admin-gated only (not public) |
 
@@ -70,7 +70,7 @@ domain: Platform
 | FF-EPIC-06-S1 | Unleash Helm Deployment+Service (gated, pinned, external image) | Open |
 | FF-EPIC-06-S2 | Unleash DB bootstrap Job + SealedSecret | Open |
 | FF-EPIC-06-S3 | Argo umbrella wiring + values-prod + chart README | Open |
-| FF-EPIC-06-S4 | @fuzefront/feature-flags OpenFeature client + publish | Open |
+| FF-EPIC-06-S4 | @fuzeone/feature-flags OpenFeature client + publish | Open |
 
 ### 🔗 Dependencies
 - **Related:** PR #111 / FuzeSDLC #17 (governance agent+skill already landed); `feature-flags` skill in `.claude/skills/feature-flags/`.
@@ -208,7 +208,7 @@ client connection endpoint + token.
 
 #### ✅ Acceptance Criteria
 1. **Given** Argo sync with `unleash.enabled=true` in prod values **When** reconciled **Then** Unleash is created and healthy.
-2. **Given** the chart README **When** read **Then** it documents the connection endpoint + which token the `@fuzefront/feature-flags` client uses.
+2. **Given** the chart README **When** read **Then** it documents the connection endpoint + which token the `@fuzeone/feature-flags` client uses.
 3. **Edge case:** **Given** `unleash.enabled=false` in prod values **When** synced **Then** Argo creates no Unleash resources (and does not drift).
 4. **Error case:** **Given** wrong node affinity **When** scheduled **Then** the pod stays Pending visibly (not silently mis-scheduled) — documented in the README troubleshooting.
 
@@ -236,7 +236,7 @@ client connection endpoint + token.
 
 ---
 
-### 📖 Story: Build and publish the @fuzefront/feature-flags OpenFeature client
+### 📖 Story: Build and publish the @fuzeone/feature-flags OpenFeature client
 
 | Field | Value |
 |-------|-------|
@@ -248,7 +248,7 @@ client connection endpoint + token.
 | **Tech Layers** | Backend / Package |
 
 #### 🧑‍💼 User Story
-> As a **family-product developer**, I want **a private `@fuzefront/feature-flags` client wrapping
+> As a **family-product developer**, I want **a private `@fuzeone/feature-flags` client wrapping
 > OpenFeature + the Unleash provider with a thin API and graceful degradation** so that **I can gate
 > features consistently and safely across the family**.
 
@@ -273,7 +273,7 @@ org/tenant id, user id, app). Degrades to defaults when Unleash is unreachable. 
 #### 📋 Sub-Tasks
 | Type | Summary | Points | Status |
 |------|---------|--------|--------|
-| Backend | `@fuzefront/feature-flags` (OpenFeature + Unleash provider, thin API, degradation) | 8 | Open |
+| Backend | `@fuzeone/feature-flags` (OpenFeature + Unleash provider, thin API, degradation) | 8 | Open |
 | Backend | Private publish-config + packages-publish wiring | 4 | Open |
 | QA | Unit tests: reachable, degraded, unknown-key default, context targeting | 4 | Open |
 

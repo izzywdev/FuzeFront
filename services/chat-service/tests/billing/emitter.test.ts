@@ -2,7 +2,7 @@
 // Kafka failure must NOT throw (billing is non-blocking — plan §5.1 / §6g).
 
 import { BillingEmitter } from '../../src/billing/emitter';
-import { TOPICS } from '@fuzefront/shared';
+import { TOPICS } from '@fuzeone/shared';
 
 function makeProducer() {
   return { send: jest.fn().mockResolvedValue(undefined) };

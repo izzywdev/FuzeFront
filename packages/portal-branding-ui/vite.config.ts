@@ -21,9 +21,9 @@ export default defineConfig({
         'react',
         'react-dom',
         'react/jsx-runtime',
-        '@fuzefront/design-system',
+        '@fuzeone/design-system',
         /^@fuzefront\/design-system\/.*/,
-        '@fuzefront/portal-client',
+        '@fuzeone/portal-client',
         'axios',
       ],
     },
@@ -36,8 +36,8 @@ export default defineConfig({
     // Resolve workspace packages to SOURCE so unit tests don't depend on the npm
     // workspace symlink (which needs GitHub Packages auth) or a pre-built dist.
     alias: {
-      '@fuzefront/design-system': dsRoot + '/index.js',
-      '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/design-system': dsRoot + '/index.js',
+      '@fuzeone/portal-client': portalClientSrc,
     },
   },
 })

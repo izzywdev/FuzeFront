@@ -13,7 +13,7 @@
 
 The app registry (`services/app-registry-service/openapi.yaml`, Zod mirror
 `backend/applications/src/app-registry/manifest.schema.ts`, client
-`@fuzefront/app-registry-client`) already models an `AppManifest` with:
+`@fuzeone/app-registry-client`) already models an `AppManifest` with:
 
 - `mode: portal | standalone` — `standalone` renders **without portal chrome on
   its own host/path**, and `routing.host` already reserves a dedicated per-app

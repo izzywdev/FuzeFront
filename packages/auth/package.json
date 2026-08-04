@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/auth",
+  "name": "@fuzeone/auth",
   "version": "0.2.0",
   "description": "Consumable authN/authZ middleware for the FuzeFront family \u2014 stable Identity shape with a pluggable, fail-closed token verifier (legacy-hs256 today, federated-jwks target). Verifies only; never mints tokens.",
   "main": "dist/index.cjs",

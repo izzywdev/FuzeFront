@@ -1,7 +1,7 @@
 # Portal API contract — changelog
 
 The single source of truth is `services/portal-service/openapi.yaml`. Every change
-bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
+bumps `info.version` here first, then the client (`@fuzeone/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
@@ -46,7 +46,7 @@ made a `portal_domains` projection impossible to type.
   public contract kept separate from the origin so the origin can be repointed
   without customer DNS changes.
 
-> Safe to make breaking: `@fuzefront/portal-client` currently has no consumers in
+> Safe to make breaking: `@fuzeone/portal-client` currently has no consumers in
 > this repo, and `services/portal-service` has no implementation behind it yet.
 
 ## 1.0.0 — 2026-07-27 (frozen)

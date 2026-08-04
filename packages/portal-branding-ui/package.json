@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/portal-branding-ui",
+  "name": "@fuzeone/portal-branding-ui",
   "version": "0.1.0",
   "description": "White-label tenant portal shell + login UI (branded topbar/side-panel/app-grid, white-label sign-in, fail-closed boot states) for FuzeFront, on the fuse-seam design system",
   "type": "module",
@@ -18,14 +18,14 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "@fuzefront/design-system": "^1.0.0",
-    "@fuzefront/portal-client": "^1.0.0",
+    "@fuzeone/design-system": "^1.0.0",
+    "@fuzeone/portal-client": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.0.0",
-    "@fuzefront/portal-client": "1.0.0",
+    "@fuzeone/design-system": "1.0.0",
+    "@fuzeone/portal-client": "1.0.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",

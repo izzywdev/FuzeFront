@@ -1,4 +1,4 @@
-# i18n — Build-time AI translation + Language Selector (`@fuzefront/i18n`)
+# i18n — Build-time AI translation + Language Selector (`@fuzeone/i18n`)
 
 Status: **plan (for review)**. Implementation artifacts listed at the end.
 
@@ -28,7 +28,7 @@ editing.
 
 ## Components (componentized, private)
 
-1. **`@fuzefront/i18n`** — npm package (private; `publishConfig` → GitHub Packages `@fuzefront`,
+1. **`@fuzeone/i18n`** — npm package (private; `publishConfig` → GitHub Packages `@fuzefront`,
    `access: restricted`, `repository` field; wired into the release pipeline). The frontend container
    imports this. Public interface:
    - `<I18nProvider>` — initializes i18next, loads bundled locale JSON, restores the saved language.
@@ -39,7 +39,7 @@ editing.
    - Internal: i18next config, the language registry (code → name, native name, `dir`), locale JSON
      loading. RTL handled centrally; **design-system components must use CSS logical properties**
      (`margin-inline`, `padding-inline-start`, `inset-inline`…) so they mirror automatically.
-2. **`@fuzefront/i18n-translate`** — a small build-time CLI (bin) in the same repo: reads the English
+2. **`@fuzeone/i18n-translate`** — a small build-time CLI (bin) in the same repo: reads the English
    source bundle + the configured language list, diffs against existing locale files, asks the
    **LiteLLM gateway** (OpenAI-compatible `/chat/completions`) to translate only **missing/changed**
    keys (preserving ICU placeholders + not translating interpolation tokens), and writes the locale
@@ -51,7 +51,7 @@ editing.
   design-system + apps. The language list lives in one config (e.g. `i18n.languages.json` with code +
   `dir`).
 - **`.github/workflows/i18n-translate.yml`**: triggers on changes to `locales/en/**` or the language
-  list (and manual `workflow_dispatch`). Runs `@fuzefront/i18n-translate` against LiteLLM (key via CI
+  list (and manual `workflow_dispatch`). Runs `@fuzeone/i18n-translate` against LiteLLM (key via CI
   secret), then **opens a bot PR** with the regenerated `locales/<lng>/*.json`. Translations are thus
   reviewable, diffable, and versioned. Merge → the normal frontend build bakes them in and the
   existing release/Argo pipeline ships them. **No translating on every build** (cost/determinism).
@@ -66,15 +66,15 @@ frontend image. No runtime DB, no CDN, no runtime service. Versioned + reviewed 
 
 ## Integration
 
-- **Converge identity-ui i18n onto `@fuzefront/i18n`.** The identity track (#65) began an en/he RTL
+- **Converge identity-ui i18n onto `@fuzeone/i18n`.** The identity track (#65) began an en/he RTL
   i18n provider; that should consume this package instead of rolling its own — single source of i18n
   truth across the container and all microfrontends (shared MF singleton like react).
 - Frontend container mounts `<I18nProvider>` at the root and `<LanguageSelector>` in the top bar.
 
 ## Deploy / CI wiring (part of "done")
 
-- `@fuzefront/i18n` + `@fuzefront/i18n-translate`: private publish-config + repository + added to the
-  lerna/release publish pipeline (same as other `@fuzefront/*` packages).
+- `@fuzeone/i18n` + `@fuzeone/i18n-translate`: private publish-config + repository + added to the
+  lerna/release publish pipeline (same as other `@fuzeone/*` packages).
 - `i18n-translate.yml` workflow added; LiteLLM endpoint + key as CI secrets (the gateway is in-cluster;
   CI reaches it via the same mechanism chat-service uses, or a build-time-only key).
 - No new service/Argo app — locale files ride the existing frontend image + release pipeline.
@@ -86,8 +86,8 @@ frontend image. No runtime DB, no CDN, no runtime service. Versioned + reviewed 
 - Human review/QA workflow beyond PR review of the generated files.
 
 ## Verification
-- `@fuzefront/i18n`: unit tests (vitest) for provider/selector/dir; type-check; library build (es/cjs/dts);
+- `@fuzeone/i18n`: unit tests (vitest) for provider/selector/dir; type-check; library build (es/cjs/dts);
   a11y check on `<LanguageSelector>`; visual RTL flip check (he/ar).
-- `@fuzefront/i18n-translate`: unit tests with a **mocked** LiteLLM (no live calls); idempotency test
+- `@fuzeone/i18n-translate`: unit tests with a **mocked** LiteLLM (no live calls); idempotency test
   (no changes → no rewrite); ICU-placeholder-preservation test.
 - `i18n-translate.yml`: `actionlint`; a dry-run that produces a no-op PR when nothing changed.

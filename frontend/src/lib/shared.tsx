@@ -87,7 +87,7 @@ export interface User {
 
 /**
  * @deprecated Legacy frontend-local App shape. The federated-app platform now
- * uses the FROZEN generated type from `@fuzefront/app-registry-client` (`App`
+ * uses the FROZEN generated type from `@fuzeone/app-registry-client` (`App`
  * with a `manifest`) as the single source of truth across UI/backend/tests.
  * Read apps via `useAppRegistry()` / `useRegisteredApps()` instead of this type.
  * Retained only for the not-yet-migrated legacy websocket/AppContext reducer

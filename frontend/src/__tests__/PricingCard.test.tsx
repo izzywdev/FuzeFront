@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { PricingCard } from '@fuzefront/design-system'
+import { PricingCard } from '@fuzeone/design-system'
 
 describe('PricingCard', () => {
   it('renders tier name, price, interval and features', () => {

@@ -6,7 +6,7 @@ import type {
   ConversationWithMessages,
   GetConversationOptions,
   ListConversationsFilter,
-} from '@fuzefront/chat-client';
+} from '@fuzeone/chat-client';
 
 /**
  * A minimal stand-in for ChatServiceClient that replays a scripted event list

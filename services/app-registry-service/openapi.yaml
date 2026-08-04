@@ -10,7 +10,7 @@ info:
     the legacy `/api/apps` routes but supersedes them under the versioned path
     `/api/v1/app-registry`.
 
-    This file is the single source of truth for `@fuzefront/app-registry-client`.
+    This file is the single source of truth for `@fuzeone/app-registry-client`.
     Changing the API means amending this file first (see the `api-contract-first`
     skill), then regenerating the client (`openapi-typescript`).
 

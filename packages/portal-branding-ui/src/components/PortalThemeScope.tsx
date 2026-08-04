@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrandTokenScope } from '@fuzefront/design-system'
+import { BrandTokenScope } from '@fuzeone/design-system'
 import type { NormalizedPortalContext } from '../types'
 
 export interface PortalThemeScopeProps {
@@ -12,7 +12,7 @@ export interface PortalThemeScopeProps {
 /**
  * The `[data-portal]` token-override hook: re-points `--accent-*` to the
  * resolved portal's brand color via the DS `BrandTokenScope`, layered over
- * the base `@fuzefront/design-system` tokens — never a fork. `isRoot`
+ * the base `@fuzeone/design-system` tokens — never a fork. `isRoot`
  * resolves to the literal `data-portal="root"` value the frames/specs assert
  * (frame 02), not the root portal's `fuzefront` slug.
  */

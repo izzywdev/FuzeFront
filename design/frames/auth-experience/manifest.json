@@ -1,13 +1,13 @@
 {
   "name": "Auth experience — approval frames",
   "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — one approved flow unblocks that flow's implementation.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "approved": false,
   "approvedBy": null,
   "approvedAt": null,
   "contract": {
     "openapi": "packages/security/openapi.yaml",
-    "client": "@fuzefront/security-client",
+    "client": "@fuzeone/security-client",
     "schemas": [
       "components.schemas.SignupRequest",
       "components.schemas.LoginRequest",
@@ -29,7 +29,7 @@
       "GET /api/v1/security/methods",
       "GET /api/v1/security/signup/email-available"
     ],
-    "component": "@fuzefront/auth-experience-ui → SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
+    "component": "@fuzeone/auth-experience-ui → SignUpFlow / SignInFlow / EmailVerificationFlow / PasswordResetFlow",
     "featureFlag": "fuzefront.auth.experience",
     "deltas": [
       "NEW endpoint GET /api/v1/security/signup/email-available?email= → { available: boolean } (debounced inline check; must fail-open on error so it never blocks submit; must NOT be an enumeration oracle beyond signup UX — rate-limit + captcha-gate it).",
@@ -83,13 +83,13 @@
       "SocialButton"
     ],
     "designSystemPrimitives": [
-      "InlineValidatedInput (Input with a right-adornment slot + valid/invalid ring) — NET-NEW in @fuzefront/design-system",
+      "InlineValidatedInput (Input with a right-adornment slot + valid/invalid ring) — NET-NEW in @fuzeone/design-system",
       "StrengthMeter (segmented bar + label tokens) — NET-NEW",
       "TurnstileContainer (managed-widget shell with loading/verified/failed slots) — NET-NEW",
       "Alert info/success variants — add if not already present"
     ],
     "packages": [
-      "@fuzefront/auth-experience-ui"
+      "@fuzeone/auth-experience-ui"
     ],
     "externalPackages": [
       "@marsidev/react-turnstile (Cloudflare Turnstile React wrapper; keys owner-gated)"

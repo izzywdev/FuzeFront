@@ -9,7 +9,7 @@ import { defineConfig, devices } from '@playwright/test'
  *   1. The repo-root `playwright.config.ts` is dedicated to the
  *      federated-apps approved-frames gate (`testMatch: federated-apps-frames`)
  *      and must stay that way — it is a merge gate other agents own.
- *   2. This feature's UI component (`@fuzefront/billing-ui → InvoiceHistoryPanel`)
+ *   2. This feature's UI component (`@fuzeone/billing-ui → InvoiceHistoryPanel`)
  *      is NOT built yet (gated on UX approval). So the specs here run in two
  *      phases that need different (or no) infrastructure:
  *

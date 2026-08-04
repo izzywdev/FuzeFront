@@ -119,7 +119,7 @@
     <div class="flowcard" data-flow="master-admin-portals">
       <h4><code>MasterAdminPortalsFlow</code></h4>
       <div class="rt">route /admin/portals · story FF-EPIC-14-S2 · flag fuzefront.platform.multi-tenant-portals · approved: false</div>
-      <div class="rt">contract: @fuzefront/portal-client (ANTICIPATED — not frozen today) → @fuzefront/portal-admin-ui</div>
+      <div class="rt">contract: @fuzeone/portal-client (ANTICIPATED — not frozen today) → @fuzeone/portal-admin-ui</div>
       <div class="comps">
         <code>PortalsTable</code><code>PortalRow</code><code>PortalStatusPill</code><code>PlanBadge</code>
         <code>CreatePortalDialog</code><code>PortalDetailPanel</code><code>DomainStatusList</code>
@@ -130,7 +130,7 @@
     <div class="flowcard" data-flow="portal-console">
       <h4><code>PortalAdminConsoleFlow</code></h4>
       <div class="rt">route /portal/admin · story FF-EPIC-14-S3 · flags fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog · approved: false</div>
-      <div class="rt">contract: @fuzefront/security-client (REAL, members/roles) + @fuzefront/app-registry-client (REAL, app display) + anticipated portal-scoped invitation &amp; portal_apps routes → @fuzefront/portal-admin-ui</div>
+      <div class="rt">contract: @fuzeone/security-client (REAL, members/roles) + @fuzeone/app-registry-client (REAL, app display) + anticipated portal-scoped invitation &amp; portal_apps routes → @fuzeone/portal-admin-ui</div>
       <div class="comps">
         <code>PortalConsoleShell</code><code>PortalTabs</code><code>PortalOverviewCards</code>
         <code>PortalUsersTable</code><code>InviteUserDialog</code><code>PortalRolePicker</code>
@@ -142,7 +142,7 @@
     <div class="flowcard" data-flow="portal-billing">
       <h4><code>PortalBillingFlow</code></h4>
       <div class="rt">route /portal/admin/billing · story FF-EPIC-14-S4 · flag fuzefront.billing.reseller-connect · approved: false</div>
-      <div class="rt">contract: @fuzefront/billing-client (REAL, platform subscription) + anticipated Connect / price-book routes → @fuzefront/billing-ui</div>
+      <div class="rt">contract: @fuzeone/billing-client (REAL, platform subscription) + anticipated Connect / price-book routes → @fuzeone/billing-ui</div>
       <div class="comps">
         <code>BillingConsolePanel</code><code>ConnectOnboardingCard</code><code>ConnectStatusStepper</code>
         <code>PriceBookTable</code><code>PlatformSubscriptionCard</code><code>ConnectErrorNotice</code>
@@ -153,8 +153,8 @@
       <div class="inv-col" data-inv="packages">
         <h4>npm packages</h4>
         <ul>
-          <li><code>@fuzefront/portal-admin-ui</code> <span class="muted">(new)</span></li>
-          <li><code>@fuzefront/billing-ui</code> <span class="muted">(extended)</span></li>
+          <li><code>@fuzeone/portal-admin-ui</code> <span class="muted">(new)</span></li>
+          <li><code>@fuzeone/billing-ui</code> <span class="muted">(extended)</span></li>
         </ul>
       </div>
       <div class="inv-col" data-inv="ds-primitives">
@@ -173,17 +173,17 @@
   <span class="pending" data-approval-status="pending">● Awaiting approval — per flow (S2 / S3 / S4)</span>
 
   <p class="note">
-    Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only) ·
+    Design system: <code>@fuzeone/design-system</code> (fuse-seam, tokens only) ·
     Epics: FF-EPIC-14 (UI) consuming FF-EPIC-09 / 11 / 12 / 15.<br />
-    <b>Anticipated contracts:</b> the <code>@fuzefront/portal-client</code> (all <code>/portals*</code>),
+    <b>Anticipated contracts:</b> the <code>@fuzeone/portal-client</code> (all <code>/portals*</code>),
     the portal-scoped invitation route, the per-portal catalog (<code>portal_apps</code>), and the
     Stripe Connect / price-book surface do <b>not</b> exist in the contracts today — these frames
     commission them, exactly as an approved frame can commission a new endpoint. Members/roles bind to
-    the real <code>@fuzefront/security-client</code>; app display to the real
-    <code>@fuzefront/app-registry-client</code>; the portal's own subscription to the real
-    <code>@fuzefront/billing-client</code>.<br />
+    the real <code>@fuzeone/security-client</code>; app display to the real
+    <code>@fuzeone/app-registry-client</code>; the portal's own subscription to the real
+    <code>@fuzeone/billing-client</code>.<br />
     <b>DS primitives:</b> <code>Tabs</code>, <code>StatusPill</code>, <code>StatCard</code>,
-    <code>Stepper</code>, and <code>SortableList</code> are not in <code>@fuzefront/design-system</code>
+    <code>Stepper</code>, and <code>SortableList</code> are not in <code>@fuzeone/design-system</code>
     today — <code>frontend-engineer</code> (sole editor of <code>design-system/</code>) adds them as
     foundation PRs; the frames compose them from tokens only in the meantime.<br />
     Approve per-flow by setting <code>approved: true</code> on the flow in <code>manifest.json</code>,

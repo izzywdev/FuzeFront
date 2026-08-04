@@ -21,7 +21,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@fuzefront/design-system": ["../../design-system/index.d.ts"],
+      "@fuzeone/design-system": ["../../design-system/index.d.ts"],
       // The design-system .d.ts lives outside this package and imports "react";
       // map react/react-dom to this package's installed types so its
       // React.SelectHTMLAttributes base resolves fully during the monorepo

@@ -2,12 +2,12 @@
  * Contract-bound types for the account-security hub.
  *
  * `AuthMethods`, `SocialProvider`, and `ErrorBody` are imported from the frozen
- * `@fuzefront/security-client` so drift is a compile error.
+ * `@fuzeone/security-client` so drift is a compile error.
  *
  * ⚠️ CONTRACT-CLIENT GAP (for contract-designer / backend-engineer):
  * `openapi.yaml` defines `IdentityConnections` + `SocialConnection`
  * (GET /v1/security/identity/connections), but the PUBLISHED
- * `@fuzefront/security-client` (v0.2.0) exposes NEITHER — its `generated.ts`
+ * `@fuzeone/security-client` (v0.2.0) exposes NEITHER — its `generated.ts`
  * and hand-authored `types.ts` predate those schemas. The client must be
  * REGENERATED from the frozen spec and re-published so these types come from
  * the client, not this package. Until then they are mirrored here EXACTLY from
@@ -15,8 +15,8 @@
  * `SocialConnection`). This is the only hand-mirrored surface; remove it once
  * the client is regenerated.
  */
-import type { AuthMethods as ClientAuthMethods, SocialProvider as ClientSocialProvider } from '@fuzefront/security-client'
-import type { components } from '@fuzefront/security-client'
+import type { AuthMethods as ClientAuthMethods, SocialProvider as ClientSocialProvider } from '@fuzeone/security-client'
+import type { components } from '@fuzeone/security-client'
 
 /** Neutral auth capability descriptor (drives which affordances render). */
 export type AuthMethods = ClientAuthMethods

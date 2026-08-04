@@ -67,7 +67,7 @@ spec:
                   name: {{ .Values.unleash.secretName | default "unleash-secrets" }}
                   key: INIT_ADMIN_API_TOKENS
             # INIT_CLIENT_API_TOKENS: the client/SDK token the
-            # @fuzefront/feature-flags package uses (format
+            # @fuzeone/feature-flags package uses (format
             # `default:development.<hex>` / `[project]:[env].<hex>`).
             - name: INIT_CLIENT_API_TOKENS
               valueFrom:
@@ -100,7 +100,7 @@ metadata:
 spec:
   # Cluster-internal ONLY. The admin UI is NOT publicly exposed (see this
   # chart's README + the optional unleash.ingress stub). Clients (and the
-  # @fuzefront/feature-flags package) connect to:
+  # @fuzeone/feature-flags package) connect to:
   #   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
   selector:
     app: fuzefront-unleash

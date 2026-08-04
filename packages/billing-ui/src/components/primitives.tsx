@@ -1,5 +1,5 @@
 /**
- * Local presentational primitives that mirror the @fuzefront/design-system
+ * Local presentational primitives that mirror the @fuzeone/design-system
  * components (Button, StatusPill, IconButton, Spinner). They render the DS
  * class contract and consume ONLY design-system token CSS variables via
  * billing-ui.css — no hard-coded colors/spacing/type. When the DS publishes a
@@ -8,7 +8,7 @@
  */
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { statusTone, statusLabel, type StatusTone } from '../lib/status';
-import type { SubscriptionStatus } from '@fuzefront/billing-client';
+import type { SubscriptionStatus } from '@fuzeone/billing-client';
 import type { BillingStrings } from '../i18n';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';

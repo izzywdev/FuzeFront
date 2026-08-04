@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleEmailRequested = void 0;
-const shared_1 = require("@fuzefront/shared");
+const shared_1 = require("@fuzeone/shared");
 const templates_1 = require("../templates");
 const mask_1 = require("../utils/mask");
 const provider_error_1 = require("../utils/provider-error");

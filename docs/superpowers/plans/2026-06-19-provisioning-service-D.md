@@ -28,7 +28,7 @@ Hard requirements:
 
 | Option | Fit | Notes |
 |---|---|---|
-| `TypedConsumer` from `@fuzefront/shared` | Full | Project-native; DLQ wired in; already used by email-service / sms-service. **Adopted.** |
+| `TypedConsumer` from `@fuzeone/shared` | Full | Project-native; DLQ wired in; already used by email-service / sms-service. **Adopted.** |
 | Raw `kafkajs` | Full | More boilerplate; no DLQ helper. Runner-up if shared consumer ever becomes a bottleneck. |
 | `kafkajs` with `kafkajs-retry` lib | Overkill | Retry belongs at the HTTP layer here, not the Kafka layer — topic offset only moves after a commit, and the endpoint is idempotent. |
 

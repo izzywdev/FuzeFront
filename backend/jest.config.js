@@ -11,12 +11,12 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tests/tsconfig.json' }],
   },
-  // Map @fuzefront/shared to the kafka sub-barrel (TypeScript source) so ts-jest
+  // Map @fuzeone/shared to the kafka sub-barrel (TypeScript source) so ts-jest
   // compiles it under CommonJS. shared/dist is ESM and would pull in JSX from the
   // React barrel; the backend only ever uses the kafka sub-tree of shared.
   moduleNameMapper: {
-    '^@fuzefront/shared/kafka$': '<rootDir>/../shared/src/kafka/index.ts',
-    '^@fuzefront/shared$': '<rootDir>/../shared/src/kafka/index.ts',
+    '^@fuzeone/shared/kafka$': '<rootDir>/../shared/src/kafka/index.ts',
+    '^@fuzeone/shared$': '<rootDir>/../shared/src/kafka/index.ts',
   },
   collectCoverageFrom: [
     'src/**/*.ts',

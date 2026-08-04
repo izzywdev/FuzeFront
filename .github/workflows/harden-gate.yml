@@ -377,7 +377,7 @@ jobs:
     # which let an unbalanced-brace in frontend/src/index.css break the prod build for 3 releases
     # (hotfixed in 4428db9). NO `|| true` / `exit 0` here: vite/postcss/tsc errors fail the build.
     # Mirrors the ci.yml build job order (root npm ci -> frontend npm ci -> chat-client+chat-ui
-    # dist -> vite build). GITHUB_TOKEN satisfies frontend/.npmrc (@fuzefront/* from GH Packages).
+    # dist -> vite build). GITHUB_TOKEN satisfies frontend/.npmrc (@fuzeone/* from GH Packages).
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -393,7 +393,7 @@ jobs:
         run: cd frontend && npm ci
       - name: Build chat-client + chat-ui (frontend bundles their dist)
         run: |
-          npm run -w @fuzefront/chat-client build
-          npm run -w @fuzefront/chat-ui build
+          npm run -w @fuzeone/chat-client build
+          npm run -w @fuzeone/chat-ui build
       - name: Build frontend (vite build — MUST pass)
         run: cd frontend && npm run build

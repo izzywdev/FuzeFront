@@ -1,5 +1,5 @@
 import React from 'react'
-import { Button, EmptyState } from '@fuzefront/design-system'
+import { Button, EmptyState } from '@fuzeone/design-system'
 import { usePortalContext } from '../context/PortalBrandingProvider'
 import type { NormalizedPortalContext } from '../types'
 import { LoadingSkeleton } from './LoadingSkeleton'

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AppCard, Badge } from '@fuzefront/design-system'
+import { AppCard, Badge } from '@fuzeone/design-system'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useOrganizations, type App as BackendApp } from '../lib/shared'
 import {

@@ -6,7 +6,7 @@ import path from 'node:path'
 /**
  * BUILT-APP PRE-PRODUCTION verification — the REAL React component.
  *
- * Independent front-end verification that the shipped `@fuzefront/billing-ui →
+ * Independent front-end verification that the shipped `@fuzeone/billing-ui →
  * InvoiceHistoryPanel` matches the approved frames' acceptance contract. Where
  * `frames.spec.ts` pins the frozen *static* frames, this spec mounts the actual
  * React component (imported from source) with a stubbed `listInvoices`, over

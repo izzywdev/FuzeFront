@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { ChatServiceClient } from '@fuzefront/chat-client'
-import { ChatWidget } from '@fuzefront/chat-ui'
-import '@fuzefront/chat-ui/styles.css'
+import { ChatServiceClient } from '@fuzeone/chat-client'
+import { ChatWidget } from '@fuzeone/chat-ui'
+import '@fuzeone/chat-ui/styles.css'
 import { useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 
@@ -18,7 +18,7 @@ const CHAT_BASE_URL =
  *
  * Owns nothing but wiring: it builds the typed ChatServiceClient (same-origin
  * base + the live auth token) and the tenant context, then hands them to the
- * reusable @fuzefront/chat-ui <ChatWidget/>. All UI/state lives in the package;
+ * reusable @fuzeone/chat-ui <ChatWidget/>. All UI/state lives in the package;
  * this component only injects host concerns (auth, org, error surfacing).
  */
 export function FuzeChatWidget() {

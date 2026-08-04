@@ -1,11 +1,11 @@
-# @fuzefront/chat-ui
+# @fuzeone/chat-ui
 
 Design-system-first React chat UI for the FuzeFront **chat-service**. Renders a
 streaming assistant (SSE), RAG source citations, and the agent mutating-tool
-confirmation prompts — built **only** from `@fuzefront/design-system` tokens
+confirmation prompts — built **only** from `@fuzeone/design-system` tokens
 (the "fuse seam" system). Zero hard-coded colors / spacing / type.
 
-Consumes the typed `@fuzefront/chat-client` SSE event union
+Consumes the typed `@fuzeone/chat-client` SSE event union
 (`text_delta` / `rag_sources` / `tool_pending` / `tool_result` / `tool_denied` /
 `done` / `error`).
 
@@ -18,15 +18,15 @@ Consumes the typed `@fuzefront/chat-client` SSE event union
 ```
 
 ```bash
-npm i @fuzefront/chat-ui @fuzefront/chat-client
+npm i @fuzeone/chat-ui @fuzeone/chat-client
 ```
 
 ## Usage
 
 ```tsx
-import { ChatServiceClient } from '@fuzefront/chat-client'
-import { ChatWidget } from '@fuzefront/chat-ui'
-import '@fuzefront/chat-ui/styles.css' // token-based styles (load once)
+import { ChatServiceClient } from '@fuzeone/chat-client'
+import { ChatWidget } from '@fuzeone/chat-ui'
+import '@fuzeone/chat-ui/styles.css' // token-based styles (load once)
 
 const client = new ChatServiceClient({
   baseUrl: `${window.location.origin}/chat-api`,
@@ -37,14 +37,14 @@ const client = new ChatServiceClient({
 ```
 
 The styles reference design-system CSS variables (`--bg-*`, `--accent-*`,
-`--space-*`, …) defined by the host shell / `@fuzefront/design-system`. Mount the
+`--space-*`, …) defined by the host shell / `@fuzeone/design-system`. Mount the
 widget inside a tree where those variables are in scope.
 
 ## RTL / a11y
 
 - Mirrors automatically via CSS **logical properties** — pass `dir="rtl"`.
 - All strings come from the i18n layer (`ChatI18nProvider` / `strings` prop);
-  no hard-coded copy. (Mirrors the shape of the future `@fuzefront/i18n`.)
+  no hard-coded copy. (Mirrors the shape of the future `@fuzeone/i18n`.)
 - Dialog/log landmarks, labelled controls, keyboard composer (Enter / Shift+Enter),
   visible fuse-seam focus rings, `aria-pressed` feedback, `role="alert"` errors.
 

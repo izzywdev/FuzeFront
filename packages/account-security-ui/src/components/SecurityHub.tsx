@@ -1,4 +1,4 @@
-import { Badge } from '@fuzefront/design-system'
+import { Badge } from '@fuzeone/design-system'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 import { SecurityPostureSummary } from './SecurityPostureSummary'
 import { SecurityCard } from './SecurityCard'

@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import type { AuthMethods } from '@fuzefront/security-client'
+import type { AuthMethods } from '@fuzeone/security-client'
 
 vi.mock('../assets/FuzeFrontLogo.svg', () => ({ default: 'mock-logo.png' }))
 

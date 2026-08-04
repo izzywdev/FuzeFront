@@ -1,9 +1,9 @@
 /**
- * Language registry for @fuzefront/i18n.
+ * Language registry for @fuzeone/i18n.
  *
  * This is the single source of truth at RUNTIME for which languages the shell
  * offers and which direction each uses. It mirrors the build-time
- * `i18n.languages.json` used by @fuzefront/i18n-translate; keep the two in sync
+ * `i18n.languages.json` used by @fuzeone/i18n-translate; keep the two in sync
  * (the build pipeline reads the JSON, the runtime ships this typed copy).
  */
 

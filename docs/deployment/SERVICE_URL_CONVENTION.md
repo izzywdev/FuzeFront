@@ -48,5 +48,5 @@ backend is the trust boundary that holds the internal service token.
    so service-specific prefixes sit above the `/api` catch-all).
 3. For browser-facing-but-not-public APIs, add a host-backend proxy route
    (`browser → backend → fuzefront-<svc>` with the service's internal token).
-4. Generate the typed client (`@fuzefront/<svc>-client`) from the service's
+4. Generate the typed client (`@fuzeone/<svc>-client`) from the service's
    OpenAPI spec; UI imports it and calls same-origin paths.

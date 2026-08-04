@@ -1,4 +1,4 @@
-# @fuzefront/security-client
+# @fuzeone/security-client
 
 The provider-agnostic client + types for the **FuzeFront Security API** (AuthN +
 AuthZ). Generated from `openapi.yaml` with `openapi-typescript`, so the UI,
@@ -37,7 +37,7 @@ npm run lint:spec   # spectral lint openapi.yaml
 ```
 
 ```ts
-import type { components, Identity, AuthMethods } from '@fuzefront/security-client';
+import type { components, Identity, AuthMethods } from '@fuzeone/security-client';
 type LoginResponse = components['schemas']['LoginResponse'];
 ```
 

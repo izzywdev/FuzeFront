@@ -10,7 +10,7 @@ import {
   initializeDatabase,
   checkDatabaseHealth,
   closeDatabase,
-} from '@fuzefront/core'
+} from '@fuzeone/core'
 import path from 'path'
 
 import authRoutes from './routes/auth'
@@ -24,7 +24,7 @@ import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
-import type { OutboxRelayHandle } from '@fuzefront/core'
+import type { OutboxRelayHandle } from '@fuzeone/core'
 
 dotenv.config()
 

@@ -1,4 +1,4 @@
-# @fuzefront/payment-service
+# @fuzeone/payment-service
 
 The **vendor-neutral payment gateway** for FuzeFront. This service is the single
 seam through which **all** payment-vendor interaction (Stripe today) is routed.

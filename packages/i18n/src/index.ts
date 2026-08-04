@@ -1,7 +1,7 @@
 /**
- * @fuzefront/i18n — shared internationalization runtime for the FuzeFront shell
+ * @fuzeone/i18n — shared internationalization runtime for the FuzeFront shell
  * and its micro-frontends. Built on i18next + react-i18next (we adopt, not
- * reinvent). Locale JSON is generated at build time by @fuzefront/i18n-translate
+ * reinvent). Locale JSON is generated at build time by @fuzeone/i18n-translate
  * and bundled by the frontend build; this package only consumes it at runtime.
  */
 

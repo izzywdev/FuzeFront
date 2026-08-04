@@ -1,7 +1,7 @@
 name: Billing invoices E2E (frames + built component)
 
 # INDEPENDENT front-end verification for the Billing "Invoice history" UI
-# (@fuzefront/billing-ui -> InvoiceHistoryPanel, flag
+# (@fuzeone/billing-ui -> InvoiceHistoryPanel, flag
 # fuzefront.billing.invoice-history), owned by frontend-test-engineer per
 # tests/e2e/billing-invoices/README.md.
 #

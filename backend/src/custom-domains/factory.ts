@@ -17,7 +17,7 @@
  * normal default-OFF case this returning null is expected and silent.
  */
 
-import { CustomHostnameClient, DEFAULT_BASE_URL } from '@fuzefront/custom-hostname-client'
+import { CustomHostnameClient, DEFAULT_BASE_URL } from '@fuzeone/custom-hostname-client'
 
 export function createCustomHostnameClient(): CustomHostnameClient | null {
   const token = process.env.CUSTOM_HOSTNAME_API_TOKEN

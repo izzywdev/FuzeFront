@@ -1,8 +1,8 @@
-# @fuzefront/auth-ui
+# @fuzeone/auth-ui
 
 Reusable sign-in / sign-up UI for FuzeFront — the `AuthPanel` React component plus a
 zero-dependency vanilla (non-React) mount, both built design-system-first on
-`@fuzefront/design-system` and typed against the frozen `@fuzefront/security-client`
+`@fuzeone/design-system` and typed against the frozen `@fuzeone/security-client`
 contract.
 
 ## Why
@@ -16,8 +16,8 @@ non-React hosts) without pulling in the host's context providers.
 ## Usage (React)
 
 ```tsx
-import { AuthPanel } from '@fuzefront/auth-ui'
-import '@fuzefront/auth-ui/styles.css'
+import { AuthPanel } from '@fuzeone/auth-ui'
+import '@fuzeone/auth-ui/styles.css'
 
 <AuthPanel
   variant="full"
@@ -40,9 +40,9 @@ transport + `onAuthenticated`/`onMfaRequired` callbacks.
 ## Usage (vanilla / non-React host)
 
 ```html
-<link rel="stylesheet" href="node_modules/@fuzefront/auth-ui/dist/styles.css" />
+<link rel="stylesheet" href="node_modules/@fuzeone/auth-ui/dist/styles.css" />
 <div id="auth-root"></div>
-<script src="node_modules/@fuzefront/auth-ui/dist/auth-ui.vanilla.js"></script>
+<script src="node_modules/@fuzeone/auth-ui/dist/auth-ui.vanilla.js"></script>
 <script>
   const instance = window.FuzeFrontAuthUI.mount(document.getElementById('auth-root'), {
     transport: { login, signup, getAuthMethods },
@@ -56,5 +56,5 @@ The vanilla build is a zero-dependency IIFE — it does not bundle React or Reac
 
 ## Design system
 
-Built only from `@fuzefront/design-system` tokens/components (`Button`, `Input`,
+Built only from `@fuzeone/design-system` tokens/components (`Button`, `Input`,
 `Alert`, `SeamDivider`, `CenteredCard`). No hard-coded color/spacing/type.

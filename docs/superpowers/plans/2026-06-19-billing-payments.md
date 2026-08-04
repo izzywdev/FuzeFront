@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Introduce a fully-featured billing and payments system to FuzeFront. A new `billing-service` microservice handles all Stripe interaction, webhook processing, subscription state, and metered usage reporting. A typed `@fuzefront/billing-client` package exposes its REST API to other services. A `@fuzefront/billing-ui` React package provides the embedded Payment Element UI (design-system-aligned). Entitlements are synced back to Permit.io so the existing permission middleware can gate features by plan.
+**Goal:** Introduce a fully-featured billing and payments system to FuzeFront. A new `billing-service` microservice handles all Stripe interaction, webhook processing, subscription state, and metered usage reporting. A typed `@fuzeone/billing-client` package exposes its REST API to other services. A `@fuzeone/billing-ui` React package provides the embedded Payment Element UI (design-system-aligned). Entitlements are synced back to Permit.io so the existing permission middleware can gate features by plan.
 
 **Architecture Overview:**
 ```
@@ -14,9 +14,9 @@
                                           │── Postgres (local mirror)
                                           └── REST API (consumed by backend + billing-ui)
                                                     ▲
-                                          @fuzefront/billing-client
+                                          @fuzeone/billing-client
                                                     ▲
-                                          @fuzefront/billing-ui (React)
+                                          @fuzeone/billing-ui (React)
                                                     ▲
                                           frontend (host shell checkout flow)
 ```
@@ -94,7 +94,7 @@ No external library needed for MVP. `billing-service` consumes `billing.usage.re
 |---------|---------------|------|
 | `stripe` | `^17.x` | Server-side Stripe client in `billing-service` |
 | `@stripe/stripe-js` | `^5.x` | Async Stripe.js loader in browser |
-| `@stripe/react-stripe-js` | `^3.x` | `<Elements>` provider + `<PaymentElement>` in `@fuzefront/billing-ui` |
+| `@stripe/react-stripe-js` | `^3.x` | `<Elements>` provider + `<PaymentElement>` in `@fuzeone/billing-ui` |
 | `zod` | `^3.22` (already in `shared/`) | Kafka event schemas for `billing.usage.recorded` |
 | `kafkajs` | `^2.2.4` (already in `shared/`) | Metering event consumption |
 
@@ -106,7 +106,7 @@ Runner-up: if we ever move away from Stripe, the server-side logic in `billing-s
 
 ### 2.1 `services/billing-service`
 
-**npm name:** `@fuzefront/billing-service` (internal, not published)
+**npm name:** `@fuzeone/billing-service` (internal, not published)
 **Image:** `ghcr.io/izzywdev/fuzefront-billing-service`
 **Language:** TypeScript, Node 18, Express
 **Sole owner of PCI surface** — all Stripe API calls, all card-adjacent data.
@@ -136,11 +136,11 @@ Runner-up: if we ever move away from Stripe, the server-side logic in `billing-s
 - Dunning: consume Stripe `invoice.payment_failed` webhook → emit `billing.payment_failed` Kafka event
 
 **Does NOT own:**
-- Frontend rendering (owned by `@fuzefront/billing-ui`)
+- Frontend rendering (owned by `@fuzeone/billing-ui`)
 - Feature gating reads (owned by `middleware/permissions.ts` via Permit.io)
 - Email rendering/sending (owned by `email-service`)
 
-### 2.2 `packages/billing-client` → `@fuzefront/billing-client`
+### 2.2 `packages/billing-client` → `@fuzeone/billing-client`
 
 **Role:** Thin typed HTTP client wrapping `billing-service` REST API. Used by `backend` (to check entitlements inline) and potentially other services.
 
@@ -156,11 +156,11 @@ class BillingClient {
   addCredits(entityId: string, amount: number, note: string): Promise<void>
   createSetupIntent(entityId: string): Promise<{ clientSecret: string }>
 }
-// All types exported from @fuzefront/billing-client
+// All types exported from @fuzeone/billing-client
 export type { BillingSubscription, Plan, PlanTier, CreateSubscriptionRequest, ... }
 ```
 
-### 2.3 `packages/billing-ui` → `@fuzefront/billing-ui`
+### 2.3 `packages/billing-ui` → `@fuzeone/billing-ui`
 
 **Role:** React component library. All Stripe Payment Element integration lives here; nothing billing-UI-specific leaks into `frontend/`.
 
@@ -438,7 +438,7 @@ In production, promote to `SealedSecret` (already the pattern for `PERMIT_API_KE
 
 ### Internal Service Auth
 `billing-service` REST API is not publicly exposed. It is called by:
-- `backend` via `@fuzefront/billing-client` using a shared `BILLING_INTERNAL_TOKEN` (Bearer, validated by billing-service middleware)
+- `backend` via `@fuzeone/billing-client` using a shared `BILLING_INTERNAL_TOKEN` (Bearer, validated by billing-service middleware)
 - Stripe webhooks (external, signature-verified)
 - `billing-ui` never calls `billing-service` directly — it calls `backend` which proxies or the client is initialized server-side
 
@@ -450,7 +450,7 @@ In production, promote to `SealedSecret` (already the pattern for `PERMIT_API_KE
 
 | File | Responsibility |
 |------|---------------|
-| `package.json` | `@fuzefront/billing-service`; deps: `stripe@^17`, `kafkajs@^2.2.4`, `zod@^3.22`, `express@^4.19`, `pg@^8` |
+| `package.json` | `@fuzeone/billing-service`; deps: `stripe@^17`, `kafkajs@^2.2.4`, `zod@^3.22`, `express@^4.19`, `pg@^8` |
 | `tsconfig.json` | Matches `backend` conventions (`"strict": false, "noImplicitAny": false`) |
 | `jest.config.js` | ts-jest config mirroring `backend` |
 | `Dockerfile` | Multi-stage, `node:18-alpine`, mirrors `backend/Dockerfile` |
@@ -486,7 +486,7 @@ In production, promote to `SealedSecret` (already the pattern for `PERMIT_API_KE
 
 | File | Responsibility |
 |------|---------------|
-| `package.json` | `@fuzefront/billing-client`; deps: `axios@^1.7`, `zod@^3.22` |
+| `package.json` | `@fuzeone/billing-client`; deps: `axios@^1.7`, `zod@^3.22` |
 | `tsconfig.json` | `"strict": true`, targets `ES2020`, `declarationDir: dist/types` |
 | `src/client.ts` | `BillingClient` class (see § 2.2) |
 | `src/types.ts` | All shared billing types exported |
@@ -497,7 +497,7 @@ In production, promote to `SealedSecret` (already the pattern for `PERMIT_API_KE
 
 | File | Responsibility |
 |------|---------------|
-| `package.json` | `@fuzefront/billing-ui`; deps: `@stripe/react-stripe-js@^3`, `@stripe/stripe-js@^5`, `react@^18` (peer) |
+| `package.json` | `@fuzeone/billing-ui`; deps: `@stripe/react-stripe-js@^3`, `@stripe/stripe-js@^5`, `react@^18` (peer) |
 | `tsconfig.json` | Strict, JSX react-jsx |
 | `src/index.ts` | Barrel export all components |
 | `src/components/CheckoutModal.tsx` | Full checkout flow modal |
@@ -664,22 +664,22 @@ GRANT UPDATE (stripe_customer_id, billing_plan_tier, billing_plan_status, trial_
 
 ### Phase 5 — Client + UI packages
 
-- [ ] **T14: `@fuzefront/billing-client` package**
+- [ ] **T14: `@fuzeone/billing-client` package**
   Files: all files in `packages/billing-client/`
   Test: all methods call correct HTTP endpoints; types exported correctly
   Verify: `tsc --noEmit` passes; unit tests green
 
-- [ ] **T15: `@fuzefront/billing-ui` — design-system theme + base components**
+- [ ] **T15: `@fuzeone/billing-ui` — design-system theme + base components**
   Files: `src/theme/stripe-appearance.ts`, `src/components/SubscriptionStatus.tsx`, `src/components/UsageMeter.tsx`, `src/components/PlanCard.tsx`, `src/components/PlanPickerGrid.tsx`
   Test: RTL renders with correct ARIA; design-system token CSS vars applied (snapshot or className checks)
   Verify: Storybook / visual spot-check; tokens from `design-system/tokens/colors.css` used; no bespoke hex values
 
-- [ ] **T16: `@fuzefront/billing-ui` — Payment Element wrapper**
+- [ ] **T16: `@fuzeone/billing-ui` — Payment Element wrapper**
   Files: `src/components/PaymentElementWrapper.tsx`, `src/hooks/useBillingClient.ts`, `src/hooks/useSubscription.ts`
   Test: RTL renders with mocked `@stripe/react-stripe-js`; `onSuccess` callback fires with PaymentMethod ID
   Verify: mock Stripe Elements renders without error
 
-- [ ] **T17: `@fuzefront/billing-ui` — CheckoutModal + InvoiceTable**
+- [ ] **T17: `@fuzeone/billing-ui` — CheckoutModal + InvoiceTable**
   Files: remaining component files
   Test: CheckoutModal step transitions (plan picker → payment → confirmation); InvoiceTable paginates
   Verify: RTL tests green
@@ -713,7 +713,7 @@ GRANT UPDATE (stripe_customer_id, billing_plan_tier, billing_plan_status, trial_
 
 4. **Stripe webhook reliability in local dev** — Stripe webhooks cannot reach a `kind` cluster directly. Local dev requires running `stripe listen --forward-to ...` (Stripe CLI) or using Stripe's webhook test fixtures. The Skaffold/local setup does not currently include the Stripe CLI sidecar. Add a note to `values-local.yaml` or a `scripts/` helper.
 
-5. **Seat counting at Stripe vs. local** — the plan stores `seat_quantity` locally and passes it to Stripe as `quantity` on the subscription item. However, actual membership count in `organization_memberships` is not validated against the subscribed seat quantity before adding members. An enforcement check (reject `addMember` if seats exhausted) needs to be added to `routes/organizations.ts` using `@fuzefront/billing-client`; this is a follow-on task not in the TDD breakdown above.
+5. **Seat counting at Stripe vs. local** — the plan stores `seat_quantity` locally and passes it to Stripe as `quantity` on the subscription item. However, actual membership count in `organization_memberships` is not validated against the subscribed seat quantity before adding members. An enforcement check (reject `addMember` if seats exhausted) needs to be added to `routes/organizations.ts` using `@fuzeone/billing-client`; this is a follow-on task not in the TDD breakdown above.
 
 6. **`billing-service` Postgres schema isolation** — for MVP, `billing.*` tables live in the same Postgres instance as `public.*` (just a different schema). If billing traffic grows large (high metering event volume), the `billing.usage_events` table can become a hotspot. The design allows promoting to a separate Postgres instance by changing `DATABASE_URL` in the billing-service deployment only.
 

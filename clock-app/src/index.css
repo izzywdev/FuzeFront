@@ -1,4 +1,4 @@
-/* Clock remote styling — uses the @fuzefront/design-system "fuse seam" tokens
+/* Clock remote styling — uses the @fuzeone/design-system "fuse seam" tokens
    (CSS custom properties). When mounted in the host shell the host provides the
    token values; the fallbacks keep it legible when opened standalone before the
    DS stylesheet loads. No raw one-off hex/spacing/type in feature code. */

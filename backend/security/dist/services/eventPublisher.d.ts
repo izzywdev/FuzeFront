@@ -1,4 +1,4 @@
-import { IdentityUserCreatedPayloadV1, NotifyEmailRequestedPayloadV1 } from '@fuzefront/shared/kafka';
+import { IdentityUserCreatedPayloadV1, NotifyEmailRequestedPayloadV1 } from '@fuzeone/shared/kafka';
 /**
  * Thin, injectable Kafka publish surface used by provisioning.
  *

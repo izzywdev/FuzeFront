@@ -1,14 +1,14 @@
 {
   "name": "TEMPLATE — replace with the feature name",
   "description": "Replace: what these frames freeze, and what approving them commits to. Approving = approving the visual model AND the build inventory below.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "services/example-service/openapi.yaml",
-    "client": "@fuzefront/example-client",
+    "client": "@fuzeone/example-client",
     "schemas": ["components.schemas.Example"],
     "endpoints": ["GET /api/v1/example"],
-    "component": "@fuzefront/example-ui → ExamplePanel",
+    "component": "@fuzeone/example-ui → ExamplePanel",
     "featureFlag": "fuzefront.example.feature"
   },
   "build": {
@@ -21,7 +21,7 @@
       }
     ],
     "components": ["ExamplePanel", "ExampleRow"],
-    "packages": ["@fuzefront/example-ui"]
+    "packages": ["@fuzeone/example-ui"]
   },
   "frames": [
     {

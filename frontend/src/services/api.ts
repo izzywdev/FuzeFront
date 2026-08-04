@@ -11,7 +11,7 @@ import type {
   AuthMethods,
   SessionResult,
   SocialProvider,
-} from '@fuzefront/security-client'
+} from '@fuzeone/security-client'
 
 // Re-export the provider-neutral contract types so existing consumers can keep
 // importing them from this module (e.g. `import { AuthMethods } from '../services/api'`).
@@ -256,7 +256,7 @@ export interface LoginResponse {
 }
 
 // Account-creation payload for the server-brokered signup endpoint. Mirrors the
-// contract `SignupRequest` (see @fuzefront/security-client / openapi.yaml).
+// contract `SignupRequest` (see @fuzeone/security-client / openapi.yaml).
 export interface SignupCredentials {
   email: string
   password: string
@@ -269,7 +269,7 @@ export interface SignupCredentials {
 // check could not be resolved (endpoint missing / network / server error) —
 // the UI shows no signal and MUST NOT block submit on it (fail-open). This
 // shape is not yet in the frozen security contract; move it to
-// @fuzefront/security-client once the endpoint is added there.
+// @fuzeone/security-client once the endpoint is added there.
 export interface EmailAvailability {
   email: string
   available: boolean | null
@@ -292,7 +292,7 @@ function persistSession(token?: string, sessionId?: string): void {
 // Authentication API — provider-agnostic FuzeFront Security API.
 //
 // Talks ONLY to FuzeFront's own same-origin `/api/v1/security/*` surface and the
-// generated `@fuzefront/security-client` contract types. No identity provider is
+// generated `@fuzeone/security-client` contract types. No identity provider is
 // named here or anywhere on the consumer surface: the underlying federation /
 // MFA / enrollment engine is a swappable server-side adapter the browser never
 // sees. Social login transits only `app.fuzefront.com` and the chosen social

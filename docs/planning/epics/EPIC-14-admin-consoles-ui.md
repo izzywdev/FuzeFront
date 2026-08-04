@@ -67,7 +67,7 @@ a frames-ONLY PR before any implementation story starts.
 > onboarding / price-book / platform-charges-tenant surfaces (FF-EPIC-15-S2/S3/S5). All routes are
 > Permit-gated — platform-admin authority is the existing Permit ReBAC parent→child org-admin
 > derivation (`backend/src/permit/schema.ts`); a Portal Admin's console is scoped to their own portal
-> only. All UI extends `@fuzefront/design-system` ("fuse seam") — no raw hex/spacing/type — and is
+> only. All UI extends `@fuzeone/design-system` ("fuse seam") — no raw hex/spacing/type — and is
 > gated by the `ui-runtime-validation` skill (console-clean) before being reported done.
 
 ### 📊 Success Metrics
@@ -227,7 +227,7 @@ on the approved and merged frames from FF-EPIC-14-S1.
 - **Related:** FF-EPIC-16 (domain status shown here is read-only; self-service editing is FF-EPIC-16).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** FF-EPIC-09-S3's CRUD API and its generated `@fuzefront/portal-client` are available
+- **Assumption:** FF-EPIC-09-S3's CRUD API and its generated `@fuzeone/portal-client` are available
   before this story starts.
 - **Risk:** Domain status display could imply edit capability it doesn't have — mitigate with a clear
   read-only affordance per the frame.

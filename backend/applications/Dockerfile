@@ -2,7 +2,7 @@
 #
 # IMPORTANT: build context is the REPOSITORY ROOT (see skaffold.yaml / release.yml),
 # not backend/applications/. This lets applications-service consume the
-# @fuzefront/core and @fuzefront/shared workspace packages.
+# @fuzeone/core and @fuzeone/shared workspace packages.
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -24,7 +24,7 @@ COPY packages/feature-flags/ ./packages/feature-flags/
 COPY backend/applications/ ./backend/applications/
 
 # Build the shared kafka sub-barrel, then core, then the flag client, then
-# applications-service. @fuzefront/feature-flags must be BUILT here: its
+# applications-service. @fuzeone/feature-flags must be BUILT here: its
 # package `main` points at dist/, and without this the workspace symlink
 # resolves to an empty package — which is why the flag client was absent from
 # the running image and every flag silently took its in-code default.

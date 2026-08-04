@@ -9,7 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // owns apps DDL). Dual-serves alongside the old monolith until Phase 3 cutover.
 const dotenv_1 = __importDefault(require("dotenv"));
 const http_1 = require("http");
-const core_1 = require("@fuzefront/core");
+const core_1 = require("@fuzeone/core");
 const path_1 = __importDefault(require("path"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const organizations_1 = __importDefault(require("./routes/organizations"));

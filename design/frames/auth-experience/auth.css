@@ -1,5 +1,5 @@
 /* auth-experience components — design-system-first, tokens only.
-   Mirrors @fuzefront/design-system primitives (Button, Input, Alert, SeamDivider)
+   Mirrors @fuzeone/design-system primitives (Button, Input, Alert, SeamDivider)
    plus the NET-NEW primitives this feature introduces (named in the PR + build
    inventory): InlineAvailability, PasswordStrengthMeter, TurnstileField,
    ResendCooldownButton, VerifyStatusPanel. No raw hex/rgb/one-off type. */
@@ -40,7 +40,7 @@
 .auth-sub { color: var(--text-secondary); font-size: var(--text-md);
   margin: 0 0 var(--space-6); line-height: 1.5; }
 
-/* ---- Input primitive (@fuzefront/design-system Input) ---- */
+/* ---- Input primitive (@fuzeone/design-system Input) ---- */
 .field { margin-bottom: var(--space-4); }
 .field__label { display: flex; align-items: center; justify-content: space-between;
   font-size: var(--text-sm); font-weight: var(--weight-medium);
@@ -108,7 +108,7 @@
 .pwreq li[data-met="true"] { color: var(--success-color); }
 .pwreq .tick { width: 13px; height: 13px; flex: none; }
 
-/* ---- SeamDivider primitive (@fuzefront/design-system) ---- */
+/* ---- SeamDivider primitive (@fuzeone/design-system) ---- */
 .seam-divider { display: flex; align-items: center; gap: var(--space-3);
   color: var(--text-tertiary); font-size: var(--text-xs);
   text-transform: uppercase; letter-spacing: var(--tracking-wide);
@@ -126,7 +126,7 @@
 .social-btn:hover { border-color: var(--border-strong); }
 .social-btn svg { width: 18px; height: 18px; }
 
-/* ---- Button primitive (@fuzefront/design-system Button) ---- */
+/* ---- Button primitive (@fuzeone/design-system Button) ---- */
 .btn-ds { width: 100%; display: inline-flex; align-items: center; justify-content: center;
   gap: var(--space-2); min-height: 46px; border-radius: var(--radius-md);
   font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-semibold);
@@ -150,7 +150,7 @@
   text-align: center; line-height: 1.5; }
 .legal a { color: var(--text-secondary); }
 
-/* ---- Alert primitive (@fuzefront/design-system Alert) ---- */
+/* ---- Alert primitive (@fuzeone/design-system Alert) ---- */
 .alert { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-5);
   border: 1px solid var(--border-color); }

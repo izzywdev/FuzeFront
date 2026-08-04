@@ -6,7 +6,7 @@ import {
   FuzeEvent,
   IdentityUserCreatedPayloadV1,
   identityUserCreatedSchemaV1,
-} from '@fuzefront/shared/kafka';
+} from '@fuzeone/shared/kafka';
 import { loadConfig } from './config';
 import { handleUserCreated } from './handler';
 import { createApp } from './app';

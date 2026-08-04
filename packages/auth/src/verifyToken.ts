@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — token verification runtime.
+ * @fuzeone/auth — token verification runtime.
  *
  * Implements the contract frozen in `types.ts` (#117). The public signatures did
  * not change; only the bodies became real.

@@ -30,7 +30,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
-import type { AuthMethods } from '@fuzefront/security-client'
+import type { AuthMethods } from '@fuzeone/security-client'
 
 // ── Hoisted mocks (processed before imports) ──────────────────────────────
 

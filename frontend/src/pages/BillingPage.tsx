@@ -6,13 +6,13 @@ import {
   PricingCard,
   Skeleton,
   Tabs,
-} from '@fuzefront/design-system'
-import { InvoiceHistoryPanel, BillingI18nProvider } from '@fuzefront/billing-ui'
+} from '@fuzeone/design-system'
+import { InvoiceHistoryPanel, BillingI18nProvider } from '@fuzeone/billing-ui'
 // The billing-ui stylesheet (design-system tokens only). Imported from source
-// here because the frontend build resolves @fuzefront/billing-ui from source
+// here because the frontend build resolves @fuzeone/billing-ui from source
 // (see frontend/vite.config.ts) and the published `./styles.css` subpath is not
-// aliased for dev. Wiring a `@fuzefront/billing-ui/styles.css` vite alias
-// (mirroring @fuzefront/chat-ui) is a follow-up owned by devops.
+// aliased for dev. Wiring a `@fuzeone/billing-ui/styles.css` vite alias
+// (mirroring @fuzeone/chat-ui) is a follow-up owned by devops.
 import '../../../packages/billing-ui/src/styles/billing-ui.css'
 import { useOrganizations } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
@@ -399,7 +399,7 @@ const InvoicesTab: React.FC<{ organizationId?: string }> = ({
   )
 
   // Flag ON → the design-system-first, vendor-neutral InvoiceHistoryPanel from
-  // @fuzefront/billing-ui. Flag OFF → the existing native table below.
+  // @fuzeone/billing-ui. Flag OFF → the existing native table below.
   if (invoiceHistoryEnabled) {
     return (
       <section aria-labelledby="invoices-h">

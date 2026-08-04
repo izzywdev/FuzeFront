@@ -10,7 +10,7 @@ import {
   TOPICS,
   billingLlmUsageSchemaV1,
   type BillingLlmUsagePayloadV1,
-} from '@fuzefront/shared';
+} from '@fuzeone/shared';
 
 export interface LlmUsageInput {
   userId: string;

@@ -1,4 +1,4 @@
-# @fuzefront/auth
+# @fuzeone/auth
 
 The consumable **authN/authZ client** for the FuzeFront family (resolves
 [#117](https://github.com/izzywdev/FuzeFront/issues/117)). Every product verifies
@@ -15,14 +15,14 @@ eventual federated-JWKS migration — is uniform across the family.
 ## Install
 
 ```bash
-npm install @fuzefront/auth        # + express, if you use the middleware
+npm install @fuzeone/auth        # + express, if you use the middleware
 ```
 
 ## Use it as middleware
 
 ```ts
 import express from 'express'
-import { createVerifier, requireAuth, requireRoles } from '@fuzefront/auth'
+import { createVerifier, requireAuth, requireRoles } from '@fuzeone/auth'
 
 // Today's FuzeFront session token (HS256 over the shared JWT_SECRET).
 // It carries no tenant/roles, so hydrate them out-of-band if you gate on them.
@@ -86,7 +86,7 @@ import {
   requireAuth, requireRoles, requireTenant, // Express middleware
   AuthError, AUTH_CONTRACT_VERSION,
   type Identity, type Verifier, type VerifierConfig,
-} from '@fuzefront/auth';
+} from '@fuzeone/auth';
 ```
 
 - **`Identity`** — the stable normalized principal: `{ userId, tenantId: string | null, roles: string[], authMode, email?, ... }`. Invariant across the HS256 → OIDC migration.
@@ -118,7 +118,7 @@ Consumers need a scoped `.npmrc`:
 ```
 
 ```sh
-npm install @fuzefront/auth
+npm install @fuzeone/auth
 ```
 
 ## Contract lifecycle

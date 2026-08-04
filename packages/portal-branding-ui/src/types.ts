@@ -27,7 +27,7 @@ export interface PortalBrandingFields {
 /**
  * A normalized, UI-facing projection of `GET /api/v1/portal/context`. Built by
  * `normalizePortalContext` from whatever the endpoint returns — the frozen
- * `@fuzefront/portal-client` `PortalContext` shape (`id`/`isRoot`/`branding`/
+ * `@fuzeone/portal-client` `PortalContext` shape (`id`/`isRoot`/`branding`/
  * `identityPolicy`/`authEntry`) once the server ships it, tolerant of extra/
  * missing fields so the UI never throws on a partial payload.
  */

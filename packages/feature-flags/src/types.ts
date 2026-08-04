@@ -1,5 +1,5 @@
 /**
- * Public types for @fuzefront/feature-flags.
+ * Public types for @fuzeone/feature-flags.
  *
  * The public evaluation surface is OpenFeature; these Fuze-flavored types map
  * onto OpenFeature's EvaluationContext using FIXED key names so that Unleash

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useT } from '@fuzefront/i18n'
-import { Modal, Spinner, StatusCallout } from '@fuzefront/design-system'
+import { useT } from '@fuzeone/i18n'
+import { Modal, Spinner, StatusCallout } from '@fuzeone/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   AppInstallation,

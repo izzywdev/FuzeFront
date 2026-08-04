@@ -206,7 +206,7 @@ Notes:
 Prod pre-creates the prefixed topics via a Helm post-install/post-upgrade Job
 (`templates/kafka-topics-job.yaml`, gated by `kafkaTopics.enabled: true` in
 `values-prod.yaml`) rather than relying on broker auto-create. The topic set is
-reconciled from the `@fuzefront/shared` `TOPICS` constant plus the planned
+reconciled from the `@fuzeone/shared` `TOPICS` constant plus the planned
 billing/chat events. When that constant changes, edit `kafkaTopics.topics` in
 `values.yaml`. The Job uses `--create --if-not-exists`, so it is safe to re-run on
 every upgrade; it never shrinks partitions/retention.

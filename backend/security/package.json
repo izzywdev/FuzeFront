@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/security-service",
+  "name": "@fuzeone/security-service",
   "version": "1.0.0",
   "description": "FuzeFront security-service: auth, organizations, provisioning, OIDC, Permit",
   "main": "dist/index.js",
@@ -12,8 +12,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@fuzefront/core": "1.0.0",
-    "@fuzefront/shared": "1.0.0",
+    "@fuzeone/core": "1.0.0",
+    "@fuzeone/shared": "1.0.0",
     "bcrypt": "^6.0.0",
     "express-rate-limit": "7.2.0",
     "bcryptjs": "^2.4.3",

@@ -49,7 +49,7 @@ function isProduction(): boolean {
 /**
  * Validates the internal Bearer token on non-webhook, non-public routes.
  * billing-service is not publicly exposed; callers (backend via
- * @fuzefront/billing-client) present BILLING_INTERNAL_TOKEN.
+ * @fuzeone/billing-client) present BILLING_INTERNAL_TOKEN.
  *
  * HIGH-2 fix — FAIL CLOSED in production. Previously, when `expectedToken` was
  * unset the guard called next() unconditionally (fail-open), so a misconfigured

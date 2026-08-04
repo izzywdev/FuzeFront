@@ -9,7 +9,7 @@ import {
   NotifyEmailRequestedPayloadV1,
   portalCreatedSchemaV1,
   PortalCreatedPayloadV1,
-} from '@fuzefront/shared/kafka'
+} from '@fuzeone/shared/kafka'
 
 /**
  * Thin, injectable Kafka publish surface used by provisioning.

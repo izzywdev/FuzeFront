@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/notification-service",
+  "name": "@fuzeone/notification-service",
   "version": "1.0.0",
   "description": "Notification microservice for FuzeFront — inbox, preferences, SSE delivery",
   "private": true,

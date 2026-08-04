@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { StatusCallout } from '@fuzefront/design-system'
+import { StatusCallout } from '@fuzeone/design-system'
 
 /**
  * Unit coverage for the DS StatusCallout primitive (owned by design-system/,

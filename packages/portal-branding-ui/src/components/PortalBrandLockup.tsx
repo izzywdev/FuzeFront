@@ -1,4 +1,4 @@
-import { Logo } from '@fuzefront/design-system'
+import { Logo } from '@fuzeone/design-system'
 import type { NormalizedPortalContext } from '../types'
 
 export interface PortalBrandLockupProps {

@@ -1,4 +1,4 @@
-# @fuzefront/feature-flags
+# @fuzeone/feature-flags
 
 OpenFeature-based feature-flags client for FuzeFront, wrapping the **Unleash**
 provider behind a thin, framework-agnostic Fuze API with **graceful degradation
@@ -13,8 +13,8 @@ to caller-supplied defaults** when Unleash is unreachable.
 
 | Import | Surface | OpenFeature SDK | Unleash provider |
 | --- | --- | --- | --- |
-| `@fuzefront/feature-flags` | server (Node services) — default | `@openfeature/server-sdk` | `unleash-openfeature-provider-server` (wraps `unleash-client`) |
-| `@fuzefront/feature-flags/web` | browser / micro-frontends | `@openfeature/web-sdk` | `@openfeature/unleash-web-provider` (wraps `unleash-proxy-client`) |
+| `@fuzeone/feature-flags` | server (Node services) — default | `@openfeature/server-sdk` | `unleash-openfeature-provider-server` (wraps `unleash-client`) |
+| `@fuzeone/feature-flags/web` | browser / micro-frontends | `@openfeature/web-sdk` | `@openfeature/unleash-web-provider` (wraps `unleash-proxy-client`) |
 
 Provider modules are **dynamically imported** at `init()` time, so a missing or
 unreachable provider can never crash module load — it degrades to defaults.
@@ -28,7 +28,7 @@ unreachable provider can never crash module load — it degrades to defaults.
 ## Usage (server)
 
 ```ts
-import { init, getBoolean, setContext, close } from '@fuzefront/feature-flags';
+import { init, getBoolean, setContext, close } from '@fuzeone/feature-flags';
 
 await init(
   {
@@ -54,7 +54,7 @@ await close(); // on shutdown
 ## Usage (web)
 
 ```ts
-import { init, getBoolean } from '@fuzefront/feature-flags/web';
+import { init, getBoolean } from '@fuzeone/feature-flags/web';
 
 await init({
   url: 'https://app.fuzefront.dev/api/frontend', // Unleash front-end/proxy endpoint

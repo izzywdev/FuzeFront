@@ -1,11 +1,11 @@
 {
   "name": "Locked App Mode — approval frames",
   "description": "Contract-freeze UX artifacts for locked app mode (white-label own-domain web + per-product native app). Approving these frames approves the mode:locked + branding + native manifest model before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* attributes (frontend/tests/locked-app-mode-frames.spec.ts).",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "plan": "docs/planning/locked-app-mode.md",
   "contract": {
     "openapi": "services/app-registry-service/openapi.yaml",
-    "client": "@fuzefront/app-registry-client",
+    "client": "@fuzeone/app-registry-client",
     "manifestSchema": "components.schemas.AppManifest",
     "newFields": [
       "AppMode.locked",

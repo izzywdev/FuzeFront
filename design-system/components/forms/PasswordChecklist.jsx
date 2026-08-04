@@ -115,7 +115,7 @@ export function PasswordChecklist({
 
 // The barrel (build.mjs) only re-exports each file's component by basename, so
 // the pure helpers are surfaced as statics on the exported component — this is
-// how feature code reaches them via `@fuzefront/design-system` without a subpath
+// how feature code reaches them via `@fuzeone/design-system` without a subpath
 // import. `PasswordChecklist.meetsPolicy(value)` is the submit gate.
 PasswordChecklist.meetsPolicy = passwordMeetsPolicy;
 PasswordChecklist.rules = DEFAULT_PASSWORD_RULES;

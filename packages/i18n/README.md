@@ -1,4 +1,4 @@
-# @fuzefront/i18n
+# @fuzeone/i18n
 
 Shared internationalization runtime for the FuzeFront shell and its
 micro-frontends. Built on **i18next + react-i18next** — we adopt the runtime
@@ -7,7 +7,7 @@ rather than reinventing one.
 This package is the **runtime** half of the build-time AI-translation model:
 
 - English is the only maintained language. All other locale JSON is generated
-  at **build time** by [`@fuzefront/i18n-translate`](../i18n-translate) and
+  at **build time** by [`@fuzeone/i18n-translate`](../i18n-translate) and
   bundled by the frontend build.
 - Git is the store. There is no translation service, database, or runtime
   spinner.
@@ -16,7 +16,7 @@ This package is the **runtime** half of the build-time AI-translation model:
 ## Install
 
 ```bash
-npm install @fuzefront/i18n
+npm install @fuzeone/i18n
 ```
 
 Published privately to GitHub Packages under the `@fuzefront` scope (configure a
@@ -25,7 +25,7 @@ scoped `.npmrc` + `GITHUB_TOKEN`).
 ## Usage
 
 ```tsx
-import { I18nProvider, LanguageSelector, useT } from '@fuzefront/i18n'
+import { I18nProvider, LanguageSelector, useT } from '@fuzeone/i18n'
 
 // Locale JSON bundled by the frontend build, shaped for i18next.
 import en from '../locales/en/common.json'
@@ -61,7 +61,7 @@ function Header() {
 | Export | What it does |
 | --- | --- |
 | `<I18nProvider>` | Initializes i18next, loads bundled locale JSON, restores the saved language, and wires the direction manager. |
-| `<LanguageSelector>` | Accessible picker built **only** from `@fuzefront/design-system` tokens; shows native language names; flips direction on change. |
+| `<LanguageSelector>` | Accessible picker built **only** from `@fuzeone/design-system` tokens; shows native language names; flips direction on change. |
 | `useT(ns?)` | Re-export of `useTranslation`. |
 | `setLanguage(i18n, code)` | Change + persist the active language. |
 | `useDir(i18n)` / `applyDocumentDirection` / `attachDirectionManager` | Centralized RTL/LTR direction management. |

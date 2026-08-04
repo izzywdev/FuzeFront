@@ -1,4 +1,4 @@
-# Changelog — @fuzefront/security-client
+# Changelog — @fuzeone/security-client
 
 ## 0.3.0 — AuthZ grants (write-side) (unreleased)
 

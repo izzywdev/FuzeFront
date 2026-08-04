@@ -2,7 +2,7 @@
 //
 // The applications-service (`fuzefront-applications:3003`) owns the FROZEN
 // `/api/v1/app-registry` contract (services/app-registry-service/openapi.yaml) —
-// the manifest-shaped surface the frontend's `@fuzefront/app-registry-client`
+// the manifest-shaped surface the frontend's `@fuzeone/app-registry-client`
 // talks to same-origin.
 //
 // Why this proxy exists: in prod the ingress routes `/api/apps` + `/socket.io`

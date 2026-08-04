@@ -11,7 +11,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv_1 = __importDefault(require("dotenv"));
 const http_1 = require("http");
 const path_1 = __importDefault(require("path"));
-const core_1 = require("@fuzefront/core");
+const core_1 = require("@fuzeone/core");
 const apps_1 = __importDefault(require("./routes/apps"));
 const socketHandler_1 = require("./sockets/socketHandler");
 dotenv_1.default.config();

@@ -4,22 +4,22 @@ info:
   version: 0.1.0
   description: >-
     SUPERSEDED — this spec is replaced by the provider-agnostic FuzeFront
-    Security API in `packages/security/openapi.yaml` (`@fuzefront/security-client`).
+    Security API in `packages/security/openapi.yaml` (`@fuzeone/security-client`).
     It documents the LEGACY, vendor-named auth surface and is retained only for
     reference during the transition; new consumers must target the Security API.
 
 
 
     Contract for the FuzeFront authN/authZ surface consumed via the
-    `@fuzefront/auth` client (issue #117). Documents the current auth HTTP
+    `@fuzeone/auth` client (issue #117). Documents the current auth HTTP
     endpoints (verified against `backend/src/routes/auth.ts`) and the stable
-    `Identity` shape that `@fuzefront/auth` normalizes tokens into, invariant
+    `Identity` shape that `@fuzeone/auth` normalizes tokens into, invariant
     across the HS256 -> OIDC/JWKS migration.
 
     This is a CONTRACT FREEZE. Endpoints below describe TODAY's behavior; the
     normalized `Identity` and the `oidc-jwks` verifier are the target the
     package interface is frozen against. Token minting stays in the identity
-    service — `@fuzefront/auth` only verifies.
+    service — `@fuzeone/auth` only verifies.
   license:
     name: MIT
 servers:
@@ -36,7 +36,7 @@ paths:
       operationId: login
       description: >-
         Validates credentials and returns a signed HS256 JWT (claims
-        `{ userId, sessionId }`). `@fuzefront/auth` VERIFIES this token in
+        `{ userId, sessionId }`). `@fuzeone/auth` VERIFIES this token in
         `legacy-hs256` mode but never issues it.
       requestBody:
         required: true
@@ -62,7 +62,7 @@ paths:
       operationId: getCurrentUser
       description: >-
         Returns the hydrated user for the bearer token. This is the source of
-        the out-of-band `roles`/tenant hydration `@fuzefront/auth` uses in
+        the out-of-band `roles`/tenant hydration `@fuzeone/auth` uses in
         `legacy-hs256` mode (the token itself carries neither).
       security:
         - bearerAuth: []
@@ -103,7 +103,7 @@ paths:
       operationId: oidcCallback
       description: >-
         Exchanges the OIDC code, syncs the user, and (today) mints a local
-        HS256 token. The target state has `@fuzefront/auth` verifying the
+        HS256 token. The target state has `@fuzeone/auth` verifying the
         provider's RS256/JWKS token directly (`oidc-jwks` mode).
       parameters:
         - name: code
@@ -144,7 +144,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        `Authorization: Bearer <token>`. Verified by `@fuzefront/auth`. Today
+        `Authorization: Bearer <token>`. Verified by `@fuzeone/auth`. Today
         HS256/shared-secret; target Authentik RS256/JWKS. The verifier is
         pluggable; consumers depend on the normalized `Identity`, not the raw JWT.
   responses:
@@ -203,7 +203,7 @@ components:
     Identity:
       type: object
       description: >-
-        The STABLE normalized identity produced by `@fuzefront/auth`,
+        The STABLE normalized identity produced by `@fuzeone/auth`,
         invariant across the HS256 -> OIDC/JWKS migration. Mirrors the
         TypeScript `Identity` interface in `src/types.ts`.
       properties:

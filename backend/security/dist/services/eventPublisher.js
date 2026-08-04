@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.defaultEventPublisher = void 0;
 exports.disconnectEventPublisher = disconnectEventPublisher;
-const kafka_1 = require("@fuzefront/shared/kafka");
+const kafka_1 = require("@fuzeone/shared/kafka");
 let producer = null;
 let connecting = null;
 function kafkaEnabled() {

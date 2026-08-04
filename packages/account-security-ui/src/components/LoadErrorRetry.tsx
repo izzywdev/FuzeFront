@@ -1,4 +1,4 @@
-import { StatusCallout, Button } from '@fuzefront/design-system'
+import { StatusCallout, Button } from '@fuzeone/design-system'
 import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
 
 export interface LoadErrorRetryProps {

@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { I18nProvider, LanguageSelector, useT } from '@fuzefront/i18n'
+import { I18nProvider, LanguageSelector, useT } from '@fuzeone/i18n'
 import { resources, bundledLanguages } from './resources'
 
 /**
- * End-to-end proof that the container wires @fuzefront/i18n correctly:
+ * End-to-end proof that the container wires @fuzeone/i18n correctly:
  *  - the repo-root locales/ tree is bundled into the i18next Resource shape,
  *  - migrated UI strings resolve via useT() flat dotted keys,
  *  - the LanguageSelector flips <html dir> through the centralized manager.

@@ -2,7 +2,7 @@
 
 The canonical entity-identifier standard for the Fuze family. Policy owned by `platform-governance`; enforced by **`gate-identifier`** (`scripts/gate_identifier.py`, run from `harden-gate.yml`). Companion to `governance/pagination-standard.md`, which it deliberately mirrors in shape.
 
-Reference implementations: **`@fuzefront/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — see §7.
+Reference implementations: **`@fuzeone/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — see §7.
 
 ## 1. Rule
 

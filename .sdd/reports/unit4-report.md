@@ -9,7 +9,7 @@ feature. No RAG/agent/LLM logic (later units).
 
 ```
 services/chat-service/
-  package.json              @fuzefront/chat-service 1.0.0, private:true
+  package.json              @fuzeone/chat-service 1.0.0, private:true
   tsconfig.json             mirrors email-service
   jest.config.js            mirrors email-service (ts-jest, roots: tests/)
   Dockerfile                multi-stage node:18-alpine, user chatservice, PORT=3006

@@ -1,12 +1,12 @@
 {
   "name": "Sessions & devices — approval frames",
   "description": "Contract-freeze UX artifacts for active-session/device management: list every signed-in device (browser, OS, location, last-seen, this-device flagged), sign out a single session (including the caller's own current session), and sign out everywhere else. Revocation is enforced server-side. Approving a flow approves its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. No provider name appears in any consumer surface.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
-    "client": "@fuzefront/security-client",
-    "component": "@fuzefront/account-security-ui",
+    "client": "@fuzeone/security-client",
+    "component": "@fuzeone/account-security-ui",
     "featureFlag": "fuzefront.security.devices-sessions",
     "schemas": [
       "components.schemas.SessionDevice"
@@ -57,7 +57,7 @@
       "EmptyState"
     ],
     "packages": [
-      "@fuzefront/account-security-ui"
+      "@fuzeone/account-security-ui"
     ],
     "missingDesignSystemPrimitives": []
   },

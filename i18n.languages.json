@@ -1,5 +1,5 @@
 {
-  "$comment": "Curated supported-language list for FuzeFront. English is the maintained source; every other language is AI-translated at BUILD time by @fuzefront/i18n-translate. Adding a language = add an entry here, then rebuild. `dir` drives RTL/LTR. `nativeName` is shown in the LanguageSelector.",
+  "$comment": "Curated supported-language list for FuzeFront. English is the maintained source; every other language is AI-translated at BUILD time by @fuzeone/i18n-translate. Adding a language = add an entry here, then rebuild. `dir` drives RTL/LTR. `nativeName` is shown in the LanguageSelector.",
   "sourceLanguage": "en",
   "languages": [
     { "code": "en", "name": "English", "nativeName": "English", "dir": "ltr" },

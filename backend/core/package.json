@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/core",
+  "name": "@fuzeone/core",
   "version": "1.0.0",
   "description": "Shared backend core: db config, auth middleware, types, express bootstrap. Zero business logic.",
   "main": "dist/index.js",

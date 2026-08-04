@@ -97,8 +97,8 @@ describe('startBillingProjection (regression: FFRNT-146 — the missing consumer
 
     let deliveredHandler: ((event: unknown) => Promise<void>) | undefined
 
-    jest.doMock('@fuzefront/shared/kafka', () => {
-      const actual = jest.requireActual('@fuzefront/shared/kafka')
+    jest.doMock('@fuzeone/shared/kafka', () => {
+      const actual = jest.requireActual('@fuzeone/shared/kafka')
       return {
         ...actual,
         createKafkaClient: jest.fn(() => ({})),

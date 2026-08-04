@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 #
 # IMPORTANT: build context is the REPOSITORY ROOT (see skaffold.yaml / release.yml),
-# not backend/security/. This lets security-service consume the @fuzefront/core
-# and @fuzefront/shared workspace packages (mirrors backend/Dockerfile and
+# not backend/security/. This lets security-service consume the @fuzeone/core
+# and @fuzeone/shared workspace packages (mirrors backend/Dockerfile and
 # services/email-service/Dockerfile).
 
 # ---------- build: full compile ----------

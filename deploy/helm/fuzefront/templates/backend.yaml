@@ -190,7 +190,7 @@ spec:
             - name: CF_ZONE_ID
               value: {{ .Values.cloudflare.cachePurge.zoneId | quote }}
             {{- end }}
-            # @fuzefront/feature-flags (OpenFeature + Unleash). The backend serves
+            # @fuzeone/feature-flags (OpenFeature + Unleash). The backend serves
             # GET /api/flags, evaluating browser-exposed flags against the
             # AUTHENTICATED session — this is how the host shell reads flags, so
             # the shell's `developers` targeting depends on this wiring.

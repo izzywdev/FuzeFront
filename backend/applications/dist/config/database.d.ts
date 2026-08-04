@@ -1,2 +1,2 @@
-export * from '@fuzefront/core';
+export * from '@fuzeone/core';
 //# sourceMappingURL=database.d.ts.map

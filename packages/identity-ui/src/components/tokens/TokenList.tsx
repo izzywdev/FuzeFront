@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DataTable, Badge, Button } from '@fuzefront/design-system'
+import { DataTable, Badge, Button } from '@fuzeone/design-system'
 import { useIdentityI18n } from '../../i18n/IdentityI18nProvider'
 import { EmptyState } from '../common/EmptyState'
 import { RevokeConfirmDialog } from './RevokeConfirmDialog'

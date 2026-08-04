@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/website-backend",
+  "name": "@fuzeone/website-backend",
   "version": "1.0.0",
   "description": "FuzeFront corporate website backend API",
   "main": "dist/index.js",

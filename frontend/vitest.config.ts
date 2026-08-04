@@ -2,12 +2,12 @@ import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 
-// Mirror vite.config.ts: resolve the @fuzefront/* workspace UI packages from source.
+// Mirror vite.config.ts: resolve the @fuzeone/* workspace UI packages from source.
 const identityUiSrc = fileURLToPath(
   new URL('../packages/identity-ui/src/index.ts', import.meta.url)
 )
-// @fuzefront/auth-ui (AuthPanel) — resolve from SOURCE, mirroring vite.config.ts.
-// Without this, LoginPage.test.tsx (which imports LoginPage -> @fuzefront/auth-ui)
+// @fuzeone/auth-ui (AuthPanel) — resolve from SOURCE, mirroring vite.config.ts.
+// Without this, LoginPage.test.tsx (which imports LoginPage -> @fuzeone/auth-ui)
 // fails to resolve, since the package's dist/ is not built in this test run.
 const authUiSrc = fileURLToPath(
   new URL('../packages/auth-ui/src/index.ts', import.meta.url)
@@ -27,7 +27,7 @@ const billingClientSrc = fileURLToPath(
 const accountSecurityUiSrc = fileURLToPath(
   new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
 )
-// @fuzefront/portal-client + @fuzefront/portal-branding-ui — same unbuilt-dist
+// @fuzeone/portal-client + @fuzeone/portal-branding-ui — same unbuilt-dist
 // reasoning as account-security-ui/security-client above (FF-EPIC-10/13).
 const portalClientSrc = fileURLToPath(
   new URL('../portal-client/src/index.ts', import.meta.url)
@@ -38,7 +38,7 @@ const portalBrandingUiSrc = fileURLToPath(
 // app-registry-client (apps-client/) is an unpublished file: workspace package
 // whose dist/ is not built in CI — resolve from SOURCE, mirroring vite.config.ts.
 // Without this, tests doing a real `import { AppRegistryClient } from
-// '@fuzefront/app-registry-client'` (e.g. appRegistry.test.tsx) fail to resolve.
+// '@fuzeone/app-registry-client'` (e.g. appRegistry.test.tsx) fail to resolve.
 const appRegistryClientSrc = fileURLToPath(
   new URL('../apps-client/src/index.ts', import.meta.url)
 )
@@ -91,22 +91,22 @@ export default defineConfig({
   plugins: [stubCss, stubFederation, react()],
   resolve: {
     alias: {
-      '@fuzefront/identity-ui': identityUiSrc,
-      '@fuzefront/auth-ui': authUiSrc,
-      '@fuzefront/i18n': i18nSrc,
-      '@fuzefront/design-system': designSystemSrc,
+      '@fuzeone/identity-ui': identityUiSrc,
+      '@fuzeone/auth-ui': authUiSrc,
+      '@fuzeone/i18n': i18nSrc,
+      '@fuzeone/design-system': designSystemSrc,
       // billing-ui + billing-client are resolved from SOURCE (unpublished file:
       // workspace packages whose dist is not built in CI), mirroring vite.config.ts.
-      // Without these, BillingPage.test.tsx fails to resolve @fuzefront/billing-ui
+      // Without these, BillingPage.test.tsx fails to resolve @fuzeone/billing-ui
       // (package.json main points to an unbuilt dist).
-      '@fuzefront/billing-ui': billingUiSrc,
-      '@fuzefront/billing-client': billingClientSrc,
-      '@fuzefront/app-registry-client': appRegistryClientSrc,
-      '@fuzefront/account-security-ui': accountSecurityUiSrc,
-      '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
-      '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/billing-ui': billingUiSrc,
+      '@fuzeone/billing-client': billingClientSrc,
+      '@fuzeone/app-registry-client': appRegistryClientSrc,
+      '@fuzeone/account-security-ui': accountSecurityUiSrc,
+      '@fuzeone/portal-branding-ui': portalBrandingUiSrc,
+      '@fuzeone/portal-client': portalClientSrc,
     },
-    // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
+    // @fuzeone/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe
     // the host renders with one React while react-i18next uses another → invalid
     // hook call ("Cannot read properties of null (reading 'useMemo')"). Force a

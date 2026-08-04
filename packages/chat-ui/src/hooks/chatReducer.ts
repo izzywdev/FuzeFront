@@ -2,7 +2,7 @@
  * Pure reducer that folds a ChatStreamEvent union into the UI message list.
  * Kept side-effect-free so it can be unit-tested without React.
  *
- * Event handling (matches @fuzefront/chat-client's ChatStreamEvent):
+ * Event handling (matches @fuzeone/chat-client's ChatStreamEvent):
  *   conversation -> record the server-resolved conversation id (thread resume)
  *   text_delta   -> append delta to the current streaming assistant message
  *   rag_sources  -> attach citations to the current assistant message
@@ -16,7 +16,7 @@
  * the same message list: hydrate_done seeds the newest page, history_prepend
  * adds an older page above (scroll up), history_append a newer page below.
  */
-import type { ChatStreamEvent } from '@fuzefront/chat-client';
+import type { ChatStreamEvent } from '@fuzeone/chat-client';
 import type { PendingConfirmation, UiMessage } from './types';
 
 export interface ChatModel {

@@ -1,4 +1,4 @@
-# Changelog — @fuzefront/auth
+# Changelog — @fuzeone/auth
 
 All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
@@ -39,7 +39,7 @@ types keeps compiling — they simply do something now.
 
 
 Neutralizes the identity-vendor leak in the consumer surface, coincident with
-the new provider-agnostic FuzeFront Security API (`@fuzefront/security-client`).
+the new provider-agnostic FuzeFront Security API (`@fuzeone/security-client`).
 
 ### Changed (BREAKING)
 
@@ -77,7 +77,7 @@ verification is a follow-up backend slice.
 - `AuthError` + stable `AuthErrorCode` enum; `AuthErrorBody` response shape.
 - `AUTH_CONTRACT_VERSION` export.
 - OpenAPI 3.1 spec (`openapi.yaml`) documenting the current auth HTTP surface + the `Identity`/error schemas.
-- Kafka Zod event schemas in `@fuzefront/shared`: `identity.session.issued`, `identity.session.revoked` (V1).
+- Kafka Zod event schemas in `@fuzeone/shared`: `identity.session.issued`, `identity.session.revoked` (V1).
 - Private `publishConfig` (GitHub Packages, `@fuzefront`, `access: restricted`) + `repository.directory`.
 
 ### Notes

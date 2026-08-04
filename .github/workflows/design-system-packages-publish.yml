@@ -1,16 +1,16 @@
 # Publish the design system to GitHub Packages under the @izzywdev scope.
 #
 # GitHub Packages requires the npm scope to match the repository owner, so the
-# canonical @fuzefront/design-system name cannot publish until the org transfer
+# canonical @fuzeone/design-system name cannot publish until the org transfer
 # completes (see packages-publish.yml, which stays the long-term path and no-ops
 # until then). Consuming apps need the design system TODAY, so this workflow
 # publishes the same build under an owner-scoped alias name:
 #
-#   @fuzefront/design-system -> @izzywdev/fuzefront-design-system
+#   @fuzeone/design-system -> @izzywdev/fuzefront-design-system
 #
 # Consumers install via an npm alias so their imports keep the canonical name:
 #
-#   "@fuzefront/design-system": "npm:@izzywdev/fuzefront-design-system@^1.0.0"
+#   "@fuzeone/design-system": "npm:@izzywdev/fuzefront-design-system@^1.0.0"
 #
 # Unlike packages/security (a tsup dist/ build), design-system has no bundler —
 # `node build.mjs` (re)generates index.js / index.d.ts / _ds_manifest.json in

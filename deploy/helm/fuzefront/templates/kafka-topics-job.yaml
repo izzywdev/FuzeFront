@@ -9,7 +9,7 @@
   and retention can only grow safely with --alter; this Job does NOT shrink them.
 
   Gated behind .Values.kafkaTopics.enabled (off locally; on in values-prod.yaml).
-  The topic set is reconciled from the shared @fuzefront/shared TOPICS constant
+  The topic set is reconciled from the shared @fuzeone/shared TOPICS constant
   plus the planned billing/chat events — keep .Values.kafkaTopics.topics in sync
   when that constant changes.
 */}}

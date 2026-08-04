@@ -1,5 +1,5 @@
 # Gitleaks config for FuzeFront. Extends the default ruleset.
-# Allowlists the @fuzefront/auth `AuthMode` type-union literals, which the
+# Allowlists the @fuzeone/auth `AuthMode` type-union literals, which the
 # generic-api-key rule mis-flags as secrets (they are TypeScript string
 # literals identifying the verifier mode, not credentials).
 [extend]
@@ -42,7 +42,7 @@ paths = [
   '''fuzefront_deploy_key''',
 ]
 regexes = [
-  # @fuzefront/auth AuthMode type-union string literals
+  # @fuzeone/auth AuthMode type-union string literals
   '''legacy-hs256''',
   '''oidc-jwks''',
   # E2E test-stack placeholders (docker-compose.e2e.yml, backend tests)

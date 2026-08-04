@@ -25,7 +25,7 @@ These are **minimums every manifest, image, workflow and remote must meet.** Fuz
 | npm | `>=10.0.0` | `engines.npm` |
 | `@types/node` | `^24.13.3` | every manifest |
 | `react` / `react-dom` | `^19.2.0` | app dependencies |
-| React peer range | `^19.0.0` | `peerDependencies` of every published `@fuzefront/*` package + the SDK |
+| React peer range | `^19.0.0` | `peerDependencies` of every published `@fuzeone/*` package + the SDK |
 | `@types/react` / `@types/react-dom` | `^19.2.0` | root **and** `design-system` (it ships `.d.ts` that import React types) |
 | MF shared `requiredVersion` | `^19.0.0` | host `frontend/vite.config.ts` **and** every remote |
 | Docker base image | `node:24-alpine` / `node:24-bookworm-slim` | every Dockerfile |
@@ -38,8 +38,8 @@ These are **minimums every manifest, image, workflow and remote must meet.** Fuz
 
 ## Design system — FuzeFront IS the base
 
-- FuzeFront publishes the **"fuse seam" design system** as the base package **`@fuzefront/design-system`** — the single source of truth for color/spacing/type/primitives for the whole Fuze family.
-- **Consuming apps extend this base** (add tokens / compose components) in their own repo-local DS package; they **never fork or redefine the primitives**. In this repo the DS package *is* the base (`extendsAs` = `@fuzefront/design-system`).
+- FuzeFront publishes the **"fuse seam" design system** as the base package **`@fuzeone/design-system`** — the single source of truth for color/spacing/type/primitives for the whole Fuze family.
+- **Consuming apps extend this base** (add tokens / compose components) in their own repo-local DS package; they **never fork or redefine the primitives**. In this repo the DS package *is* the base (`extendsAs` = `@fuzeone/design-system`).
 - `frontend-engineer` is the **sole** editor of `design-system/`. No raw hex/spacing/type in feature code — use the tokens. If a primitive is missing, add it to the base via the design-system skill rather than one-off styling.
 
 ## Hardening / signing — bot-pushed branches MUST be signed (deploy-sensitive)
@@ -54,9 +54,9 @@ This repo enables `required_signatures` on `master`, and **`master` is deploy-on
 
 ## Feature flags — FuzeFront HOSTS the family flag service
 
-The family flag standard is **Unleash** (self-hosted OSS) consumed via **OpenFeature** + the private **`@fuzefront/feature-flags`** client (baseline §10). **FuzeFront hosts the Unleash deployment** and owns flag management for the family — consuming repos point their provider at FuzeFront's Unleash with a scoped client token.
+The family flag standard is **Unleash** (self-hosted OSS) consumed via **OpenFeature** + the private **`@fuzeone/feature-flags`** client (baseline §10). **FuzeFront hosts the Unleash deployment** and owns flag management for the family — consuming repos point their provider at FuzeFront's Unleash with a scoped client token.
 
-- `feature-flags-engineer` owns the Unleash config + flag taxonomy (`<repo>.<domain>.<flag>`) + flag administration here. The Unleash *deploy mechanics* (Helm/Argo/CI on FuzeInfra) are `devops-engineer`; the `@fuzefront/feature-flags` *client package build* is `backend-engineer`.
+- `feature-flags-engineer` owns the Unleash config + flag taxonomy (`<repo>.<domain>.<flag>`) + flag administration here. The Unleash *deploy mechanics* (Helm/Argo/CI on FuzeInfra) are `devops-engineer`; the `@fuzeone/feature-flags` *client package build* is `backend-engineer`.
 - `backend-engineer` + `frontend-engineer` plan with flags: wrap new/risky work in a flag **default OFF**, gate **both** server logic and UI, **test both states**, retire stale flags (owner + removal criterion each). A **permission** flag is rollout convenience — real authz stays in **Permit**, never the flag.
 - See the `feature-flags` skill (`.claude/skills/feature-flags/`).
 
@@ -146,7 +146,7 @@ Two rules, and one is not enough without the other:
 
 **Graph create** uses `lid` in / `idMap` out, with ids minted up front so handlers never learn `lid` existed and reference cycles resolve. A `lid` graph is scoped to **one service's aggregate** — a graph spanning services cannot be created atomically.
 
-Packages: **`@fuzefront/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
+Packages: **`@fuzeone/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
 
 ## Branch lifecycle policy
 

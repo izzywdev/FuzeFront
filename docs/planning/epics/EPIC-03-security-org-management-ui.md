@@ -51,7 +51,7 @@ domain: Identity / Security
 ### 🏗️ High-Level Architecture Notes
 > Reads/writes via the security service + Permit (role assignment). Every action gated by Permit
 > (`UserManagement:*`, `Organization:manage`) — **real authz, never a UI/feature flag**. Same-origin API
-> base; lists paginated per `gate-pagination`; design-system-first (extend `@fuzefront/design-system`).
+> base; lists paginated per `gate-pagination`; design-system-first (extend `@fuzeone/design-system`).
 > API keys reuse the existing API-token backend (identity #65); add org-scoped endpoints where gaps exist
 > (members list, invite, api-key CRUD). Coordinate the role model with FF-EPIC-05.
 
@@ -332,4 +332,4 @@ Wires the four flows into a coherent shell nav area, design-system-first, Permit
 - **Risk:** Visibility-only gating mistaken for authz → real authz stays in Permit server-side.
 
 #### 📎 References
-- Shell nav; `@fuzefront/design-system`.
+- Shell nav; `@fuzeone/design-system`.

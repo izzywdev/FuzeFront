@@ -2,7 +2,7 @@
   "name": "Portal admin consoles — approval frames",
   "feature": "portal-admin-consoles",
   "description": "Contract-freeze UX artifacts for the two multi-tenant admin surfaces: a master-admin console to run the portal fleet (list/create/suspend/resume + domain status) and a portal-admin console for a tenant to run its own users, app catalog, and billing (Stripe Connect). Approving a flow approves its visual + interaction model AND its component/package/contract build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. UI-only (FF-EPIC-14) consuming FF-EPIC-09/11/12/15.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "epics": [
     "FF-EPIC-14",
@@ -14,7 +14,7 @@
   "contracts": {
     "real": [
       {
-        "client": "@fuzefront/security-client",
+        "client": "@fuzeone/security-client",
         "openapi": "packages/security/openapi.yaml",
         "usedFor": "Portal-scoped members & roles (the tenant is the portal's org). tenantId is resolved from the session, never accepted from the client.",
         "endpoints": [
@@ -24,7 +24,7 @@
         ]
       },
       {
-        "client": "@fuzefront/app-registry-client",
+        "client": "@fuzeone/app-registry-client",
         "openapi": "services/app-registry-service/openapi.yaml",
         "usedFor": "App display fields for the catalog (slug, name, menuLabel, integration, icon). Global registry — read-only here.",
         "endpoints": [
@@ -32,7 +32,7 @@
         ]
       },
       {
-        "client": "@fuzefront/billing-client",
+        "client": "@fuzeone/billing-client",
         "openapi": "services/billing-service/openapi.yaml",
         "usedFor": "The portal's own FuzeFront subscription (platform-billed): plans, subscription status, hosted management portal.",
         "endpoints": [
@@ -44,7 +44,7 @@
     ],
     "anticipated": [
       {
-        "client": "@fuzefront/portal-client",
+        "client": "@fuzeone/portal-client",
         "openapi": "services/portal-service/openapi.yaml (NOT frozen — commissioned by these frames, FF-EPIC-09-S3)",
         "usedFor": "Master-admin portal CRUD + a portal's self-scoped identity (GET /portal/current).",
         "endpoints": [
@@ -56,7 +56,7 @@
         ]
       },
       {
-        "client": "@fuzefront/security-client (extension) / portal invitation surface",
+        "client": "@fuzeone/security-client (extension) / portal invitation surface",
         "openapi": "portal-scoped invitation route (NOT native to the monolith today — FF-EPIC-11-S3)",
         "usedFor": "Portal-scoped user invitations (invite/resend/revoke), scoped to the caller's own portal.",
         "endpoints": [
@@ -66,7 +66,7 @@
         ]
       },
       {
-        "client": "@fuzefront/portal-client (catalog admin) / app-registry extension",
+        "client": "@fuzeone/portal-client (catalog admin) / app-registry extension",
         "openapi": "per-portal catalog admin — portal_apps entity (NOT frozen — FF-EPIC-12-S3)",
         "usedFor": "Per-portal enable/disable + reorder (portal_apps.enabled, portal_apps.pinned_order).",
         "endpoints": [
@@ -76,7 +76,7 @@
         ]
       },
       {
-        "client": "@fuzefront/billing-client (extension)",
+        "client": "@fuzeone/billing-client (extension)",
         "openapi": "Stripe Connect + price book (NOT frozen — FF-EPIC-15-S2/S3/S5)",
         "usedFor": "Connect Express onboarding + status (connected_accounts: charges_enabled, payouts_enabled, onboarding_status) and the reseller price book (tenant_plans).",
         "endpoints": [
@@ -99,7 +99,7 @@
         "approvedBy": null,
         "approvedAt": null,
         "contract": {
-          "client": "@fuzefront/portal-client",
+          "client": "@fuzeone/portal-client",
           "status": "anticipated",
           "openapi": "services/portal-service/openapi.yaml (commissioned — FF-EPIC-09-S3)",
           "endpoints": [
@@ -108,7 +108,7 @@
             "GET /api/v1/admin/portals/{portalId}",
             "PATCH /api/v1/admin/portals/{portalId}"
           ],
-          "component": "@fuzefront/portal-admin-ui → MasterAdminPortalsFlow",
+          "component": "@fuzeone/portal-admin-ui → MasterAdminPortalsFlow",
           "featureFlag": "fuzefront.platform.multi-tenant-portals"
         },
         "frames": [
@@ -127,7 +127,7 @@
         "approvedBy": null,
         "approvedAt": null,
         "contract": {
-          "client": "@fuzefront/security-client + @fuzefront/app-registry-client (real) + anticipated portal invitation & portal_apps routes",
+          "client": "@fuzeone/security-client + @fuzeone/app-registry-client (real) + anticipated portal invitation & portal_apps routes",
           "status": "mixed",
           "openapi": "packages/security/openapi.yaml + services/app-registry-service/openapi.yaml + anticipated FF-EPIC-11-S3 / FF-EPIC-12-S3",
           "endpoints": [
@@ -140,7 +140,7 @@
             "PUT /api/v1/portal/catalog/{appId}",
             "PATCH /api/v1/portal/catalog/order"
           ],
-          "component": "@fuzefront/portal-admin-ui → PortalAdminConsoleFlow",
+          "component": "@fuzeone/portal-admin-ui → PortalAdminConsoleFlow",
           "featureFlag": [
             "fuzefront.identity.portal-scoped-users",
             "fuzefront.apps.portal-catalog"
@@ -162,7 +162,7 @@
         "approvedBy": null,
         "approvedAt": null,
         "contract": {
-          "client": "@fuzefront/billing-client (real subscription) + anticipated Connect / price-book",
+          "client": "@fuzeone/billing-client (real subscription) + anticipated Connect / price-book",
           "status": "mixed",
           "openapi": "services/billing-service/openapi.yaml + anticipated FF-EPIC-15-S2/S3/S5",
           "endpoints": [
@@ -174,7 +174,7 @@
             "GET /api/v1/portal/price-book",
             "POST /api/v1/portal/price-book"
           ],
-          "component": "@fuzefront/billing-ui → PortalBillingFlow",
+          "component": "@fuzeone/billing-ui → PortalBillingFlow",
           "featureFlag": "fuzefront.billing.reseller-connect"
         },
         "frames": [
@@ -213,11 +213,11 @@
       "ConnectErrorNotice"
     ],
     "packages": [
-      "@fuzefront/portal-admin-ui",
-      "@fuzefront/billing-ui"
+      "@fuzeone/portal-admin-ui",
+      "@fuzeone/billing-ui"
     ],
     "dsPrimitivesNeeded": [
-      "Tabs — tabbed console shell; not in @fuzefront/design-system today",
+      "Tabs — tabbed console shell; not in @fuzeone/design-system today",
       "StatusPill — semantic lifecycle pill (active/suspended/pending/restricted)",
       "StatCard — summary metric card",
       "Stepper — Connect onboarding step list",
@@ -225,7 +225,7 @@
     ]
   },
   "commissionedByApproval": [
-    "@fuzefront/portal-client and all /portals* routes — does not exist in the contract today (FF-EPIC-09-S3)",
+    "@fuzeone/portal-client and all /portals* routes — does not exist in the contract today (FF-EPIC-09-S3)",
     "Portal-scoped invitation routes (POST /api/v1/portal/invitations, resend, revoke) — not native to the monolith today (FF-EPIC-11-S3)",
     "Per-portal catalog admin (portal_apps: enabled, pinned_order) — does not exist today (FF-EPIC-12-S3)",
     "Stripe Connect onboarding + status + price book (connected_accounts, tenant_plans) — no Connect surface exists today (FF-EPIC-15-S2/S3/S5)",
@@ -336,7 +336,7 @@
       "route": "/portal/admin/users",
       "flow": "portal-console",
       "summary": "Portal-scoped users + roles, status (active/invited), invite dialog with role choice, resend/revoke invite. Self-role-change guard.",
-      "acceptanceNotes": "Members from the REAL @fuzefront/security-client GET /v1/security/tenants/{tenantId}/members (tenantId resolved from session, never client). Roles from GET .../roles; change is PUT .../members/{userId}/roles. Invite is the anticipated portal-scoped route POST /api/v1/portal/invitations, scoped to the caller's own portal (cross-portal invite -> 403, see 09 i6). You cannot change your own role.",
+      "acceptanceNotes": "Members from the REAL @fuzeone/security-client GET /v1/security/tenants/{tenantId}/members (tenantId resolved from session, never client). Roles from GET .../roles; change is PUT .../members/{userId}/roles. Invite is the anticipated portal-scoped route POST /api/v1/portal/invitations, scoped to the caller's own portal (cross-portal invite -> 403, see 09 i6). You cannot change your own role.",
       "testHooks": [
         "[data-frame='06-users']",
         "[data-panel='portal-users']",
@@ -356,7 +356,7 @@
       "route": "/portal/admin/catalog",
       "flow": "portal-console",
       "summary": "Enabled apps with drag + ▲▼ reorder and enabled status, plus an add-app panel listing available apps from the FuzeFront catalog.",
-      "acceptanceNotes": "App display fields (slug/name/menuLabel/integration/icon) from the REAL @fuzefront/app-registry-client GET /apps. Enablement + order are per-portal and ANTICIPATED (portal_apps): add/remove PUT /api/v1/portal/catalog/{appId} { enabled }; reorder PATCH /api/v1/portal/catalog/order { order } persisted to pinned_order, reflected without a full reload. Drag is primary; ▲▼ is the keyboard-accessible equivalent, endpoints disable the unusable direction.",
+      "acceptanceNotes": "App display fields (slug/name/menuLabel/integration/icon) from the REAL @fuzeone/app-registry-client GET /apps. Enablement + order are per-portal and ANTICIPATED (portal_apps): add/remove PUT /api/v1/portal/catalog/{appId} { enabled }; reorder PATCH /api/v1/portal/catalog/order { order } persisted to pinned_order, reflected without a full reload. Drag is primary; ▲▼ is the keyboard-accessible equivalent, endpoints disable the unusable direction.",
       "testHooks": [
         "[data-frame='07-catalog']",
         "[data-panel='catalog-enabled']",
@@ -376,7 +376,7 @@
       "route": "/portal/admin/billing",
       "flow": "portal-billing",
       "summary": "Onboarded billing console: Connect onboarding status (stepper, all steps done), the reseller price book, and the portal's own FuzeFront platform subscription.",
-      "acceptanceNotes": "Platform subscription binds to the REAL @fuzefront/billing-client (GET /plans, GET /subscriptions/{id} -> BillingSubscription.status, manage via POST /portal). Connect + price book are ANTICIPATED (FF-EPIC-15): 'Onboarded' requires charges_enabled AND payouts_enabled both true; price book is tenant_plans. Creating a price is fail-closed on charges_enabled=false (see 09 i10). No vendor secret is rendered. Flag fuzefront.billing.reseller-connect (default OFF).",
+      "acceptanceNotes": "Platform subscription binds to the REAL @fuzeone/billing-client (GET /plans, GET /subscriptions/{id} -> BillingSubscription.status, manage via POST /portal). Connect + price book are ANTICIPATED (FF-EPIC-15): 'Onboarded' requires charges_enabled AND payouts_enabled both true; price book is tenant_plans. Creating a price is fail-closed on charges_enabled=false (see 09 i10). No vendor secret is rendered. Flag fuzefront.billing.reseller-connect (default OFF).",
       "testHooks": [
         "[data-frame='08-billing']",
         "[data-panel='connect-status']",

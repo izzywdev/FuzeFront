@@ -26,7 +26,7 @@ const WarningIcon = ({ size = 14 }) => (
  * RTL: spacing and the chevron use CSS *logical* properties (padding-inline,
  * inset-inline-end, text-align: start) so the control mirrors automatically
  * under `dir="rtl"` — no per-direction branching. The platform's direction
- * manager (@fuzefront/i18n) owns the `<html dir>` flip.
+ * manager (@fuzeone/i18n) owns the `<html dir>` flip.
  */
 export function Select({
   label,

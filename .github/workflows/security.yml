@@ -128,7 +128,7 @@ jobs:
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       # backend + frontend images build from the REPO ROOT context (they
-      # consume @fuzefront/* workspaces outside their own dir) — mirror
+      # consume @fuzeone/* workspaces outside their own dir) — mirror
       # release.yml's exact buildx config (context: . + file:) so the scanned
       # image is what actually ships. load: true keeps it in the local daemon
       # for Trivy. task-manager-app is self-contained.

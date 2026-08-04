@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Input, Alert, SeamDivider, CenteredCard } from '@fuzefront/design-system'
+import { Button, Input, Alert, SeamDivider, CenteredCard } from '@fuzeone/design-system'
 import type {
   AuthPanelProps,
   AuthMethods,

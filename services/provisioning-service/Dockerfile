@@ -43,8 +43,8 @@ RUN apk add --no-cache dumb-init && \
     addgroup -S provisioningservice && adduser -S provisioningservice -G provisioningservice -u 1001
 
 COPY --from=base /app/services/provisioning-service/node_modules ./services/provisioning-service/node_modules
-# shared/package.json is required so the @fuzefront/shared link
-# (node_modules/@fuzefront/shared -> ../../shared) resolves "main: dist/index.js"
+# shared/package.json is required so the @fuzeone/shared link
+# (node_modules/@fuzeone/shared -> ../../shared) resolves "main: dist/index.js"
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/services/provisioning-service/dist ./services/provisioning-service/dist
@@ -54,8 +54,8 @@ RUN find ./services/provisioning-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/provisioning-service
 
-# This service imports ONLY from '@fuzefront/shared/kafka' (the subpath export
-# → shared/dist/kafka/index.js), never from the '@fuzefront/shared' root export.
+# This service imports ONLY from '@fuzeone/shared/kafka' (the subpath export
+# → shared/dist/kafka/index.js), never from the '@fuzeone/shared' root export.
 # The root export re-exports React hooks and socket.io-client; the kafka subpath
 # is compiled CJS and requires only kafkajs + zod — both present in
 # provisioning-service/node_modules. NODE_PATH makes Node.js fall back to those

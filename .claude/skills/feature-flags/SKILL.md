@@ -1,6 +1,6 @@
 ---
 name: feature-flags
-description: Use when planning or writing code that should ship behind a feature flag — new/risky work, a gradual rollout, an operational kill-switch, an experiment, or a plan/tenant-gated capability. Covers the flag types and when to use each, the `<repo>.<domain>.<flag>` naming, the evaluation-context contract, default-OFF release / default-ON kill-switch rules, testing BOTH states, lifecycle + debt cleanup, and how to read a flag via `@fuzefront/feature-flags` (OpenFeature) in backend and frontend. Owned by feature-flags-engineer.
+description: Use when planning or writing code that should ship behind a feature flag — new/risky work, a gradual rollout, an operational kill-switch, an experiment, or a plan/tenant-gated capability. Covers the flag types and when to use each, the `<repo>.<domain>.<flag>` naming, the evaluation-context contract, default-OFF release / default-ON kill-switch rules, testing BOTH states, lifecycle + debt cleanup, and how to read a flag via `@fuzeone/feature-flags` (OpenFeature) in backend and frontend. Owned by feature-flags-engineer.
 ---
 
 # Feature flags
@@ -10,7 +10,7 @@ Decouple **deploy** from **release**: merge and ship code dark, turn it on delib
 ## Architecture (the family standard)
 - **Backend:** **Unleash** (self-hosted OSS, **FuzeFront-hosted**) is the flag store + admin UI + rollout/targeting engine.
 - **API:** **OpenFeature** (vendor-neutral SDK) + the **Unleash OpenFeature provider** — you code against the OpenFeature API, so Unleash stays swappable.
-- **Client:** the private **`@fuzefront/feature-flags`** package wraps OpenFeature + the provider with the family's defaults and context contract. Consumers depend on it; they never wire OpenFeature/Unleash by hand.
+- **Client:** the private **`@fuzeone/feature-flags`** package wraps OpenFeature + the provider with the family's defaults and context contract. Consumers depend on it; they never wire OpenFeature/Unleash by hand.
 - **Ownership:** `feature-flags-engineer` owns the Unleash config, the taxonomy, and the flags. Family products **manage flags through that agent**, not by clicking around Unleash ad hoc. The Unleash *deploy* is `devops-engineer`; the *client package build* is `backend-engineer`.
 
 ## When to flag
@@ -33,7 +33,7 @@ Rules that are NOT negotiable:
 Dot-namespaced, lowercase, kebab within a segment: `fuzefront.billing.usage-based-pricing`, `fuzekeys.tokenizer.batch-detokenize`, `fuzefront.checkout.new-cart-kill-switch`. The `<repo>` prefix prevents collisions across the family in one shared Unleash; `<domain>` groups by service/area; `<flag>` is the specific toggle. Don't encode the type in the name beyond what's natural (a `-kill-switch` suffix is fine and readable).
 
 ## Evaluation context contract
-Every evaluation passes a context so Unleash can target correctly. The family-standard fields (set by `@fuzefront/feature-flags`):
+Every evaluation passes a context so Unleash can target correctly. The family-standard fields (set by `@fuzeone/feature-flags`):
 - **`environment`** — `local` | `dev` | `prod` (the Unleash environment; usually injected from config, not per-call).
 - **`organizationId` / `tenantId`** — the org/tenant the request acts on (drives per-tenant rollout + permission flags).
 - **`userId`** — the acting user (drives gradual-by-user rollout, experiment bucketing, stickiness).
@@ -41,11 +41,11 @@ Every evaluation passes a context so Unleash can target correctly. The family-st
 
 **Never evaluate with no context in a prod path** (you'd get only the default and lose targeting). If you genuinely have no user/tenant (a cron, a system task), pass `app` + `environment` and document why. Context flows from the request: backend reads it from the authenticated principal + headers; frontend reads it from the session/host shell.
 
-## Reading a flag via `@fuzefront/feature-flags` (OpenFeature)
+## Reading a flag via `@fuzeone/feature-flags` (OpenFeature)
 
 **Backend (server SDK)** — evaluate per-request with the request's context; never cache a boolean across users:
 ```ts
-import { getClient } from '@fuzefront/feature-flags'; // wraps OpenFeature + Unleash provider
+import { getClient } from '@fuzeone/feature-flags'; // wraps OpenFeature + Unleash provider
 
 const flags = getClient();
 const ctx = { environment: env, organizationId: req.org.id, userId: req.user.id, app: 'billing-service' };
@@ -61,14 +61,14 @@ if (await flags.getBooleanValue('fuzefront.checkout.charge-kill-switch', true, c
 
 **Frontend (web/proxy SDK)** — the browser uses the Unleash **proxy/frontend** token (never the server admin token); context comes from the host session:
 ```ts
-import { useFlag } from '@fuzefront/feature-flags/react';
+import { useFlag } from '@fuzeone/feature-flags/react';
 const showNewCart = useFlag('fuzefront.checkout.new-cart', false); // default OFF
 ```
 The default value passed in code (the 2nd arg) is the **fallback when the flag store is unreachable** — make it match the type rule (OFF for release, ON for kill-switch) so an Unleash outage fails safe.
 
 ## Testing — BOTH states, always
 A flagged change has **two** code paths; CI must exercise both. Don't test only the on-path.
-- Unit/integration: run the suite with the flag **OFF** (the old/safe path) **and ON** (the new path). The `@fuzefront/feature-flags` client exposes a test provider (static/in-memory) so a test pins a flag's value — no network, deterministic.
+- Unit/integration: run the suite with the flag **OFF** (the old/safe path) **and ON** (the new path). The `@fuzeone/feature-flags` client exposes a test provider (static/in-memory) so a test pins a flag's value — no network, deterministic.
 - For a kill-switch, test that flipping OFF cleanly disables the path (no half-state, no thrown 500).
 - For permission flags, also assert the **Permit** check still gates the capability with the flag ON (the flag is not the boundary).
 
@@ -86,7 +86,7 @@ Net effect: ON for developers, and still following its deliberate rollout (i.e. 
 
 The **global/in-code defaults never change** to accommodate this (release OFF, kill-switch ON). The segment is a targeting layer on top; the in-code default remains the fail-safe used when Unleash is unreachable.
 
-The `developers` segment constrains Unleash's built-in **`userId`** context field, whose values are FuzeFront `users.id` **UUIDs** — not emails. `@fuzefront/feature-flags` maps `userId` → OpenFeature `targetingKey`, which the Unleash provider supplies as the Unleash `userId`. To add a developer, append their `users.id` UUID to the segment's constraint values.
+The `developers` segment constrains Unleash's built-in **`userId`** context field, whose values are FuzeFront `users.id` **UUIDs** — not emails. `@fuzeone/feature-flags` maps `userId` → OpenFeature `targetingKey`, which the Unleash provider supplies as the Unleash `userId`. To add a developer, append their `users.id` UUID to the segment's constraint values.
 
 ## Lifecycle + debt cleanup
 A flag is **debt** the moment it's created. At creation, record (in Unleash + the flag's PR): **owner**, **type**, **default**, and **removal criterion**. Then:
@@ -95,7 +95,7 @@ A flag is **debt** the moment it's created. At creation, record (in Unleash + th
 3. **Removing a flag** = delete the toggle in Unleash + remove both branches in code (keep the winning path) + drop the test for the dead path. Verify nothing else references the flag key first.
 
 ## Consuming-repo onboarding (point a repo at the family flag service)
-1. Add `@fuzefront/feature-flags` as a dependency (private GitHub Packages, `@fuzefront` scope — scoped `.npmrc` + token).
+1. Add `@fuzeone/feature-flags` as a dependency (private GitHub Packages, `@fuzefront` scope — scoped `.npmrc` + token).
 2. Get a **client token** for your app from `feature-flags-engineer` (a scoped Unleash API token — server token for backend, frontend/proxy token for browser). It's a SealedSecret in your repo, ref'd by env; `devops-engineer` wires it.
 3. Point the provider at **FuzeFront's Unleash** URL (same-origin proxy in the browser; service-DNS for server-side) via config — never hard-code the host.
 4. Pass the standard evaluation context (above) on every evaluation.
@@ -109,4 +109,4 @@ A flag is **debt** the moment it's created. At creation, record (in Unleash + th
 - [ ] **Both** flag states tested (off-path AND on-path); permission flags still gated by Permit
 - [ ] Flag recorded with **owner + removal criterion**; release/experiment flags scheduled for cleanup
 - [ ] **`developers` segment strategy attached** in the production environment (100% + segment `developers`) — EXCEPT for `ops-kill-switch` flags, which get a plain 100% strategy with no segment
-- [ ] Read via `@fuzefront/feature-flags` (OpenFeature API), not a hand-wired Unleash/OpenFeature call
+- [ ] Read via `@fuzeone/feature-flags` (OpenFeature API), not a hand-wired Unleash/OpenFeature call

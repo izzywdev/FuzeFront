@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/account-security-ui",
+  "name": "@fuzeone/account-security-ui",
   "version": "0.1.0",
   "description": "Account security hub UI (posture summary + password / two-factor / devices / API-tokens / connected-accounts cards) for FuzeFront, on the fuse-seam design system",
   "type": "module",
@@ -18,14 +18,14 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "@fuzefront/design-system": "^1.0.0",
-    "@fuzefront/security-client": "^0.2.0",
+    "@fuzeone/design-system": "^1.0.0",
+    "@fuzeone/security-client": "^0.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.0.0",
-    "@fuzefront/security-client": "0.2.0",
+    "@fuzeone/design-system": "1.0.0",
+    "@fuzeone/security-client": "0.2.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",

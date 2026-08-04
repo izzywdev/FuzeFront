@@ -23,7 +23,7 @@ info:
     frozen here so the portal-admin console can read the caller's own portal
     (resolved from the session, never from a client-supplied id).
 
-    This file is the single source of truth for `@fuzefront/portal-client`.
+    This file is the single source of truth for `@fuzeone/portal-client`.
     Changing the API means amending this file first (see the `api-contract-first`
     skill), bumping `info.version` + the changelog, re-linting (Spectral), then
     regenerating the client (`openapi-typescript`). UI, backend, and tests import

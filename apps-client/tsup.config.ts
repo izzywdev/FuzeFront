@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsup';
 
-// Mirrors @fuzefront/billing-client: dual ESM (.js) + CJS (.cjs) + .d.ts so the
+// Mirrors @fuzeone/billing-client: dual ESM (.js) + CJS (.cjs) + .d.ts so the
 // host bundler can resolve named exports statically (avoids the
 // __exportStar(require()) named-export failure plain tsc CJS produces).
 export default defineConfig({

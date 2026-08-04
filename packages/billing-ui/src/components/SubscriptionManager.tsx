@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BillingSubscription } from '@fuzefront/billing-client';
+import type { BillingSubscription } from '@fuzeone/billing-client';
 import { useBillingI18n } from '../i18n';
 import { Button, Notice, StatusPill } from './primitives';
 import { Modal } from './Modal';

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a reusable `@fuzefront/identity-ui` React package that provides a complete user / permissions / invitation management UI for organizations. The package is consumed by the host shell (`frontend/`) and future FuzeFront products. It renders custom UI on top of the fuse-seam design system (no Permit Elements), wires to the existing backend org/membership routes + a new `organization_invitations` table, and delegates email delivery to the email-service via `notify.email.requested` Kafka events. The v1 scope covers: member table with role assignment, single + bulk/CSV invite modal, pending-invite list with resend/revoke, and empty/loading/error states.
+**Goal:** Build a reusable `@fuzeone/identity-ui` React package that provides a complete user / permissions / invitation management UI for organizations. The package is consumed by the host shell (`frontend/`) and future FuzeFront products. It renders custom UI on top of the fuse-seam design system (no Permit Elements), wires to the existing backend org/membership routes + a new `organization_invitations` table, and delegates email delivery to the email-service via `notify.email.requested` Kafka events. The v1 scope covers: member table with role assignment, single + bulk/CSV invite modal, pending-invite list with resend/revoke, and empty/loading/error states.
 
-**Note on coordination:** API-token management screens will also live in `@fuzefront/identity-ui`. That plan has not been written yet; reserve the `ApiTokens*` component namespace and export it from the package public API as a stub so the package API does not have to break when the api-tokens plan lands.
+**Note on coordination:** API-token management screens will also live in `@fuzeone/identity-ui`. That plan has not been written yet; reserve the `ApiTokens*` component namespace and export it from the package public API as a stub so the package API does not have to break when the api-tokens plan lands.
 
 ---
 
@@ -66,7 +66,7 @@
 | **Bundle** | RHF ~9 KB + Zod already a workspace dep (0 extra). | Formik ~15 KB + Yup ~14 KB = ~29 KB. |
 | **DX** | `useForm<InviteFormData>()` with full TypeScript inference. | Similar but more verbose. |
 
-**Recommendation: React Hook Form 7 + Zod 3.** Zod is already in `@fuzefront/shared`; zero incremental cost. Pin `react-hook-form@7.56.4`, `@hookform/resolvers@3.10.0`.
+**Recommendation: React Hook Form 7 + Zod 3.** Zod is already in `@fuzeone/shared`; zero incremental cost. Pin `react-hook-form@7.56.4`, `@hookform/resolvers@3.10.0`.
 
 ---
 
@@ -82,11 +82,11 @@
 
 ---
 
-## 3. Package Boundary: `@fuzefront/identity-ui`
+## 3. Package Boundary: `@fuzeone/identity-ui`
 
 ```
 packages/identity-ui/               ← NEW workspace package
-  package.json                      (@fuzefront/identity-ui, 0.1.0)
+  package.json                      (@fuzeone/identity-ui, 0.1.0)
   tsconfig.json
   vite.config.ts                    (library mode, dual CJS+ESM)
   src/
@@ -426,7 +426,7 @@ CREATE INDEX ON organization_invitations(email, status);
 
 Replace the current `MembersManagement` tab content with:
 ```tsx
-import { IdentityPage, IdentityI18nProvider } from '@fuzefront/identity-ui'
+import { IdentityPage, IdentityI18nProvider } from '@fuzeone/identity-ui'
 
 // Inside the "members" tab:
 <IdentityI18nProvider locale={locale}>
@@ -438,9 +438,9 @@ import { IdentityPage, IdentityI18nProvider } from '@fuzefront/identity-ui'
 </IdentityI18nProvider>
 ```
 
-The existing `MembersManagement.tsx` component is **deprecated** (kept for reference until `@fuzefront/identity-ui` reaches feature parity, then deleted).
+The existing `MembersManagement.tsx` component is **deprecated** (kept for reference until `@fuzeone/identity-ui` reaches feature parity, then deleted).
 
-**Frontend vite.config.ts:** Add `@fuzefront/identity-ui` to Vite's `optimizeDeps.include` and ensure Module Federation's shared scope includes it.
+**Frontend vite.config.ts:** Add `@fuzeone/identity-ui` to Vite's `optimizeDeps.include` and ensure Module Federation's shared scope includes it.
 
 ---
 
@@ -451,9 +451,9 @@ The existing `MembersManagement.tsx` component is **deprecated** (kept for refer
 The package does **not** bundle any CSS. Consumers must import the design system token CSS:
 ```ts
 // In host or in the package's peer-dep docs:
-import '@fuzefront/design-system/tokens/colors.css'
-import '@fuzefront/design-system/tokens/spacing.css'
-import '@fuzefront/design-system/tokens/typography.css'
+import '@fuzeone/design-system/tokens/colors.css'
+import '@fuzeone/design-system/tokens/spacing.css'
+import '@fuzeone/design-system/tokens/typography.css'
 ```
 
 The host shell's `[data-theme="dark"|"light"]` attribute is inherited automatically (CSS custom properties cascade). The package checks `document.documentElement.dataset.theme` in no-op fallback only.
@@ -479,7 +479,7 @@ export const en = {
 ## 9. TDD Task Breakdown
 
 ### Phase 1 — Package scaffold + DS additions (no functionality)
-- [ ] **Task 1.1** — Create `packages/identity-ui/` workspace skeleton: `package.json`, `tsconfig.json`, `vite.config.ts` (library mode, dual CJS+ESM), `src/index.ts` (empty exports). Add to root `workspaces`. **Verification:** `npm install` from root resolves `@fuzefront/identity-ui`.
+- [ ] **Task 1.1** — Create `packages/identity-ui/` workspace skeleton: `package.json`, `tsconfig.json`, `vite.config.ts` (library mode, dual CJS+ESM), `src/index.ts` (empty exports). Add to root `workspaces`. **Verification:** `npm install` from root resolves `@fuzeone/identity-ui`.
 - [ ] **Task 1.2** — Add `Modal`, `DataTable`, `Textarea`, `FileDropZone` to `design-system/`. Add manifest entries. Write prompt-md for each. **Verification:** DS build (`node design-system/build.mjs`) passes; new components render in DS cards.
 - [ ] **Task 1.3** — Add new tokens (`--modal-max-w`, `--drop-active`) to `design-system/tokens/`. **Verification:** Tokens appear in `_ds_manifest.json` after rebuild.
 
@@ -513,7 +513,7 @@ export const en = {
 
 ### Phase 6 — Package publish readiness
 - [ ] **Task 6.1** — Vite library build produces `dist/index.js` (CJS) + `dist/index.mjs` (ESM) + `dist/index.d.ts`. **Verification:** `npm run build` in `packages/identity-ui` exits 0; `dist/` contains both formats.
-- [ ] **Task 6.2** — Add `@fuzefront/identity-ui` to Skaffold + Helm values (not as a deployed service — it's a frontend package — but document the version bump process). **Verification:** n/a (documentation only).
+- [ ] **Task 6.2** — Add `@fuzeone/identity-ui` to Skaffold + Helm values (not as a deployed service — it's a frontend package — but document the version bump process). **Verification:** n/a (documentation only).
 
 ---
 
@@ -574,7 +574,7 @@ test('admin can invite a user and invitee can accept', async ({ page, context })
 
 4. **RTL layout for Hebrew:** `dir="rtl"` on the `IdentityPage` root div is sufficient for most column reversal, but TanStack Table column ordering may also need to be reversed. Verify with a Hebrew-speaking reviewer.
 
-5. **`@fuzefront/identity-ui` version in Helm:** Since this is a frontend package bundled into the host shell image, there is no separate Kubernetes deployment. The version is implicit in the `fuzefront-frontend` image. Confirm this is the intended shipping model (no CDN/micro-frontend lazy-load for the identity package).
+5. **`@fuzeone/identity-ui` version in Helm:** Since this is a frontend package bundled into the host shell image, there is no separate Kubernetes deployment. The version is implicit in the `fuzefront-frontend` image. Confirm this is the intended shipping model (no CDN/micro-frontend lazy-load for the identity package).
 
 6. **API Tokens stub:** The prompt says "coordinate with the api-tokens plan." That plan does not exist yet. Confirm whether the api-tokens plan should be written before or after this UI plan is implemented.
 
@@ -585,7 +585,7 @@ test('admin can invite a user and invitee can accept', async ({ page, context })
 ### New files
 | Path | Description |
 |---|---|
-| `packages/identity-ui/package.json` | Package manifest (`@fuzefront/identity-ui`) |
+| `packages/identity-ui/package.json` | Package manifest (`@fuzeone/identity-ui`) |
 | `packages/identity-ui/tsconfig.json` | TypeScript config |
 | `packages/identity-ui/vite.config.ts` | Library build config |
 | `packages/identity-ui/src/index.ts` | Public API barrel |

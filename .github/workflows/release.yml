@@ -21,7 +21,7 @@ on:
       - 'shared/**'
       - 'frontend/**'
       # Workspace packages are COMPILED INTO the images (the backend/applications
-      # images build @fuzefront/feature-flags; the frontend bundles the UI
+      # images build @fuzeone/feature-flags; the frontend bundles the UI
       # packages from source via vite aliases). Without this, a change confined
       # to packages/** merges green and ships nothing — the images keep the old
       # code, which is exactly how a "merged" fix can fail to reach production.

@@ -222,7 +222,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // NOTE: `<html dir>`/`<html lang>` are now owned by the centralized direction
-    // manager in @fuzefront/i18n (driven by the active i18next language), so this
+    // manager in @fuzeone/i18n (driven by the active i18next language), so this
     // legacy provider no longer writes them — doing so would race the manager.
     // We still persist the legacy key for not-yet-migrated useLanguage() consumers.
     localStorage.setItem('language', language)

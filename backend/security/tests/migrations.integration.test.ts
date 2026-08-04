@@ -1,6 +1,6 @@
 import path from 'path'
 import { Client } from 'pg'
-import { runMigrations } from '@fuzefront/core'
+import { runMigrations } from '@fuzeone/core'
 
 // Integration test: security-service runs the 001-010 chain against the
 // existing knex_migrations table. 002 and 006 are no-op tombstones, so the apps

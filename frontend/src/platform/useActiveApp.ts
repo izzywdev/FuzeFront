@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import type { App } from '@fuzefront/app-registry-client'
+import type { App } from '@fuzeone/app-registry-client'
 import { useAppRegistry } from './appRegistry'
 
 /**

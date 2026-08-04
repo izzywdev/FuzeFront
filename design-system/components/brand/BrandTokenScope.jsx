@@ -44,7 +44,7 @@ export function resolveBrandAccent(accent) {
 
 /**
  * Applies a validated portal brand accent as a scoped CSS-custom-property
- * override layered OVER the base `@fuzefront/design-system` tokens — never a
+ * override layered OVER the base `@fuzeone/design-system` tokens — never a
  * fork of the tokens, only a re-point of `--accent-color` / `--accent-hover`
  * / `--accent-soft` (and optionally `--accent-2`) for everything rendered
  * inside it. A malformed or WCAG-AA-failing `accent` is rejected and the

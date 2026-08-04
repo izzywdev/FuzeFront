@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — verifier runtime tests (#117).
+ * @fuzeone/auth — verifier runtime tests (#117).
  *
  * Bias: these test the DENIAL paths hardest. This package is the gate consuming
  * services mount, so a false "allow" is a family-wide breach, while a false

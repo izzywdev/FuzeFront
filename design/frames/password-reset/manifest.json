@@ -1,11 +1,11 @@
 {
   "name": "Password reset & change — approval frames",
   "description": "Contract-freeze UX artifacts for three password flows: unauthenticated self-service reset, signed-in change-password, and set-first-password for a social-only account. The 'check your email' screen renders the deliberate no-enumeration 202 honestly. Approving each flow approves its slice of the component/package plan. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
-    "client": "@fuzefront/security-client",
+    "client": "@fuzeone/security-client",
     "schemas": [
       "components.schemas.PasswordResetRequest",
       "components.schemas.PasswordResetConfirmRequest",
@@ -19,7 +19,7 @@
       "POST /v1/security/session/password/reset-confirm",
       "POST /v1/security/password"
     ],
-    "component": "@fuzefront/account-security-ui → PasswordResetFlow | ChangePasswordFlow | SetPasswordFlow",
+    "component": "@fuzeone/account-security-ui → PasswordResetFlow | ChangePasswordFlow | SetPasswordFlow",
     "featureFlag": "fuzefront.account-security.password-reset"
   },
   "build": {
@@ -61,10 +61,10 @@
       "PasswordPolicyHints"
     ],
     "packages": [
-      "@fuzefront/account-security-ui"
+      "@fuzeone/account-security-ui"
     ],
     "designSystemAdditions": [
-      "PasswordStrengthMeter — segmented strength bar + policy hints; not yet in @fuzefront/design-system base. Named for frontend-engineer to add as a foundation PR; drawn from tokens only here.",
+      "PasswordStrengthMeter — segmented strength bar + policy hints; not yet in @fuzeone/design-system base. Named for frontend-engineer to add as a foundation PR; drawn from tokens only here.",
       "StatusCallout — shared soft-tinted inline banner (also named by the account-security frames); used by token-invalid / policy / 409 states. Foundation PR before implementation; never one-offed."
     ]
   },

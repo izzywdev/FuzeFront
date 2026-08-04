@@ -265,7 +265,7 @@ the contract-first pattern used elsewhere in the platform (e.g., `services/billi
 #### 🔲 Definition of Done
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] Backend unit + contract tests passing (coverage ≥ 80%)
-- [ ] OpenAPI spec published; `@fuzefront/portal-client` generated and consumable
+- [ ] OpenAPI spec published; `@fuzeone/portal-client` generated and consumable
 - [ ] BOLA/authorization verified (appsec-reviewer pass) — non-admin 403 on every route
 - [ ] Suspend/resume verified to invalidate any cached portal-resolution state
 - [ ] PM verified all Acceptance Criteria on staging
@@ -273,7 +273,7 @@ the contract-first pattern used elsewhere in the platform (e.g., `services/billi
 #### 📋 Sub-Tasks
 | Type | Summary | Points | Status |
 |------|---------|--------|--------|
-| Backend | OpenAPI: POST/GET/GET:id/PATCH /portals + suspend/resume; generate @fuzefront/portal-client | 4 | Open |
+| Backend | OpenAPI: POST/GET/GET:id/PATCH /portals + suspend/resume; generate @fuzeone/portal-client | 4 | Open |
 | Backend | routes + Permit platform-admin gate (fail-closed) | 8 | Open |
 | QA | contract + authz tests (non-admin 403, suspend blocks access) | 4 | Open |
 
@@ -309,7 +309,7 @@ the contract-first pattern used elsewhere in the platform (e.g., `services/billi
 > affecting today's single-portal FuzeFront behavior.
 
 #### 📌 Background & Context
-Per the baseline feature-flag standard (Unleash + OpenFeature + `@fuzefront/feature-flags`), all new
+Per the baseline feature-flag standard (Unleash + OpenFeature + `@fuzeone/feature-flags`), all new
 risky capability ships flagged OFF by default. This flag — `fuzefront.platform.multi-tenant-portals` —
 becomes the master switch reused by later epics (EPIC-13 branding, EPIC-14 admin consoles).
 
@@ -343,7 +343,7 @@ becomes the master switch reused by later epics (EPIC-13 branding, EPIC-14 admin
   not blocked from starting their own non-flag work).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** Unleash and the `@fuzefront/feature-flags` client are already onboarded in this repo
+- **Assumption:** Unleash and the `@fuzeone/feature-flags` client are already onboarded in this repo
   per baseline §10.
 - **Risk:** Flag left ON accidentally pre-launch — mitigate via `feature-flags-engineer` review and a
   documented removal/graduation criterion.

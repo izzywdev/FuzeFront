@@ -13,7 +13,7 @@ import { ConversationsRepository } from './db/repositories/conversations';
 import { MessagesRepository } from './db/repositories/messages';
 import { FeedbackRepository } from './db/repositories/feedback';
 import { BillingEmitter } from './billing/emitter';
-import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
+import { createKafkaClient, TypedProducer } from '@fuzeone/shared';
 
 async function main() {
   const config = loadConfig();

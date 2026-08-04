@@ -1,6 +1,6 @@
 ---
 key: FF-EPIC-02
-title: AI Chat platform — @fuzefront/chat-ui npm pkg + chat microservice (Anthropic + AG-UI + RAG + continuous history)
+title: AI Chat platform — @fuzeone/chat-ui npm pkg + chat microservice (Anthropic + AG-UI + RAG + continuous history)
 label: [fuzefront, chat, design-system-first, contract-first, paginated, permit-gated]
 github: https://github.com/izzywdev/FuzeFront/issues/120
 status: ready
@@ -30,18 +30,18 @@ domain: AI / Chat
 
 ### 🎯 Goal
 > A user holds one continuous, streaming, RAG-augmented chat thread per org/user, served by a dedicated
-> chat microservice (Anthropic + ChromaDB), rendered by the reusable `@fuzefront/chat-ui` AG-UI package.
+> chat microservice (Anthropic + ChromaDB), rendered by the reusable `@fuzeone/chat-ui` AG-UI package.
 
 ### 👥 Target Personas
 - **End user** — has an ongoing assistant conversation grounded in their org's knowledge.
-- **Family-product developer** — consumes `@fuzefront/chat-ui` + `@fuzefront/chat-client` to embed chat.
+- **Family-product developer** — consumes `@fuzeone/chat-ui` + `@fuzeone/chat-client` to embed chat.
 
 ### ✅ Features In Scope
-- [ ] Feature 1: Freeze the chat-service contract (OpenAPI + Kafka/stream event Zod schemas) and generate `@fuzefront/chat-client`.
+- [ ] Feature 1: Freeze the chat-service contract (OpenAPI + Kafka/stream event Zod schemas) and generate `@fuzeone/chat-client`.
 - [ ] Feature 2: `services/chat-service` wrapping Anthropic (key in SealedSecret, never browser-exposed), streaming (SSE/websocket).
 - [ ] Feature 3: ChromaDB RAG — embed + retrieve over the org/user knowledge corpus, inject into the Anthropic call; documented ingestion path.
 - [ ] Feature 4: Continuous chat-history store (Postgres chat-service role), org/tenant-scoped, BOLA-safe, paginated history.
-- [ ] Feature 5: `@fuzefront/chat-ui` private npm package rendered with AG-UI (streaming tokens, markdown/code, citations, continuous scrollback, floating launcher).
+- [ ] Feature 5: `@fuzeone/chat-ui` private npm package rendered with AG-UI (streaming tokens, markdown/code, citations, continuous scrollback, floating launcher).
 - [ ] Feature 6: Deploy wiring — Helm Deployment+Service (`enabled` gate), release image matrix, Argo umbrella wiring, SealedSecret.
 
 ### 🚫 Out of Scope
@@ -51,10 +51,10 @@ domain: AI / Chat
 
 ### 🏗️ High-Level Architecture Notes
 > Contract-first fan-out: contract-designer freezes the OpenAPI + stream/event schemas → generates
-> `@fuzefront/chat-client` (private, GitHub Packages, restricted). Backend (`backend-engineer`) implements
+> `@fuzeone/chat-client` (private, GitHub Packages, restricted). Backend (`backend-engineer`) implements
 > the service: Anthropic wrap, ChromaDB retrieval, Postgres history, SSE/websocket streaming, Authentik
 > auth + Permit authz, BOLA-safe, paginated. Frontend (`frontend-engineer`, sole DS owner) builds
-> `@fuzefront/chat-ui` with AG-UI, design-system-first. test-engineer writes independent contract/stream
+> `@fuzeone/chat-ui` with AG-UI, design-system-first. test-engineer writes independent contract/stream
 > tests. devops-engineer does Helm/Argo/CI + SealedSecret. Same-origin API base.
 
 ### 📊 Success Metrics
@@ -63,16 +63,16 @@ domain: AI / Chat
 | Anthropic key reachable from browser | Risk present | 0 (key server-side only) |
 | Conversation continuity across sessions | Ephemeral | Persistent single thread per user/org |
 | RAG citations attached to grounded answers | None | ≥ 1 citation when corpus hit |
-| `@fuzefront/chat-ui` + `@fuzefront/chat-client` published privately | No | Yes (restricted) |
+| `@fuzeone/chat-ui` + `@fuzeone/chat-client` published privately | No | Yes (restricted) |
 
 ### 📋 Child Stories
 | Story ID | Summary | Status |
 |----------|---------|--------|
-| FF-EPIC-02-S1 | Freeze chat-service contract + generate @fuzefront/chat-client | Open |
+| FF-EPIC-02-S1 | Freeze chat-service contract + generate @fuzeone/chat-client | Open |
 | FF-EPIC-02-S2 | chat-service Anthropic wrapper with streaming | Open |
 | FF-EPIC-02-S3 | ChromaDB RAG augmentation + ingestion path | Open |
 | FF-EPIC-02-S4 | Continuous chat-history store (Postgres, paginated, BOLA-safe) | Open |
-| FF-EPIC-02-S5 | @fuzefront/chat-ui AG-UI package | Open |
+| FF-EPIC-02-S5 | @fuzeone/chat-ui AG-UI package | Open |
 | FF-EPIC-02-S6 | Deploy wiring (Helm/Argo/CI/SealedSecret) | Open |
 
 ### 🔗 Dependencies
@@ -100,7 +100,7 @@ domain: AI / Chat
 
 #### 🧑‍💼 User Story
 > As a **platform engineer**, I want to **a frozen chat-service OpenAPI + stream/event contract with a
-> generated `@fuzefront/chat-client`** so that **the backend, UI, and tests all build against one source
+> generated `@fuzeone/chat-client`** so that **the backend, UI, and tests all build against one source
 > of truth and contract drift becomes a compile error**.
 
 #### 📌 Background & Context
@@ -110,14 +110,14 @@ schemas, then generates the private client package.
 
 #### ✅ Acceptance Criteria
 1. **Given** the chat requirements **When** the contract is authored **Then** the OpenAPI spec lints clean (Spectral) and covers history (paginated), send, and streaming endpoints.
-2. **Given** the frozen spec **When** the client is generated **Then** `@fuzefront/chat-client` types are produced via `openapi-typescript` and the package has private `publishConfig` (GitHub Packages, restricted).
+2. **Given** the frozen spec **When** the client is generated **Then** `@fuzeone/chat-client` types are produced via `openapi-typescript` and the package has private `publishConfig` (GitHub Packages, restricted).
 3. **Edge case:** **Given** a streaming event **When** modeled **Then** the SSE/websocket message schema (token, tool-call, citation, done) is defined as a typed event, not free-form JSON.
 4. **Error case:** **Given** a malformed event shape **When** the schema validates **Then** it is rejected at compile/lint time (drift = build error).
 
 #### 🔲 Definition of Done
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] Spectral lint green on the OpenAPI spec
-- [ ] `@fuzefront/chat-client` generates + has `publishConfig` + `repository.directory`
+- [ ] `@fuzeone/chat-client` generates + has `publishConfig` + `repository.directory`
 - [ ] Contract PR merged/frozen before fan-out
 - [ ] Pagination present on the history endpoint (gate-pagination)
 
@@ -125,7 +125,7 @@ schemas, then generates the private client package.
 | Type | Summary | Points | Status |
 |------|---------|--------|--------|
 | Backend | Author chat-service OpenAPI + Kafka/stream Zod schemas | 8 | Open |
-| Backend | Generate + wire `@fuzefront/chat-client` private package | 4 | Open |
+| Backend | Generate + wire `@fuzeone/chat-client` private package | 4 | Open |
 | QA | Spectral lint + client-typecheck in CI | 4 | Open |
 
 #### 🔗 Dependencies
@@ -294,7 +294,7 @@ Replaces ephemeral per-session chat with a persistent single thread per user/org
 
 ---
 
-### 📖 Story: @fuzefront/chat-ui renders a polished AG-UI chat experience
+### 📖 Story: @fuzeone/chat-ui renders a polished AG-UI chat experience
 
 | Field | Value |
 |-------|-------|
@@ -311,7 +311,7 @@ Replaces ephemeral per-session chat with a persistent single thread per user/org
 > visible**; and as a **family-product developer** I want it as a reusable package.
 
 #### 📌 Background & Context
-Promote the chat UI into a standalone private package `@fuzefront/chat-ui` rendered with AG-UI, consumed
+Promote the chat UI into a standalone private package `@fuzeone/chat-ui` rendered with AG-UI, consumed
 by the shell and family products. Design-system-first (fuse-seam tokens); the floating launcher stays.
 
 #### ✅ Acceptance Criteria
@@ -324,8 +324,8 @@ by the shell and family products. Design-system-first (fuse-seam tokens); the fl
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] RTL + a11y tests passing, coverage ≥ 80%
 - [ ] `gate-ds-conformance` green — fuse-seam tokens, no raw hex/spacing/type
-- [ ] `@fuzefront/chat-ui` private `publishConfig` (GitHub Packages, restricted) + repository.directory
-- [ ] Built against `@fuzefront/chat-client` (single type source)
+- [ ] `@fuzeone/chat-ui` private `publishConfig` (GitHub Packages, restricted) + repository.directory
+- [ ] Built against `@fuzeone/chat-client` (single type source)
 
 #### 📋 Sub-Tasks
 | Type | Summary | Points | Status |

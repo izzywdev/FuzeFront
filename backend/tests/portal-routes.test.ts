@@ -28,7 +28,7 @@ import {
 // Controls the master flag for every consumer of utils/portalFlag (routes,
 // middleware/auth, middleware/portalContext) via one mutable boolean — see the
 // feature-flags skill: BOTH states must be exercised. This substitutes for the
-// OpenFeature test provider (no Unleash/@fuzefront/feature-flags package is
+// OpenFeature test provider (no Unleash/@fuzeone/feature-flags package is
 // installed in this sandbox) but keeps the exact same call contract every
 // production module already uses.
 //
@@ -52,7 +52,7 @@ beforeAll(() => {
   // keep exercising ONLY the membership-based check they were written
   // against; without this, isPortalScopedUsersEnabled's own S6 AC4
   // fail-closed-to-ENFORCED default (utils/identityFlag.ts — no
-  // @fuzefront/feature-flags package resolvable in this sandbox) would
+  // @fuzeone/feature-flags package resolvable in this sandbox) would
   // silently turn S5 ON here too and reject logins this file asserts succeed.
   jest.spyOn(identityFlagModule, 'isPortalScopedUsersEnabled').mockResolvedValue(false)
 })

@@ -44,7 +44,7 @@ pwsh scripts/windows/Remove-WorktreesInBackground.ps1 -Action Status
 
 ```powershell
 npm install
-npm run dev --workspace @fuzefront/fuzequality
+npm run dev --workspace @fuzeone/fuzequality
 ```
 
 The web UI runs at `http://localhost:4181` and proxies the API at
@@ -55,7 +55,7 @@ scanner evaluation only.
 Scan a local repository from the command line:
 
 ```powershell
-npm run scan --workspace @fuzefront/fuzequality -- D:\source\FuzeFront FuzeFront
+npm run scan --workspace @fuzeone/fuzequality -- D:\source\FuzeFront FuzeFront
 ```
 
 ## Production services

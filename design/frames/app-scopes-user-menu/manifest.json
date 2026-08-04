@@ -1,7 +1,7 @@
 {
   "name": "App scopes, consolidated user menu & notifications — approval frames",
   "description": "Contract-freeze UX artifacts for four shell changes and one new backing service: per-app install scope levels (personal / organization / both) with an install-for-me vs install-for-everyone choice; the organization switcher and language switcher moving out of the top bar into the avatar menu; a multi-account switcher bounded at MAX_PARALLEL_ACCOUNTS=5 with a per-account storage-namespace isolation contract; and the notification bell backed by a real notification-service inbox. Approving these frames approves the interaction model AND the build inventory (flows / components / services) before implementation.",
-  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "designSystem": "fuse-seam (@fuzeone/design-system)",
   "plan": "docs/planning/app-scopes-user-menu-notifications.md",
   "entry": "index.html",
   "contract": {
@@ -53,7 +53,7 @@
       "NotificationItem"
     ],
     "designSystemAdditions": [
-      "none — these frames are composed entirely from primitives already in @fuzefront/design-system (Avatar, Badge, Modal, Select, Skeleton, StatusCallout, EmptyState, Spinner). No new base primitive is required, so no foundation PR precedes implementation."
+      "none — these frames are composed entirely from primitives already in @fuzeone/design-system (Avatar, Badge, Modal, Select, Skeleton, StatusCallout, EmptyState, Spinner). No new base primitive is required, so no foundation PR precedes implementation."
     ]
   },
   "frames": [

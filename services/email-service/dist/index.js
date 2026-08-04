@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const shared_1 = require("@fuzefront/shared");
+const shared_1 = require("@fuzeone/shared");
 const config_1 = require("./config");
 const providers_1 = require("./providers");
 const email_requested_handler_1 = require("./handlers/email-requested.handler");

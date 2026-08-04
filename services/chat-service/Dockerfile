@@ -42,8 +42,8 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/chat-service/node_modules ./services/chat-service/node_modules
-# shared/package.json is required so the @fuzefront/shared workspace symlink
-# (node_modules/@fuzefront/shared -> ../shared) resolves "main: dist/index.js".
+# shared/package.json is required so the @fuzeone/shared workspace symlink
+# (node_modules/@fuzeone/shared -> ../shared) resolves "main: dist/index.js".
 # Without it Node finds the symlink target but no manifest, falls back to looking
 # for /app/shared/index.js, and dies with MODULE_NOT_FOUND at startup — see #538.
 # email-service's production stage has carried this line all along; chat-service

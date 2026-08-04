@@ -1,16 +1,16 @@
 # Publish the security client to GitHub Packages under the @izzywdev scope.
 #
 # GitHub Packages requires the npm scope to match the repository owner, so the
-# canonical @fuzefront/security-client name cannot publish until the org transfer
+# canonical @fuzeone/security-client name cannot publish until the org transfer
 # completes (see packages-publish.yml, which stays the long-term path and no-ops
 # until then). Consuming apps (FuzeSocial, Mendys) need the security client TODAY,
 # so this workflow publishes the same build under an owner-scoped alias name:
 #
-#   @fuzefront/security-client -> @izzywdev/fuzefront-security-client
+#   @fuzeone/security-client -> @izzywdev/fuzefront-security-client
 #
 # Consumers install via an npm alias so their imports keep the canonical name:
 #
-#   "@fuzefront/security-client": "npm:@izzywdev/fuzefront-security-client@^0.1.0"
+#   "@fuzeone/security-client": "npm:@izzywdev/fuzefront-security-client@^0.1.0"
 #
 # Once the org transfer lands and packages-publish.yml activates, consumers drop
 # the alias and this workflow is deleted. Publishing is idempotent: a version that

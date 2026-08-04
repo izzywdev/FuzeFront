@@ -1,18 +1,18 @@
 # Publish the chat packages to GitHub Packages under the @izzywdev scope.
 #
 # GitHub Packages requires the npm scope to match the repository owner, so the
-# canonical @fuzefront/* names cannot publish until the org transfer completes
+# canonical @fuzeone/* names cannot publish until the org transfer completes
 # (see packages-publish.yml, which stays the long-term path and no-ops until
 # then). Consuming apps (e.g. MendysRobotics) need the chat packages TODAY, so
 # this workflow publishes the same builds under owner-scoped alias names:
 #
-#   @fuzefront/chat-client -> @izzywdev/fuzefront-chat-client
-#   @fuzefront/chat-ui     -> @izzywdev/fuzefront-chat-ui
+#   @fuzeone/chat-client -> @izzywdev/fuzefront-chat-client
+#   @fuzeone/chat-ui     -> @izzywdev/fuzefront-chat-ui
 #
 # Consumers install via npm aliases so their imports keep the canonical names:
 #
-#   "@fuzefront/chat-client": "npm:@izzywdev/fuzefront-chat-client@^1.1.0",
-#   "@fuzefront/chat-ui":     "npm:@izzywdev/fuzefront-chat-ui@^1.1.0"
+#   "@fuzeone/chat-client": "npm:@izzywdev/fuzefront-chat-client@^1.1.0",
+#   "@fuzeone/chat-ui":     "npm:@izzywdev/fuzefront-chat-ui@^1.1.0"
 #
 # Once the org transfer lands and packages-publish.yml activates, consumers
 # drop the alias and this workflow is deleted. Publishing is idempotent: a

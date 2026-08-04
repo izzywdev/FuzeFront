@@ -415,7 +415,7 @@ admins can support a tenant without disabling isolation platform-wide.
 > scoping misbehaves**.
 
 #### 📌 Background & Context
-Per the family flag standard (Unleash + OpenFeature via `@fuzefront/feature-flags`), all new/risky server
+Per the family flag standard (Unleash + OpenFeature via `@fuzeone/feature-flags`), all new/risky server
 logic ships wrapped in a flag. `fuzefront.identity.portal-scoped-users` gates S2/S3/S5's scoping logic;
 with the flag OFF, behavior is identical to today's global pool (no regression for existing deployments
 that haven't opted into multi-tenant portals yet).
@@ -446,7 +446,7 @@ that haven't opted into multi-tenant portals yet).
 - **Related:** FF-EPIC-09-S4 (`fuzefront.platform.multi-tenant-portals` master switch); this flag is a sub-flag of that rollout.
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** `@fuzefront/feature-flags` client + Unleash instance (hosted by FuzeFront per the family flag standard) is already available in this repo.
+- **Assumption:** `@fuzeone/feature-flags` client + Unleash instance (hosted by FuzeFront per the family flag standard) is already available in this repo.
 - **Risk:** Flag ownership handoff — `feature-flags-engineer` owns the taxonomy/administration; this sub-task only wires the check, it does not define flag governance.
 
 #### 📎 References

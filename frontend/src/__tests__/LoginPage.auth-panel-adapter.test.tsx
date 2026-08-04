@@ -1,7 +1,7 @@
 /**
  * LoginPage.auth-panel-adapter.test.tsx
  *
- * Covers the LoginPage <-> @fuzefront/auth-ui AuthPanel adapter boundary
+ * Covers the LoginPage <-> @fuzeone/auth-ui AuthPanel adapter boundary
  * introduced by the AuthPanel refactor, which isn't exercised by the other
  * LoginPage.*.test.tsx files (those cover mode-detection, the Google/
  * credentials sign-in path, and the login error taxonomy — all unchanged by
@@ -17,14 +17,14 @@
  *
  * NOTE: the pre-refactor LoginPage also had a confirm-password field, a
  * password-policy checklist gating submit, and an inline email-availability
- * check on signup. @fuzefront/auth-ui's AuthPanel (v0.1.0) does not yet
+ * check on signup. @fuzeone/auth-ui's AuthPanel (v0.1.0) does not yet
  * implement any of those, so they are gone from this page — not
  * reintroduced as one-off markup here, which would refork logic AuthPanel is
- * meant to own. Tracked as a fast-follow against @fuzefront/auth-ui.
+ * meant to own. Tracked as a fast-follow against @fuzeone/auth-ui.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
-import type { AuthMethods } from '@fuzefront/security-client'
+import type { AuthMethods } from '@fuzeone/security-client'
 
 vi.mock('../assets/FuzeFrontLogo.svg', () => ({ default: 'mock-logo.png' }))
 

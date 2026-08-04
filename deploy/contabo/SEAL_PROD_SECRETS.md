@@ -67,7 +67,7 @@ git push
 ## Adding `FEATURE_FLAGS_CLIENT_TOKEN` (app-registry / family flags)
 
 The `applications-service` (app-registry) evaluates family feature flags via the
-`@fuzefront/feature-flags` (Unleash) client. The scoped client token is a SECRET,
+`@fuzeone/feature-flags` (Unleash) client. The scoped client token is a SECRET,
 sealed into the SAME `fuzefront-secrets` SealedSecret under the key
 `FEATURE_FLAGS_CLIENT_TOKEN` (matches `applicationsService.featureFlags.tokenSecretKey`
 in `values-prod.yaml`). It is **optional**: while `applicationsService.featureFlags.unleashUrl`

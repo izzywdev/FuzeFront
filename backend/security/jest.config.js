@@ -12,8 +12,8 @@ module.exports = {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tests/tsconfig.json' }],
   },
   moduleNameMapper: {
-    '^@fuzefront/core$': '<rootDir>/../core/dist/index.js',
-    '^@fuzefront/shared/kafka$': '<rootDir>/../../shared/dist/kafka/index.js',
+    '^@fuzeone/core$': '<rootDir>/../core/dist/index.js',
+    '^@fuzeone/shared/kafka$': '<rootDir>/../../shared/dist/kafka/index.js',
   },
   testTimeout: 30000,
 }

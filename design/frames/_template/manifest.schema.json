@@ -19,7 +19,7 @@
     "designSystem": {
       "type": "string",
       "description": "The design system the frames are built in. Frames use tokens only — no raw hex/spacing/type.",
-      "default": "fuse-seam (@fuzefront/design-system)"
+      "default": "fuse-seam (@fuzeone/design-system)"
     },
     "plan": {
       "type": "string",
@@ -77,7 +77,7 @@
       "description": "The API/type contract these frames render against — the seam to contract-first.",
       "properties": {
         "openapi": { "type": "string", "description": "Path to the OpenAPI spec, e.g. 'services/billing-service/openapi.yaml'." },
-        "client": { "type": "string", "description": "Generated client package, e.g. '@fuzefront/billing-client'." },
+        "client": { "type": "string", "description": "Generated client package, e.g. '@fuzeone/billing-client'." },
         "schemas": {
           "type": "array",
           "description": "The OpenAPI schema components the frames bind to.",
@@ -88,7 +88,7 @@
           "description": "Endpoints the flows call, e.g. 'GET /api/v1/billing/invoices'.",
           "items": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /" }
         },
-        "component": { "type": "string", "minLength": 1, "description": "Target component, e.g. '@fuzefront/billing-ui → InvoiceHistoryPanel'." },
+        "component": { "type": "string", "minLength": 1, "description": "Target component, e.g. '@fuzeone/billing-ui → InvoiceHistoryPanel'." },
         "featureFlag": {
           "type": "string",
           "description": "Flag gating the feature, taxonomy '<repo>.<domain>.<flag>'. Default OFF; the builders audience must be targeted or prod-smoke can never see it.",
@@ -136,7 +136,7 @@
         "packages": {
           "type": "array",
           "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted.",
-          "items": { "type": "string", "pattern": "^@fuzefront/" }
+          "items": { "type": "string", "pattern": "^@fuzeone/" }
         }
       }
     }

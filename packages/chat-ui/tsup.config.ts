@@ -10,12 +10,12 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['react', 'react-dom', 'react/jsx-runtime', '@fuzefront/chat-client'],
+  external: ['react', 'react-dom', 'react/jsx-runtime', '@fuzeone/chat-client'],
   outExtension({ format }) {
     return { js: format === 'cjs' ? '.cjs' : '.js' };
   },
   // The design-system-token-only stylesheet ships alongside the JS so consumers
-  // can `import '@fuzefront/chat-ui/styles.css'`.
+  // can `import '@fuzeone/chat-ui/styles.css'`.
   loader: { '.css': 'copy' },
   publicDir: false,
   onSuccess: 'node ./scripts/copy-css.mjs',

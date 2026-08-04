@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { MenuItem as DSMenuItem } from '@fuzefront/design-system'
-import { useT } from '@fuzefront/i18n'
+import { MenuItem as DSMenuItem } from '@fuzeone/design-system'
+import { useT } from '@fuzeone/i18n'
 import { useCurrentUser, useAppContext } from '../lib/shared'
 import type { MenuItem } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { PasswordChecklist, FieldStatus } from '@fuzefront/design-system'
+import { PasswordChecklist, FieldStatus } from '@fuzeone/design-system'
 
 describe('PasswordChecklist.meetsPolicy', () => {
   it('requires 12+ chars, upper, lower, digit and symbol', () => {

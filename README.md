@@ -249,7 +249,7 @@ npm create vite@latest my-app -- --template react-ts
 
 # 2. Add Module Federation
 npm install @originjs/vite-plugin-federation --save-dev
-npm install @fuzefront/sdk-react
+npm install @fuzeone/sdk-react
 
 # 3. Configure vite.config.ts with federation setup
 # 4. Add self-registration code
@@ -261,7 +261,7 @@ npm install @fuzefront/sdk-react
 Apps using the FuzeFront SDK can self-register and maintain health status:
 
 ```typescript
-import { createHeartbeat } from '@fuzefront/sdk-react'
+import { createHeartbeat } from '@fuzeone/sdk-react'
 
 // Auto-register when running standalone
 async function autoRegister() {

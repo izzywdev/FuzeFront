@@ -23,7 +23,7 @@ domain: Platform
 ---
 
 ### 📌 Problem Statement
-> The App Manifest + app-registry OpenAPI + Kafka `app.*` schemas + `@fuzefront/app-registry-client` + the
+> The App Manifest + app-registry OpenAPI + Kafka `app.*` schemas + `@fuzeone/app-registry-client` + the
 > HTML approval frames are merged on master (PR #107) and the frames are **approved**, but the platform
 > behind the contract is unbuilt: there is no registry/lifecycle API, no app menu, no register→activate
 > flow, no menu substitution, no built-in Clock, and no standalone mode. The host shell cannot yet mount
@@ -53,7 +53,7 @@ domain: Platform
 - Per-product authn/authz provisioning — that is FF-EPIC-05 (plugs into the manifest `auth` section).
 
 ### 🏗️ High-Level Architecture Notes
-> Contract-first against merged #107. Backend uses the generated `@fuzefront/app-registry-client` types as
+> Contract-first against merged #107. Backend uses the generated `@fuzeone/app-registry-client` types as
 > the single source of App/Manifest types (deprecate the duplicated frontend `App` type). Module-Federation
 > host shell mounts remotes; same-origin API base; Permit-gated; paginated lists. Clock ships as a real
 > federated remote (devops: image in release matrix + Helm/Argo, or static-host the remote).
@@ -82,7 +82,7 @@ domain: Platform
 
 ### 📎 References
 - GitHub issue: https://github.com/izzywdev/FuzeFront/issues/122
-- Merged contract PR #107; approved frames `design/frames/federated-apps/`; `@fuzefront/app-registry-client`
+- Merged contract PR #107; approved frames `design/frames/federated-apps/`; `@fuzeone/app-registry-client`
 
 ---
 
@@ -137,7 +137,7 @@ persistence (migration). Built-ins (Clock) are non-deletable.
 - **Risk:** Lifecycle/event drift → validate strictly against the frozen schemas (drift = test fail).
 
 #### 📎 References
-- #107 contract; `@fuzefront/app-registry-client`.
+- #107 contract; `@fuzeone/app-registry-client`.
 
 ---
 
@@ -157,7 +157,7 @@ persistence (migration). Built-ins (Clock) are non-deletable.
 > flow to register→activate** so that **I can discover and enable federated apps from the shell**.
 
 #### 📌 Background & Context
-Renders the app menu (icon + label) bound to `@fuzefront/app-registry-client`, with the register→activate
+Renders the app menu (icon + label) bound to `@fuzeone/app-registry-client`, with the register→activate
 flow. The duplicated frontend `App` type is removed in favor of the generated client type.
 
 #### ✅ Acceptance Criteria
@@ -169,7 +169,7 @@ flow. The duplicated frontend `App` type is removed in favor of the generated cl
 #### 🔲 Definition of Done
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] RTL + a11y tests passing, coverage ≥ 80%
-- [ ] Bound to `@fuzefront/app-registry-client`; duplicated `App` type removed
+- [ ] Bound to `@fuzeone/app-registry-client`; duplicated `App` type removed
 - [ ] `gate-ds-conformance` green (fuse-seam tokens)
 - [ ] Matches the approved frames
 
@@ -189,7 +189,7 @@ flow. The duplicated frontend `App` type is removed in favor of the generated cl
 - **Risk:** Type-removal ripples → coordinate the single client type across menu + substitution.
 
 #### 📎 References
-- Approved frames; `@fuzefront/app-registry-client`.
+- Approved frames; `@fuzeone/app-registry-client`.
 
 ---
 

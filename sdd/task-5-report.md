@@ -25,7 +25,7 @@ Successfully bootstrapped the `services/email-service` package scaffold with all
 
 ### npm install
 - Root `npm install` succeeded: 1019 packages added
-- Subdirectory `npm install` expected to fail with 404 on `@fuzefront/shared` (workspace package not published) — handled correctly
+- Subdirectory `npm install` expected to fail with 404 on `@fuzeone/shared` (workspace package not published) — handled correctly
 - Root hoisting resolves dependencies for test runner
 
 ### Test Run

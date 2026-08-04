@@ -15,7 +15,7 @@ except one, partially. Then the tracking issue was closed, and the work fell off
 
 | Doc                                                | What it specifies                                                                                                                            |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/planning/epics/EPIC-02-ai-chat-platform.md`  | FF-EPIC-02, stories S1–S6 (contract → service → RAG → history → `@fuzefront/chat-ui` → deploy). All six still marked **Open**.               |
+| `docs/planning/epics/EPIC-02-ai-chat-platform.md`  | FF-EPIC-02, stories S1–S6 (contract → service → RAG → history → `@fuzeone/chat-ui` → deploy). All six still marked **Open**.               |
 | `docs/superpowers/plans/2026-06-19-ai-chat-rag.md` | Plan F (PR #53) — 24-task/8-phase TDD design: LiteLLM gateway, ChromaDB, Permit-gated tools, SSE protocol, billing metering, security model. |
 | `services/chat-service/EXTRACTION.md`              | Contract-first handoff — what exists, plus **4 deferred streams** with owners.                                                               |
 | `services/chat-service/openapi.yaml`               | The frozen contract (v1.1.0).                                                                                                                |
@@ -141,7 +141,7 @@ permissions. Verified locally: `tsc` clean, **24/24 suites, 131 tests passing**.
   **purely additive** (+532 lines, zero deletions) — no existing package's resolution changed.
 - This also repairs the **Dockerfile**, whose `npm ci --workspace=services/chat-service` could never
   have resolved before.
-- New `chat-service-tests` job in `ci.yml`: `npm ci` → build `@fuzefront/shared` → `tsc` chat-service →
+- New `chat-service-tests` job in `ci.yml`: `npm ci` → build `@fuzeone/shared` → `tsc` chat-service →
   `jest`. The suite now gates every PR for the first time.
 - `jest.config.js` `moduleNameMapper` switched from hard-coded `<rootDir>/node_modules/{kafkajs,zod}`
   to `require.resolve(...)`. Workspace membership hoists those deps to the repo root, so the pinned

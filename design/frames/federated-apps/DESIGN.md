@@ -16,7 +16,7 @@ The applications-service (`backend/applications/`) already owns an **App registr
   `apps(id, name, url, icon_url, is_active, integration_type, remote_url, scope,
   module, description, metadata, organization_id, visibility, marketplace_metadata,
   is_marketplace_approved, …)`.
-- **TS type** `App` in `@fuzefront/core` (`backend/core/src/types/shared.ts`).
+- **TS type** `App` in `@fuzeone/core` (`backend/core/src/types/shared.ts`).
 - **REST** mounted at `/api/apps`: `GET /api/apps`, `POST /api/apps` (admin),
   `PUT /api/apps/:id/activate`, `DELETE /api/apps/:id`,
   `POST /api/apps/register` (no-auth demo), `POST /api/apps/:id/heartbeat`.
@@ -42,7 +42,7 @@ The applications-service (`backend/applications/`) already owns an **App registr
 We **do not** create a brand-new service. We **freeze a contract over the existing
 applications-service** under the versioned path `/api/v1/app-registry`, mirroring
 the billing precedent (`services/billing-service/openapi.yaml` +
-`@fuzefront/billing-client`). The new generated client is **`@fuzefront/app-registry-client`**.
+`@fuzeone/billing-client`). The new generated client is **`@fuzeone/app-registry-client`**.
 
 Net-new surface this contract adds to the existing service:
 
@@ -63,9 +63,9 @@ consume the **same generated `Manifest` type**, so drift is a compile error.
 - **Service:** the existing `backend/applications/` (applications-service),
   contract-frozen as `services/app-registry-service/openapi.yaml`. Public HTTP
   interface = that OpenAPI doc, served under `{baseUrl}/api/v1/app-registry`.
-- **Shared client package:** `@fuzefront/app-registry-client` (private, GitHub
+- **Shared client package:** `@fuzeone/app-registry-client` (private, GitHub
   Packages, `access: restricted`) — generated `schema.ts` (openapi-typescript) +
-  hand-wrapped axios client, exactly like `@fuzefront/billing-client`.
+  hand-wrapped axios client, exactly like `@fuzeone/billing-client`.
 - **Event contract:** Kafka topics `app.registered`, `app.activated`,
   `app.suspended`, `app.heartbeat` with Zod schemas in `shared/src/kafka/schemas/`
   (these are the durable, cross-service successors to the Socket.io emits; the host

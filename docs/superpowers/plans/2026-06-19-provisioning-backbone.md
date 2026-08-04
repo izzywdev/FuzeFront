@@ -29,7 +29,7 @@ endpoint that Plan D's provisioning-service will call).
 - **Injectable externals** for tests: provisioning takes `{ permit, publish }` deps; defaults
   bind to the real Permit client + a lazily-created shared `TypedProducer`. Tests pass fakes —
   no real Permit cloud or broker.
-- **Kafka resolution**: backend imports `@fuzefront/shared` (kafka sub-barrel). Jest maps it to
+- **Kafka resolution**: backend imports `@fuzeone/shared` (kafka sub-barrel). Jest maps it to
   `shared/src/kafka/index.ts` (mirrors email-service). For build/runtime the backend image is
   built from repo root (mirror email-service Dockerfile) so `shared/dist` is present.
 
@@ -71,7 +71,7 @@ endpoint that Plan D's provisioning-service will call).
   `process.env.INTERNAL_PROVISION_SECRET`; body `{ userId }`; runs `runInternalProvision`. Mount in index.ts.
 
 ### T5 — Kafka publisher helper (`backend/src/services/eventPublisher.ts`)
-- Lazy singleton `TypedProducer` from `@fuzefront/shared`; `publishIdentityUserCreated`,
+- Lazy singleton `TypedProducer` from `@fuzeone/shared`; `publishIdentityUserCreated`,
   `publishNotifyEmailRequested`. Disabled (no-op, logs) when `KAFKA_BROKERS` unset.
 
 ### T6 — Tests (`backend/tests/provisioning.test.ts`, `internal-provision.test.ts`)
@@ -80,10 +80,10 @@ endpoint that Plan D's provisioning-service will call).
 - benign-409 vs real failure (fake permit tenants.create throws 409 → step done; throws 500 → failed).
 - reconcile-on-login heals a missing/incomplete org.
 - internal endpoint auth (401 wrong/missing secret) + behavior (200 provisions).
-- Jest `moduleNameMapper` for `@fuzefront/shared` → shared kafka source.
+- Jest `moduleNameMapper` for `@fuzeone/shared` → shared kafka source.
 
 ### T7 — Build/runtime plumbing
-- Backend `package.json`: add `@fuzefront/shared`, `kafkajs`, `zod` deps; jest moduleNameMapper.
+- Backend `package.json`: add `@fuzeone/shared`, `kafkajs`, `zod` deps; jest moduleNameMapper.
 - Backend image build from root context (skaffold + Dockerfile) building shared first.
 - Document the `POST /internal/provision` contract for Plan D.
 - `npm run build` + type-check + jest green before commit.

@@ -1,6 +1,6 @@
 // Outbox relay wiring for security-service.
 //
-// The generic drain loop lives in @fuzefront/core (startOutboxRelay); this
+// The generic drain loop lives in @fuzeone/core (startOutboxRelay); this
 // module injects the Kafka transport: it maps each topic to its frozen Zod
 // schema, derives the partition key (entity id) for per-entity ordering, and
 // dead-letters rows that exhaust their retries. One relay per shared DB drains
@@ -21,13 +21,13 @@ import {
   identityMembershipRemovedSchemaV1,
   notifyEmailRequestedSchemaV1,
   portalCreatedSchemaV1,
-} from '@fuzefront/shared/kafka'
+} from '@fuzeone/shared/kafka'
 import {
   db,
   startOutboxRelay,
   OutboxRecord,
   OutboxRelayHandle,
-} from '@fuzefront/core'
+} from '@fuzeone/core'
 import type { ZodSchema } from 'zod'
 
 // Topic -> payload schema. Publishing validates against the frozen schema; an

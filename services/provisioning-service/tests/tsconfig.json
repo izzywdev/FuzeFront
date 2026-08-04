@@ -9,8 +9,8 @@
     "skipLibCheck": true,
     "baseUrl": "..",
     "paths": {
-      "@fuzefront/shared/kafka": ["../../shared/src/kafka/index.ts"],
-      "@fuzefront/shared": ["../../shared/src/kafka/index.ts"]
+      "@fuzeone/shared/kafka": ["../../shared/src/kafka/index.ts"],
+      "@fuzeone/shared": ["../../shared/src/kafka/index.ts"]
     }
   },
   "include": ["**/*.test.ts", "../src/**/*.ts"]

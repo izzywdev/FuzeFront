@@ -1,11 +1,11 @@
 /**
- * @fuzefront/chat-ui — design-system-first React chat UI for the FuzeFront
- * chat-service. Consumes @fuzefront/chat-client's SSE event union; renders
+ * @fuzeone/chat-ui — design-system-first React chat UI for the FuzeFront
+ * chat-service. Consumes @fuzeone/chat-client's SSE event union; renders
  * streaming messages, RAG citations, and agent confirmation prompts using only
- * @fuzefront/design-system tokens.
+ * @fuzeone/design-system tokens.
  *
  * Consumers must also import the stylesheet once:
- *   import '@fuzefront/chat-ui/styles.css';
+ *   import '@fuzeone/chat-ui/styles.css';
  */
 
 // High-level, self-contained widget (launcher + drawer + state).

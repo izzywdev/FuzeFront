@@ -1,5 +1,5 @@
 import { App as LegacyApp } from '../lib/shared'
-import type { App } from '@fuzefront/app-registry-client'
+import type { App } from '@fuzeone/app-registry-client'
 // Dynamic remote-loading helpers from @originjs/vite-plugin-federation (the
 // federation runtime this host actually builds with). The previous
 // webpack-style __webpack_init_sharing__ approach never worked with Vite remotes.

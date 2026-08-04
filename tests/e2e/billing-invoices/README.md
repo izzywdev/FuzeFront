@@ -2,7 +2,7 @@
 
 Owned by `frontend-test-engineer` (independent of the UI implementer). This is
 the **INDEPENDENT** e2e verification for the vendor-neutral, DB-backed invoice
-history UI (`@fuzefront/billing-ui → InvoiceHistoryPanel`, flag
+history UI (`@fuzeone/billing-ui → InvoiceHistoryPanel`, flag
 `fuzefront.billing.invoice-history`).
 
 The React component now **exists** (`InvoiceHistoryPanel`, verified by billing-ui
@@ -79,7 +79,7 @@ base in prod); override only for split hosts.
 
 ## Built-app pre-production — the REAL React component
 
-`built-component.spec.ts` mounts the actual `@fuzefront/billing-ui →
+`built-component.spec.ts` mounts the actual `@fuzeone/billing-ui →
 InvoiceHistoryPanel` (imported from source, bundled by esbuild) with a stubbed
 `listInvoices`, over `file://`, and asserts the SAME `data-*` acceptance contract
 the frames assert — proving the implementation matches the approved frames.

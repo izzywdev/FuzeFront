@@ -54,7 +54,7 @@ domain: Identity / Security
 
 ### 🏗️ High-Level Architecture Notes
 > **The integration seam for consumers is the FuzeFront Security API (`/api/v1/security/*`, contract
-> `packages/security/openapi.yaml`) and the `@fuzefront/security-client` types — NOT any vendor.** Consumers
+> `packages/security/openapi.yaml`) and the `@fuzeone/security-client` types — NOT any vendor.** Consumers
 > authenticate via `/session`, `/signup`, `/social/{provider}/start`, `/session/exchange`, `/methods` and
 > authorize via `/authz/check` + `/authz/grants` + `/tenants/*`, always resolving to the stable `Identity`.
 > The identity engine and the authorization engine are swappable server-side implementations hidden behind
@@ -116,7 +116,7 @@ domain: Identity / Security
 
 #### 📌 Background & Context
 This design doc is the gate: it defines how a consumer integrates **through the FuzeFront Security API
-(`/api/v1/security/*`) and `@fuzefront/security-client`** — capability discovery + sign-in/up + session
+(`/api/v1/security/*`) and `@fuzeone/security-client`** — capability discovery + sign-in/up + session
 (AuthN) and `authz/check` + grants + tenant/role management (AuthZ), all resolving to the stable
 `Identity`, with the identity/authorization engines hidden behind server-side adapters. It also covers the
 internal provisioning (manifest `auth`/`authz` → per-product policy merge) and the FuzeOne-root ReBAC

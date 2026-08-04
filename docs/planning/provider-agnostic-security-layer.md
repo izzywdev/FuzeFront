@@ -7,10 +7,10 @@
 - The browser is **302-redirected to `auth.fuzefront.com` (Authentik's own hosted UI)** for social login, SSO, and enrollment (`backend/security/src/routes/auth.ts:402` `/oidc/login`, `:463` `/oidc/signup`). This is what lands the user on Authentik's raw enrollment page instead of a FuzeFront-branded flow.
 - `auth.fuzefront.com` is a **dedicated public Ingress** (`deploy/helm/fuzefront/templates/authentik.yaml:281-311`) — the IdP is a first-class public host, not an implementation detail.
 - The **consumer contract itself names the vendors**: `docs/consumers/onboarding-authn-authz.md` and `docs/planning/epics/EPIC-05-multi-product-authn-authz.md` instruct consumers to run OIDC against the shared **Authentik** issuer directly and to call the **Permit.io** SDK directly (`checkProductPermission`, `syncPermitSchemaWithProducts`, Permit tenants/ReBAC).
-- The published `@fuzefront/auth` client leaks Authentik in its **types/config/docs** (`packages/auth/src/types.ts:68` `AuthMode='oidc-jwks'`, `:137-161` `OidcJwksConfig` naming Authentik; `packages/auth/openapi.yaml:83-100` names Authentik in endpoint descriptions).
+- The published `@fuzeone/auth` client leaks Authentik in its **types/config/docs** (`packages/auth/src/types.ts:68` `AuthMode='oidc-jwks'`, `:137-161` `OidcJwksConfig` naming Authentik; `packages/auth/openapi.yaml:83-100` names Authentik in endpoint descriptions).
 - There is **no FuzeFront-owned AuthZ API at all** — authorization is exposed only as direct Permit SDK usage.
 
-**The vision (confirmed with the owner).** FuzeFront must expose its **own** provider-agnostic Security API for both **AuthN and AuthZ**, wrapping the selected providers (Authentik, Permit) behind an internal adapter. Consumers, the frontend, and federated remotes know only the FuzeFront Security API + the `@fuzefront/auth` client. This keeps the *value* of Authentik (federation, MFA, enrollment engine) and Permit (policy/ReBAC engine) while making them **swappable** — we can switch providers for features/cost, or blend our own flows, without any consumer change.
+**The vision (confirmed with the owner).** FuzeFront must expose its **own** provider-agnostic Security API for both **AuthN and AuthZ**, wrapping the selected providers (Authentik, Permit) behind an internal adapter. Consumers, the frontend, and federated remotes know only the FuzeFront Security API + the `@fuzeone/auth` client. This keeps the *value* of Authentik (federation, MFA, enrollment engine) and Permit (policy/ReBAC engine) while making them **swappable** — we can switch providers for features/cost, or blend our own flows, without any consumer change.
 
 **Decisions locked:**
 1. **IdP hiding = Model 1** (reverse-proxy Authentik under the app host + adapter interface). Not a full IdP rebuild — we keep Authentik's value behind our interface.
@@ -28,7 +28,7 @@
 ```
 Consumers · Frontend SPA · Federated remotes
         │  see ONLY ▼
-FuzeFront Security API   →  app.fuzefront.com/api/v1/security/*   (+ @fuzefront/auth client, provider-neutral)
+FuzeFront Security API   →  app.fuzefront.com/api/v1/security/*   (+ @fuzeone/auth client, provider-neutral)
         │
 security-service (backend/security)
    ├── IdentityProvider   (interface)  ──►  AuthentikIdentityProvider   (impl, swappable)
@@ -54,9 +54,9 @@ Everything else fans out only after this PR is merged. Deliverables:
    - **AuthN:** `POST /session` (password login), `GET /session` (current identity / “me”), `DELETE /session` (logout), `POST /session/exchange` (opaque-code → token), `GET /social/{provider}/start` (begin social login — 302, provider ∈ enum `google|…`), `GET /social/callback` (broker), `POST /signup`, `GET /methods` (neutral capability descriptor — replaces `oidcConfigured`).
    - **AuthZ:** `POST /authz/check`, `POST /authz/bulk-check`, `GET /authz/permissions`; role/tenant/membership: `.../roles`, `.../tenants`, `.../members` (neutralized from today’s org routes + Permit primitives).
    - **M2M:** `POST /tokens` (issue), `POST /tokens/introspect` — FuzeFront-owned, Authentik hidden.
-2. **Provider-neutral shared types** — evolve `@fuzefront/auth` types: rename `AuthMode='oidc-jwks'` → neutral (e.g. `federated-jwks`); make `OidcJwksConfig` **server-internal** (drop it from the consumer surface or strip Authentik naming); neutralize error codes/docs. Keep the stable `Identity` shape.
+2. **Provider-neutral shared types** — evolve `@fuzeone/auth` types: rename `AuthMode='oidc-jwks'` → neutral (e.g. `federated-jwks`); make `OidcJwksConfig` **server-internal** (drop it from the consumer surface or strip Authentik naming); neutralize error codes/docs. Keep the stable `Identity` shape.
 3. **Adapter interfaces** — `IdentityProvider` + `AuthorizationProvider` TS interfaces (in `backend/security/src/providers/` or a shared package), documented as the internal swap contract.
-4. Lint (Spectral) + generate the client (`openapi-typescript`) → the `@fuzefront/security-client` (or fold into `@fuzefront/auth`). PR = the gate.
+4. Lint (Spectral) + generate the client (`openapi-typescript`) → the `@fuzeone/security-client` (or fold into `@fuzeone/auth`). PR = the gate.
 
 ---
 
@@ -109,7 +109,7 @@ Fan out, all gated on the Phase-0 contract:
 - Backend AuthZ / M2M: `backend/security/src/utils/permit/*`, `permit/*`, `config/permit.ts`, `middleware/permissions.ts`; `backend/src/services/machine-identity.ts`, `backend/src/authentik/provision-m2m-clients.ts`.
 - Frontend: `frontend/src/services/api.ts:199-293`, `frontend/src/pages/LoginPage.tsx`.
 - Deploy: `deploy/helm/fuzefront/templates/authentik.yaml:281-311`, `templates/ingress.yaml`, `values-prod.yaml:190-229`.
-- Contract/SDK: `packages/auth/openapi.yaml`, `packages/auth/src/types.ts`, `packages/auth/README.md`, `packages/auth/docs/TOKEN_CONTRACT.md`; new `packages/security/` (or extended `@fuzefront/auth`).
+- Contract/SDK: `packages/auth/openapi.yaml`, `packages/auth/src/types.ts`, `packages/auth/README.md`, `packages/auth/docs/TOKEN_CONTRACT.md`; new `packages/security/` (or extended `@fuzeone/auth`).
 - Docs: `docs/consumers/authn-authz-integration.md`, `docs/consumers/onboarding-authn-authz.md`, `docs/planning/epics/EPIC-05-multi-product-authn-authz.md`.
 
 ---

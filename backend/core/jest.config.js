@@ -1,4 +1,4 @@
-// @fuzefront/core — Jest setup for the outbox/relay unit tests.
+// @fuzeone/core — Jest setup for the outbox/relay unit tests.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',

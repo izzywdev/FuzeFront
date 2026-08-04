@@ -84,7 +84,7 @@ spec:
                   key: PERMIT_API_KEY
             - name: PERMIT_PDP_URL
               value: {{ .Values.applicationsService.permitPdpUrl | quote }}
-            # @fuzefront/feature-flags (OpenFeature + Unleash) client for the
+            # @fuzeone/feature-flags (OpenFeature + Unleash) client for the
             # app-registry release / kill-switch flags. FLAG_ENV picks the Unleash
             # environment; absence of the client/token → safe in-code defaults.
             - name: FLAG_ENV

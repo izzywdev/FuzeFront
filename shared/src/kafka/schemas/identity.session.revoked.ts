@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Topic: `identity.session.revoked`
  * Emitted when a session is invalidated (logout, admin revoke, rotation).
- * Consumers of @fuzefront/auth (#117) can drop cached identities on revoke.
+ * Consumers of @fuzeone/auth (#117) can drop cached identities on revoke.
  */
 export const identitySessionRevokedSchemaV1 = z.object({
   userId: z.string().uuid(),

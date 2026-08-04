@@ -5,7 +5,7 @@
  * management), implemented PURELY against the neutral `AuthorizationProvider`
  * contract (via the env-driven factory) — no vendor is named here. Request /
  * response shapes match the frozen OpenAPI (`packages/security/openapi.yaml`)
- * and the generated `@fuzefront/security-client` types. Fail-closed throughout:
+ * and the generated `@fuzeone/security-client` types. Fail-closed throughout:
  * every route requires a valid caller identity, and decision endpoints deny on
  * any provider error (the provider itself returns `false`, never throws-allow).
  */
@@ -96,7 +96,7 @@ router.post('/authz/check', async (req: Request, res: Response) => {
  * `AuthzBulkDecision` in packages/security/openapi.yaml): `checks` in,
  * `decisions` out, each decision an OBJECT `{allow}` — not a bare boolean. This
  * route originally shipped `queries`/`results`/`boolean[]`, which no consumer
- * generated from the contract could talk to; `@fuzefront/auth`'s bulkCheck was
+ * generated from the contract could talk to; `@fuzeone/auth`'s bulkCheck was
  * built against the spec and fail-closed against it. The contract is the source
  * of truth — it is what consumers were told to build against — so the route
  * conforms, not the other way round.

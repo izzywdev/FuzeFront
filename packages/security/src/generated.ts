@@ -705,7 +705,7 @@ export interface components {
             defaultAppId?: string;
             roles: string[];
         };
-        /** @description The STABLE normalized identity, invariant across token-format migrations. Mirrors the TypeScript `Identity` interface in `@fuzefront/security-client`. Provider-neutral. */
+        /** @description The STABLE normalized identity, invariant across token-format migrations. Mirrors the TypeScript `Identity` interface in `@fuzeone/security-client`. Provider-neutral. */
         Identity: {
             /** @description Stable subject id. Always present. */
             userId: string;

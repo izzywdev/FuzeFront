@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/billing-client",
+  "name": "@fuzeone/billing-client",
   "version": "1.0.1",
   "description": "Typed HTTP client for the FuzeFront billing-service REST API",
   "main": "dist/index.cjs",

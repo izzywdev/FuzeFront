@@ -7,8 +7,8 @@ import {
   requireOwnership,
 } from '../middleware/permissions'
 import { db } from '../config/database'
-import { enqueueEvent } from '@fuzefront/core'
-import { TOPICS } from '@fuzefront/shared/kafka'
+import { enqueueEvent } from '@fuzeone/core'
+import { TOPICS } from '@fuzeone/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'

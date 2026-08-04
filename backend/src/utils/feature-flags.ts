@@ -1,4 +1,4 @@
-// Startup wiring for the family flag client (@fuzefront/feature-flags).
+// Startup wiring for the family flag client (@fuzeone/feature-flags).
 //
 // Without this the OpenFeature provider is never installed, so every flag read
 // resolves to its in-code default and the Unleash `developers` segment has no
@@ -28,9 +28,9 @@ export async function initFeatureFlags(appName: string): Promise<void> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const flags = require('@fuzefront/feature-flags')
+    const flags = require('@fuzeone/feature-flags')
     if (typeof flags.init !== 'function') {
-      console.log('⚠️  @fuzefront/feature-flags has no init() — using defaults')
+      console.log('⚠️  @fuzeone/feature-flags has no init() — using defaults')
       return
     }
     await flags.init(

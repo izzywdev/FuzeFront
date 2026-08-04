@@ -90,7 +90,7 @@ Established precedent to copy: `design/frames/billing-invoices/` (`index.html` n
   "build": {
     "flows": [{ "id": "reset", "orchestrator": "PasswordResetFlow", "route": "/reset" }],
     "components": ["OtpInput", "PasswordStrengthMeter", "ResetRequestForm"],
-    "packages": ["@fuzefront/account-security-ui"]
+    "packages": ["@fuzeone/account-security-ui"]
   }
   ```
   Approving the frames approves the component/package plan — so implementation can't quietly invent a different architecture.

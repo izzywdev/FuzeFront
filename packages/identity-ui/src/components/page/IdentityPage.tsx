@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button } from '@fuzefront/design-system'
+import { Button } from '@fuzeone/design-system'
 import { IdentityI18nProvider, useIdentityI18n, type IdentityLocale } from '../../i18n/IdentityI18nProvider'
 import { createIdentityClient } from '../../api/identityClient'
 import { MembersTable } from '../members/MembersTable'

@@ -1,6 +1,6 @@
 import React, { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Select } from '@fuzefront/design-system'
+import { Select } from '@fuzeone/design-system'
 import { LANGUAGES, type LanguageDescriptor } from './languages'
 import { setLanguage } from './config'
 
@@ -8,7 +8,7 @@ import { setLanguage } from './config'
  * DESIGN-SYSTEM-FIRST
  * -------------------
  * This selector renders the "fuse seam" design-system <Select> primitive
- * (@fuzefront/design-system) rather than reproducing a control. All surface,
+ * (@fuzeone/design-system) rather than reproducing a control. All surface,
  * spacing, type, radii, focus-ring and the tokenized chevron come from the DS
  * component — zero hard-coded colors/spacing/type appear here.
  *

@@ -181,7 +181,7 @@ body {
 .frame-nav a { text-decoration: none; }
 .content { padding-bottom: 72px; }
 
-/* ---- invoice status pill soft tokens (mirror @fuzefront/design-system semantic *-soft) ---- */
+/* ---- invoice status pill soft tokens (mirror @fuzeone/design-system semantic *-soft) ---- */
 :root {
   --success-soft: rgba(52, 211, 153, 0.14);
   --warning-soft: rgba(245, 185, 80, 0.14);

@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/frontend",
+  "name": "@fuzeone/frontend",
   "private": true,
   "version": "1.0.0",
   "description": "FuzeFront container shell application",
@@ -23,8 +23,8 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@fuzefront/chat-client": "file:../packages/chat-client",
-    "@fuzefront/chat-ui": "file:../packages/chat-ui",
+    "@fuzeone/chat-client": "file:../packages/chat-client",
+    "@fuzeone/chat-ui": "file:../packages/chat-ui",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",

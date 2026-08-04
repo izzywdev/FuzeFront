@@ -1,4 +1,4 @@
-import { PortalClient } from '@fuzefront/portal-client'
+import { PortalClient } from '@fuzeone/portal-client'
 
 /**
  * Minimal shape the boot provider depends on — lets tests inject a fake

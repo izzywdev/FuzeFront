@@ -1,7 +1,7 @@
-# @fuzefront/billing-ui
+# @fuzeone/billing-ui
 
 Design-system-first React UI for the FuzeFront **billing-service**. Built against
-the frozen contract (`@fuzefront/billing-client`, generated from
+the frozen contract (`@fuzeone/billing-client`, generated from
 `services/billing-service/openapi.yaml`) — every request/response shape is
 imported, never hand-written.
 
@@ -22,7 +22,7 @@ Private package: published to GitHub Packages (`@fuzefront`, `access: restricted
 ## Install & usage
 
 ```bash
-npm i @fuzefront/billing-ui @fuzefront/billing-client \
+npm i @fuzeone/billing-ui @fuzeone/billing-client \
   @stripe/stripe-js @stripe/react-stripe-js
 ```
 
@@ -31,8 +31,8 @@ import {
   BillingI18nProvider,
   PlanPicker,
   CheckoutModal,
-} from '@fuzefront/billing-ui';
-import '@fuzefront/billing-ui/styles.css'; // design-system token-only stylesheet
+} from '@fuzeone/billing-ui';
+import '@fuzeone/billing-ui/styles.css'; // design-system token-only stylesheet
 import { loadStripe } from '@stripe/stripe-js';
 
 const stripe = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
@@ -49,7 +49,7 @@ function Billing({ plans }) {
 ```
 
 The token CSS variables (`--bg-*`, `--accent-*`, `--space-*`, `--seam`, …) come
-from `@fuzefront/design-system` / `frontend/src/index.css` — the FuzeFront shell
+from `@fuzeone/design-system` / `frontend/src/index.css` — the FuzeFront shell
 already provides them. Card data is collected and tokenised entirely by Stripe.js
 inside its iframe; only the `clientSecret` and Stripe ids flow through these
 components.
@@ -65,7 +65,7 @@ components.
 
 ## i18n
 
-`BillingI18nProvider` mirrors the expected `@fuzefront/i18n` interface (a `dir`,
+`BillingI18nProvider` mirrors the expected `@fuzeone/i18n` interface (a `dir`,
 a `locale`, a string table, and `Intl` formatters). When the shared package
 lands, swapping it in is a one-line import change; the component API does not
 move. All copy lives in `src/i18n` — components never hard-code strings.

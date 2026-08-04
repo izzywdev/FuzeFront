@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import type { ConversationWithMessages } from '@fuzefront/chat-client';
+import type { ConversationWithMessages } from '@fuzeone/chat-client';
 import { useChat } from '../src/hooks/useChat';
 import { makeFakeClient } from './fakeClient';
 

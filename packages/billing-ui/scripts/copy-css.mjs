@@ -1,4 +1,4 @@
-// Copy the component stylesheet into dist so `@fuzefront/billing-ui/styles.css`
+// Copy the component stylesheet into dist so `@fuzeone/billing-ui/styles.css`
 // resolves for consumers. The CSS contains ONLY design-system token references
 // (var(--bg-*), var(--space-*), var(--seam), …) and logical properties — no
 // hard-coded colors / spacing / type.

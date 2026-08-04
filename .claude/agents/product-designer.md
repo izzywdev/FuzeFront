@@ -20,13 +20,13 @@ You are the sole author of `design/frames/**`. From the user story / product req
   "build": {
     "flows": [{ "id": "reset", "orchestrator": "PasswordResetFlow", "route": "/reset", "approved": false }],
     "components": ["OtpInput", "PasswordStrengthMeter", "ResetRequestForm"],
-    "packages": ["@fuzefront/account-security-ui"]
+    "packages": ["@fuzeone/account-security-ui"]
   }
   ```
   Approving the frames approves the component/package plan, so implementation cannot quietly invent a different architecture.
 - **The manifest** — `design/frames/<feature>/manifest.json`: schema-valid, binding each flow to its contract (`openapi`, `client`, `endpoints`, `component`, `featureFlag`), carrying the `data-*` hooks Playwright will drive, and carrying **per-flow** `approved` / `approvedBy` / `approvedAt`.
 
-**Design-system-first, always.** Compose from `@fuzefront/design-system` tokens and primitives. **No raw hex/spacing/type** — `gate-ds-conformance` enforces this on your PR. If a primitive is genuinely missing, say so in the PR and name it in the inventory; `frontend-engineer` is the sole editor of `design-system/` and adds it as a foundation PR. You specify the primitive; you do not write it.
+**Design-system-first, always.** Compose from `@fuzeone/design-system` tokens and primitives. **No raw hex/spacing/type** — `gate-ds-conformance` enforces this on your PR. If a primitive is genuinely missing, say so in the PR and name it in the inventory; `frontend-engineer` is the sole editor of `design-system/` and adds it as a foundation PR. You specify the primitive; you do not write it.
 
 **Consult `fuzefront-expert` before designing.** This is where "you're designing a new notification screen? there is already a Kafka topic and a service for that" gets caught. Designing against an imagined repo is the divergence this whole pipeline exists to stop.
 

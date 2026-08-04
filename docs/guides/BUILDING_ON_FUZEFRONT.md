@@ -1,7 +1,7 @@
 # Building on FuzeFront
 
 How a downstream product runs **on top of** the FuzeFront platform: register a
-micro-frontend into the host shell, consume the shared `@fuzefront/*` packages,
+micro-frontend into the host shell, consume the shared `@fuzeone/*` packages,
 sign users in and authorize them through the **FuzeFront Security API**, and call
 the platform API.
 
@@ -77,12 +77,12 @@ with the host.
   quietly loads its own React copy and fails at runtime with "Invalid hook call";
   nothing in your build or the host's CI will warn you first.
 - Your app needs `react`/`react-dom` `^19.2.0` and `@types/react(-dom)` `^19.2.0`.
-- Build on Node `>=24.0.0` / npm `>=10.0.0`. The published `@fuzefront/*` packages
+- Build on Node `>=24.0.0` / npm `>=10.0.0`. The published `@fuzeone/*` packages
   peer-depend on `react@^19.0.0`, so a React 18 consumer fails peer resolution outright.
 
 ---
 
-## 2. Consume the `@fuzefront/*` packages
+## 2. Consume the `@fuzeone/*` packages
 
 FuzeFront publishes reusable packages **privately to GitHub Packages** under the
 `@fuzefront` (and `@izzywdev`) scopes. Consumers authenticate with a scoped
@@ -97,7 +97,7 @@ FuzeFront publishes reusable packages **privately to GitHub Packages** under the
 
 | package | what it gives you |
 |---|---|
-| `@fuzefront/shared` | shared types, Kafka `TOPICS` constant + `FuzeEvent<T>` envelope, typed producer/consumer helpers |
+| `@fuzeone/shared` | shared types, Kafka `TOPICS` constant + `FuzeEvent<T>` envelope, typed producer/consumer helpers |
 | `@izzywdev/fuzefront-api-client` | generated TypeScript client for the platform API (auth, apps, health) |
 | `@izzywdev/fuzefront-sdk-react` | React SDK for self-registration, heartbeat, and host context |
 
@@ -111,7 +111,7 @@ If your service consumes/produces platform events, use the shared constants
 rather than string literals:
 
 ```ts
-import { TOPICS, FuzeEvent } from '@fuzefront/shared'
+import { TOPICS, FuzeEvent } from '@fuzeone/shared'
 // e.g. TOPICS.IDENTITY_USER_CREATED, TOPICS.NOTIFY_EMAIL_REQUESTED
 ```
 
@@ -124,7 +124,7 @@ constant together.
 ## 3. Authentication (Security API)
 
 Sign users in through the **FuzeFront Security API** (`/api/v1/security/*`,
-same-origin) and the `@fuzefront/security-client` types — never a vendor SDK or
+same-origin) and the `@fuzeone/security-client` types — never a vendor SDK or
 identity host. The platform brokers everything server-side; the browser only ever
 transits `app.fuzefront.com` and (for social login) the social provider's own
 consent host.

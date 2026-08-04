@@ -1,8 +1,8 @@
 /**
- * @fuzefront/feature-flags — OpenFeature-based feature flags for FuzeFront.
+ * @fuzeone/feature-flags — OpenFeature-based feature flags for FuzeFront.
  *
  * The default entrypoint is the SERVER surface (Node services). Browser /
- * micro-frontend consumers import from `@fuzefront/feature-flags/web`.
+ * micro-frontend consumers import from `@fuzeone/feature-flags/web`.
  *
  * Public evaluation surface is OpenFeature; the Unleash provider is wrapped
  * behind it with graceful degradation to caller-supplied defaults.

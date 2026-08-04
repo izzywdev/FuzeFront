@@ -1,5 +1,5 @@
 /**
- * @fuzefront/auth — public contract types (CONTRACT FREEZE).
+ * @fuzeone/auth — public contract types (CONTRACT FREEZE).
  *
  * This module defines the STABLE, versioned interface every FuzeFront-family
  * product codes against for authentication + authorization identity. The
@@ -10,7 +10,7 @@
  *
  * PROVIDER-NEUTRAL: this contract names no identity vendor. The federated token
  * mode is `federated-jwks`; the concrete federation provider lives only behind
- * the server-side Security adapter. See `@fuzefront/security-client` for the
+ * the server-side Security adapter. See `@fuzeone/security-client` for the
  * full provider-agnostic Security API surface (AuthN + AuthZ).
  *
  * Nothing in this package mints tokens. It only *verifies* and normalizes.

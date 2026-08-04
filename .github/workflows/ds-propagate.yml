@@ -62,7 +62,7 @@ jobs:
           PROMPT=$(printf '%s\n' \
             "You are acting as frontend-engineer for FuzeFront." \
             "" \
-            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "The @fuzeone/design-system was just updated on master (ds-propagate run #${RUN})." \
             "" \
             "Change summary: ${SUMMARY}" \
             "Changed files: ${CHANGED}" \
@@ -97,7 +97,7 @@ jobs:
           PROMPT=$(printf '%s\n' \
             "You are acting as mobile-frontend-engineer for FuzeFront." \
             "" \
-            "The @fuzefront/design-system was just updated on master (ds-propagate run #${RUN})." \
+            "The @fuzeone/design-system was just updated on master (ds-propagate run #${RUN})." \
             "" \
             "Change summary: ${SUMMARY}" \
             "Changed files: ${CHANGED}" \
@@ -133,7 +133,7 @@ jobs:
           PROMPT=$(printf '%s\n' \
             "You are acting as frontend-test-engineer for FuzeFront." \
             "" \
-            "The @fuzefront/design-system has been updated with mobile primitives (BottomNav, BottomSheet, Drawer) and the frontend/mobile propagation agents for run #${RUN} have been dispatched." \
+            "The @fuzeone/design-system has been updated with mobile primitives (BottomNav, BottomSheet, Drawer) and the frontend/mobile propagation agents for run #${RUN} have been dispatched." \
             "" \
             "Change summary: ${SUMMARY}" \
             "" \

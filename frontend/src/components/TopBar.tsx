@@ -2,8 +2,8 @@ import { useCurrentUser } from '../lib/shared'
 import { useTheme } from '../contexts/ThemeContext'
 // `LanguageSelector` is deliberately NOT imported: the language control moved
 // into the avatar menu (see the note on TopBar below). Portal branding stays.
-import { useT } from '@fuzefront/i18n'
-import { usePortalContext, PortalBrandLockup } from '@fuzefront/portal-branding-ui'
+import { useT } from '@fuzeone/i18n'
+import { usePortalContext, PortalBrandLockup } from '@fuzeone/portal-branding-ui'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
@@ -76,7 +76,7 @@ function TopBar({ onMenuToggle }: TopBarProps) {
         <AppSelector />
 
         {/* AI assistant is launched from its own floating fuse-seam launcher
-            (FuzeChatWidget / @fuzefront/chat-ui), so no top-bar toggle here. */}
+            (FuzeChatWidget / @fuzeone/chat-ui), so no top-bar toggle here. */}
 
         {/* Theme Toggle */}
         <button

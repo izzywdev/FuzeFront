@@ -11,8 +11,8 @@ export default defineConfig({
   esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
-      '@fuzefront/design-system': dsRoot + '/index.js',
-      '@fuzefront/security-client': securityClientSrc,
+      '@fuzeone/design-system': dsRoot + '/index.js',
+      '@fuzeone/security-client': securityClientSrc,
     },
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },

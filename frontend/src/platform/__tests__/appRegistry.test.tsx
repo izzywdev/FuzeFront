@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, type Mock } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
-import { AppRegistryClient } from '@fuzefront/app-registry-client'
+import { AppRegistryClient } from '@fuzeone/app-registry-client'
 import { AppRegistryProvider, useAppRegistry } from '../appRegistry'
 
 /**
@@ -11,7 +11,7 @@ import { AppRegistryProvider, useAppRegistry } from '../appRegistry'
  * renderer main-thread stall observed live on app.fuzefront.com.
  */
 
-vi.mock('@fuzefront/app-registry-client', () => {
+vi.mock('@fuzeone/app-registry-client', () => {
   const listApps = vi.fn().mockResolvedValue({ apps: [] })
   return {
     AppRegistryClient: vi.fn().mockImplementation(() => ({ listApps })),

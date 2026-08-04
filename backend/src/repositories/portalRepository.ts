@@ -7,7 +7,7 @@ import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
  * Data access + row<->DTO mapping for `portals`/`portal_domains`
  * (FF-EPIC-09-S1 / FF-EPIC-10-S1). Every DTO shape here matches the FROZEN
  * `services/portal-service/openapi.yaml` contract exactly (camelCase field
- * names) — the generated `@fuzefront/portal-client` types are the source of
+ * names) — the generated `@fuzeone/portal-client` types are the source of
  * truth this module targets.
  */
 

@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/i18n-translate",
+  "name": "@fuzeone/i18n-translate",
   "version": "1.0.0",
   "description": "Build-time CLI that AI-translates FuzeFront's English locale files into the curated language set via an OpenAI-compatible gateway (LiteLLM). Idempotent, ICU/interpolation-preserving, glossary-aware.",
   "main": "dist/index.js",
