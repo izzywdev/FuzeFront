@@ -154,9 +154,12 @@ jobs:
       # core + shared/kafka must be built first — the jest moduleNameMapper
       # resolves them from their dist/ output.
       - name: build core + shared (jest deps)
+        # shared MUST build before core — @fuzefront/core now imports
+        # @fuzefront/shared/kafka (the schema registry), and tsc resolves it
+        # through shared/dist, so shared has to be current first.
         run: |
-          npm run -w @fuzefront/core build
           npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/core build
 
       - name: security — API-token jest suite (DB mocked, no Postgres)
         run: |
