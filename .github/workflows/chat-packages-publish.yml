@@ -104,6 +104,17 @@ jobs:
         run: |
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-chat-ui
+          # chat-ui peers on @fuzefront/chat-client, a scope that cannot be published
+          # (GitHub Packages requires the scope to match the owning account). Left as-is,
+          # npm resolves that peer from the PUBLIC registry and consumers get
+          #   404 Not Found - GET https://registry.npmjs.org/@fuzefront%2fchat-client
+          # even though they installed the client fine under an alias. The source keeps
+          # the @fuzefront name so the in-repo workspace link still resolves; only the
+          # PUBLISHED artifact is rewritten — same treatment the package name already
+          # gets one line above. @fuzeone/* is the name consumers install under, and is
+          # what the canonical scope becomes after the org transfer.
+          npm pkg delete peerDependencies.@fuzefront/chat-client
+          npm pkg set peerDependencies.@fuzeone/chat-client='^1.1.0'
           if npm view "@izzywdev/fuzefront-chat-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
             echo "@izzywdev/fuzefront-chat-ui@${VERSION} already published — skipping."
           else
