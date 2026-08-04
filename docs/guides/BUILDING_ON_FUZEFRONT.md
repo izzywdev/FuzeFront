@@ -143,7 +143,7 @@ the prefix** — never parse further, never assume a length. FuzeFront reserves 
 right to change id length exactly as Stripe and GitHub have.
 
 ```ts
-import { mintId, assertRef, toUuid, graphCreate } from '@fuzefront/shared/identity'
+import { mintId, assertRef, toUuid, graphCreate } from '@izzywdev/fuzefront-identity'
 
 const orderId = mintId('order')                 // ord_01h455…  — the ONLY constructor
 assertRef('organization', body.organizationId)  // offline type check; throws on mismatch
@@ -196,12 +196,12 @@ so a raw string off `req.body` will not compile against a repository taking
 equivalent and relies on the runtime boundary plus the gate, so Python services need
 **more** review discipline here, not less.
 
-> **Install caveat, honestly stated.** These packages are not yet installable from
-> outside this repo. `@fuzefront/*` cannot publish to GitHub Packages at all (no
-> `fuzefront` org exists — see the scope convention above; the correct target is
-> `@izzywdev/fuzefront-identity`), and the Python package has no publish workflow
-> yet. Until both land, copy the standard's rules and follow them; the packages will
-> drop in without an API change.
+> **Install caveat, honestly stated.** Both packages are now correctly scoped and
+> buildable, but **nothing is published yet**. `packages-publish.yml` is still gated
+> on the repository owner, so the npm package does not reach GitHub Packages until
+> that guard flips; the Python wheel publishes on an `identity-py-v*` tag and is
+> available as a Release asset. Until the npm side lands, follow the standard's rules
+> — the package drops in without an API change.
 
 ---
 
