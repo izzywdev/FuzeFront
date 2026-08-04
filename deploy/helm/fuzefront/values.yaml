@@ -176,8 +176,23 @@ backend:
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
+  # See templates/security-networkpolicy.yaml. port/*Namespace were dropped by the
+  # values.yaml rewrite in 8dedb865 (#523) and are restored here — without them the
+  # template renders `port: 0`, which the API server rejects (FuzeInfra#501).
+  # NOTE: #497 shipped this default-ON; 8dedb865 also flipped it to false. It is
+  # left OFF here deliberately: the policy has never actually been applied in prod
+  # (Argo syncs were already failing when #497 landed), so enabling it is a
+  # separate deploy-window change, not part of an outage fix. See FuzeInfra#501.
   networkPolicy:
     enabled: false
+    port: 3002
+    # Namespace where Traefik (k3s ingress) runs — source of the
+    # /api/v1/security, /api/auth, /api/organizations, /api/internal
+    # reverse-proxy path (ingress.yaml routes directly to this Service).
+    ingressControllerNamespace: kube-system
+    # mendys-prod's datasets-service authenticates against this Service
+    # in-cluster (session verify + authz check/grants). Issue: FuzeFront#493.
+    mendysProdNamespace: mendys-prod
   image:
     repository: fuzefront/security-service
     tag: local
@@ -571,8 +586,21 @@ authentik:
     className: ""
     host: ""
     annotations: {}
+  # Default OFF so a chart bump alone can never flip the policy on unverified. Enable
+  # in a deploy window and verify BOTH (a) a fuzeagent pod can curl authentik-server
+  # and (b) the Authentik login UI via the tunnel still works. See values-prod.yaml.
+  #
+  # port/*Namespace were dropped by the values.yaml rewrite in 8dedb865 (#523) and
+  # are restored here. values-prod.yaml sets enabled: true, so without them the
+  # template rendered `port: 0` — rejected by the API server, which failed every
+  # Argo sync of the whole application for days (FuzeInfra#501). Do not remove.
   networkPolicy:
     enabled: false
+    port: 9000
+    # Namespace where Traefik (k3s ingress) runs — source of the login-UI proxy path.
+    ingressControllerNamespace: kube-system
+    # Namespace whose pods may reach authentik-server in-cluster (A2A JWKS fetch).
+    fuzeagentNamespace: fuzeagent
   # Placement for the Authentik server + worker (empty → global.scheduling).
   nodeSelector: {}
   affinity: {}

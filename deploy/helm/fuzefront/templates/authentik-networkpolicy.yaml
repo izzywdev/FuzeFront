@@ -21,6 +21,12 @@
 */}}
 {{- if and .Values.authentik.enabled .Values.authentik.networkPolicy.enabled }}
 {{- $np := .Values.authentik.networkPolicy }}
+{{- /* Every $np lookup below carries an inline `default`. An invalid NetworkPolicy
+     (e.g. `port: 0` from a missing value) is rejected by the API server and fails the
+     ENTIRE Argo sync of this application, so no Deployment rolls — which is exactly how
+     a values.yaml rewrite that dropped these keys froze prod for days (FuzeInfra#501).
+     A defaulted-but-wrong policy has a blast radius of one policy; an unrenderable one
+     stops every deploy. Keep the defaults in sync with values.yaml. */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -40,23 +46,23 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | default "kube-system" | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port | int }}
+          port: {{ $np.port | default 9000 | int }}
     # Intra-fuzefront: any pod in this namespace (backend/security OIDC discovery, etc.).
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: {{ $np.port | int }}
+          port: {{ $np.port | default 9000 | int }}
     # NEW — the reason this policy exists: fuzeagent A2A pods fetch JWKS/discovery
     # in-cluster (avoids the Cloudflare-tunnel hairpin timeout).
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ $np.fuzeagentNamespace | quote }}
+              kubernetes.io/metadata.name: {{ $np.fuzeagentNamespace | default "fuzeagent" | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port | int }}
+          port: {{ $np.port | default 9000 | int }}
 {{- end }}
