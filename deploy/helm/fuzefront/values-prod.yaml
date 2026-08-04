@@ -325,6 +325,21 @@ secret:
   # this PR stays a config change rather than a template change.
   litellmMasterKey: "managed-by-sealed-secret"
 
+  # GATE ONLY — same pattern as litellmMasterKey above. Because existingSecret is
+  # set, templates/secret.yaml never renders and this value goes nowhere; the real
+  # credential is the CONSUMER_REGISTRATION_SECRET entry in the sealed
+  # `fuzefront-secrets`. What this key actually switches on is
+  # templates/consumer-registration-seed-job.yaml + -rbac.yaml, both wrapped in
+  # `{{- if .Values.secret.consumerRegistrationSecret }}`. Without it the seed Job
+  # does not render at all, so Secret/fuzefront-registration is never published in
+  # this namespace and consuming products (FuzeHub, FuzeSales, …) have nothing to
+  # read, seal, and commit for their own namespace.
+  #
+  # The Job mounts the key from the existing sealed Secret with `optional: true`
+  # and exits 0 with a diagnostic if it is absent, so rendering it before the
+  # sealed key lands is safe — it just no-ops until then.
+  consumerRegistrationSecret: "managed-by-sealed-secret"
+
 # Exposure model (verified against the LIVE cluster, 2026-06-23): prod is reached
 # via the Cloudflare tunnel "FuzeInfra" -> k3s Traefik (default ingress, NOT
 # disabled) -> standard Ingress host-routing. Cloudflare terminates TLS at the
