@@ -12,12 +12,11 @@ RUN apk add --no-cache dumb-init
 # `npm ci` cannot run from inside a workspace member — the lockfile lives at the
 # root — so the install moves to the root.
 #
-# Deps therefore land in /app/node_modules rather than
-# /app/services/billing-service/node_modules. That is where they were being
-# copied to anyway (see the production stage): node resolution walks UP from
-# /app/services/billing-service/dist and from /app/shared/dist, so a single root
-# node_modules serves both — which is exactly what the old double-copy was
-# hand-building.
+# Most deps hoist to /app/node_modules, which node resolution reaches by walking
+# UP from both /app/services/billing-service/dist and /app/shared/dist. Some do
+# NOT hoist — a dependency that loses a version conflict is pinned inside the
+# member instead — so the production stage copies both trees. `stripe` is that
+# case here.
 #
 # scripts/check-dockerfile-lockfile.mjs keeps this list in sync with the root
 # workspaces array.
@@ -53,10 +52,12 @@ COPY services/notification-service/package.json ./services/notification-service/
 # for every route file while the workspace symlinks resolved fine. Caught by the
 # image build on the PR, which is the entire reason that job exists.
 #
-# The unscoped form is the one actually verified to place express/pg/stripe in
-# /app/node_modules. It installs more than this service strictly needs, which
-# costs image size; correctness first, and trimming it is a follow-up that must
-# be re-verified against a real build rather than reasoned about.
+# The unscoped form is the one actually verified to install this service's whole
+# dependency tree — express and pg hoisted into /app/node_modules, stripe pinned
+# under /app/services/billing-service/node_modules. It installs more than this
+# service strictly needs, which costs image size; correctness first, and
+# trimming it is a follow-up that must be re-verified against a real build
+# rather than reasoned about — reasoning is what got the scoped form wrong.
 RUN npm ci --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
@@ -88,14 +89,25 @@ COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 
-# devDeps included here (tsc, and shared's toolchain for the kafka sub-tree).
-# Unscoped for the same reason as the base stage above.
-RUN npm ci --ignore-scripts
-
-# Copy source
+# Copy source BEFORE installing, not after.
+#
+# `stripe` does not hoist: a version conflict with another workspace pins it to
+# services/billing-service/node_modules/stripe (the root lockfile has no
+# "node_modules/stripe" entry at all). Installing first and copying the source
+# over the top left that nested directory missing, and tsc failed with
+# "Cannot find module 'stripe'" in all 22 files that import it — while express
+# and pg, which DO hoist to /app/node_modules, resolved fine. That asymmetry is
+# what identified the cause.
+#
+# The cost is layer caching: a source change now re-runs the install. Worth it —
+# the alternative is an ordering that works only for dependencies that happen to
+# hoist, which is not a property any manifest states or guarantees.
 COPY shared/ ./shared/
 COPY packages/identity/ ./packages/identity/
 COPY services/billing-service/ ./services/billing-service/
+
+# devDeps included here (tsc, and shared's toolchain for the kafka sub-tree).
+RUN npm ci --ignore-scripts
 
 # Build the shared kafka + identity sub-trees first (avoids socket.io-client /
 # React dep), then billing-service. identity supplies the graph-create
@@ -125,15 +137,21 @@ RUN apk add --no-cache dumb-init && \
     addgroup -S billingservice && adduser -S billingservice -G billingservice -u 1001
 
 COPY --from=build /app/shared/dist ./shared/dist
-# ONE copy at the ROOT, not two. shared/dist/kafka/* does require('zod') +
-# kafkajs at runtime, resolved by walking UP from the file until it reaches
-# /app/node_modules; the service resolves the same way from
-# /app/services/billing-service/dist. A single /app/node_modules therefore
-# serves both — which is what the previous double-copy was hand-building from a
-# per-service install (the sibling-only copy is what crashlooped the pod with
-# "Cannot find module 'zod'"). `npm ci` at the workspace root now puts the deps
-# there directly.
+# The ROOT tree. shared/dist/kafka/* does require('zod') + kafkajs at runtime,
+# resolved by walking UP from the file until it reaches /app/node_modules; the
+# service resolves the same way from /app/services/billing-service/dist. Copying
+# only the SIBLING tree is what previously crashlooped the pod with "Cannot find
+# module 'zod'", because nothing under /app/shared can reach it.
 COPY --from=base /app/node_modules ./node_modules
+# The NESTED tree as well, and this is not redundant with the line above: a
+# dependency that loses a version conflict is pinned inside the member rather
+# than hoisted — `stripe` is exactly that case. Copying only the root tree ships
+# an image whose entrypoint dies on require('stripe').
+#
+# This is what the original double-copy was really doing. An earlier revision of
+# this change removed it as "hand-building a hoist"; that reading was wrong, and
+# the image build is what showed it.
+COPY --from=base /app/services/billing-service/node_modules ./services/billing-service/node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
 # @izzywdev/fuzefront-identity is a `file:` dependency, so npm links it —
 # /app/node_modules/@izzywdev/fuzefront-identity is a SYMLINK to
