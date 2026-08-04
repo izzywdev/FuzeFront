@@ -19,7 +19,7 @@ domain: Platform / Data
 | **Priority** | High |
 | **Owner** | Orchestrator (delegated to `contract-designer` + `product-designer` + `backend-engineer` + `frontend-engineer` + `devops-engineer`) |
 | **Target Release** | Next available sprint |
-| **Effort Estimate** | L (16 stories · 51 sub-tasks · 288 pts = 288 h) |
+| **Effort Estimate** | L (19 stories · 61 sub-tasks · 342 pts = 342 h) |
 
 ---
 
@@ -54,7 +54,9 @@ domain: Platform / Data
 - [ ] Runtime i18n for org-authored content — side translation tables, locale fallback chain, machine-translation autofill reusing `@fuzefront/i18n-translate`.
 - [ ] Per-list ReBAC authorization with action granularity (`read`, `add_value`, `update_value`, `remove_value`, `translate`, `update`, `delete`, `manage_access`).
 - [ ] Quota enforcement — max lists per org, max lists per user, max values per list × languages — atomic and plan-tier aware.
-- [ ] Management + translation-workbench UI and an embeddable `<SelectionListPicker>`, behind `fuzefront.selection-lists.service` (default OFF).
+- [ ] Management + translation-workbench UI and an embeddable `<SelectionListPicker>`, shipped as its own npm package behind `fuzefront.selection-lists.service` (default OFF).
+- [ ] **Published, installable artifacts** — `@fuzeone/selection-list-client` (Node) and `fuzefront-selection-list-client` (Python) so both language families consume the service the same way.
+- [ ] **Published API docs** — the OpenAPI spec rendered as browsable Swagger UI with a consuming-service guide beside it.
 
 ### 🚫 Out of Scope
 
@@ -75,6 +77,9 @@ Owner-confirmed before planning:
 | Default access on create | **Org-wide read, creator owns.** |
 | Deleting a value | **Archive by default; purge explicit + audit-logged.** |
 | Quota source | **Plan-tier via Permit attributes + per-org DB override**, behind one interface so it can move to the forthcoming key-value configuration-storage microservice without touching call sites. |
+| npm scope / GitHub org | **`@fuzeone/*` on GitHub Packages.** GitHub Packages requires the npm scope to equal the owning org, and the org is `fuzeone`. |
+| Python client | **PyPI (public).** No Python publish workflow exists in the repo yet; this epic builds the first one. |
+| Service home | **Stays in the FuzeFront monorepo**, alongside `chat-service` and `billing-service`. |
 
 ### Why per-list, not per-item
 
@@ -102,11 +107,47 @@ New standalone service modelled on `services/chat-service/` — the cleanest in-
 `openapi.yaml` + `.spectral.yaml`, `Dockerfile`, jest `tests/` mirroring `src/`).
 
 ```
-services/selection-list-service/    # the service
-selection-list-client/              # typed client, sibling of billing-client/, portal-client/
-packages/selection-lists-ui/        # UI package (only after frames approved)
-design/frames/selection-lists/      # product-designer, frames-ONLY PR — HARD GATE
+services/selection-list-service/       # the service
+selection-list-client/                 # @fuzeone/selection-list-client (Node)
+packages/selection-list-client-py/     # fuzefront-selection-list-client (Python, PyPI)
+packages/selection-lists-ui/           # @fuzeone/selection-lists-ui (own npm package)
+design/frames/selection-lists/         # product-designer, frames-ONLY PR — HARD GATE
 ```
+
+## Packaging and publication
+
+Four artifacts ship from this epic: the deployed service, two npm packages, and one Python package.
+
+| Artifact | Name | Registry |
+|---|---|---|
+| Node client | `@fuzeone/selection-list-client` | GitHub Packages (`npm.pkg.github.com`) |
+| UI package | `@fuzeone/selection-lists-ui` | GitHub Packages |
+| Python client | `fuzefront-selection-list-client` | PyPI (public) |
+| API docs | OpenAPI + Swagger UI | GitHub Pages, beside the frames site |
+
+### Why `@fuzeone` and not `@fuzefront`
+
+**GitHub Packages requires the npm scope to equal the owning org.** The org is `fuzeone`, so
+`@fuzefront/*` cannot publish there at all.
+
+This is not a hypothetical. Two findings from planning, both recorded on FFRNT-266:
+
+- **`packages-publish.yml` has never published anything.** It is guarded
+  `if: github.repository_owner == 'fuzefront'`, and the repo is owned by `izzywdev`. Its own header
+  comment states the constraint. Four other publishers (`auth-ui`, `chat`, `design-system`,
+  `security`) are guarded on `izzywdev` and do run — so publishing is split across two inconsistent
+  guards, one permanently dormant, and **nothing in CI distinguishes a dormant job from a passing
+  one.**
+- **There is no Python publish workflow anywhere.** `packages/identity-py/README.md` already tells
+  consumers `pip install fuzefront-identity`; that command resolves against nothing today. FFRNT-264
+  builds the first PyPI workflow, written so `identity-py` can adopt it unchanged.
+
+Both are why FFRNT-266 requires that a skipped or dormant publish job **fail loudly**, and why
+FFRNT-276 verifies every artifact by installing it from a clean checkout against the real registry —
+a green publish job is not evidence that anything was published.
+
+`@fuzefront/*` packages stay on their existing registry during migration; a family-wide rename is
+deliberately out of scope here and should be its own epic.
 
 ### Reuse, do not re-invent
 
@@ -119,7 +160,8 @@ design/frames/selection-lists/      # product-designer, frames-ONLY PR — HARD 
 | Rate limiting | `services/chat-service/src/middleware/ratelimit.ts` |
 | Locale registry (11 langs, `dir`, `sourceLanguage: en`) | `i18n.languages.json`, `packages/i18n/src/languages.ts` |
 | LLM translation, placeholder safety, source hashing | `packages/i18n-translate/src/{translate,llm,placeholders,hash}.ts` |
-| Client package shape | `billing-client/package.json` |
+| Client package shape (Node) | `billing-client/package.json` |
+| Python package shape | `packages/identity-py/` — setuptools, `requires-python >=3.10`, dependency-free core |
 
 ### Data model
 
@@ -263,11 +305,15 @@ rubric. Sub-task points are strictly `{2, 4, 8}`; **1 point = 1 hour**; story po
 | S14 | FFRNT-200 | The service is deployable on FuzeInfra | FFRNT-246…249 | 14 |
 | S15 | FFRNT-201 | Selection lists ship dark behind a default-OFF feature flag | FFRNT-250…251 | 6 |
 | S16 | FFRNT-202 | A consuming team integrates without reading the source | FFRNT-252…253 | 6 |
+| S17 | FFRNT-264 | Python services consume selection lists through a published client | FFRNT-267…269 | 20 |
+| S18 | FFRNT-265 | Consuming teams read the API from published, browsable docs | FFRNT-270…272 | 16 |
+| S19 | FFRNT-266 | The packages actually publish under the `@fuzeone` scope | FFRNT-273…276 | 18 |
 
 **Sequencing.** S1 and S2 are the sequential gates and run first, in parallel with each other.
 S3–S8 fan out behind S1. S9–S11 are blocked by S2's per-flow approval (`gate-frames-first`). S12
 runs against S1's spec, independent of the implementers. S13 writes ALL-RED specs the moment S2
-merges, before S9 exists.
+merges, before S9 exists. S17 (Python client) and S18 (published docs) also fan out behind S1;
+S19 (publishing) needs the client and UI packages to exist first, so it trails S1 and S11.
 
 **Sizing (SIZING.md).** Longest single-developer chain S1→S3→S4→S7→S9→S13 ≈ 140 h ≈ 17.5 work days
 ≈ 1.75 sprints — inside the Epic ceiling of N×D = 6 sprints / 60 work days. No story exceeds one
