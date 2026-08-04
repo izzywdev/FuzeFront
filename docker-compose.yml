@@ -206,7 +206,7 @@ services:
   # AUTHENTIK OIDC/OAuth2 AUTHENTICATION
   # ================================
   authentik-server:
-    image: ghcr.io/goauthentik/server:2026.5.5
+    image: ghcr.io/goauthentik/server:2024.12.3
     container_name: fuzefront-authentik-server
     command: server
     environment:
@@ -262,7 +262,7 @@ services:
       - 'traefik.http.routers.authentik.tls=false'
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2026.5.5
+    image: ghcr.io/goauthentik/server:2024.12.3
     container_name: fuzefront-authentik-worker
     command: worker
     environment:
