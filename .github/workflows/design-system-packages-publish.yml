@@ -62,8 +62,19 @@ jobs:
       - name: Publish @izzywdev/fuzefront-design-system
         working-directory: design-system
         env:
+          # Both names: setup-node's .npmrc uses NODE_AUTH_TOKEN, but the repo-root
+          # .npmrc is project-level and outranks it, and that one references
+          # ${GITHUB_TOKEN}. Setting only NODE_AUTH_TOKEN made it expand EMPTY and
+          # every publish 401'd. See FuzeFront#558.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Pin an explicit .npmrc in the package dir as the closest (winning)
+          # config, so registry + auth are deterministic regardless of ambient files.
+          cat > .npmrc <<'NPMRC'
+          @izzywdev:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-design-system
           if npm view "@izzywdev/fuzefront-design-system@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then

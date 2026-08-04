@@ -34,7 +34,6 @@ jobs:
           cd frontend && npm ci
           cd ../sdk && npm ci
           cd ../api-client && npm ci
-          cd ../task-manager-app && npm ci
 
       # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
       # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
@@ -188,7 +187,6 @@ jobs:
           npm ci   # root workspace (backend + shared) — applies root overrides
           cd frontend && npm ci
           cd ../sdk && npm ci
-          cd ../task-manager-app && npm ci
 
       # backend/src/custom-domains imports @fuzefront/custom-hostname-client
       # statically and its `types` points at dist/, so the workspace symlink
@@ -213,9 +211,6 @@ jobs:
       - name: Build SDK
         run: cd sdk && npm run build
 
-      - name: Build task manager app
-        run: cd task-manager-app && npm run build
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -224,7 +219,6 @@ jobs:
             backend/dist/
             frontend/dist/
             sdk/dist/
-            task-manager-app/dist/
 
   chat-service-tests:
     name: Chat service (unit)

@@ -59,6 +59,9 @@ spec:
             {{- if .Values.chatService.enabled }}
             {{- $extraDbs = append $extraDbs .Values.chatService.dbName }}
             {{- end }}
+            {{- if .Values.notificationService.enabled }}
+            {{- $extraDbs = append $extraDbs .Values.notificationService.dbName }}
+            {{- end }}
             {{- if $extraDbs }}
             - name: EXTRA_DATABASES
               value: {{ join "," $extraDbs | quote }}

@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 8734d248ee7a
+    tag: 230344db334e
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 8734d248ee7a
+    tag: 230344db334e
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -97,7 +97,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -120,7 +120,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 8734d248ee7a
+    tag: 230344db334e
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -131,7 +131,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -172,7 +172,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -183,9 +183,16 @@ smsService:
 # rendered and the empty tag was inert rather than an InvalidImageName. The
 # anchor exists now, so the next release writes a real SHA here.
 provisioningService:
+  # ENABLED. Preconditions are met: INTERNAL_PROVISION_SECRET is already sealed
+  # into fuzefront-secrets (verified in deploy/contabo/sealed/fuzefront-secrets.yaml),
+  # which is this service's ONLY hard secretKeyRef. It is a thin Kafka->HTTP bridge
+  # (consumes identity.user.created -> security-service POST /internal/provision):
+  # no database, no migrations, no ingress. The image is built + tag-bumped by
+  # release.yml (anchor present), so nothing else gates it.
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -220,7 +227,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -492,7 +499,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -511,18 +518,29 @@ chatService:
                 values: ["fuzefront-node-2"]
 
 notificationService:
+  # ENABLED. Its two hard secretKeyRefs — DB_PASSWORD and JWT_SECRET — are already
+  # sealed into fuzefront-secrets (both used by the backend), so no NEW secret is
+  # required to go live. NOTIFICATION_INTERNAL_TOKEN stays UNSET and that is safe:
+  # its env block is if-guarded on secret.notificationInternalToken, so the service
+  # simply DISABLES the /internal/publish fan-out (the inbox + bell still work).
+  # Seal that token later, in a deploy window, once a producer is ready to publish.
+  enabled: true
+  # Dedicated DB so notification's knex ledger can't collide with the backend's in
+  # fuzefront_platform — the chat-service #499 crash-loop, pre-empted. The
+  # db-bootstrap Job creates fuzefront_notification and grants the runtime role
+  # (gated on notificationService.enabled), and migrate below runs the schema.
+  dbName: fuzefront_notification
+  migrate:
+    # REQUIRED when enabled: nothing else creates the notifications tables and
+    # index.ts does not self-migrate, so without this the service boots against a
+    # schema-less DB and every read fails on the first SELECT. Idempotent (knex).
+    enabled: true
   # The tag: line MUST stay immediately after repository: — release.yml's GitOps
   # bump step only rewrites a tag: found on the line directly following a matched
-  # repository: anchor. Seeded empty; the first successful release build writes
-  # a real SHA here.
-  #
-  # notificationService.enabled is still false (see values.yaml). Flip it on
-  # together with secret.notificationInternalToken once a producer service is
-  # ready to publish — the inbox and bell work without the token, but the
-  # /internal/publish fan-out stays disabled until it is set.
+  # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 8734d248ee7a
+    tag: 230344db334e
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +
