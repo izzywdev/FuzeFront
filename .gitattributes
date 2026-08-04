@@ -18,3 +18,8 @@ deploy/helm/** text eol=lf
 # regenerated on Linux CI and diffed, so it must be LF too.
 services/custom-hostname-api/** text eol=lf
 custom-hostname-client/**       text eol=lf
+
+# CLAUDE.md had somehow accumulated CRLF endings before gate-line-endings
+# existed to catch it; pin it to LF so touching it again doesn't retrip the
+# gate on the file's pre-existing encoding.
+CLAUDE.md text eol=lf
