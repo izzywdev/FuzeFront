@@ -271,9 +271,9 @@ class TestCrossLanguageParity:
 
         ts = (
             pathlib.Path(__file__).resolve().parents[3]
-            / "shared"
-            / "src"
+            / "packages"
             / "identity"
+            / "src"
             / "registry.ts"
         ).read_text()
         block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts, re.S)

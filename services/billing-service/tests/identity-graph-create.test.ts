@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
-import { graphCreate } from '@fuzefront/shared/dist/identity';
-import type { EntityType } from '@fuzefront/shared/dist/identity';
+import { graphCreate } from '@izzywdev/fuzefront-identity';
+import type { EntityType } from '@izzywdev/fuzefront-identity';
 import { createWebhookRouter } from '../src/routes/webhooks';
 
 /**

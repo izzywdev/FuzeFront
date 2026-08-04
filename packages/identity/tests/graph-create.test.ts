@@ -3,10 +3,10 @@ import {
   graphCreate,
   idMapOf,
   resolveGraph,
-} from '../../src/identity/graph-create'
-import type { GraphRequestLike, GraphResponseLike } from '../../src/identity/graph-create'
-import { entityTypeOf, parseId } from '../../src/identity/id'
-import type { EntityType } from '../../src/identity/registry'
+} from '../src/graph-create'
+import type { GraphRequestLike, GraphResponseLike } from '../src/graph-create'
+import { entityTypeOf, parseId } from '../src/id'
+import type { EntityType } from '../src/registry'
 
 const AGGREGATE = new Set<EntityType>(['customer', 'invoice', 'payment', 'subscription'])
 const opts = { aggregate: AGGREGATE }

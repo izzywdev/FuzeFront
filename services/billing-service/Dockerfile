@@ -27,12 +27,14 @@ RUN cd shared && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/identity/ ./packages/identity/
 COPY services/billing-service/ ./services/billing-service/
 
 # Build the shared kafka + identity sub-trees first (avoids socket.io-client /
 # React dep), then billing-service. identity supplies the graph-create
 # middleware app.ts mounts; without it the image starts and fails on import.
-RUN cd shared && npm run build:kafka && npm run build:identity
+RUN cd shared && npm run build:kafka
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd services/billing-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/001_billing_schema.sql at startup; without this the pod logs

@@ -14,7 +14,7 @@ module.exports = {
   // sub-tree of shared, the narrower mapping is intentional — not a partial-import trap.
   moduleNameMapper: {
     '^@fuzefront/shared/dist/kafka$': '<rootDir>/../../shared/src/kafka/index.ts',
-    '^@fuzefront/shared/dist/identity$': '<rootDir>/../../shared/src/identity/index.ts',
+    '^@izzywdev/fuzefront-identity$': '<rootDir>/../../packages/identity/src/index.ts',
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
   },
   testTimeout: 60000,
