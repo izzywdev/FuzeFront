@@ -4,8 +4,11 @@ The role .md persona body (YAML frontmatter stripped) becomes the agent `system`
 followed by the base guardrail block and any role-specific `system_append`.
 """
 import json
+import logging
 import os
 import re
+
+log = logging.getLogger(__name__)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_ROOT = os.path.dirname(HERE)                # agent-templates/
@@ -76,14 +79,29 @@ def agent_payload(manifest):
     # or set-but-empty -> "") — the API rejects an empty/invalid url. Also drop the
     # matching mcp_toolset so the agent creates cleanly with only its configured servers;
     # re-provision after setting the URL to add the server + tool back.
+    #
+    # A drop is NEVER silent (FA-13): a required server logs at WARNING (its tools are
+    # missing until the URL is set), an `optional: true` server logs at INFO. A silent
+    # strip was the worst failure mode — an agent came up tool-less with no signal at all.
     servers = expand_env(manifest.get("mcp_servers", []))
     valid, dropped = [], set()
     for s in servers:
+        # `optional` is our own hint, never part of the API payload — strip it either way.
+        optional = bool(s.pop("optional", False))
         url = s.get("url", "")
         if url and "${" not in url:
             valid.append(s)
+            continue
+        name = s.get("name")
+        dropped.add(name)
+        reason = "url unset/empty" if not url else f"url unresolved ({url!r})"
+        if optional:
+            log.info("MCP server %r on agent %r dropped (optional): %s — continuing without it.",
+                     name, manifest.get("name"), reason)
         else:
-            dropped.add(s.get("name"))
+            log.warning("MCP server %r on agent %r dropped: %s — its tools will be MISSING until "
+                        "the URL is configured; re-provision after setting it.",
+                        name, manifest.get("name"), reason)
     tools = expand_env(manifest.get("tools", []))
     if dropped:
         tools = [t for t in tools
