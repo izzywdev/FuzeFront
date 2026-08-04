@@ -104,12 +104,12 @@ ${colors.bright}What this demo will show:${colors.reset}
 
 ${colors.cyan}1. Runtime Module Federation${colors.reset}
    • Hub Portal has NO knowledge of apps at build time
-   • Task Manager will self-register via REST API
+   • Clock App will self-register via REST API
    • Real-time WebSocket notification when app registers
 
 ${colors.cyan}2. Dynamic App Loading${colors.reset}
    • Click the 9-dots selector in the top-right
-   • See the Task Manager app appear dynamically
+   • See the Clock App appear dynamically
    • Click to load it using Module Federation
 
 ${colors.cyan}3. Shared Dependencies${colors.reset}
@@ -125,7 +125,7 @@ ${colors.cyan}4. Health Monitoring${colors.reset}
 ${colors.bright}URLs when running:${colors.reset}
    • Hub Portal:    ${colors.blue}http://localhost:5173${colors.reset}
    • Backend API:   ${colors.blue}http://localhost:3001${colors.reset}
-   • Task Manager:  ${colors.blue}http://localhost:3002${colors.reset}
+   • Clock App:     ${colors.blue}http://localhost:3003${colors.reset}
 
 ${colors.bright}Demo Accounts:${colors.reset}
    • Admin: ${colors.green}admin@frontfuse.dev${colors.reset} / ${colors.green}admin123${colors.reset}
@@ -146,13 +146,13 @@ function startDemo() {
 
   logStep(1, 'Starting Backend API server...')
   logStep(2, 'Starting Frontend Hub portal...')
-  logStep(3, 'Starting Task Manager micro-frontend...')
+  logStep(3, 'Starting Clock App micro-frontend...')
 
   console.log(`
 ${colors.bright}🎯 Demo is starting...${colors.reset}
 
 ${colors.cyan}Watch for these events:${colors.reset}
-1. Task Manager automatically registers with the hub
+1. Clock App automatically registers with the hub
 2. Real-time notification appears in the hub
 3. App becomes available in the 9-dots selector
 4. Click to load and experience Module Federation!

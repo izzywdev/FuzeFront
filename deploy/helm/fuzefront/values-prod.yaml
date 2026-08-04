@@ -183,6 +183,13 @@ smsService:
 # rendered and the empty tag was inert rather than an InvalidImageName. The
 # anchor exists now, so the next release writes a real SHA here.
 provisioningService:
+  # ENABLED. Preconditions are met: INTERNAL_PROVISION_SECRET is already sealed
+  # into fuzefront-secrets (verified in deploy/contabo/sealed/fuzefront-secrets.yaml),
+  # which is this service's ONLY hard secretKeyRef. It is a thin Kafka->HTTP bridge
+  # (consumes identity.user.created -> security-service POST /internal/provision):
+  # no database, no migrations, no ingress. The image is built + tag-bumped by
+  # release.yml (anchor present), so nothing else gates it.
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
     tag: 230344db334e
@@ -511,15 +518,26 @@ chatService:
                 values: ["fuzefront-node-2"]
 
 notificationService:
+  # ENABLED. Its two hard secretKeyRefs — DB_PASSWORD and JWT_SECRET — are already
+  # sealed into fuzefront-secrets (both used by the backend), so no NEW secret is
+  # required to go live. NOTIFICATION_INTERNAL_TOKEN stays UNSET and that is safe:
+  # its env block is if-guarded on secret.notificationInternalToken, so the service
+  # simply DISABLES the /internal/publish fan-out (the inbox + bell still work).
+  # Seal that token later, in a deploy window, once a producer is ready to publish.
+  enabled: true
+  # Dedicated DB so notification's knex ledger can't collide with the backend's in
+  # fuzefront_platform — the chat-service #499 crash-loop, pre-empted. The
+  # db-bootstrap Job creates fuzefront_notification and grants the runtime role
+  # (gated on notificationService.enabled), and migrate below runs the schema.
+  dbName: fuzefront_notification
+  migrate:
+    # REQUIRED when enabled: nothing else creates the notifications tables and
+    # index.ts does not self-migrate, so without this the service boots against a
+    # schema-less DB and every read fails on the first SELECT. Idempotent (knex).
+    enabled: true
   # The tag: line MUST stay immediately after repository: — release.yml's GitOps
   # bump step only rewrites a tag: found on the line directly following a matched
-  # repository: anchor. Seeded empty; the first successful release build writes
-  # a real SHA here.
-  #
-  # notificationService.enabled is still false (see values.yaml). Flip it on
-  # together with secret.notificationInternalToken once a producer service is
-  # ready to publish — the inbox and bell work without the token, but the
-  # /internal/publish fan-out stays disabled until it is set.
+  # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
     tag: 230344db334e

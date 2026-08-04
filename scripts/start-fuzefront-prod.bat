@@ -66,13 +66,6 @@ docker inspect --format="{{.State.Health.Status}}" fuzefront-frontend-prod 2>nul
 if errorlevel 1 goto check_frontend
 echo [SUCCESS] fuzefront-frontend-prod is healthy
 
-echo [INFO] Checking health of fuzefront-taskmanager-prod...
-:check_taskmanager
-timeout /t 5 /nobreak >nul
-docker inspect --format="{{.State.Health.Status}}" fuzefront-taskmanager-prod 2>nul | findstr "healthy" >nul
-if errorlevel 1 goto check_taskmanager
-echo [SUCCESS] fuzefront-taskmanager-prod is healthy
-
 echo.
 echo [SUCCESS] 🎉 FuzeFront Production Platform is ready!
 echo.
@@ -80,7 +73,6 @@ echo [FUZEFRONT] === FUZEFRONT PRODUCTION SERVICES ===
 echo.
 echo 🌐 WEB ACCESS:
 echo    Frontend:     http://localhost:8085
-echo    Task Manager: http://localhost:3003
 echo.
 echo 🔌 API ACCESS:
 echo    Backend API:  http://localhost:3004
@@ -89,7 +81,6 @@ echo.
 echo 📊 HEALTH CHECKS:
 echo    Backend:      http://localhost:3004/health
 echo    Frontend:     http://localhost:8085/health
-echo    Task Manager: http://localhost:3002/health
 echo.
 echo 🗄️  DATABASE:
 echo    PostgreSQL:   localhost:5432
@@ -105,7 +96,6 @@ echo    Network:      FuzeInfra (shared infrastructure)
 echo    Network:      fuzefront-prod (internal services)
 echo    Images:       fuzefront/backend:latest
 echo                  fuzefront/frontend:latest
-echo                  fuzefront/taskmanager:latest
 echo.
 echo 📦 MANAGEMENT COMMANDS:
 echo    Stop:         docker-compose -f docker-compose.prod.yml down
