@@ -143,15 +143,19 @@ COPY --from=build /app/shared/dist ./shared/dist
 # only the SIBLING tree is what previously crashlooped the pod with "Cannot find
 # module 'zod'", because nothing under /app/shared can reach it.
 COPY --from=base /app/node_modules ./node_modules
-# The NESTED tree as well, and this is not redundant with the line above: a
-# dependency that loses a version conflict is pinned inside the member rather
-# than hoisted — `stripe` is exactly that case. Copying only the root tree ships
-# an image whose entrypoint dies on require('stripe').
+# ONE copy, from `base`, and the two stages genuinely differ here:
 #
-# This is what the original double-copy was really doing. An earlier revision of
-# this change removed it as "hand-building a hoist"; that reading was wrong, and
-# the image build is what showed it.
-COPY --from=base /app/services/billing-service/node_modules ./services/billing-service/node_modules
+#   build (devDeps included) — `stripe` loses a version conflict with a devDep
+#     and is pinned to services/billing-service/node_modules. That is why the
+#     source COPY has to precede the install in that stage.
+#   base  (--omit=dev)       — the conflicting devDep is not installed, so the
+#     conflict does not arise and stripe hoists to /app/node_modules. The nested
+#     directory does not exist at all; a COPY of it fails the build outright,
+#     which is exactly how this was found.
+#
+# Production copies from `base`, so the single root tree is the correct and
+# complete one. Both readings of the original double-copy were wrong in
+# different directions; only building the image settled it.
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
 # @izzywdev/fuzefront-identity is a `file:` dependency, so npm links it —
 # /app/node_modules/@izzywdev/fuzefront-identity is a SYMLINK to
