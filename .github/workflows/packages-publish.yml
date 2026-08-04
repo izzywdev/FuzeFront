@@ -71,8 +71,17 @@ jobs:
         # proves nothing about that, so assert it before shipping anything.
         run: node --test scripts/__tests__/publish-packages.test.mjs
 
-      - name: Build packages (topological, if a build script exists)
-        run: npx lerna run build --if-present
+      - name: Build packages (topological)
+        # NOT `--if-present`: lerna 10 removed it and errors with
+        # "Unknown arguments: if-present, ifPresent". That flag was inherited
+        # from this workflow's original form and had never executed — the job was
+        # gated on an owner that does not exist, so every run for the life of the
+        # file was a skip. Fixing the guard is what first ran this line.
+        #
+        # The flag is also unnecessary: `lerna run <script>` already skips
+        # packages that do not define it. Verified locally — 24 projects built,
+        # exit 0.
+        run: npx lerna run build
 
       - name: Resolve what would publish
         run: node scripts/publish-packages.mjs --dry-run
