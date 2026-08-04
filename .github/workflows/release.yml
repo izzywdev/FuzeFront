@@ -54,14 +54,14 @@ jobs:
       packages: write # push to GHCR
       actions: write # dispatch prod-post-deploy.yml (see the final step)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -72,7 +72,7 @@ jobs:
         run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push backend
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/Dockerfile
@@ -84,7 +84,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push frontend
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: frontend/Dockerfile
@@ -106,11 +106,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend-root
 
       - name: Build and push email-service
+        id: email_image
         # Ancillary services are disabled in prod (only billing is enabled). They
         # must NEVER block the core backend+frontend deploy — a failed build here
         # is non-fatal; the bump+deploy still proceeds.
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/email-service/Dockerfile
@@ -122,8 +123,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push sms-service
+        id: sms_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/sms-service/Dockerfile
@@ -135,8 +137,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push provisioning-service
+        id: provisioning_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/provisioning-service/Dockerfile
@@ -148,8 +151,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push billing-service
+        id: billing_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/billing-service/Dockerfile
@@ -161,8 +165,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push security-service
+        id: security_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/security/Dockerfile
@@ -174,8 +179,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push applications-service
+        id: applications_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/applications/Dockerfile
@@ -199,9 +205,8 @@ jobs:
         id: chat_image
         continue-on-error: true
         # SHA-pinned (Semgrep github-actions-mutable-action-tag). Same SHA the
-        # already-pinned steps in security.yml use. The other steps in this
-        # file still use the mutable @v7 — pinning the whole file is a separate,
-        # security-owned change, not this PR's scope.
+        # already-pinned steps in security.yml use; every other docker/build-push-action
+        # step in this file is now pinned to the same SHA too.
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -235,10 +240,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push clock-app (built-in MF remote)
+        id: clock_image
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: clock-app
           file: clock-app/Dockerfile
@@ -272,21 +278,37 @@ jobs:
         run: |
           set -euo pipefail
           SHA="${{ steps.tag.outputs.sha }}"
-          # chat-service builds with continue-on-error, so its image may NOT
-          # exist even though this step runs. Only bump its tag when the build
-          # actually succeeded — otherwise values-prod would pin a tag that was
-          # never pushed (today masked only by chatService.enabled: false).
-          # The expected-rewrite count moves with it so the guard stays exact.
-          CHAT_OK=0
-          if [ "${{ steps.chat_image.outcome }}" = "success" ]; then CHAT_OK=1; fi
-          # Same treatment for notification-service: continue-on-error, so only
-          # bump its tag when the image actually got pushed.
-          NOTIF_OK=0
-          if [ "${{ steps.notification_image.outcome }}" = "success" ]; then NOTIF_OK=1; fi
-          # 9 always-built images (incl. billing-service + provisioning-service,
-          # added in #442) plus the two continue-on-error ones.
-          EXPECTED=$((9 + CHAT_OK + NOTIF_OK))
-          echo "chat-service image built: ${CHAT_OK}, notification-service: ${NOTIF_OK} — expecting ${EXPECTED} tag rewrites"
+          # EVERY auxiliary build step above is continue-on-error, so ANY of
+          # their images may be missing even though this step runs. Bump a tag
+          # only when that image actually got pushed — otherwise values-prod
+          # pins a tag that does not exist, Argo applies a Deployment whose pods
+          # can never pull, the old ReplicaSet keeps serving, and the release
+          # still reports success. That is exactly what happened at 44d9a5a0192b:
+          # the applications-service build failed, its tag was bumped anyway, and
+          # the new ReplicaSet sat in ImagePullBackOff for 12h through 3,174 pull
+          # attempts while the release was green. See #539 / FuzeInfra#501.
+          #
+          # This guard used to cover ONLY chat-service and notification-service.
+          # The other seven were assumed "always built" — but continue-on-error
+          # means none of them is. backend and frontend are the only genuinely
+          # unconditional images (no continue-on-error: a failure there fails the
+          # job), which is why EXPECTED starts at 2 and everything else is gated.
+          ok() { [ "$1" = "success" ] && echo 1 || echo 0; }
+          EMAIL_OK=$(ok "${{ steps.email_image.outcome }}")
+          SMS_OK=$(ok "${{ steps.sms_image.outcome }}")
+          PROV_OK=$(ok "${{ steps.provisioning_image.outcome }}")
+          BILLING_OK=$(ok "${{ steps.billing_image.outcome }}")
+          SECURITY_OK=$(ok "${{ steps.security_image.outcome }}")
+          APPS_OK=$(ok "${{ steps.applications_image.outcome }}")
+          CLOCK_OK=$(ok "${{ steps.clock_image.outcome }}")
+          CHAT_OK=$(ok "${{ steps.chat_image.outcome }}")
+          NOTIF_OK=$(ok "${{ steps.notification_image.outcome }}")
+          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK))
+          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK}"
+          echo "expecting ${EXPECTED} tag rewrites (backend + frontend are always built)"
+          if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
+            echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
+          fi
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
           chmod 600 ~/.ssh/release_bump
@@ -316,7 +338,10 @@ jobs:
           # manually restored LF. Rewritten tag lines preserve the line's
           # original ending so a CRLF file round-trips without a spurious
           # whole-file diff.
-          awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" '
+          awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" \
+              -v email="$EMAIL_OK" -v sms="$SMS_OK" -v prov="$PROV_OK" \
+              -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
+              -v apps="$APPS_OK" -v clock="$CLOCK_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -328,13 +353,13 @@ jobs:
             }
             /repository: ghcr\.io\/izzywdev\/fuzefront-backend\r?$/ { hot=1 }
             /repository: ghcr\.io\/izzywdev\/fuzefront-frontend\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-security-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-billing-service\r?$/ { hot=1 }
-            /repository: ghcr\.io\/izzywdev\/fuzefront-provisioning-service\r?$/ { hot=1 }
+            security == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-security-service\r?$/ { hot=1 }
+            apps == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-applications-service\r?$/ { hot=1 }
+            clock == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-clock-app\r?$/ { hot=1 }
+            email == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-email-service\r?$/ { hot=1 }
+            sms == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-sms-service\r?$/ { hot=1 }
+            billing == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-billing-service\r?$/ { hot=1 }
+            prov == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-provisioning-service\r?$/ { hot=1 }
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
             notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
             { print }

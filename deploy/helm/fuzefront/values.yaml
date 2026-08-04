@@ -100,12 +100,12 @@ secret:
   # (POST /internal/provision), called by Plan D's provisioning-service.
   # DEV ONLY default — override with a long random value in real deployments.
   internalProvisionSecret: "dev-internal-provision-secret-change-me"
-  # Shared service token for notification-service's /internal/publish fan-out.
-  # EMPTY BY DEFAULT and that is deliberate: with no token the service disables
-  # the publish surface entirely rather than exposing an unauthenticated
-  # write-into-any-inbox endpoint. Set it (sealed, in prod) when a producer
-  # service needs to publish.
-  notificationInternalToken: ""
+  # Bearer token accepted by POST /api/v1/app-registry/apps and
+  # POST /api/v1/app-registry/apps/:slug/activate for MFE self-registration.
+  # The consumer-registration-seed Job writes this into Secret/fuzefront-registration
+  # so consumer CI workflows can read, seal, and commit it for their namespace.
+  # DEV ONLY default — override with a long random value in real deployments.
+  consumerRegistrationSecret: "dev-consumer-registration-secret-change-me"
   # Authentik (DEV ONLY — override). Secret key must be long/random in real use.
   authentikSecretKey: "dev-authentik-secret-key-change-me-0123456789abcdef0123"
   authentikBootstrapPassword: "admin123"
@@ -117,32 +117,6 @@ secret:
   # same value from the worker env var AUTHENTIK_OIDC_CLIENT_SECRET.
   authentikClientId: "fuzefront-oidc-client"
   authentikClientSecret: ""
-  # OIDC client secret for the mendys-datasets consumer product (blueprint
-  # provider-oidc-mendys-datasets.yaml, client_id mendys-datasets-oidc-client).
-  # OPTIONAL: leave empty to apply the blueprint with a placeholder secret;
-  # supply via --set / a gitignored values file / the prod SealedSecret.
-  # NEVER commit a real secret.
-  mendysDatasetsClientSecret: ""
-  # OIDC client secret for the mendys-platform provider (client_id
-  # mendys-platform-oidc-client) — the shared `mendys-backend` behind both
-  # live.mendysrobotics.com and marketplace.mendysrobotics.com.
-  # Must equal MENDYS_AUTHENTIK_CLIENT_SECRET in the mendys-prod
-  # `mendys-secrets` sealed secret. Same rules as above: NEVER commit a real
-  # secret; supply via --set / a gitignored values file / the prod SealedSecret.
-  mendysPlatformClientSecret: ""
-  # ── Credentials for the separate MendysRobotics Authentik instance ──────────
-  # Only consumed when authentikMendys.enabled is true. Each MUST be distinct
-  # from its FuzeFront counterpart — a shared secret key would let either
-  # instance validate the other's sessions and destroy the account boundary.
-  authentikMendysSecretKey: ""
-  authentikMendysBootstrapPassword: ""
-  authentikMendysBootstrapToken: ""
-  # Password of the `authentik_mendys_user` Postgres role, provisioned by
-  # FuzeInfra (serviceDatabases entry `authentik-mendys`). The identical value
-  # must be sealed as `authentik-mendys-db-credentials` (key `password`) into
-  # the `fuzeinfra` namespace, or the provisioning Job will set a password the
-  # Authentik pods do not know.
-  authentikMendysDbPassword: ""
   sendgridApiKey: ""
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
@@ -168,6 +142,13 @@ secret:
   # --set or a gitignored values file locally; in prod it comes from the
   # fuzefront-secrets SealedSecret. NEVER commit a real token here.
   featureFlagsClientToken: ""
+  notificationInternalToken: ""
+  mendysDatasetsClientSecret: ""
+  mendysPlatformClientSecret: ""
+  authentikMendysSecretKey: ""
+  authentikMendysBootstrapPassword: ""
+  authentikMendysBootstrapToken: ""
+  authentikMendysDbPassword: ""
 
 backend:
   image:
@@ -177,16 +158,15 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
-  # @fuzefront/feature-flags client for GET /api/flags (the shell's flag source).
-  featureFlags:
-    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
-    appName: "fuzefront-host"
-    tokenSecretName: ""      # empty -> fuzefront-secrets; prod uses unleash-secrets
-    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
   # Per-service placement overrides (empty → falls back to global.scheduling).
+  featureFlags:
+    unleashUrl: ""
+    appName: "backend"
+    tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: ""
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -196,89 +176,15 @@ backend:
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
-  # ── Multi-tenant identity (EMPTY = today's single-tenant behaviour) ──────────
-  #
-  # security-service is the single front door for identity; each tenant sits
-  # behind it on its OWN Authentik instance and therefore its own account
-  # directory. Declaring tenants here maps request host -> instance.
-  #
-  # LEAVING THIS EMPTY IS THE SAFE DEFAULT: the service stays in legacy mode,
-  # synthesises one tenant from the existing AUTHENTIK_* env, and serves every
-  # host exactly as it does today.
-  #
-  # SETTING IT FLIPS ON FAIL-CLOSED HOST MATCHING. An identity request whose
-  # Host matches no declared tenant is rejected with 400 rather than served by
-  # a default — because falling back would authenticate a user against the
-  # WRONG directory, the single failure this split exists to prevent. So the
-  # list must name EVERY host that carries identity traffic, including dev
-  # hostnames and any in-cluster name the SPA or a service calls it on. Miss
-  # one and its logins 400.
-  #
-  # NEVER put a secret in here — this renders into a plain env var. Reference
-  # chart Secret KEYS instead (clientSecretKey / adminTokenKey /
-  # googleClientSecretKey); the chart emits those as secretKeyRefs.
-  #
-  # googleClientSecretKey + googleClientId are OPTIONAL: omit them and the
-  # tenant shares the platform Google client (today's behaviour). Supply them
-  # where the consent screen's branding matters — a tenant whose premise is
-  # that FuzeFront is invisible should not show users a FuzeFront-named consent
-  # screen. Its callback URI (<appBaseUrl>/api/v1/security/social/google/callback)
-  # must be registered in that Google client.
-  #
-  # tenants:
-  #   - id: fuzefront
-  #     hosts: [app.fuzefront.com]
-  #     issuerUrl: https://app.fuzefront.com/application/o/fuzefront/
-  #     baseUrl: http://authentik-server:9000
-  #     clientId: fuzefront-oidc-client
-  #     clientSecretKey: AUTHENTIK_CLIENT_SECRET
-  #     adminTokenKey: AUTHENTIK_BOOTSTRAP_TOKEN
-  #     redirectUri: https://app.fuzefront.com/api/auth/oidc/callback
-  #     enrollmentFlowSlug: fuzefront-enrollment
-  #     appBaseUrl: https://app.fuzefront.com
-  #   - id: mendys
-  #     hosts: [live.mendysrobotics.com, marketplace.mendysrobotics.com]
-  #     issuerUrl: https://live.mendysrobotics.com/application/o/mendys-platform/
-  #     baseUrl: http://authentik-mendys-server:9000
-  #     clientId: mendys-platform-oidc-client
-  #     clientSecretKey: MENDYS_PLATFORM_CLIENT_SECRET
-  #     adminTokenKey: AUTHENTIK_MENDYS_BOOTSTRAP_TOKEN
-  #     redirectUri: https://live.mendysrobotics.com/api/auth/oidc/callback
-  #     enrollmentFlowSlug: mendys-enrollment
-  #     appBaseUrl: https://live.mendysrobotics.com
-  #     googleBrokered: true
-  tenants: []
-  image:
-    repository: fuzefront/security-service
-    tag: local
-  port: 3002
-  replicas: 1
-  # Enforce signup email verification. Default false: the code DEGRADES to
-  # auto-verifying every account when this is off, so turning it on is only safe
-  # once a working email path (email-service + a proven SMTP/SendGrid sender) is
-  # verified — otherwise every new signup is locked out at the door.
-  requireEmailVerification: false
-  kafka:
-    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits:   { cpu: "1",  memory: 512Mi }
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  # security-service owns auth; keep it co-located with the DB-heavy node-1 by
-  # default (no-op here, set in values-prod if desired).
-  # Server-brokered Google sign-in (PR #329). OFF by default; prod enables it.
-  googleBrokered: "false"
-  # Browser-facing Google callback URL. Dev default here; prod overrides in values-prod.
-  googleRedirectUri: "https://auth-dev.fuzefront.com/api/v1/security/social/google/callback"
-  # Ingress NetworkPolicy for fuzefront-security (port 3002). Default ON
-  # (unlike authentik.networkPolicy) because the whole point is to pre-empt a
-  # future default-deny in this namespace breaking mendys-prod's session/authz
-  # calls (FuzeInfra#339). See templates/security-networkpolicy.yaml for why
-  # this enumerates Traefik + intra-namespace alongside the mendys-prod rule.
+  # See templates/security-networkpolicy.yaml. port/*Namespace were dropped by the
+  # values.yaml rewrite in 8dedb865 (#523) and are restored here — without them the
+  # template renders `port: 0`, which the API server rejects (FuzeInfra#501).
+  # NOTE: #497 shipped this default-ON; 8dedb865 also flipped it to false. It is
+  # left OFF here deliberately: the policy has never actually been applied in prod
+  # (Argo syncs were already failing when #497 landed), so enabling it is a
+  # separate deploy-window change, not part of an outage fix. See FuzeInfra#501.
   networkPolicy:
-    enabled: true
+    enabled: false
     port: 3002
     # Namespace where Traefik (k3s ingress) runs — source of the
     # /api/v1/security, /api/auth, /api/organizations, /api/internal
@@ -287,6 +193,26 @@ securityService:
     # mendys-prod's datasets-service authenticates against this Service
     # in-cluster (session verify + authz check/grants). Issue: FuzeFront#493.
     mendysProdNamespace: mendys-prod
+  image:
+    repository: fuzefront/security-service
+    tag: local
+  port: 3002
+  replicas: 1
+  kafka:
+    brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+  adminEmail: ""
+  requireEmailVerification: false
+  googleBrokered: false
+  googleRedirectUri: ""
+  tenants: []
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # security-service owns auth; keep it co-located with the DB-heavy node-1 by
+  # default (no-op here, set in values-prod if desired).
 
 applicationsService:
   enabled: false
@@ -309,13 +235,11 @@ applicationsService:
   # at it. The scoped CLIENT TOKEN is a SECRET (sealed) — its key in the chart
   # Secret / SealedSecret is below; absence → flags fall back to safe defaults.
   featureFlags:
-    unleashUrl: ""           # e.g. http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+    unleashUrl: ""           # e.g. http://unleash.fuzefront.svc.cluster.local:4242/api
     appName: "applications-service"
-    # Secret holding the scoped Unleash CLIENT token. Empty -> the umbrella
-    # fuzefront-secrets; set to "unleash-secrets" to reuse the token the Unleash
-    # chart already seals, instead of duplicating it.
-    tokenSecretName: ""
+    # Key in fuzefront-secrets holding the scoped Unleash client token.
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
+    tokenSecretName: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -343,23 +267,6 @@ clockApp:
   nodeSelector: {}
   affinity: {}
   tolerations: []
-
-# federatedApps — list of Module-Federation remotes deployed as in-cluster pods.
-# Each entry creates a same-origin ingress at /apps/<slug>/ that strips the
-# prefix and proxies to the named Service, so the browser fetches
-# https://<host>/apps/<slug>/remoteEntry.js without leaving the cluster (no WAN
-# hairpin). The app's remote_url in the database must be /apps/<slug>/remoteEntry.js.
-#
-# Example entry:
-#   - slug: task-manager
-#     enabled: true
-#     serviceName: task-manager-svc
-#     port: 3002
-#
-# Add one entry per federated app that runs as a k8s Service in this cluster.
-# Apps not listed here (external remotes with real public URLs) continue to work
-# with their full URL stored in remote_url — only in-cluster apps need an entry.
-federatedApps: []
 
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
@@ -414,20 +321,7 @@ emailService:
   email:
     provider: "smtp"  # "sendgrid" or "smtp"
     from: "noreply@fuzefront.com"
-    # SMTP transport config (provider: "smtp"). NON-secret only — the credentials
-    # (SMTP_USER / SMTP_PASS) come from the SealedSecret, never from values.
-    #
-    # Leave `host` EMPTY for local/dev: the service then falls back to its in-code
-    # localhost:1025 (mailhog) default, which is correct for a dev mail catcher.
-    # In any environment that must deliver real mail, host MUST be set — see the
-    # smtp.hostRequired guard in templates/email-service.yaml. That in-code
-    # fallback is silent: with no host the pod is healthy, /health is green, and
-    # every message is dropped. That is exactly how signup email-verification and
-    # password-reset sat live-dead in prod.
-    smtp:
-      host: ""          # e.g. smtp.zeptomail.com — empty = dev mailhog fallback
-      port: 587
-      secure: false     # true for implicit TLS (465); false for STARTTLS (587)
+    smtp: ""
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
@@ -462,22 +356,6 @@ chatService:
   litellmUrl: "http://litellm.fuzeinfra.svc.cluster.local:4000"
   # ChromaDB vector store in fuzeinfra namespace (enabled via fuzeinfra Argo values).
   chromaUrl: "http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000"
-  # Dedicated database for chat-service's OWN knex migration ledger (#499).
-  # chat-service used to share `database.name` (the backend's fuzefront_platform)
-  # and self-migrate via knex on the same Postgres instance/DB. That put its
-  # small migration dir and the backend's ~18-file dir in the SAME
-  # `knex_migrations` table: whichever service's migrate Job ran last saw the
-  # OTHER service's files as "missing" and knex's validateMigrationList aborted
-  # — the crash-loop that stuck the whole `fuzefront` Argo Application
-  # Degraded/OutOfSync. Isolating chat onto its own database gives it its own
-  # `knex_migrations` row set with zero collision risk.
-  #
-  # Provisioned by the shared db-bootstrap Job (templates/db-bootstrap-job.yaml)
-  # via the same EXTRA_DATABASES mechanism already used for `authentik.dbName` —
-  # owned by the existing least-privilege `database.user` role (fuzefront_user),
-  # not a new role, since this DB has no other tenant to isolate FROM at the
-  # role level (only the migration ledger needed isolating).
-  dbName: fuzefront_chat
   # FuzeFront backend for user/org lookups.
   backendUrl: "http://fuzefront-backend:3001"
   # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs
@@ -485,6 +363,7 @@ chatService:
   permitPdpUrl: "http://fuzefront-permit-pdp:7000"
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  dbName: "chat"
   # Embedding model resolved at the LiteLLM gateway (used by the doc indexer).
   embeddingModel: "text-embedding-3-small"
   # Resource requests/limits. Local/dev single replica; prod overrides upward.
@@ -495,61 +374,37 @@ chatService:
     limits:
       cpu: "1"
       memory: 1Gi
-  # chat-db-migrate Job: runs the knex migrations (chat_conversations,
-  # chat_messages, chat_audit_log, chat_feedback) as a pre-install/pre-upgrade
-  # hook, before chat-service starts. Nothing else creates these tables, so
-  # leave this on whenever chatService.enabled is true; it is idempotent.
-  migrate:
-    enabled: true
   # chat-doc-indexer Job: indexes docs/ into ChromaDB as a post-install/upgrade
   # hook. Idempotent (content-hash keyed). Disabled by default — flip on once
   # LiteLLM + ChromaDB are reachable in fuzeinfra.
+  migrate:
+    enabled: false
   docIndexer:
     enabled: false
     # Directory inside the chat-service image that holds the docs to index.
     docsDir: "/app/services/chat-service/docs"
 
-# The notification inbox behind the shell's bell. Owns its own Postgres tables
-# (notifications / notification_preferences / notification_deliveries) in the
-# shared platform database, and is reached SAME-ORIGIN through the host
-# backend's /api/v1/notifications proxy — the browser never calls it directly.
 notificationService:
   enabled: false
-  # NOTE ON REPLICAS: the SSE hub is IN-PROCESS, so with replicas > 1 a live
-  # push only reaches clients attached to the same pod. That degrades to a
-  # delayed badge, which the client's reconnect + unread-count refetch corrects;
-  # the inbox read is always authoritative from Postgres. Cross-pod fan-out
-  # (Redis pub/sub) is the additive fix when scaling past one replica.
   replicas: 1
-  # Port 3008: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
-  # 3005=provisioning, 3006=chat, 3007=billing.
-  port: 3008
+  port: 3009
   image:
     repository: fuzefront/notification-service
     tag: local
-  # SSE comment-frame interval. Must stay below the ingress/proxy idle timeout,
-  # or a live stream is reaped and the client silently stops receiving events.
-  sseHeartbeatMs: 25000
-  # Per-user concurrent stream cap. Bounds a client stuck in a reconnect loop
-  # from pinning every socket on the pod.
+  sseHeartbeatMs: 30000
   maxStreamsPerUser: 5
   rateLimit:
     windowMs: 60000
-    # Generous — the badge polls and the panel opens often. This exists to stop
-    # a runaway client, not to shape normal traffic. The SSE stream is exempt.
-    max: 240
+    max: 100
+  migrate:
+    enabled: false
   resources:
     requests:
-      cpu: 50m
+      cpu: 100m
       memory: 128Mi
     limits:
-      cpu: 500m
-      memory: 512Mi
-  # notification-db-migrate Job: runs the knex migrations as a
-  # pre-install/pre-upgrade hook, before the service starts. Nothing else
-  # creates these tables. Idempotent — leave on whenever the service is enabled.
-  migrate:
-    enabled: true
+      cpu: "1"
+      memory: 256Mi
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
@@ -597,6 +452,7 @@ billingService:
   secretName: billing-secrets
   meterFlushIntervalSec: 60
   permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
     enabled: true
@@ -604,45 +460,9 @@ billingService:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
     clientId: "billing-service"
     groupId: "billing-service-group"
-  # Payment-path config (checkout allowlist). Fail-closed by default: empty
-  # productKeys means the payments route rejects every product key. Prod
-  # overrides these in values-prod.yaml.
-  payment:
-    productKeys: ""
-    currencies: ""
-    maxTotalCents: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 512Mi }
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-
-# payment-service — vendor-neutral payment GATEWAY (SCAFFOLD; not the live money
-# path yet). Stateless: no DB, no Kafka. Runnable with zero secrets — without a
-# real STRIPE_SECRET_KEY it serves /health only (degraded mode). Its templates
-# live in this umbrella chart, so it is synced by the umbrella `fuzefront` Argo
-# Application (hybrid-Argo — same rule as billingService/unleash). Disabled by
-# default; flip `enabled` + seal payment-secrets to bring it up.
-paymentService:
-  enabled: false
-  image:
-    repository: fuzefront/payment-service
-    tag: local
-  # 3007: billing-service is 3006. Keep unique across the service port map.
-  port: 3007
-  replicas: 1
-  # Active vendor adapter. Swapping the vendor = adding a sibling adapter and
-  # changing this. Default 'stripe'.
-  provider: stripe
-  # Per-service secret (payment-only keys: STRIPE_SECRET_KEY,
-  # PAYMENT_INTERNAL_TOKEN). Placeholders committed in
-  # deploy/contabo/sealed/payment-secrets.yaml; both keys are `optional: true` in
-  # the Deployment so the scaffold pod runs even before real values are sealed.
-  secretName: payment-secrets
-  resources:
-    requests: { cpu: 50m,  memory: 128Mi }
-    limits:   { cpu: 500m, memory: 256Mi }
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -662,29 +482,74 @@ litellm:
   tolerations: []
 
 # ---------------------------------------------------------------------------
-# Unleash — self-hosted OSS feature-flag server (issue #116) — MOVED OUT of this
-# umbrella chart into its OWN chart + Argo Application: deploy/helm/unleash and
-# deploy/argocd/applications/unleash.yaml. Per the hybrid-Argo rule (CLAUDE.md),
-# an independently-lifecycled service (external image, own release cadence,
-# family-wide flag server hosted by FuzeFront) gets its own Application rather
-# than being folded into this umbrella. See that chart for the full config;
-# nothing here renders Unleash anymore.
+# Unleash — self-hosted OSS feature-flag server (issue #116, Deliverable 1).
+#
+# EXTERNAL upstream image (unleashorg/unleash-server) — NOT built by release.yml
+# and NOT in its build matrix. Pin a concrete tag below (never :latest).
+#
+# Gated by `unleash.enabled` (default false). When enabled, the umbrella chart
+# renders, in order:
+#   1. a pre-install/pre-upgrade bootstrap Job (unleash-db-bootstrap) that creates
+#      the least-privilege `unleash_svc` role + a DEDICATED `unleash` database it
+#      OWNS on the shared FuzeInfra Postgres (Unleash self-migrates its schema on
+#      boot as unleash_svc — that's why it must own the db).
+#   2. the Unleash Deployment + a cluster-internal Service `fuzefront-unleash`.
+#
+# Admin UI is NOT public: the Service is cluster-internal. Reach the admin UI via
+# `kubectl port-forward svc/fuzefront-unleash 4242:4242`, or (optionally) an
+# admin-gated host under the *.prod.fuzefront.com Cloudflare-Access zone — see
+# `unleash.ingress` below (default off; requires FuzeInfra to wire the CF host).
+#
+# Secrets live in the per-service `unleash-secrets` SealedSecret (keys:
+# UNLEASH_DB_PASSWORD, INIT_ADMIN_API_TOKENS, UNLEASH_CLIENT_TOKEN). Seal real
+# values with:  deploy/scripts/seal-secret.sh <KEY> --scope fuzefront/unleash-secrets
+# Placeholders are committed in deploy/contabo/sealed/unleash-secrets.yaml.
+#
+# Client connection (the @fuzefront/feature-flags package): the unleash API is at
+#   http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
+# authenticated with the UNLEASH_CLIENT_TOKEN.
 # ---------------------------------------------------------------------------
+unleash:
+  enabled: false
+  image:
+    repository: unleashorg/unleash-server
+    # Concrete, widely-published OSS tag (verified-available fallback per #116).
+    # Bump deliberately in a deploy window (external image — not auto-bumped by CI).
+    tag: "5.12.0"
+  port: 4242
+  replicas: 1
+  # Least-privilege DB role created by the unleash-db-bootstrap Job (NOT the shared
+  # fuzefront_user). Its password is UNLEASH_DB_PASSWORD in unleash-secrets.
+  dbUser: unleash_svc
+  # Dedicated database OWNED by unleash_svc (Unleash self-migrates into it).
+  dbName: unleash
+  # Per-service secret (unleash-only keys). Shared creds stay in fuzefront-secrets.
+  secretName: unleash-secrets
+  # Pre-install Job that creates the unleash_svc role + `unleash` database.
+  dbBootstrap:
+    enabled: true
+  # Unleash needs headroom for its Node runtime + in-memory flag cache.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  # OPTIONAL admin-gated ingress for the admin UI (default OFF). Requires the host
+  # to sit under the *.prod.fuzefront.com Cloudflare-Access zone; the CF tunnel
+  # rule + CNAME are FuzeInfra-owned (delegated). See the chart README.
+  ingress:
+    enabled: false
+    className: ""        # defaults to ingress.className when empty
+    host: ""             # e.g. unleash.prod.fuzefront.com (CF-Access gated)
+    annotations: {}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 authentik:
   enabled: true
   image:
     repository: ghcr.io/goauthentik/server
-    tag: "2026.5.5"
+    tag: "2024.12.3"
   host: auth.fuzefront.dev.local
-  # Dedicated admin host for the Authentik UI, separate from the OIDC
-  # reverse-proxy under the app host (see templates/ingress.yaml). OFF by default:
-  # it is only safe where an edge auth gate (Cloudflare Access) fronts the host.
-  adminIngress:
-    enabled: false
-    host: ""
-    className: ""
-    annotations: {}
   dbName: authentik # must pre-exist in the FuzeInfra Postgres
   cookieDomain: fuzefront.dev.local
   bootstrapEmail: admin@fuzefront.dev
@@ -700,6 +565,9 @@ authentik:
     redirectUri: "" # https://fuzefront.dev.local/api/auth/oidc/callback
     backendHostAliasIP: "" # ingress-nginx ClusterIP (kubectl -n ingress-nginx get svc)
     caConfigMap: "" # configmap holding ca.crt for NODE_EXTRA_CA_CERTS
+    internalUrl: ""
+    enrollmentFlowSlug: ""
+    idpProxyPrefix: ""
   # SMTP for Authentik transactional email (enrollment verification, password reset).
   # Leave all fields empty (default) to keep email disabled — Authentik will log a
   # warning but won't crash. Supply real values via --set or an existingSecret in prod.
@@ -713,26 +581,19 @@ authentik:
     useTls: false
     useSSL: false
     timeout: 10
-  # Placement for the Authentik server + worker (empty → global.scheduling).
-  nodeSelector: {}
-  affinity: {}
-  tolerations: []
-  # Ingress NetworkPolicy for authentik-server (port 9000).
-  #
-  # CORRECTNESS: this repo ships NO default-deny NetworkPolicy, so authentik-server
-  # currently accepts ALL ingress. k3s enforces NetworkPolicy via its built-in
-  # controller, so the MOMENT any policy selects authentik-server, that pod flips to
-  # "deny everything except what this policy allows". A lone fuzeagent allow-rule
-  # would therefore silently break Traefik→Authentik (login UI) and intra-namespace
-  # traffic. This policy is authored WITH all existing allowances so enabling it is
-  # additive, not restrictive:
-  #   - Traefik (kube-system): the app.fuzefront.com/api/auth/idp/* reverse-proxy path
-  #   - intra-fuzefront pods:  e.g. security-service OIDC discovery to authentik-server:9000
-  #   - fuzeagent namespace:   in-cluster JWKS/discovery fetch (the reason this exists)
-  #
+  adminIngress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
   # Default OFF so a chart bump alone can never flip the policy on unverified. Enable
   # in a deploy window and verify BOTH (a) a fuzeagent pod can curl authentik-server
   # and (b) the Authentik login UI via the tunnel still works. See values-prod.yaml.
+  #
+  # port/*Namespace were dropped by the values.yaml rewrite in 8dedb865 (#523) and
+  # are restored here. values-prod.yaml sets enabled: true, so without them the
+  # template rendered `port: 0` — rejected by the API server, which failed every
+  # Argo sync of the whole application for days (FuzeInfra#501). Do not remove.
   networkPolicy:
     enabled: false
     port: 9000
@@ -740,83 +601,7 @@ authentik:
     ingressControllerNamespace: kube-system
     # Namespace whose pods may reach authentik-server in-cluster (A2A JWKS fetch).
     fuzeagentNamespace: fuzeagent
-
-# ── MendysRobotics identity silo — a SECOND, fully separate Authentik ─────────
-#
-# WHY A SECOND INSTANCE AND NOT A BRAND: authentik has no realm. One instance
-# is one user directory; `authentik_brands.brand` controls branding + default
-# flows only ("all objects like applications and providers are still global"),
-# so a Mendys brand on the FuzeFront instance would still share every account.
-# authentik's hard tenancy (a Postgres SCHEMA per tenant, 2024.2+) does give
-# real separation, but it is Enterprise-only, still alpha, needs a license per
-# tenant, and is created only through the API — i.e. it cannot be expressed as
-# a blueprint in git, which is how every other authentik object here is
-# managed. A second instance on its own DATABASE gives the same isolation for
-# free and stays declarative.
-#
-# The boundary this buys: MendysRobotics accounts exist only in this instance.
-# A FuzeFront account cannot sign in to the Mendys apps, a Mendys account
-# cannot sign in to FuzeFront, and the same email address may exist
-# independently on both sides as two unrelated accounts.
-#
-# The only applications in this silo are the two MendysRobotics products:
-# the platform backend (mendys-platform) and the datasets marketplace
-# (mendys-datasets).
-authentikMendys:
-  enabled: false
-  # Image is deliberately pinned separately from the FuzeFront instance so the
-  # two can be upgraded independently (one IdP at a time), but defaults to the
-  # same tested tag.
-  image:
-    repository: ghcr.io/goauthentik/server
-    tag: "2026.5.5"
-  # Postgres: same shared FuzeInfra server (fuzeinfra.postgres.*), different
-  # DATABASE and different ROLE. Provisioned by FuzeInfra's
-  # `fuzeinfra-service-db-provision` Job — values entry `authentik-mendys` in
-  # helm/fuzeinfra/values.yaml. Must exist before this instance starts.
-  dbName: authentik_mendys
-  dbUser: authentik_mendys_user
-  # Redis: same shared instance, DIFFERENT logical DB index. Authentik keeps
-  # cache + sessions in Redis; two instances sharing index 0 would collide on
-  # identical key names and leak session state across the silo boundary.
-  # Index 0 is the FuzeFront instance's (authentik's default).
-  redisDb: 2
-  # Cookie domain MUST NOT overlap the FuzeFront one. A shared parent domain
-  # would let one instance's session cookie be sent to the other.
-  cookieDomain: mendysrobotics.com
-  bootstrapEmail: admin@mendysrobotics.com
-  # Fewer web workers than FuzeFront: this silo serves two apps, not the whole
-  # platform. Raise if login latency shows queueing.
-  webWorkers: 2
-  # Browser-facing exposure. OFF, and it should STAY off.
-  #
-  # This instance is an implementation detail of FuzeFront's security-service,
-  # which is the single front door for every tenant. MendysRobotics reaches
-  # security-service on its own hosts; security-service drives this Authentik
-  # in-cluster over ClusterIP. Nothing outside FuzeFront's boundary — not
-  # end-users, not the MendysRobotics apps — ever addresses Authentik.
-  #
-  # Do NOT reach for Cloudflare Access to make an exposed IdP host safe: a host
-  # carrying live OIDC traffic cannot be gated. Per templates/ingress.yaml,
-  # putting an auth gate in front of the OIDC path "would break sign-in for
-  # every user". Access is only usable on an admin host carrying no OIDC
-  # traffic. The escape hatch below exists for debugging, not for production.
-  ingress:
-    enabled: false
-    host: "" # e.g. auth.mendysrobotics.com
-    className: ""
-    annotations: {}
-  # SMTP for this silo's transactional email (enrollment verification, password
-  # reset). Separate from the FuzeFront sender so Mendys mail is Mendys-branded.
-  smtp:
-    host: ""
-    port: 25
-    username: ""
-    from: "noreply@mendysrobotics.com"
-    useTls: false
-    useSSL: false
-    timeout: 10
-  # Placement for the Mendys authentik server + worker (empty → global.scheduling).
+  # Placement for the Authentik server + worker (empty → global.scheduling).
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -825,45 +610,13 @@ ingress:
   enabled: true
   className: nginx
   host: fuzefront.dev.local
-  # Tenant-subdomain wildcard (FF-EPIC-16 / FFRNT-91). Empty = rule not emitted.
-  # Matches exactly ONE label ("*.fuzefront.com" covers corpabc.fuzefront.com but
-  # NOT eu.corpabc.fuzefront.com — nested tenant subdomains would need Cloudflare
-  # Advanced Certificate Manager). Exact hosts beat wildcards, so `host` above and
-  # every other explicit record keep winning.
-  #
-  # Its path fan-out is a YAML alias of the canonical host's, so the two can never
-  # diverge. It deliberately gets NO tls: block — Cloudflare terminates edge TLS.
-  wildcardHost: ''
   # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
   annotations: {}
+  wildcardHost: ""
   tls:
     enabled: false
     # Defaults to "<host>-tls" when empty.
     secretName: ''
-
-# ---------------------------------------------------------------------------
-# FuzeInfra Custom Hostname API (FF-EPIC-16 / FFRNT-91).
-#
-# Cluster-internal, bearer-authenticated provisioning of customer-owned domains
-# (app.corpabc.com) via Cloudflare for SaaS. FuzeInfra owns the service AND the
-# Cloudflare token; FuzeFront holds ONLY the bearer token below and never a
-# Cloudflare credential.
-#
-# Gated by the default-OFF flag `fuzefront.platform.portal-domains`; this block
-# only supplies connection details, it does not enable the feature.
-# ---------------------------------------------------------------------------
-customHostnameApi:
-  # Injects CUSTOM_HOSTNAME_API_TOKEN into the backend. Leave false until the
-  # SealedSecret below actually carries the key, or the pod CrashLoops on a
-  # missing secret key.
-  enabled: false
-  baseUrl: http://custom-hostname-api.fuzeinfra.svc.cluster.local:8080
-  # Route profile our token grants. Optional in the contract when the token
-  # grants exactly one profile (our case); sent explicitly for clarity.
-  profile: fuzefront
-  secret:
-    name: fuzefront-secrets
-    key: CUSTOM_HOSTNAME_API_TOKEN
 
 # ---------------------------------------------------------------------------
 # Kafka topic pre-creation (Phase D). A Helm post-install/post-upgrade Job runs
@@ -992,19 +745,38 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
-    - name: billing.payment.completed
-      partitions: 3
-      replicationFactor: 1
-      retentionMs: 2592000000 # 30d — billing audit trail
 
-# ── Cloudflare edge integration ──────────────────────────────────────────────
-# Cache purge lets the backend purge the CF edge cache after MFE deploys.
-# Disabled by default; prod enables it and supplies the kubesealed token blob
-# (see templates/sealed-secret-cloudflare-cache-purge.yaml for reseal steps).
+# Cloudflare cache purge — disabled by default; prod enables via values-prod.yaml.
 cloudflare:
   cachePurge:
     enabled: false
-    # Cloudflare zone ID for app.fuzefront.com (not a secret).
-    zoneId: "94eaf85fb0ed9a26b5645af10fed0788"
-    # kubesealed ciphertext of the CF API token; empty disables the SealedSecret.
+    zoneId: ""
     sealedToken: ""
+
+customHostnameApi:
+  enabled: false
+  baseUrl: ""
+  profile: ""
+  secret:
+    name: ""
+    key: ""
+
+paymentService:
+  enabled: false
+  replicas: 1
+  port: 3010
+  image:
+    repository: fuzefront/payment-service
+    tag: local
+  provider: ""
+  secretName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+
+authentikMendys:
+  enabled: false

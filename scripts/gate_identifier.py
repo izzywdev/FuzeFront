@@ -1,0 +1,464 @@
+#!/usr/bin/env python3
+"""gate-identifier — enforce the server-owned identifier standard.
+
+Policy: governance/identifier-standard.md. The service that owns an entity mints
+its identifier; clients never supply one. A client-chosen id turns a cross-type
+UUID collision from ~0 probability into a certainty, and the collision enables
+type confusion wherever a bare id is resolved without its type
+(OWASP API3:2023 BOPLA).
+
+Three check families:
+
+  contracts (default)
+    C1  a create request body must not declare an `id` for the resource created
+    C2  a create request body schema must set `additionalProperties: false`
+    C3  a polymorphic reference (`*EntityId` / `*OwnerId`) must carry a sibling
+        type discriminator, so no lookup can resolve a bare id
+    C4  a `lid`-able relationship must stay inside the service's own aggregate
+
+  --source
+    S1  uuid minting (`randomUUID`, `uuidv4`, `uuid.uuid4`) outside the sanctioned
+        identity modules — every id must come from `mintId`/`mint_id`
+    S2  `as EntityId<...>` casts, which forge the brand the type system relies on
+
+  --registry-parity
+    P1  shared/src/identity/registry.ts and
+        packages/identity-py/fuzefront_identity/registry.py must agree exactly.
+        A prefix that differs between them means a reference minted by a Node
+        service is rejected by a Python one — a cross-language outage no
+        single-language test can catch.
+
+Exemptions: an operation may carry `x-client-assigned-id: allowed` (plus
+`x-client-assigned-id-reason`), or the route may be listed in
+governance/identifier-allowlist.txt as `METHOD /path`, one per line.
+
+Usage: gate_identifier.py [root] [--source] [--registry-parity] [--all]
+Exit 0 = pass (or no contracts found); exit 1 = violation.
+Requires PyYAML for YAML specs; JSON specs need no extra deps.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover
+    yaml = None
+
+SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.I)
+ALLOWLIST_PATHS = [
+    "governance/identifier-allowlist.txt",
+    ".fuze/identifier-allowlist.txt",
+]
+
+PRUNE_DIRS = {
+    ".git", "node_modules", "dist", "build", ".venv", "venv", "vendor", "__pycache__",
+    "coverage", ".next", ".terraform", ".turbo", ".cache", "out", "target",
+    "storybook-static", "playwright-report", "test-results",
+}
+
+# Where minting legitimately happens. Everything else must call mintId/mint_id.
+IDENTITY_MODULES = (
+    "shared/src/identity/",
+    "packages/identity-py/fuzefront_identity/",
+)
+
+CREATE_METHODS = ("post", "put")
+PATH_PARAM_TAIL_RE = re.compile(r"\{[^}]+\}/?$")
+
+# Properties naming the resource being created. `organizationId`/`userId` and
+# friends are REFERENCES to entities that already exist, so they are legitimate
+# create-body fields and must not be flagged here.
+SELF_ID_RE = re.compile(r"^(id|uuid|_id)$", re.I)
+
+# A reference that can point at more than one entity type. These are the
+# dangerous ones: without a sibling discriminator the id alone decides which
+# table is consulted.
+POLYMORPHIC_ID_RE = re.compile(r"^(entity|owner|subject|target|parent|resource)Id$", re.I)
+
+
+# ---------------------------------------------------------------------------
+# File discovery (shared conventions with scripts/gate_pagination.py)
+# ---------------------------------------------------------------------------
+
+def _candidate_files(root: str, patterns: list[str]) -> list[str]:
+    """Tracked files only, via `git ls-files` — fast in a large monorepo — with a
+    pruned os.walk fallback when git is unavailable."""
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["git", "-C", root, "ls-files", "--", *patterns],
+            capture_output=True, text=True, timeout=60,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            files = [os.path.join(root, p) for p in res.stdout.splitlines() if p.strip()]
+            return [
+                f for f in files
+                if not any(seg in PRUNE_DIRS for seg in f.replace("\\", "/").split("/"))
+            ]
+    except Exception:
+        pass
+    suffixes = tuple(p.lstrip("*") for p in patterns)
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS]
+        for fn in filenames:
+            if fn.endswith(suffixes):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def find_specs(root: str) -> list[str]:
+    out = []
+    for p in _candidate_files(root, ["*.yaml", "*.yml", "*.json", "**/*.yaml", "**/*.yml", "**/*.json"]):
+        fn = os.path.basename(p)
+        if SPEC_NAME_RE.search(fn) or fn in ("openapi.yaml", "openapi.yml", "openapi.json"):
+            out.append(p)
+            continue
+        try:
+            with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                head = f.read(400)
+            if re.search(r'["\']?(openapi|swagger)["\']?\s*:', head):
+                out.append(p)
+        except OSError:
+            pass
+    return sorted(set(out))
+
+
+def load_spec(path: str):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        text = f.read()
+    if path.endswith(".json"):
+        return json.loads(text)
+    if yaml is None:
+        return json.loads(text)
+    return yaml.safe_load(text)
+
+
+def load_allowlist(root: str) -> set[str]:
+    allow = set()
+    for rel in ALLOWLIST_PATHS:
+        p = os.path.join(root, rel)
+        if os.path.isfile(p):
+            with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.split("#", 1)[0].strip()
+                    if line:
+                        allow.add(line.lower())
+    return allow
+
+
+# ---------------------------------------------------------------------------
+# Schema helpers
+# ---------------------------------------------------------------------------
+
+def resolve_ref(spec: dict, node, seen: set[str] | None = None):
+    """Follow a local $ref to its schema. Returns the node unchanged otherwise."""
+    seen = seen or set()
+    for _ in range(20):
+        if not isinstance(node, dict):
+            return node
+        ref = node.get("$ref")
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            return node
+        if ref in seen:
+            return {}
+        seen.add(ref)
+        target = spec
+        for part in ref[2:].split("/"):
+            part = part.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or part not in target:
+                return {}
+            target = target[part]
+        node = target
+    return node
+
+
+def request_schemas(spec: dict, operation: dict):
+    """Every JSON request-body schema of an operation, $refs resolved."""
+    body = resolve_ref(spec, operation.get("requestBody"))
+    if not isinstance(body, dict):
+        return []
+    content = body.get("content")
+    if not isinstance(content, dict):
+        return []
+    out = []
+    for media, entry in content.items():
+        if "json" not in str(media).lower() or not isinstance(entry, dict):
+            continue
+        schema = resolve_ref(spec, entry.get("schema"))
+        if isinstance(schema, dict):
+            out.append(schema)
+    return out
+
+
+def composed_parts(spec: dict, schema: dict):
+    """A schema plus everything it composes, so allOf branches are inspected too."""
+    parts = [schema]
+    for key in ("allOf", "oneOf", "anyOf"):
+        for sub in schema.get(key, []) or []:
+            resolved = resolve_ref(spec, sub)
+            if isinstance(resolved, dict):
+                parts.extend(composed_parts(spec, resolved))
+    return parts
+
+
+def is_create_operation(method: str, path: str, operation: dict) -> bool:
+    """A create writes a NEW resource to a collection.
+
+    Requires POSITIVE evidence of creation — a create verb in the operationId or
+    summary, or a 201 response. Treating every bare POST as a create is wrong and
+    noisy: `POST /auth/login`, `/authz/check`, `/mfa/verify` and `/chat/stream`
+    are RPC-style actions that create no resource and have no id to own. A gate
+    that cries wolf on those gets switched off, and then it protects nothing.
+
+    `post`/`put` to a path ending in a parameter addresses an existing resource,
+    so it is an update, not a create.
+    """
+    if method not in CREATE_METHODS:
+        return False
+    if PATH_PARAM_TAIL_RE.search(path):
+        return False
+
+    haystack = f"{operation.get('operationId', '')} {operation.get('summary', '')}".lower()
+    if re.search(r"\b(create|add|register|provision|new|signup|sign-up|invite)", haystack):
+        return True
+
+    # 201 Created is the unambiguous machine-readable signal.
+    return "201" in {str(code) for code in (operation.get("responses") or {})}
+
+
+def is_exempt(operation: dict, method: str, path: str, allow: set[str]) -> bool:
+    if str(operation.get("x-client-assigned-id", "")).lower() == "allowed":
+        return True
+    return f"{method.upper()} {path}".lower() in allow
+
+
+# ---------------------------------------------------------------------------
+# Contract checks
+# ---------------------------------------------------------------------------
+
+def check_contracts(root: str) -> list[str]:
+    violations: list[str] = []
+    allow = load_allowlist(root)
+    specs = find_specs(root)
+
+    for spec_path in specs:
+        try:
+            spec = load_spec(spec_path)
+        except Exception as exc:
+            print(f"  ! skipping unparseable spec {spec_path}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(spec, dict):
+            continue
+        rel = os.path.relpath(spec_path, root)
+        paths = spec.get("paths")
+        if not isinstance(paths, dict):
+            continue
+
+        for path, item in paths.items():
+            if not isinstance(item, dict):
+                continue
+            for method, operation in item.items():
+                method = str(method).lower()
+                if method not in CREATE_METHODS or not isinstance(operation, dict):
+                    continue
+                if not is_create_operation(method, str(path), operation):
+                    continue
+                if is_exempt(operation, method, str(path), allow):
+                    continue
+
+                for schema in request_schemas(spec, operation):
+                    label = f"{rel}: {method.upper()} {path}"
+
+                    # C1 — no client-supplied id for the resource being created.
+                    for part in composed_parts(spec, schema):
+                        props = part.get("properties")
+                        if not isinstance(props, dict):
+                            continue
+                        for prop in props:
+                            if SELF_ID_RE.match(str(prop)):
+                                violations.append(
+                                    f"{label} — create body declares '{prop}'; the owning "
+                                    f"service mints ids (identifier-standard.md 1)"
+                                )
+
+                    # C2 — reject unknown properties, so a stray id cannot bind.
+                    if not any(
+                        part.get("additionalProperties") is False
+                        for part in composed_parts(spec, schema)
+                    ):
+                        violations.append(
+                            f"{label} — create body schema does not set "
+                            f"'additionalProperties: false' (identifier-standard.md 1)"
+                        )
+
+        # C3 — polymorphic references must carry their type, wherever they appear.
+        schemas = (spec.get("components") or {}).get("schemas")
+        if isinstance(schemas, dict):
+            for name, schema in schemas.items():
+                schema = resolve_ref(spec, schema)
+                if not isinstance(schema, dict):
+                    continue
+                props = schema.get("properties")
+                if not isinstance(props, dict):
+                    continue
+                for prop in props:
+                    if not POLYMORPHIC_ID_RE.match(str(prop)):
+                        continue
+                    discriminator = re.sub(r"Id$", "Type", str(prop), flags=re.I)
+                    if discriminator not in props:
+                        violations.append(
+                            f"{rel}: components.schemas.{name} — polymorphic reference "
+                            f"'{prop}' has no sibling '{discriminator}'; a bare id must "
+                            f"never decide which entity is resolved "
+                            f"(identifier-standard.md 3)"
+                        )
+
+    if not specs:
+        print("gate-identifier: no OpenAPI contracts found — nothing to check.")
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Source backstop
+# ---------------------------------------------------------------------------
+
+# Only a uuid that becomes an ENTITY id matters here. Capture what the minted
+# value is assigned to: `const appId = uuidv4()` or `id: randomUUID(),`.
+MINT_RE = re.compile(
+    r"""(?P<target>\b[A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*"""
+    r"""(?:await\s+)?(?:randomUUID|uuidv4|uuid4|uuid\.uuid4)\s*\("""
+)
+
+# Ephemeral/infrastructure identifiers: correlation and tracing handles, OAuth
+# nonces, one-shot tokens. They label a request or a message, not a stored
+# entity, so they have no type to carry and are outside this standard.
+NON_ENTITY_ID_RE = re.compile(
+    r"^(request|correlation|trace|span|nonce|state|token|idempotency|event|"
+    r"delivery|job|run|batch|transaction|tx|challenge|client|secret|key|salt|"
+    r"verifier|code)",
+    re.I,
+)
+
+# `id` alone, or `<noun>Id` — the shapes that name a persisted entity.
+ENTITY_ID_TARGET_RE = re.compile(r"^(id|_id|[a-z][A-Za-z0-9]*Id)$")
+
+BRAND_CAST_RE = re.compile(r"\bas\s+EntityId\s*<")
+
+
+def check_source(root: str) -> list[str]:
+    """Grep-shaped and therefore the BACKSTOP, not the mechanism.
+
+    The real enforcement is the branded `EntityId<T>` type: a raw string off
+    req.body does not compile against a repository that takes one. This catches
+    the two ways to sidestep that.
+    """
+    violations: list[str] = []
+    files = _candidate_files(root, ["*.ts", "*.py", "**/*.ts", "**/*.py"])
+
+    for path in files:
+        rel = os.path.relpath(path, root).replace("\\", "/")
+        if any(rel.startswith(module) for module in IDENTITY_MODULES):
+            continue
+        # Tests and migrations legitimately fabricate ids and seed fixtures.
+        if re.search(r"(^|/)(tests?|__tests__|migrations|scripts)/", f"/{rel}"):
+            continue
+        if rel.endswith((".test.ts", ".spec.ts", ".d.ts")):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+        except OSError:
+            continue
+
+        for number, line in enumerate(lines, 1):
+            if line.lstrip().startswith(("//", "#", "*")):
+                continue
+            match = MINT_RE.search(line)
+            if match:
+                target = match.group("target")
+                if ENTITY_ID_TARGET_RE.match(target) and not NON_ENTITY_ID_RE.match(target):
+                    violations.append(
+                        f"{rel}:{number} — '{target}' is minted as a bare uuid; call "
+                        f"mintId()/mint_id() so the id carries its type "
+                        f"(identifier-standard.md 2)"
+                    )
+            if BRAND_CAST_RE.search(line):
+                violations.append(
+                    f"{rel}:{number} — casts to EntityId, forging the brand the type "
+                    f"system relies on; use parseId()/parse_id() instead"
+                )
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Cross-language registry parity
+# ---------------------------------------------------------------------------
+
+def check_registry_parity(root: str) -> list[str]:
+    ts_path = os.path.join(root, "shared/src/identity/registry.ts")
+    py_path = os.path.join(root, "packages/identity-py/fuzefront_identity/registry.py")
+    if not (os.path.isfile(ts_path) and os.path.isfile(py_path)):
+        return []
+
+    with open(ts_path, encoding="utf-8") as f:
+        ts_text = f.read()
+    with open(py_path, encoding="utf-8") as f:
+        py_text = f.read()
+
+    ts_block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts_text, re.S)
+    py_block = re.search(r"ENTITY_PREFIXES[^=]*=\s*MappingProxyType\(\s*\{(.*?)\n\s*\}\s*\)", py_text, re.S)
+    if not ts_block or not py_block:
+        return ["registry parity — could not locate ENTITY_PREFIXES in one of the registries"]
+
+    ts_pairs = dict(re.findall(r"^\s*(\w+):\s*'([a-z_]+)',", ts_block.group(1), re.M))
+    py_pairs = dict(re.findall(r'^\s*"(\w+)":\s*"([a-z_]+)",', py_block.group(1), re.M))
+
+    if ts_pairs == py_pairs:
+        return []
+
+    violations = []
+    for key in sorted(set(ts_pairs) | set(py_pairs)):
+        ts_value, py_value = ts_pairs.get(key), py_pairs.get(key)
+        if ts_value != py_value:
+            violations.append(
+                f"registry parity — '{key}': registry.ts={ts_value!r} but "
+                f"registry.py={py_value!r}; a reference minted by one language "
+                f"would be rejected by the other"
+            )
+    return violations
+
+
+def main(argv: list[str]) -> int:
+    args = [a for a in argv[1:] if not a.startswith("-")]
+    flags = {a for a in argv[1:] if a.startswith("-")}
+    root = args[0] if args else "."
+    run_all = "--all" in flags
+
+    violations: list[str] = []
+    if run_all or not (flags - {"--all"}):
+        violations += check_contracts(root)
+    if run_all or "--source" in flags:
+        violations += check_source(root)
+    if run_all or "--registry-parity" in flags:
+        violations += check_registry_parity(root)
+
+    if violations:
+        print(f"\ngate-identifier: {len(violations)} violation(s)\n")
+        for violation in violations:
+            print(f"  ✗ {violation}")
+        print("\nSee governance/identifier-standard.md. To exempt an operation, add")
+        print("`x-client-assigned-id: allowed` with a reason, or list the route in")
+        print("governance/identifier-allowlist.txt.")
+        return 1
+
+    print("gate-identifier: OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

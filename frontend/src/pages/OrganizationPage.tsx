@@ -27,7 +27,11 @@ interface Organization {
   created_at: string
   updated_at: string
   member_count?: number
-  user_role?: 'owner' | 'admin' | 'member' | 'viewer'
+  // The caller's own role in this org. `null` means "not a member" — the org is
+  // visible only because it is a `platform`-type org, which every authenticated
+  // user can see without belonging to it. `undefined` means "unknown" (e.g. a
+  // backend that predates the `user_role` field); treat it permissively.
+  user_role?: 'owner' | 'admin' | 'member' | 'viewer' | null
 }
 
 interface OrganizationMember {
@@ -294,21 +298,39 @@ function OrganizationPage() {
                   }}
                 >
                   {currentOrg.name}
-                  <span
-                    style={{
-                      backgroundColor: getRoleBadgeColor(
-                        currentOrg.user_role || 'viewer'
-                      ),
-                      color: 'white',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: '12px',
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    {getRoleIcon(currentOrg.user_role || 'viewer')}{' '}
-                    {currentOrg.user_role?.toUpperCase()}
-                  </span>
+                  {/* Show the caller's actual role. `null` = not a member of
+                      this org (a visible platform org) → a distinct "Guest"
+                      badge rather than silently mislabelling everyone 'viewer'.
+                      `undefined` = unknown role → render no badge at all. */}
+                  {currentOrg.user_role ? (
+                    <span
+                      style={{
+                        backgroundColor: getRoleBadgeColor(currentOrg.user_role),
+                        color: 'white',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {getRoleIcon(currentOrg.user_role)}{' '}
+                      {currentOrg.user_role.toUpperCase()}
+                    </span>
+                  ) : currentOrg.user_role === null ? (
+                    <span
+                      style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-color)',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      👋 GUEST
+                    </span>
+                  ) : null}
                 </h2>
                 <p style={{ color: 'var(--text-tertiary)', margin: '0 0 1rem 0' }}>
                   {currentOrg.description || 'No description provided'}
@@ -460,14 +482,41 @@ function OrganizationPage() {
             </div>
           )}
 
-          {activeTab === 'members' && (
-            <IdentityPage
-              organizationId={currentOrg.id}
-              userRole={currentOrg.user_role ?? 'viewer'}
-              userId={user?.id}
-              onMembersChange={() => loadMembers(currentOrg.id)}
-            />
-          )}
+          {activeTab === 'members' &&
+            (currentOrg.user_role === null ? (
+              // Confirmed non-member of a visible platform org. Render an
+              // explicit state instead of IdentityPage — every members/roles/
+              // invitations/tokens call would 403 and surface a raw
+              // "Insufficient permissions" error in each sub-tab.
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '3rem 2rem',
+                  color: 'var(--text-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                }}
+              >
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👋</div>
+                <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>
+                  You're not a member of this organization
+                </h3>
+                <p style={{ margin: 0 }}>
+                  You can see <strong>{currentOrg.name}</strong> because it's a
+                  platform organization, but you don't have a membership here, so
+                  its members, roles, and tokens aren't available to you. Ask an
+                  organization owner or admin for an invitation to gain access.
+                </p>
+              </div>
+            ) : (
+              <IdentityPage
+                organizationId={currentOrg.id}
+                userRole={currentOrg.user_role ?? 'viewer'}
+                userId={user?.id}
+                onMembersChange={() => loadMembers(currentOrg.id)}
+              />
+            ))}
 
           {activeTab === 'settings' && (
             <PermissionGate

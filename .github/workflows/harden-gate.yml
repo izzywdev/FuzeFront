@@ -25,10 +25,10 @@ jobs:
   gate-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
       - name: Lint (adaptive, report-only)
         shell: bash
@@ -48,10 +48,10 @@ jobs:
   gate-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
         shell: bash
@@ -68,8 +68,8 @@ jobs:
   gate-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
       - name: Build (adaptive, report-only)
         shell: bash
@@ -83,14 +83,14 @@ jobs:
   gate-sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Semgrep (report-only, SARIF)
         shell: bash
         run: |
           pip install -q semgrep
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         continue-on-error: true  # private repos lack code-scanning; report-only must stay green
         if: always()
         with:
@@ -100,7 +100,7 @@ jobs:
   gate-secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
       - name: gitleaks (gates new secrets)
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
@@ -113,7 +113,7 @@ jobs:
       security-events: write
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Trivy filesystem scan (report-only, SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
@@ -160,7 +160,7 @@ jobs:
             echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
             echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         continue-on-error: true
         if: always()
         with:
@@ -174,7 +174,7 @@ jobs:
     # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
       - name: Semgrep authz/appsec scan (report-only, SARIF)
         shell: bash
@@ -184,7 +184,7 @@ jobs:
           [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
           semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always()
         continue-on-error: true
         with:
@@ -197,7 +197,7 @@ jobs:
     # to enforcing per-repo (see local-environment.md).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { submodules: recursive }
       - name: Consumer-test bounded up + smoke
         shell: bash
@@ -227,7 +227,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
       - name: SemVer bump check (packages + API contracts, report-only)
         shell: bash
@@ -280,9 +280,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
       - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
         shell: bash
@@ -336,14 +336,40 @@ jobs:
     # per repo once the billing-service contract annotates/allowlists its collection GETs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
       - name: Pagination gate (report-only)
         shell: bash
         run: |
           pip install -q pyyaml
           python scripts/gate_pagination.py . || true
+
+  gate-identifier:
+    # Server-owned identifier standard (governance/identifier-standard.md).
+    #
+    # The CONTRACT checks are already clean and are ENFORCING: a new create body
+    # declaring an `id`, or a polymorphic reference without its type, fails here.
+    # That is the whole point — the hole must be impossible to open, not merely
+    # reported after it is opened.
+    #
+    # The SOURCE backstop is report-only: ~41 call sites still mint bare uuids
+    # (the P3 backfill), so failing on it today would block every unrelated PR.
+    # Ratchet it to enforcing once that backlog is cleared.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: '3.12' }
+      - name: Identifier gate — contracts + cross-language registry parity (enforcing)
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          python scripts/gate_identifier.py .
+          python scripts/gate_identifier.py . --registry-parity
+      - name: Identifier gate — source backstop (report-only)
+        shell: bash
+        run: python scripts/gate_identifier.py . --source || true
 
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
@@ -356,8 +382,8 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'

@@ -130,6 +130,24 @@ This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_mo
 
 **This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
 
+## Entity identifiers — the owning service mints them, and references carry their type
+
+Full standard: **`governance/identifier-standard.md`** (enforced by `gate-identifier`).
+Design rationale: `docs/planning/entity-identity-and-graph-create.md`.
+
+Two rules, and one is not enough without the other:
+
+1. **The service that owns an entity mints its id.** A create body must never accept an `id`/`uuid` for the resource being created, and must set `additionalProperties: false`. A client-chosen id turns a cross-type collision from something an attacker must *find* (probability ~0) into something they *type in* — OWASP API3:2023 BOPLA. Fields naming an entity that already exists (`organizationId`, `userId`) are references, not identity, and are fine.
+2. **Every polymorphic reference carries its type**, and no lookup resolves a bare id. §1 alone still loses to an attacker who *learns* an id rather than choosing one.
+
+**Corollary, always in force: an id is never a capability.** Authorization comes from the token and Permit. "The caller knew the id" is never sufficient.
+
+**Format is wire-typed, storage-native.** `cus_01h455vb4pex5vsknk084sn02q` on the API (TypeID: prefix + UUIDv7 in base32); a native 16-byte `uuid` column underneath. With services on separate databases there is no shared unique index, so the prefix — checkable offline, with no network call and no cache — is the only defense that always works. Ids are **opaque past the prefix**: never parse further, never assume a length. `mintId()`/`mint_id()` is the only sanctioned constructor.
+
+**Graph create** uses `lid` in / `idMap` out, with ids minted up front so handlers never learn `lid` existed and reference cycles resolve. A `lid` graph is scoped to **one service's aggregate** — a graph spanning services cannot be created atomically.
+
+Packages: **`@fuzefront/shared/identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
+
 ## Branch lifecycle policy
 
 Every agent-created branch must reach one of these terminal states — never left open indefinitely:
