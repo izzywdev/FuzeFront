@@ -59,25 +59,30 @@ jobs:
         with:
           fail-on-severity: high
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
-          # Two CI-ONLY scanners exempted by name, rather than widening
-          # allow-licenses above. Both have been in this workflow all along;
-          # they only became visible when pinning changed their refs, because
-          # Dependency Review evaluates CHANGED dependencies and a floating
-          # `@main` ref never changes.
+          # TruffleHog is AGPL-3.0, which allow-licenses above does not permit.
+          # It has been in this workflow all along; it only became visible when
+          # pinning changed its ref, because Dependency Review evaluates CHANGED
+          # dependencies and a floating `@main` ref never changes.
           #
-          #   trufflesecurity/trufflehog  — AGPL-3.0
-          #   snyk/actions/node           — no license detected
-          #
-          # Exempted by name and NOT by adding AGPL-3.0 to allow-licenses,
-          # because that list also governs npm dependencies that ship inside the
-          # product, where AGPL copyleft would be a real obligation. These two
-          # are GitHub Actions that run in the pipeline and are never conveyed
-          # with FuzeFront, so the obligation does not attach. Keeping the
-          # distinction means the strict policy still protects what it was
+          # Exempted by name rather than adding AGPL-3.0 to allow-licenses,
+          # because that list also governs the npm dependencies that ship inside
+          # the product, where AGPL copyleft would be a real obligation.
+          # TruffleHog is a scanner that runs in the pipeline and is never
+          # conveyed with FuzeFront, so the obligation does not attach. Keeping
+          # the distinction means the strict policy still protects what it was
           # written to protect.
-          allow-dependencies-licenses: >-
-            actions://trufflesecurity/trufflehog,
-            actions://snyk/actions/node
+          #
+          # Format is package-url, per the action's README:
+          #   pkg:githubactions/owner/repo[@version]
+          # Version deliberately omitted so the exemption survives future pin
+          # bumps rather than silently lapsing on the next SHA change.
+          #
+          # `snyk/actions/node` also appears in the log under "could not detect
+          # a license", but that is NOT a failure: src/main.ts calls setFailed
+          # only for `forbidden` and `unresolved` licenses, while `unlicensed`
+          # is merely printed. Adding it would be an unverified multi-segment
+          # purl bought for nothing.
+          allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
 
   npm-audit:
     name: NPM Security Audit
