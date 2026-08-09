@@ -22,7 +22,14 @@ def api(path, method='GET', body=None):
     req = urllib.request.Request(
         f'{AK}/api/v3{path}', method=method,
         headers={'Authorization': f'Bearer {TOK}', 'Accept': 'application/json',
-                 'Content-Type': 'application/json'},
+                 'Content-Type': 'application/json',
+                 # Without this, urllib sends its default "Python-urllib/3.x" UA,
+                 # which Cloudflare's bot heuristics block at the tunnel edge with
+                 # error 1010 ("browser signature ban") before Authentik ever sees
+                 # the request — the admin API and the token are never reached.
+                 # prod-authentik-probe.yml hits the same host successfully because
+                 # it uses curl, whose UA isn't flagged. See #507.
+                 'User-Agent': 'FuzeFront-authentik-ops/1.0 (+github-actions)'},
         data=json.dumps(body).encode() if body is not None else None)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
