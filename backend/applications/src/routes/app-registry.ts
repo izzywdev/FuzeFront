@@ -23,6 +23,7 @@ import { resolveCaller } from '../app-registry/caller'
 import { checkAppRegistryPermission } from '../app-registry/permit'
 import { getAppRegistryEmitter } from '../app-registry/events'
 import { isV1WriteEnabled, isKafkaEmitEnabled } from '../app-registry/flags'
+import { resolvePortalCatalogContext } from '../app-registry/portalContext'
 
 const router = express.Router()
 
@@ -84,7 +85,12 @@ router.get('/apps', authenticateConsumerOrSession, async (req: any, res) => {
         .json({ error: 'validation_error', message: 'invalid limit' })
     }
 
-    const result = await appRegistryService.list({ status, mode, limit, cursor }, caller)
+    // FF-EPIC-12-S2/S5 — resolves to `{ mode: 'off' }` when the
+    // fuzefront.apps.portal-catalog flag is OFF, so this is a no-op for every
+    // deployment until the flag is deliberately turned on (S5 AC1).
+    const portalCtx = await resolvePortalCatalogContext(req)
+
+    const result = await appRegistryService.list({ status, mode, limit, cursor }, caller, portalCtx)
     return res.json(result)
   } catch (err) {
     console.error('[app-registry] listApps error:', err)
