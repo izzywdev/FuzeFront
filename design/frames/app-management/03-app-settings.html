@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App settings &amp; attributes — frame (c)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="03-app-settings">
+  <a class="back" href="02-app-detail.html">← Northwind CRM</a>
+  <div class="eyebrow">App detail · Frame (c) · route /apps/:appId/settings</div>
+  <h1>Settings &amp; attributes</h1>
+  <p class="lead">Edit the app's display, visibility, routing/entry and configuration attributes.
+    The slug and built-in flag are immutable; the editor renders them read-only rather than pretending
+    they are editable and 4xx-ing on save. Saves are a single <code>PUT</code> of the manifest.</p>
+
+  <div class="tabs" role="tablist" data-panel="app-tabs">
+    <a class="tab" role="tab" aria-selected="false" data-tab="overview" href="02-app-detail.html">Overview</a>
+    <a class="tab" role="tab" aria-selected="true" data-tab="settings" href="03-app-settings.html">Settings &amp; attributes</a>
+    <a class="tab" role="tab" aria-selected="false" data-tab="installations" href="04-installations.html">Installations</a>
+  </div>
+
+  <form class="panel" data-panel="settings-form" data-app="crm">
+    <div class="panel-body">
+      <div class="field">
+        <label class="label" for="s-name">Display name</label>
+        <input class="input" id="s-name" data-input="displayName" value="Northwind CRM" />
+        <p class="hint">Shown in the app menu and on cards. Changing this does not change the slug.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="s-slug">Slug</label>
+        <input class="input input--mono" id="s-slug" data-input="slug" value="crm" readonly aria-readonly="true" />
+        <p class="hint">Immutable — the app's permanent identifier. Rejected by <code>PUT</code> if changed.</p>
+      </div>
+
+      <div class="field">
+        <label class="label">Icon</label>
+        <div class="uploader" data-input="icon">
+          <div class="appicon appicon--lg" aria-hidden="true">📇</div>
+          <div class="drop">Drop an SVG/PNG, or <a href="03-app-settings.html" data-action="choose-icon">choose a file</a> · 512×512 recommended</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="s-vis">Visibility</label>
+        <select class="select" id="s-vis" data-input="visibility">
+          <option value="private">Private — only the owning org's admins</option>
+          <option value="organization" selected>Organization — members of the owning org</option>
+          <option value="public">Public — any signed-in platform user</option>
+          <option value="marketplace">Marketplace — listed for discovery/install</option>
+        </select>
+        <p class="hint">Governs who sees the app. Real access is enforced by Permit, not this flag.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="s-entry">Entry / remote URL</label>
+        <input class="input input--mono" id="s-entry" data-input="entryUrl" value="https://crm.northwind.example/remoteEntry.js" />
+        <p class="hint">Module-federation remoteEntry, iframe URL, or standalone URL depending on integration.</p>
+      </div>
+
+      <div class="field">
+        <label class="label" for="s-route">Route / mount path</label>
+        <input class="input input--mono" id="s-route" data-input="route" value="/apps/crm" />
+      </div>
+
+      <div class="field">
+        <label class="label">Configuration attributes</label>
+        <div class="attrs" data-input="attributes">
+          <div class="attr-row" data-attr="menuLabel">
+            <input class="input input--mono" value="menuLabel" aria-label="Attribute key" />
+            <input class="input" value="CRM" aria-label="Attribute value" />
+            <button type="button" class="btn btn-ghost btn-sm" data-action="remove-attr" aria-label="Remove menuLabel">✕</button>
+          </div>
+          <div class="attr-row" data-attr="chrome.menu">
+            <input class="input input--mono" value="chrome.menu" aria-label="Attribute key" />
+            <input class="input" value="host" aria-label="Attribute value" />
+            <button type="button" class="btn btn-ghost btn-sm" data-action="remove-attr" aria-label="Remove chrome.menu">✕</button>
+          </div>
+          <div class="attr-row" data-attr="mode">
+            <input class="input input--mono" value="mode" aria-label="Attribute key" />
+            <input class="input" value="portal" aria-label="Attribute value" />
+            <button type="button" class="btn btn-ghost btn-sm" data-action="remove-attr" aria-label="Remove mode">✕</button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm" data-action="add-attr" style="margin-top: var(--space-3)">+ Add attribute</button>
+      </div>
+    </div>
+
+    <div class="savebar" data-panel="save-bar">
+      <span class="spacer muted" data-dirty="true">Unsaved changes</span>
+      <button type="button" class="btn btn-ghost" data-action="cancel">Cancel</button>
+      <button type="submit" class="btn btn-accent" data-action="save-settings">Save changes</button>
+    </div>
+  </form>
+
+  <p class="note">
+    <b>Contract.</b> Save is <code>PUT /api/v1/app-registry/apps/{slug}</code> replacing the
+    <code>AppManifest</code>; requires the <code>apps:write</code> scope. <b>Slug and</b>
+    <code>builtin</code> are immutable — rendered read-only, and the server rejects a changed slug.
+    <b>Attributes</b> are the manifest's config keys (<code>menuLabel</code>, <code>chrome.menu</code>,
+    <code>mode</code>, …) edited as key/value rows. A validation failure returns
+    <code>422</code> rendered inline on the offending field (never a toast that loses the form); a
+    concurrent-edit <code>409</code> and a <code>403</code> denial are contract — see frame (f).
+    A caller without <code>apps:write</code> sees this whole form read-only with no Save affordance.
+  </p>
+
+  <nav class="pager"><a href="02-app-detail.html">← Overview</a><a href="04-installations.html">Next: Installations →</a></nav>
+</div>
+</body>
+</html>
