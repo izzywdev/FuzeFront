@@ -339,6 +339,8 @@ export interface FlowChallenge {
   to?: string
   password_fields?: boolean
   response_errors?: Record<string, Array<{ string?: string; code?: string }>>
+  /** ak-stage-consent's confirmation token — POST it back to advance. */
+  token?: string
   [key: string]: unknown
 }
 
@@ -656,25 +658,34 @@ export async function completeOidcWithSession(
     // stages. So: detect that shell URL and call the JSON API directly
     // instead of trying to parse the shell page itself.
     const flowShellMatch = !next ? location.match(/\/if\/flow\/([^/?]+)\/(?:\?(.*))?$/) : null
+    let flowStageSeen: string | undefined
     if (flowShellMatch) {
       // We're not reading this hop's body — hand the socket back before
       // issuing the flow-executor request (see drainBody).
       drainBody(res)
       const [, slug, flowQuery] = flowShellMatch
-      const challenge = await flowRequest(base, slug, jar, undefined, deadline, flowQuery)
+      let challenge = await flowRequest(base, slug, jar, undefined, deadline, flowQuery)
+      if (challenge.component === 'ak-stage-consent' && typeof challenge.token === 'string') {
+        // Confirmed against real Authentik 2026.5.5 in CI: even with the
+        // provider set to implicit consent, the flow executor still renders
+        // ConsentStage exactly once via the API (the browser client would
+        // auto-submit it without ever showing UI) — POST its token back to
+        // confirm, which then resolves to the actual redirect challenge.
+        challenge = await flowRequest(
+          base,
+          slug,
+          jar,
+          { component: 'ak-stage-consent', token: challenge.token },
+          deadline,
+          flowQuery
+        )
+      }
       const isRedirectChallenge =
         challenge.component === 'xak-flow-redirect' || challenge.type === 'redirect'
       if (isRedirectChallenge && typeof challenge.to === 'string') {
         next = challenge.to
       } else {
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 2): the shell-URL
-        // detection + flowRequest() call is confirmed reached, but CI still hit
-        // the fallback error afterward. Log the actual challenge the
-        // flow-executor returned so this isn't a fourth guess.
-        logger.warn(
-          { hop, slug, flowQuery, challenge },
-          'authentikPassword: DIAGNOSTIC — flow-executor challenge after shell redirect was not a recognized redirect'
-        )
+        flowStageSeen = challenge.component || challenge.type
       }
     } else {
       // Nothing else in this chain ever reads an authorize response BODY —
@@ -685,11 +696,13 @@ export async function completeOidcWithSession(
 
     if (!next) {
       // Genuinely no Location header, not the flow-shell redirect, or a
-      // flow-executor challenge that wasn't a redirect: Authentik rendered a
-      // flow UI (consent / re-auth) — implicit consent is expected on the
-      // FuzeFront provider.
+      // flow-executor challenge that wasn't a redirect (or ak-stage-consent)
+      // — Authentik rendered a flow UI needing real interaction (e.g. MFA,
+      // a required re-auth); implicit consent is expected on the FuzeFront
+      // provider, so this is a genuine "cannot proceed headlessly" case.
       throw new UnsupportedFlowStageError(
-        `authorize returned HTTP ${res.status} without redirect (consent flow?)`
+        flowStageSeen ??
+          `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
     }
     const resolvedUrl = new URL(next, location)

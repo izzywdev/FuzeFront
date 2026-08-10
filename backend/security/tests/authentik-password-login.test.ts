@@ -301,13 +301,16 @@ describe('authentikPasswordLogin()', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('follows the /if/flow/ shell redirect via the flow-executor JSON API (Authentik >=2026.x)', async () => {
+  it('follows the /if/flow/ shell redirect, confirms ak-stage-consent, then follows the resulting redirect (Authentik >=2026.x)', async () => {
     // Confirmed against real Authentik 2026.5.5 in CI: when implicit consent
     // resolves, the authorize hop's 302 lands on the flow's browser SHELL
     // page (/if/flow/<slug>/?<original-query>) — real HTML, regardless of
-    // Accept: application/json, because it's the SPA entry point. The
-    // machine-readable challenge only comes from a SEPARATE call to the
-    // flow-executor JSON API for the same slug+query.
+    // Accept: application/json, because it's the SPA entry point. GETting the
+    // flow-executor JSON API for that slug+query renders ConsentStage
+    // (component: 'ak-stage-consent') exactly once, even with the provider
+    // set to implicit consent — the browser client would auto-submit it
+    // without ever showing UI, so the headless driver must POST the token
+    // back itself to get the actual redirect challenge.
     fetchMock
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'ak-stage-identification' } })
@@ -327,8 +330,11 @@ describe('authentikPasswordLogin()', () => {
       // hop 1: GET the shell page -> 200 HTML (not read; only its URL is used
       // to derive the flow-executor call).
       .mockResolvedValueOnce(mkRes({ status: 200 }))
-      // The flow-executor JSON API for the same slug+query resolves the
-      // already-authenticated implicit-consent flow to a redirect challenge.
+      // flowRequest GET: the flow-executor renders the consent stage.
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-consent', token: 'consent-token-abc' } })
+      )
+      // flowRequest POST: confirming the token resolves to the redirect.
       .mockResolvedValueOnce(
         mkRes({
           json: { component: 'xak-flow-redirect', to: `${REDIRECT_URI}?code=the-code&state=st` },
@@ -343,11 +349,19 @@ describe('authentikPasswordLogin()', () => {
       'st',
       'test-code-verifier'
     )
-    // The flow-executor call carries the original authorize query forward.
-    const [flowExecutorUrl] = fetchMock.mock.calls[5]
-    expect(flowExecutorUrl).toBe(
+    // The flow-executor GET carries the original authorize query forward.
+    const [flowExecutorGetUrl] = fetchMock.mock.calls[5]
+    expect(flowExecutorGetUrl).toBe(
       'http://auth.example.test/api/v3/flows/executor/fuzefront-authorization-implicit-consent/?query=client_id%3Dx%26state%3Dst'
     )
+    // The consent confirmation POSTs the token back to the SAME URL.
+    const [consentPostUrl, consentPostInit] = fetchMock.mock.calls[6]
+    expect(consentPostUrl).toBe(flowExecutorGetUrl)
+    expect(consentPostInit.method).toBe('POST')
+    expect(JSON.parse(consentPostInit.body as string)).toEqual({
+      component: 'ak-stage-consent',
+      token: 'consent-token-abc',
+    })
   })
 
   it('follows a relative "to" from the flow-executor redirect challenge, then a further hop', async () => {
@@ -367,7 +381,8 @@ describe('authentikPasswordLogin()', () => {
         })
       )
       .mockResolvedValueOnce(mkRes({ status: 200 }))
-      // Flow-executor challenge with a path-only `to`, resolved against the
+      // No consent stage this time — the flow-executor resolves straight to
+      // a redirect challenge with a path-only `to`, resolved against the
       // Authentik-origin shell URL (not the flow-executor URL itself).
       .mockResolvedValueOnce(
         mkRes({

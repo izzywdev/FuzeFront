@@ -94,6 +94,8 @@ interface FlowChallenge {
   to?: string
   password_fields?: boolean
   response_errors?: Record<string, Array<{ string?: string; code?: string }>>
+  /** ak-stage-consent's confirmation token — POST it back to advance. */
+  token?: string
   [key: string]: unknown
 }
 
@@ -291,27 +293,36 @@ export async function authentikPasswordLogin(
     // stages. So: detect that shell URL and call the JSON API directly
     // instead of trying to parse the shell page itself.
     const flowShellMatch = !next ? location.match(/\/if\/flow\/([^/?]+)\/(?:\?(.*))?$/) : null
+    let flowStageSeen: string | undefined
     if (flowShellMatch) {
       const [, slug, flowQuery] = flowShellMatch
-      const challenge = await flowRequest(base, slug, jar, undefined, flowQuery)
+      let challenge = await flowRequest(base, slug, jar, undefined, flowQuery)
+      if (challenge.component === 'ak-stage-consent' && typeof challenge.token === 'string') {
+        // Confirmed against real Authentik 2026.5.5 in CI: even with the
+        // provider set to implicit consent, the flow executor still renders
+        // ConsentStage exactly once via the API (the browser client would
+        // auto-submit it without ever showing UI) — POST its token back to
+        // confirm, which then resolves to the actual redirect challenge.
+        challenge = await flowRequest(
+          base,
+          slug,
+          jar,
+          { component: 'ak-stage-consent', token: challenge.token },
+          flowQuery
+        )
+      }
       const isRedirectChallenge =
         challenge.component === 'xak-flow-redirect' || challenge.type === 'redirect'
       if (isRedirectChallenge && typeof challenge.to === 'string') {
         next = challenge.to
       } else {
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 2): the shell-URL
-        // detection + flowRequest() call is confirmed reached, but CI still hit
-        // the fallback error afterward. Log the actual challenge the
-        // flow-executor returned so this isn't a fourth guess.
-        console.warn(
-          'authentikPassword: DIAGNOSTIC — flow-executor challenge after shell redirect was not a recognized redirect',
-          { hop, slug, flowQuery, challenge }
-        )
+        flowStageSeen = challenge.component || challenge.type
       }
     }
     if (!next) {
       throw new UnsupportedFlowStageError(
-        `authorize returned HTTP ${res.status} without redirect (consent flow?)`
+        flowStageSeen ??
+          `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
     }
     const resolvedUrl = new URL(next, location)
