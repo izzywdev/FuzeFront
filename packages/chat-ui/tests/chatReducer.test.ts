@@ -1,23 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { chatReducer, initialModel, type ChatModel } from '../src/hooks/chatReducer';
 
+const T = '2026-08-10T00:00:00.000Z';
+
 function withTurn(): ChatModel {
-  let s = chatReducer(initialModel, { kind: 'user_message', id: 'u1', content: 'hi' });
-  s = chatReducer(s, { kind: 'assistant_start', id: 'a1' });
+  let s = chatReducer(initialModel, { kind: 'user_message', id: 'u1', content: 'hi', createdAt: T });
+  s = chatReducer(s, { kind: 'assistant_start', id: 'a1', createdAt: T });
   return s;
 }
 
 describe('chatReducer', () => {
   it('appends a user message', () => {
-    const s = chatReducer(initialModel, { kind: 'user_message', id: 'u1', content: 'hello' });
+    const s = chatReducer(initialModel, {
+      kind: 'user_message',
+      id: 'u1',
+      content: 'hello',
+      createdAt: T,
+    });
     expect(s.messages).toHaveLength(1);
-    expect(s.messages[0]).toMatchObject({ role: 'user', content: 'hello', streaming: false });
+    expect(s.messages[0]).toMatchObject({ role: 'user', content: 'hello', streaming: false, createdAt: T });
   });
 
   it('starts a streaming assistant message', () => {
     const s = withTurn();
     expect(s.streaming).toBe(true);
-    expect(s.messages[1]).toMatchObject({ role: 'assistant', content: '', streaming: true });
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', content: '', streaming: true, createdAt: T });
   });
 
   it('accumulates text_delta into the assistant message', () => {

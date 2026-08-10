@@ -40,8 +40,8 @@ export interface ChatModel {
 }
 
 export type ChatAction =
-  | { kind: 'user_message'; id: string; content: string }
-  | { kind: 'assistant_start'; id: string }
+  | { kind: 'user_message'; id: string; content: string; createdAt: string }
+  | { kind: 'assistant_start'; id: string; createdAt: string }
   | { kind: 'stream_event'; event: ChatStreamEvent }
   | { kind: 'set_feedback'; id: string; feedback: 'positive' | 'negative' }
   | { kind: 'confirm_running'; confirmationId: string }
@@ -103,7 +103,13 @@ export function chatReducer(state: ChatModel, action: ChatAction): ChatModel {
         sendCount: state.sendCount + 1,
         messages: [
           ...state.messages,
-          { id: action.id, role: 'user', content: action.content, streaming: false },
+          {
+            id: action.id,
+            role: 'user',
+            content: action.content,
+            streaming: false,
+            createdAt: action.createdAt,
+          },
         ],
       };
 
@@ -113,7 +119,7 @@ export function chatReducer(state: ChatModel, action: ChatAction): ChatModel {
         streaming: true,
         messages: [
           ...state.messages,
-          { id: action.id, role: 'assistant', content: '', streaming: true },
+          { id: action.id, role: 'assistant', content: '', streaming: true, createdAt: action.createdAt },
         ],
       };
 
