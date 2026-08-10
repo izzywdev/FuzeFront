@@ -6,7 +6,9 @@ import type { AuthTransport, AuthMethods, AuthenticatedSession, MfaRequiredChall
 const AUTHENTICATED: AuthenticatedSession = {
   status: 'authenticated',
   token: 'tok-123',
-  user: { id: 'u1' },
+  // Must satisfy the contract's `User` shape. Was `{ id: 'u1' }`, which only
+  // compiled while SessionResult.user was `unknown` — the gap this change closes.
+  user: { id: 'u1', email: 'u1@example.test', roles: [] },
 }
 
 const MFA_CHALLENGE: MfaRequiredChallenge = {

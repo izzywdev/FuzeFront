@@ -7,6 +7,8 @@ import {
   requireOwnership,
 } from '../middleware/permissions'
 import { db } from '../config/database'
+import { enqueueEvent } from '@fuzefront/core'
+import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
@@ -180,6 +182,32 @@ router.post('/', authenticateToken, async (req: any, res) => {
         permissions: JSON.stringify({}),
         metadata: JSON.stringify({}),
       })
+
+      // Emit lifecycle events via the transactional outbox — persisted in the
+      // SAME transaction as the org+membership rows, so downstream services are
+      // notified iff the create actually committed (the relay publishes later).
+      await enqueueEvent(
+        trx,
+        TOPICS.IDENTITY_ORG_CREATED,
+        {
+          organizationId,
+          slug: input.slug,
+          name: input.name,
+          type: input.type,
+          parentId: input.parent_id ?? null,
+          ownerId: req.user.id,
+          isActive: true,
+          settings: input.settings,
+          metadata: input.metadata,
+        },
+        `identity-org-created-${organizationId}`
+      )
+      await enqueueEvent(
+        trx,
+        TOPICS.IDENTITY_MEMBERSHIP_ADDED,
+        { organizationId, userId: req.user.id, role: 'owner' },
+        `identity-membership-added-${uuidv4()}`
+      )
     })
 
     // Fetch the created organization
@@ -254,9 +282,11 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const sortField = validSortFields.includes(sort) ? sort : 'name'
     const sortOrder = ['asc', 'desc'].includes(order) ? order : 'asc'
 
-    // Build query
+    // Build query. Also project the caller's own membership role (via the
+    // left-join below) as `user_role` so the UI can show "your role" and
+    // distinguish a real member from someone merely seeing a platform org.
     let query = db('organizations')
-      .select('organizations.*')
+      .select('organizations.*', 'organization_memberships.role as user_role')
       .leftJoin('organization_memberships', function () {
         this.on(
           'organizations.id',
@@ -326,8 +356,15 @@ router.get('/', authenticateToken, async (req: any, res) => {
       .limit(limitNum)
       .offset(offset)
 
-    // Transform results
-    const transformedOrganizations: Organization[] = organizations.map(org => ({
+    // Transform results. `user_role` is the caller's own role in each org, or
+    // `null` when they are NOT a member (they can still see `platform`-type orgs
+    // without belonging to them). An owner always resolves to 'owner' even if a
+    // membership row is somehow missing — the owner is authoritative over any
+    // stale/absent membership row.
+    type OrgRole = OrganizationMembership['role']
+    const transformedOrganizations: Array<
+      Organization & { user_role: OrgRole | null }
+    > = organizations.map(org => ({
       id: org.id,
       name: org.name,
       slug: org.slug,
@@ -339,6 +376,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
       is_active: org.is_active,
       created_at: org.created_at,
       updated_at: org.updated_at,
+      user_role:
+        (org.user_role as OrgRole | null) ??
+        (org.owner_id === req.user.id ? 'owner' : null),
     }))
 
     res.json({
@@ -367,9 +407,11 @@ router.get(
     try {
       const { id } = req.params
 
-      // Check if user has access to this organization
+      // Check if user has access to this organization. Project the caller's own
+      // membership role (via the left-join) as `user_role`, mirroring the list
+      // endpoint so the UI can show the role and detect non-membership.
       const organization = await db('organizations')
-        .select('organizations.*')
+        .select('organizations.*', 'organization_memberships.role as user_role')
         .leftJoin('organization_memberships', function () {
           this.on(
             'organizations.id',
@@ -403,7 +445,8 @@ router.get(
           .json({ error: 'Organization not found or access denied' })
       }
 
-      const result: Organization = {
+      type OrgRole = OrganizationMembership['role']
+      const result: Organization & { user_role: OrgRole | null } = {
         id: organization.id,
         name: organization.name,
         slug: organization.slug,
@@ -415,6 +458,9 @@ router.get(
         is_active: organization.is_active,
         created_at: organization.created_at,
         updated_at: organization.updated_at,
+        user_role:
+          (organization.user_role as OrgRole | null) ??
+          (organization.owner_id === req.user.id ? 'owner' : null),
       }
 
       res.json(result)
@@ -472,21 +518,39 @@ router.put(
         }
       }
 
-      // Update organization
-      await db('organizations')
-        .where('id', id)
-        .update({
-          name: input.name,
-          slug: input.slug,
-          settings: JSON.stringify(input.settings),
-          metadata: JSON.stringify(input.metadata),
-          updated_at: new Date(),
-        })
+      // Update organization + emit identity.org.updated in one transaction so
+      // the event commits atomically with the change (see enqueueEvent).
+      let updatedOrganization: any
+      await db.transaction(async trx => {
+        await trx('organizations')
+          .where('id', id)
+          .update({
+            name: input.name,
+            slug: input.slug,
+            settings: JSON.stringify(input.settings),
+            metadata: JSON.stringify(input.metadata),
+            updated_at: new Date(),
+          })
 
-      // Fetch updated organization
-      const updatedOrganization = await db('organizations')
-        .where('id', id)
-        .first()
+        updatedOrganization = await trx('organizations').where('id', id).first()
+
+        await enqueueEvent(
+          trx,
+          TOPICS.IDENTITY_ORG_UPDATED,
+          {
+            organizationId: updatedOrganization.id,
+            slug: updatedOrganization.slug,
+            name: updatedOrganization.name,
+            type: updatedOrganization.type,
+            parentId: updatedOrganization.parent_id ?? null,
+            ownerId: updatedOrganization.owner_id ?? null,
+            isActive: !!updatedOrganization.is_active,
+            settings: parseJsonb(updatedOrganization.settings),
+            metadata: parseJsonb(updatedOrganization.metadata),
+          },
+          `identity-org-updated-${uuidv4()}`
+        )
+      })
 
       const result: Organization = {
         id: updatedOrganization.id,
@@ -554,10 +618,26 @@ router.delete(
         })
       }
 
-      // Deactivate organization (soft delete)
-      await db('organizations').where('id', id).update({
-        is_active: false,
-        updated_at: new Date(),
+      // Deactivate organization (soft delete) + emit identity.org.deleted in
+      // one transaction. cascade:'soft' — consumers deactivate their per-org
+      // state (Permit tenant, billing, portals) rather than hard-purging.
+      await db.transaction(async trx => {
+        const org = await trx('organizations').where('id', id).first()
+        await trx('organizations').where('id', id).update({
+          is_active: false,
+          updated_at: new Date(),
+        })
+        await enqueueEvent(
+          trx,
+          TOPICS.IDENTITY_ORG_DELETED,
+          {
+            organizationId: id,
+            slug: org?.slug ?? '',
+            ownerId: org?.owner_id ?? null,
+            cascade: 'soft',
+          },
+          `identity-org-deleted-${uuidv4()}`
+        )
       })
 
       res.json({ message: 'Organization deactivated successfully' })

@@ -33,7 +33,9 @@ spec:
             - name: DB_PORT
               value: {{ .Values.fuzeinfra.postgres.port | quote }}
             - name: DB_NAME
-              value: {{ .Values.database.name | quote }}
+              # Dedicated DB (see notificationService.dbName) so knex_migrations
+              # never collides with the backend's ledger in fuzefront_platform.
+              value: {{ .Values.notificationService.dbName | quote }}
             - name: DB_USER
               value: {{ .Values.database.user | quote }}
             - name: DB_PASSWORD

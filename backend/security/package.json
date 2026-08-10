@@ -1,6 +1,7 @@
 {
   "name": "@fuzefront/security-service",
   "version": "1.0.0",
+  "private": true,
   "description": "FuzeFront security-service: auth, organizations, provisioning, OIDC, Permit",
   "main": "dist/index.js",
   "scripts": {

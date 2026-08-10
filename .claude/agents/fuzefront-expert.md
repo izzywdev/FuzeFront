@@ -16,7 +16,7 @@ A **Module-Federation host shell** ("runtime fabric"): a dark-default dashboard 
 - `backend/` — Express + TypeScript + Postgres (knex) + Socket.io on **:3001**. Auth: local JWT **and** Authentik OIDC (`src/services/oidc.ts`); permissions via **Permit.io** (`src/utils/permit/*`, degrades gracefully without a PDP). It is an **npm workspace member** (root `package.json` `workspaces: [backend, shared]`).
 - `shared/` — shared types (workspace member).
 - `sdk/` — `@izzywdev/fuzefront-sdk-react`, published to npm by `.github/workflows/sdk-publish.yml`.
-- `clock-app/`, `task-manager-app/` — example remote micro-frontends.
+- `clock-app/` — example remote micro-frontend.
 - `design-system/` — standalone "fuse seam" design system package (tokens, components, guideline cards, `build.mjs`). See `design-system/readme.md` / its `SKILL.md`.
 - `deploy/helm/fuzefront/` — the Helm chart. `deploy/local-tls/` — local cert-manager CA. `FuzeInfra/` — git submodule providing shared k8s infra.
 

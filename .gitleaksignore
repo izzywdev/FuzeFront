@@ -17,3 +17,8 @@
 # client input). It was replaced with a synthetic UUID in a later commit, but it
 # remains in this commit's history and history is not rewritten on this repo.
 6c21dfd3e67158b0059b1657eb7f65b722dc50a0:packages/feature-flags/tests/unleash-provider.test.ts:generic-api-key:13
+# deploy/contabo/sealed/fuzefront-secrets.yaml — CONSUMER_REGISTRATION_SECRET is a
+# kubeseal-encrypted ciphertext bound to the fuzefront-secrets SealedSecret in the
+# fuzefront namespace. It is asymmetrically encrypted with the cluster's public key
+# and cannot be decrypted outside the cluster. Safe to commit (SealedSecrets design intent).
+53fa34b2d69b1508748dc6bd9c3caec969438ad8:deploy/contabo/sealed/fuzefront-secrets.yaml:generic-api-key:16

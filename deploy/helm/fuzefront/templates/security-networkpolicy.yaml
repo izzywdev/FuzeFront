@@ -25,6 +25,12 @@
 */}}
 {{- if and .Values.securityService.enabled .Values.securityService.networkPolicy.enabled }}
 {{- $np := .Values.securityService.networkPolicy }}
+{{- /* Every $np lookup below carries an inline `default`. An invalid NetworkPolicy
+     (e.g. `port: 0` from a missing value) is rejected by the API server and fails the
+     ENTIRE Argo sync of this application, so no Deployment rolls — which is exactly how
+     a values.yaml rewrite that dropped these keys froze prod for days (FuzeInfra#501).
+     A defaulted-but-wrong policy has a blast radius of one policy; an unrenderable one
+     stops every deploy. Keep the defaults in sync with values.yaml. */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -45,24 +51,24 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | default "kube-system" | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | default 3002 | int }}
     # Intra-fuzefront: any pod in this namespace (e.g. provisioning-service's
     # server-side session verification call).
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | default 3002 | int }}
     # NEW — the reason this policy exists: mendys-prod's datasets-service
     # authenticates against fuzefront-security in-cluster.
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ $np.mendysProdNamespace | quote }}
+              kubernetes.io/metadata.name: {{ $np.mendysProdNamespace | default "mendys-prod" | quote }}
       ports:
         - protocol: TCP
-          port: {{ $np.port }}
+          port: {{ $np.port | default 3002 | int }}
 {{- end }}
