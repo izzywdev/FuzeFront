@@ -376,6 +376,15 @@ export async function flowRequest(
       headers['Content-Type'] = 'application/json'
       const csrf = jar.get('authentik_csrf')
       if (csrf) headers['X-CSRFToken'] = csrf
+      if (slug.includes('authorization-implicit-consent')) {
+        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 5): the cookie
+        // jar has the CSRF value right before this call, yet Authentik still
+        // reports "CSRF token missing" — log exactly what this fetch sends.
+        logger.warn(
+          { hop, slug, url, headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined }, payload },
+          'authentikPassword: DIAGNOSTIC — outgoing headers for the consent-flow POST'
+        )
+      }
     }
 
     let res: Response
