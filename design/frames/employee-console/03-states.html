@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Employee console — states</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body data-frame="03-states">
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <button class="ctx-pill"><span class="ctx-avatar">⛨</span> Staff console <span class="caret">▾</span></button>
+    <div class="avatar">JM</div>
+  </header>
+  <main class="content">
+    <h1 class="page-title">States — contract, not decoration</h1>
+    <p class="page-sub">Every state the staff console must render, for RED Playwright specs.</p>
+
+    <div class="states">
+      <!-- c1 loading -->
+      <div class="state-card" data-state="loading" aria-busy="true">
+        <span class="cap">c1 · loading</span>
+        <h3>Resolving your staff scope…</h3>
+        <div class="skel" style="width: 55%"></div>
+        <div class="skel" style="width: 85%"></div>
+        <div class="skel" style="width: 70%"></div>
+        <p class="page-sub" style="margin:0; font-size: var(--text-sm)"><code>aria-busy="true"</code> while the ReBAC-scoped org tree is evaluated.</p>
+      </div>
+
+      <!-- c2 empty -->
+      <div class="state-card" data-state="empty">
+        <span class="cap">c2 · empty (real)</span>
+        <div class="empty">
+          <span class="notice"><span class="ico">🛰️</span></span>
+          <h3>No customer orgs yet</h3>
+          <p class="page-sub" style="margin:0">On a fresh platform the only reachable org is root itself.
+            Empty is real — the explorer shows root and nothing below it.</p>
+        </div>
+      </div>
+
+      <!-- c3 error + retry -->
+      <div class="state-card" data-state="error">
+        <span class="cap">c3 · error + retry</span>
+        <div class="notice">
+          <span class="ico">⚠️</span>
+          <h3>Couldn't load the org tree</h3>
+          <p class="page-sub" style="margin:0">A non-2xx while evaluating scope. Show retry; never fall back to an unscoped list.</p>
+          <button class="btn btn-ghost retry" data-action="retry">Retry</button>
+        </div>
+      </div>
+
+      <!-- c4 not staff — 403 in place -->
+      <div class="state-card" data-state="forbidden" data-http="403" data-error-code="FORBIDDEN">
+        <span class="cap">c4 · fail-closed · 403 in place</span>
+        <div class="notice forbidden">
+          <span class="ico">⛔</span>
+          <h3>You are not platform staff</h3>
+          <p class="page-sub" style="margin:0; color: var(--text-secondary)">The staff console requires the
+            <b>Employee</b> role (ReBAC <code>org-admin</code>-on-root). A non-Employee reaching
+            <code>/staff</code> gets <code>403 FORBIDDEN</code> rendered <b>in place</b> with zero cross-org
+            data — <b>never a sign-in redirect</b>; only a <code>401</code> re-authenticates.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="frame-caption">
+  <span>Frame (c) · <b>States</b> · loading · empty · error · 403-in-place (non-Employee)</span>
+  <span><a href="02-org-drilldown.html">← drill-down</a> &nbsp;·&nbsp; <a href="index.html">index →</a></span>
+</div>
+</body>
+</html>
