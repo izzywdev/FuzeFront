@@ -5,11 +5,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "prebuild": "npm run --prefix ../../shared build:kafka",
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "test": "jest"
   },
   "dependencies": {
+    "@fuzefront/shared": "1.0.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "helmet": "^7.1.0",

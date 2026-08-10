@@ -1,9 +1,14 @@
 {{- /*
-  The full path fan-out, defined ONCE and emitted with a YAML anchor (&fanout)
-  on the canonical host rule, then aliased (*fanout) by the tenant-wildcard
-  rule below. Structural, not a review item: it is impossible for a tenant
-  subdomain to route differently from app.fuzefront.com, because there is only
-  one list and the YAML parser expands the alias to it.
+  The full path fan-out, defined ONCE here and included by BOTH the canonical
+  host rule and the tenant-wildcard Ingress at the bottom of this file.
+  Structural, not a review item: a tenant subdomain cannot route differently
+  from app.fuzefront.com, because there is only one definition of the list.
+
+  This was originally a YAML anchor (&fanout / *fanout). That worked while both
+  rules lived in one Ingress object, but the wildcard had to move to its own
+  object to carry a Traefik router.priority annotation (see the comment there),
+  and a YAML anchor cannot be referenced across documents. Both call sites now
+  include this helper instead, which preserves the same guarantee.
 
   Do NOT inline these paths into the wildcard rule. FF-EPIC-16 / FFRNT-91.
 */}}
@@ -111,27 +116,69 @@ spec:
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
-      http: &fanout
+      http:
         paths:
           {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
-    {{- if .Values.ingress.wildcardHost }}
-    # Tenant subdomains — FF-EPIC-16 / FFRNT-91.
-    #
-    # Kubernetes wildcard hosts match exactly ONE label, and exact hosts beat
-    # wildcards, so `{{ .Values.ingress.host }}` keeps winning and every other
-    # explicit host (auth, plan, the admin *.prod wall) is unaffected. Order
-    # does not matter.
-    #
-    # NO tls: block here, deliberately. Cloudflare terminates edge TLS
-    # (Universal SSL already covers one wildcard label) and the tunnel delivers
-    # plain HTTP to the ingress controller. Adding tls: would either do nothing
-    # or break the path — see FuzeInfra CUSTOM_DOMAINS.md §2/§3.
-    #
-    # `*fanout` aliases the canonical host's path list. A tenant subdomain
-    # therefore CANNOT drift from the canonical host: there is one list.
-    - host: {{ .Values.ingress.wildcardHost | quote }}
-      http: *fanout
+{{- if .Values.ingress.wildcardHost }}
+---
+# Tenant subdomains — FF-EPIC-16 / FFRNT-91.
+#
+# A SEPARATE Ingress object, NOT a second rule on the main one. That is a
+# correctness requirement on Traefik, not a style choice:
+#
+#   Traefik orders routers by RULE LENGTH, not host specificity. The rule it
+#   generates for a wildcard host is a HostRegexp(...), which is LONGER than
+#   Host(`plan.fuzefront.com`) — so the wildcard OUTRANKS every exact single-
+#   label host in the cluster and silently swallows it.
+#
+#   This is not theoretical. Shipping the wildcard as a second rule on the main
+#   Ingress (PR #431) took FuzePlan down in production: plan.fuzefront.com
+#   served the FuzeFront shell instead of fuzeplan-frontend. Reverted in #437.
+#
+#   MEASURED on rancher/mirrored-library-traefik:3.6.13 (the prod image), file
+#   provider, two routers, no explicit priority:
+#     Host: plan.fuzefront.com  -> wildcard-fuzefront@file  (WRONG — shadowed)
+#   With `priority: 1` on the wildcard router only:
+#     Host: plan.fuzefront.com  -> exact-plan@file          (correct)
+#     Host: corpabc.fuzefront.com -> wildcard-fuzefront@file (correct)
+#
+# `router.priority` is a PER-INGRESS-OBJECT annotation, so the wildcard rule
+# cannot be de-prioritised while it shares an object with the canonical host.
+# Hence the split. Do not merge this back into the main Ingress.
+#
+# ingress-nginx (local) follows the Kubernetes spec and prefers exact hosts on
+# its own, so the annotation is inert there and this is harmless.
+#
+# NO tls: block, deliberately — Cloudflare terminates edge TLS (Universal SSL
+# covers one wildcard label) and the tunnel delivers plain HTTP.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-tenant-wildcard
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tenant-wildcard
+  annotations:
+    {{- if eq .Values.ingress.className "traefik" }}
+    # Lower number = lower precedence. Any exact-host router (whose priority
+    # defaults to its rule length, far above this) therefore wins.
+    traefik.ingress.kubernetes.io/router.priority: {{ .Values.ingress.wildcardPriority | default 1 | quote }}
     {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    # Same fan-out as the canonical host, from the same helper — a tenant
+    # subdomain cannot drift from app.fuzefront.com because there is one
+    # definition. (A YAML anchor cannot cross documents, so this includes the
+    # helper directly rather than aliasing *fanout.)
+    - host: {{ .Values.ingress.wildcardHost | quote }}
+      http:
+        paths:
+          {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
+{{- end }}
 {{- if .Values.clockApp.enabled }}
 ---
 # Clock-app remote, same-origin under the app host at /apps/clock/. A SEPARATE

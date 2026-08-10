@@ -26,8 +26,13 @@ name: Publish packages (GitHub Packages, private)
 # last part is what the per-package publishers this replaces got wrong.
 #
 # Publishing is idempotent — a version already in the registry is skipped, not
-# overwritten — so re-runs and any overlap with the remaining per-package
-# publishers are both safe.
+# overwritten — so a re-run after a partial failure is safe. The first live run
+# exercised exactly that: 13 published, 5 skipped, 0 failed, the 5 being versions
+# the interim per-package publishers had already shipped.
+#
+# Those interim publishers (chat/auth-ui/design-system/security) are now DELETED.
+# Their own headers said to remove them once this workflow worked; it does, and
+# it is a strict superset — all 5 of their packages are among the 18 here.
 #
 # VERSIONS ARE BUMPED IN THE PR, NOT HERE. The old design had lerna compute
 # conventional-commit bumps and push the version commit + tags back to master.
@@ -71,13 +76,36 @@ jobs:
         # proves nothing about that, so assert it before shipping anything.
         run: node --test scripts/__tests__/publish-packages.test.mjs
 
-      - name: Build packages (topological, if a build script exists)
-        run: npx lerna run build --if-present
+      - name: Build packages (topological)
+        # NOT `--if-present`: lerna 10 removed it and errors with
+        # "Unknown arguments: if-present, ifPresent". That flag was inherited
+        # from this workflow's original form and had never executed — the job was
+        # gated on an owner that does not exist, so every run for the life of the
+        # file was a skip. Fixing the guard is what first ran this line.
+        #
+        # The flag is also unnecessary: `lerna run <script>` already skips
+        # packages that do not define it. Verified locally — 24 projects built,
+        # exit 0.
+        run: npx lerna run build
 
       - name: Resolve what would publish
         run: node scripts/publish-packages.mjs --dry-run
 
       - name: Publish
         env:
+          # BOTH names, and that is not redundant. setup-node writes an .npmrc
+          # referencing NODE_AUTH_TOKEN, but the repo-root .npmrc is
+          # PROJECT-level and outranks it — and that one references
+          # ${GITHUB_TOKEN}. With only NODE_AUTH_TOKEN set, ${GITHUB_TOKEN}
+          # expanded to empty and every publish 401'd:
+          #
+          #   npm error 401 Unauthorized - PUT .../@izzywdev%2ffuzefront-design-system
+          #   unauthenticated: User cannot be authenticated with the token provided
+          #   publish-packages: 0 published, 0 skipped, 18 failed
+          #
+          # Exactly the failure FuzeFront#558 hit and #559 fixed for the
+          # per-package publishers; this workflow never reached the publish step
+          # before today, so it never inherited the fix.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/publish-packages.mjs

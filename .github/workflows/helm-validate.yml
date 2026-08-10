@@ -22,6 +22,20 @@ jobs:
       matrix:
         values: [values-local.yaml, values-prod.yaml]
     steps:
+      # GitHub-hosted ubuntu-latest runners occasionally provision with an
+      # uninitialised ca-certificates bundle (CAfile: none / CRLfile: none),
+      # causing git SSL verification to fail during checkout (exit 128).
+      # This guard installs the package only when the bundle is missing/empty
+      # so it is a no-op on correctly configured runners. Must run BEFORE
+      # actions/checkout — git needs certs to clone the repo.
+      - name: Ensure CA certificates
+        run: |
+          if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "::warning::ca-certificates bundle missing — installing (runner provisioning race)"
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ca-certificates
+            sudo update-ca-certificates
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Helm
@@ -81,3 +95,29 @@ jobs:
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/
+
+      - name: Guard NetworkPolicy port values (${{ matrix.values }})
+        run: |
+          # kubeconform validates SHAPE (NetworkPolicyPort.port is IntOrString) but
+          # not RANGE — a missing values.yaml default renders as `port: 0`, which is
+          # a syntactically valid integer, so kubeconform stays green while the live
+          # API server rejects it at admission time (ports must be 1-65535). That
+          # gap is exactly how FuzeInfra#501 shipped: a `| int` cast silently
+          # coerced an undefined value to 0 to satisfy kubeconform's oneOf schema,
+          # and every subsequent Argo sync of the whole application failed for days
+          # before anyone noticed. This step catches numeric out-of-range ports
+          # (0 or >65535) directly in the rendered manifest, with no cluster
+          # needed. Named ports (e.g. `port: http`, referencing a container port
+          # name) are valid and deliberately left unchecked.
+          fail=0
+          for f in rendered/fuzefront/templates/*.yaml; do
+            grep -q '^kind: NetworkPolicy$' "$f" || continue
+            while IFS= read -r line; do
+              val="${line#*: }"
+              if [[ "$val" =~ ^[0-9]+$ ]] && { [ "$val" -lt 1 ] || [ "$val" -gt 65535 ]; }; then
+                echo "::error file=$f::NetworkPolicy has invalid port value '$val' (must be 1-65535, got via a rendered default of 0 or similar) — see FuzeInfra#501"
+                fail=1
+              fi
+            done < <(grep -E '^\s*port:\s*' "$f")
+          done
+          exit $fail
