@@ -60,6 +60,17 @@ members reconciliation, portal-management console, Employee cross-org console, m
 design-first frames pipeline. **Critical priority — read it before starting any FF-EPIC-09/11/14 work
 touching the `portals` table**, since parts of those epics are superseded.
 
+### App Management Console (FF-EPIC-20)
+
+Closes the app-management-UI gap: the app-registry backend exists but there is no UI to list all apps,
+edit an app's settings/attributes, drive its lifecycle, or manage its installations/scopes (distinct
+from FF-EPIC-04's register→activate flow and FF-EPIC-14's per-portal catalog curation). Design-first —
+frames gate the build.
+
+| Epic Key | Title | GitHub | Domain | Priority | Effort |
+|----------|-------|--------|--------|----------|--------|
+| [FF-EPIC-20](epics/EPIC-20-app-management-console.md) | App Management Console (list / detail-settings / installations) | TBD | Frontend / Platform | High | L |
+
 ---
 
 ## Open question: target Jira project key (FFP vs FFRNT)
