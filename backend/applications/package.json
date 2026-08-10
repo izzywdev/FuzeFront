@@ -1,6 +1,7 @@
 {
   "name": "@fuzefront/applications-service",
   "version": "1.0.0",
+  "private": true,
   "description": "FuzeFront applications-service: app registry, Module-Federation remotes, heartbeat, Socket.IO",
   "main": "dist/index.js",
   "scripts": {

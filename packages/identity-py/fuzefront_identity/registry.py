@@ -27,6 +27,13 @@ ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
         "payment": "pay",
         "invoice": "inv",
         "credit": "crd",
+        # identity — the remaining spine entities the FFRNT-185 rollout mints.
+        # "ivt" not "inv": invoice already owns "inv", and a prefix collision
+        # inside one registry would defeat the whole point of the prefix.
+        "invitation": "ivt",
+        "membership": "mbr",
+        "session": "ses",
+        "mfaFactor": "mfa",
         # messaging
         "conversation": "cnv",
         "message": "msg",

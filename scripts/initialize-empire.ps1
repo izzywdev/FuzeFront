@@ -111,8 +111,7 @@ function Initialize-DNS {
     $entries = @(
         "127.0.0.1    fuzefront.local",
         "127.0.0.1    auth.fuzefront.local",
-        "127.0.0.1    api.fuzefront.local",
-        "127.0.0.1    taskmanager.fuzefront.local"
+        "127.0.0.1    api.fuzefront.local"
     )
     
     Invoke-Step "Configuring hosts file" {
@@ -202,10 +201,6 @@ function Start-CoreServices {
     
     Invoke-Step "Starting FuzeFront frontend" {
         docker compose up -d fuzefront-frontend
-    }
-    
-    Invoke-Step "Starting Task Manager app" {
-        docker compose up -d task-manager-app
     }
     
     Write-Info "Waiting for services to be ready..."
@@ -327,7 +322,6 @@ function Show-EmpireStatus {
     Write-Host "   🌐 Frontend:          http://localhost:5173" -ForegroundColor White
     Write-Host "   🌐 Frontend (domain): http://fuzefront.local:5173" -ForegroundColor White
     Write-Host "   🎯 Backend API:       http://localhost:3001" -ForegroundColor White
-    Write-Host "   📋 Task Manager:      http://localhost:3002" -ForegroundColor White
     Write-Host "   🔐 Authentik Admin:   http://auth.fuzefront.local:9000" -ForegroundColor White
     Write-Host "   🛡️  Permit.io PDP:    http://localhost:7766" -ForegroundColor White
     Write-Host "   📊 PostgreSQL:        localhost:5432" -ForegroundColor White

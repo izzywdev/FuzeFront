@@ -105,7 +105,7 @@ Write-Host "✅ Databases created" -ForegroundColor Green
 
 # Start FuzeFront services
 Write-Host "🚀 Starting FuzeFront services..." -ForegroundColor Cyan
-docker compose up -d fuzefront-backend fuzefront-frontend task-manager-app
+docker compose up -d fuzefront-backend fuzefront-frontend
 Write-Host "✅ FuzeFront core services started" -ForegroundColor Green
 
 Write-Host "ℹ️  Waiting for backend migrations..." -ForegroundColor Blue
@@ -131,7 +131,6 @@ Write-Host ""
 Write-Host "🌟 Access Points:" -ForegroundColor Magenta
 Write-Host "   Frontend:        http://localhost:5173" -ForegroundColor White
 Write-Host "   Backend API:     http://localhost:3001" -ForegroundColor White
-Write-Host "   Task Manager:    http://localhost:3002" -ForegroundColor White
 Write-Host "   Authentik:       http://auth.fuzefront.local:9000" -ForegroundColor White
 Write-Host "   Permit.io PDP:   http://localhost:7766" -ForegroundColor White
 Write-Host ""
