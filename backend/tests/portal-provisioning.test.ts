@@ -37,6 +37,8 @@ import {
 } from '../src/services/portalProvisioning'
 import { ROOT_ORG_ID } from '../src/migrations/015_seed_root_platform_organization'
 import { createAdminPortalStore } from '../src/routes/adminPortals'
+import { callbackUri } from '../src/custom-domains/authentikRedirect'
+import * as portalFlagModule from '../src/utils/portalFlag'
 
 // ---- fakes -------------------------------------------------------------
 
@@ -65,6 +67,39 @@ function makeFakePermit(
   } as any
 }
 
+/**
+ * FF-EPIC-11-S4 — fake `RedirectUriRegistrar`. `onRegister` (if supplied) runs
+ * BEFORE the call is recorded, so a test that makes it throw observes zero
+ * recorded calls for that attempt — matching the real registrar's behavior of
+ * not mutating state on a failed API call.
+ */
+function makeFakeRedirectRegistrar(onRegister?: (domain: string) => void | Promise<void>) {
+  const calls: string[] = []
+  return {
+    calls,
+    async register(domain: string) {
+      if (onRegister) await onRegister(domain)
+      calls.push(domain)
+    },
+    async deregister() {
+      /* not exercised by provisioning */
+    },
+  }
+}
+
+/** FF-EPIC-11-S4 — fake `PortalBrandRegistrar`. Same before/throw contract as
+ * {@link makeFakeRedirectRegistrar}. */
+function makeFakeBrandRegistrar(onEnsure?: (input: any) => void | Promise<void>) {
+  const calls: any[] = []
+  return {
+    calls,
+    async ensure(input: any) {
+      if (onEnsure) await onEnsure(input)
+      calls.push(input)
+    },
+  }
+}
+
 function makeFakePublisher() {
   const emails: any[] = []
   const portalCreatedEvents: any[] = []
@@ -83,12 +118,41 @@ function makeFakePublisher() {
   }
 }
 
+// FF-EPIC-11-S4 — `fuzefront.platform.multi-tenant-portals` gates the two new
+// Authentik steps (see portalProvisioning.ts's module doc). Defaults ON here
+// so the existing "wired to the real pipeline" happy-path assertions below
+// keep exercising the new steps' on-path; the dedicated flag-off describe
+// block flips it to false for its own tests and restores true afterward —
+// same convention as tests/portal-scoped-invitations.test.ts.
+let multiTenantPortalsEnabled = true
+
 beforeAll(() => {
   initializeDatabaseConnection()
+  jest
+    .spyOn(portalFlagModule, 'isMultiTenantPortalsEnabled')
+    .mockImplementation(async () => multiTenantPortalsEnabled)
 })
 
-function deps(permit: any, publish: any): Partial<PortalProvisioningDeps> {
-  return { db, permit, publish }
+afterEach(() => {
+  multiTenantPortalsEnabled = true
+  jest
+    .spyOn(portalFlagModule, 'isMultiTenantPortalsEnabled')
+    .mockImplementation(async () => multiTenantPortalsEnabled)
+})
+
+function deps(
+  permit: any,
+  publish: any,
+  extra: Partial<PortalProvisioningDeps> = {}
+): Partial<PortalProvisioningDeps> {
+  return {
+    db,
+    permit,
+    publish,
+    redirectUris: extra.redirectUris ?? makeFakeRedirectRegistrar(),
+    brandRegistrar: extra.brandRegistrar ?? makeFakeBrandRegistrar(),
+    ...extra,
+  }
 }
 
 async function createUser(): Promise<string> {
@@ -125,9 +189,15 @@ describe('provisionPortal — happy path', () => {
     const actorId = await createUser()
     const permit = makeFakePermit()
     const { publisher, emails, portalCreatedEvents } = makeFakePublisher()
+    const redirectRegistrar = makeFakeRedirectRegistrar()
+    const brandRegistrar = makeFakeBrandRegistrar()
     const input = makeInput()
 
-    const result = await provisionPortal(input, actorId, deps(permit, publisher))
+    const result = await provisionPortal(
+      input,
+      actorId,
+      deps(permit, publisher, { redirectUris: redirectRegistrar, brandRegistrar })
+    )
 
     expect(result.ok).toBe(true)
     expect(result.resumed).toBe(false)
@@ -182,6 +252,18 @@ describe('provisionPortal — happy path', () => {
       [input.slug]
     ).first()
     expect(outboxRow).toBeTruthy()
+
+    // FF-EPIC-11-S4 AC1 — the default subdomain's OIDC redirect URI is
+    // registered automatically, no manual step.
+    expect(redirectRegistrar.calls).toEqual([`${input.slug}.fuzefront.com`])
+
+    // FF-EPIC-11-S4 AC2 — the portal's Authentik brand is created for the
+    // same domain, themed from its (default) branding.
+    expect(brandRegistrar.calls).toHaveLength(1)
+    expect(brandRegistrar.calls[0]).toMatchObject({
+      domain: `${input.slug}.fuzefront.com`,
+      name: input.name,
+    })
 
     // Every step recorded done.
     const steps = await db('portal_provisioning').where({ slug: input.slug })
@@ -347,6 +429,180 @@ describe('provisionPortal — AC4: owner-invite failure never regresses status, 
       .andWhereRaw(`payload->>'slug' = ?`, [input.slug])
       .first()
     expect(outboxRow).toBeTruthy()
+  })
+})
+
+describe('provisionPortal — FF-EPIC-11-S4 AC4: redirect-registration failure fails loud (not a silent success)', () => {
+  it('records the step failed, does not transition the portal, then succeeds exactly once on resume', async () => {
+    const actorId = await createUser()
+    const { publisher } = makeFakePublisher()
+    const input = makeInput()
+
+    let failRegister = true
+    const redirectRegistrar = makeFakeRedirectRegistrar(() => {
+      if (failRegister) throw new Error('authentik outage 503')
+    })
+
+    const first = await provisionPortal(
+      input,
+      actorId,
+      deps(makeFakePermit(), publisher, { redirectUris: redirectRegistrar })
+    )
+
+    expect(first.ok).toBe(false)
+    expect(first.failedStep).toBe('authentik_redirect_register')
+    // Fail-loud: the portal row exists (created in an earlier step) but was
+    // NEVER transitioned past 'provisioning' — login is never silently
+    // broken by a portal that looks ready but has no registered redirect URI.
+    expect(first.portal).toBeTruthy()
+    expect(first.portal!.status).toBe('provisioning')
+    expect(redirectRegistrar.calls).toEqual([])
+
+    const stepRow = await db('portal_provisioning')
+      .where({ slug: input.slug, step: 'authentik_redirect_register' })
+      .first()
+    expect(stepRow.status).toBe('failed')
+    expect(stepRow.last_error).toContain('authentik outage 503')
+
+    // Fix the outage and resume.
+    failRegister = false
+    const second = await provisionPortal(
+      input,
+      actorId,
+      deps(makeFakePermit(), publisher, { redirectUris: redirectRegistrar })
+    )
+
+    expect(second.ok).toBe(true)
+    expect(second.resumed).toBe(true)
+    expect(second.portal!.status).toBe('provisioned-pending-invite')
+    expect(redirectRegistrar.calls).toEqual([`${input.slug}.fuzefront.com`])
+
+    const resolvedStep = await db('portal_provisioning')
+      .where({ slug: input.slug, step: 'authentik_redirect_register' })
+      .first()
+    expect(resolvedStep.status).toBe('done')
+  })
+})
+
+describe('provisionPortal — FF-EPIC-11-S4 AC3: multi-domain correctness', () => {
+  it('registers a distinct, correct redirect URI for every domain on the portal', async () => {
+    const actorId = await createUser()
+    const { publisher } = makeFakePublisher()
+
+    // Force the FIRST attempt to fail at the redirect step (after
+    // `default_domain_create` has already created the default subdomain and
+    // `portalId` is known, but BEFORE the completion checkpoint) — this is
+    // the pipeline's normal AC2 resumable-failure window, and it is the only
+    // way to legitimately add a second `portal_domains` row and have the
+    // step re-run: once the portal reaches `provisioned-pending-invite` a
+    // fresh `provisionPortal()` call for the same slug is a genuine
+    // duplicate (`SlugTakenError`), not a resume.
+    let failRegister = true
+    const redirectRegistrar = makeFakeRedirectRegistrar(() => {
+      if (failRegister) throw new Error('authentik outage 503')
+    })
+    const input = makeInput()
+
+    const first = await provisionPortal(
+      input,
+      actorId,
+      deps(makeFakePermit(), publisher, { redirectUris: redirectRegistrar })
+    )
+    expect(first.ok).toBe(false)
+    expect(first.failedStep).toBe('authentik_redirect_register')
+    expect(first.portal).toBeTruthy()
+
+    // Simulate a later custom domain landing on the SAME portal (FF-EPIC-16)
+    // before the step ever succeeded.
+    await db('portal_domains').insert({
+      portal_id: first.portal!.id,
+      domain: 'custom.acmecorp.example.com',
+      kind: 'custom',
+      is_primary: false,
+      verification_status: 'verified',
+      tls_status: 'issued',
+    })
+
+    failRegister = false
+    const second = await provisionPortal(
+      input,
+      actorId,
+      deps(makeFakePermit(), publisher, { redirectUris: redirectRegistrar })
+    )
+
+    expect(second.ok).toBe(true)
+    expect(second.resumed).toBe(true)
+    expect(redirectRegistrar.calls.sort()).toEqual(
+      [`${input.slug}.fuzefront.com`, 'custom.acmecorp.example.com'].sort()
+    )
+    // Each domain's own callback URI is independent — no cross-domain mismatch.
+    expect(callbackUri(`${input.slug}.fuzefront.com`)).not.toBe(
+      callbackUri('custom.acmecorp.example.com')
+    )
+  })
+})
+
+describe('provisionPortal — FF-EPIC-11-S4: flag-off leaves provisioning unchanged', () => {
+  it('registers no redirect URI / brand and still completes normally when multi-tenant-portals is OFF', async () => {
+    multiTenantPortalsEnabled = false
+    const actorId = await createUser()
+    const permit = makeFakePermit()
+    const { publisher } = makeFakePublisher()
+    const redirectRegistrar = makeFakeRedirectRegistrar()
+    const brandRegistrar = makeFakeBrandRegistrar()
+    const input = makeInput()
+
+    const result = await provisionPortal(
+      input,
+      actorId,
+      deps(permit, publisher, { redirectUris: redirectRegistrar, brandRegistrar })
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.portal!.status).toBe('provisioned-pending-invite')
+    expect(redirectRegistrar.calls).toEqual([])
+    expect(brandRegistrar.calls).toEqual([])
+
+    // Steps are still recorded done (no-op, not skipped/dangling).
+    const steps = await db('portal_provisioning').where({ slug: input.slug })
+    expect(
+      steps.find((s: any) => s.step === 'authentik_redirect_register')?.status
+    ).toBe('done')
+    expect(
+      steps.find((s: any) => s.step === 'authentik_brand_register')?.status
+    ).toBe('done')
+  })
+})
+
+describe('provisionPortal — FF-EPIC-11-S4 AC2: Authentik brand registration is best-effort', () => {
+  it('records a brand-registration failure without blocking or regressing the portal', async () => {
+    const actorId = await createUser()
+    const permit = makeFakePermit()
+    const { publisher, portalCreatedEvents } = makeFakePublisher()
+    const brandRegistrar = makeFakeBrandRegistrar(() => {
+      throw new Error('authentik brands API outage')
+    })
+    const input = makeInput()
+
+    const result = await provisionPortal(
+      input,
+      actorId,
+      deps(permit, publisher, { brandRegistrar })
+    )
+
+    // Unlike the redirect step, a brand failure never fails the call.
+    expect(result.ok).toBe(true)
+    expect(result.portal!.status).toBe('provisioned-pending-invite')
+    expect(brandRegistrar.calls).toEqual([])
+
+    const brandStep = await db('portal_provisioning')
+      .where({ slug: input.slug, step: 'authentik_brand_register' })
+      .first()
+    expect(brandStep.status).toBe('failed')
+    expect(brandStep.last_error).toContain('authentik brands API outage')
+
+    // portal.created still fires — a cosmetic brand failure never blocks it.
+    expect(portalCreatedEvents).toHaveLength(1)
   })
 })
 
