@@ -22,3 +22,9 @@
 # fuzefront namespace. It is asymmetrically encrypted with the cluster's public key
 # and cannot be decrypted outside the cluster. Safe to commit (SealedSecrets design intent).
 53fa34b2d69b1508748dc6bd9c3caec969438ad8:deploy/contabo/sealed/fuzefront-secrets.yaml:generic-api-key:16
+# services/selection-list-service/tests/resolve.test.ts (commit 010a995 — S8 resolve hot path,
+# merged into this branch before the S4 CRUD commit).
+# const TEST_SECRET = 'resolve-test-jwt-secret-2026' — a unit-test signing key for JWT
+# construction inside the test file. Not a production secret; the value was later replaced
+# with a non-flagging identifier in commit e249e96 on the S8 branch. History is not rewritten.
+010a995cebabeba3bb38c47da16326f8fe218658:services/selection-list-service/tests/resolve.test.ts:generic-api-key:71
