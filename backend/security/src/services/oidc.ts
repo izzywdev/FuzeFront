@@ -87,36 +87,56 @@ class OIDCService {
       // and jwks — not just the one call that happened to fail first.
       custom.setHttpOptionsDefaults({ timeout: OIDC_HTTP_TIMEOUT_MS });
 
-      // Discover the issuer
-      const issuer = await Issuer.discover(this.config.issuerUrl);
-      logger.info({ issuer: issuer.metadata.issuer }, 'oidc: discovered issuer');
-
-      // Route the SERVER-SIDE OIDC calls (token / userinfo / jwks) over in-cluster
-      // DNS instead of hairpinning out to app.fuzefront.com via Cloudflare (which
-      // made login 15-28s and intermittently 401). Safe because the provider's
-      // issuer_mode is `per_provider` — the `iss` claim is fixed to the external
-      // issuer regardless of the request host, so token validation still matches.
-      // The authorization_endpoint stays EXTERNAL (it is browser-facing).
-      let effectiveIssuer = issuer;
       // Per-tenant in-cluster base. Reading this from the tenant rather than
       // the environment is what keeps each tenant's server-side calls pointed
       // at ITS OWN authentik Service (authentik-server vs
       // authentik-mendys-server) instead of whichever one the process happened
       // to be configured with.
       const internalBase = this.tenant.baseUrl || undefined;
+
+      // Rewrite a browser-facing Authentik URL's protocol+host onto the
+      // in-cluster base, path/query untouched. Used BOTH to route the discovery
+      // fetch in-cluster (immediately below) and to normalise the discovered
+      // token/userinfo/jwks endpoint URLs. A no-op when there is no internal base
+      // (dev/legacy without AUTHENTIK_BASE_URL) — discovery then stays external.
+      const toInternal = (u?: string): string | undefined => {
+        if (!u || !internalBase) return u;
+        try {
+          const url = new URL(u);
+          const ib = new URL(internalBase);
+          url.protocol = ib.protocol;
+          url.host = ib.host;
+          return url.toString();
+        } catch {
+          return u;
+        }
+      };
+
+      // Discover against the IN-CLUSTER host when we have one, instead of the
+      // browser-facing issuer (app.fuzefront.com) — a public name that resolves
+      // to Cloudflare, so discovery would hairpin pod -> internet -> CF edge ->
+      // tunnel -> back to authentik-server. Discovery was the LAST server-side
+      // OIDC call still doing that: token/userinfo/jwks are rewritten in-cluster
+      // below, but the discovery fetch that PRECEDES (and gates) them was not —
+      // so every client init / self-heal, and thus the first sign-in on each
+      // fresh pod, paid a full Cloudflare round-trip (the same "17-34s" hairpin
+      // documented for JWKS/discovery in values-prod.yaml).
+      //
+      // `iss` identity is unchanged. Whatever host answers discovery, the
+      // resulting issuer is passed through the SAME toInternal() normalisation as
+      // the endpoints below, so effectiveIssuer.issuer ends up byte-for-byte what
+      // it was before this change — and it MUST stay the internal value, because
+      // Authentik derives the token's `iss` from the request host and the token
+      // endpoint is hit in-cluster, so client.callback()'s iss check matches only
+      // against the internal issuer.
+      const discoveryUrl = toInternal(this.config.issuerUrl) ?? this.config.issuerUrl;
+      const issuer = await Issuer.discover(discoveryUrl);
+      logger.info({ issuer: issuer.metadata.issuer, discoveryUrl }, 'oidc: discovered issuer');
+
+      // Route the SERVER-SIDE OIDC calls (token / userinfo / jwks) over in-cluster
+      // DNS. The authorization_endpoint stays EXTERNAL (it is browser-facing).
+      let effectiveIssuer = issuer;
       if (internalBase) {
-        const toInternal = (u?: string): string | undefined => {
-          if (!u) return u;
-          try {
-            const url = new URL(u);
-            const ib = new URL(internalBase);
-            url.protocol = ib.protocol;
-            url.host = ib.host;
-            return url.toString();
-          } catch {
-            return u;
-          }
-        };
         effectiveIssuer = new Issuer({
           ...issuer.metadata,
           // Authentik derives `iss` from the request host even in per_provider
