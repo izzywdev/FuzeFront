@@ -34,4 +34,6 @@ export interface UiMessage {
   feedback?: 'positive' | 'negative';
   /** Error message if the turn failed. */
   error?: string;
+  /** ISO-8601 timestamp the message was created (server-persisted or locally stamped on send). */
+  createdAt?: string;
 }
