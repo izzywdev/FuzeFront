@@ -381,7 +381,16 @@ export async function flowRequest(
         // jar has the CSRF value right before this call, yet Authentik still
         // reports "CSRF token missing" — log exactly what this fetch sends.
         logger.warn(
-          { hop, slug, url, headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined }, payload },
+          {
+            hop,
+            slug,
+            url,
+            headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined },
+            // Deliberately NOT logging `payload` — flowRequest() is shared
+            // with the password stage, and CodeQL correctly flags it as a
+            // credential-bearing sink even under this consent-only guard.
+            bodyFields: body ? Object.keys(body) : [],
+          },
           'authentikPassword: DIAGNOSTIC — outgoing headers for the consent-flow POST'
         )
       }

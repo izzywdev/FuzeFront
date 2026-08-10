@@ -136,7 +136,16 @@ async function flowRequest(
         // reports "CSRF token missing" — log exactly what this fetch sends.
         console.warn(
           'authentikPassword: DIAGNOSTIC — outgoing headers for the consent-flow POST',
-          { hop, slug, url, headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined }, payload }
+          {
+            hop,
+            slug,
+            url,
+            headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined },
+            // Deliberately NOT logging `payload` — flowRequest() is shared
+            // with the password stage, and CodeQL correctly flags it as a
+            // credential-bearing sink even under this consent-only guard.
+            bodyFields: body ? Object.keys(body) : [],
+          }
         )
       }
     }
