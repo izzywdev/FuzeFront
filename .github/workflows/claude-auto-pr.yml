@@ -51,6 +51,14 @@ permissions:
   pull-requests: write
   issues: write   # required for gh label create (repo-level labels API)
 
+# One waiter per branch. The step below sits in a grace window for up to five
+# minutes, and an agent that pushes three times in a row would otherwise stack
+# three overlapping waiters all asking the same question. Only the newest push
+# reflects the branch's current state, so cancel the older ones.
+concurrency:
+  group: stranded-branch-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   open-pr:
     runs-on: ubuntu-latest
@@ -91,17 +99,42 @@ jobs:
             exit 0
           fi
 
-          # RE-CHECK before declaring the branch stranded. The check at the top of this
-          # step and the create above are not atomic, and the agent is REQUIRED to open
-          # its own PR — so the normal, correct sequence races this job: push starts the
-          # workflow, the agent opens its PR moments later, and by the time we attempt
-          # the create the PR exists. `gh pr create` then fails with "a pull request for
-          # branch ... already exists", which is the SUCCESS condition, and we reported
-          # it as stranded. That false positive fires precisely when the process is
-          # followed correctly, which is the worst possible time for it.
+          # WAIT before declaring the branch stranded. The agent is REQUIRED to open its
+          # own PR, so the normal, correct sequence races this job: the push starts the
+          # workflow, and the agent opens its PR seconds to minutes later.
+          #
+          # A single immediate re-check used to sit here and was not enough — it ran
+          # within ~5s of the push and lost the race every time. Measured on three
+          # consecutive PRs (#563, #571, #583): the job ran 11:51:13-11:51:19 while the
+          # PR appeared at 11:51:38, so the re-check was ~20s early. Every one of those
+          # was a red X that cleared on a manual re-run, i.e. a false positive that
+          # fired precisely BECAUSE the process was followed correctly.
+          #
+          # So poll instead of peeking once. A live agent gets its PR seen; an agent
+          # that died still fails, just $GRACE_SECONDS later. That delay costs nothing
+          # real — this job is seconds of runner time, `governance-nightly` is the
+          # backstop for anything missed, and a stranded branch is not an emergency
+          # measured in minutes. A detector that cries wolf on the happy path gets
+          # ignored, which is the actual failure mode worth engineering against.
+          GRACE_SECONDS=300
+          INTERVAL=20
+          waited=0
+          while [ "$waited" -lt "$GRACE_SECONDS" ]; do
+            existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+            if [ -n "$existing" ]; then
+              echo "PR #$existing appeared after ${waited}s — the agent did its job. Nothing to do."
+              exit 0
+            fi
+            sleep "$INTERVAL"
+            waited=$((waited + INTERVAL))
+            echo "No PR for $BRANCH yet (waited ${waited}s of ${GRACE_SECONDS}s) — still within the agent's grace window."
+          done
+
+          # Final check after the window closes, so a PR opened during the last
+          # interval is not missed.
           existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -n "$existing" ]; then
-            echo "PR #$existing was opened while this job was running — the agent did its job. Nothing to do."
+            echo "PR #$existing appeared just as the grace window closed — nothing to do."
             exit 0
           fi
 
@@ -119,9 +152,10 @@ jobs:
             echo "\`$BASE\`)."
             echo ""
             echo "**The agent that pushed this branch was supposed to open its own PR and"
-            echo "did not** — most likely it died mid-run. The work is safe on the remote"
-            echo "but invisible, and \`governance-nightly\` will reap the branch if it stays"
-            echo "that way."
+            echo "did not** — most likely it died mid-run. No PR appeared in the"
+            echo "${GRACE_SECONDS}s after the push, so this is not the usual push-then-open"
+            echo "race. The work is safe on the remote but invisible, and"
+            echo "\`governance-nightly\` will reap the branch if it stays that way."
             echo ""
             echo "**To salvage:** \`gh pr create --base $BASE --head $BRANCH --fill --label auto-merge\`"
           } | tee -a "$GITHUB_STEP_SUMMARY"

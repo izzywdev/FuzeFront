@@ -50,10 +50,12 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.1.0'
+export const SCANNER_VERSION = '1.2.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
+  '**/test_*.py',
+  '**/*_test.py',
   '**/tests/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
   '**/e2e/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
 ]
@@ -89,8 +91,15 @@ function levelFor(file: string, source: string): TestCase['level'] {
 
 function extractTests(repository: Repository, file: string, source: string): TestCase[] {
   const cases: TestCase[] = []
-  const titlePattern = /\b(?:it|test)\s*\(\s*(['"`])([^\n]+?)\1/g
-  const titleMatches = [...source.matchAll(titlePattern)]
+  const titleMatches = file.endsWith('.py')
+    ? [...source.matchAll(/^[ \t]*(?:async\s+)?def\s+(test_[A-Za-z0-9_]+)\s*\(/gm)].map(match => ({
+        index: match.index ?? 0,
+        title: match[1].replace(/^test_/, '').replace(/_+/g, ' '),
+      }))
+    : [...source.matchAll(/\b(?:it|test)\s*\(\s*(['"`])([^\n]+?)\1/g)].map(match => ({
+        index: match.index ?? 0,
+        title: match[2].trim(),
+      }))
   const metadata = (segment: string) => {
     const routeMatches = [
       ...segment.matchAll(/\b(get|post|put|patch|delete)\s*\(\s*(['"`])([^'"`]+)\2/gi),
@@ -111,8 +120,8 @@ function extractTests(repository: Repository, file: string, source: string): Tes
     }
   }
   for (const [index, match] of titleMatches.entries()) {
-    const title = match[2].trim()
-    const start = match.index ?? 0
+    const title = match.title
+    const start = match.index
     const end = titleMatches[index + 1]?.index ?? source.length
     const evidence = metadata(source.slice(start, end))
     cases.push({

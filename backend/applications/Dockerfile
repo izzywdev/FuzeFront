@@ -9,13 +9,44 @@ FROM node:24-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
+# Copy EVERY workspace manifest referenced by the root "workspaces" array before
+# installing. npm resolves/hoists against the full set of workspace manifests;
+# omitting any of them makes `npm install` compute a DIFFERENT hoist tree than the
+# committed package-lock.json. That is exactly how express-rate-limit went missing
+# from the image: backend/security pins express-rate-limit@7.2.0 (exact) while the
+# other consumers allow ^7.2.0, producing a lockfile doppelganger
+# (root express-rate-limit@7.5.1 + backend/node_modules/express-rate-limit@7.2.0).
+# With those manifests absent, npm re-resolved and express-rate-limit never landed
+# in /app/node_modules, so the copied production node_modules lacked it.
+# Copy all manifests and use `npm ci`, which installs EXACTLY the committed
+# lockfile (deterministic hoist) and fails loudly if lock and manifests drift.
 COPY package.json package-lock.json ./
-COPY shared/package.json ./shared/
+COPY backend/package.json ./backend/
 COPY backend/core/package.json ./backend/core/
-COPY packages/feature-flags/package.json ./packages/feature-flags/
+COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
+COPY shared/package.json ./shared/
+COPY packages/identity/package.json ./packages/identity/
+COPY billing-client/package.json ./billing-client/
+COPY custom-hostname-client/package.json ./custom-hostname-client/
+COPY packages/billing-ui/package.json ./packages/billing-ui/
+COPY packages/chat-client/package.json ./packages/chat-client/
+COPY packages/chat-ui/package.json ./packages/chat-ui/
+COPY packages/identity-ui/package.json ./packages/identity-ui/
+COPY packages/auth-ui/package.json ./packages/auth-ui/
+COPY packages/account-security-ui/package.json ./packages/account-security-ui/
+COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY portal-client/package.json ./portal-client/
+COPY packages/i18n/package.json ./packages/i18n/
+COPY packages/i18n-translate/package.json ./packages/i18n-translate/
+COPY packages/feature-flags/package.json ./packages/feature-flags/
+COPY packages/security/package.json ./packages/security/
+COPY design-system/package.json ./design-system/
+COPY services/chat-service/package.json ./services/chat-service/
+COPY services/email-service/package.json ./services/email-service/
+COPY services/notification-service/package.json ./services/notification-service/
 
-RUN npm install
+RUN npm ci
 
 # Copy source
 COPY shared/ ./shared/

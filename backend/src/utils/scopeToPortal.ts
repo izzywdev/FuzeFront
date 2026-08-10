@@ -173,3 +173,19 @@ export async function scopeToPortal<Q extends Knex.QueryBuilder>(
   const decision = await resolvePortalScopeDecision(req, opts)
   return { query: applyPortalScope(query, decision, opts.column ?? 'home_portal_id'), decision }
 }
+
+/**
+ * FF-EPIC-11-S3 — normalizes a portal id to the canonical "root == NULL"
+ * representation used everywhere in this epic (`users.home_portal_id`,
+ * migration 019; `organization_invitations.portal_id`, migration 020; the
+ * `'scoped'` branch of `applyPortalScope` above). A caller holding the ROOT
+ * portal's own literal id (`ROOT_PORTAL_ID`) and a caller holding no portal at
+ * all (`null`/`undefined`) must compare EQUAL — both mean "root/platform" —
+ * so any code that STORES or COMPARES a portal id (not just this module's own
+ * read-scoping decision) should normalize through this helper rather than
+ * comparing raw ids directly.
+ */
+export function normalizePortalId(portalId: string | null | undefined): string | null {
+  if (!portalId || portalId === ROOT_PORTAL_ID) return null
+  return portalId
+}

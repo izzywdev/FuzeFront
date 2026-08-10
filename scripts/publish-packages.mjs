@@ -1,0 +1,210 @@
+#!/usr/bin/env node
+// Publish every publishable workspace package to GitHub Packages.
+//
+// WHY THIS EXISTS INSTEAD OF PLAIN `lerna publish`
+//
+// GitHub Packages requires the npm scope to match the account that OWNS the
+// repository. This repo is owned by the personal account **izzywdev**, so the
+// canonical `@fuzefront/*` names cannot publish there — no `fuzefront` account
+// exists, and the `FuzeOne` org that does exist owns no repositories yet. The
+// previous workflow was gated on an owner that never matched, so lerna no-opped
+// on every run and not one package had ever been published.
+//
+// The fix is to publish under the owner's scope while keeping the canonical
+// names in the source tree: `@fuzefront/x` is renamed to
+// `@izzywdev/fuzefront-x` at publish time. That is the same mechanism the
+// interim per-package publishers already used successfully; this generalises it
+// to every package so they stop drifting apart.
+//
+// The part those one-offs got wrong, and this does not: **intra-family
+// dependencies are rewritten too.** A published `@izzywdev/fuzefront-chat-ui`
+// whose dependencies still say `@fuzefront/chat-client` cannot be installed by
+// anyone — that name resolves to nothing on any registry. Every `@fuzefront/*`
+// dependency is rewritten to its alias, and `file:`/`workspace:` specifiers
+// (meaningless outside this tree) are replaced with the target's real version.
+//
+// Publishing is IDEMPOTENT: a version already in the registry is skipped, never
+// overwritten. So a re-run after a partial failure is safe, and so is the
+// overlap with any per-package publisher still in place.
+//
+// Usage:
+//   node scripts/publish-packages.mjs --dry-run   # resolve + report, publish nothing
+//   node scripts/publish-packages.mjs             # publish
+//
+// Requires NODE_AUTH_TOKEN for a real publish.
+
+import { readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+
+const root = process.cwd()
+const REGISTRY = 'https://npm.pkg.github.com'
+const OWNER_SCOPE = '@izzywdev'
+const CANONICAL_SCOPE = '@fuzefront/'
+const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies']
+const LOCAL_PROTOCOL = /^(file:|link:|workspace:|portal:)/
+
+const dryRun = process.argv.includes('--dry-run')
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+/** `@fuzefront/chat-ui` -> `@izzywdev/fuzefront-chat-ui`. Already-owner-scoped names pass through. */
+export function aliasFor(name) {
+  if (name.startsWith(`${OWNER_SCOPE}/`)) return name
+  if (name.startsWith(CANONICAL_SCOPE)) {
+    return `${OWNER_SCOPE}/fuzefront-${name.slice(CANONICAL_SCOPE.length)}`
+  }
+  return name
+}
+
+function workspaces() {
+  return (readJson(`${root}/package.json`).workspaces ?? []).filter((w) => !w.includes('*'))
+}
+
+/** Publishable = a workspace that is not marked private. One source of truth. */
+function publishable() {
+  return workspaces()
+    .filter((dir) => existsSync(`${root}/${dir}/package.json`))
+    .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
+    .filter(({ pkg }) => !pkg.private && pkg.name)
+}
+
+/**
+ * Rewrite a manifest for publication: alias its own name, alias every in-family
+ * dependency, and turn local specifiers into real version ranges.
+ *
+ * Exported so the tests can assert the transform without publishing anything.
+ */
+export function rewriteForPublish(pkg, versionByName) {
+  const out = { ...pkg, name: aliasFor(pkg.name) }
+  for (const field of DEP_FIELDS) {
+    const deps = pkg[field]
+    if (!deps) continue
+    const rewritten = {}
+    for (const [name, spec] of Object.entries(deps)) {
+      const alias = aliasFor(name)
+      if (alias === name && !LOCAL_PROTOCOL.test(spec)) {
+        rewritten[name] = spec
+        continue
+      }
+      if (LOCAL_PROTOCOL.test(spec)) {
+        // `file:../../packages/identity` means nothing to a consumer. Pin the
+        // target's actual version, or the published tarball is uninstallable.
+        const version = versionByName[name]
+        if (!version) {
+          throw new Error(
+            `${pkg.name}: ${field}.${name} uses a local specifier (${spec}) but ` +
+              `${name} is not a publishable workspace — a consumer could never resolve it`
+          )
+        }
+        rewritten[alias] = `^${version}`
+      } else {
+        rewritten[alias] = spec
+      }
+    }
+    out[field] = rewritten
+  }
+  return out
+}
+
+function alreadyPublished(name, version) {
+  try {
+    execFileSync('npm', ['view', `${name}@${version}`, 'version', `--registry=${REGISTRY}`], {
+      stdio: 'pipe',
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Only run the publish loop when invoked as a script. Importing this module
+// (the tests do) must not publish anything.
+const invokedDirectly = process.argv[1]?.endsWith('publish-packages.mjs') ?? false
+if (!invokedDirectly) {
+  // eslint-disable-next-line no-empty
+} else {
+main()
+}
+
+function main() {
+const targets = publishable()
+const versionByName = Object.fromEntries(targets.map(({ pkg }) => [pkg.name, pkg.version]))
+
+console.log(`publish-packages: ${targets.length} publishable package(s)${dryRun ? ' (dry run)' : ''}\n`)
+
+const skipped = []
+const published = []
+const failed = []
+
+for (const { dir, pkg } of targets) {
+  const manifestPath = `${root}/${dir}/package.json`
+  const original = readFileSync(manifestPath, 'utf8')
+  let rewritten
+  try {
+    rewritten = rewriteForPublish(pkg, versionByName)
+  } catch (err) {
+    failed.push(`${pkg.name}: ${err.message}`)
+    console.error(`  ✗ ${pkg.name} — ${err.message}`)
+    continue
+  }
+
+  const target = `${rewritten.name}@${pkg.version}`
+
+  if (dryRun) {
+    const renamedDeps = DEP_FIELDS.flatMap((f) =>
+      Object.keys(rewritten[f] ?? {}).filter((n) => !(pkg[f] ?? {})[n])
+    )
+    console.log(
+      `  → ${pkg.name} -> ${target}` +
+        (renamedDeps.length ? `  (deps rewritten: ${renamedDeps.join(', ')})` : '')
+    )
+    continue
+  }
+
+  if (alreadyPublished(rewritten.name, pkg.version)) {
+    skipped.push(target)
+    console.log(`  = ${target} already published — skipping`)
+    continue
+  }
+
+  try {
+    // Write the aliased manifest, publish, then ALWAYS restore. Leaving a
+    // renamed manifest behind would break every workspace link in the job.
+    writeFileSync(manifestPath, JSON.stringify(rewritten, null, 2) + '\n')
+    execFileSync('npm', ['publish', `--registry=${REGISTRY}`], {
+      cwd: `${root}/${dir}`,
+      stdio: 'inherit',
+    })
+    published.push(target)
+    console.log(`  ✓ ${target}`)
+  } catch (err) {
+    // The interim per-package publishers still run on the same push, so two
+    // jobs can pass the existence check and then both publish. The loser gets a
+    // 409. That is a race, not a fault — if the version is in the registry now,
+    // the release succeeded and whose upload won does not matter.
+    if (alreadyPublished(rewritten.name, pkg.version)) {
+      skipped.push(target)
+      console.log(`  = ${target} published concurrently by another job — treating as done`)
+    } else {
+      failed.push(`${target}: ${err.message}`)
+      console.error(`  ✗ ${target} — ${err.message}`)
+    }
+  } finally {
+    writeFileSync(manifestPath, original)
+  }
+}
+
+if (!dryRun) {
+  console.log(
+    `\npublish-packages: ${published.length} published, ${skipped.length} skipped, ${failed.length} failed`
+  )
+}
+if (failed.length) {
+  console.error('\nFailures:')
+  for (const f of failed) console.error(`  ✗ ${f}`)
+  process.exit(1)
+}
+}

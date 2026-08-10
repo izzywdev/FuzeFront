@@ -57,6 +57,17 @@ jobs:
         with:
           node-version: '24.x'
 
+      # @izzywdev/fuzefront-identity is a `file:` dependency whose `types` points
+      # at dist/, and dist/ is gitignored — so it does not exist on a fresh
+      # checkout. jest's moduleNameMapper resolves the import at RUNTIME from
+      # source, but ts-jest still type-checks it against the package's declared
+      # `types`, which tsc cannot find until this builds. Same reason the CI job
+      # above builds @fuzefront/custom-hostname-client before the backend
+      # type-check. Must precede the billing install.
+      - name: Build @izzywdev/fuzefront-identity (d.ts for the billing type-check)
+        working-directory: packages/identity
+        run: npm install --ignore-scripts && npm run build
+
       - name: Install billing-service dependencies
         working-directory: services/billing-service
         # Matches the service Dockerfile (`npm install --ignore-scripts`): this

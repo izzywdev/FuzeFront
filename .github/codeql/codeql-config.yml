@@ -22,7 +22,6 @@ paths:
   - 'backend/src'
   - 'shared/src'
   - 'sdk/src'
-  - 'task-manager-app/src'
 
 # Module Federation specific patterns
 module-federation:

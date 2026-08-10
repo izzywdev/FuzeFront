@@ -45,3 +45,55 @@ describe('createGlobalLimiter exports a rate-limiter factory', () => {
     expect(() => createGlobalLimiter(null)).not.toThrow();
   });
 });
+
+// Regression for FuzeFront #510: the DEFAULT (no-arg) factory path must never
+// crash the process — neither when REDIS_URL is unset (prod) nor when it points
+// at an unreachable host. Before the fix, the no-arg path defaulted to
+// redis://localhost:6379 and built the client with enableOfflineQueue:false, so
+// rate-limit-redis's constructor-time SCRIPT LOAD rejected into an unhandled
+// rejection and took the pod down (chat-service CrashLoopBackOff in prod).
+//
+// These cases exercise the module-level getDefaultRedisClient(), so each uses
+// jest.isolateModules() with resetModules to defeat its one-shot memoization.
+describe('default limiter factory does not crash the process (FuzeFront #510)', () => {
+  const ORIGINAL_REDIS_URL = process.env.REDIS_URL;
+
+  afterEach(() => {
+    if (ORIGINAL_REDIS_URL === undefined) delete process.env.REDIS_URL;
+    else process.env.REDIS_URL = ORIGINAL_REDIS_URL;
+    jest.resetModules();
+  });
+
+  it('uses the in-memory store (no Redis client) when REDIS_URL is unset', () => {
+    delete process.env.REDIS_URL;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('../../src/middleware/ratelimit');
+      expect(() => mod.createGlobalLimiter()).not.toThrow();
+    });
+  });
+
+  it('does not throw or emit an unhandled rejection when REDIS_URL is unreachable', async () => {
+    // Port 1 is reserved/closed — the client can never connect.
+    process.env.REDIS_URL = 'redis://127.0.0.1:1';
+
+    const rejections: unknown[] = [];
+    const onUnhandled = (err: unknown) => rejections.push(err);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = require('../../src/middleware/ratelimit');
+        // Constructing the store fires rate-limit-redis's eager SCRIPT LOAD.
+        expect(() => mod.createGlobalLimiter()).not.toThrow();
+      });
+
+      // Give any floating promise from the constructor a few ticks to settle.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(rejections).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  }, 10000);
+});

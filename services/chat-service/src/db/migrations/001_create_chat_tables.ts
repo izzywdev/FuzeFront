@@ -2,16 +2,23 @@ import { Knex } from 'knex';
 
 // Migration: create all four chat tables in a single file.
 // SQL is the exact schema from plan §6e.
-// FK references: users(id) and organizations(id) are owned by the backend in
-// the same fuzefront_platform database. This migration assumes those tables exist.
+// DECOUPLED IDENTITY: user_id/org_id are opaque identifiers OWNED BY OTHER
+// SERVICES (security/backend), whose tables live in a SEPARATE database. They are
+// therefore NOT foreign-keyed here — a cross-database FK is impossible in
+// Postgres, and creating `REFERENCES users(id)` inline made this migration abort
+// with "relation users does not exist" against chat's own isolated DB
+// (fuzefront_chat), wedging the pre-sync hook and the whole Argo sync (#499).
+// Referential integrity to users/orgs is an application/event-layer concern, not
+// a DB constraint. Migration 002 further widens these to TEXT for multi-app
+// subjects. Intra-chat FKs (messages→conversations, feedback→messages) remain.
 // down() drops tables in reverse FK dependency order.
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
     CREATE TABLE IF NOT EXISTS chat_conversations (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id     UUID NOT NULL REFERENCES users(id),
-      org_id      UUID REFERENCES organizations(id),
+      user_id     UUID NOT NULL,
+      org_id      UUID,
       title       TEXT,
       created_at  TIMESTAMPTZ DEFAULT NOW(),
       updated_at  TIMESTAMPTZ DEFAULT NOW()
