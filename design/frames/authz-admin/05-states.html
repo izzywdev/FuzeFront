@@ -103,6 +103,30 @@
     </div>
   </div>
 
+  <!-- e6 non-member — and why root is now MEMBER, not GUEST -->
+  <div class="state-block">
+    <div class="state-label">(e6) Not a member — but root is now MEMBER, never GUEST</div>
+    <div class="panel" data-panel="member-list" data-state="non-member" data-role="none">
+      <div class="panel-head"><div><h2>Members</h2></div></div>
+      <div class="empty">
+        <div class="banner banner-info" data-error-code="NOT_A_MEMBER" data-http="403" style="text-align: left">
+          <span>
+            <b>You're not a member of this organization</b>
+            <p>You can see it exists, but you hold no membership here. Ask an owner to add you.
+              This is an <b>authorization</b> state shown in place — never a sign-in redirect.</p>
+          </span>
+        </div>
+        <p class="sub" data-rule="root-is-member" style="margin-top: var(--space-3)">
+          <b>Reconciliation:</b> this GUEST/non-member state <b>no longer applies to the root
+          <code>FuzeFront</code> org</b>. Signup now writes a real
+          <code>organization_memberships(role='member')</code> row for root, so the root org resolves to
+          <code>user_role='member'</code> and shows a <b>MEMBER</b> badge — the #529 root GUEST state is
+          retired. It still applies to ordinary orgs you have not joined.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <p class="note">
     <b>Contract.</b> Loading covers the in-flight
     <code>GET /v1/security/tenants/{tenantId}/members</code>. Empty is a real, common state — a
