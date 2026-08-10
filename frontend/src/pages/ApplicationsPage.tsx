@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AppCard, Badge } from '@fuzefront/design-system'
+import { AppCard, Badge, Button } from '@fuzefront/design-system'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useOrganizations, type App as BackendApp } from '../lib/shared'
 import {
@@ -169,8 +169,8 @@ function InstalledAppsSection() {
               <Badge data-scope-level={scopeLevel}>{scopeLevel}</Badge>
 
               {installed && installation ? (
-                <button
-                  className="btn btn-ghost"
+                <Button
+                  variant="ghost"
                   data-action="uninstall"
                   data-app-id={app.id}
                   onClick={async () => {
@@ -183,7 +183,7 @@ function InstalledAppsSection() {
                   }}
                 >
                   Uninstall
-                </button>
+                </Button>
               ) : (
                 <button
                   className="btn btn-primary"

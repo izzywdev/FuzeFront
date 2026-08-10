@@ -1,0 +1,4 @@
+# Build output — published to the registry from CI, never committed.
+dist/
+node_modules/
+*.tsbuildinfo
