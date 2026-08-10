@@ -244,7 +244,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
   // Build parameterized WHERE clauses
   const whereClause: string[] = ['sl.organization_id = ?'];
-  const params: unknown[] = [req.orgId];
+  const params: (string | number | boolean | null | Date)[] = [req.orgId as string];
 
   whereClause.push('sl.status = ?');
   params.push(statusFilter);
@@ -636,22 +636,19 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
     const current = existing.rows[0];
 
     await db.transaction(async (trx) => {
-      // Update the list row for scalar fields
-      const listUpdates: Record<string, unknown> = { updated_at: new Date() };
+      // Update the list row — always bump updated_at (plus any changed scalars)
+      const listUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.key !== undefined) listUpdates.key = body.key.trim();
       if (body.source_locale !== undefined) listUpdates.source_locale = body.source_locale;
       if (body.status !== undefined) listUpdates.status = body.status;
 
-      if (Object.keys(listUpdates).length > 1) {
-        // Always has updated_at, only issue SQL if there's more
-        const setClause = Object.keys(listUpdates)
-          .map((k) => `${k} = ?`)
-          .join(', ');
-        await trx.raw(
-          `UPDATE selection_lists SET ${setClause} WHERE id = ?`,
-          [...Object.values(listUpdates), listId],
-        );
-      }
+      const setClause = Object.keys(listUpdates)
+        .map((k) => `${k} = ?`)
+        .join(', ');
+      await trx.raw(
+        `UPDATE selection_lists SET ${setClause} WHERE id = ?`,
+        [...Object.values(listUpdates), listId],
+      );
 
       // Update translation if name or description changed
       if (body.name !== undefined || body.description !== undefined) {

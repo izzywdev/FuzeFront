@@ -88,8 +88,13 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  // Re-inject flag client after clearAllMocks to ensure flag stays ON
+  // mockReset clears both call history AND the specificReturnValues queue
+  // (mockClear/clearAllMocks only clears call history, not the once-queues).
+  mockRaw.mockReset();
+  mockTrxRaw.mockReset();
+  mockTransaction.mockReset();
+  // Re-establish the transaction implementation after reset.
+  mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -269,6 +274,8 @@ describe('POST /v1/selection-lists/:listId/items', () => {
   });
 
   it('mints the id — rejects client-supplied id', async () => {
+    // No DB setup needed: 'id' is not in allowedProps, validation fires before DB.
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }); // list check (just in case)
     const res = await request(app)
       .post(`/v1/selection-lists/${TEST_LIST_ID}/items`)
       .set(authHeader())
@@ -421,6 +428,7 @@ describe('PATCH /v1/selection-lists/:listId/items/:itemId', () => {
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, label: 'USA' }] }); // fetch updated
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE selection_list_items (updated_at)
       .mockResolvedValueOnce({ rows: [] }); // UPSERT translation
 
     const res = await request(app)

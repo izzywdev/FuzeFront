@@ -212,7 +212,7 @@ router.get('/:listId/items', async (req: Request, res: Response): Promise<void> 
   const machineCoalesce = `COALESCE(${localeChain.map((_, i) => `t${i}.is_machine`).join(', ')})`;
 
   const whereClause: string[] = ['i.list_id = ?', 'i.status = ?'];
-  const whereParams: unknown[] = [listId, statusFilter];
+  const whereParams: (string | number | boolean | null)[] = [listId, statusFilter];
 
   if (cursor) {
     whereClause.push('(i.sort_order > ? OR (i.sort_order = ? AND i.id > ?))');
@@ -280,7 +280,12 @@ router.get('/:listId/items', async (req: Request, res: Response): Promise<void> 
 // ─── POST /:listId/items — create an item ────────────────────────────────────
 
 router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
-  // Flag + orgId already checked by enforceItemQuota
+  // Flag is also checked by enforceItemQuota, but we re-check here so that tests
+  // which mock the middleware as a pass-through still see the correct 404 behavior.
+  if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
+    res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
+    return;
+  }
 
   if (!req.orgId) {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
@@ -578,18 +583,16 @@ router.patch('/:listId/items/:itemId', async (req: Request, res: Response): Prom
     }
 
     await db.transaction(async (trx) => {
-      // Update item row for scalar fields
-      const itemUpdates: Record<string, unknown> = { updated_at: new Date() };
+      // Update item row — always bump updated_at (plus any changed scalars)
+      const itemUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.sort_order !== undefined) itemUpdates.sort_order = parseInt(String(body.sort_order), 10);
       if (body.status !== undefined) itemUpdates.status = body.status;
 
-      if (Object.keys(itemUpdates).length > 1) {
-        const setClause = Object.keys(itemUpdates).map((k) => `${k} = ?`).join(', ');
-        await trx.raw(
-          `UPDATE selection_list_items SET ${setClause} WHERE id = ?`,
-          [...Object.values(itemUpdates), itemId],
-        );
-      }
+      const setClause = Object.keys(itemUpdates).map((k) => `${k} = ?`).join(', ');
+      await trx.raw(
+        `UPDATE selection_list_items SET ${setClause} WHERE id = ?`,
+        [...Object.values(itemUpdates), itemId],
+      );
 
       // Update translation for label/description
       if (body.label !== undefined || body.description !== undefined) {

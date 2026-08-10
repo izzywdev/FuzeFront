@@ -88,8 +88,13 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  // Re-inject flag client after clearAllMocks to ensure flag stays ON
+  // mockReset clears both call history AND the specificReturnValues queue
+  // (mockClear/clearAllMocks only clears call history, not the once-queues).
+  mockRaw.mockReset();
+  mockTrxRaw.mockReset();
+  mockTransaction.mockReset();
+  // Re-establish the transaction implementation after reset.
+  mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -273,11 +278,7 @@ describe('POST /v1/selection-lists', () => {
   });
 
   it('mints the id — never uses client-supplied id', async () => {
-    mockTrxRaw
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
-    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
-
+    // 'id' is not in allowedProps — validation rejects it before any DB calls.
     const res = await request(app)
       .post('/v1/selection-lists')
       .set(authHeader())
