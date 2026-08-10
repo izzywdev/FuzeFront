@@ -1,0 +1,17 @@
+{{- if .Values.selectionListService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-selection-list-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-service
+spec:
+  selector:
+    app: fuzefront-selection-list-service
+  ports:
+    - port: {{ .Values.selectionListService.port }}
+      targetPort: {{ .Values.selectionListService.port }}
+      protocol: TCP
+      name: http
+{{- end }}
