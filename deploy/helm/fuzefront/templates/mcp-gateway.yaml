@@ -1,0 +1,144 @@
+{{- if .Values.mcp.enabled }}
+{{/*
+FuzeFront's OWN MCP SSE gateway.
+
+Every product in the family deploys one of these — the shared
+@fuzefront/mcp-gateway image, configured at runtime with that product's OpenAPI
+document. FuzeFront publishes the image, and until now was the only member of
+the family that did not also RUN one, even though it owns the app registry: the
+API by which every other app is registered, activated and surfaced in the shell.
+That surface is exactly the one an agent has most reason to query, so this pod
+closes the gap.
+
+Nothing FuzeFront-specific lives in the image. What makes this pod "the
+FuzeFront gateway" is the two mounted files and the upstream URL below.
+
+UPSTREAM is the applications-service, which serves the app-registry contract at
+/api/v1/app-registry (see templates/applications.yaml; the Service name
+`fuzefront-applications` is load-bearing and already relied on by the frontend
+nginx routes). The base URL carries that prefix because the contract's `servers`
+entry does — services[0].url is '{baseUrl}/api/v1/app-registry' and every path
+in the document hangs off it, so a base without the prefix would 404 every call.
+
+The spec is mounted from a ConfigMap rendered out of files/, which is a COPY of
+services/app-registry-service/openapi.yaml. Helm cannot read files outside the
+chart directory, so the copy is unavoidable — run
+scripts/check-mcp-spec-drift.sh to prove it has not drifted (it exits non-zero
+if it has).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-mcp-spec
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+data:
+  openapi.yaml: |-
+{{ .Files.Get "files/app-registry-openapi.yaml" | indent 4 }}
+  tools.overrides.yaml: |-
+{{ .Files.Get "files/mcp-tools.overrides.yaml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  replicas: {{ .Values.mcp.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: mcp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: mcp-gateway
+      annotations:
+        # Roll the pod when the spec or the overrides change. Without this a
+        # contract change would leave a stale tool surface serving indefinitely
+        # — the ConfigMap updates in place and nothing restarts the process.
+        checksum/spec: {{ .Files.Get "files/app-registry-openapi.yaml" | sha256sum }}
+        checksum/overrides: {{ .Files.Get "files/mcp-tools.overrides.yaml" | sha256sum }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.mcp "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-gateway
+          image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
+          imagePullPolicy: {{ .Values.mcp.image.pullPolicy | default .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcp.port }}
+          env:
+            - name: MCP_PRODUCT
+              value: fuzefront
+            # In-cluster base URL of the app-registry surface. The gateway makes
+            # every upstream call here carrying the CALLER'S bearer token, so
+            # the per-user Permit checks in applications-service still apply.
+            - name: MCP_UPSTREAM_BASE_URL
+              value: {{ .Values.mcp.upstreamBaseUrl | default (printf "http://fuzefront-applications:%v/api/v1/app-registry" .Values.applicationsService.port) | quote }}
+            - name: MCP_OPENAPI_SPEC
+              value: /spec/openapi.yaml
+            - name: MCP_TOOL_OVERRIDES
+              value: /spec/tools.overrides.yaml
+            - name: PORT
+              value: {{ .Values.mcp.port | quote }}
+          # DELIBERATELY no credential env var, and none may be added. The
+          # gateway forwards the caller's identity and holds none of its own; it
+          # refuses to start if MCP_UPSTREAM_TOKEN / MCP_SERVICE_TOKEN /
+          # MCP_API_KEY is present (packages/mcp-gateway/src/config.ts), because
+          # a shared token would bypass every per-user authorization check on
+          # the app-registry API — including the ones guarding deleteApp.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: spec
+              mountPath: /spec
+              readOnly: true
+      volumes:
+        - name: spec
+          configMap:
+            name: fuzefront-mcp-spec
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: mcp-gateway
+  ports:
+    - name: http
+      port: {{ .Values.mcp.port }}
+      targetPort: http
+{{- end }}
