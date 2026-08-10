@@ -97,6 +97,17 @@ domain: Identity / Security
 - **Blocks:** FF-EPIC-14 (admin-console UI for user/invitation management needs this API); FF-EPIC-12 does not depend on this epic but ships the same feature-flag master-switch pattern.
 - **Related:** FF-EPIC-13 (per-portal login theming consumes the Authentik brand blueprints added in S4).
 
+> ⚠️ **Reconciliation note (FF-EPIC-17):** the standalone `portals` table this epic's S1 FKs
+> `users.home_portal_id` against is **superseded** by the org-tree unification — a portal is an
+> `organizations` row (`parent_id` = platform root), not a separate `portals.id`. **S1's `home_portal_id`
+> retargets to the nearest portal-root ancestor derived from `organization_memberships` +
+> `organizations.parent_id`** instead of a `portals.id` FK; S2/S3/S5/S6 (scoping enforcement, invitations,
+> cross-portal login rejection, flag) are **behaviorally unaffected** — only what `home_portal_id` resolves
+> against changes. Also note: this epic's "portal-scoped identity" is a distinct concern from FF-EPIC-17's
+> **root membership** (every user is additionally a literal `member` of the platform root regardless of
+> which portal they're homed to) — the two models compose, they don't conflict. See
+> `docs/planning/epics/EPIC-17-personal-identity-portal-employee-reconciliation.md` (story FF-EPIC-17-S7).
+
 ### 📎 References
 - Permit ReBAC schema: `backend/src/permit/schema.ts`
 - App-registry BOLA filter precedent: `backend/applications/src/app-registry/service.ts`
