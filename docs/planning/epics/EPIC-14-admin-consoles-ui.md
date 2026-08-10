@@ -99,6 +99,14 @@ a frames-ONLY PR before any implementation story starts.
 - Permit ReBAC parent→child authority: `backend/src/permit/schema.ts`
 - Design-first gate + `ui-runtime-validation` skill: `CLAUDE.md`, `.claude/skills/ui-runtime-validation/`
 
+> ⚠️ **Reconciliation note (FF-EPIC-17):** S2 (master-admin portal console) is UX-unaffected but its
+> contract (`@fuzefront/portal-client` against `services/portal-service/openapi.yaml`, currently
+> "anticipated" in `design/frames/portal-admin-consoles/manifest.json`) is **superseded** by FF-EPIC-17-S7's
+> org-tree-unified portal API — consume the org-tree endpoints, not the standalone portal-service ones.
+> FF-EPIC-17 also adds a **new** console this epic's family didn't have: an **Employee cross-org staff
+> console** (FF-EPIC-17-S9) — a support/visibility surface distinct from S2's full-CRUD Master-Admin
+> authority. See `docs/planning/epics/EPIC-17-personal-identity-portal-employee-reconciliation.md`.
+
 ---
 
 ## Stories
