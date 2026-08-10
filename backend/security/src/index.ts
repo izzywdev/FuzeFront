@@ -24,6 +24,7 @@ import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
+import { initFeatureFlags } from './utils/feature-flags'
 import type { OutboxRelayHandle } from '@fuzefront/core'
 
 dotenv.config()
@@ -125,6 +126,11 @@ async function startServer() {
     // Drain event_outbox → Kafka. Starts after the DB connection is live so the
     // relay's `db` singleton is initialized; a no-op when KAFKA_BROKERS is unset.
     outboxRelay = startOutboxRelayIfConfigured()
+
+    // Install the OpenFeature/Unleash provider. Non-fatal: on failure flags
+    // (e.g. `fuzefront.identity.root-membership`) fall back to their in-code
+    // fail-safe defaults — see utils/rootMembershipFlag.ts.
+    await initFeatureFlags('fuzefront-security')
 
     try {
       console.log('🔧 Initializing OIDC service(s)...')
