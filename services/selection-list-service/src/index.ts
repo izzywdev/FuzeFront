@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     const applied = await runMigrations();
     if (applied.length > 0) {
       // eslint-disable-next-line no-console
-      console.log(`[selection-list-service] Applied ${applied.length} migration(s):`, applied);
+      console.log('[selection-list-service] Applied %d migration(s):', applied.length, applied);
     } else {
       // eslint-disable-next-line no-console
       console.log('[selection-list-service] DB schema up to date.');
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
 
   const server = app.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`[selection-list-service] Listening on port ${port}`);
+    console.log('[selection-list-service] Listening on port %d', port);
   });
 
   const shutdown = async (): Promise<void> => {

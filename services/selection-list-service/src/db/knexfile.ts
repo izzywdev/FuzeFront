@@ -42,7 +42,7 @@ const config: { [key: string]: Knex.Config } = {
       ...(process.env.DATABASE_URL
         ? connectionFromUrl(process.env.DATABASE_URL)
         : connectionFromEnv()),
-      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+      ssl: process.env.DB_SSL === 'false' ? false : true,
     },
     pool: { min: 2, max: 10 },
     acquireConnectionTimeout: 10000,
