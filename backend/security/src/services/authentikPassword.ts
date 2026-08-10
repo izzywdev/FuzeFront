@@ -23,10 +23,22 @@
  */
 import { generators } from 'openid-client'
 import { Agent } from 'undici'
+import { createHash } from 'node:crypto'
 import { getOidcService } from './oidc'
 import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
 import { logger } from '../lib/logger'
+
+/**
+ * TEMPORARY diagnostic helper (FuzeFront#557 follow-up round 7): a short,
+ * non-reversible fingerprint so cookie ROTATION is visible across log lines
+ * (same value -> same fingerprint) without printing the raw secret — and
+ * without whatever masks "authentik_session=<value>" wholesale in CI logs,
+ * which made the round-6 trace unreadable.
+ */
+function fingerprint(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 10)
+}
 
 /**
  * Hard per-fetch timeout (ms) for EVERY server-side Authentik HTTP hop driven in
@@ -281,15 +293,24 @@ export class CookieJar {
       typeof anyHeaders.getSetCookie === 'function'
         ? anyHeaders.getSetCookie()
         : ([res.headers.get('set-cookie')].filter(Boolean) as string[])
-    // TEMPORARY diagnostic (FuzeFront#557 follow-up round 6): the
-    // consent-confirm POST is rejected with "CSRF token missing" even though
-    // the header IS sent with a well-formed value, and the request's own
-    // access log shows an empty `user` — trace every Set-Cookie this jar
-    // absorbs to see whether/when authentik_session or authentik_csrf
-    // actually rotate across the chain.
+    // TEMPORARY diagnostic (FuzeFront#557 follow-up round 7): round 6's trace
+    // showed every value masked as "***" in the CI logs (some redaction we
+    // don't control masks "authentik_session=<value>" wholesale), making
+    // rotation invisible. Log a short non-reversible fingerprint per cookie
+    // instead — identical fingerprints across log lines mean the SAME value,
+    // a changed one means real rotation.
     if (label && setCookies.length > 0) {
       logger.warn(
-        { label, setCookies: setCookies.map(sc => sc.split(';')[0]) },
+        {
+          label,
+          cookies: setCookies.map(sc => {
+            const pair = sc.split(';')[0]
+            const eq = pair.indexOf('=')
+            const name = eq > 0 ? pair.slice(0, eq).trim() : pair
+            const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
+            return { name, fp: value ? fingerprint(value) : '(empty)' }
+          }),
+        },
         'authentikPassword: DIAGNOSTIC — Set-Cookie absorbed'
       )
     }
@@ -702,13 +723,25 @@ export async function completeOidcWithSession(
         // auto-submit it without ever showing UI) — POST its token back to
         // confirm, which then resolves to the actual redirect challenge.
         //
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 4): the POST
-        // fails server-side with "CSRF Failed: CSRF token missing" — the
-        // cookie IS present (else Django's message would be "CSRF cookie not
-        // set") but our X-CSRFToken header apparently wasn't. Log the jar's
-        // exact cookie state right before the POST to see why.
+        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 7): fingerprint
+        // (see above) every cookie the jar holds right before the POST, so
+        // it can be compared against the per-hop Set-Cookie trace to confirm
+        // exactly which value was actually sent.
         logger.warn(
-          { hop, slug, cookieHeader: jar.header(), csrfCookie: jar.get('authentik_csrf') },
+          {
+            hop,
+            slug,
+            cookies: jar
+              .header()
+              .split('; ')
+              .filter(Boolean)
+              .map(pair => {
+                const eq = pair.indexOf('=')
+                const name = eq > 0 ? pair.slice(0, eq) : pair
+                const value = eq > 0 ? pair.slice(eq + 1) : ''
+                return { name, fp: value ? fingerprint(value) : '(empty)' }
+              }),
+          },
           'authentikPassword: DIAGNOSTIC — cookie jar state before consent-confirm POST'
         )
         challenge = await flowRequest(
