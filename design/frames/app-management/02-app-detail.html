@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App detail — frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-app-detail">
+  <a class="back" href="01-app-list.html">← All applications</a>
+  <div class="eyebrow">App detail · Frame (b) · route /apps/:appId</div>
+
+  <div class="detail-head" data-panel="app-detail-header" data-app="crm">
+    <div class="appicon appicon--lg" aria-hidden="true">📇</div>
+    <div class="grow">
+      <h1 class="detail-title">Northwind CRM</h1>
+      <div class="rowflex">
+        <span class="slug-cell">crm</span>
+        <span class="status status--activated" data-app-state="activated"><span class="dot"></span>Activated</span>
+        <span class="vis vis--organization">Organization</span>
+        <span class="tag">module-federation</span>
+      </div>
+    </div>
+    <div class="actions" data-panel="lifecycle-actions">
+      <a class="btn" href="03-app-settings.html" data-action="edit-settings">Edit settings</a>
+      <button class="btn btn-danger" data-action="suspend-app" data-target="crm">Suspend</button>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist" data-panel="app-tabs">
+    <a class="tab" role="tab" aria-selected="true" data-tab="overview" href="02-app-detail.html">Overview</a>
+    <a class="tab" role="tab" aria-selected="false" data-tab="settings" href="03-app-settings.html">Settings &amp; attributes</a>
+    <a class="tab" role="tab" aria-selected="false" data-tab="installations" href="04-installations.html">Installations</a>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Overview</h2><span class="muted mono" data-field="updatedAt">updated 2026-08-08</span></div>
+    <div class="panel-body">
+      <dl class="defs">
+        <dt>Display name</dt><dd>Northwind CRM</dd>
+        <dt>Slug</dt><dd class="slug-cell">crm <span class="muted">· immutable</span></dd>
+        <dt>Lifecycle state</dt><dd><span class="status status--activated"><span class="dot"></span>Activated</span></dd>
+        <dt>Visibility</dt><dd><span class="vis vis--organization">Organization</span> — visible to members of the owning org</dd>
+        <dt>Owning org</dt><dd>Northwind Inc. <span class="muted mono">org_01hzz…nw</span></dd>
+        <dt>Integration</dt><dd>Module federation · remote <span class="mono">crm</span></dd>
+        <dt>Entry / route</dt><dd class="mono">/apps/crm → https://crm.northwind.example/remoteEntry.js</dd>
+        <dt>Menu chrome</dt><dd>Host menu (default)</dd>
+        <dt>Health</dt><dd><span class="status status--healthy"><span class="dot"></span>Healthy</span> <span class="muted">· last heartbeat 40s ago</span></dd>
+        <dt>Installations</dt><dd>3 scopes — <a href="04-installations.html" data-action="view-installations">manage</a></dd>
+      </dl>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> The header + overview bind to <code>GET /api/v1/app-registry/apps/{slug}</code>
+    (the <code>AppManifest</code>). <b>Lifecycle actions</b> are state-driven: an <i>activated</i> app
+    shows <b>Suspend</b> (<code>POST /apps/{slug}/suspend</code>); a <i>registered</i> or
+    <i>suspended</i> app shows <b>Activate</b> (<code>POST /apps/{slug}/activate</code>) — never both.
+    Requires the <code>apps:activate</code> scope; a caller without it sees the buttons
+    read-only/absent (fail-closed, frame f). <b>Edit settings</b> → frame (c). <b>Built-in apps</b>
+    (<code>builtin: true</code>) hide Delete entirely — the slug, builtin flag and manifest core are
+    immutable on <code>PUT</code>. Health derives from <code>GET /apps/{slug}/heartbeat</code>.
+  </p>
+
+  <nav class="pager"><a href="01-app-list.html">← App list</a><a href="03-app-settings.html">Next: Settings &amp; attributes →</a></nav>
+</div>
+</body>
+</html>
