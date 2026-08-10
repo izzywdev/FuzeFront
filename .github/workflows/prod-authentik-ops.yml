@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: 'diagnose | apply'
+        description: 'diagnose | apply | stock-apply'
         required: true
         default: 'diagnose'
       blueprints:
