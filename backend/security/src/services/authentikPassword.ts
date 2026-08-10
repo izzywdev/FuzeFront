@@ -273,7 +273,7 @@ export class UnsupportedFlowStageError extends Error {
 export class CookieJar {
   private cookies = new Map<string, string>()
 
-  absorb(res: { headers: Headers }): void {
+  absorb(res: { headers: Headers }, label?: string): void {
     // Node >=18.14 exposes getSetCookie(); fall back to the single-value get()
     // (sufficient in practice — Authentik sets one cookie per response hop).
     const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] }
@@ -281,6 +281,18 @@ export class CookieJar {
       typeof anyHeaders.getSetCookie === 'function'
         ? anyHeaders.getSetCookie()
         : ([res.headers.get('set-cookie')].filter(Boolean) as string[])
+    // TEMPORARY diagnostic (FuzeFront#557 follow-up round 6): the
+    // consent-confirm POST is rejected with "CSRF token missing" even though
+    // the header IS sent with a well-formed value, and the request's own
+    // access log shows an empty `user` — trace every Set-Cookie this jar
+    // absorbs to see whether/when authentik_session or authentik_csrf
+    // actually rotate across the chain.
+    if (label && setCookies.length > 0) {
+      logger.warn(
+        { label, setCookies: setCookies.map(sc => sc.split(';')[0]) },
+        'authentikPassword: DIAGNOSTIC — Set-Cookie absorbed'
+      )
+    }
     for (const sc of setCookies) {
       const pair = sc.split(';')[0]
       const eq = pair.indexOf('=')
@@ -417,7 +429,7 @@ export async function flowRequest(
       method,
       status: res.status,
     })
-    jar.absorb(res)
+    jar.absorb(res, `flowRequest slug=${slug} hop=${hop} ${method}`)
 
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
@@ -662,7 +674,7 @@ export async function completeOidcWithSession(
       hop,
       status: res.status,
     })
-    jar.absorb(res)
+    jar.absorb(res, `authorize.hop hop=${hop} status=${res.status}`)
 
     let next = res.headers.get('location')
     // Confirmed against real Authentik 2026.5.5 in CI (FuzeFront#557): when

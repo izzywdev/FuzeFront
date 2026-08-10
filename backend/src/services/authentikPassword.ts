@@ -38,12 +38,21 @@ export class UnsupportedFlowStageError extends Error {
 class CookieJar {
   private cookies = new Map<string, string>()
 
-  absorb(res: { headers: Headers }): void {
+  absorb(res: { headers: Headers }, label?: string): void {
     const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] }
     const setCookies: string[] =
       typeof anyHeaders.getSetCookie === 'function'
         ? anyHeaders.getSetCookie()
         : ([res.headers.get('set-cookie')].filter(Boolean) as string[])
+    // TEMPORARY diagnostic (FuzeFront#557 follow-up round 6): trace every
+    // Set-Cookie this jar absorbs to see whether/when authentik_session or
+    // authentik_csrf actually rotate across the chain.
+    if (label && setCookies.length > 0) {
+      console.warn('authentikPassword: DIAGNOSTIC — Set-Cookie absorbed', {
+        label,
+        setCookies: setCookies.map(sc => sc.split(';')[0]),
+      })
+    }
     for (const sc of setCookies) {
       const pair = sc.split(';')[0]
       const eq = pair.indexOf('=')
@@ -163,7 +172,7 @@ async function flowRequest(
         `Authentik unreachable at ${base}: ${(err as Error).message}`
       )
     }
-    jar.absorb(res)
+    jar.absorb(res, `flowRequest slug=${slug} hop=${hop} ${method}`)
 
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
@@ -297,7 +306,7 @@ export async function authentikPasswordLogin(
         `Authorize request failed: ${(err as Error).message}`
       )
     }
-    jar.absorb(res)
+    jar.absorb(res, `authorize.hop hop=${hop} status=${res.status}`)
 
     let next = res.headers.get('location')
     // Confirmed against real Authentik 2026.5.5 in CI (FuzeFront#557): when
