@@ -23,22 +23,10 @@
  */
 import { generators } from 'openid-client'
 import { Agent } from 'undici'
-import { createHash } from 'node:crypto'
 import { getOidcService } from './oidc'
 import { currentTenant } from '../providers/authentik/tenants'
 import { User } from '../types/shared'
 import { logger } from '../lib/logger'
-
-/**
- * TEMPORARY diagnostic helper (FuzeFront#557 follow-up round 7): a short,
- * non-reversible fingerprint so cookie ROTATION is visible across log lines
- * (same value -> same fingerprint) without printing the raw secret — and
- * without whatever masks "authentik_session=<value>" wholesale in CI logs,
- * which made the round-6 trace unreadable.
- */
-function fingerprint(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 10)
-}
 
 /**
  * Hard per-fetch timeout (ms) for EVERY server-side Authentik HTTP hop driven in
@@ -285,7 +273,7 @@ export class UnsupportedFlowStageError extends Error {
 export class CookieJar {
   private cookies = new Map<string, string>()
 
-  absorb(res: { headers: Headers }, label?: string): void {
+  absorb(res: { headers: Headers }): void {
     // Node >=18.14 exposes getSetCookie(); fall back to the single-value get()
     // (sufficient in practice — Authentik sets one cookie per response hop).
     const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] }
@@ -293,27 +281,6 @@ export class CookieJar {
       typeof anyHeaders.getSetCookie === 'function'
         ? anyHeaders.getSetCookie()
         : ([res.headers.get('set-cookie')].filter(Boolean) as string[])
-    // TEMPORARY diagnostic (FuzeFront#557 follow-up round 7): round 6's trace
-    // showed every value masked as "***" in the CI logs (some redaction we
-    // don't control masks "authentik_session=<value>" wholesale), making
-    // rotation invisible. Log a short non-reversible fingerprint per cookie
-    // instead — identical fingerprints across log lines mean the SAME value,
-    // a changed one means real rotation.
-    if (label && setCookies.length > 0) {
-      logger.warn(
-        {
-          label,
-          cookies: setCookies.map(sc => {
-            const pair = sc.split(';')[0]
-            const eq = pair.indexOf('=')
-            const name = eq > 0 ? pair.slice(0, eq).trim() : pair
-            const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
-            return { name, fp: value ? fingerprint(value) : '(empty)' }
-          }),
-        },
-        'authentikPassword: DIAGNOSTIC — Set-Cookie absorbed'
-      )
-    }
     for (const sc of setCookies) {
       const pair = sc.split(';')[0]
       const eq = pair.indexOf('=')
@@ -416,24 +383,6 @@ export async function flowRequest(
       // never sent (FuzeFront#557 round 10).
       const csrf = jar.get('authentik_csrf')
       if (csrf) headers['X-Authentik-CSRF'] = csrf
-      if (slug.includes('authorization-implicit-consent')) {
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 5): the cookie
-        // jar has the CSRF value right before this call, yet Authentik still
-        // reports "CSRF token missing" — log exactly what this fetch sends.
-        logger.warn(
-          {
-            hop,
-            slug,
-            url,
-            headers: { ...headers, Cookie: headers.Cookie ? '<redacted>' : undefined },
-            // Deliberately NOT logging `payload` — flowRequest() is shared
-            // with the password stage, and CodeQL correctly flags it as a
-            // credential-bearing sink even under this consent-only guard.
-            bodyFields: body ? Object.keys(body) : [],
-          },
-          'authentikPassword: DIAGNOSTIC — outgoing headers for the consent-flow POST'
-        )
-      }
     }
 
     let res: Response
@@ -457,7 +406,7 @@ export async function flowRequest(
       method,
       status: res.status,
     })
-    jar.absorb(res, `flowRequest slug=${slug} hop=${hop} ${method}`)
+    jar.absorb(res)
 
     const loc = res.headers.get('location')
     if ([301, 302, 303, 307, 308].includes(res.status) && loc) {
@@ -702,7 +651,7 @@ export async function completeOidcWithSession(
       hop,
       status: res.status,
     })
-    jar.absorb(res, `authorize.hop hop=${hop} status=${res.status}`)
+    jar.absorb(res)
 
     let next = res.headers.get('location')
     // Confirmed against real Authentik 2026.5.5 in CI (FuzeFront#557): when
@@ -729,28 +678,6 @@ export async function completeOidcWithSession(
         // ConsentStage exactly once via the API (the browser client would
         // auto-submit it without ever showing UI) — POST its token back to
         // confirm, which then resolves to the actual redirect challenge.
-        //
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 7): fingerprint
-        // (see above) every cookie the jar holds right before the POST, so
-        // it can be compared against the per-hop Set-Cookie trace to confirm
-        // exactly which value was actually sent.
-        logger.warn(
-          {
-            hop,
-            slug,
-            cookies: jar
-              .header()
-              .split('; ')
-              .filter(Boolean)
-              .map(pair => {
-                const eq = pair.indexOf('=')
-                const name = eq > 0 ? pair.slice(0, eq) : pair
-                const value = eq > 0 ? pair.slice(eq + 1) : ''
-                return { name, fp: value ? fingerprint(value) : '(empty)' }
-              }),
-          },
-          'authentikPassword: DIAGNOSTIC — cookie jar state before consent-confirm POST'
-        )
         challenge = await flowRequest(
           base,
           slug,
@@ -766,15 +693,6 @@ export async function completeOidcWithSession(
         next = challenge.to
       } else {
         flowStageSeen = challenge.component || challenge.type
-        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 3): the
-        // consent-token POST is confirmed reached (this now reports
-        // ak-stage-flow-error instead of the old generic message), so
-        // Authentik is rejecting the POST itself. Log the full challenge —
-        // Authentik's flow-error stage usually carries the actual reason.
-        logger.warn(
-          { hop, slug, flowQuery, challenge },
-          'authentikPassword: DIAGNOSTIC — flow-executor challenge after consent POST was not a recognized redirect'
-        )
       }
     } else {
       // Nothing else in this chain ever reads an authorize response BODY —
