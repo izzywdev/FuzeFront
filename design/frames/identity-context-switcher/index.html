@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Personal identity & context switcher — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="idx">
+  <div class="eyebrow">Contract-freeze · UX approval · design-first</div>
+  <h1>Personal identity &amp; context switcher · Approval Frames</h1>
+  <p class="lead">These frames demonstrate the <b>identity + org-context</b> model before any feature UI
+    is implemented. The <b>user identity is the base principal</b>; signup makes you a <b>member of the
+    root <span class="mono">FuzeFront</span> platform org</b> (Slack/GitHub shape), and orgs are opt-in
+    tenants you own or join. Operating <b>as yourself</b> is a first-class <b>Personal</b> (non-org)
+    context; the root org now shows a <b>MEMBER</b> badge — <b>never GUEST</b>. This set reconciles the
+    two switchers that exist today: the local <span class="mono">&lt;select&gt;</span> in
+    <span class="mono">OrganizationPage.tsx</span> and the canonical persisted
+    <span class="mono">setActiveOrganization</span> in <span class="mono">UserMenu.tsx</span> into one
+    <b>ContextSwitcher</b>. Approving freezes the visual + interaction contract and the build inventory
+    below. Built in the fuse-seam design system (tokens only).</p>
+
+  <div class="grid">
+    <a href="01-personal-context.html" class="frame-link" data-frame-link="01-personal-context">
+      <div class="seam"></div><div class="step">Frame (a) · flow: context-switch</div>
+      <h3>👤 Personal context</h3>
+      <p>Operating "as yourself": the non-org Personal home. Context pill reads <b>Personal</b>; personal-scope app installs and a shortcut into your orgs. No tenant nav.</p>
+    </a>
+    <a href="02-org-context.html" class="frame-link" data-frame-link="02-org-context">
+      <div class="seam"></div><div class="step">Frame (b) · flow: context-switch</div>
+      <h3>🏢 Org context — root MEMBER</h3>
+      <p>Inside the root <span class="mono">FuzeFront</span> org. The header badge is <b>MEMBER</b> (never GUEST) because signup writes a real root membership row.</p>
+    </a>
+    <a href="03-switcher.html" class="frame-link" data-frame-link="03-switcher">
+      <div class="seam"></div><div class="step">Frame (c) · flow: context-switch</div>
+      <h3>🔀 Context switcher</h3>
+      <p>The unified switcher menu: Personal + your orgs &amp; nested sub-orgs, active check, persisted via <span class="mono">setActiveOrganization</span>. Reconciles the two switchers.</p>
+    </a>
+    <a href="04-my-orgs.html" class="frame-link" data-frame-link="04-my-orgs">
+      <div class="seam"></div><div class="step">Frame (d) · flow: my-orgs</div>
+      <h3>🗂️ My orgs &amp; sub-orgs</h3>
+      <p>Manage the orgs you own or belong to, each with your role pill and its sub-org tree; create a new org. Direct memberships only.</p>
+    </a>
+    <a href="05-states.html" class="frame-link" data-frame-link="05-states">
+      <div class="seam"></div><div class="step">Frame (e) · states are contract</div>
+      <h3>◔ States</h3>
+      <p>Loading skeleton (aria-busy), empty (Personal + root only), provisioning gate, switch error+retry, and the fail-closed 403-in-place when you switch into an org you no longer belong to — never a sign-in redirect.</p>
+    </a>
+  </div>
+
+  <section class="inv">
+    <h2>Build inventory <span class="inv-note">— approving these frames approves this plan</span></h2>
+    <div class="inv-grid">
+      <div class="inv-card">
+        <div class="inv-k">Flows</div>
+        <ul>
+          <li><span class="mono">context-switch</span> → <span class="mono">ContextSwitcherFlow</span> @ <span class="mono">/</span> · <span class="pending">approved:false</span></li>
+          <li><span class="mono">my-orgs</span> → <span class="mono">MyOrganizationsFlow</span> @ <span class="mono">/organizations</span> · <span class="pending">approved:false</span></li>
+        </ul>
+      </div>
+      <div class="inv-card">
+        <div class="inv-k">Components</div>
+        <ul class="cols">
+          <li>ContextSwitcher</li><li>ContextPill</li><li>PersonalContextHome</li>
+          <li>OrgContextBadge</li><li>MembershipRoleBadge</li><li>MyOrganizationsList</li>
+          <li>OrgCard</li><li>SubOrgTree</li><li>CreateOrganizationDialog</li>
+          <li>ProvisioningGate</li><li>ContextSwitchErrorNotice</li><li>AccessLostNotice</li>
+        </ul>
+      </div>
+      <div class="inv-card">
+        <div class="inv-k">Packages</div>
+        <ul><li class="mono">@fuzefront/identity-ui</li></ul>
+        <div class="inv-k">Feature flags</div>
+        <ul><li class="mono">fuzefront.identity.root-membership</li><li class="mono">fuzefront.identity.personal-context</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="inv">
+    <h2>Contract mapping <span class="inv-note">— what approval commissions</span></h2>
+    <ul class="contract">
+      <li><b>Real:</b> <span class="mono">@fuzefront/security-client</span> · <span class="mono">packages/security/openapi.yaml</span> — <span class="mono">GET /api/organizations</span> (returns <span class="mono">user_role</span> per org, #529), <span class="mono">GET /api/organizations/{id}</span>.</li>
+      <li><b>Client-persisted:</b> active-org selection via <span class="mono">setActiveOrganization</span> (<span class="mono">lib/shared.tsx</span>) — no server call; supersedes the local <span class="mono">&lt;select&gt;</span> in <span class="mono">OrganizationPage.tsx</span>.</li>
+      <li><b>Commissioned by approval:</b> a <b>Personal (non-org) context</b> as a switcher target (not an org row); the root org resolving to <span class="mono">user_role='member'</span> so the <b>root GUEST state is retired</b> in favour of a <b>MEMBER</b> badge (depends on the <span class="mono">fuzefront.identity.root-membership</span> backend slice); <span class="mono">type='personal'</span> orgs are <b>dropped</b> from the switcher — a person is Personal, not the owner of a personal org.</li>
+    </ul>
+  </section>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Plan: <code>docs/planning/design-first-ui-pipeline.md</code> · Reconciles: <code>frontend/src/pages/OrganizationPage.tsx</code>, <code>frontend/src/components/UserMenu.tsx</code>, <code>frontend/src/lib/shared.tsx</code>.<br />
+    Approve per flow by setting <code>build.flows[].approved: true</code> (+ approver + date), or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>
