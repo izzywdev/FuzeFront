@@ -124,6 +124,35 @@ applicationsService:
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
+# ---- MCP SSE gateway: ON ---------------------------------------------------
+# FuzeFront's own MCP pod, running the shared @fuzefront/mcp-gateway image this
+# repo publishes, over the app-registry contract served by applicationsService
+# above. ClusterIP only — deliberately NOT exposed through the ingress: the
+# gateway forwards the caller's identity to the app-registry API and has no
+# authentication of its own, so publishing it to the internet would put an
+# unauthenticated front door on a tool surface that includes deleteApp.
+# Reaching it from outside the cluster is a separate decision that needs an
+# authenticating proxy.
+#
+# The tag is PINNED to a published :sha, verified present in GHCR
+# (ghcr.io/izzywdev/fuze-mcp-gateway:12cb4f787248 →
+# sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de),
+# built by mcp-gateway-image.yml run 31411682066. NOT `latest`: the component
+# that decides whether a tool is advertised as a safe read or an irreversible
+# write must not roll forward silently.
+#
+# It happens to be the same SHA as applicationsService above because master
+# commit 12cb4f78 triggered both release.yml and mcp-gateway-image.yml — the
+# gateway and the API it fronts are from one commit. That is a coincidence of
+# this release, not an invariant; the two tags move independently.
+mcp:
+  enabled: true
+  replicas: 1
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten

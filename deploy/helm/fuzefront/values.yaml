@@ -247,6 +247,52 @@ applicationsService:
   affinity: {}
   tolerations: []
 
+# ---------------------------------------------------------------------------
+# MCP SSE gateway — FuzeFront's own pod running the SHARED
+# @fuzefront/mcp-gateway image (one image, one pod per product).
+#
+# FuzeFront publishes that image from packages/mcp-gateway and every product in
+# the family deploys one. This is FuzeFront's, and its upstream is the
+# applications-service app-registry surface — the API by which every other app
+# is registered, activated and surfaced in the shell.
+#
+# Disabled by default so a local/dev render does not schedule it. Enabled, and
+# PINNED, in values-prod.yaml.
+#
+# The image tag is pinned to a published :sha and MUST NOT become `latest`.
+# This component decides whether a tool is advertised to an agent as a safe read
+# or an irreversible write, so rolling it forward silently is not acceptable —
+# a change in classification behaviour must arrive as a reviewed tag bump.
+# NOTE: release.yml's values-prod tag bump is allowlisted to
+# `ghcr.io/izzywdev/fuzefront-*` repositories, so it will not rewrite this tag.
+mcp:
+  enabled: false
+  replicas: 1
+  port: 8081
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Published by .github/workflows/mcp-gateway-image.yml. Verified present in
+    # GHCR (digest sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de).
+    # `0.1.0` was NEVER published despite several charts referencing it — do not
+    # reintroduce it.
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+  # Empty = derive from the in-cluster applications-service Service, INCLUDING
+  # the /api/v1/app-registry prefix the contract's `servers` entry declares.
+  # Never point this at the public ingress host: the gateway has no
+  # authentication of its own and must stay on the cluster network.
+  upstreamBaseUrl: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+
 # Service and exposed SAME-ORIGIN under the app host at /apps/clock/ (see
