@@ -40,3 +40,9 @@ CLAUDE.md text eol=lf
 package.json    text eol=lf
 **/package.json text eol=lf
 lerna.json      text eol=lf
+
+# Same pre-existing-CRLF-before-gate-line-endings-existed story as CLAUDE.md
+# above: these two files were already stored as CRLF and tripped the gate the
+# first time a PR touched them (#587). Pin them to LF so it doesn't recur.
+backend/security/src/services/authentikPassword.ts text eol=lf
+backend/security/tests/authentik-password-login.test.ts text eol=lf
