@@ -26,8 +26,13 @@ name: Publish packages (GitHub Packages, private)
 # last part is what the per-package publishers this replaces got wrong.
 #
 # Publishing is idempotent — a version already in the registry is skipped, not
-# overwritten — so re-runs and any overlap with the remaining per-package
-# publishers are both safe.
+# overwritten — so a re-run after a partial failure is safe. The first live run
+# exercised exactly that: 13 published, 5 skipped, 0 failed, the 5 being versions
+# the interim per-package publishers had already shipped.
+#
+# Those interim publishers (chat/auth-ui/design-system/security) are now DELETED.
+# Their own headers said to remove them once this workflow worked; it does, and
+# it is a strict superset — all 5 of their packages are among the 18 here.
 #
 # VERSIONS ARE BUMPED IN THE PR, NOT HERE. The old design had lerna compute
 # conventional-commit bumps and push the version commit + tags back to master.
