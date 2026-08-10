@@ -146,16 +146,7 @@ async function flowRequest(
   // semantics a redirected POST is retried as GET.
   let url = `${base}/api/v3/flows/executor/${slug}/?query=${encodeURIComponent(flowQuery ?? '')}`
   let method: 'GET' | 'POST' = body ? 'POST' : 'GET'
-  // Send the CSRF token both ways: the X-CSRFToken header (Django's default
-  // read path) AND csrfmiddlewaretoken in the body (Django's classic
-  // form-field fallback) — the header alone is confirmed present and
-  // well-formed yet still rejected as "missing" (FuzeFront#557 round 5), so
-  // this covers the possibility that Authentik's ASGI stack reads it from
-  // the body instead of (or in addition to) the header.
-  const csrfForBody = jar.get('authentik_csrf')
-  let payload: string | undefined = body
-    ? JSON.stringify(csrfForBody ? { ...body, csrfmiddlewaretoken: csrfForBody } : body)
-    : undefined
+  let payload: string | undefined = body ? JSON.stringify(body) : undefined
 
   for (let hop = 0; hop < 10; hop++) {
     const headers: Record<string, string> = {
@@ -167,8 +158,15 @@ async function flowRequest(
     if (cookie) headers['Cookie'] = cookie
     if (method === 'POST') {
       headers['Content-Type'] = 'application/json'
+      // Authentik overrides Django's default CSRF_HEADER_NAME to
+      // "HTTP_X_AUTHENTIK_CSRF" (confirmed via authentik's settings.py and
+      // multiple upstream issues/discussions) — it never reads the Django
+      // default `X-CSRFToken` header, which is why every prior round's
+      // "header confirmed present and well-formed" was still rejected as
+      // "CSRF token missing": the header authentik was reading was simply
+      // never sent (FuzeFront#557 round 10).
       const csrf = jar.get('authentik_csrf')
-      if (csrf) headers['X-CSRFToken'] = csrf
+      if (csrf) headers['X-Authentik-CSRF'] = csrf
       if (slug.includes('authorization-implicit-consent')) {
         // TEMPORARY diagnostic (FuzeFront#557 follow-up round 5): the cookie
         // jar has the CSRF value right before this call, yet Authentik still

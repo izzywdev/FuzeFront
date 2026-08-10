@@ -130,7 +130,7 @@ describe('authentikPasswordLogin()', () => {
       component: 'ak-stage-identification',
       uid_field: 'e2e@test.local',
     })
-    expect(identInit.headers['X-CSRFToken']).toBe('csrf-tok')
+    expect(identInit.headers['X-Authentik-CSRF']).toBe('csrf-tok')
 
     // Authorize GET presented the authenticated session cookie.
     const [authorizeUrl, authorizeInit] = fetchMock.mock.calls[3]
@@ -171,7 +171,7 @@ describe('authentikPasswordLogin()', () => {
     const [identUrl, identInit] = fetchMock.mock.calls[2]
     expect(identUrl).toContain('/flows/executor/')
     expect(identInit.headers.Cookie).toContain('authentik_session=pre-sess')
-    expect(identInit.headers['X-CSRFToken']).toBe('csrf-tok')
+    expect(identInit.headers['X-Authentik-CSRF']).toBe('csrf-tok')
   })
 
   it('supports a combined identification+password stage (password_fields: true)', async () => {
