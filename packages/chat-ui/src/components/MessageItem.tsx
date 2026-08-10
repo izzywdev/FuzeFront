@@ -3,6 +3,7 @@ import type { UiMessage } from '../hooks/types';
 import { Citations } from './Citations';
 import { ConfirmationCard } from './ConfirmationCard';
 import { FeedbackButtons } from './FeedbackButtons';
+import { renderInlineMarkdown } from '../lib/markdown';
 
 export interface MessageItemProps {
   message: UiMessage;
@@ -11,11 +12,20 @@ export interface MessageItemProps {
   onFeedback: (messageId: string, rating: 'positive' | 'negative') => void;
 }
 
+/** Slack/WhatsApp-style short local time, e.g. "10:42 AM". Undefined if unparseable. */
+function formatMessageTime(createdAt?: string): string | undefined {
+  if (!createdAt) return undefined;
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
 /** A single chat turn: bubble, streaming caret, citations, confirmations, feedback. */
 export function MessageItem({ message, onApprove, onCancel, onFeedback }: MessageItemProps) {
   const { strings } = useChatI18n();
   const isAssistant = message.role === 'assistant';
   const roleLabel = isAssistant ? strings.assistantRole : strings.userRole;
+  const timeLabel = formatMessageTime(message.createdAt);
 
   return (
     <article
@@ -23,10 +33,17 @@ export function MessageItem({ message, onApprove, onCancel, onFeedback }: Messag
       aria-label={roleLabel}
       data-streaming={message.streaming || undefined}
     >
-      <span className="ffc-msg__role">{roleLabel}</span>
+      <div className="ffc-msg__meta">
+        <span className="ffc-msg__role">{roleLabel}</span>
+        {timeLabel ? (
+          <time className="ffc-msg__time" dateTime={message.createdAt}>
+            {timeLabel}
+          </time>
+        ) : null}
+      </div>
 
       <div className="ffc-bubble">
-        {message.content}
+        {renderInlineMarkdown(message.content)}
         {message.streaming ? (
           <span className="ffc-caret" aria-hidden="true" data-testid="ffc-caret" />
         ) : null}

@@ -46,6 +46,7 @@ function toUiMessages(stored: ConversationMessage[]): UiMessage[] {
       role: m.role,
       content: contentText(m.content),
       streaming: false,
+      createdAt: m.createdAt,
     }));
 }
 
@@ -165,8 +166,13 @@ export function useChat(options: UseChatOptions): UseChatResult {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      dispatch({ kind: 'user_message', id: nextId('u'), content: trimmed });
-      dispatch({ kind: 'assistant_start', id: nextId('a') });
+      dispatch({
+        kind: 'user_message',
+        id: nextId('u'),
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+      });
+      dispatch({ kind: 'assistant_start', id: nextId('a'), createdAt: new Date().toISOString() });
 
       historyRef.current = [...historyRef.current, { role: 'user', content: trimmed }];
 

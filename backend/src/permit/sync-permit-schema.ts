@@ -271,6 +271,40 @@ export async function loadRegisteredPolicyResult(
     /* eslint-disable @typescript-eslint/no-var-requires */
     const { db } = require('../config/database')
     /* eslint-enable @typescript-eslint/no-var-requires */
+
+    // The `apps.slug` and `apps.policy` columns are provisioned by the
+    // APPLICATIONS-service migration chain (006_add_app_policy_and_billing,
+    // recorded under knex_migrations_apps) — NOT by this (backend) image, whose
+    // chain only creates the base `apps` table (002_create_apps_table). On a
+    // fresh install or a coordinated upgrade the permit-schema-sync post-upgrade
+    // hook can run before the applications service has landed that migration.
+    //
+    // When the column is genuinely absent, NO product has been able to register
+    // a policy yet, so the correct result is "registry available, zero
+    // registered policies" (available: true) — NOT "registry unavailable". The
+    // distinction matters because the CLI job treats `available: false` as fatal
+    // (exit 1): letting the SELECT throw `column "policy" does not exist` here
+    // turned a benign deploy-ordering window into a crash-looping Job.
+    //
+    // The hard-fail stays reserved for a REAL registry outage: if the DB is
+    // unreachable, `hasTable`/`hasColumn` themselves reject and land in the
+    // catch below → available: false → the job exits non-zero, exactly as
+    // designed. We only downgrade to "empty" when we can POSITIVELY confirm the
+    // storage does not exist, never when we simply failed to read it.
+    const hasApps = await db.schema.hasTable('apps')
+    const hasPolicyStorage =
+      hasApps &&
+      (await db.schema.hasColumn('apps', 'slug')) &&
+      (await db.schema.hasColumn('apps', 'policy'))
+    if (!hasPolicyStorage) {
+      log(
+        'App-registry policy storage not present yet (apps.policy column ' +
+          'unmigrated) — no product has registered a policy; syncing the base + ' +
+          'legacy schema only'
+      )
+      return { available: true, policies: [], rejected, error: null }
+    }
+
     const rows = await db('apps')
       .whereNotNull('slug')
       .whereNotNull('policy')

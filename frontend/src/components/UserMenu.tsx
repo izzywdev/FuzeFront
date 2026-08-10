@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LanguageSelector, useT } from '@fuzefront/i18n'
-import { Skeleton, StatusCallout } from '@fuzefront/design-system'
+import { Button, Skeleton, StatusCallout } from '@fuzefront/design-system'
 import { User, useCurrentUser, useOrganizations } from '../lib/shared'
 import { useAccounts } from '../contexts/AccountsContext'
 import { usePermissions } from './PermissionGate'
@@ -417,13 +417,13 @@ export function OrganizationSwitcherSection({
             tone="error"
             title={t('organizations.loadFailed')}
             actions={
-              <button
-                className="btn btn-ghost"
+              <Button
+                variant="ghost"
                 data-action="retry"
                 onClick={() => void load()}
               >
                 {t('actions.retry')}
-              </button>
+              </Button>
             }
           />
         </div>

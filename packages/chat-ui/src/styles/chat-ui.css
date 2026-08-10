@@ -41,7 +41,12 @@
 /* ---- Drawer ------------------------------------------------- */
 .ffc-drawer {
   position: fixed;
-  inset-block: 0;
+  /* Sit below the host shell's top bar (var(--top-bar-height), defined by
+     @fuzefront/design-system) rather than covering it — the drawer must
+     never obscure the user/toast menu that lives in the top bar. Falls back
+     to 0 for a standalone host that doesn't define the token. */
+  inset-block-start: var(--top-bar-height, 0px);
+  inset-block-end: 0;
   inset-inline-end: 0;
   inline-size: min(420px, 100vw);
   display: flex;
@@ -158,11 +163,29 @@
   color: var(--text-primary);
   border-start-start-radius: var(--radius-sm);
 }
+.ffc-msg__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
 .ffc-msg__role {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide, 0.04em);
+}
+.ffc-msg__time {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Inline markdown emphasis inside a bubble (see lib/markdown.tsx). */
+.ffc-bubble code {
+  font-family: var(--font-mono);
+  background: var(--bg-secondary);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
 }
 
 /* Streaming caret. */

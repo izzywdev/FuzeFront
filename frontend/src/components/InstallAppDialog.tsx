@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useT } from '@fuzefront/i18n'
-import { Modal, Spinner, StatusCallout } from '@fuzefront/design-system'
+import { Button, Modal, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   AppInstallation,
@@ -320,9 +320,9 @@ export function InstallAppDialog({
             gap: 'var(--space-3)',
           }}
         >
-          <button className="btn btn-ghost" data-action="cancel" onClick={onClose}>
+          <Button variant="ghost" data-action="cancel" onClick={onClose}>
             {everyoneInstall ? t('actions.close') : t('actions.cancel')}
-          </button>
+          </Button>
           {everyoneInstall ? (
             <button
               className="btn btn-primary"

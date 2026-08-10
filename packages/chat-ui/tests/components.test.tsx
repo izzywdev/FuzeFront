@@ -7,6 +7,7 @@ import { Composer } from '../src/components/Composer';
 import { ConfirmationCard } from '../src/components/ConfirmationCard';
 import { Citations } from '../src/components/Citations';
 import { FeedbackButtons } from '../src/components/FeedbackButtons';
+import { MessageItem } from '../src/components/MessageItem';
 import type { UiMessage, PendingConfirmation } from '../src/hooks/types';
 
 function wrap(ui: React.ReactNode, dir: 'ltr' | 'rtl' = 'ltr') {
@@ -113,6 +114,44 @@ describe('FeedbackButtons', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Bad response' }));
     expect(onFeedback).toHaveBeenCalledWith('m1', 'negative');
+  });
+});
+
+describe('MessageItem', () => {
+  const noopHandlers = { onApprove: noop, onCancel: noop, onFeedback: noop };
+
+  it('renders **bold** markdown as a <strong> element, not literal asterisks', () => {
+    const message: UiMessage = {
+      id: 'm1',
+      role: 'assistant',
+      content: 'This is **bold** text.',
+      streaming: false,
+    };
+    wrap(<MessageItem message={message} {...noopHandlers} />);
+    const strong = screen.getByText('bold');
+    expect(strong.tagName).toBe('STRONG');
+    expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument();
+  });
+
+  it('renders a <time> element with a formatted timestamp when createdAt is set', () => {
+    const message: UiMessage = {
+      id: 'm1',
+      role: 'user',
+      content: 'hi',
+      streaming: false,
+      createdAt: '2026-08-10T14:05:00.000Z',
+    };
+    wrap(<MessageItem message={message} {...noopHandlers} />);
+    const time = document.querySelector('time.ffc-msg__time');
+    expect(time).toBeInTheDocument();
+    expect(time).toHaveAttribute('dateTime', message.createdAt);
+    expect(time?.textContent).not.toBe('');
+  });
+
+  it('renders no timestamp when createdAt is absent', () => {
+    const message: UiMessage = { id: 'm1', role: 'user', content: 'hi', streaming: false };
+    wrap(<MessageItem message={message} {...noopHandlers} />);
+    expect(document.querySelector('time.ffc-msg__time')).not.toBeInTheDocument();
   });
 });
 
