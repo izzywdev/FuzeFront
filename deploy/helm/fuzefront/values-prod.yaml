@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 090f756c5a30
+    tag: 9b353cd76d6e
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -109,7 +109,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -124,6 +124,35 @@ applicationsService:
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
+# ---- MCP SSE gateway: ON ---------------------------------------------------
+# FuzeFront's own MCP pod, running the shared @fuzefront/mcp-gateway image this
+# repo publishes, over the app-registry contract served by applicationsService
+# above. ClusterIP only — deliberately NOT exposed through the ingress: the
+# gateway forwards the caller's identity to the app-registry API and has no
+# authentication of its own, so publishing it to the internet would put an
+# unauthenticated front door on a tool surface that includes deleteApp.
+# Reaching it from outside the cluster is a separate decision that needs an
+# authenticating proxy.
+#
+# The tag is PINNED to a published :sha, verified present in GHCR
+# (ghcr.io/izzywdev/fuze-mcp-gateway:12cb4f787248 →
+# sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de),
+# built by mcp-gateway-image.yml run 31411682066. NOT `latest`: the component
+# that decides whether a tool is advertised as a safe read or an irreversible
+# write must not roll forward silently.
+#
+# It happens to be the same SHA as applicationsService above because master
+# commit 12cb4f78 triggered both release.yml and mcp-gateway-image.yml — the
+# gateway and the API it fronts are from one commit. That is a coincidence of
+# this release, not an invariant; the two tags move independently.
+mcp:
+  enabled: true
+  replicas: 1
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
@@ -132,7 +161,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 090f756c5a30
+    tag: 12cb4f787248
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -143,7 +172,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -184,7 +213,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -204,7 +233,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -239,7 +268,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -277,7 +306,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -516,7 +545,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -557,7 +586,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 090f756c5a30
+    tag: 12cb4f787248
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +

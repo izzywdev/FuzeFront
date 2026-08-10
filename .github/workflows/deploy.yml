@@ -1,10 +1,32 @@
 name: Deploy FuzeFront Website (SSH)
 
+# SCOPED to the website stack. Everything this workflow touches lives under
+# fuzefront-website/ (backend, frontend, and infrastructure/main.tf), but it had
+# no `paths:` filter — so it planned Terraform against AWS on EVERY pull request
+# to master, including ones that change nothing it deploys.
+#
+# That plan currently fails outright: data.aws_vpc.default, data.aws_lb.main and
+# data.aws_autoscaling_group.main all resolve to nothing in us-east-1, i.e. the
+# AWS resources these data sources read no longer exist. So this was a
+# permanently-red check on unrelated PRs.
+#
+# The filter does NOT hide that. A PR that touches fuzefront-website/** still
+# runs it and still fails — loudly, on the change that owns the problem. What it
+# stops is an unrelated PR being blocked by infrastructure it never touched.
+#
+# Whether the AWS website stack should exist at all is a separate, open question
+# (prod is Contabo k3s via Helm/Argo per CLAUDE.md). Not decided here.
 on:
   push:
     branches: [ master, fuzefront-website ]
+    paths:
+      - 'fuzefront-website/**'
+      - '.github/workflows/deploy.yml'
   pull_request:
     branches: [ master ]
+    paths:
+      - 'fuzefront-website/**'
+      - '.github/workflows/deploy.yml'
 
 env:
   AWS_REGION: us-east-1
