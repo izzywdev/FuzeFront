@@ -17,7 +17,7 @@ from fuzefront_selection_list_client import SelectionListClient
 
 client = SelectionListClient(
     base_url="http://fuzefront-selection-list-service:3011",
-    token="eyJhbGciOiJSUzI1NiJ9...",
+    token="<your-bearer-token>",
 )
 
 # List all active lists in the caller's organisation
@@ -31,10 +31,10 @@ for sl in client.paginate(client.get_lists):
 
 # Create a list (service mints the id)
 created = client.create_list(key="countries", name="Countries")
-print(created.id)  # sl_01h455vb4pex5vsknk084sn02q
+print(created.id)  # front_sl_01h455vb4pex5vsknk084sn02q
 
 # Bulk-resolve persisted item ids to their display labels (hot path)
-result = client.resolve_ids(["sli_01h455vb4pex5vsknk084sn02q"])
+result = client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
 for item_id, resolved in result.results.items():
     print(item_id, resolved.label)
 ```
