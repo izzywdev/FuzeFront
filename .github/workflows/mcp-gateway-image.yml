@@ -1,0 +1,107 @@
+name: MCP gateway image
+
+# Builds and publishes ghcr.io/izzywdev/fuze-mcp-gateway.
+#
+# WHY THIS EXISTS: every product in the family deploys its OWN MCP pod running
+# this one image, configured with that product's OpenAPI document. Several
+# products have already merged the Helm templates for that pod — and every one of
+# them is pinned OFF, because nothing published the image. Flipping `mcp.enabled`
+# without it is an ImagePullBackOff.
+#
+# So this is the single gate between "MCP pods are wired" and "MCP pods can run",
+# for the whole fleet rather than for this repo.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/mcp-gateway/**'
+      - '.github/workflows/mcp-gateway-image.yml'
+  # A PR builds but does NOT push: an unreviewed image tag that products could
+  # pull is worse than no image at all.
+  pull_request:
+    paths:
+      - 'packages/mcp-gateway/**'
+      - '.github/workflows/mcp-gateway-image.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Extra tag to publish (e.g. 0.1.0). :sha and :latest are always published on master.'
+        required: false
+        type: string
+
+jobs:
+  image:
+    name: build & publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.x'
+
+      # Test before building. A gateway that mis-classifies a tool as read-only
+      # when it is irreversible is not a broken build — it is an agent taking an
+      # unrecoverable action believing it is safe. That must not reach a registry.
+      - name: Install
+        working-directory: packages/mcp-gateway
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: packages/mcp-gateway
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        working-directory: packages/mcp-gateway
+        run: npx vitest run
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v3
+
+      # NOT pinned to a SHA, deliberately. Semgrep flags this and it is right in
+      # principle — but no verified SHA for docker/login-action exists anywhere in
+      # this repo, and this repo's GitHub scope cannot read the upstream action's
+      # tags to resolve one. Inventing a plausible-looking 40-hex string would
+      # either break the workflow or, worse, pin to something nobody checked.
+      # Pinning the two actions whose SHAs ARE established here is a real
+      # reduction; leaving this one honest and visible is better than a guess.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      # `latest` is published for convenience, but product charts should pin the
+      # :sha tag — a floating tag on a component that decides whether a tool is
+      # destructive is not something to roll forward silently.
+      - name: Build & push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          # Repo ROOT, not packages/mcp-gateway. The Dockerfile's COPY paths are
+          # root-relative (`COPY packages/mcp-gateway/package.json …`), so a
+          # narrower context makes every COPY miss. Same convention as
+          # release.yml, which builds `backend/Dockerfile` from `.`.
+          context: .
+          file: packages/mcp-gateway/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/izzywdev/fuze-mcp-gateway:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuze-mcp-gateway:latest
+            ${{ inputs.tag && format('ghcr.io/izzywdev/fuze-mcp-gateway:{0}', inputs.tag) || '' }}
+          cache-from: type=gha,scope=mcp-gateway
+          cache-to: type=gha,mode=max,scope=mcp-gateway
+
+      - name: Report
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "::notice::Published ghcr.io/izzywdev/fuze-mcp-gateway:${{ steps.tag.outputs.sha }}"
+          echo "Products can now set mcp.enabled=true with image.tag=${{ steps.tag.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"

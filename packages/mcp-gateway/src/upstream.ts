@@ -16,6 +16,7 @@
  */
 
 import type { ToolDescriptor } from './spec.js';
+import { getOwn, safeRecord } from './safety.js';
 
 export class MissingIdentityError extends Error {}
 
@@ -34,12 +35,24 @@ export interface CallerContext {
 }
 
 export function extractForwardHeaders(ctx: CallerContext): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out = safeRecord<string>();
   for (const [k, v] of Object.entries(ctx.headers ?? {})) {
     const key = k.toLowerCase();
     if (!FORWARDED_HEADERS.includes(key)) continue;
     const value = Array.isArray(v) ? v[0] : v;
-    if (typeof value === 'string' && value.length > 0) out[key] = value;
+    // defineProperty rather than `out[key] = value`: writes an own data property
+    // without consulting the prototype chain. `key` is already constrained by the
+    // FORWARDED_HEADERS allowlist above, so this cannot currently be reached with
+    // a prototype key — but the allowlist is one edit away from being widened,
+    // and this way the safety does not depend on remembering that.
+    if (typeof value === 'string' && value.length > 0) {
+      Object.defineProperty(out, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
   }
   return out;
 }
@@ -52,10 +65,16 @@ export function buildRequest(
 ): { url: string; headers: Record<string, string>; body?: string } {
   let path = tool.path;
   const query = new URLSearchParams();
-  const headers: Record<string, string> = {};
+  // Null-prototype: keyed by spec-supplied header parameter names.
+  const headers = safeRecord<string>();
 
   for (const p of tool.params) {
-    const raw = args[p.name];
+    // OWN-property read only. `args[p.name]` would resolve `constructor` to
+    // Object.prototype.constructor and stringify a function into the URL;
+    // `getOwn` returns undefined for anything the caller did not actually send.
+    // buildTools already rejects prototype-keyed parameter names, so this is the
+    // second of two independent guards rather than the only one.
+    const raw = getOwn(args, p.name);
     if (raw === undefined || raw === null) {
       if (p.required) {
         throw new Error(`Missing required parameter "${p.name}" for tool "${tool.name}".`);
@@ -69,7 +88,17 @@ export function buildRequest(
       if (Array.isArray(raw)) raw.forEach(v => query.append(p.name, String(v)));
       else query.append(p.name, value);
     } else {
-      headers[p.name] = value;
+      // Same reasoning as extractForwardHeaders: an own data property written
+      // without touching the prototype chain. `p.name` has already passed
+      // assertSafeKey() when the spec was parsed, so this is belt-and-braces —
+      // but that guard lives in another module, and a header name is
+      // spec-supplied input reaching an object key.
+      Object.defineProperty(headers, p.name, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
   }
 
@@ -82,8 +111,9 @@ export function buildRequest(
   const url = `${baseUrl.replace(/\/+$/, '')}${path}${qs ? `?${qs}` : ''}`;
 
   let body: string | undefined;
-  if (tool.bodySchema && args.body !== undefined) {
-    body = JSON.stringify(args.body);
+  const bodyArg = getOwn(args, 'body');
+  if (tool.bodySchema && bodyArg !== undefined) {
+    body = JSON.stringify(bodyArg);
     headers['content-type'] = 'application/json';
   }
 

@@ -45,6 +45,13 @@ jobs:
       - name: register.sh behaviour (fake registry)
         run: sh tests/register.test.sh
 
+      # migrate-slug.mjs is the only tool in the kit that DELETES a registration, and
+      # it is pointed at production by hand. Its safety property — every failure path
+      # leaves the original app still registered — is asserted end to end against the
+      # same fake registry, so it is gated exactly as hard as register.sh.
+      - name: Slug de-prefix migration (fake registry)
+        run: node --test tests/migrate-slug.test.mjs
+
       # Every template the kit hands out must itself pass the validators, or the
       # first thing a product copies is already broken. This is not hypothetical: the
       # template shipped `mode: portal` with no `modes` and no `routing.host`, so every

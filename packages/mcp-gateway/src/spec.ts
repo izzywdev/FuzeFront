@@ -7,6 +7,7 @@
  */
 
 import { classify, type Classification, type Overrides } from './classify.js';
+import { assertSafeKey, getOwn, isForbiddenKey, safeRecord } from './safety.js';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options'] as const;
 
@@ -58,10 +59,27 @@ function resolveRef(doc: OpenApiDoc, node: unknown, seen = new Set<string>()): u
   seen.add(ref);
 
   const parts = ref.slice(2).split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~'));
+
+  // Validate EVERY segment before walking any of them. Checking lazily inside
+  // the loop would only reject a hostile segment when traversal happened to
+  // reach it, so `#/absent/__proto__` would pass simply because `absent` is
+  // missing — the pointer would be judged safe for the wrong reason.
+  for (const p of parts) {
+    // A segment of __proto__/constructor/prototype walks onto Object.prototype
+    // instead of into the document. A spec containing one is hostile or broken,
+    // and either way the tool built from it would describe the JavaScript
+    // runtime rather than the product's API.
+    if (isForbiddenKey(p)) {
+      throw new Error(
+        `Refusing $ref "${ref}": segment "${p}" resolves to the object prototype, not to the document.`
+      );
+    }
+  }
+
   let cur: unknown = doc;
   for (const p of parts) {
     if (!cur || typeof cur !== 'object') return {};
-    cur = (cur as Record<string, unknown>)[p];
+    cur = getOwn(cur, p);
   }
   return resolveRef(doc, cur, seen);
 }
@@ -79,17 +97,40 @@ export function toolNameFor(operationId: unknown, method: string, path: string):
 }
 
 function buildInputSchema(params: ToolParam[], bodySchema?: Record<string, unknown>, bodyRequired = false) {
-  const properties: Record<string, unknown> = {};
+  // Accumulate in a Map rather than assigning into an object under a
+  // spec-supplied key. A Map cannot reach Object.prototype at all, so this is
+  // immune by construction rather than by a guard someone could later delete —
+  // and it carries no `obj[dynamicKey] = …` shape for a scanner to flag.
+  //
+  // Two guards already stood behind this line: parameter names pass
+  // assertSafeKey() at parse time, and the accumulator was already
+  // null-prototype. Both still hold for the materialised result below; this
+  // removes the last write-by-dynamic-key rather than suppressing the warning.
+  const collected = new Map<string, unknown>();
   const required: string[] = [];
 
   for (const p of params) {
-    properties[p.name] = p.description ? { ...p.schema, description: p.description } : p.schema;
+    collected.set(p.name, p.description ? { ...p.schema, description: p.description } : p.schema);
     if (p.required) required.push(p.name);
   }
 
   if (bodySchema) {
-    properties.body = { ...bodySchema, description: 'Request body.' };
+    collected.set('body', { ...bodySchema, description: 'Request body.' });
     if (bodyRequired) required.push('body');
+  }
+
+  // Materialise into a null-prototype object. defineProperty writes an own data
+  // property under any key without consulting the prototype chain, and
+  // JSON.stringify treats the result exactly like a plain object, so the
+  // emitted tool schema is byte-identical to before.
+  const properties = safeRecord();
+  for (const [key, value] of collected) {
+    Object.defineProperty(properties, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
 
   return {
@@ -121,6 +162,7 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
       const op = opRaw as Record<string, unknown>;
 
       const name = toolNameFor(op.operationId, method, path);
+      assertSafeKey(name, `a tool name (${method.toUpperCase()} ${path})`);
       if (seenNames.has(name)) {
         throw new Error(
           `Duplicate tool name "${name}" (${method.toUpperCase()} ${path}). ` +
@@ -136,6 +178,9 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
         const loc = p.in;
         if (loc !== 'path' && loc !== 'query' && loc !== 'header') continue;
         if (typeof p.name !== 'string') continue;
+        // The parameter name becomes a key in the tool's input schema and is
+        // used to index the caller's arguments, so it must not be a prototype key.
+        assertSafeKey(p.name, `a parameter name on ${method.toUpperCase()} ${path}`);
         params.push({
           name: p.name,
           in: loc,
