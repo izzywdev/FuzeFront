@@ -45,6 +45,7 @@ on:
       # never-built payment-service, stay absent entirely).
       - 'services/notification-service/**'
       - 'services/payment-service/**'
+      - 'services/selection-list-service/**'
       - 'clock-app/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
@@ -265,6 +266,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push selection-list-service
+        # Root build context: the Dockerfile runs `npm ci --workspace=
+        # services/selection-list-service`, so it needs the root package.json and
+        # lockfile — not just services/selection-list-service/.
+        #
+        # Ships dark (selectionListService.enabled: false) by default; continue-on-error
+        # matches the other auxiliary services. The `id` lets the bump step gate on
+        # the real outcome so no tag is pinned for an image that was never pushed
+        # (the pattern that froze billing-service at a stale SHA — see #539).
+        id: selection_list_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: services/selection-list-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-selection-list-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-selection-list-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push clock-app (built-in MF remote)
         id: clock_image
         # Built-in reference Module-Federation remote, served same-origin at
@@ -330,8 +353,9 @@ jobs:
           CHAT_OK=$(ok "${{ steps.chat_image.outcome }}")
           NOTIF_OK=$(ok "${{ steps.notification_image.outcome }}")
           PAYMENT_OK=$(ok "${{ steps.payment_image.outcome }}")
-          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK))
-          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK}"
+          SELECTION_LIST_OK=$(ok "${{ steps.selection_list_image.outcome }}")
+          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK + SELECTION_LIST_OK))
+          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK} selection_list=${SELECTION_LIST_OK}"
           echo "expecting ${EXPECTED} tag rewrites (backend + frontend are always built)"
           if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
             echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
@@ -368,7 +392,8 @@ jobs:
           awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" \
               -v email="$EMAIL_OK" -v sms="$SMS_OK" -v prov="$PROV_OK" \
               -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
-              -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" '
+              -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" \
+              -v selection_list="$SELECTION_LIST_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -390,6 +415,7 @@ jobs:
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
             notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
             payment == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-payment-service\r?$/ { hot=1 }
+            selection_list == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-selection-list-service\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml
