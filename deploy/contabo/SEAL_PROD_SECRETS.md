@@ -177,10 +177,17 @@ are what the chart reads — they must match EXACTLY:
 
 | Key | Where to get it | Used by |
 |-----|-----------------|---------|
-| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info (starts `AC…`) | sms-service → Twilio Verify |
-| `TWILIO_AUTH_TOKEN` | Twilio console → Account Info (rotate-able) | sms-service → Twilio Verify |
+| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info (starts `AC…`) | sms-service → Twilio Verify (account context) |
+| `TWILIO_API_KEY_SID` | Twilio console → Account → API keys & tokens → API Keys (starts `SK…`) | sms-service → Twilio Verify (auth username) |
+| `TWILIO_API_KEY_SECRET` | shown **once** when the API Key is created (rotate by making a new key) | sms-service → Twilio Verify (auth password) |
 | `TWILIO_VERIFY_SERVICE_SID` | Twilio console → Verify → Services (starts `VA…`) | sms-service → Twilio Verify |
 | `SMS_AUTH_SECRET` | **Generate a fresh random value** — `openssl rand -hex 32` | Authentik + security-service authenticating TO sms-service |
+
+> **Auth uses a Twilio API Key, not the account Auth Token** — API Keys are
+> revocable independently of the account. `sms-service` calls
+> `twilio(apiKeySid, apiKeySecret, { accountSid })`
+> (`services/sms-service/src/twilio-client.ts`); `TWILIO_ACCOUNT_SID` is still
+> required as the account context. Do **not** seal `TWILIO_AUTH_TOKEN`.
 
 `SMS_AUTH_SECRET` is not issued by any vendor: it is an internal shared secret you
 mint yourself. It is consumed by the Authentik SMS stage blueprint

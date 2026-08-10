@@ -171,12 +171,15 @@ emailService:
 #
 # STILL DISABLED, deliberately. Enabling it now would CrashLoop the pod: the
 # container requires SMS_AUTH_SECRET (a hard secretKeyRef, no `optional`) and the
-# Twilio credentials, and NONE of those keys exist in the fuzefront-secrets
+# Twilio API-key credentials, not all of which exist in the fuzefront-secrets
 # SealedSecret yet (verified against deploy/contabo/sealed/fuzefront-secrets.yaml).
+# Auth uses a Twilio API Key (SK… SID + secret), NOT the account Auth Token —
+# see services/sms-service/src/twilio-client.ts.
 # GO-LIVE for phone 2FA is exactly two steps, in this order:
-#   1. Owner seals the 4 keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
-#      (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID,
-#       SMS_AUTH_SECRET) into fuzefront-secrets.
+#   1. Owner seals the keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
+#      (TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET,
+#       TWILIO_VERIFY_SERVICE_SID, SMS_AUTH_SECRET) into fuzefront-secrets.
+#      (SMS_AUTH_SECRET + TWILIO_ACCOUNT_SID were sealed in PR #578.)
 #   2. Flip `enabled` to true here via GitOps in a deploy window.
 # Until step 1 lands this MUST stay false — the empty tag hid a missing-secret
 # failure that would otherwise surface as a CrashLoopBackOff on the umbrella sync.

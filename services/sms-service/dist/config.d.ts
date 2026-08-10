@@ -1,6 +1,8 @@
 export interface TwilioConfig {
     accountSid: string;
     authToken: string;
+    apiKeySid: string;
+    apiKeySecret: string;
     verifyServiceSid: string;
     mock: boolean;
 }

@@ -46,11 +46,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: TWILIO_ACCOUNT_SID
-            - name: TWILIO_AUTH_TOKEN
+            # API Key auth (preferred): SK… SID + secret. Replaces the account
+            # Auth Token — see services/sms-service/src/twilio-client.ts.
+            - name: TWILIO_API_KEY_SID
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
-                  key: TWILIO_AUTH_TOKEN
+                  key: TWILIO_API_KEY_SID
+            - name: TWILIO_API_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: TWILIO_API_KEY_SECRET
             - name: TWILIO_VERIFY_SERVICE_SID
               valueFrom:
                 secretKeyRef:
