@@ -88,5 +88,19 @@ jobs:
 
       - name: Publish
         env:
+          # BOTH names, and that is not redundant. setup-node writes an .npmrc
+          # referencing NODE_AUTH_TOKEN, but the repo-root .npmrc is
+          # PROJECT-level and outranks it — and that one references
+          # ${GITHUB_TOKEN}. With only NODE_AUTH_TOKEN set, ${GITHUB_TOKEN}
+          # expanded to empty and every publish 401'd:
+          #
+          #   npm error 401 Unauthorized - PUT .../@izzywdev%2ffuzefront-design-system
+          #   unauthenticated: User cannot be authenticated with the token provided
+          #   publish-packages: 0 published, 0 skipped, 18 failed
+          #
+          # Exactly the failure FuzeFront#558 hit and #559 fixed for the
+          # per-package publishers; this workflow never reached the publish step
+          # before today, so it never inherited the fix.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/publish-packages.mjs
