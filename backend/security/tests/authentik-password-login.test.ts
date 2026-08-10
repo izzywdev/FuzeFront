@@ -301,7 +301,13 @@ describe('authentikPasswordLogin()', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('follows an HTTP 200 "redirect" challenge from the authorize hop (Authentik >=2026.x)', async () => {
+  it('follows the /if/flow/ shell redirect via the flow-executor JSON API (Authentik >=2026.x)', async () => {
+    // Confirmed against real Authentik 2026.5.5 in CI: when implicit consent
+    // resolves, the authorize hop's 302 lands on the flow's browser SHELL
+    // page (/if/flow/<slug>/?<original-query>) — real HTML, regardless of
+    // Accept: application/json, because it's the SPA entry point. The
+    // machine-readable challenge only comes from a SEPARATE call to the
+    // flow-executor JSON API for the same slug+query.
     fetchMock
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'ak-stage-identification' } })
@@ -310,13 +316,22 @@ describe('authentikPasswordLogin()', () => {
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
       )
-      // authorize returns HTTP 200 + {"type":"redirect","to":"..."} instead of
-      // a 302 with a Location header — the shape Authentik >=2026.x's flow
-      // executor uses for the same implicit-consent outcome.
+      // hop 0: authorize -> 302 to the flow's browser shell page.
       .mockResolvedValueOnce(
         mkRes({
-          status: 200,
-          json: { type: 'redirect', to: `${REDIRECT_URI}?code=the-code&state=st` },
+          status: 302,
+          location:
+            'http://auth.example.test/if/flow/fuzefront-authorization-implicit-consent/?client_id=x&state=st',
+        })
+      )
+      // hop 1: GET the shell page -> 200 HTML (not read; only its URL is used
+      // to derive the flow-executor call).
+      .mockResolvedValueOnce(mkRes({ status: 200 }))
+      // The flow-executor JSON API for the same slug+query resolves the
+      // already-authenticated implicit-consent flow to a redirect challenge.
+      .mockResolvedValueOnce(
+        mkRes({
+          json: { component: 'xak-flow-redirect', to: `${REDIRECT_URI}?code=the-code&state=st` },
         })
       )
 
@@ -328,9 +343,14 @@ describe('authentikPasswordLogin()', () => {
       'st',
       'test-code-verifier'
     )
+    // The flow-executor call carries the original authorize query forward.
+    const [flowExecutorUrl] = fetchMock.mock.calls[5]
+    expect(flowExecutorUrl).toBe(
+      'http://auth.example.test/api/v3/flows/executor/fuzefront-authorization-implicit-consent/?query=client_id%3Dx%26state%3Dst'
+    )
   })
 
-  it('follows a relative "to" in an HTTP 200 redirect challenge, then a further hop', async () => {
+  it('follows a relative "to" from the flow-executor redirect challenge, then a further hop', async () => {
     fetchMock
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'ak-stage-identification' } })
@@ -339,15 +359,25 @@ describe('authentikPasswordLogin()', () => {
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
       )
-      // First authorize hop: 200 redirect challenge with a path-only `to`,
-      // resolved against the current (Authentik-origin) hop URL.
       .mockResolvedValueOnce(
         mkRes({
-          status: 200,
-          json: { type: 'redirect', to: '/if/flow/default-provider-authorization-implicit-consent/' },
+          status: 302,
+          location:
+            'http://auth.example.test/if/flow/fuzefront-authorization-implicit-consent/?client_id=x&state=st',
         })
       )
-      // Second hop lands on the app's own callback with the code.
+      .mockResolvedValueOnce(mkRes({ status: 200 }))
+      // Flow-executor challenge with a path-only `to`, resolved against the
+      // Authentik-origin shell URL (not the flow-executor URL itself).
+      .mockResolvedValueOnce(
+        mkRes({
+          json: {
+            component: 'xak-flow-redirect',
+            to: '/if/flow/default-provider-authorization-implicit-consent/',
+          },
+        })
+      )
+      // Next hop lands on the app's own callback with the code.
       .mockResolvedValueOnce(
         mkRes({ status: 302, location: `${REDIRECT_URI}?code=c-relative&state=st` })
       )
@@ -361,17 +391,13 @@ describe('authentikPasswordLogin()', () => {
       'test-code-verifier'
     )
     // The relative `to` resolved against the Authentik origin, not off-site.
-    const [secondHopUrl] = fetchMock.mock.calls[4]
-    expect(secondHopUrl).toBe(
+    const [nextHopUrl] = fetchMock.mock.calls[6]
+    expect(nextHopUrl).toBe(
       'http://auth.example.test/if/flow/default-provider-authorization-implicit-consent/'
     )
   })
 
-  it('follows an HTTP 200 redirect challenge shaped as component: "xak-flow-redirect" (no "type" field)', async () => {
-    // The stage loop above identifies a redirect challenge by `component`, not
-    // `type` (see FlowChallenge / the `component === 'xak-flow-redirect'`
-    // checks elsewhere in this file) — the authorize hop must accept the same
-    // shape, not just a `type: 'redirect'` envelope.
+  it('also accepts a flow-executor challenge shaped with "type: redirect" (no "component" field)', async () => {
     fetchMock
       .mockResolvedValueOnce(
         mkRes({ json: { component: 'ak-stage-identification' } })
@@ -382,19 +408,21 @@ describe('authentikPasswordLogin()', () => {
       )
       .mockResolvedValueOnce(
         mkRes({
-          status: 200,
-          json: {
-            component: 'xak-flow-redirect',
-            to: `${REDIRECT_URI}?code=component-shaped&state=st`,
-          },
+          status: 302,
+          location:
+            'http://auth.example.test/if/flow/fuzefront-authorization-implicit-consent/?client_id=x&state=st',
         })
+      )
+      .mockResolvedValueOnce(mkRes({ status: 200 }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { type: 'redirect', to: `${REDIRECT_URI}?code=type-shaped&state=st` } })
       )
 
     const user = await authentikPasswordLogin('e2e@test.local', 'pw123')
 
     expect(user.email).toBe('e2e@test.local')
     expect(oidcService.handleCallback).toHaveBeenCalledWith(
-      'component-shaped',
+      'type-shaped',
       'st',
       'test-code-verifier'
     )

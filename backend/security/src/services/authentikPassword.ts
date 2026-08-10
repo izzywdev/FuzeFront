@@ -347,13 +347,18 @@ export async function flowRequest(
   slug: string,
   jar: CookieJar,
   body?: Record<string, unknown>,
-  deadline?: Deadline
+  deadline?: Deadline,
+  // The original request's query string (e.g. the OAuth authorize params),
+  // forwarded as Authentik's `query` param so the flow executor knows which
+  // in-flight request it's continuing — required when entering a flow via
+  // an existing `/if/flow/<slug>/?...` redirect rather than starting fresh.
+  flowQuery?: string
 ): Promise<FlowChallenge> {
   // Authentik commonly answers the first executor request with a 302 that
   // establishes the session cookie (Location points back into the flow), so
   // follow same-origin redirects manually, carrying the jar. Per Django 302
   // semantics a redirected POST is retried as GET.
-  let url = `${base}/api/v3/flows/executor/${slug}/?query=`
+  let url = `${base}/api/v3/flows/executor/${slug}/?query=${encodeURIComponent(flowQuery ?? '')}`
   let method: 'GET' | 'POST' = body ? 'POST' : 'GET'
   let payload: string | undefined = body ? JSON.stringify(body) : undefined
 
@@ -640,47 +645,27 @@ export async function completeOidcWithSession(
     jar.absorb(res)
 
     let next = res.headers.get('location')
-    if (!next && res.status === 200) {
-      // Authentik >=2026.x's flow executor can answer the final authorize hop
-      // with an HTTP 200 "redirect" challenge — {"type":"redirect","to":"..."}
-      // — instead of a 302 with a Location header. Same outcome (implicit
-      // consent resolved, here is where to go next), different transport.
-      // This is the only branch that reads the response body, so it also
-      // takes over releasing the socket for this hop (see drainBody).
-      const bodyText = await res.text()
-      try {
-        const challenge = JSON.parse(bodyText) as FlowChallenge
-        const isRedirectChallenge =
-          challenge?.type === 'redirect' || challenge?.component === 'xak-flow-redirect'
-        if (isRedirectChallenge && typeof challenge.to === 'string') {
-          next = challenge.to
-        }
-        if (!next) {
-          // TEMPORARY diagnostic (FuzeFront#557 follow-up): the redirect-challenge
-          // shape guessed here has been wrong twice against real Authentik
-          // 2026.5.5 in CI. Log exactly what came back so the next fix is based
-          // on the real payload instead of a third guess. Remove once confirmed.
-          logger.warn(
-            { hop, location, contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) },
-            'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, parsed JSON but not a recognized redirect challenge'
-          )
-        }
-      } catch {
-        // TEMPORARY diagnostic (see above): body wasn't valid JSON — real HTML
-        // in practice. Dump it in fixed-size chunks (a flat slice, no pattern
-        // search over the markup) so the next fix is based on the real payload.
-        logger.warn(
-          {
-            hop,
-            location,
-            contentType: res.headers.get('content-type'),
-            bodyLength: bodyText.length,
-            bodyChunk1: bodyText.slice(0, 1500),
-            bodyChunk2: bodyText.slice(1500, 3000),
-            bodyChunk3: bodyText.slice(3000, 4500),
-          },
-          'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, body is not JSON'
-        )
+    // Confirmed against real Authentik 2026.5.5 in CI (FuzeFront#557): when
+    // implicit consent resolves, the 302 from /application/o/authorize/ lands
+    // on the flow's browser SHELL page — /if/flow/<slug>/?<original-query> —
+    // not a JSON payload. That page always serves HTML regardless of Accept,
+    // because it's the SPA entry point; the machine-readable challenge only
+    // comes from the flow-executor JSON API at
+    // /api/v3/flows/executor/<slug>/?query=<original-query>, the same
+    // endpoint flowRequest() already drives for the identification/password
+    // stages. So: detect that shell URL and call the JSON API directly
+    // instead of trying to parse the shell page itself.
+    const flowShellMatch = !next ? location.match(/\/if\/flow\/([^/?]+)\/(?:\?(.*))?$/) : null
+    if (flowShellMatch) {
+      // We're not reading this hop's body — hand the socket back before
+      // issuing the flow-executor request (see drainBody).
+      drainBody(res)
+      const [, slug, flowQuery] = flowShellMatch
+      const challenge = await flowRequest(base, slug, jar, undefined, deadline, flowQuery)
+      const isRedirectChallenge =
+        challenge.component === 'xak-flow-redirect' || challenge.type === 'redirect'
+      if (isRedirectChallenge && typeof challenge.to === 'string') {
+        next = challenge.to
       }
     } else {
       // Nothing else in this chain ever reads an authorize response BODY —
@@ -690,9 +675,10 @@ export async function completeOidcWithSession(
     }
 
     if (!next) {
-      // Genuinely no Location header AND (not HTTP 200, or a 200 that wasn't
-      // a redirect challenge) means Authentik rendered a flow UI (consent /
-      // re-auth) — implicit consent is expected on the FuzeFront provider.
+      // Genuinely no Location header, not the flow-shell redirect, or a
+      // flow-executor challenge that wasn't a redirect: Authentik rendered a
+      // flow UI (consent / re-auth) — implicit consent is expected on the
+      // FuzeFront provider.
       throw new UnsupportedFlowStageError(
         `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
