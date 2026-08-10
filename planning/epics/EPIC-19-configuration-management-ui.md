@@ -3,6 +3,7 @@ key: FF-EPIC-19
 title: Configuration Management UI — the settings editor and key-catalog console
 label: [fuzefront, platform, config-management, design-system-first, design-first, permit-gated, needs-jira-upload]
 github: TBD
+jira: FFRNT-152
 status: ready
 priority: High
 domain: Platform
@@ -87,14 +88,14 @@ S2's RED specs and the S3–S5 build. S1 blocks S2, S3, S4 and S5.
 | Console errors / CSP violations on the config console | N/A | 0 (`ui-runtime-validation`) |
 
 ### 📋 Child Stories
-| Story ID | Summary | Status |
-|----------|---------|--------|
-| FF-EPIC-19-S1 | Designer frames for the config console (frames-ONLY PR) | Open |
-| FF-EPIC-19-S2 | RED Playwright specs per approved flow | Open |
-| FF-EPIC-19-S3 | `@fuzefront/config-ui` settings editor | Open |
-| FF-EPIC-19-S4 | Admin key-catalog view + diff-against-parent | Open |
-| FF-EPIC-19-S5 | Secret-input and audit-history surfaces | Open |
-| FF-EPIC-19-S6 | Console-clean runtime validation + post-prod e2e | Open |
+| Story ID | Jira | Summary | Status |
+|----------|------|---------|--------|
+| FF-EPIC-19-S1 | [FFRNT-280](https://fuzefront.atlassian.net/browse/FFRNT-280) | Designer frames for the config console (frames-ONLY PR) | Open |
+| FF-EPIC-19-S2 | [FFRNT-281](https://fuzefront.atlassian.net/browse/FFRNT-281) | RED Playwright specs per approved flow | Open |
+| FF-EPIC-19-S3 | [FFRNT-282](https://fuzefront.atlassian.net/browse/FFRNT-282) | `@fuzefront/config-ui` settings editor | Open |
+| FF-EPIC-19-S4 | [FFRNT-283](https://fuzefront.atlassian.net/browse/FFRNT-283) | Admin key-catalog view + diff-against-parent | Open |
+| FF-EPIC-19-S5 | [FFRNT-284](https://fuzefront.atlassian.net/browse/FFRNT-284) | Secret-input and audit-history surfaces | Open |
+| FF-EPIC-19-S6 | [FFRNT-285](https://fuzefront.atlassian.net/browse/FFRNT-285) | Console-clean runtime validation + post-prod e2e | Open |
 
 ### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-17-S1 (contract to build against), FF-EPIC-17-S5 (read API), FF-EPIC-17-S6 (write API).
@@ -115,6 +116,7 @@ S2's RED specs and the S3–S5 build. S1 blocks S2, S3, S4 and S5.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-280](https://fuzefront.atlassian.net/browse/FFRNT-280) |
 | **Story ID** | FF-EPIC-19-S1 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | High |
@@ -170,6 +172,7 @@ manifest covering the feature.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-281](https://fuzefront.atlassian.net/browse/FFRNT-281) |
 | **Story ID** | FF-EPIC-19-S2 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | High |
@@ -220,6 +223,7 @@ Written by `frontend-test-engineer`, independent of the implementer, driven by t
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-282](https://fuzefront.atlassian.net/browse/FFRNT-282) |
 | **Story ID** | FF-EPIC-19-S3 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | High |
@@ -276,6 +280,7 @@ The core deliverable: `@fuzefront/config-ui`, design-system-first, consuming
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-283](https://fuzefront.atlassian.net/browse/FFRNT-283) |
 | **Story ID** | FF-EPIC-19-S4 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | Medium |
@@ -328,6 +333,7 @@ diff-against-parent view that answers "what has this tenant actually changed".
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-284](https://fuzefront.atlassian.net/browse/FFRNT-284) |
 | **Story ID** | FF-EPIC-19-S5 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | Medium |
@@ -380,6 +386,7 @@ Surfaces FF-EPIC-18's secrets, audit history and revert. Both are states already
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-285](https://fuzefront.atlassian.net/browse/FFRNT-285) |
 | **Story ID** | FF-EPIC-19-S6 |
 | **Parent Epic** | FF-EPIC-19 — Configuration Management UI |
 | **Priority** | High |
