@@ -24,6 +24,7 @@ import {
 import appsRoutes from './routes/apps'
 import appInstallationsRoutes from './routes/app-installations'
 import appRegistryRoutes from './routes/app-registry'
+import portalCatalogRoutes from './routes/portal-catalog'
 import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
@@ -54,6 +55,10 @@ app.use('/api/apps', appsRoutes)
 // Frozen versioned app-registry contract surface (services/app-registry-service/
 // openapi.yaml) — mounted ALONGSIDE the legacy /api/apps for back-compat.
 app.use('/api/v1/app-registry', appRegistryRoutes)
+// FF-EPIC-12-S3 — portal app-catalog admin API. Mounted at the SAME prefix so
+// it rides the existing host-backend proxy/route-ownership entry for
+// /api/v1/app-registry with no new wiring (see routes/portal-catalog.ts).
+app.use('/api/v1/app-registry', portalCatalogRoutes)
 
 const health = async (_req: any, res: any) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
@@ -89,8 +94,10 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 /**
  * Boot sequence with cross-service startup ordering: wait for Postgres, ensure
  * the DB exists, then wait for the `organizations` table (owned by security-
- * service) to exist BEFORE running our migrations — migration 002 adds an
- * organization_id FK to organizations. All in-process; no initContainer.
+ * service) AND the `portals` table (owned by the host backend, FF-EPIC-09) to
+ * exist BEFORE running our migrations — migration 002 adds an organization_id
+ * FK to organizations, and migration 007 (FF-EPIC-12-S1) adds a portal_id FK
+ * to portals. All in-process; no initContainer.
  */
 async function startServer() {
   try {
@@ -106,6 +113,9 @@ async function startServer() {
     await ensureDatabase()
     // Cross-service ordering: organizations must exist before our FK migration.
     await waitForTable('organizations', 60, 2000)
+    // FF-EPIC-12-S1 — portal_apps.portal_id FKs into portals (host backend,
+    // migration 012). Mirrors the organizations wait above exactly.
+    await waitForTable('portals', 60, 2000)
     await runMigrations(dbOptions)
     initializeDatabaseConnection(dbOptions)
     if (process.env.NODE_ENV !== 'production') {
