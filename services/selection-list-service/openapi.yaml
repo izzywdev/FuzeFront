@@ -686,6 +686,43 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /v1/selection-lists/{listId}/translations:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    get:
+      operationId: listSelectionListTranslations
+      summary: List all translated locales for a selection list
+      description: >-
+        Returns one status entry per locale that has a list-level translation,
+        including completeness (list + items), machine-translation status, and
+        whether the translation is stale relative to the current source text
+        (`source_changed`). The source locale itself is never returned here —
+        its text lives on `PATCH /v1/selection-lists/{listId}`.
+
+        This endpoint is the primary read for the translation workbench UI.
+      tags: [translations]
+      x-permit-action: read
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded by the supported locale count (max 11). Not a user-data
+        collection; no cursor required (pagination-standard.md §3).
+      responses:
+        '200':
+          description: Translation status per locale.
+          content:
+            application/json:
+              schema:
+                type: array
+                description: >-
+                  One entry per locale that has a list-level translation
+                  (excluding source_locale).
+                items:
+                  $ref: '#/components/schemas/TranslationLocaleStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /v1/selection-lists/{listId}/translations/{locale}:
     parameters:
       - $ref: '#/components/parameters/ListIdParam'
@@ -725,6 +762,61 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteSelectionListTranslation
+      summary: Remove a list's translation for one locale
+      description: >-
+        Deletes the list-level translation row for `locale`. The source locale
+        (`source_locale` on the list) cannot be deleted — a `400
+        VALIDATION_ERROR` is returned instead. Item-level translations in this
+        locale are not touched; delete them individually if needed. Idempotent:
+        deleting a translation that does not exist returns `204`.
+      tags: [translations]
+      x-permit-action: translate
+      responses:
+        '204':
+          description: Translation deleted (or never existed). No body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items/{itemId}/translations:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/ItemIdParam'
+    get:
+      operationId: listSelectionListItemTranslations
+      summary: List all translated locales for one item
+      description: >-
+        Returns one status entry per locale that has an item-level translation,
+        with machine-translation status and staleness relative to the current
+        source text. The source locale itself is excluded.
+      tags: [translations]
+      x-permit-action: read
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded by the supported locale count (max 11).
+      responses:
+        '200':
+          description: Item translation status per locale.
+          content:
+            application/json:
+              schema:
+                type: array
+                description: >-
+                  One entry per locale that has an item-level translation
+                  (excluding source_locale).
+                items:
+                  $ref: '#/components/schemas/ItemTranslationLocaleStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}:
     parameters:
@@ -755,6 +847,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SelectionListItemTranslation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteSelectionListItemTranslation
+      summary: Remove an item's translation for one locale
+      description: >-
+        Deletes the item-level translation row for `locale`. The source locale
+        cannot be deleted. Idempotent: deleting a translation that does not
+        exist returns `204`.
+      tags: [translations]
+      x-permit-action: translate
+      responses:
+        '204':
+          description: Translation deleted (or never existed). No body.
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1409,6 +1521,58 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/SelectionListItemId'
+
+    TranslationLocaleStatus:
+      type: object
+      description: >-
+        Translation workbench summary for one locale of a selection list.
+        Returned by `GET /v1/selection-lists/{listId}/translations`.
+      required: [locale, completeness_pct, machine_translated, source_changed]
+      additionalProperties: false
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        completeness_pct:
+          type: integer
+          description: >-
+            Percentage of translatable entities (list + active items) that have
+            a translation in this locale. 0–100.
+          minimum: 0
+          maximum: 100
+          examples: [75]
+        machine_translated:
+          type: boolean
+          description: Whether the list-level translation in this locale was machine-produced.
+          examples: [true]
+        source_changed:
+          type: boolean
+          description: >-
+            Whether the source-locale text has changed since this translation
+            was written (i.e. the stored `source_hash` no longer matches the
+            current source). A `true` value means the translation is stale and
+            should be reviewed or regenerated.
+          examples: [false]
+
+    ItemTranslationLocaleStatus:
+      type: object
+      description: >-
+        Translation workbench summary for one locale of a selection-list item.
+        Returned by `GET /v1/selection-lists/{listId}/items/{itemId}/translations`.
+      required: [locale, machine_translated, source_changed]
+      additionalProperties: false
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        machine_translated:
+          type: boolean
+          description: Whether this item's translation in this locale was machine-produced.
+          examples: [true]
+        source_changed:
+          type: boolean
+          description: >-
+            Whether the source-locale text for this item has changed since the
+            translation was written.
+          examples: [false]
 
     SelectionListTranslation:
       type: object
