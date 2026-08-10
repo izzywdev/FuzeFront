@@ -32,6 +32,12 @@ services:
       - PERMIT_API_KEY=${PERMIT_API_KEY}
       - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
       - PERMIT_PDP_URL=http://permit-pdp:7000
+      # This local stack does not run the applications-service, so serve
+      # app-registry reads (GET /api/v1/app-registry/apps) from the backend's
+      # local `apps` table instead of delegating to the (absent) proxy. In prod
+      # this flag is unset, so reads delegate to fuzefront-applications — the
+      # same store writes land in (FuzeFront #533).
+      - APP_REGISTRY_LOCAL_ADAPTER=1
       - AUTHENTIK_ISSUER_URL=${AUTHENTIK_ISSUER_URL}
       - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID}
       - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET}
@@ -164,37 +170,6 @@ services:
       - 'traefik.enable=true'
       - 'traefik.http.routers.fuzefront-frontend.rule=Host(`fuzefront.local`)'
       - 'traefik.http.services.fuzefront-frontend.loadbalancer.server.port=8080'
-
-  # ================================
-  # TASK MANAGER MICROFRONTEND
-  # ================================
-  fuzefront-taskmanager:
-    build:
-      context: ./task-manager-app
-      dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=http://fuzefront.dev.local
-        - VITE_APP_TITLE=Task Manager - FuzeFront
-    container_name: fuzefront-taskmanager
-    environment:
-      - NGINX_HOST=localhost
-      - NGINX_PORT=3002
-    networks:
-      - FuzeInfra # Connect to shared infrastructure for nginx access
-      - fuzefront # Connect to FuzeFront internal network
-    depends_on:
-      - fuzefront-backend
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3002/health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.fuzefront-taskmanager.rule=Host(`taskmanager.fuzefront.local`)'
-      - 'traefik.http.services.fuzefront-taskmanager.loadbalancer.server.port=3002'
 
   # ================================
   # AUTHENTIK OIDC/OAuth2 AUTHENTICATION

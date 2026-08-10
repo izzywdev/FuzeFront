@@ -64,7 +64,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.1.0',
+      scannerVersion: '1.2.0',
       partial: false,
       counts: {
         operations: 1,
@@ -143,6 +143,56 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('covered-explicit')
     expect(result.expectations.find(item => item.kind === 'response-404')?.coverage).toBe('covered-explicit')
     expect(result.expectations.find(item => item.kind === 'missing-path-id')?.coverage).toBe('gap')
+  })
+
+  it('discovers root-level pytest functions and preserves per-scenario evidence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-pytest-'))
+    await writeFile(
+      join(root, 'openapi.yaml'),
+      `openapi: 3.0.0
+info: { title: Sample, version: 1.0.0 }
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: ok }, '401': { description: unauthenticated }, '404': { description: missing } }
+`
+    )
+    await writeFile(
+      join(root, 'test_users.py'),
+      `def test_get_user_returns_200(client):
+    # @fuzequality api api:sample:openapi.yaml:getUser
+    response = client.get('/users/42')
+    assert response.status_code == 200
+
+def test_get_user_missing_auth_returns_401(client):
+    # @fuzequality api api:sample:openapi.yaml:getUser
+    response = client.get('/users/42')
+    assert response.status_code == 401
+
+async def test_get_user_missing_id_returns_404(client):
+    # @fuzequality api api:sample:openapi.yaml:getUser
+    response = client.get('/users/')
+    assert response.status_code == 404
+`
+    )
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.tests.map(test => test.title)).toEqual([
+      'get user returns 200',
+      'get user missing auth returns 401',
+      'get user missing id returns 404',
+    ])
+    expect(result.tests.every(test => test.assertionCount === 1)).toBe(true)
+    expect(result.tests.every(test => test.explicitTargets?.includes('api:sample:openapi.yaml:getUser'))).toBe(true)
+    expect(result.expectations.find(item => item.kind === 'happy-path')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'authentication-missing')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'missing-path-id')?.coverage).toBe('covered-explicit')
+    expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('covered-explicit')
   })
 
   it('rejects credentials embedded in repository URLs', () => {

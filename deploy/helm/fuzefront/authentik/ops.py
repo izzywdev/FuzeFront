@@ -22,7 +22,14 @@ def api(path, method='GET', body=None):
     req = urllib.request.Request(
         f'{AK}/api/v3{path}', method=method,
         headers={'Authorization': f'Bearer {TOK}', 'Accept': 'application/json',
-                 'Content-Type': 'application/json'},
+                 'Content-Type': 'application/json',
+                 # Without this, urllib sends its default "Python-urllib/3.x" UA,
+                 # which Cloudflare's bot heuristics block at the tunnel edge with
+                 # error 1010 ("browser signature ban") before Authentik ever sees
+                 # the request — the admin API and the token are never reached.
+                 # prod-authentik-probe.yml hits the same host successfully because
+                 # it uses curl, whose UA isn't flagged. See #507.
+                 'User-Agent': 'FuzeFront-authentik-ops/1.0 (+github-actions)'},
         data=json.dumps(body).encode() if body is not None else None)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -93,6 +100,80 @@ else:
                 f'- {name}: upsert HTTP {st_u}, apply HTTP {st_a}, status **{status}**, '
                 f'last_applied {last}{"" if confirmed else " (UNCONFIRMED — apply not observed)"}'
             )
+
+    elif PHASE == 'stock-apply':
+        # Force re-apply of stock (system/default) Authentik blueprints that are
+        # stuck in error status — e.g. after a version upgrade changes the schema.
+        # We call POST /apply/ on each stuck instance; the worker re-reads its
+        # own embedded content and re-applies. We also query the event log to
+        # surface the original error message for each failing blueprint.
+        #
+        # FuzeInfra#514: four stock blueprints have been in error since 2026-08-04
+        # (authentik Bootstrap, Default - Authentication flow, Default - Events
+        # Transport & Rules, Default - Out-of-box-experience flow). This recovers them.
+        import time as _time
+        st_l, listing = api('/managed/blueprints/?page_size=100')
+        if st_l != 200:
+            failed = True
+            report.append(f'Blueprint listing failed: HTTP {st_l}')
+        else:
+            report.append('### Stock blueprint re-apply (FuzeInfra#514)')
+            all_insts = listing.get('results', [])
+            report.append('')
+            report.append('**Pre-apply state:**')
+            for i in all_insts:
+                report.append(
+                    f"- `{i.get('name')}` path=`{i.get('path')}` "
+                    f"status=**{i.get('status')}** last_applied={i.get('last_applied')}")
+            # Stock blueprints live under system/ or default/; FuzeFront-owned
+            # blueprints live under blueprints/. Identify stuck stock ones.
+            stock_error = [
+                i for i in all_insts
+                if i.get('status') == 'error'
+                and not str(i.get('path', '')).startswith('blueprints/')
+            ]
+            if not stock_error:
+                report.append('')
+                report.append('**No stock blueprints in error — nothing to do.**')
+            else:
+                report.append('')
+                report.append(f'**Re-applying {len(stock_error)} stuck stock blueprint(s):**')
+                # Pull recent blueprint events once for context
+                _st_ev, _ev_resp = api('/events/events/?action=blueprints_apply&page_size=20')
+                ev_list = _ev_resp.get('results', []) if _st_ev == 200 else []
+                for i in stock_error:
+                    name = i.get('name', '')
+                    pk = i.get('pk')
+                    prev_applied = i.get('last_applied')
+                    # Find an event entry mentioning this blueprint
+                    ev_detail = ''
+                    for ev in ev_list:
+                        ctx = ev.get('context', {})
+                        if name.lower() in json.dumps(ctx).lower():
+                            ev_detail = json.dumps(ctx)[:200]
+                            break
+                    # Force re-apply — no body needed; stock blueprints own their content
+                    st_a, _ = api(f'/managed/blueprints/{pk}/apply/', 'POST', {})
+                    status, last = '?', '?'
+                    confirmed = False
+                    for _ in range(18):  # poll up to ~90s
+                        _st_g, after = api(f'/managed/blueprints/{pk}/')
+                        status = after.get('status', '?')
+                        last = after.get('last_applied', '?')
+                        if (_st_g == 200 and last != prev_applied
+                                and status in ('successful', 'warning', 'error', 'orphaned')):
+                            confirmed = True
+                            break
+                        _time.sleep(5)
+                    if status in ('error', 'orphaned') or not confirmed:
+                        failed = True
+                    ev_line = f' prev_err={ev_detail}' if ev_detail else ''
+                    report.append(
+                        f"- `{name}` ({i.get('path')}): apply HTTP {st_a},"
+                        f" status **{status}**, last_applied {last}"
+                        f"{'' if confirmed else ' (UNCONFIRMED)'}{ev_line}"
+                    )
+
 
     report.append('')
     report.append('### State')

@@ -16,7 +16,9 @@
   },
   "typesVersions": {
     "*": {
-      "kafka": ["./dist/kafka/index.d.ts"]
+      "kafka": [
+        "./dist/kafka/index.d.ts"
+      ]
     }
   },
   "scripts": {

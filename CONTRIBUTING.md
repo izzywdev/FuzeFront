@@ -53,12 +53,12 @@ This project and everyone participating in it is governed by our [Code of Conduc
    - Backend: http://localhost:3001
    - API Docs: http://localhost:3001/api-docs
 
-4. **Start Task Manager (Optional)**
+4. **Start Clock App (Optional)**
    ```bash
-   cd task-manager-app
+   cd clock-app
    npm run dev
    ```
-   - Task Manager: http://localhost:3002
+   - Clock App: http://localhost:3003
 
 ## 🔄 Development Workflow
 
@@ -113,7 +113,7 @@ FrontFuse/
 ├── backend/           # Express.js API server
 ├── shared/            # Shared utilities and types
 ├── sdk/               # FrontFuse SDK for app developers
-├── task-manager-app/  # Example federated app
+├── clock-app/         # Example federated app
 ├── docs/              # Documentation
 ├── scripts/           # Build and utility scripts
 └── .github/           # CI/CD workflows
@@ -220,7 +220,6 @@ We follow [Conventional Commits](https://conventionalcommits.org/) specification
 - **backend**: API server changes
 - **shared**: Shared utilities
 - **sdk**: SDK package changes
-- **task-manager**: Task manager app
 - **auth**: Authentication system
 - **ui**: User interface components
 - **api**: API endpoints

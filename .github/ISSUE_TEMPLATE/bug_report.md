@@ -41,7 +41,7 @@ If applicable, add screenshots to help explain your problem.
 **FrontFuse:**
 
 - Version: [e.g. 1.0.0]
-- Component: [e.g. frontend, backend, sdk, task-manager]
+- Component: [e.g. frontend, backend, sdk]
 
 ## 📱 Mobile (if applicable)
 

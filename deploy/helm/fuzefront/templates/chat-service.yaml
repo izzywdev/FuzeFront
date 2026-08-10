@@ -38,6 +38,16 @@ spec:
               value: {{ .Values.chatService.permitPdpUrl | quote }}
             - name: KAFKA_BROKERS
               value: {{ .Values.chatService.kafka.brokers | quote }}
+            {{- if .Values.fuzeinfra.redis.host }}
+            # Shared FuzeInfra Redis backs chat-service's per-user rate limiter
+            # (rate-limit-redis) with a cross-replica store. chat-service is the
+            # first service in this chart to need Redis, so the wiring lives here.
+            # If this is unset the limiter degrades to a per-pod in-memory store —
+            # ratelimit.ts treats REDIS_URL as opt-in and never crashes without it
+            # (FuzeFront #543 / #546). Same cross-namespace DNS style as DB/Kafka.
+            - name: REDIS_URL
+              value: "redis://{{ .Values.fuzeinfra.redis.host }}:6379"
+            {{- end }}
             - name: DB_HOST
               value: {{ .Values.fuzeinfra.postgres.host | quote }}
             - name: DB_PORT

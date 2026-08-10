@@ -20,11 +20,17 @@ import {
   PortalIdentityPolicy,
   BillingMode,
 } from '../repositories/portalRepository'
+import { isMultiTenantPortalsEnabled } from '../utils/portalFlag'
+import { createAuthentikRedirectRegistrar } from '../custom-domains/authentikRedirect'
+import type { RedirectUriRegistrar } from '../custom-domains/customHostnameService'
+import { createAuthentikBrandRegistrar } from '../authentik/portalBrand'
+import type { PortalBrandRegistrar } from '../authentik/portalBrand'
 
 /**
  * FF-EPIC-09-S2 — resumable master-admin portal provisioning pipeline:
  * org -> Permit tenant -> Organization ReBAC instance/parent link -> portals
- * row -> default subdomain -> owner invite.
+ * row -> default subdomain -> Authentik redirect URI -> Authentik brand ->
+ * owner invite.
  *
  * Mirrors `services/organizationProvisioning.ts`'s reconcile pattern
  * (idempotent, dependency-ordered step log + a Postgres advisory lock) rather
@@ -43,6 +49,32 @@ import {
  * start completely over. `SlugTakenError` is the only intentional throw, and
  * it is only ever raised BEFORE any row in this transaction is touched, so
  * rolling back an empty transaction is harmless.
+ *
+ * FF-EPIC-11-S4 adds two Authentik steps, treated very differently:
+ *
+ *   - `authentik_redirect_register` (AC1/AC3/AC4) is an INFRA step (same
+ *     blocking/fail-loud contract as every step above it) — it registers the
+ *     OIDC redirect URI for EVERY row currently in `portal_domains` for this
+ *     portal via the existing `RedirectUriRegistrar` contract
+ *     (`custom-domains/authentikRedirect.ts`, reused verbatim). Blocking is
+ *     deliberate: an unregistered redirect URI is a silently broken login,
+ *     which is exactly the failure mode AC4 forbids, so this step must
+ *     succeed before the portal is allowed to reach
+ *     `provisioned-pending-invite`.
+ *   - `authentik_brand_register` (AC2) registers the portal's Authentik
+ *     brand (login-page theming) via `authentik/portalBrand.ts`. Unlike the
+ *     redirect step, this is treated exactly like `owner_invite` — recorded,
+ *     independently retryable, but its failure never blocks or regresses the
+ *     portal's status nor fails the overall `provisionPortal()` call, because
+ *     losing branding is cosmetic, not a broken login.
+ *
+ * Both steps are no-ops (recorded `done`, no Authentik call made) while
+ * `fuzefront.platform.multi-tenant-portals` is OFF — this pipeline already
+ * runs regardless of that flag (see `index.ts`'s `ensureRootPortal` comment:
+ * "runs regardless of the multi-tenant-portals flag ... creates dormant rows
+ * nothing reads while the flag is off"), and these two steps follow the same
+ * contract rather than making a live Authentik call for a portal nothing can
+ * reach yet.
  */
 
 export const PORTAL_PROVISIONING_STEPS = [
@@ -52,6 +84,8 @@ export const PORTAL_PROVISIONING_STEPS = [
   'permit_org_parent',
   'portal_row_create',
   'default_domain_create',
+  'authentik_redirect_register',
+  'authentik_brand_register',
   'owner_invite',
 ] as const
 
@@ -68,6 +102,10 @@ export interface PortalProvisioningDeps {
   db: Knex
   permit: PortalProvisioningPermitClient
   publish: EventPublisher
+  /** FF-EPIC-11-S4 AC1 — registers a domain's OIDC redirect URI in Authentik. */
+  redirectUris: RedirectUriRegistrar
+  /** FF-EPIC-11-S4 AC2 — creates/updates the portal's Authentik login brand. */
+  brandRegistrar: PortalBrandRegistrar
 }
 
 export const defaultPortalPermitClient: PortalProvisioningPermitClient = {
@@ -84,11 +122,45 @@ export const defaultPortalPermitClient: PortalProvisioningPermitClient = {
   },
 }
 
+/**
+ * Falls back to a no-op when Authentik is not configured for this
+ * deployment (no `AUTHENTIK_ADMIN_TOKEN`) — mirrors
+ * `custom-domains/authentikRedirect.ts`'s own degrade contract
+ * (`createAuthentikRedirectRegistrar` returning `null`) so a deployment
+ * without Authentik wired up gets "no redirect registered" instead of a
+ * crash on every portal create.
+ */
+function defaultRedirectUriRegistrar(): RedirectUriRegistrar {
+  const registrar = createAuthentikRedirectRegistrar()
+  if (registrar) return registrar
+  return {
+    async register() {
+      /* Authentik not configured — see doc comment above. */
+    },
+    async deregister() {
+      /* Authentik not configured — see doc comment above. */
+    },
+  }
+}
+
+/** Same degrade-to-no-op contract as {@link defaultRedirectUriRegistrar}. */
+function defaultBrandRegistrar(): PortalBrandRegistrar {
+  const registrar = createAuthentikBrandRegistrar()
+  if (registrar) return registrar
+  return {
+    async ensure() {
+      /* Authentik not configured — see defaultRedirectUriRegistrar's doc. */
+    },
+  }
+}
+
 function getDeps(overrides?: Partial<PortalProvisioningDeps>): PortalProvisioningDeps {
   return {
     db: overrides?.db ?? defaultDb,
     permit: overrides?.permit ?? defaultPortalPermitClient,
     publish: overrides?.publish ?? defaultEventPublisher,
+    redirectUris: overrides?.redirectUris ?? defaultRedirectUriRegistrar(),
+    brandRegistrar: overrides?.brandRegistrar ?? defaultBrandRegistrar(),
   }
 }
 
@@ -142,6 +214,32 @@ const DEFAULT_IDENTITY_POLICY: PortalIdentityPolicy = {
   allowSelfSignup: false,
   mfaRequired: false,
   ssoProviders: [],
+}
+
+/**
+ * Defensive parse of `portals.branding` for the `authentik_brand_register`
+ * step. The column is `jsonb`, written via `JSON.stringify` in
+ * `portal_row_create` above, but knex/pg's driver may hand it back either as
+ * an already-parsed object or as a raw string depending on connection pool
+ * type-parser config — same ambiguity `portalRepository.ts`'s
+ * `parseJsonColumnWithDefaults` guards against. Falls back to
+ * `DEFAULT_BRANDING(name)` on anything unparseable so a malformed value never
+ * throws out of this best-effort step.
+ */
+function parseBrandingColumn(value: unknown, name: string): PortalBranding {
+  const fallback = DEFAULT_BRANDING(name)
+  if (!value) return fallback
+  if (typeof value === 'string') {
+    try {
+      return { ...fallback, ...JSON.parse(value) }
+    } catch {
+      return fallback
+    }
+  }
+  if (typeof value === 'object') {
+    return { ...fallback, ...(value as Partial<PortalBranding>) }
+  }
+  return fallback
 }
 
 async function ensureStepRows(qb: Knex | Knex.Transaction, slug: string): Promise<void> {
@@ -245,7 +343,14 @@ export async function provisionPortal(
         })
     }
 
-    const INFRA_STEPS = PORTAL_PROVISIONING_STEPS.filter(s => s !== 'owner_invite')
+    // `authentik_brand_register` is excluded here for the same reason
+    // `owner_invite` is: cosmetic/independently-retryable, handled in its own
+    // best-effort block below the completion checkpoint, never blocking.
+    // `authentik_redirect_register` stays IN — see the module doc comment
+    // (AC4 fail-loud contract).
+    const INFRA_STEPS = PORTAL_PROVISIONING_STEPS.filter(
+      s => s !== 'owner_invite' && s !== 'authentik_brand_register'
+    )
 
     let failedStep: PortalProvisioningStep | undefined
     let failureMessage: string | undefined
@@ -330,6 +435,25 @@ export async function provisionPortal(
               .onConflict('domain')
               .ignore()
             break
+          case 'authentik_redirect_register': {
+            // No-op while the master flag is off — see the module doc
+            // comment. Re-evaluated per attempt (not cached), same as every
+            // other flag read in this codebase.
+            if (await isMultiTenantPortalsEnabled()) {
+              // AC3 — registers EVERY domain currently on this portal, not
+              // just the primary one, so a portal with more than one
+              // `portal_domains` row (e.g. a resumed run that now also has a
+              // path/custom domain) gets a correct, independent redirect URI
+              // for each. `register()` itself is idempotent (dedupes by
+              // exact URL), so re-registering an already-registered domain
+              // here is a safe no-op.
+              const domainRows = await trx('portal_domains').where({ portal_id: portalId })
+              for (const domainRow of domainRows) {
+                await deps.redirectUris.register(domainRow.domain)
+              }
+            }
+            break
+          }
         }
 
         await markDone(step)
@@ -372,6 +496,38 @@ export async function provisionPortal(
         .where({ id: portalId })
         .update({ status: 'provisioned-pending-invite', updated_at: new Date() })
       justTransitioned = true
+    }
+
+    // Authentik brand (AC2) — independently retryable, purely cosmetic
+    // (branded login theming), so unlike `authentik_redirect_register` a
+    // failure here must NOT block/regress the portal's status nor fail the
+    // overall create call. AC4's fail-loud contract is scoped to the
+    // redirect-URI step specifically, because that failure breaks login
+    // outright; losing branding does not.
+    const brandRow = stepRows['authentik_brand_register']
+    if (brandRow?.status !== 'done') {
+      try {
+        if (portalRowBeforeInvite && (await isMultiTenantPortalsEnabled())) {
+          const domainRows = await trx('portal_domains').where({ portal_id: portalId })
+          const primaryDomain =
+            domainRows.find((d: any) => d.is_primary)?.domain ?? domainRows[0]?.domain
+          if (primaryDomain) {
+            const branding = parseBrandingColumn(portalRowBeforeInvite.branding, input.name)
+            await deps.brandRegistrar.ensure({
+              domain: primaryDomain,
+              name: branding.name,
+              accent: branding.accent ?? null,
+              logo: branding.logo ?? null,
+              favicon: branding.favicon ?? null,
+            })
+          }
+        }
+        await markDone('authentik_brand_register')
+      } catch (error: any) {
+        await markFailed('authentik_brand_register', error)
+        // Swallow — never fail the create call; cosmetic-only (see comment
+        // above).
+      }
     }
 
     // Owner invite — independently retryable; a failure here must NOT

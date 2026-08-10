@@ -16,16 +16,21 @@ export class TypedProducer {
   /**
    * Validates `event.payload` against `schema` then sends the event.
    * Throws ZodError if validation fails (caller should dead-letter).
+   *
+   * `options.key` sets the Kafka message key — pass the entity id (org/user)
+   * so all events for one entity land on the same partition and stay ordered.
+   * Omitting it preserves the previous round-robin behaviour.
    */
   async send<T>(
     topic: TopicName | string,
     event: FuzeEvent<T>,
-    schema: ZodSchema<T>
+    schema: ZodSchema<T>,
+    options?: { key?: string }
   ): Promise<void> {
     schema.parse(event.payload); // throws ZodError on failure
     await this.producer.send({
       topic,
-      messages: [{ value: JSON.stringify(event) }],
+      messages: [{ key: options?.key, value: JSON.stringify(event) }],
     });
   }
 

@@ -15,6 +15,14 @@ Read the baseline for the full governance model (3 layers, repo tiers, single-re
 - **Backend:** Express + Postgres, with **Authentik** (identity/SSO) and **Permit** (authorization) for auth. The frontend talks to the API on a **same-origin API base** (no cross-origin base URL) so it works identically under local TLS and prod ingress — never hard-code an absolute API host.
 - **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@claude`** — never edit FuzeInfra or operate the cluster from here.
 
+## Helm values hygiene — don't cast around a missing default, restore it
+
+`helm lint` and `kubeconform` are **static schema** checks: they confirm a rendered value has the right *shape*, not that it is semantically valid. This gap shipped a real outage (FuzeInfra#501): a large `values.yaml` restructuring (#523) accidentally dropped `authentik.networkPolicy.port` (and its sibling namespace keys). With the key gone, `{{ $np.port }}` rendered as nil, which correctly failed kubeconform's `oneOf: [integer, string]` schema check for `NetworkPolicyPort.port` — but the fix applied was `{{ $np.port | int }}`, and Sprig's `int` filter silently converts nil to `0`. `0` **is** a valid integer, so kubeconform went green — while the live API server correctly rejects `port: 0` (must be 1–65535) at admission time, which nothing else in CI exercises. Every Argo sync of the whole `fuzefront` Application failed for days before anyone noticed (fixed in #534).
+
+- **A coercion filter on a `.Values.` lookup (`| int`, `| default X`, `| toString`, …) is a signal to investigate, not a fix for a lint failure.** If kubeconform/helm-lint complains about a missing or wrong-shaped value, find out *why* it's undefined before reaching for a cast. If the field is genuinely optional, declare the default explicitly in `values.yaml` where a reviewer can see it — don't let the template silently absorb a missing value at the render site. `gate-networkpolicy-ports` (`helm-validate.yml`) now catches the specific case of a NetworkPolicy port rendering out of range, but it does not generalize to every field a naked cast could mask.
+- **A "fix missing defaults" commit whose diff is dominated by deletions is a restructuring, not an addition** — self-review it accordingly: diff `helm template` output for every values overlay (`values.yaml`, `values-local.yaml`, `values-prod.yaml`) before vs. after, not just the line-level YAML diff, since a reordered/consolidated file makes an eyeballed diff unreliable.
+- **Two PRs touching the same top-level `values.yaml` key concurrently is the highest-risk moment for this class of bug** — if your branch has been open a while and merges master while another active PR is landing changes to the same key (e.g. two sibling `networkPolicy` blocks), diff exactly that region post-merge instead of trusting the auto-resolution.
+
 ## Toolchain baseline — Node 24 LTS / React 19 are a floor, not a suggestion
 
 These are **minimums every manifest, image, workflow and remote must meet.** FuzeFront is the Module-Federation host, so its React major *is* the shared-singleton contract for the whole family — drift here does not surface as a version warning, it surfaces as a white screen in somebody else's app.
@@ -129,6 +137,24 @@ This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_mo
 - This is the local counterpart to the branch policy below: `governance-nightly` reaps stale *branches* on the remote; the reaper reaps stale *worktrees* on the developer's disk. Neither covers the other.
 
 **This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
+
+## Entity identifiers — the owning service mints them, and references carry their type
+
+Full standard: **`governance/identifier-standard.md`** (enforced by `gate-identifier`).
+Design rationale: `docs/planning/entity-identity-and-graph-create.md`.
+
+Two rules, and one is not enough without the other:
+
+1. **The service that owns an entity mints its id.** A create body must never accept an `id`/`uuid` for the resource being created, and must set `additionalProperties: false`. A client-chosen id turns a cross-type collision from something an attacker must *find* (probability ~0) into something they *type in* — OWASP API3:2023 BOPLA. Fields naming an entity that already exists (`organizationId`, `userId`) are references, not identity, and are fine.
+2. **Every polymorphic reference carries its type**, and no lookup resolves a bare id. §1 alone still loses to an attacker who *learns* an id rather than choosing one.
+
+**Corollary, always in force: an id is never a capability.** Authorization comes from the token and Permit. "The caller knew the id" is never sufficient.
+
+**Format is wire-typed, storage-native.** `cus_01h455vb4pex5vsknk084sn02q` on the API (TypeID: prefix + UUIDv7 in base32); a native 16-byte `uuid` column underneath. With services on separate databases there is no shared unique index, so the prefix — checkable offline, with no network call and no cache — is the only defense that always works. Ids are **opaque past the prefix**: never parse further, never assume a length. `mintId()`/`mint_id()` is the only sanctioned constructor.
+
+**Graph create** uses `lid` in / `idMap` out, with ids minted up front so handlers never learn `lid` existed and reference cycles resolve. A `lid` graph is scoped to **one service's aggregate** — a graph spanning services cannot be created atomically.
+
+Packages: **`@izzywdev/fuzefront-identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
 
 ## Branch lifecycle policy
 

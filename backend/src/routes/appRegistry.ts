@@ -1,8 +1,46 @@
-import express from 'express'
+import express, { Response, NextFunction } from 'express'
+import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 
 const router = express.Router()
+
+// Per-IP rate limit for the registry read. The route is authenticated and
+// shell-facing (the portal polls it), so a conservative cap adds defense in
+// depth against an unauthenticated flood without affecting normal polling.
+// Placed before authenticateToken so abusive traffic is shed before auth work.
+const appsReadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+})
+
+/**
+ * Whether this host-backend should answer app-registry READS from its own local
+ * `apps` table instead of delegating to the applications-service proxy
+ * (routes/app-registry.ts, mounted at the same path right after this router).
+ *
+ * Default is FALSE — delegate. The applications-service owns the FROZEN
+ * `/api/v1/app-registry` contract and is where every WRITE already lands
+ * (self-registration POST/PUT/activate fall through to the proxy because this
+ * adapter only defines GET /apps). If the READ is served from the local `apps`
+ * table instead, the two stores diverge and self-registered MFEs — e.g.
+ * FuzePicker's `picker` remote — are active in the applications-service but
+ * absent from what the shell reads, so they never render (FuzeFront #533).
+ *
+ * The local adapter is a CI / no-applications-service fallback only, enabled
+ * explicitly with APP_REGISTRY_LOCAL_ADAPTER=1 (or true/yes). It is keyed on an
+ * explicit flag and NOT on APPLICATIONS_SERVICE_URL: prod does not set that env
+ * (the proxy defaults it to http://fuzefront-applications:3003), so keying on it
+ * would leave the adapter shadowing the proxy in prod — the exact split-brain
+ * this fix removes.
+ */
+function localAdapterEnabled(): boolean {
+  const v = (process.env.APP_REGISTRY_LOCAL_ADAPTER || '').trim().toLowerCase()
+  return v === '1' || v === 'true' || v === 'yes'
+}
 
 /**
  * Maps a row from the legacy `apps` table to the app-registry App shape so
@@ -70,7 +108,16 @@ function rowToRegistryApp(row: any) {
 }
 
 // GET /api/v1/app-registry/apps
-router.get('/apps', authenticateToken, async (req: any, res) => {
+//
+// Delegates to the applications-service proxy unless the local DB adapter is
+// explicitly enabled (see localAdapterEnabled). `next()` falls through to
+// routes/app-registry.ts, mounted at this same path in src/index.ts — realizing
+// the pass-through the mount comment there already promises.
+router.get('/apps', appsReadLimiter, authenticateToken, async (req: any, res: Response, next: NextFunction) => {
+  if (!localAdapterEnabled()) {
+    return next()
+  }
+
   try {
     const { status, limit = '100' } = req.query as Record<string, string>
 
@@ -93,3 +140,6 @@ router.get('/apps', authenticateToken, async (req: any, res) => {
 })
 
 export default router
+
+// Exported for tests / introspection.
+export const __appRegistryAdapterConfig = { localAdapterEnabled }
