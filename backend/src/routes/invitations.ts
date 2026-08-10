@@ -13,7 +13,7 @@
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
-import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
@@ -261,7 +261,7 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
 
       if (!existingMembership) {
         await trx('organization_memberships').insert({
-          id: uuidv4(),
+          id: toUuid(mintId('membership')),
           user_id: user.id,
           organization_id: invitation.organization_id,
           role: invitation.role,

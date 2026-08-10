@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
 import { createTenantInPermit } from '../utils/permit/tenant-management'
@@ -142,7 +143,7 @@ export async function ensurePersonalOrg(
   const user = await db('users').where({ id: userId }).first()
   if (!user) throw new Error(`Cannot create personal org: user ${userId} not found`)
 
-  const orgId = uuidv4()
+  const orgId = toUuid(mintId('organization'))
   // Use the full userId so the slug is globally unique per user (M1 — a
   // truncated 8-char prefix shares only 32 bits of entropy and two different
   // users can produce the same slug, silently losing the loser's personal org).
@@ -184,7 +185,7 @@ export async function ensurePersonalOrg(
       // organization_memberships(user_id, organization_id)).
       await trx('organization_memberships')
         .insert({
-          id: uuidv4(),
+          id: toUuid(mintId('membership')),
           user_id: userId,
           organization_id: actualOrg.id,
           role: 'owner',

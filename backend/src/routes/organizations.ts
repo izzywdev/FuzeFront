@@ -2,6 +2,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   PermissionMiddleware,
@@ -145,7 +146,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const organizationId = uuidv4()
+    const organizationId = toUuid(mintId('organization'))
 
     // Create organization in transaction
     await db.transaction(async trx => {
@@ -164,7 +165,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
 
       // Create owner membership
       await trx('organization_memberships').insert({
-        id: uuidv4(),
+        id: toUuid(mintId('membership')),
         user_id: req.user.id,
         organization_id: organizationId,
         role: 'owner',
@@ -959,7 +960,7 @@ router.post(
 
       const token = crypto.randomBytes(32).toString('hex')
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-      const invitationId = uuidv4()
+      const invitationId = toUuid(mintId('invitation'))
       const correlationId = uuidv4()
 
       await db('organization_invitations').insert({

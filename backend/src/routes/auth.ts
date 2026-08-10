@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
@@ -477,7 +478,7 @@ router.post('/login', async (req, res) => {
 
     // Create the session id first so it can be embedded in the token; this lets
     // logout invalidate only THIS session rather than all of the user's sessions.
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Generate JWT
@@ -840,7 +841,7 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
       return res.status(403).json(forbiddenPortalBody(portalBinding))
     }
 
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     // This IS FuzeFront's identity service — the issuer of platform tokens
     // (same mint as /login and the OIDC callback), not a product self-minting.
@@ -970,7 +971,7 @@ router.get('/oidc/callback', async (req, res) => {
     }
 
     // Create session id first so it can be embedded in the token
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Generate JWT token — include standard OIDC claims (sub, email) alongside
