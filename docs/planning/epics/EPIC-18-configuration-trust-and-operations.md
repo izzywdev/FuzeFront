@@ -3,6 +3,7 @@ key: FF-EPIC-18
 title: Configuration Trust & Operations — secrets, audit, change events, and portability
 label: [fuzefront, platform, config-management, contract-first, permit-gated, security, needs-jira-upload]
 github: TBD
+jira: FFRNT-151
 status: ready
 priority: High
 domain: Platform
@@ -95,16 +96,16 @@ domain: Platform
 | Tenant onboarding config steps | Manual, per-setting | 1 preset application |
 
 ### 📋 Child Stories
-| Story ID | Summary | Status |
-|----------|---------|--------|
-| FF-EPIC-18-S1 | Secret-typed values — encryption, masking, export exclusion | Open |
-| FF-EPIC-18-S2 | Append-only audit history | Open |
-| FF-EPIC-18-S3 | Revert a value to a previous version | Open |
-| FF-EPIC-18-S4 | `config.changed` events for cache invalidation | Open |
-| FF-EPIC-18-S5 | Version stamp / ETag per (namespace, scope) | Open |
-| FF-EPIC-18-S6 | Declarative key-definition registration from an app manifest | Open |
-| FF-EPIC-18-S7 | Import / export with dry-run diff | Open |
-| FF-EPIC-18-S8 | Presets — named bundles applied atomically | Open |
+| Story ID | Jira | Summary | Status |
+|----------|------|---------|--------|
+| FF-EPIC-18-S1 | [FFRNT-256](https://fuzefront.atlassian.net/browse/FFRNT-256) | Secret-typed values — encryption, masking, export exclusion | Open |
+| FF-EPIC-18-S2 | [FFRNT-257](https://fuzefront.atlassian.net/browse/FFRNT-257) | Append-only audit history | Open |
+| FF-EPIC-18-S3 | [FFRNT-261](https://fuzefront.atlassian.net/browse/FFRNT-261) | Revert a value to a previous version | Open |
+| FF-EPIC-18-S4 | [FFRNT-262](https://fuzefront.atlassian.net/browse/FFRNT-262) | `config.changed` events for cache invalidation | Open |
+| FF-EPIC-18-S5 | [FFRNT-263](https://fuzefront.atlassian.net/browse/FFRNT-263) | Version stamp / ETag per (namespace, scope) | Open |
+| FF-EPIC-18-S6 | [FFRNT-277](https://fuzefront.atlassian.net/browse/FFRNT-277) | Declarative key-definition registration from an app manifest | Open |
+| FF-EPIC-18-S7 | [FFRNT-278](https://fuzefront.atlassian.net/browse/FFRNT-278) | Import / export with dry-run diff | Open |
+| FF-EPIC-18-S8 | [FFRNT-279](https://fuzefront.atlassian.net/browse/FFRNT-279) | Presets — named bundles applied atomically | Open |
 
 ### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-17 (all of it — there must be a catalog and a value store first).
@@ -124,6 +125,7 @@ domain: Platform
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-256](https://fuzefront.atlassian.net/browse/FFRNT-256) |
 | **Story ID** | FF-EPIC-18-S1 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | High |
@@ -177,6 +179,7 @@ gives it teeth across every read path — resolution, bulk read, export and audi
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-257](https://fuzefront.atlassian.net/browse/FFRNT-257) |
 | **Story ID** | FF-EPIC-18-S2 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | High |
@@ -230,6 +233,7 @@ for revert (S3) and for the audit UI (FF-EPIC-19-S5).
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-261](https://fuzefront.atlassian.net/browse/FFRNT-261) |
 | **Story ID** | FF-EPIC-18-S3 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | Medium |
@@ -279,6 +283,7 @@ Builds directly on S2's history. Revert is deliberately implemented as a forward
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-262](https://fuzefront.atlassian.net/browse/FFRNT-262) |
 | **Story ID** | FF-EPIC-18-S4 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | High |
@@ -332,6 +337,7 @@ than merely limited.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-263](https://fuzefront.atlassian.net/browse/FFRNT-263) |
 | **Story ID** | FF-EPIC-18-S5 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | Medium |
@@ -382,6 +388,7 @@ cannot be.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-277](https://fuzefront.atlassian.net/browse/FFRNT-277) |
 | **Story ID** | FF-EPIC-18-S6 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | Medium |
@@ -432,6 +439,7 @@ artifact.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-278](https://fuzefront.atlassian.net/browse/FFRNT-278) |
 | **Story ID** | FF-EPIC-18-S7 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | Medium |
@@ -484,6 +492,7 @@ use on a live tenant.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-279](https://fuzefront.atlassian.net/browse/FFRNT-279) |
 | **Story ID** | FF-EPIC-18-S8 |
 | **Parent Epic** | FF-EPIC-18 — Configuration Trust & Operations |
 | **Priority** | Low |
