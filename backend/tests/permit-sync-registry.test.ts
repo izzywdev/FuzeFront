@@ -73,19 +73,34 @@ function makeFakeClient(opts: { failOn?: string } = {}) {
  */
 // eslint-disable-next-line prefer-const
 let mockRegistryRows: any[] | (() => never) = []
-jest.mock('../src/config/database', () => ({
-  db: () => ({
+// Whether the mocked platform DB reports the apps table / policy-storage columns
+// as present. Defaults to present so the existing read-path cases are unaffected;
+// the migration-race cases flip these to false. Prefixed `mock*` so the hoisted
+// jest.mock factory may close over it.
+// eslint-disable-next-line prefer-const
+let mockSchemaPresence = { hasTable: true, hasColumn: true }
+jest.mock('../src/config/database', () => {
+  const db: any = () => ({
     whereNotNull: () => ({
       whereNotNull: () => ({
         select: async () =>
           typeof mockRegistryRows === 'function' ? mockRegistryRows() : mockRegistryRows,
       }),
     }),
-  }),
-}))
+  })
+  db.schema = {
+    hasTable: async () => mockSchemaPresence.hasTable,
+    hasColumn: async () => mockSchemaPresence.hasColumn,
+  }
+  return { db }
+})
 
 function stubRegistry(rows: any[] | (() => never)) {
   mockRegistryRows = rows
+}
+
+function stubSchemaPresence(presence: { hasTable: boolean; hasColumn: boolean }) {
+  mockSchemaPresence = presence
 }
 
 const silent = () => undefined
@@ -105,6 +120,7 @@ const fuzeservicePolicy = {
 beforeEach(() => {
   resetPermitSyncStatus()
   mockRegistryRows = []
+  mockSchemaPresence = { hasTable: true, hasColumn: true }
 })
 
 // ── the happy path a product actually depends on ──────────────────────────────
@@ -288,13 +304,80 @@ describe('loadRegisteredPolicyResult', () => {
       policies: [],
       error: null,
     })
+    // A genuine read failure against present storage is still unavailable.
     stubRegistry(() => {
-      throw new Error('relation "apps" does not exist')
+      throw new Error('ECONNREFUSED 127.0.0.1:5432')
     })
     await expect(loadRegisteredPolicyResult(silent)).resolves.toMatchObject({
       available: false,
       policies: [],
     })
+  })
+
+  // The apps.slug/apps.policy columns are provisioned by the applications-service
+  // migration, which the backend-image permit-schema-sync hook can outrun on a
+  // fresh install/upgrade. A missing column means NO product has registered a
+  // policy yet — that is an empty registry (available: true), not an outage —
+  // otherwise the CLI job exits non-zero and the deploy crash-loops.
+  it('treats the not-yet-migrated policy column as an empty registry, not an outage', async () => {
+    stubSchemaPresence({ hasTable: true, hasColumn: false })
+    // The read must never even be attempted once the column is known absent.
+    stubRegistry(() => {
+      throw new Error('column "policy" does not exist')
+    })
+    await expect(loadRegisteredPolicyResult(silent)).resolves.toMatchObject({
+      available: true,
+      policies: [],
+      error: null,
+    })
+  })
+
+  it('treats a missing apps table the same way — nothing registered, not an outage', async () => {
+    stubSchemaPresence({ hasTable: false, hasColumn: true })
+    await expect(loadRegisteredPolicyResult(silent)).resolves.toMatchObject({
+      available: true,
+      policies: [],
+      error: null,
+    })
+  })
+
+  it('a real DB outage while probing the schema is still reported unavailable', async () => {
+    // If the DB is unreachable, hasTable itself rejects — that must NOT be
+    // downgraded to "empty"; it is the fatal case the job is meant to catch.
+    const boom = () => {
+      throw new Error('ECONNREFUSED 127.0.0.1:5432')
+    }
+    const db: any = require('../src/config/database').db
+    const original = db.schema.hasTable
+    db.schema.hasTable = boom
+    try {
+      await expect(loadRegisteredPolicyResult(silent)).resolves.toMatchObject({
+        available: false,
+        policies: [],
+      })
+    } finally {
+      db.schema.hasTable = original
+    }
+  })
+})
+
+describe('the migration-race that crash-looped the permit-schema-sync Job', () => {
+  it('syncs base + legacy and reports ok when apps.policy is not migrated yet', async () => {
+    // Reproduces the deploy-ordering window: apps table exists (backend migrated)
+    // but the applications-service has not yet added apps.policy. The job must
+    // push the base + legacy schema and exit 0, not fail.
+    stubSchemaPresence({ hasTable: true, hasColumn: false })
+    const { client, created } = makeFakeClient()
+
+    const status = await syncPermitSchemaFromRegistry(client, [fuzemarketPolicy], silent)
+
+    expect(status.outcome).toBe('ok')
+    expect(status.registeredProducts).toEqual([])
+    expect(status.legacyProducts).toEqual(['fuzemarket'])
+    // Base schema + the legacy in-tree policy both went out.
+    expect(created.map(r => r.key)).toEqual(
+      expect.arrayContaining(['Organization', 'fuzemarket_Listing'])
+    )
   })
 })
 
