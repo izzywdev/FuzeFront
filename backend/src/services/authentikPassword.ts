@@ -282,8 +282,10 @@ export async function authentikPasswordLogin(
       // consent resolved, here is where to go next), different transport.
       // Ported from backend/security/src/services/authentikPassword.ts.
       try {
-        const challenge = (await res.json()) as { type?: string; to?: string }
-        if (challenge?.type === 'redirect' && typeof challenge.to === 'string') {
+        const challenge = (await res.json()) as FlowChallenge
+        const isRedirectChallenge =
+          challenge?.type === 'redirect' || challenge?.component === 'xak-flow-redirect'
+        if (isRedirectChallenge && typeof challenge.to === 'string') {
           next = challenge.to
         }
       } catch {

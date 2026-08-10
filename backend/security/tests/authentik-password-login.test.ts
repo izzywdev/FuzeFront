@@ -367,6 +367,39 @@ describe('authentikPasswordLogin()', () => {
     )
   })
 
+  it('follows an HTTP 200 redirect challenge shaped as component: "xak-flow-redirect" (no "type" field)', async () => {
+    // The stage loop above identifies a redirect challenge by `component`, not
+    // `type` (see FlowChallenge / the `component === 'xak-flow-redirect'`
+    // checks elsewhere in this file) — the authorize hop must accept the same
+    // shape, not just a `type: 'redirect'` envelope.
+    fetchMock
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      .mockResolvedValueOnce(
+        mkRes({
+          status: 200,
+          json: {
+            component: 'xak-flow-redirect',
+            to: `${REDIRECT_URI}?code=component-shaped&state=st`,
+          },
+        })
+      )
+
+    const user = await authentikPasswordLogin('e2e@test.local', 'pw123')
+
+    expect(user.email).toBe('e2e@test.local')
+    expect(oidcService.handleCallback).toHaveBeenCalledWith(
+      'component-shaped',
+      'st',
+      'test-code-verifier'
+    )
+  })
+
   it('fails when authorize renders a flow UI instead of redirecting (consent required)', async () => {
     fetchMock
       .mockResolvedValueOnce(

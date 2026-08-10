@@ -648,8 +648,10 @@ export async function completeOidcWithSession(
       // This is the only branch that reads the response body, so it also
       // takes over releasing the socket for this hop (see drainBody).
       try {
-        const challenge = (await res.json()) as { type?: string; to?: string }
-        if (challenge?.type === 'redirect' && typeof challenge.to === 'string') {
+        const challenge = (await res.json()) as FlowChallenge
+        const isRedirectChallenge =
+          challenge?.type === 'redirect' || challenge?.component === 'xak-flow-redirect'
+        if (isRedirectChallenge && typeof challenge.to === 'string') {
           next = challenge.to
         }
       } catch {
