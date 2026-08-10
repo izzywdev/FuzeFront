@@ -160,6 +160,14 @@ jobs:
           docker compose -f docker-compose.e2e.yml logs backend 2>/dev/null \
             | grep -aE "(❌|⚠️|\[oidc\]|oidc/callback|token-exchange|authentication_failed|codeVerif|outbox|syncUser|Error:|exception|Initialized OIDC|Created new user|Updated existing user)" \
             | head -300 || true
+          echo "=== backend: authentikPassword DIAGNOSTIC lines only (all time, FuzeFront#557) ==="
+          # The tail -100 dump above only catches the LAST attempt's tail end
+          # of a verbose retry loop, which drops the per-hop Set-Cookie/CSRF
+          # diagnostics from earlier hops in the same attempt. Grep the full,
+          # untruncated backend log for just the diagnostic lines instead.
+          docker compose -f docker-compose.e2e.yml logs backend 2>/dev/null \
+            | grep -aiE "DIAGNOSTIC|csrf" \
+            | head -400 || true
 
       - name: Tear down E2E stack
         if: always()

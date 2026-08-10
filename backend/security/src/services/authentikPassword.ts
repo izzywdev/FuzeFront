@@ -339,6 +339,8 @@ export interface FlowChallenge {
   to?: string
   password_fields?: boolean
   response_errors?: Record<string, Array<{ string?: string; code?: string }>>
+  /** ak-stage-consent's confirmation token — POST it back to advance. */
+  token?: string
   [key: string]: unknown
 }
 
@@ -347,13 +349,18 @@ export async function flowRequest(
   slug: string,
   jar: CookieJar,
   body?: Record<string, unknown>,
-  deadline?: Deadline
+  deadline?: Deadline,
+  // The original request's query string (e.g. the OAuth authorize params),
+  // forwarded as Authentik's `query` param so the flow executor knows which
+  // in-flight request it's continuing — required when entering a flow via
+  // an existing `/if/flow/<slug>/?...` redirect rather than starting fresh.
+  flowQuery?: string
 ): Promise<FlowChallenge> {
   // Authentik commonly answers the first executor request with a 302 that
   // establishes the session cookie (Location points back into the flow), so
   // follow same-origin redirects manually, carrying the jar. Per Django 302
   // semantics a redirected POST is retried as GET.
-  let url = `${base}/api/v3/flows/executor/${slug}/?query=`
+  let url = `${base}/api/v3/flows/executor/${slug}/?query=${encodeURIComponent(flowQuery ?? '')}`
   let method: 'GET' | 'POST' = body ? 'POST' : 'GET'
   let payload: string | undefined = body ? JSON.stringify(body) : undefined
 
@@ -367,8 +374,15 @@ export async function flowRequest(
     if (cookie) headers['Cookie'] = cookie
     if (method === 'POST') {
       headers['Content-Type'] = 'application/json'
+      // Authentik overrides Django's default CSRF_HEADER_NAME to
+      // "HTTP_X_AUTHENTIK_CSRF" (confirmed via authentik's settings.py and
+      // multiple upstream issues/discussions) — it never reads the Django
+      // default `X-CSRFToken` header, which is why every prior round's
+      // "header confirmed present and well-formed" was still rejected as
+      // "CSRF token missing": the header authentik was reading was simply
+      // never sent (FuzeFront#557 round 10).
       const csrf = jar.get('authentik_csrf')
-      if (csrf) headers['X-CSRFToken'] = csrf
+      if (csrf) headers['X-Authentik-CSRF'] = csrf
     }
 
     let res: Response
@@ -638,17 +652,64 @@ export async function completeOidcWithSession(
       status: res.status,
     })
     jar.absorb(res)
-    // Nothing in this chain ever reads an authorize response BODY — only its
-    // status, cookies and `location`. Release the socket now so the next hop
-    // doesn't queue behind it (see drainBody).
-    drainBody(res)
 
-    const next = res.headers.get('location')
+    let next = res.headers.get('location')
+    // Confirmed against real Authentik 2026.5.5 in CI (FuzeFront#557): when
+    // implicit consent resolves, the 302 from /application/o/authorize/ lands
+    // on the flow's browser SHELL page — /if/flow/<slug>/?<original-query> —
+    // not a JSON payload. That page always serves HTML regardless of Accept,
+    // because it's the SPA entry point; the machine-readable challenge only
+    // comes from the flow-executor JSON API at
+    // /api/v3/flows/executor/<slug>/?query=<original-query>, the same
+    // endpoint flowRequest() already drives for the identification/password
+    // stages. So: detect that shell URL and call the JSON API directly
+    // instead of trying to parse the shell page itself.
+    const flowShellMatch = !next ? location.match(/\/if\/flow\/([^/?]+)\/(?:\?(.*))?$/) : null
+    let flowStageSeen: string | undefined
+    if (flowShellMatch) {
+      // We're not reading this hop's body — hand the socket back before
+      // issuing the flow-executor request (see drainBody).
+      drainBody(res)
+      const [, slug, flowQuery] = flowShellMatch
+      let challenge = await flowRequest(base, slug, jar, undefined, deadline, flowQuery)
+      if (challenge.component === 'ak-stage-consent' && typeof challenge.token === 'string') {
+        // Confirmed against real Authentik 2026.5.5 in CI: even with the
+        // provider set to implicit consent, the flow executor still renders
+        // ConsentStage exactly once via the API (the browser client would
+        // auto-submit it without ever showing UI) — POST its token back to
+        // confirm, which then resolves to the actual redirect challenge.
+        challenge = await flowRequest(
+          base,
+          slug,
+          jar,
+          { component: 'ak-stage-consent', token: challenge.token },
+          deadline,
+          flowQuery
+        )
+      }
+      const isRedirectChallenge =
+        challenge.component === 'xak-flow-redirect' || challenge.type === 'redirect'
+      if (isRedirectChallenge && typeof challenge.to === 'string') {
+        next = challenge.to
+      } else {
+        flowStageSeen = challenge.component || challenge.type
+      }
+    } else {
+      // Nothing else in this chain ever reads an authorize response BODY —
+      // only its status, cookies and `location`. Release the socket now so
+      // the next hop doesn't queue behind it (see drainBody).
+      drainBody(res)
+    }
+
     if (!next) {
-      // 200 here means Authentik rendered a flow UI (consent / re-auth) —
-      // implicit consent is expected on the FuzeFront provider.
+      // Genuinely no Location header, not the flow-shell redirect, or a
+      // flow-executor challenge that wasn't a redirect (or ak-stage-consent)
+      // — Authentik rendered a flow UI needing real interaction (e.g. MFA,
+      // a required re-auth); implicit consent is expected on the FuzeFront
+      // provider, so this is a genuine "cannot proceed headlessly" case.
       throw new UnsupportedFlowStageError(
-        `authorize returned HTTP ${res.status} without redirect (consent flow?)`
+        flowStageSeen ??
+          `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
     }
     const resolvedUrl = new URL(next, location)
