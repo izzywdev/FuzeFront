@@ -111,6 +111,18 @@ Each service subscribes to what **it** owns; handlers are idempotent and DLQ on 
 
 This is a cross-service contract change, so it follows the repo's **contract-first fan-out**: the event schemas are frozen first (owned by `contract-designer`), then the backend / consumer / test streams fan out — expect **multiple auto-merge PRs**, not one. The event-propagation implementation is a **backend technical detail** hung off the UX story that first needs it ([FFRNT-115](https://fuzefront.atlassian.net/browse/FFRNT-115)); the tickets live as sub-tasks there.
 
+## Distribution & packaging
+
+The reusable pieces here are **shared middleware**, so per the family rule ([`docs/guides/shared-packages-distribution.md`](../guides/shared-packages-distribution.md)) they ship as **versioned packages published from FuzeFront to the GitHub `fuzeone` org**, and every microservice — Node or Python — consumes the pinned published version rather than vendoring or re-implementing:
+
+| Piece | Package | Consumed by |
+|---|---|---|
+| Event contract + typed client + registry | `@fuzefront/shared/kafka` → published `@fuzeone/*` | all backend services (+ Python mirror) |
+| Express transactional-outbox `enqueueEvent` + relay | `@fuzefront/core` → published `@fuzeone/*` | all Express services |
+| Python outbox + relay + Pydantic contract mirror | `fuzeone-events` (PyPI/GitHub) | all Python services |
+
+`@fuzefront/shared` and `@fuzefront/core` are currently workspace-only; giving them `publishConfig` + a publish-workflow entry (mirroring `packages/auth`) and publishing to the `fuzeone` org is the remaining step to satisfy the rule. Only the **generic** middleware is packaged — per-service emit call-sites and consumer handlers stay in their service.
+
 ## Verification
 
 - **Unit:** schema round-trips; `enqueueEvent` writes a row and a **transaction rollback drops the event** (proves atomicity); relay marks `sent` / backs off / DLQs; consumers are idempotent (same event twice = one effect).
