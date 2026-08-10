@@ -90,6 +90,11 @@ domain: Identity / Security
 ### 🔗 Dependencies
 - **Related:** FF-EPIC-04 (manifest `auth` section is the seam); FF-EPIC-03 (consumes the role model — must not be duplicated there).
 - **Blocked By:** #107 manifest `auth` section (frozen).
+- **Reconciled by FF-EPIC-17** (personal identity / root membership / portal / Employee): S4 here (ReBAC
+  FuzeOne-root parent→child derivation) is **consumed, not re-implemented** — FF-EPIC-17-S8 only names that
+  existing derivation "Employee" in the role catalog and adds the zero-per-org-membership contract;
+  FF-EPIC-17-S9 builds the console over it. No duplication of the derivation mechanics. See
+  `docs/planning/epics/EPIC-17-personal-identity-portal-employee-reconciliation.md`.
 
 ### 📎 References
 - GitHub issue: https://github.com/izzywdev/FuzeFront/issues/115

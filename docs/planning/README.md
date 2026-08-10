@@ -25,6 +25,7 @@ is executed by the domain agents (`backend-engineer`, `frontend-engineer`, `bill
 | [FF-EPIC-06](epics/EPIC-06-feature-flags-platform.md) | Feature Flags platform (Unleash + client) | [#116](https://github.com/izzywdev/FuzeFront/issues/116) | Platform | Medium | Ready |
 | [FF-EPIC-07](epics/EPIC-07-platform-hardening-residual.md) | Platform hardening residual | [#94](https://github.com/izzywdev/FuzeFront/issues/94) | DevOps / Security | High | Ready |
 | [FF-EPIC-08](epics/EPIC-08-sdlc-quality-gates.md) | SDLC quality gates | [#108](https://github.com/izzywdev/FuzeFront/issues/108) | Governance / CI | Medium | In progress (PR rebase pending) |
+| [FF-EPIC-17](epics/EPIC-17-personal-identity-portal-employee-reconciliation.md) | Personal identity, root membership & portal/Employee reconciliation | TBD | Identity / Security | Critical | Ready |
 
 ### Multi-Tenant Portal initiative (FF-EPIC-09 … 16)
 
@@ -47,7 +48,31 @@ FuzePlan workflow scheme (see `../planning/jira-scrum-provisioning.md`). 8 epics
 **Dependency order:** 09 → 10 → {11, 12} → {13, 14} ; 15 depends on 09/10 ; 16 depends on 10 + the
 FuzeInfra wildcard/custom-hostname delegation. All capabilities ship behind default-OFF feature flags.
 
+### Personal identity / root membership / portal / Employee reconciliation (FF-EPIC-17)
+
+[FF-EPIC-17](epics/EPIC-17-personal-identity-portal-employee-reconciliation.md) reconciles the org-
+membership model per the approved plan `/root/.claude/plans/as-you-can-see-glimmering-rabbit.md`: drops
+`type='personal'` orgs in favor of literal root membership on signup, unifies the Multi-Tenant Portal
+initiative onto `organizations + parent_id` (no separate `portals` entity — **supersedes** FF-EPIC-09-S1/S3
+and retargets FF-EPIC-11-S1's `home_portal_id`), formalizes "Employee" as ReBAC `org-admin`-on-root, and
+delivers all six resulting UI flows (personal/org/portal switcher, root/portal member directory, per-org
+members reconciliation, portal-management console, Employee cross-org console, my-orgs view) behind the
+design-first frames pipeline. **Critical priority — read it before starting any FF-EPIC-09/11/14 work
+touching the `portals` table**, since parts of those epics are superseded.
+
 ---
+
+## Open question: target Jira project key (FFP vs FFRNT)
+
+This README's Multi-Tenant Portal section (above) states the target as **`FFRNT`** ("FuzeFront SCRUM"),
+while `jira-scrum-provisioning.md` records the project as created with suggested key **`FFP`**
+("FuzeFront Portal"). **This is an unresolved discrepancy, not a typo either file can silently pick a
+side on.** As of this backlog update, **Atlassian/Jira tooling is not connected in this environment** (no
+Atlassian MCP tool was available to the agent that authored FF-EPIC-17), so no live-Jira decision was
+forced. Per governance, an ambiguous target defaults to the version-controlled markdown backlog with
+`needs-jira-upload` rather than guessing a key and pushing to a possibly-wrong project. **Before any bulk
+Jira import**, a human/site-admin must confirm the final key (`FFP` or `FFRNT` or otherwise) and update
+both this file and `jira-scrum-provisioning.md` to agree.
 
 ## How these map to Jira (import contract)
 
