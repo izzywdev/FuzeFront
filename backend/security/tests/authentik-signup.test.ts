@@ -111,7 +111,7 @@ describe('authentikSignup()', () => {
       password_repeat: 'Sup3rSecret!!',
     })
     expect(body.username).toBeTruthy()
-    expect(promptInit.headers['X-CSRFToken']).toBe('csrf-tok')
+    expect(promptInit.headers['X-Authentik-CSRF']).toBe('csrf-tok')
   })
 
   it('maps an "already exists" response_error to EnrollmentConflictError', async () => {

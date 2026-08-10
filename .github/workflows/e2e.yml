@@ -134,6 +134,14 @@ jobs:
           docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60 || true
           echo "=== clock-app (last 60 lines) ==="
           tail -60 /tmp/clock.log || echo "(no clock-app log)"
+          echo "=== backend/security: authentikPassword DIAGNOSTIC lines only (all time, FuzeFront#557) ==="
+          # The tail -120 dumps above only catch the LAST attempt's tail end
+          # of a verbose retry loop, which drops the per-hop Set-Cookie/CSRF
+          # diagnostics from earlier hops in the same attempt. Grep the full,
+          # untruncated logs for just the diagnostic lines instead.
+          docker compose -f docker-compose.e2e.yml logs backend security 2>/dev/null \
+            | grep -aiE "DIAGNOSTIC|csrf" \
+            | head -400 || true
 
       - name: Upload Playwright report
         if: failure()
