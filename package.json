@@ -27,7 +27,8 @@
     "design-system",
     "services/chat-service",
     "services/email-service",
-    "services/notification-service"
+    "services/notification-service",
+    "services/selection-list-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

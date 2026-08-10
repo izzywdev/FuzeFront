@@ -52,6 +52,9 @@ services/chat-service/dist/
 # the image's build stage, so it is never committed.
 services/notification-service/dist/
 
+# selection-list-service build output. Same reasoning as chat-service above.
+services/selection-list-service/dist/
+
 # Per-package local .npmrc workarounds (Windows native-binary installs only;
 # the repo's os=linux pin must NOT be overridden in CI).
 packages/*/.npmrc
