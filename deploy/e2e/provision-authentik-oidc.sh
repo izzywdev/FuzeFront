@@ -57,7 +57,13 @@ except Flow.DoesNotExist:
             "name": "FuzeFront Authorization (Implicit Consent)",
             "designation": "authorization",
             "title": "FuzeFront Authorization",
-            "authentication": "none",
+            # An authorization flow only ever runs mid-OAuth-authorize, for a
+            # user who is already authenticated (see FuzeFront#557: "none"
+            # here is suspected of breaking session/CSRF continuity between
+            # the GET that renders ak-stage-consent and the POST confirming
+            # it — Authentik's own built-in flow, which this script prefers
+            # when present, does not use "none" for an authorization flow).
+            "authentication": "require_authenticated",
             "policy_engine_mode": "all",
         },
     )
