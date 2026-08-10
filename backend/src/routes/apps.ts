@@ -22,16 +22,9 @@ interface AppRow {
   metadata: string
   organization_id: string | null
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
-  // Where the app may be INSTALLED (migration 017). Distinct from `scope`
-  // above, which is the Module-Federation remote container name.
-  scope_level: 'personal' | 'organization' | 'both'
   created_at: Date
   updated_at: Date
 }
-
-// Install scope levels an app may declare. Rows written before migration 017
-// read as the column default, 'both'.
-const VALID_SCOPE_LEVELS = ['personal', 'organization', 'both'] as const
 
 const VALID_INTEGRATION_TYPES = [
   'iframe',
@@ -318,7 +311,6 @@ router.get('/', authenticateToken, async (req: any, res) => {
           scope: app.scope,
           module: app.module,
           description: app.description,
-          scopeLevel: app.scope_level ?? 'both',
         }
       })
     )
@@ -388,7 +380,6 @@ router.post(
         scope,
         module,
         description,
-        scopeLevel = 'both',
       } = req.body
 
       // Input sanitization - trim whitespace from string fields
@@ -401,7 +392,6 @@ router.post(
       if (typeof scope === 'string') scope = scope.trim()
       if (typeof module === 'string') module = module.trim()
       if (typeof description === 'string') description = description.trim()
-      if (typeof scopeLevel === 'string') scopeLevel = scopeLevel.trim()
 
       // Basic required field validation
       if (!name || name.length === 0) {
@@ -449,15 +439,6 @@ router.post(
             .status(400)
             .json({ error: 'Icon URL must be a valid HTTP or HTTPS URL' })
         }
-      }
-
-      // Install scope level validation. Declares where the app may be
-      // installed (personal space, an organization, or either); the install
-      // flow asks the user only about the choices this leaves open.
-      if (!VALID_SCOPE_LEVELS.includes(scopeLevel)) {
-        return res.status(400).json({
-          error: `Invalid scopeLevel. Must be one of: ${VALID_SCOPE_LEVELS.join(', ')}`,
-        })
       }
 
       // Integration type validation
@@ -535,7 +516,6 @@ router.post(
         scope,
         module,
         description,
-        scope_level: scopeLevel,
       })
 
       const newApp: App = {
@@ -553,7 +533,6 @@ router.post(
         marketplaceMetadata: {},
         isMarketplaceApproved: false,
         installCount: 0,
-        scopeLevel,
       }
 
       res.status(201).json(newApp)
@@ -714,7 +693,6 @@ router.post(
         scope,
         module,
         description,
-        scopeLevel = 'both',
       } = req.body
 
       // Sanitize string fields
@@ -727,7 +705,6 @@ router.post(
       if (typeof scope === 'string') scope = scope.trim()
       if (typeof module === 'string') module = module.trim()
       if (typeof description === 'string') description = description.trim()
-      if (typeof scopeLevel === 'string') scopeLevel = scopeLevel.trim()
 
       // The owning org comes from the verified request context set by
       // requireAppPermission, NOT from the request body (no tenant spoofing).
@@ -761,13 +738,6 @@ router.post(
       if (!VALID_INTEGRATION_TYPES.includes(integrationType)) {
         return res.status(400).json({
           error: `Invalid integration type. Must be one of: ${VALID_INTEGRATION_TYPES.join(', ')}`,
-        })
-      }
-
-      // Install scope level allow-list (see POST /api/apps).
-      if (!VALID_SCOPE_LEVELS.includes(scopeLevel)) {
-        return res.status(400).json({
-          error: `Invalid scopeLevel. Must be one of: ${VALID_SCOPE_LEVELS.join(', ')}`,
         })
       }
 
@@ -811,7 +781,6 @@ router.post(
         description,
         organization_id: organizationId || null,
         visibility: 'private',
-        scope_level: scopeLevel,
       })
 
       const newApp: App = {
@@ -829,7 +798,6 @@ router.post(
         marketplaceMetadata: {},
         isMarketplaceApproved: false,
         installCount: 0,
-        scopeLevel,
       }
 
       // Emit WebSocket event to notify all connected clients
@@ -876,7 +844,6 @@ router.post(
               marketplaceMetadata: {},
               isMarketplaceApproved: false,
               installCount: 0,
-              scopeLevel: existingApp.scope_level ?? 'both',
             }
             return res.status(200).json(app)
           }

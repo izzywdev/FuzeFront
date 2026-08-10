@@ -102,7 +102,7 @@ the rest safe** — only it answers *kind*, and only it needs nothing external.
 
 | Phase | Content | Status |
 |---|---|---|
-| **P0** | `governance/identifier-standard.md` + allowlist; `@fuzefront/shared/identity` (registry, branded `EntityId<T>`, TypeID codec, mint/parse/assertRef); `gate_identifier.py` + harden-gate wiring; spectral glob widened to `packages/*`; `additionalProperties: false` added to 7 create schemas in `packages/security` | **done** |
+| **P0** | `governance/identifier-standard.md` + allowlist; `@izzywdev/fuzefront-identity` (registry, branded `EntityId<T>`, TypeID codec, mint/parse/assertRef); `gate_identifier.py` + harden-gate wiring; spectral glob widened to `packages/*`; `additionalProperties: false` added to 7 create schemas in `packages/security` | **done** |
 | **P1** | `lid`/`idMap` graph-create middleware; billing-service reference implementation + contract shapes (spec 1.2.0 → 1.3.0) | **done** |
 | **P1b** | `fuzefront-identity` Python package (`packages/identity-py/`) — stdlib-only, pure-ASGI middleware, cross-language parity tested | **done** |
 | **P2** | `ref_index` Kafka projection + `assertRef` at L1 | ticket |

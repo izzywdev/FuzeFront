@@ -38,6 +38,13 @@ on:
       # failure mode the packages/** comment above describes, just for a
       # different path. This was live for every commit between #432 and now.
       - 'services/chat-service/**'
+      # notification-service/** and payment-service/** were both missing here,
+      # the same silent-ship gap the chat-service comment above describes: a
+      # change confined to one of those service dirs would merge green and never
+      # trigger a release, so the image would keep the old code (or, for the
+      # never-built payment-service, stay absent entirely).
+      - 'services/notification-service/**'
+      - 'services/payment-service/**'
       - 'clock-app/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
@@ -54,14 +61,14 @@ jobs:
       packages: write # push to GHCR
       actions: write # dispatch prod-post-deploy.yml (see the final step)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -72,7 +79,7 @@ jobs:
         run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push backend
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/Dockerfile
@@ -84,7 +91,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push frontend
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: frontend/Dockerfile
@@ -111,7 +118,7 @@ jobs:
         # must NEVER block the core backend+frontend deploy — a failed build here
         # is non-fatal; the bump+deploy still proceeds.
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/email-service/Dockerfile
@@ -125,7 +132,7 @@ jobs:
       - name: Build and push sms-service
         id: sms_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/sms-service/Dockerfile
@@ -139,7 +146,7 @@ jobs:
       - name: Build and push provisioning-service
         id: provisioning_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/provisioning-service/Dockerfile
@@ -153,7 +160,7 @@ jobs:
       - name: Build and push billing-service
         id: billing_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: services/billing-service/Dockerfile
@@ -164,10 +171,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push payment-service
+        # Self-contained Dockerfile (no @fuzefront/shared dep) => context is
+        # services/payment-service/, like clock-app — NOT the repo root the
+        # workspace services use. Scaffold gateway, disabled in prod; this build
+        # only makes the image EXIST so paymentService.image.tag can be bumped
+        # off "" and a future go-live is a values flip, not a missing image.
+        id: payment_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: services/payment-service
+          file: services/payment-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-payment-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-payment-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push security-service
         id: security_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/security/Dockerfile
@@ -181,7 +207,7 @@ jobs:
       - name: Build & push applications-service
         id: applications_image
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: backend/applications/Dockerfile
@@ -205,9 +231,8 @@ jobs:
         id: chat_image
         continue-on-error: true
         # SHA-pinned (Semgrep github-actions-mutable-action-tag). Same SHA the
-        # already-pinned steps in security.yml use. The other steps in this
-        # file still use the mutable @v7 — pinning the whole file is a separate,
-        # security-owned change, not this PR's scope.
+        # already-pinned steps in security.yml use; every other docker/build-push-action
+        # step in this file is now pinned to the same SHA too.
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -245,7 +270,7 @@ jobs:
         # Built-in reference Module-Federation remote, served same-origin at
         # app.fuzefront.com/apps/clock/. Self-contained Dockerfile => context is clock-app/.
         continue-on-error: true
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: clock-app
           file: clock-app/Dockerfile
@@ -304,8 +329,9 @@ jobs:
           CLOCK_OK=$(ok "${{ steps.clock_image.outcome }}")
           CHAT_OK=$(ok "${{ steps.chat_image.outcome }}")
           NOTIF_OK=$(ok "${{ steps.notification_image.outcome }}")
-          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK))
-          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK}"
+          PAYMENT_OK=$(ok "${{ steps.payment_image.outcome }}")
+          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK))
+          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK}"
           echo "expecting ${EXPECTED} tag rewrites (backend + frontend are always built)"
           if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
             echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
@@ -342,7 +368,7 @@ jobs:
           awk -v sha="$SHA" -v chat="$CHAT_OK" -v notif="$NOTIF_OK" \
               -v email="$EMAIL_OK" -v sms="$SMS_OK" -v prov="$PROV_OK" \
               -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
-              -v apps="$APPS_OK" -v clock="$CLOCK_OK" '
+              -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -363,6 +389,7 @@ jobs:
             prov == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-provisioning-service\r?$/ { hot=1 }
             chat == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-chat-service\r?$/ { hot=1 }
             notif == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-notification-service\r?$/ { hot=1 }
+            payment == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-payment-service\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml

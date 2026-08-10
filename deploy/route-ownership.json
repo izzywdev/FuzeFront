@@ -1,0 +1,73 @@
+{
+  "$comment": [
+    "API-path ownership contract, enforced by scripts/check-route-ownership.mjs.",
+    "",
+    "WHY THIS FILE EXISTS.",
+    "The ingress splits /api across several services by LONGEST-PREFIX match:",
+    "`/api/apps` goes to fuzefront-applications while the remaining `/api` goes to",
+    "fuzefront-backend. A route can therefore be fully implemented, unit-tested and",
+    "green in CI while being a 404 in every deployed environment, because it was",
+    "mounted on a service that does not own its path prefix. That is exactly what",
+    "happened to the app-installation endpoints: implemented on the backend, owned",
+    "by applications-service, 404 in prod, and no test could see it because unit",
+    "tests mount routers directly and never traverse the ingress.",
+    "",
+    "Each entry pins three things that must agree:",
+    "  path          - an API path the frontend actually calls",
+    "  servedBy      - the k8s Service the chart's ingress resolves that path to",
+    "  implementedIn - the router source file that must implement it",
+    "  mountedIn     - the service entrypoint that must mount that router",
+    "",
+    "Adding a route that crosses a prefix boundary means adding it here. That is",
+    "the point: the pairing becomes a reviewable, testable fact instead of an",
+    "assumption nobody re-checks."
+  ],
+  "valuesFiles": [
+    "deploy/helm/fuzefront/values-prod.yaml",
+    "deploy/helm/fuzefront/values-local.yaml"
+  ],
+  "routes": [
+    {
+      "path": "/api/apps/installed",
+      "servedBy": "fuzefront-applications",
+      "implementedIn": "backend/applications/src/routes/app-installations.ts",
+      "mountedIn": "backend/applications/src/index.ts",
+      "why": "Effective installed apps for the caller. Regressed to 404 in prod when mounted on fuzefront-backend."
+    },
+    {
+      "path": "/api/apps/some-app-id/install",
+      "servedBy": "fuzefront-applications",
+      "implementedIn": "backend/applications/src/routes/app-installations.ts",
+      "mountedIn": "backend/applications/src/index.ts",
+      "why": "Install an app at personal or organization scope."
+    },
+    {
+      "path": "/api/apps/some-app-id/installations",
+      "servedBy": "fuzefront-applications",
+      "implementedIn": "backend/applications/src/routes/app-installations.ts",
+      "mountedIn": "backend/applications/src/index.ts",
+      "why": "List an app's installations."
+    },
+    {
+      "path": "/api/apps",
+      "servedBy": "fuzefront-applications",
+      "implementedIn": "backend/applications/src/routes/apps.ts",
+      "mountedIn": "backend/applications/src/index.ts",
+      "why": "The app registry itself, including the scopeLevel an app declares at registration."
+    },
+    {
+      "path": "/api/v1/notifications/unread-count",
+      "servedBy": "fuzefront-backend",
+      "implementedIn": "backend/src/routes/notifications.ts",
+      "mountedIn": "backend/src/index.ts",
+      "why": "Same-origin notification proxy. Falls to the `/api` catch-all; pinned so a future, more specific ingress rule cannot silently steal it."
+    },
+    {
+      "path": "/api/organizations",
+      "servedBy": "fuzefront-security",
+      "implementedIn": "backend/security/src/routes/organizations.ts",
+      "mountedIn": "backend/security/src/index.ts",
+      "why": "Organization list backing the org switcher in the user menu."
+    }
+  ]
+}

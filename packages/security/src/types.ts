@@ -17,6 +17,13 @@
  * Semantic version of THIS contract. Bump on every interface change; record it
  * in CHANGELOG.md. Consumers may assert on the major.
  */
+/**
+ * The generated spec types. `SessionResult.user` is defined by the OpenAPI
+ * `User` schema, so it is taken from here rather than restated — restating it
+ * is how the two drifted (see below).
+ */
+import type { components } from './generated';
+
 export const SECURITY_CONTRACT_VERSION = '0.3.0' as const;
 
 /**
@@ -104,7 +111,14 @@ export type SessionResult =
       status: 'authenticated';
       token: string;
       sessionId?: string;
-      user: unknown;
+      /**
+       * The authenticated user. Was `unknown`, which pushed every consumer into
+       * either a cast or a hand-maintained copy of this shape — FuzeHub carried
+       * TWO such copies (frontend + backend `lib/security/contract.ts`), each
+       * tightening `user` to its own local `SecurityUser`. Bound to the spec's
+       * `User` schema so the contract is the single source of truth.
+       */
+      user: components['schemas']['User'];
     }
   | {
       status: 'mfa_required';

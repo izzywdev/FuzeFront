@@ -30,19 +30,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           category: '/language:${{matrix.language}}'
 
@@ -52,23 +52,47 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+          # TruffleHog is AGPL-3.0, which allow-licenses above does not permit.
+          # It has been in this workflow all along; it only became visible when
+          # pinning changed its ref, because Dependency Review evaluates CHANGED
+          # dependencies and a floating `@main` ref never changes.
+          #
+          # Exempted by name rather than adding AGPL-3.0 to allow-licenses,
+          # because that list also governs the npm dependencies that ship inside
+          # the product, where AGPL copyleft would be a real obligation.
+          # TruffleHog is a scanner that runs in the pipeline and is never
+          # conveyed with FuzeFront, so the obligation does not attach. Keeping
+          # the distinction means the strict policy still protects what it was
+          # written to protect.
+          #
+          # Format is package-url, per the action's README:
+          #   pkg:githubactions/owner/repo[@version]
+          # Version deliberately omitted so the exemption survives future pin
+          # bumps rather than silently lapsing on the next SHA change.
+          #
+          # `snyk/actions/node` also appears in the log under "could not detect
+          # a license", but that is NOT a failure: src/main.ts calls setFailed
+          # only for `forbidden` and `unresolved` licenses, while `unlicensed`
+          # is merely printed. Adding it would be an unverified multi-segment
+          # purl bought for nothing.
+          allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
 
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -114,7 +138,6 @@ jobs:
           run_audit "fuzefront-website/backend"
           run_audit "sdk"
           run_audit "shared"
-          run_audit "task-manager-app"
 
   container-security:
     name: Container Security Scan
@@ -123,7 +146,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -131,7 +154,7 @@ jobs:
       # consume @fuzefront/* workspaces outside their own dir) — mirror
       # release.yml's exact buildx config (context: . + file:) so the scanned
       # image is what actually ships. load: true keeps it in the local daemon
-      # for Trivy. task-manager-app is self-contained.
+      # for Trivy.
       - name: Build backend image for scanning
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -154,18 +177,8 @@ jobs:
           tags: frontfuse/frontend:latest
           cache-from: type=gha,scope=frontend-root
 
-      - name: Build task-manager image for scanning
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: task-manager-app
-          file: task-manager-app/Dockerfile
-          push: false
-          load: true
-          tags: frontfuse/task-manager:latest
-          cache-from: type=gha
-
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: 'frontfuse/backend:latest'
           format: 'sarif'
@@ -177,7 +190,7 @@ jobs:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -189,12 +202,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Run TruffleHog secret scanner
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@82df476e759c1448517fac6bfb3677685cdcd78a # main (pinned snapshot)
         with:
           path: ./
           base: main
@@ -209,10 +222,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -226,7 +239,7 @@ jobs:
           npx @cyclonedx/cyclonedx-npm --output-format xml --output-file frontfuse-sbom.xml
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom-files
           path: |
@@ -259,11 +272,11 @@ jobs:
 
       - name: Checkout code
         if: steps.snyk-token.outputs.present == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
         if: steps.snyk-token.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
 
@@ -273,14 +286,14 @@ jobs:
 
       - name: Run Snyk to check for vulnerabilities
         if: steps.snyk-token.outputs.present == 'true'
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@12140f4059e244892ae643824a95459a102120dd # master (pinned snapshot)
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
 
       - name: Upload Snyk results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always() && steps.snyk-token.outputs.present == 'true'
         with:
           sarif_file: snyk.sarif

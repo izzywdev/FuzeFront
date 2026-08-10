@@ -8,7 +8,6 @@ import dotenv from 'dotenv'
 // Import routes
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
-import appInstallationsRoutes from './routes/app-installations'
 import notificationProxyRoutes from './routes/notifications'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
@@ -300,10 +299,15 @@ try {
 
 // Routes
 app.use('/api/auth', authRoutes)
-// Installation routes mount FIRST so `/installed` and `/:id/install*` resolve
-// before appsRoutes' own handlers. Express falls through to appsRoutes for
-// every path this router does not define.
-app.use('/api/apps', appInstallationsRoutes)
+// NOTE: the app INSTALLATION routes are deliberately NOT mounted here. The
+// ingress routes `/api/apps` (Prefix) to fuzefront-applications and only the
+// remaining `/api` to fuzefront-backend, and applicationsService.enabled is
+// true in BOTH values-local.yaml and values-prod.yaml. Mounting them on this
+// service made every install endpoint a 404 in every deployed environment
+// while the unit tests — which mount the router directly — stayed green.
+// They now live in backend/applications/src/routes/app-installations.ts, the
+// service that actually owns this path prefix. See scripts/check-route-
+// ownership.mjs, which fails CI if that pairing is ever broken again.
 app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // FF-EPIC-11-S3 — public token-based invitation resolve/accept (routes/invitations.ts).

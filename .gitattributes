@@ -18,3 +18,20 @@ deploy/helm/** text eol=lf
 # regenerated on Linux CI and diffed, so it must be LF too.
 services/custom-hostname-api/** text eol=lf
 custom-hostname-client/**       text eol=lf
+
+# Force LF for Dockerfiles and the npm/lerna manifests.
+#
+# gate-line-endings flags any file in a PR stored with CRLF, and these are the
+# ones that keep arriving that way: they are edited on Windows, and unlike CSS
+# or Helm the breakage is not visually obvious, so a CRLF manifest rides along
+# in an unrelated PR and fails the gate for someone else. Covering the paths
+# means git normalises on commit instead of the gate catching it after the fact.
+#
+# Dockerfiles specifically: the RUN lines are line-anchored by
+# scripts/check-dockerfile-lockfile.mjs, and a stray \r is the classic way for a
+# check like that to start reporting nonsense.
+**/Dockerfile   text eol=lf
+**/Dockerfile.* text eol=lf
+package.json    text eol=lf
+**/package.json text eol=lf
+lerna.json      text eol=lf
