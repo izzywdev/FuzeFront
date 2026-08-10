@@ -666,6 +666,15 @@ export async function completeOidcWithSession(
         challenge.component === 'xak-flow-redirect' || challenge.type === 'redirect'
       if (isRedirectChallenge && typeof challenge.to === 'string') {
         next = challenge.to
+      } else {
+        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 2): the shell-URL
+        // detection + flowRequest() call is confirmed reached, but CI still hit
+        // the fallback error afterward. Log the actual challenge the
+        // flow-executor returned so this isn't a fourth guess.
+        logger.warn(
+          { hop, slug, flowQuery, challenge },
+          'authentikPassword: DIAGNOSTIC — flow-executor challenge after shell redirect was not a recognized redirect'
+        )
       }
     } else {
       // Nothing else in this chain ever reads an authorize response BODY —
