@@ -99,3 +99,8 @@ authentik:
     # ConfigMap (in the fuzefront ns) holding ca.crt for the local CA so the
     # backend trusts the Authentik TLS cert (NODE_EXTRA_CA_CERTS).
     caConfigMap: "fuzefront-local-ca"
+
+# selection-list-service (S14 / FFRNT-200): disabled locally by default.
+# Flip to enabled once the Dockerfile and selection-list-secrets are ready.
+# selectionListService:
+#   enabled: true
