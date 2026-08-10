@@ -303,6 +303,16 @@ export async function authentikPasswordLogin(
         // ConsentStage exactly once via the API (the browser client would
         // auto-submit it without ever showing UI) — POST its token back to
         // confirm, which then resolves to the actual redirect challenge.
+        //
+        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 4): the POST
+        // fails server-side with "CSRF Failed: CSRF token missing" — the
+        // cookie IS present (else Django's message would be "CSRF cookie not
+        // set") but our X-CSRFToken header apparently wasn't. Log the jar's
+        // exact cookie state right before the POST to see why.
+        console.warn(
+          'authentikPassword: DIAGNOSTIC — cookie jar state before consent-confirm POST',
+          { hop, slug, cookieHeader: jar.header(), csrfCookie: jar.get('authentik_csrf') }
+        )
         challenge = await flowRequest(
           base,
           slug,
