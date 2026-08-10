@@ -123,6 +123,38 @@ build step:
   simply grants nothing, so the symptom is *"our users have no permissions"*, which
   reads as a bug in your app.
 
+## Validating the whole `registration/` directory in your CI
+
+```bash
+npx fuzefront-validate-registration registration
+# or, from a checkout of the kit:
+node bin/validate-registration.mjs registration
+```
+
+Where `validate-policy` checks that one file is **well-formed**, this checks that your
+registration satisfies **fleet policy** — the rules the platform requires of every
+product but that no schema can express. Also zero dependencies.
+
+It enforces three things:
+
+| Rule | Why |
+|---|---|
+| Effective modes include `portal` **and** `standalone` | `standalone` is the only surface a mobile TWA/APK can wrap, because an app store needs a URL that stands on its own. |
+| `standalone` implies a non-empty `routing.host` | A standalone surface with no host has no URL to serve or to wrap. |
+| `policy.json` exists, and a vendored `register.sh` actually submits it | A pre-kit script that skips the policy step leaves the product with no roles. |
+
+**Why this is not a schema rule.** `mode: "portal"` with `modes` omitted is entirely
+valid — the contract says an absent `modes` falls back to `[mode]`. Such a product
+registers cleanly, appears in the portal, passes every existing gate, and is silently
+incapable of ever shipping a mobile app. Nothing is malformed; a capability simply
+never exists. That is precisely the class of failure a schema cannot catch and this
+gate can.
+
+**Embed-only products are exempt** from the surface rules. Per the contract an embed
+renders inside a third-party page with neither portal chrome nor FuzeFront navigation,
+is not a portal destination, and may not register a menu entry at all — so requiring a
+portal surface of it would be wrong.
+
 The validator enforces the frozen `ProductPolicy` contract:
 
 - keys are **bare** (`Ticket`, not `fuzeservice_Ticket`) and contain **no `_`** — `_`
