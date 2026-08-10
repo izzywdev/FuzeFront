@@ -281,16 +281,30 @@ export async function authentikPasswordLogin(
       // — instead of a 302 with a Location header. Same outcome (implicit
       // consent resolved, here is where to go next), different transport.
       // Ported from backend/security/src/services/authentikPassword.ts.
+      const bodyText = await res.text()
       try {
-        const challenge = (await res.json()) as FlowChallenge
+        const challenge = JSON.parse(bodyText) as FlowChallenge
         const isRedirectChallenge =
           challenge?.type === 'redirect' || challenge?.component === 'xak-flow-redirect'
         if (isRedirectChallenge && typeof challenge.to === 'string') {
           next = challenge.to
         }
+        if (!next) {
+          // TEMPORARY diagnostic (FuzeFront#557 follow-up): the redirect-challenge
+          // shape guessed here has been wrong twice against real Authentik
+          // 2026.5.5 in CI. Log exactly what came back so the next fix is based
+          // on the real payload instead of a third guess. Remove once confirmed.
+          console.warn(
+            'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, parsed JSON but not a recognized redirect challenge',
+            { contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) }
+          )
+        }
       } catch {
-        // Not JSON, or not the redirect-challenge shape — fall through to the
-        // consent-flow error below with the body already drained by .json().
+        // TEMPORARY diagnostic (see above): body wasn't valid JSON at all.
+        console.warn(
+          'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, body is not JSON',
+          { contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) }
+        )
       }
     }
     if (!next) {
