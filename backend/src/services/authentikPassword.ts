@@ -301,10 +301,8 @@ export async function authentikPasswordLogin(
         }
       } catch {
         // TEMPORARY diagnostic (see above): body wasn't valid JSON — real HTML
-        // in practice. Authentik's flow-executor commonly inlines its initial
-        // challenge as JSON inside a <script> tag in the shell page, so search
-        // for that instead of only dumping a fixed-size prefix.
-        const scriptIdx = bodyText.search(/<script[^>]*>/i)
+        // in practice. Dump it in fixed-size chunks (a flat slice, no pattern
+        // search over the markup) so the next fix is based on the real payload.
         console.warn(
           'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, body is not JSON',
           {
@@ -312,9 +310,9 @@ export async function authentikPasswordLogin(
             location,
             contentType: res.headers.get('content-type'),
             bodyLength: bodyText.length,
-            bodyPrefix: bodyText.slice(0, 400),
-            bodyAroundFirstScript:
-              scriptIdx >= 0 ? bodyText.slice(scriptIdx, scriptIdx + 3000) : '(no <script> tag found)',
+            bodyChunk1: bodyText.slice(0, 1500),
+            bodyChunk2: bodyText.slice(1500, 3000),
+            bodyChunk3: bodyText.slice(3000, 4500),
           }
         )
       }
