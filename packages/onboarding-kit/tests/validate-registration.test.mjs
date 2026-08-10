@@ -248,3 +248,23 @@ test('malformed manifest JSON is reported, not thrown', () => {
   assert.equal(errors.length, 1)
   assert.match(errors[0], /not valid JSON/)
 })
+
+test('a slug that de-prefixes below 3 chars keeps the prefix — FuzeBI', () => {
+  // `fuzebi` -> `bi` is REJECTED by the contract's Slug pattern (min 3 chars),
+  // so there is no conformant slug to move to and the prefix is load-bearing.
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI' }), [])
+})
+
+test('the same exemption covers FuzeX', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzex', name: 'FuzeX' }), [])
+})
+
+test('the exemption does NOT leak to slugs that de-prefix to 3+ chars', () => {
+  const errors = validateSlugConvention({ slug: 'fuzebio', name: 'FuzeBio' })
+  assert.equal(errors.length, 2, errors.join('\n'))
+  assert.match(errors[0], /use "bio"/)
+})
+
+test('a 3-char de-prefixed slug is still held to the convention', () => {
+  assert.match(validateSlugConvention({ slug: 'fuzehub' })[0], /use "hub"/)
+})
