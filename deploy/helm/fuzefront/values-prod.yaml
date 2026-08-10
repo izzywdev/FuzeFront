@@ -391,6 +391,11 @@ ingress:
   # carrying `traefik.ingress.kubernetes.io/router.priority` set LOW, so every
   # exact-host router outranks it, and verify against plan.fuzefront.com in a
   # deploy window before trusting it.
+  # Re-enablement is a DEPLOY-WINDOW decision, not a code change. The mechanism
+  # is now safe (own Ingress + router.priority: 1, measured on traefik 3.6.13),
+  # but flipping this puts every *.fuzefront.com host live immediately — the
+  # wildcard CNAME already exists at Cloudflare. Verify plan.fuzefront.com right
+  # after the sync. Priority override: ingress.wildcardPriority.
   wildcardHost: ''
   annotations: {}
   tls:
