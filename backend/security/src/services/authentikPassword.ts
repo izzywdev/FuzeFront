@@ -686,6 +686,15 @@ export async function completeOidcWithSession(
         next = challenge.to
       } else {
         flowStageSeen = challenge.component || challenge.type
+        // TEMPORARY diagnostic (FuzeFront#557 follow-up round 3): the
+        // consent-token POST is confirmed reached (this now reports
+        // ak-stage-flow-error instead of the old generic message), so
+        // Authentik is rejecting the POST itself. Log the full challenge —
+        // Authentik's flow-error stage usually carries the actual reason.
+        logger.warn(
+          { hop, slug, flowQuery, challenge },
+          'authentikPassword: DIAGNOSTIC — flow-executor challenge after consent POST was not a recognized redirect'
+        )
       }
     } else {
       // Nothing else in this chain ever reads an authorize response BODY —
