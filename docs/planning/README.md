@@ -47,6 +47,17 @@ FuzePlan workflow scheme (see `../planning/jira-scrum-provisioning.md`). 8 epics
 **Dependency order:** 09 → 10 → {11, 12} → {13, 14} ; 15 depends on 09/10 ; 16 depends on 10 + the
 FuzeInfra wildcard/custom-hostname delegation. All capabilities ship behind default-OFF feature flags.
 
+### App Management Console (FF-EPIC-20)
+
+Closes the app-management-UI gap: the app-registry backend exists but there is no UI to list all apps,
+edit an app's settings/attributes, drive its lifecycle, or manage its installations/scopes (distinct
+from FF-EPIC-04's register→activate flow and FF-EPIC-14's per-portal catalog curation). Design-first —
+frames gate the build.
+
+| Epic Key | Title | GitHub | Domain | Priority | Effort |
+|----------|-------|--------|--------|----------|--------|
+| [FF-EPIC-20](epics/EPIC-20-app-management-console.md) | App Management Console (list / detail-settings / installations) | TBD | Frontend / Platform | High | L |
+
 ---
 
 ## How these map to Jira (import contract)
