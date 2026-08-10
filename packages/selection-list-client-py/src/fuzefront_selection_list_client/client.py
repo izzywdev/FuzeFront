@@ -2,7 +2,7 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v1.0.0. Zero runtime dependencies — uses ``urllib.request`` from the stdlib.
+v1.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
@@ -10,7 +10,7 @@ Usage::
 
     client = SelectionListClient(
         base_url="http://fuzefront-selection-list-service:3011",
-        token="eyJhbGciOiJSUzI1NiJ9...",
+        token="<your-bearer-token>",
     )
     page = client.get_lists()
     for sl in page.items:
@@ -54,6 +54,8 @@ from .types import (
 )
 
 TokenProvider = Union[str, Callable[[], str]]
+
+_ALLOWED_SCHEMES = frozenset(("http", "https"))
 
 
 def _to_dict_omit_none(obj: object) -> dict:
@@ -193,10 +195,12 @@ class SelectionListClient:
     Typed client for the FuzeFront selection-list-service.
 
     :param base_url:
-        Base URL of the service. Trailing slashes are stripped.
+        Base URL of the service, using ``http`` or ``https`` only.
+        Trailing slashes are stripped. ``file://`` and other non-HTTP
+        schemes are rejected at construction time.
     :param token:
         Bearer token string, or a callable that returns one (so short-lived
-        tokens can refresh between calls). Optional — ``resolve_ids`` may be
+        tokens can refresh between calls). Optional -- ``resolve_ids`` may be
         called unauthenticated by a trusted in-cluster caller.
     :param default_locale:
         Locale applied to every request that does not pass its own.
@@ -211,6 +215,14 @@ class SelectionListClient:
     ) -> None:
         if not base_url:
             raise ValueError("SelectionListClient: base_url is required")
+        # Reject non-HTTP schemes (e.g. file://) to prevent local-file reads
+        # via urllib's built-in scheme support (Semgrep: dynamic-urllib-use-detected).
+        scheme = urllib.parse.urlparse(base_url).scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES:
+            raise ValueError(
+                f"SelectionListClient: base_url must use http or https, "
+                f"got '{scheme or '(none)'}'"
+            )
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._default_locale = default_locale
@@ -225,7 +237,7 @@ class SelectionListClient:
         return self._token
 
     # ------------------------------------------------------------------
-    # HTTP transport (urllib.request — stdlib only, zero deps)
+    # HTTP transport (urllib.request -- stdlib only, zero deps)
     # ------------------------------------------------------------------
 
     def _build_url(self, path: str, query: Optional[Dict[str, str]] = None) -> str:
@@ -279,7 +291,7 @@ class SelectionListClient:
                     parsed_error = None
             _raise_api_error(status, parsed_error)
 
-        # 204 / 205 — empty body
+        # 204 / 205 -- empty body
         if status in (204, 205):
             if allow_empty:
                 return None
@@ -323,7 +335,7 @@ class SelectionListClient:
         locale: Optional[str] = None,
         key: Optional[str] = None,
     ) -> PagedResponse[SelectionList]:
-        """``GET /v1/selection-lists`` — a page of lists in the caller's org."""
+        """``GET /v1/selection-lists`` -- a page of lists in the caller's org."""
         query = _build_query(
             limit=limit,
             cursor=cursor,
@@ -346,7 +358,7 @@ class SelectionListClient:
         source_locale: Optional[str] = None,
         description: Optional[str] = None,
     ) -> SelectionList:
-        """``POST /v1/selection-lists`` — create a list. The service mints the id."""
+        """``POST /v1/selection-lists`` -- create a list. The service mints the id."""
         body: dict = {"key": key, "name": name}
         if source_locale is not None:
             body["source_locale"] = source_locale
@@ -362,7 +374,7 @@ class SelectionListClient:
         *,
         locale: Optional[str] = None,
     ) -> SelectionList:
-        """``GET /v1/selection-lists/{listId}`` — one list, text resolved for locale."""
+        """``GET /v1/selection-lists/{listId}`` -- one list, text resolved for locale."""
         query = _build_query(locale=locale or self._default_locale)
         raw = self._request(
             "GET",
@@ -382,7 +394,7 @@ class SelectionListClient:
         name: Optional[str] = None,
         description: Optional[str] = None,
     ) -> SelectionList:
-        """``PATCH /v1/selection-lists/{listId}`` — partial update."""
+        """``PATCH /v1/selection-lists/{listId}`` -- partial update."""
         body = _omit_none(
             key=key,
             source_locale=source_locale,
@@ -399,7 +411,7 @@ class SelectionListClient:
         return _parse_selection_list(raw)
 
     def archive_list(self, list_id: str) -> SelectionList:
-        """``POST /v1/selection-lists/{listId}/archive`` — archive a list. Idempotent."""
+        """``POST /v1/selection-lists/{listId}/archive`` -- archive a list. Idempotent."""
         raw = self._request(
             "POST",
             f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/archive",
@@ -414,7 +426,7 @@ class SelectionListClient:
         purge: bool = False,
     ) -> Optional[SelectionList]:
         """
-        ``DELETE /v1/selection-lists/{listId}`` — archives by default.
+        ``DELETE /v1/selection-lists/{listId}`` -- archives by default.
 
         Pass ``purge=True`` only deliberately: it is irreversible and
         permanently breaks every consumer row holding one of the list's item
@@ -445,7 +457,7 @@ class SelectionListClient:
         status: Optional[str] = None,
         locale: Optional[str] = None,
     ) -> PagedResponse[SelectionListItem]:
-        """``GET /v1/selection-lists/{listId}/items`` — a page of items, in sort_order."""
+        """``GET /v1/selection-lists/{listId}/items`` -- a page of items, in sort_order."""
         query = _build_query(
             limit=limit,
             cursor=cursor,
@@ -472,7 +484,7 @@ class SelectionListClient:
         description: Optional[str] = None,
         sort_order: Optional[int] = None,
     ) -> SelectionListItem:
-        """``POST /v1/selection-lists/{listId}/items`` — add an item."""
+        """``POST /v1/selection-lists/{listId}/items`` -- add an item."""
         body: dict = {"code": code, "label": label}
         if description is not None:
             body["description"] = description
@@ -496,7 +508,7 @@ class SelectionListClient:
         sort_order: Optional[int] = None,
         status: Optional[str] = None,
     ) -> SelectionListItem:
-        """``PATCH /v1/selection-lists/{listId}/items/{itemId}`` — partial update."""
+        """``PATCH /v1/selection-lists/{listId}/items/{itemId}`` -- partial update."""
         body = _omit_none(
             label=label,
             description=description,
@@ -515,7 +527,7 @@ class SelectionListClient:
         return _parse_item(raw)
 
     def archive_item(self, list_id: str, item_id: str) -> SelectionListItem:
-        """``POST /v1/selection-lists/{listId}/items/{itemId}/archive`` — idempotent."""
+        """``POST /v1/selection-lists/{listId}/items/{itemId}/archive`` -- idempotent."""
         raw = self._request(
             "POST",
             (
@@ -534,7 +546,7 @@ class SelectionListClient:
         purge: bool = False,
     ) -> Optional[SelectionListItem]:
         """
-        ``DELETE /v1/selection-lists/{listId}/items/{itemId}`` — archives by default.
+        ``DELETE /v1/selection-lists/{listId}/items/{itemId}`` -- archives by default.
 
         Returns the archived item, or ``None`` when purged (``204``).
         """
@@ -554,7 +566,7 @@ class SelectionListClient:
 
     def reorder_items(self, list_id: str, item_ids: List[str]) -> List[SelectionListItem]:
         """
-        ``PUT /v1/selection-lists/{listId}/items/reorder`` — set the whole order.
+        ``PUT /v1/selection-lists/{listId}/items/reorder`` -- set the whole order.
 
         ``item_ids`` must be a permutation of exactly the list's non-archived items.
         """
@@ -578,7 +590,7 @@ class SelectionListClient:
         *,
         description: Optional[str] = None,
     ) -> Translation:
-        """``PUT /v1/selection-lists/{listId}/translations/{locale}`` — human list text."""
+        """``PUT /v1/selection-lists/{listId}/translations/{locale}`` -- human list text."""
         body: dict = {"name": name}
         if description is not None:
             body["description"] = description
@@ -604,7 +616,7 @@ class SelectionListClient:
     ) -> SelectionListItemTranslation:
         """
         ``PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}``
-        — human item text. Always stored with ``is_machine: false``.
+        -- human item text. Always stored with ``is_machine: false``.
         """
         body: dict = {"label": label}
         if description is not None:
@@ -631,7 +643,7 @@ class SelectionListClient:
     ) -> AutofillResult:
         """
         ``POST /v1/selection-lists/{listId}/translations/{locale}/autofill``
-        — machine-translate everything missing or stale.
+        -- machine-translate everything missing or stale.
         Human translations are never overwritten.
         """
         body: dict = {"overwrite_machine": overwrite_machine}
@@ -659,7 +671,7 @@ class SelectionListClient:
         limit: Optional[int] = None,
         cursor: Optional[str] = None,
     ) -> PagedResponse[AccessEntry]:
-        """``GET /v1/selection-lists/{listId}/access`` — a page of grants."""
+        """``GET /v1/selection-lists/{listId}/access`` -- a page of grants."""
         query = _build_query(limit=limit, cursor=cursor)
         raw = self._request(
             "GET",
@@ -679,7 +691,7 @@ class SelectionListClient:
         role: str,
     ) -> AccessEntry:
         """
-        ``PUT /v1/selection-lists/{listId}/access/{userId}`` — grant or change a role.
+        ``PUT /v1/selection-lists/{listId}/access/{userId}`` -- grant or change a role.
         Demoting the last ``list-owner`` is refused with ``409 CONFLICT``.
         """
         raw = self._request(
@@ -695,7 +707,7 @@ class SelectionListClient:
 
     def revoke_access(self, list_id: str, user_id: str) -> None:
         """
-        ``DELETE /v1/selection-lists/{listId}/access/{userId}`` — idempotent revoke.
+        ``DELETE /v1/selection-lists/{listId}/access/{userId}`` -- idempotent revoke.
 
         Returns ``None``; revoking a grant that does not exist is not an error.
         """
@@ -714,7 +726,7 @@ class SelectionListClient:
 
     def get_quota(self) -> SelectionListQuotaStatus:
         """
-        ``GET /v1/selection-lists/quota`` — usage and ceilings for the caller's org.
+        ``GET /v1/selection-lists/quota`` -- usage and ceilings for the caller's org.
 
         Call it to warn *before* a create fails, rather than surfacing
         ``403 QUOTA_EXCEEDED`` as a surprise.
@@ -734,12 +746,12 @@ class SelectionListClient:
         locale: Optional[str] = None,
     ) -> ResolveResponse:
         """
-        ``POST /v1/resolve`` — turn persisted item ids back into labels in one call.
+        ``POST /v1/resolve`` -- turn persisted item ids back into labels in one call.
 
         Read-only and cacheable despite being a POST (the id batch does not fit
         a URL). Archived ids resolve normally with ``status: 'archived'``; only
         purged or never-existent ids come back in ``missing``. Bounded at 500
-        ids per call — chunk larger batches yourself.
+        ids per call -- chunk larger batches yourself.
         """
         body: dict = {"ids": ids}
         resolved_locale = locale or self._default_locale
@@ -764,7 +776,7 @@ class SelectionListClient:
         """
         Walk every page of a cursor-paginated endpoint, yielding one item at a time.
 
-        Exists so no consumer hand-rolls the cursor loop — the standard's
+        Exists so no consumer hand-rolls the cursor loop -- the standard's
         guarantee (no gaps, no duplicates under concurrent writes) only holds
         if the cursor is echoed back verbatim and the walk stops on
         ``next_cursor is None``, both of which are easy to get subtly wrong.
