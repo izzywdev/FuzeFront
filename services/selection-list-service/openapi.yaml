@@ -177,11 +177,58 @@ paths:
       tags: [lists]
       x-permit-action: read
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/StatusFilterParam'
-        - $ref: '#/components/parameters/LocaleQueryParam'
-        - $ref: '#/components/parameters/KeyFilterParam'
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
+        - name: status
+          in: query
+          required: false
+          description: Filter lists by lifecycle status. Defaults to `active`.
+          schema:
+            type: string
+            description: Lifecycle status filter.
+            enum: [active, archived, all]
+            default: active
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
+        - name: key
+          in: query
+          required: false
+          description: >-
+            Exact-match filter on the org-unique list `key`. Returns a page of at
+            most one row; present so a consumer can look a list up by its stable
+            slug without knowing its id.
+          schema:
+            $ref: '#/components/schemas/SelectionListKey'
       responses:
         '200':
           description: A page of selection lists.
@@ -251,7 +298,16 @@ paths:
       tags: [lists]
       x-permit-action: read
       parameters:
-        - $ref: '#/components/parameters/LocaleQueryParam'
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
       responses:
         '200':
           description: The selection list.
@@ -311,7 +367,16 @@ paths:
       tags: [lists]
       x-permit-action: delete
       parameters:
-        - $ref: '#/components/parameters/PurgeParam'
+        - name: purge
+          in: query
+          required: false
+          description: >-
+            When `true`, permanently delete instead of archiving. Irreversible;
+            breaks every consumer reference to the purged ids.
+          schema:
+            type: boolean
+            description: Permanently delete rather than archive.
+            default: false
       responses:
         '200':
           description: The archived list (only returned when `purge` is false/absent).
@@ -368,10 +433,51 @@ paths:
       tags: [items]
       x-permit-action: read
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/ItemStatusFilterParam'
-        - $ref: '#/components/parameters/LocaleQueryParam'
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
+        - name: status
+          in: query
+          required: false
+          description: >-
+            Filter items by lifecycle status. Defaults to `active` so a picker
+            never offers a retired choice by accident.
+          schema:
+            type: string
+            description: Lifecycle status filter.
+            enum: [active, archived, all]
+            default: active
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
       responses:
         '200':
           description: A page of items, in `sort_order`.
@@ -529,7 +635,16 @@ paths:
       tags: [items]
       x-permit-action: remove_value
       parameters:
-        - $ref: '#/components/parameters/PurgeParam'
+        - name: purge
+          in: query
+          required: false
+          description: >-
+            When `true`, permanently delete instead of archiving. Irreversible;
+            breaks every consumer reference to the purged ids.
+          schema:
+            type: boolean
+            description: Permanently delete rather than archive.
+            default: false
       responses:
         '200':
           description: The archived item (only returned when `purge` is false/absent).
@@ -709,8 +824,30 @@ paths:
       tags: [access]
       x-permit-action: manage_access
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CursorParam'
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
       responses:
         '200':
           description: A page of access grants.
@@ -914,86 +1051,6 @@ components:
       description: The target locale, from the supported set.
       schema:
         $ref: '#/components/schemas/Locale'
-    LocaleQueryParam:
-      name: locale
-      in: query
-      required: false
-      description: >-
-        Preferred locale for resolved text. Highest priority in the fallback
-        chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
-        silent fallback, so a client bug does not masquerade as missing
-        translations.
-      schema:
-        $ref: '#/components/schemas/Locale'
-    LimitParam:
-      name: limit
-      in: query
-      required: false
-      description: >-
-        Maximum rows to return. Clamped to `maximum` server-side — an over-max
-        request is never honoured unbounded.
-      schema:
-        type: integer
-        description: Page size.
-        minimum: 1
-        default: 50
-        maximum: 200
-    CursorParam:
-      name: cursor
-      in: query
-      required: false
-      description: >-
-        Opaque, server-issued cursor from the previous page's `page.nextCursor`.
-        Echo it back unmodified; never construct or parse one. A malformed or
-        expired cursor is a `400 VALIDATION_ERROR`, never a silent reset to
-        page 1.
-      schema:
-        type: string
-        description: Opaque pagination cursor.
-        maxLength: 2048
-    StatusFilterParam:
-      name: status
-      in: query
-      required: false
-      description: Filter lists by lifecycle status. Defaults to `active`.
-      schema:
-        type: string
-        description: Lifecycle status filter.
-        enum: [active, archived, all]
-        default: active
-    ItemStatusFilterParam:
-      name: status
-      in: query
-      required: false
-      description: >-
-        Filter items by lifecycle status. Defaults to `active` so a picker never
-        offers a retired choice by accident.
-      schema:
-        type: string
-        description: Lifecycle status filter.
-        enum: [active, archived, all]
-        default: active
-    KeyFilterParam:
-      name: key
-      in: query
-      required: false
-      description: >-
-        Exact-match filter on the org-unique list `key`. Returns a page of at
-        most one row; present so a consumer can look a list up by its stable
-        slug without knowing its id.
-      schema:
-        $ref: '#/components/schemas/SelectionListKey'
-    PurgeParam:
-      name: purge
-      in: query
-      required: false
-      description: >-
-        When `true`, permanently delete instead of archiving. Irreversible;
-        breaks every consumer reference to the purged ids.
-      schema:
-        type: boolean
-        description: Permanently delete rather than archive.
-        default: false
 
   schemas:
     SelectionListId:
