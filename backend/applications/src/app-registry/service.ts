@@ -157,6 +157,20 @@ export interface ListResult {
   nextCursor: string | null
 }
 
+/**
+ * FF-EPIC-12-S2 — the portal-catalog context `list()`'s caller
+ * (routes/app-registry.ts, via app-registry/portalContext.ts) resolves and
+ * passes in. See portalContext.ts's module doc for how this is derived (the
+ * JWT's `portalId` claim — this service has no other source of portal
+ * context). Optional/undefined behaves EXACTLY like `{ mode: 'off' }` — every
+ * existing caller that never passes this argument sees byte-identical
+ * pre-epic behavior (S5 AC1).
+ */
+export interface PortalCatalogListContext {
+  mode: 'off' | 'root' | 'scoped' | 'denied'
+  portalId: string | null
+}
+
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
@@ -166,7 +180,11 @@ export class AppRegistryService {
    * created_at/slug as the tiebreak that keeps the ordering total and stable.
    * Only manifest-bearing (registry) rows are returned.
    */
-  async list(params: ListParams, caller: AppCaller): Promise<ListResult> {
+  async list(
+    params: ListParams,
+    caller: AppCaller,
+    portalCtx?: PortalCatalogListContext
+  ): Promise<ListResult> {
     const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
 
     let query = db('apps').whereNotNull('slug').whereNotNull('manifest')
@@ -181,21 +199,61 @@ export class AppRegistryService {
       query = query.where('mode', params.mode)
     }
 
-    // BOLA filter in SQL (unless platform admin).
+    // BOLA filter in SQL (unless platform admin). Platform admins bypass this
+    // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
+    // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
       const orgIds = caller.organizationIds
-      query = query.where(builder => {
-        builder
-          .whereIn('visibility', ['public', 'marketplace'])
-          .orWhereNull('organization_id')
-        if (orgIds.length > 0) {
-          builder.orWhere(sub => {
-            sub
-              .whereIn('visibility', ['organization', 'private'])
-              .whereIn('organization_id', orgIds)
+
+      // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
+      // is ON and the caller's portal context is missing/malformed) must
+      // NEVER fall back to the unscoped global list — match no rows at all,
+      // rather than only gating the org-less/public branch below.
+      if (portalCtx?.mode === 'denied') {
+        query = query.whereRaw('1 = 0')
+      } else {
+        // 'scoped' (a resolved, non-root tenant portal) ANDs an extra
+        // membership check onto the org-less/public branch ONLY — the
+        // org-owned branch (organization/private visibility, caller's own
+        // orgs) is untouched, since that leak never existed for those. 'off'
+        // and 'root' apply NO extra gate here, preserving the EXACT
+        // pre-epic/root SQL (S5 AC1 / S2 AC3).
+        const applyPortalGate = portalCtx?.mode === 'scoped'
+
+        query = query.where(builder => {
+          builder.where(orgLessOrPublic => {
+            // IMPORTANT: the OR-pair below MUST be its own explicit group
+            // (nested `.where(w => ...)`), not top-level calls on
+            // `orgLessOrPublic` directly — SQL's `AND` binds tighter than
+            // `OR`, so `visibility IN (...) OR organization_id IS NULL AND
+            // EXISTS(...)` parses as `visibility IN (...) OR (organization_id
+            // IS NULL AND EXISTS(...))`, which lets ANY `public`/`marketplace`
+            // app bypass the portal gate entirely regardless of EXISTS — the
+            // exact leak this filter exists to close. Caught by the S2
+            // no-leak integration test.
+            orgLessOrPublic.where(w => {
+              w.whereIn('visibility', ['public', 'marketplace']).orWhereNull('organization_id')
+            })
+            if (applyPortalGate) {
+              const portalId = portalCtx!.portalId as string
+              orgLessOrPublic.whereExists(function (this: any) {
+                this.select(1)
+                  .from('portal_apps')
+                  .whereRaw('portal_apps.app_id = apps.id')
+                  .andWhere('portal_apps.portal_id', portalId)
+                  .andWhere('portal_apps.enabled', true)
+              })
+            }
           })
-        }
-      })
+          if (orgIds.length > 0) {
+            builder.orWhere(sub => {
+              sub
+                .whereIn('visibility', ['organization', 'private'])
+                .whereIn('organization_id', orgIds)
+            })
+          }
+        })
+      }
     }
 
     // Keyset cursor over the FULL sort key (nav_rank, nav_order, created_at, slug).

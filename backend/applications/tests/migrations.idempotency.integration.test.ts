@@ -27,6 +27,12 @@ async function seedExistingAppsSchema(): Promise<void> {
   await c.query('CREATE EXTENSION IF NOT EXISTS pgcrypto')
   await c.query("CREATE TABLE IF NOT EXISTS users (id uuid PRIMARY KEY DEFAULT gen_random_uuid())")
   await c.query("CREATE TABLE IF NOT EXISTS organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid())")
+  // FF-EPIC-12-S1 — minimal `portals` table (owned by the host backend,
+  // migration 012), matching its `id varchar(44)` primary key shape, so
+  // migration 007's portal_apps.portal_id FK has a target to resolve against.
+  // Mirrors the same "minimal cross-service dependency" pattern already used
+  // for organizations/users above.
+  await c.query("CREATE TABLE IF NOT EXISTS portals (id varchar(44) PRIMARY KEY, is_root boolean NOT NULL DEFAULT false)")
   await c.query(`CREATE TABLE IF NOT EXISTS apps (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name varchar UNIQUE NOT NULL,
@@ -100,5 +106,43 @@ describe('applications-service migrations idempotency (C1, integration)', () => 
     expect(names).toContain('organization_id')
     expect(names).toContain('visibility')
     expect(names).toContain('install_count')
+  }, 60000)
+
+  // FF-EPIC-12-S1 — migration 007 must ALSO be a clean, idempotent create
+  // against this same pre-existing-apps-schema deployment shape (portal_apps
+  // did not exist before this epic on any deployment).
+  it('creates portal_apps idempotently alongside the pre-existing apps schema', async () => {
+    if (!reachable) {
+      console.warn('Postgres unreachable — skipping applications idempotency test')
+      return
+    }
+    const opts = { migrationsTableName: 'knex_migrations_apps', migrationsDir: migDir }
+    await expect(runMigrations(opts)).resolves.toBeUndefined()
+    await expect(runMigrations(opts)).resolves.toBeUndefined()
+
+    const c = new Client({ host: HOST, port: PORT, user: USER, password: PASSWORD, database: DB })
+    await c.connect()
+    const cols = await c.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name='portal_apps'"
+    )
+    const constraints = await c.query(
+      `SELECT tc.constraint_type, kcu.column_name
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.key_column_usage kcu
+         ON tc.constraint_name = kcu.constraint_name
+       WHERE tc.table_name = 'portal_apps'`
+    )
+    await c.end()
+
+    const names = cols.rows.map(r => r.column_name)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'portal_id', 'app_id', 'enabled', 'pinned_order', 'config', 'created_at', 'updated_at',
+      ])
+    )
+    const uniqueCols = constraints.rows
+      .filter(r => r.constraint_type === 'UNIQUE')
+      .map(r => r.column_name)
+    expect(uniqueCols).toEqual(expect.arrayContaining(['portal_id', 'app_id']))
   }, 60000)
 })
