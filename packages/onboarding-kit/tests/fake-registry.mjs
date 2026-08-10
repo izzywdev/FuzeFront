@@ -40,8 +40,28 @@ const server = createServer((req, res) => {
     if (method === 'POST' && url === '/api/v1/app-registry/apps') {
       const manifest = JSON.parse(body).manifest
       if (apps.has(manifest.slug)) return send(409, { error: 'conflict' })
-      apps.set(manifest.slug, { manifest, status: 'registered' })
+      apps.set(manifest.slug, {
+        manifest,
+        status: 'registered',
+        builtin: manifest.builtin === true,
+      })
       return send(201, { slug: manifest.slug, status: 'registered' })
+    }
+
+    // List. Used by migrate-slug.mjs for suite detection. `?status=` filters;
+    // omitting it returns all NON-SUSPENDED rows, matching the frozen contract.
+    if (method === 'GET' && url.startsWith('/api/v1/app-registry/apps?')) {
+      const want = new URL(url, 'http://x').searchParams.get('status')
+      const items = [...apps.entries()]
+        .filter(([, a]) => (want ? a.status === want : a.status !== 'suspended'))
+        .map(([slug, a]) => ({ slug, status: a.status, builtin: a.builtin, manifest: a.manifest }))
+      return send(200, items)
+    }
+    if (method === 'GET' && url === '/api/v1/app-registry/apps') {
+      const items = [...apps.entries()]
+        .filter(([, a]) => a.status !== 'suspended')
+        .map(([slug, a]) => ({ slug, status: a.status, builtin: a.builtin, manifest: a.manifest }))
+      return send(200, items)
     }
 
     if (!m) return send(404, { error: 'not_found' })
@@ -49,9 +69,28 @@ const server = createServer((req, res) => {
     const app = apps.get(slug)
 
     if (method === 'GET' && !sub) {
-      return app ? send(200, { slug, status: app.status }) : send(404, { error: 'not_found' })
+      // The contract's `App` carries the manifest and the builtin flag; migrate-slug
+      // reads both to decide whether a delete is even permitted. It deliberately does
+      // NOT carry `policy` or `billing` — that omission is real, and the migration tool
+      // is built around it, so the fake must not invent them.
+      return app
+        ? send(200, {
+            slug,
+            status: app.status,
+            builtin: app.builtin === true,
+            manifest: app.manifest,
+          })
+        : send(404, { error: 'not_found' })
     }
     if (!app) return send(404, { error: 'not_found' })
+
+    // Built-ins cannot be deleted, only suspended — a 403, per the contract.
+    if (method === 'DELETE' && !sub) {
+      if (app.builtin === true) return send(403, { error: 'builtin_cannot_be_deleted' })
+      apps.delete(slug)
+      res.writeHead(204)
+      return res.end()
+    }
 
     if (method === 'PUT' && !sub) {
       app.manifest = JSON.parse(body)
