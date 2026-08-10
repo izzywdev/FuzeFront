@@ -296,14 +296,26 @@ export async function authentikPasswordLogin(
           // on the real payload instead of a third guess. Remove once confirmed.
           console.warn(
             'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, parsed JSON but not a recognized redirect challenge',
-            { contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) }
+            { hop, location, contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) }
           )
         }
       } catch {
-        // TEMPORARY diagnostic (see above): body wasn't valid JSON at all.
+        // TEMPORARY diagnostic (see above): body wasn't valid JSON — real HTML
+        // in practice. Authentik's flow-executor commonly inlines its initial
+        // challenge as JSON inside a <script> tag in the shell page, so search
+        // for that instead of only dumping a fixed-size prefix.
+        const scriptIdx = bodyText.search(/<script[^>]*>/i)
         console.warn(
           'authentikPassword: DIAGNOSTIC — HTTP 200 authorize hop, body is not JSON',
-          { contentType: res.headers.get('content-type'), bodyPreview: bodyText.slice(0, 500) }
+          {
+            hop,
+            location,
+            contentType: res.headers.get('content-type'),
+            bodyLength: bodyText.length,
+            bodyPrefix: bodyText.slice(0, 400),
+            bodyAroundFirstScript:
+              scriptIdx >= 0 ? bodyText.slice(scriptIdx, scriptIdx + 3000) : '(no <script> tag found)',
+          }
         )
       }
     }
