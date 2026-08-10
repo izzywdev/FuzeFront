@@ -93,6 +93,29 @@ export function validateSlugConvention(manifest) {
   const errors = []
   const { slug, name } = manifest
 
+  // SHORT-NAME EXEMPTION. The contract's Slug pattern is
+  // ^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$ — a minimum of THREE characters. So for a
+  // product whose de-prefixed slug would be shorter than that, the prefix is not
+  // a style violation, it is load-bearing: `fuzebi` -> `bi` and `fuzex` -> `x`
+  // are both REJECTED by the platform, so there is no conformant slug to move to.
+  //
+  // This is a rule, not an allowlist. Anything that de-prefixes to 3+ characters
+  // is still held to the convention; only the products the schema makes
+  // impossible are exempt, and they are exempt on both `slug` and `name` so the
+  // launcher tile and the URL agree with each other.
+  // The remainder must be NON-EMPTY: bare `fuze` de-prefixes to nothing, which is
+  // not a short product name, it is a missing one. Exempting it would let the
+  // placeholder slug through the very check that exists to catch it.
+  const deprefixed = typeof slug === 'string' ? slug.replace(FUZE_PREFIX_RE, '') : ''
+  if (
+    typeof slug === 'string' &&
+    FUZE_PREFIX_RE.test(slug) &&
+    deprefixed.length > 0 &&
+    deprefixed.length < 3
+  ) {
+    return errors
+  }
+
   if (typeof slug === 'string' && FUZE_PREFIX_RE.test(slug)) {
     errors.push(
       `slug "${slug}" starts with "fuze" — Fuze products register WITHOUT the prefix ` +
