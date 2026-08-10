@@ -5,6 +5,14 @@ description: Use in the frontend-design phase, before feature-UI implementation.
 
 # ui-frame-contract
 
+> **Scope note (2026-08-10):** this skill documents the LOCAL `design/frames/**` pipeline,
+> which is now frozen to the 13 legacy features listed in `design/frames/_LEGACY_FEATURES.json`
+> (see `docs/planning/design-first-ui-pipeline.md`'s extraction addendum). It also predates
+> the `product-designer` pivot — it still says "Authored by `frontend-engineer`" below, which
+> is stale; `product-designer` is the sole author now (see that agent's definition). For any
+> NEW feature, author frames against `izzywdev/FuzeX`'s `design-frames-service` instead — this
+> skill's content does not apply there.
+
 The frontend-design phase produces static **HTML frames** of the expected UI before any feature-UI is implemented. These approved frames are part of the contract freeze (alongside the OpenAPI/event contract) — the visual source of truth the implementation is checked against, so visual/structural drift is caught against a frozen artifact rather than discovered after the fact.
 
 ## When

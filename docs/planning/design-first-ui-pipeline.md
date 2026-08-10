@@ -5,6 +5,34 @@
 > gate described in `CLAUDE.md` (HTML frames are authoritative — see *Corrections*
 > §7 below).
 >
+> **Extraction addendum (2026-08-10):** the navigable-frames *technology* — content
+> stamping, per-flow approval, a build-inventory contract seam, a navigable review
+> site — has been ported into a standalone service, `design-frames-service`, in
+> `izzywdev/FuzeX` (PR [izzywdev/FuzeX#21](https://github.com/izzywdev/FuzeX/pull/21),
+> see that repo's `services/design-frames-service/docs/EXTRACTION.md` for the full
+> port-vs-reimplement breakdown). This is a **plumbing-only** extraction:
+> - The **13 existing `design/frames/<feature>/` directories in this repo are
+>   frozen as-is** — not migrated, not deleted. They remain the source of truth
+>   for their own flows until a separate follow-up decides to move them.
+>   (`design/frames/_LEGACY_FEATURES.json` in this repo records the frozen slug
+>   list.)
+> - **New features go to FuzeX's service going forward**, over its REST API, MCP
+>   tools, or A2A `design-review` role — not as new `design/frames/<feature>/`
+>   directories here. `gate-frames-external` (new, see `.github/workflows/`)
+>   enforces this: a PR that adds a `design/frames/<feature>/` directory not on
+>   the frozen legacy list fails, pointing the author at the external service.
+> - `scripts/design-frames-client.mjs` is a thin, dependency-free client for
+>   calling the FuzeX service from this repo's CI or from an agent — mirroring
+>   the style of `scripts/stamp-frames.mjs`/`scripts/build-frames-site.mjs`.
+> - **Everything else below in this doc — the local pipeline, `stamp-frames.mjs`,
+>   `design-approval.yml`, `pages-frames.yml`, `gate-frames-stamped.yml` — still
+>   describes how the 12 legacy features are stamped/approved/published. It is
+>   legacy documentation for frozen features, not the path for new ones.**
+> - Not done in this addendum: no Module-Federation embed of the FuzeX
+>   frontend into the FuzeFront shell (still just an API integration); no change
+>   to `product-designer`'s scope beyond a pointer to author new features against
+>   the external service instead of local files (see its agent definition).
+>
 > **Resolved since drafting** (the plan's open questions, now settled with evidence):
 > - **Repo visibility / Pages** — the repo is **public**, so Pages needs no
 >   Enterprise Cloud. Pages is **enabled** with `build_type=workflow`
