@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Add access</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Dana Okafor">DO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☗</span> Organizations</a>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <!-- S9 adds this entry. Frames freeze it as active for every management screen. -->
+      <a class="nav-item active" href="01-list-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <a class="nav-item" href="#"><span class="ico">☷</span> Billing</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="11-add-access-modal">
+
+      <h1 class="page-title">Add person to a list</h1>
+      <p class="page-sub">Search a member of the organization, pick one role. Cross-org users are not
+        offerable — list access never spans organizations.</p>
+
+      <div class="sl-section">
+        <h2>Add access</h2>
+        <div class="sl-panel"><div class="sl-panel__seam"></div><div class="sl-panel__body">
+          <div class="sl-modal sl-modal--wide" style="margin: 0 auto; box-shadow: none;" data-modal="add-access" role="dialog" aria-modal="true" aria-labelledby="m-acc-t">
+            <div class="sl-modal__seam"></div>
+            <div class="sl-modal__head">
+              <h3 class="sl-modal__title" id="m-acc-t">Add person to Countries</h3>
+              <p class="sl-modal__sub">They will be able to act on this list only.</p>
+            </div>
+            <div class="sl-modal__body">
+              <div class="sl-field" data-field="user">
+                <label class="sl-field__label" for="a-user">Person <span class="sl-field__req" aria-hidden="true">*</span></label>
+                <input class="sl-input" id="a-user" value="sof" placeholder="Search by name or email…" data-user-search />
+                <div class="sl-combo__menu" style="position: static; margin-top: var(--space-2);" data-user-results>
+                  <div class="sl-combo__list">
+                    <div class="sl-opt" data-user="usr_05h455vb4pex5vsknk084sn02q" aria-selected="true">
+                      <span>Sofia Marchetti <span class="sl-uuid">sofia@northwind.example</span></span>
+                      <span class="sl-opt__check" aria-hidden="true">✓</span>
+                    </div>
+                    <div class="sl-opt" data-user="usr_06h455vb4pex5vsknk084sn02q">
+                      <span>Sofian Belkacem <span class="sl-uuid">sofian@northwind.example</span></span>
+                    </div>
+                    <!-- already granted: offerable but not addable twice -->
+                    <div class="sl-opt" data-user="usr_02h455vb4pex5vsknk084sn02q" data-already-granted="true" style="opacity:0.5;">
+                      <span>Marc Lindqvist <span class="sl-uuid">marc@northwind.example</span></span>
+                      <span class="sl-pill sl-pill--archived">already list-editor</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sl-field" data-field="role" style="margin-bottom: 0;">
+                <label class="sl-field__label" for="a-role">Role <span class="sl-field__req" aria-hidden="true">*</span></label>
+                <select class="sl-input" id="a-role" data-role-select>
+                  <option value="list-viewer">list-viewer — can see the list</option>
+                  <option value="list-translator" selected>list-translator — can translate, cannot add or remove values</option>
+                  <option value="list-contributor">list-contributor — can add and edit values</option>
+                  <option value="list-editor">list-editor — values, translations and list settings</option>
+                  <option value="list-owner">list-owner — everything, including access</option>
+                </select>
+                <p class="sl-field__hint">Roles do not stack. Choosing a role <b>replaces</b> any role this
+                  person already holds on this list.</p>
+              </div>
+            </div>
+            <div class="sl-modal__foot">
+              <a class="btn btn-ghost" href="10-access-panel.html" data-action="cancel">Cancel</a>
+              <button class="btn btn-primary" data-action="confirm-add-access">Add person</button>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="sl-section">
+        <h2>States</h2>
+
+        <div class="sl-panel" data-panel="user-search" data-state="loading" style="margin-bottom: var(--space-5);">
+          <div class="sl-panel__seam"></div>
+          <div class="sl-panel__body">
+            <div class="sl-field__lock" style="margin-bottom: var(--space-3);">Searching members…</div>
+            <div class="sl-skel" style="width: 70%; margin-bottom: var(--space-3);"></div>
+            <div class="sl-skel" style="width: 56%;"></div>
+          </div>
+        </div>
+
+        <div class="sl-panel" data-panel="user-search" data-state="empty" style="margin-bottom: var(--space-5);">
+          <div class="sl-panel__seam"></div>
+          <div class="sl-state">
+            <div class="sl-state__ico" aria-hidden="true">🔍</div>
+            <h3 class="sl-state__title">No members match “zzz”</h3>
+            <p class="sl-state__body">Only members of this organization can be granted access. Invite them to
+              the organization first.</p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--error" data-state="error" data-error="NOT_FOUND">
+          <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">That person is no longer a member — <code class="sl-code">404 NOT_FOUND</code></p>
+            <p>They left the organization while this dialog was open. The row has been removed from the results.</p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--warn" data-state="error" data-error="FORBIDDEN">
+          <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">You can't grant access — <code class="sl-code">403 FORBIDDEN</code></p>
+            <p>Needs <code class="sl-code">manage_access</code> (<b>list-owner</b> or org admin).</p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--info" data-state="done" style="margin-bottom: 0;">
+          <span class="sl-banner__ico" aria-hidden="true">✓</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Sofia Marchetti added as list-translator</p>
+            <p>The dialog closes and her row appears in the access table, with you recorded as
+              <b>granted by</b>.</p>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='11-add-access-modal']</code> · <code>[data-modal='add-access']</code> · <code>[data-user-search]</code> · <code>[data-user-results]</code> · <code>[data-user='usr_05h455vb4pex5vsknk084sn02q']</code> · <code>[data-already-granted='true']</code> · <code>[data-role-select]</code> · <code>[data-action='confirm-add-access']</code> · <code>[data-panel='user-search'][data-state='loading']</code> · <code>[data-panel='user-search'][data-state='empty']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-error='FORBIDDEN']</code><br />
+        Contract: <code>PUT /v1/selection-lists/{listId}/access/{userId}</code> body <code>{ role }</code>.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="10-access-panel.html" data-nav="prev">← Access panel</a>
+  <span class="caption"><b>(3b) Add access</b> · Flow 3 · Access control · frame 11 of 14</span>
+  <a class="btn btn-primary" href="12-picker-single.html" data-nav="next">Picker — single select →</a>
+</nav>
+</body>
+</html>
