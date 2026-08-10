@@ -23,8 +23,13 @@ import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
+import { startOutboxRelayIfConfigured } from './services/outboxRelay'
+import type { OutboxRelayHandle } from '@fuzefront/core'
 
 dotenv.config()
+
+// Transactional-outbox relay handle (null when KAFKA_BROKERS is unset).
+let outboxRelay: OutboxRelayHandle | null = null
 
 const PORT = process.env.PORT || 3002
 const app = createExpressApp({ serviceName: 'security-service' })
@@ -97,6 +102,7 @@ attachErrorHandlers(app)
 function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [security-service] Received ${signal}. Shutting down...`)
   httpServer.close(async () => {
+    outboxRelay?.stop()
     await closeDatabase().catch(() => undefined)
     process.exit(0)
   })
@@ -115,6 +121,10 @@ async function startServer() {
       migrationsDir: path.join(__dirname, 'migrations'),
       seedsDir: path.join(__dirname, 'seeds'),
     })
+
+    // Drain event_outbox → Kafka. Starts after the DB connection is live so the
+    // relay's `db` singleton is initialized; a no-op when KAFKA_BROKERS is unset.
+    outboxRelay = startOutboxRelayIfConfigured()
 
     try {
       console.log('🔧 Initializing OIDC service(s)...')

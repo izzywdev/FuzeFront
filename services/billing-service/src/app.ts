@@ -1,4 +1,6 @@
 import express, { Application, Request, Response } from 'express';
+import { graphCreate } from '@izzywdev/fuzefront-identity';
+import type { EntityType } from '@izzywdev/fuzefront-identity';
 import type Stripe from 'stripe';
 import { requireInternalToken } from './middleware/auth';
 import { createWebhookRouter, WebhookDeps } from './routes/webhooks';
@@ -85,6 +87,36 @@ export function createApp(deps?: AppDeps): Application {
 
   // 2) JSON body parser for the rest.
   app.use(express.json());
+
+  // 2b) Server-owned identifiers (governance/identifier-standard.md).
+  //
+  // Rejects a client-supplied `id` on create (422 CLIENT_SUPPLIED_ID), resolves
+  // `lid:` graph references to freshly-minted ids, and merges `idMap` into the
+  // JSON response — all without any route implementing it.
+  //
+  // Placement is load-bearing, twice over:
+  //  - AFTER express.json(), so req.body is a parsed object rather than the raw
+  //    Buffer the webhook route needs;
+  //  - AFTER the webhook router above, which is mounted first and therefore
+  //    matches before this ever runs. That ordering is not incidental: every
+  //    Stripe webhook object carries an `id`, so a webhook reaching this
+  //    middleware would 422 the entire provider integration.
+  //
+  // `aggregate` is exactly what billing OWNS. A graph declaring anything else
+  // (a portal, a user) is rejected rather than silently created across a
+  // service boundary it cannot transact over.
+  app.use(
+    API_BASE,
+    graphCreate({
+      aggregate: new Set<EntityType>([
+        'customer',
+        'subscription',
+        'payment',
+        'invoice',
+        'credit',
+      ]),
+    }),
+  );
 
   // 3) Public plans listing (no auth).
   app.use(API_BASE, createPlansRouter(deps.plans));

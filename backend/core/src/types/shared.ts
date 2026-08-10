@@ -63,6 +63,21 @@ export interface App {
   isMarketplaceApproved: boolean
   installCount: number
   rating?: number
+  /**
+   * Where the app may be INSTALLED — its "installable scope" (backend migration
+   * 017, `apps.scope_level`). Distinct from `scope` above, which is the
+   * Module-Federation remote container name.
+   *
+   * Constrains, but is not the same as, an INSTALLATION's own scope: a `both`
+   * app may be installed personally or into an organization, while a
+   * `personal`/`organization` app admits only the matching one. The install
+   * route enforces that (422 SCOPE_NOT_PERMITTED) and the DB backs it with a
+   * CHECK constraint.
+   *
+   * Optional on the type because rows written before 017 read as the column
+   * default; every reader treats `undefined` as 'both'.
+   */
+  scopeLevel?: 'personal' | 'organization' | 'both'
 }
 
 export interface MenuItem {

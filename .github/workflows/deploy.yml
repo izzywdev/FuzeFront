@@ -1,10 +1,32 @@
 name: Deploy FuzeFront Website (SSH)
 
+# SCOPED to the website stack. Everything this workflow touches lives under
+# fuzefront-website/ (backend, frontend, and infrastructure/main.tf), but it had
+# no `paths:` filter — so it planned Terraform against AWS on EVERY pull request
+# to master, including ones that change nothing it deploys.
+#
+# That plan currently fails outright: data.aws_vpc.default, data.aws_lb.main and
+# data.aws_autoscaling_group.main all resolve to nothing in us-east-1, i.e. the
+# AWS resources these data sources read no longer exist. So this was a
+# permanently-red check on unrelated PRs.
+#
+# The filter does NOT hide that. A PR that touches fuzefront-website/** still
+# runs it and still fails — loudly, on the change that owns the problem. What it
+# stops is an unrelated PR being blocked by infrastructure it never touched.
+#
+# Whether the AWS website stack should exist at all is a separate, open question
+# (prod is Contabo k3s via Helm/Argo per CLAUDE.md). Not decided here.
 on:
   push:
     branches: [ master, fuzefront-website ]
+    paths:
+      - 'fuzefront-website/**'
+      - '.github/workflows/deploy.yml'
   pull_request:
     branches: [ master ]
+    paths:
+      - 'fuzefront-website/**'
+      - '.github/workflows/deploy.yml'
 
 env:
   AWS_REGION: us-east-1
@@ -16,10 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: '24.x'
         cache: 'npm'
@@ -66,10 +88,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6
+      uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -77,7 +99,7 @@ jobs:
 
     - name: Login to Amazon ECR
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
 
     - name: Create ECR repositories if they don't exist
       run: |
@@ -250,17 +272,17 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6
+      uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
       with:
         terraform_version: 1.5.0
 
@@ -355,7 +377,7 @@ jobs:
     
     steps:
     - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v6
+      uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

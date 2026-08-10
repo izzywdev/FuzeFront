@@ -1,7 +1,7 @@
 {
   "name": "@fuzefront/billing-service",
   "version": "1.0.0",
-  "description": "Billing microservice for FuzeFront — Stripe, metering, and subscription management",
+  "description": "Billing microservice for FuzeFront \u2014 Stripe, metering, and subscription management",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -17,7 +17,8 @@
     "pg": "^8",
     "permitio": "^2.7.4",
     "stripe": "^17",
-    "zod": "3.22.4"
+    "zod": "3.22.4",
+    "@izzywdev/fuzefront-identity": "file:../../packages/identity"
   },
   "devDependencies": {
     "@types/express": "4.17.21",

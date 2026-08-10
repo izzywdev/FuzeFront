@@ -2,8 +2,12 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
-# Drop any host lockfile so npm resolves platform-native deps in this image.
-RUN rm -f package-lock.json && npm install
+# `npm ci`, from a lockfile that is now COMMITTED. This app had none at all, so
+# every image build resolved every floating range fresh against the live
+# registry — the build was never reproducible and any registry hiccup broke it
+# (FFRNT-254). The lockfile is generated on linux, so the platform-native deps
+# the old `rm -f package-lock.json` was reaching for are the ones recorded in it.
+RUN npm ci
 COPY . .
 
 # Build-time configuration (no host code, just URLs). HTTPS by default so the

@@ -1,18 +1,51 @@
 name: Publish packages (GitHub Packages, private)
 
-# On merge to master, version-bump and publish the reusable @fuzefront/* packages
-# to GitHub Packages (private/restricted). Lerna with conventional commits detects
-# which packages changed since their last release tag, computes the semver bump
-# from commit messages (feat->minor, fix->patch, BREAKING CHANGE->major), and
-# publishes only those. Private packages (apps + deployed services) are skipped.
+# On merge to master, publish every publishable workspace package to GitHub
+# Packages under the repository owner's scope.
 #
-# NOTE: GitHub Packages requires the npm scope to match the owning org/user.
-# @fuzefront/* can only publish once this repo is owned by the `fuzefront` GitHub
-# org. The job guard below makes this workflow a no-op under any other owner, so
-# it is safe to merge now and auto-activates after the org transfer.
+# THIS WORKFLOW USED TO BE INERT, AND THAT WAS THE BUG.
+#
+# GitHub Packages requires the npm scope to match the account that OWNS the
+# repository. This repo is owned by the personal account **izzywdev**. The guard
+# tested first for a `fuzefront` org (which does not exist) and then for
+# `FuzeOne` (which exists but owns no repositories), so the job could never fire
+# and not one package had ever been published. A workflow that no-ops on every
+# run is indistinguishable from a workflow that works, which is why this went
+# unnoticed for so long — every run was green.
+#
+# It now publishes under `@izzywdev`, matching the actual owner. Waiting on an
+# org transfer is not a release strategy: the transfer is a human action with no
+# date, and consumers need these packages now. If the repos ever do move to
+# FuzeOne, change OWNER_SCOPE in scripts/publish-packages.mjs and the guard here
+# — one edit each, and the canonical `@fuzefront/*` names in the source tree
+# never had to move.
+#
+# The canonical names stay `@fuzefront/*` in the tree; the publish script
+# renames to `@izzywdev/fuzefront-*` at publish time AND rewrites in-family
+# dependencies to match, so a published package is installable on its own. That
+# last part is what the per-package publishers this replaces got wrong.
+#
+# Publishing is idempotent — a version already in the registry is skipped, not
+# overwritten — so a re-run after a partial failure is safe. The first live run
+# exercised exactly that: 13 published, 5 skipped, 0 failed, the 5 being versions
+# the interim per-package publishers had already shipped.
+#
+# Those interim publishers (chat/auth-ui/design-system/security) are now DELETED.
+# Their own headers said to remove them once this workflow worked; it does, and
+# it is a strict superset — all 5 of their packages are among the 18 here.
+#
+# VERSIONS ARE BUMPED IN THE PR, NOT HERE. The old design had lerna compute
+# conventional-commit bumps and push the version commit + tags back to master.
+# That could not have worked on this repo even with a correct guard: master
+# enforces `required_signatures`, and a lerna commit from Actions is unsigned,
+# so the push would be rejected after the publish had already happened. Bumping
+# in the PR also keeps the version visible in review, which `gate-version`
+# already checks. A package publishes when its version changes; if it does not
+# change, this run skips it and says so.
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 concurrency:
   group: packages-publish
@@ -20,41 +53,59 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository_owner == 'fuzefront'
+    if: github.repository_owner == 'izzywdev'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push lerna version commits + tags
+      contents: read
       packages: write # publish to GitHub Packages
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # lerna needs full history for change detection
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@fuzefront'
+          scope: '@izzywdev'
 
       - name: Install
-        run: npm ci || npm install
+        run: npm ci
 
-      - name: Build packages (topological, if a build script exists)
-        run: npx lerna run build --if-present
+      - name: Verify the rename/rewrite transform
+        # Its failure mode is silent: a wrong rewrite produces a tarball that
+        # publishes happily and installs for nobody. `npm publish` exiting 0
+        # proves nothing about that, so assert it before shipping anything.
+        run: node --test scripts/__tests__/publish-packages.test.mjs
 
-      - name: Configure git identity
-        run: |
-          git config user.email "action@github.com"
-          git config user.name "GitHub Action"
+      - name: Build packages (topological)
+        # NOT `--if-present`: lerna 10 removed it and errors with
+        # "Unknown arguments: if-present, ifPresent". That flag was inherited
+        # from this workflow's original form and had never executed — the job was
+        # gated on an owner that does not exist, so every run for the life of the
+        # file was a skip. Fixing the guard is what first ran this line.
+        #
+        # The flag is also unnecessary: `lerna run <script>` already skips
+        # packages that do not define it. Verified locally — 24 projects built,
+        # exit 0.
+        run: npx lerna run build
 
-      - name: Version + publish changed packages
-        # --conventional-commits: bump + changelog + tag from commit messages
-        # --no-private: skip "private": true packages (apps, deployed services)
-        # --yes: non-interactive; [skip ci] avoids retriggering CI on the bump commit
-        run: >-
-          npx lerna publish --conventional-commits --no-private --yes
-          --message "chore(release): publish %s [skip ci]"
+      - name: Resolve what would publish
+        run: node scripts/publish-packages.mjs --dry-run
+
+      - name: Publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # BOTH names, and that is not redundant. setup-node writes an .npmrc
+          # referencing NODE_AUTH_TOKEN, but the repo-root .npmrc is
+          # PROJECT-level and outranks it — and that one references
+          # ${GITHUB_TOKEN}. With only NODE_AUTH_TOKEN set, ${GITHUB_TOKEN}
+          # expanded to empty and every publish 401'd:
+          #
+          #   npm error 401 Unauthorized - PUT .../@izzywdev%2ffuzefront-design-system
+          #   unauthenticated: User cannot be authenticated with the token provided
+          #   publish-packages: 0 published, 0 skipped, 18 failed
+          #
+          # Exactly the failure FuzeFront#558 hit and #559 fixed for the
+          # per-package publishers; this workflow never reached the publish step
+          # before today, so it never inherited the fix.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-packages.mjs

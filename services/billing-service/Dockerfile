@@ -9,6 +9,12 @@ RUN apk add --no-cache dumb-init
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY services/billing-service/package.json ./services/billing-service/
+# app.ts imports @izzywdev/fuzefront-identity (file:../../packages/identity) as a
+# bare specifier. npm must see the target manifest here or it creates a DANGLING
+# symlink in node_modules — the "Cannot find module '@izzywdev/fuzefront-identity'"
+# crashloop. With the manifest present the symlink resolves to /app/packages/identity,
+# which the production stage then populates with the built dist.
+COPY packages/identity/package.json ./packages/identity/
 
 # Install only production deps for billing-service
 RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
@@ -27,10 +33,14 @@ RUN cd shared && npm install --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/identity/ ./packages/identity/
 COPY services/billing-service/ ./services/billing-service/
 
-# Build shared kafka sub-tree first (avoids socket.io-client / React dep), then billing-service
+# Build the shared kafka + identity sub-trees first (avoids socket.io-client /
+# React dep), then billing-service. identity supplies the graph-create
+# middleware app.ts mounts; without it the image starts and fails on import.
 RUN cd shared && npm run build:kafka
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd services/billing-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/001_billing_schema.sql at startup; without this the pod logs
@@ -59,6 +69,15 @@ COPY --from=build /app/shared/dist ./shared/dist
 # service (WORKDIR walks up) resolve them.
 COPY --from=base /app/services/billing-service/node_modules ./node_modules
 COPY --from=build /app/services/billing-service/dist ./services/billing-service/dist
+# @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it —
+# node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
+# The base stage now ships packages/identity/package.json so that link resolves
+# instead of dangling; here we populate its target with the built output. app.ts
+# imports graphCreate at module load, so without this the container dies at boot
+# with "Cannot find module '@izzywdev/fuzefront-identity'". Only dist/ +
+# package.json are needed — exactly what the package publishes.
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 
 # Remove declaration files from production image
 RUN find ./services/billing-service/dist -name "*.d.ts" -type f -delete

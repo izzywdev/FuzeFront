@@ -187,6 +187,22 @@ mint yourself. It is consumed by the Authentik SMS stage blueprint
 (`deploy/helm/fuzefront/authentik/blueprints/stages-sms.yaml`), so the value sealed
 here must be the same one that stage uses.
 
+### Automated path — the `Seal Twilio + SMS secrets` dispatch workflow (preferred)
+
+Instead of running `kubeseal` by hand, set the three Twilio values ONCE as GitHub
+repo secrets (Settings → Secrets and variables → Actions):
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` — then run the
+**Seal Twilio + SMS secrets** workflow (`.github/workflows/seal-sms-secrets.yml`,
+`workflow_dispatch`). It reads those repo secrets, MINTS `SMS_AUTH_SECRET` itself,
+seals all four into `fuzefront-secrets` (merge-in — every other key preserved), and
+commits. The Twilio values live only in GitHub Secrets: they never appear in chat,
+a PR diff, or a build log, which is exactly the "agents scaffold the wiring, never
+hold the values" split. It fails loudly if any Twilio secret is unset, so it can
+never seal a placeholder. Use `dry_run=true` first to preview the sealed diff.
+
+The manual recipe below is the equivalent, for when you would rather not put the
+Twilio values in GitHub Secrets.
+
 ```bash
 # Seal each key in place (does not disturb the other keys in the manifest).
 for KEY in TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_VERIFY_SERVICE_SID; do
