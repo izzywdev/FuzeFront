@@ -76,7 +76,7 @@ services:
 
   # ── Authentik worker (applies blueprints, including Google source + OIDC provider) ─
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2024.12.3
+    image: ghcr.io/goauthentik/server:2026.5.5
     command: worker
     environment:
       AUTHENTIK_REDIS__HOST: redis
@@ -116,7 +116,7 @@ services:
 
   # ── Authentik server ──────────────────────────────────────────────────────
   authentik-server:
-    image: ghcr.io/goauthentik/server:2024.12.3
+    image: ghcr.io/goauthentik/server:2026.5.5
     command: server
     environment:
       AUTHENTIK_REDIS__HOST: redis

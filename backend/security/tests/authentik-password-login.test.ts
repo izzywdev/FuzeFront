@@ -301,6 +301,72 @@ describe('authentikPasswordLogin()', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('follows an HTTP 200 "redirect" challenge from the authorize hop (Authentik >=2026.x)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      // authorize returns HTTP 200 + {"type":"redirect","to":"..."} instead of
+      // a 302 with a Location header — the shape Authentik >=2026.x's flow
+      // executor uses for the same implicit-consent outcome.
+      .mockResolvedValueOnce(
+        mkRes({
+          status: 200,
+          json: { type: 'redirect', to: `${REDIRECT_URI}?code=the-code&state=st` },
+        })
+      )
+
+    const user = await authentikPasswordLogin('e2e@test.local', 'pw123')
+
+    expect(user.email).toBe('e2e@test.local')
+    expect(oidcService.handleCallback).toHaveBeenCalledWith(
+      'the-code',
+      'st',
+      'test-code-verifier'
+    )
+  })
+
+  it('follows a relative "to" in an HTTP 200 redirect challenge, then a further hop', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'ak-stage-identification' } })
+      )
+      .mockResolvedValueOnce(mkRes({ json: { component: 'ak-stage-password' } }))
+      .mockResolvedValueOnce(
+        mkRes({ json: { component: 'xak-flow-redirect', to: '/' } })
+      )
+      // First authorize hop: 200 redirect challenge with a path-only `to`,
+      // resolved against the current (Authentik-origin) hop URL.
+      .mockResolvedValueOnce(
+        mkRes({
+          status: 200,
+          json: { type: 'redirect', to: '/if/flow/default-provider-authorization-implicit-consent/' },
+        })
+      )
+      // Second hop lands on the app's own callback with the code.
+      .mockResolvedValueOnce(
+        mkRes({ status: 302, location: `${REDIRECT_URI}?code=c-relative&state=st` })
+      )
+
+    const user = await authentikPasswordLogin('e2e@test.local', 'pw123')
+
+    expect(user.email).toBe('e2e@test.local')
+    expect(oidcService.handleCallback).toHaveBeenCalledWith(
+      'c-relative',
+      'st',
+      'test-code-verifier'
+    )
+    // The relative `to` resolved against the Authentik origin, not off-site.
+    const [secondHopUrl] = fetchMock.mock.calls[4]
+    expect(secondHopUrl).toBe(
+      'http://auth.example.test/if/flow/default-provider-authorization-implicit-consent/'
+    )
+  })
+
   it('fails when authorize renders a flow UI instead of redirecting (consent required)', async () => {
     fetchMock
       .mockResolvedValueOnce(

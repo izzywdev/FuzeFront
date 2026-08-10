@@ -638,15 +638,35 @@ export async function completeOidcWithSession(
       status: res.status,
     })
     jar.absorb(res)
-    // Nothing in this chain ever reads an authorize response BODY — only its
-    // status, cookies and `location`. Release the socket now so the next hop
-    // doesn't queue behind it (see drainBody).
-    drainBody(res)
 
-    const next = res.headers.get('location')
+    let next = res.headers.get('location')
+    if (!next && res.status === 200) {
+      // Authentik >=2026.x's flow executor can answer the final authorize hop
+      // with an HTTP 200 "redirect" challenge — {"type":"redirect","to":"..."}
+      // — instead of a 302 with a Location header. Same outcome (implicit
+      // consent resolved, here is where to go next), different transport.
+      // This is the only branch that reads the response body, so it also
+      // takes over releasing the socket for this hop (see drainBody).
+      try {
+        const challenge = (await res.json()) as { type?: string; to?: string }
+        if (challenge?.type === 'redirect' && typeof challenge.to === 'string') {
+          next = challenge.to
+        }
+      } catch {
+        // Not JSON, or not the redirect-challenge shape — fall through to the
+        // consent-flow error below with the body already drained by .json().
+      }
+    } else {
+      // Nothing else in this chain ever reads an authorize response BODY —
+      // only its status, cookies and `location`. Release the socket now so
+      // the next hop doesn't queue behind it (see drainBody).
+      drainBody(res)
+    }
+
     if (!next) {
-      // 200 here means Authentik rendered a flow UI (consent / re-auth) —
-      // implicit consent is expected on the FuzeFront provider.
+      // Genuinely no Location header AND (not HTTP 200, or a 200 that wasn't
+      // a redirect challenge) means Authentik rendered a flow UI (consent /
+      // re-auth) — implicit consent is expected on the FuzeFront provider.
       throw new UnsupportedFlowStageError(
         `authorize returned HTTP ${res.status} without redirect (consent flow?)`
       )
