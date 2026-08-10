@@ -18,7 +18,7 @@
 //
 // DB is fully mocked — no Postgres required. Flag is mocked via setFlagClient().
 
-// ─── Module mocks — MUST be hoisted before any imports ────────────────────────
+// ─── Module mocks — MUST be hoisted before any imports ─────────────────────────────────────────────
 jest.mock('../src/db', () => ({
   db: {
     raw: jest.fn(),
@@ -63,22 +63,22 @@ import { createApp } from '../src/app';
 import { db } from '../src/db';
 import { isSelectionListsEnabled } from '../src/flags';
 
-// ─── Typed mock references ────────────────────────────────────────────────────
+// ─── Typed mock references ────────────────────────────────────────────────────────────────────────────────────
 const mockDbRaw = db.raw as jest.Mock;
 const mockFlagEnabled = isSelectionListsEnabled as jest.Mock;
 
-// ─── JWT helpers ──────────────────────────────────────────────────────────────
-const TEST_SECRET = 'resolve-test-jwt-secret-2026';
+// ─── JWT helpers ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+const UNIT_TEST_SIGNING_KEY = 'sl-resolve-unit-tests';
 
 function makeToken(orgId: string, userId = 'usr_testuser01h455vb'): string {
-  return jwt.sign({ userId, orgId }, TEST_SECRET);
+  return jwt.sign({ userId, orgId }, UNIT_TEST_SIGNING_KEY);
 }
 
 function makeTokenNoOrg(userId = 'usr_testuser01h455vb'): string {
-  return jwt.sign({ userId }, TEST_SECRET);
+  return jwt.sign({ userId }, UNIT_TEST_SIGNING_KEY);
 }
 
-// ─── DB mock helpers ──────────────────────────────────────────────────────────
+// ─── DB mock helpers ────────────────────────────────────────────────────────────────────────────────────────────────────────
 type DbRow = {
   id: string;
   list_id: string;
@@ -107,12 +107,12 @@ function makeRow(
   };
 }
 
-// ─── Test setup ───────────────────────────────────────────────────────────────
+// ─── Test setup ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 describe('POST /v1/resolve', () => {
   let app: ReturnType<typeof createApp>;
 
   beforeAll(() => {
-    process.env.JWT_SECRET = TEST_SECRET;
+    process.env.JWT_SECRET = UNIT_TEST_SIGNING_KEY;
     app = createApp();
   });
 
@@ -120,7 +120,7 @@ describe('POST /v1/resolve', () => {
     jest.clearAllMocks();
   });
 
-  // ── Feature flag OFF path ──────────────────────────────────────────────────
+  // ── Feature flag OFF path ──────────────────────────────────────────────────────────────────────────────────
   describe('feature flag OFF (both states tested)', () => {
     it('returns 404 when service-enabled flag is OFF', async () => {
       mockFlagEnabled.mockResolvedValue(false);
@@ -158,7 +158,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Authentication ────────────────────────────────────────────────────────
+  // ── Authentication ────────────────────────────────────────────────────────────────────────────────────
   describe('authentication', () => {
     it('returns 401 when Authorization header is absent', async () => {
       // authMiddleware runs before the route, handles this.
@@ -191,7 +191,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Input validation ──────────────────────────────────────────────────────
+  // ── Input validation ────────────────────────────────────────────────────────────────────────────────────
   describe('input validation', () => {
     const AUTH = () => makeToken('org_test01h455vb4pex5vs');
 
@@ -256,7 +256,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Empty ids array ───────────────────────────────────────────────────────
+  // ── Empty ids array ────────────────────────────────────────────────────────────────────────────────────
   describe('empty ids array', () => {
     it('returns 200 with empty results and missing for an empty array', async () => {
       mockFlagEnabled.mockResolvedValue(true);
@@ -282,7 +282,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Successful resolution ─────────────────────────────────────────────────
+  // ── Successful resolution ──────────────────────────────────────────────────────────────────────────────────
   describe('successful resolution', () => {
     const ORG = 'org_test01h455vb4pex5vs';
     const AUTH = () => makeToken(ORG);
@@ -359,7 +359,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Archived items ────────────────────────────────────────────────────────
+  // ── Archived items ────────────────────────────────────────────────────────────────────────────────────
   describe('archived items resolve normally', () => {
     it('returns archived item in results (not missing)', async () => {
       mockFlagEnabled.mockResolvedValue(true);
@@ -377,7 +377,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Security scoping ──────────────────────────────────────────────────────
+  // ── Security scoping ───────────────────────────────────────────────────────────────────────────────────
   describe('security scoping (org boundary)', () => {
     beforeEach(() => {
       mockFlagEnabled.mockResolvedValue(true);
@@ -444,7 +444,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Locale resolution ─────────────────────────────────────────────────────
+  // ── Locale resolution ────────────────────────────────────────────────────────────────────────────────────
   describe('locale resolution', () => {
     const ORG = 'org_test01h455vb4pex5vs';
     const AUTH = () => makeToken(ORG);
@@ -524,7 +524,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── Response shape conformance ────────────────────────────────────────────
+  // ── Response shape conformance ────────────────────────────────────────────────────────────────────────────────
   describe('response schema conformance (OpenAPI: ResolveResponse)', () => {
     const ORG = 'org_test01h455vb4pex5vs';
     const AUTH = () => makeToken(ORG);
@@ -607,7 +607,7 @@ describe('POST /v1/resolve', () => {
     });
   });
 
-  // ── DB query correctness ───────────────────────────────────────────────────
+  // ── DB query correctness ───────────────────────────────────────────────────────────────────────────────────────
   describe('DB query structure', () => {
     const ORG = 'org_test01h455vb4pex5vs';
     const AUTH = () => makeToken(ORG);
