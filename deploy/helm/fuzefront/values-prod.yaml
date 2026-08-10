@@ -477,6 +477,19 @@ authentik:
     # FuzeFront security-service route, unchanged.
     issuerUrl: "https://app.fuzefront.com/application/o/fuzefront/"
     redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
+    # Dedicated sign-in flow with a COMBINED identification+password stage
+    # (blueprint: authentik/blueprints/flow-authentication.yaml). The built-in
+    # default-authentication-flow uses two SEPARATE stages, so server-side
+    # password login pays two sequential Authentik round-trips (identify, then
+    # password); this collapses them to one. Only the server-side password path
+    # uses it; browser/admin/Google logins keep the built-in flow. MFA stays
+    # bound (fail-closed) — see the blueprint header.
+    # DEPLOY-WINDOW VERIFY after this syncs (before trusting it):
+    #   - the `fuzefront-auth` flow exists + is bound (Authentik admin > Flows),
+    #     and a password sign-in for a NON-MFA account still succeeds; and
+    #   - a password sign-in for an MFA-enrolled account is still refused on the
+    #     server path (pushed to browser SSO), i.e. MFA is not bypassed.
+    authFlowSlug: "fuzefront-auth"
     # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
     # backend reaches Authentik over the internet without a hostAlias or a custom
     # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
