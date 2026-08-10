@@ -288,10 +288,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
     }
 
     if (search) {
+      // Coerce to string and cap length; ILIKE value is a bound parameter (not
+      // interpolated SQL), so this is a defensive length guard only.
+      const searchPattern = `%${String(search).slice(0, 200)}%`
       query = query.where(function () {
-        this.whereILike('organizations.name', `%${search}%`).orWhereILike(
-          'organizations.slug',
-          `%${search}%`
+        this.whereRaw('organizations.name ILIKE ?', [searchPattern]).orWhereRaw(
+          'organizations.slug ILIKE ?',
+          [searchPattern]
         )
       })
     }
