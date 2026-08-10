@@ -613,34 +613,60 @@ analysis recorded that as an open gap for chat. Config is a platform-wide servic
 service and both client packages consume, so shipping it API-dark would repeat the same mistake at
 wider blast radius. This story also establishes the pattern the other five specs can follow.
 
+##### Exposure policy — DECIDED
+
+**Docs route: authenticated developer session, not public.** It reuses the normal same-origin
+session; no separate auth path.
+
+**Try-it in production: READ-ONLY** — Swagger UI configured `supportedSubmitMethods: ['get']`, so
+the Execute button does not exist on write operations.
+
+*Why read-only rather than a browser sandbox:* the console sends the **caller's own token** and
+every call is Permit-gated, so try-it cannot escalate privilege — a developer reaches exactly what
+they could reach with `curl`. The real risk is an **accidental** write (fat-fingering a PUT against
+a live org), and disabling write submission removes precisely that, in one config line.
+
+**Write exploration happens off production**, via either a non-prod `servers` entry or a
+**Prism mock** (`@stoplight/prism`) served from the same committed spec — a real sandbox that
+returns generated responses and touches no data.
+
+*Industry reference:* the common pattern is **not** an in-browser sandbox — it is a separate
+environment or test-mode credential (Stripe test mode, Twilio test credentials). Redoc sidesteps it
+by shipping display-only. Scalar (`@scalar/api-reference`) is the modern Swagger UI alternative if
+its client/proxy model fits better. Verify current library behaviour at implementation time rather
+than trusting this summary.
+
 #### ✅ Acceptance Criteria
-1. **Given** the running service **When** a developer opens the docs route **Then** Swagger UI renders the config-service contract and the raw spec is retrievable at a stable machine-readable URL (JSON **and** YAML).
+1. **Given** the running service **When** an authenticated developer opens the docs route **Then** Swagger UI renders the config-service contract and the raw spec is retrievable at a stable machine-readable URL (JSON **and** YAML).
 2. **Given** the served spec **When** it is compared to `services/config-service/openapi.yaml` **Then** they are identical — the UI is generated from the committed contract, never hand-maintained alongside it.
-3. **Edge case:** **Given** the docs route in production **When** an unauthenticated visitor loads it **Then** exposure follows the decided policy (public contract vs authenticated-only) and the "try it" console cannot be used to make unauthenticated writes.
+3. **Edge case:** **Given** the docs route in production **When** an unauthenticated visitor loads it **Then** they are refused; and for an authenticated developer, **no write operation offers Execute** — asserted by test, not just by config review.
 4. **Error case:** **Given** the spec fails to parse or drifts from the served version **When** CI runs **Then** the build fails rather than shipping a docs page that misdescribes the API — a stale contract is worse than no contract.
 
 #### 🔲 Definition of Done
 - [ ] Code reviewed and approved (min. 1 reviewer)
-- [ ] Swagger UI reachable and rendering the real contract
+- [ ] Swagger UI reachable (authenticated) and rendering the real contract
 - [ ] Spec served as both JSON and YAML at stable URLs
 - [ ] Drift between committed spec and served spec fails CI
-- [ ] Docs route's auth posture explicitly decided and documented
+- [ ] **Write operations un-executable in prod, asserted by test**
+- [ ] Sandbox / non-prod target documented for write exploration
 - [ ] Same-origin API base respected — no absolute API host hard-coded
 
 #### 📋 Sub-Tasks
 | Type | Summary | Assignee | Points | Status |
 |------|---------|----------|--------|--------|
-| Backend | Serve Swagger UI + JSON/YAML spec endpoints from the committed contract | — | 3 | Open |
-| DevOps | Publish the spec alongside the existing Pages pipeline (extend beyond `design/frames/**`) | — | 2 | Open |
-| QA | Spec-drift CI check, unauthenticated-exposure behaviour, try-it console cannot write unauthenticated | — | 3 | Open |
+| Backend | Serve Swagger UI + JSON/YAML spec endpoints from the committed contract; auth-gate the route; `supportedSubmitMethods: ['get']` in prod | — | 3 | Open |
+| DevOps | Publish the spec alongside the existing Pages pipeline; stand up the Prism mock (or non-prod server entry) as the write-exploration target | — | 2 | Open |
+| QA | Spec-drift CI check, unauthenticated refusal, **no-Execute-on-writes** assertion | — | 3 | Open |
 
 #### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-17-S1 (the frozen contract), FF-EPIC-17-S7 (something to serve it from).
 - **Blocks:** FF-EPIC-17-S11 (the guide links to it).
 
 #### ⚠️ Risks & Assumptions
+- **Decided:** authenticated-developer access; read-only try-it in prod; writes explored off-prod.
 - **Assumption:** Serving docs from the service itself is preferred over a separate docs site; if the team prefers Pages-only, the drift check (AC4) still applies.
-- **Risk:** A "try it" console pointed at production is a live write surface — decide the environment policy before enabling it, not after.
+- **Risk:** `supportedSubmitMethods` is a **UI-side** control — it hides the button, it does not make the server refuse. That is acceptable here *only because Permit already gates every write server-side*; the config must never be mistaken for the boundary.
+- **Risk:** A Prism mock drifts from the real service's behaviour even while matching the spec (it returns examples, not real resolution). Say so in the docs, or developers will trust a sandbox response production would not produce.
 
 #### 📎 References
 - The five other unpublished specs this pattern should later cover.
@@ -670,8 +696,12 @@ without one they will either hand-roll requests — re-implementing caching, ret
 handling inconsistently — or skip the service entirely. Both clients are generated from the **same**
 frozen contract so their behaviour cannot diverge.
 
+**Distribution channel — DECIDED:** Python packages publish to **GitHub Packages**, the same
+registry as npm. This is settled, not an open question. `packages/identity-py/` is the in-repo
+precedent to follow.
+
 #### ✅ Acceptance Criteria
-1. **Given** the frozen OpenAPI contract **When** the Python client is generated/built **Then** it is published as an installable package exposing the same operations as the Node client: read effective config, read the catalog, set / reset / lock values.
+1. **Given** the frozen OpenAPI contract **When** the Python client is generated/built **Then** it is published to **GitHub Packages** and exposes the same operations as the Node client: read effective config, read the catalog, set / reset / lock values.
 2. **Given** a resolved entry **When** the Python client returns it **Then** it carries the same provenance fields as the Node client (`value`, `source`, `locked`, `editable`, `definition`) with typed access — the two clients present one model, not two dialects.
 3. **Edge case:** **Given** the contract changes **When** CI runs **Then** **both** clients are regenerated and a divergence between them fails the build — two clients maintained by hand drift within one release.
 4. **Error case:** **Given** the config service is unreachable at boot **When** a Python consumer starts **Then** the client surfaces a typed error and honours the documented fallback (declared defaults), rather than hanging the service's startup indefinitely.
@@ -679,7 +709,7 @@ frozen contract so their behaviour cannot diverge.
 #### 🔲 Definition of Done
 - [ ] Code reviewed and approved (min. 1 reviewer)
 - [ ] Unit tests written and passing (coverage ≥ 80%)
-- [ ] Package published privately and installable by a Python service
+- [ ] Package published to **GitHub Packages** and installable by a Python service
 - [ ] Generated from the same contract as the Node client; divergence fails CI
 - [ ] Caching + cache-invalidation parity with the Node client (FF-EPIC-18-S4/S5)
 - [ ] Usage documented (FF-EPIC-17-S11)
