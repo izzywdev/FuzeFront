@@ -62,25 +62,76 @@ jobs:
       - name: Publish @izzywdev/fuzefront-chat-client
         working-directory: packages/chat-client
         env:
+          # Both names: setup-node's .npmrc uses NODE_AUTH_TOKEN, but the repo-root
+          # .npmrc is project-level and outranks it, and that one references
+          # ${GITHUB_TOKEN}. Setting only NODE_AUTH_TOKEN made it expand EMPTY and
+          # every publish 401'd. See FuzeFront#558.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-chat-client
           if npm view "@izzywdev/fuzefront-chat-client@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
             echo "@izzywdev/fuzefront-chat-client@${VERSION} already published — skipping."
           else
-            npm publish --registry=https://npm.pkg.github.com
+            # A failing `npm view` does NOT prove the version is absent (auth blips,
+            # workspace-config quirks). Without this, that case republishes an existing
+            # version, fails the step, and aborts the job before sibling packages get
+            # their turn — which is what blocked chat-ui@1.2.0 behind an unchanged
+            # chat-client@1.1.0. The registry's own refusal is the authoritative signal.
+            set +e
+            OUT=$(npm publish --registry=https://npm.pkg.github.com 2>&1); RC=$?
+            set -e
+            echo "$OUT"
+            if [ "$RC" -ne 0 ]; then
+              if echo "$OUT" | grep -q "cannot publish over"; then
+                echo "already published at this version - treating as success."
+              else
+                exit "$RC"
+              fi
+            fi
           fi
 
       - name: Publish @izzywdev/fuzefront-chat-ui
         working-directory: packages/chat-ui
         env:
+          # Both names: setup-node's .npmrc uses NODE_AUTH_TOKEN, but the repo-root
+          # .npmrc is project-level and outranks it, and that one references
+          # ${GITHUB_TOKEN}. Setting only NODE_AUTH_TOKEN made it expand EMPTY and
+          # every publish 401'd. See FuzeFront#558.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(npm pkg get version | tr -d '"')
           npm pkg set name=@izzywdev/fuzefront-chat-ui
+          # chat-ui peers on @fuzefront/chat-client, a scope that cannot be published
+          # (GitHub Packages requires the scope to match the owning account). Left as-is,
+          # npm resolves that peer from the PUBLIC registry and consumers get
+          #   404 Not Found - GET https://registry.npmjs.org/@fuzefront%2fchat-client
+          # even though they installed the client fine under an alias. The source keeps
+          # the @fuzefront name so the in-repo workspace link still resolves; only the
+          # PUBLISHED artifact is rewritten — same treatment the package name already
+          # gets one line above. @fuzeone/* is the name consumers install under, and is
+          # what the canonical scope becomes after the org transfer.
+          npm pkg delete peerDependencies.@fuzefront/chat-client
+          npm pkg set peerDependencies.@fuzeone/chat-client='^1.1.0'
           if npm view "@izzywdev/fuzefront-chat-ui@${VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
             echo "@izzywdev/fuzefront-chat-ui@${VERSION} already published — skipping."
           else
-            npm publish --registry=https://npm.pkg.github.com
+            # A failing `npm view` does NOT prove the version is absent (auth blips,
+            # workspace-config quirks). Without this, that case republishes an existing
+            # version, fails the step, and aborts the job before sibling packages get
+            # their turn — which is what blocked chat-ui@1.2.0 behind an unchanged
+            # chat-client@1.1.0. The registry's own refusal is the authoritative signal.
+            set +e
+            OUT=$(npm publish --registry=https://npm.pkg.github.com 2>&1); RC=$?
+            set -e
+            echo "$OUT"
+            if [ "$RC" -ne 0 ]; then
+              if echo "$OUT" | grep -q "cannot publish over"; then
+                echo "already published at this version - treating as success."
+              else
+                exit "$RC"
+              fi
+            fi
           fi

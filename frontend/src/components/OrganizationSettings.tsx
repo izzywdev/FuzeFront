@@ -16,7 +16,8 @@ interface Organization {
   metadata: Record<string, any>
   created_at: string
   updated_at: string
-  user_role?: 'owner' | 'admin' | 'member' | 'viewer'
+  // `null` when the caller is not a member of this org (see OrganizationPage).
+  user_role?: 'owner' | 'admin' | 'member' | 'viewer' | null
 }
 
 interface OrganizationSettingsProps {

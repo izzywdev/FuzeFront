@@ -36,7 +36,6 @@ Which parts of FrontFuse would this feature affect?
 - [ ] Backend (API Server)
 - [ ] SDK (Developer Tools)
 - [ ] Shared (Common Utilities)
-- [ ] Task Manager (Example App)
 - [ ] Documentation
 - [ ] CI/CD Pipeline
 - [ ] Other: \***\*\_\_\_\*\***

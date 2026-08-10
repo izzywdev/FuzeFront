@@ -10,6 +10,11 @@ export interface InputProps
   label?: string;
   /** Validation message; when present, borders the input red and renders below it. */
   error?: string;
+  /**
+   * For `type="password"` fields, render an in-field show/hide (eye) toggle.
+   * Defaults to `true`; set `false` to opt out. No effect on non-password inputs.
+   */
+  revealToggle?: boolean;
 }
 
 export function Input(props: InputProps): React.JSX.Element;
