@@ -7,7 +7,6 @@ import dotenv from 'dotenv'
 
 // Import routes
 import authRoutes from './routes/auth'
-import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
@@ -242,40 +241,20 @@ try {
         </div>
         
         <h2>📱 Application Management</h2>
-        <div class="endpoint">
-          <div><span class="method">GET</span> <span class="path">/api/apps</span></div>
-          <p>Get list of all registered applications</p>
-          <p><strong>Requires:</strong> Authorization: Bearer &lt;token&gt;</p>
-        </div>
-        
-        <div class="endpoint">
-          <div><span class="method">POST</span> <span class="path">/api/apps</span></div>
-          <p>Register a new microfrontend application (Admin only)</p>
-          <p><strong>Requires:</strong> Authorization: Bearer &lt;token&gt;</p>
-          <pre>
-{
-  "name": "My App",
-  "url": "https://my-app.netlify.app",
-  "integrationType": "module-federation",
-  "remoteUrl": "https://my-app.netlify.app/assets/remoteEntry.js",
-  "scope": "myApp",
-  "module": "./App"
-}
-          </pre>
-        </div>
-        
+        <p>
+          The app registry (<code>/api/apps/*</code>) is served by
+          fuzefront-applications, not this service — the ingress routes that
+          prefix there by longest-prefix match. See
+          backend/applications/src/routes/apps.ts.
+        </p>
+
         <h2>💓 Health & Monitoring</h2>
         <div class="endpoint">
           <div><span class="method">GET</span> <span class="path">/health</span></div>
           <p>Platform health check endpoint</p>
           <p><strong>No authentication required</strong></p>
         </div>
-        
-        <div class="endpoint">
-          <div><span class="method">POST</span> <span class="path">/api/apps/:id/heartbeat</span></div>
-          <p>Application heartbeat endpoint</p>
-        </div>
-        
+
         <h2>🔑 Authentication</h2>
         <p>Most endpoints require a JWT token in the Authorization header:</p>
         <pre>Authorization: Bearer &lt;your-jwt-token&gt;</pre>
@@ -299,16 +278,20 @@ try {
 
 // Routes
 app.use('/api/auth', authRoutes)
-// NOTE: the app INSTALLATION routes are deliberately NOT mounted here. The
-// ingress routes `/api/apps` (Prefix) to fuzefront-applications and only the
-// remaining `/api` to fuzefront-backend, and applicationsService.enabled is
-// true in BOTH values-local.yaml and values-prod.yaml. Mounting them on this
-// service made every install endpoint a 404 in every deployed environment
-// while the unit tests — which mount the router directly — stayed green.
-// They now live in backend/applications/src/routes/app-installations.ts, the
-// service that actually owns this path prefix. See scripts/check-route-
-// ownership.mjs, which fails CI if that pairing is ever broken again.
-app.use('/api/apps', appsRoutes)
+// NOTE: the app registry AND its installation routes are deliberately NOT
+// mounted here. The ingress routes `/api/apps` (Prefix) to
+// fuzefront-applications and only the remaining `/api` to fuzefront-backend,
+// and applicationsService.enabled is true in BOTH values-local.yaml and
+// values-prod.yaml. A duplicate copy of the registry router (routes/apps.ts)
+// lived on this service until it was deleted as dead code: it never received
+// a single real request in any deployed environment (mounting it here made
+// its routes 404 through the ingress) while its own unit tests — which mount
+// the router directly and never traverse the ingress — stayed green. The
+// live implementation, including the appsec #100 object-level-authz fix
+// ported into it, is backend/applications/src/routes/apps.ts; the app
+// INSTALLATION routes are backend/applications/src/routes/
+// app-installations.ts. See scripts/check-route-ownership.mjs, which fails CI
+// if this pairing is ever broken again.
 app.use('/api/organizations', organizationsRoutes)
 // FF-EPIC-11-S3 — public token-based invitation resolve/accept (routes/invitations.ts).
 app.use('/api/invitations', invitationsRoutes)
