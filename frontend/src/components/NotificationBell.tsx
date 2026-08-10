@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '@fuzefront/i18n'
-import { Skeleton, StatusCallout } from '@fuzefront/design-system'
+import { Button, Skeleton, StatusCallout } from '@fuzefront/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   Notification,
@@ -293,13 +293,13 @@ function NotificationBell() {
                   tone="error"
                   title={t('notifications.loadFailed')}
                   actions={
-                    <button
-                      className="btn btn-ghost"
+                    <Button
+                      variant="ghost"
                       data-action="retry"
                       onClick={() => void loadItems()}
                     >
                       {t('actions.retry')}
-                    </button>
+                    </Button>
                   }
                 />
               </div>
