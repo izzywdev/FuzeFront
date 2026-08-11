@@ -29,6 +29,15 @@ export function getPersistedActiveOrganizationId(): string | null {
   return getActiveValue('activeOrganizationId')
 }
 
+/**
+ * The pinned platform root "FuzeFront" org id (migration 015,
+ * `backend/src/migrations/015_seed_root_platform_organization.ts`
+ * `ROOT_ORG_ID`). Every user is a member of this org once the
+ * `fuzefront.identity.root-membership` backend slice (FF-EPIC-17-S1/S2)
+ * ships — see design/frames/identity-context-switcher/.
+ */
+export const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+
 function persistActiveOrganizationId(id: string | null): void {
   setActiveValue('activeOrganizationId', id)
 }
@@ -248,6 +257,13 @@ export function useCurrentUser() {
  *
  * Plan G builds on top of this: call setActiveOrganization(id) to switch
  * the active workspace; read activeOrganization for the current org object.
+ *
+ * `setActiveOrganization(null)` selects the first-class **Personal**
+ * (non-org) context — FF-EPIC-17-S4's identity-context-switcher. This is
+ * NOT backed by a `type='personal'` org row; `activeOrganizationId === null`
+ * already meant "no org active" before this reconciliation, so Personal is
+ * simply that state made explicit and selectable, not a new persistence
+ * shape. `getPersistedActiveOrganizationId()` already round-trips `null`.
  */
 export function useOrganizations() {
   const { state, dispatch } = useAppContext()
@@ -257,7 +273,7 @@ export function useOrganizations() {
     organizations: state.organizations,
     activeOrganizationId: state.activeOrganizationId,
     activeOrganization,
-    setActiveOrganization: (id: string) =>
+    setActiveOrganization: (id: string | null) =>
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: id }),
   }
 }

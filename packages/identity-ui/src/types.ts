@@ -1,5 +1,33 @@
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
+// ---------------------------------------------------------------------------
+// Identity context switcher (FF-EPIC-17-S4) — Personal identity + org/portal
+// context switcher, reconciling OrganizationPage.tsx's local <select> with
+// the canonical persisted setActiveOrganization switcher.
+// design/frames/identity-context-switcher/**
+// ---------------------------------------------------------------------------
+
+/** The active context: the non-org Personal identity, or a specific org. */
+export type ContextTarget = 'personal' | string
+
+/**
+ * One org/sub-org the current user directly belongs to, as rendered by the
+ * ContextSwitcher menu and the "My orgs & sub-orgs" list. `role` is the
+ * caller's real `user_role` for that org — `null` means visible-but-not-a-
+ * member (a platform org you can see but haven't joined); never fabricated.
+ */
+export interface OrgContextItem {
+  id: string
+  name: string
+  role: OrgRole | null
+  /** True for the pinned platform root org — always a top-level row, never nested. */
+  isRoot?: boolean
+  /** True for a portal-root org (direct child of the platform root). */
+  isPortal?: boolean
+  /** Direct parent org id, when the caller also belongs to the parent. */
+  parentId?: string | null
+}
+
 export interface Member {
   id: string
   role: OrgRole
