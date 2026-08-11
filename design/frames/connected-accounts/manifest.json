@@ -26,7 +26,9 @@
         "id": "connected-accounts",
         "orchestrator": "ConnectedAccountsPanel",
         "route": "/account/security/connections",
-        "approved": false
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-11T20:19:10Z"
       }
     ],
     "components": [
