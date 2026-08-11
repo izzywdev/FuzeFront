@@ -101,6 +101,32 @@ flags:
     web_exposed: false
     jira: FFRNT-91
 
+  - key: fuzefront.platform.portals-directory
+    type: release
+    default: false
+    description: >
+      Gates the master-admin Portals Directory: the `/portals` frontend
+      page + SidePanel "Portals" nav entry, and the `identityMode` /
+      `launchUrl` fields that `GET /api/v1/admin/portals` adds to the
+      portal fleet list (backend S1, #640; frontend S3, #642). OFF =>
+      `GET /api/v1/admin/portals`'s response is byte-identical to the
+      pre-existing shape (neither new field emitted) and the `/portals`
+      page + nav entry are hidden. This flag is rollout convenience only
+      — it gates response shape and UI visibility, not authorization;
+      `GET /api/v1/admin/portals` stays `requireRole(['admin'])`-gated
+      in both flag states.
+    owner: platform team
+    removal_criterion: >
+      Delete once the Portals Directory is GA and enabled for 100% of
+      admins; then drop the flag and the OFF-path field-stripping branch
+      in routes/adminPortals.ts plus the hidden-by-default SidePanel entry.
+    gates:
+      - /portals frontend page (PortalsDirectory)
+      - SidePanel "Portals" nav entry
+      - GET /api/v1/admin/portals identityMode / launchUrl response fields
+    web_exposed: true
+    jira: ~
+
   # ---------------------------------------------------------------------------
   # fuzefront.app-registry.*
   # ---------------------------------------------------------------------------

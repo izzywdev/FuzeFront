@@ -48,6 +48,16 @@ export const FLAG_KEYS = {
    *   2. "Selection Lists" entry in the shell left sidebar (UI-side, S9)
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
+  /**
+   * Portals Directory (backend S1 #640 / frontend S3 #642).
+   * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
+   * the identityMode/launchUrl fields on GET /api/v1/admin/portals
+   * (server-side, evaluated independently in the backend route). Default
+   * OFF. Release flag. Owner: platform team.
+   * Removal criterion: when the Portals Directory is GA and enabled for
+   * 100% of admins.
+   */
+  PORTALS_DIRECTORY: 'fuzefront.platform.portals-directory',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
@@ -58,4 +68,5 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     type: 'release',
     default: false,
   },
+  { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
 ] as const;
