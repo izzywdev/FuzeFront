@@ -12,7 +12,15 @@ import Ajv, { ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
 import { ValueType } from '../types';
 
-const ajv = new Ajv({ allErrors: true, strict: false });
+// `allErrors` is deliberately OFF. With it on, Ajv allocates an error object per
+// failure with no bound, so a large `json`-typed value on the write path becomes a
+// memory-amplification DoS (semgrep javascript.ajv.security.audit.ajv-allerrors-true).
+// Nothing is lost that the contract needs: validation runs once per key, so the
+// error envelope still reports one `details[]` entry per failing key, and enum
+// rejections still name `allowedValues` (S2 AC2). Only multiple sub-errors WITHIN a
+// single value are collapsed to the first -- for scalar valueTypes there is never
+// more than one anyway.
+const ajv = new Ajv({ allErrors: false, strict: false });
 addFormats(ajv);
 
 export interface ValidationResult {
