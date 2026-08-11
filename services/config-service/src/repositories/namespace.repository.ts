@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { fromUuid, mintId, toUuid } from '@izzywdev/fuzefront-identity';
 import { Namespace, NamespaceCreateInput, NamespaceEntityId } from '../types';
+import { decodeCursor, encodeCursor, PageInfo } from '../pagination';
 
 interface NamespaceRow {
   id: string;
@@ -23,6 +24,17 @@ function mapRow(r: NamespaceRow): Namespace {
   };
 }
 
+export interface ListNamespacesArgs {
+  limit: number;
+  /** Opaque keyset cursor (previous page's nextCursor); undefined for page 1. */
+  cursor?: string;
+}
+
+export interface ListNamespacesResult {
+  items: Namespace[];
+  pageInfo: PageInfo;
+}
+
 export interface NamespaceRepository {
   findByName(namespace: string): Promise<Namespace | null>;
   findById(id: NamespaceEntityId): Promise<Namespace | null>;
@@ -31,6 +43,19 @@ export interface NamespaceRepository {
    * existing namespace updates its presentation metadata rather than failing.
    */
   upsert(input: NamespaceCreateInput): Promise<{ namespace: Namespace; created: boolean }>;
+  /**
+   * Cursor page, newest first (openapi.yaml `listNamespaces`). Keyset on
+   * (created_at, id) DESC — both are part of every row and `id` is unique, so
+   * the pair is a stable total order even when multiple namespaces share a
+   * `created_at` timestamp, which is what keeps the walk gap/dupe-free under
+   * concurrent inserts.
+   */
+  listPage(args: ListNamespacesArgs): Promise<ListNamespacesResult>;
+}
+
+interface NamespaceCursor {
+  createdAt: string;
+  id: string;
 }
 
 export class PgNamespaceRepository implements NamespaceRepository {
@@ -76,5 +101,38 @@ export class PgNamespaceRepository implements NamespaceRepository {
     );
     const row = res.rows[0];
     return { namespace: mapRow(row), created: row.inserted };
+  }
+
+  async listPage(args: ListNamespacesArgs): Promise<ListNamespacesResult> {
+    const cursor = args.cursor ? decodeCursor<NamespaceCursor>(args.cursor) : null;
+    const params: unknown[] = [];
+    let where = '';
+    if (cursor && cursor.createdAt && cursor.id) {
+      params.push(cursor.createdAt, cursor.id);
+      // Row-value comparison on the same (created_at, id) DESC order as
+      // ORDER BY below, so the keyset predicate and the sort agree exactly.
+      where = `WHERE (created_at, id) < ($1::timestamptz, $2::uuid)`;
+    }
+    // Fetch limit+1 to detect a further page without a second COUNT query.
+    params.push(args.limit + 1);
+    const limitParamIdx = params.length;
+
+    const res = await this.pool.query<NamespaceRow>(
+      `SELECT id, namespace, display_name, description, owner_app_id, created_at, updated_at
+         FROM config_namespaces
+         ${where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT $${limitParamIdx}`,
+      params,
+    );
+
+    const hasNextPage = res.rows.length > args.limit;
+    const rows = hasNextPage ? res.rows.slice(0, args.limit) : res.rows;
+    const items = rows.map(mapRow);
+    const last = rows[rows.length - 1];
+    const nextCursor =
+      hasNextPage && last ? encodeCursor({ createdAt: last.created_at.toISOString(), id: last.id }) : null;
+
+    return { items, pageInfo: { hasNextPage, nextCursor } };
   }
 }

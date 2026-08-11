@@ -19,8 +19,9 @@ configureIdentity({
 async function main(): Promise<void> {
   const config = loadConfig();
 
+  let pool: ReturnType<typeof createPool> | undefined;
   if (config.databaseUrl) {
-    const pool = createPool(config.databaseUrl);
+    pool = createPool(config.databaseUrl);
     try {
       await runMigrations(pool);
       // eslint-disable-next-line no-console
@@ -34,7 +35,12 @@ async function main(): Promise<void> {
     console.warn('[config-service] DATABASE_URL missing — serving /health only');
   }
 
-  const app = createApp();
+  // A DB-unreachable start (config.databaseUrl set but runMigrations threw
+  // above) still wires the /v1/* routes — EPIC-17-S7 AC3 ("the health probe
+  // reports unhealthy rather than serving requests that would resolve every
+  // key to its default") is that story's concern for /health itself; this PR
+  // does not change /health's behaviour, only whether /v1/* exists at all.
+  const app = createApp(pool ? { pool } : undefined);
   const server = app.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`[config-service] Listening on port ${config.port}`);
