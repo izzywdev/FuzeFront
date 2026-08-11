@@ -163,8 +163,28 @@ if [ -z "$INV_FLOW_PK" ] || [ "$INV_FLOW_PK" = "null" ]; then
 fi
 
 # ── OAuth2 provider ───────────────────────────────────────────────────────────
-PROVIDER_RAW=$(curl -s -H "$AUTH" "$BASE/providers/oauth2/?search=FuzeFront")
-PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.results[]? | select(.name=="FuzeFront") | .pk' 2>/dev/null | head -1 || true)
+# Use the Django ORM to look up the provider by client_id — REST search
+# (?search=FuzeFront) is unreliable on a fresh Authentik that just ran its
+# startup blueprints: the ORM sees the row immediately but the REST search
+# index may not be warm yet, returning 0 results for an existing row.
+# client_id is the unique constraint that triggers the 400 on a conflicting
+# POST, so it is also the right lookup key for the existence check.
+echo "Looking up OAuth2 provider by client_id via Python ORM..."
+PROVIDER_ORM_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
+import os
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+import django
+django.setup()
+from authentik.providers.oauth2.models import OAuth2Provider
+
+p = OAuth2Provider.objects.filter(client_id="fuzefront-oidc-client").first()
+if p:
+    print("PROVIDER_PK=" + str(p.pk))
+else:
+    print("PROVIDER_PK=")
+PYEOF
+)
+PROVIDER_PK=$(echo "$PROVIDER_ORM_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
 if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
   echo "Creating FuzeFront OAuth2 provider..."
   # redirect_uris use matching_mode:strict — the security service reuses the
