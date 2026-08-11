@@ -7,6 +7,7 @@ import { handleInvoiceSynced } from './invoice-synced';
 import { handleTrialEnding } from './trial-ending';
 import { handleCheckoutCompleted } from './checkout-completed';
 import { handlePaymentCompleted } from './payment-completed';
+import { handlePaymentMethodUpdated } from './payment-method-updated';
 
 /**
  * Runs the given handlers in sequence for one event. Used so an invoice event
@@ -64,6 +65,9 @@ export const HANDLERS: Record<string, StripeEventHandler> = {
   'invoice.paid': handleInvoiceSynced,
   'invoice.finalized': handleInvoiceSynced,
   'invoice.updated': handleInvoiceSynced,
+  // Card added/updated on a Customer — mirrored out for FuzeFinance (#491).
+  'payment_method.attached': handlePaymentMethodUpdated,
+  'payment_method.updated': handlePaymentMethodUpdated,
 };
 
 export async function routeWebhookEvent(

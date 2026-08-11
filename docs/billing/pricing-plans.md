@@ -57,7 +57,25 @@ card `4242 4242 4242 4242`. The webhook endpoint is
 `https://app.fuzefront.com/api/v1/billing/webhooks/stripe` and must receive:
 `customer.subscription.updated`, `customer.subscription.deleted`,
 `customer.subscription.trial_will_end`, `invoice.payment_succeeded`,
-`invoice.payment_failed`.
+`invoice.payment_failed`, `payment_method.attached`, `payment_method.updated`
+(the last two feed `billing.payment_method.updated`, see below).
+
+## FuzeFinance-facing events (#491)
+
+billing-service is event-driven only toward FuzeFinance — no direct HTTP call
+into that repo. Two Kafka topics carry the contract (schemas in
+`shared/src/kafka/schemas/`):
+
+- **`billing.tenant.registered`** — emitted by `CustomerService.ensureCustomer`
+  the moment a *new* Stripe Customer is created for an `organization` entity
+  (not on every checkout/subscription change — that's `billing.subscription.changed`).
+  Payload: `{ entityId, entityType: 'organization', stripeCustomerId }`.
+- **`billing.payment_method.updated`** — emitted on `payment_method.attached` /
+  `payment_method.updated`. Payload: `{ entityId, entityType, stripeCustomerId,
+  paymentMethodId, brand?, last4? }`.
+
+A FuzeFinance consumer group subscribes to both; nothing in this repo pushes
+to FuzeFinance directly.
 
 ## Secrets (never in git/chat)
 
