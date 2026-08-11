@@ -6,8 +6,12 @@ import * as React from "react";
  * values (app types, scopes, role keys).
  */
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  /** Color intent. `accent` is the fuse indigo; status tones use their color on a faint surface. */
-  tone?: "neutral" | "accent" | "success" | "warning" | "error";
+  /**
+   * Color intent. `accent` is the fuse indigo; `info` is the fuse cyan
+   * (the seam's other half — mirrors Alert's `info` tone); status tones
+   * use their color on a faint surface.
+   */
+  tone?: "neutral" | "accent" | "info" | "success" | "warning" | "error";
   size?: "sm" | "md";
   /** Switch to JetBrains Mono (and drop uppercasing) for technical values like `react`, `read:apps`. */
   mono?: boolean;
