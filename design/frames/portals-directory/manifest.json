@@ -31,9 +31,9 @@
         "id": "portals-directory",
         "orchestrator": "PortalsDirectory",
         "route": "/portals",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-11T12:45:59Z",
         "contract": {
           "client": "@fuzefront/portal-client",
           "status": "real",
