@@ -1,6 +1,7 @@
 import type Stripe from 'stripe';
 import { BillingCustomer, EntityType } from '../types';
 import { CustomerRepository } from '../repositories/customer.repository';
+import { BillingEventEmitter } from '../kafka/producer';
 
 /**
  * Owns the dual-entity Stripe Customer mapping:
@@ -14,6 +15,12 @@ export class CustomerService {
   constructor(
     private readonly stripe: Pick<Stripe, 'customers'>,
     private readonly repo: CustomerRepository,
+    /**
+     * Optional so existing unit tests / degraded-mode boot don't need to wire
+     * one; when present, a new organization Customer emits
+     * billing.tenant.registered (FuzeFinance's "new corporate tenant" signal).
+     */
+    private readonly emitter?: Pick<BillingEventEmitter, 'tenantRegistered'>,
   ) {}
 
   async ensureCustomer(
@@ -35,10 +42,31 @@ export class CustomerService {
       { idempotencyKey: `customer-create-${entityType}-${entityId}` },
     );
 
-    return this.repo.insert({
+    const created = await this.repo.insert({
       entityType,
       entityId,
       stripeCustomerId: customer.id,
     });
+
+    // Best-effort, never blocks/fails customer creation: ensureCustomer runs
+    // inline in user-facing request paths (checkout, setup-intent, payments,
+    // credits), unlike the webhook handlers where an emit failure is fine to
+    // throw and let Stripe retry the whole event.
+    if (entityType === 'organization' && this.emitter) {
+      this.emitter
+        .tenantRegistered({
+          entityId,
+          entityType: 'organization',
+          stripeCustomerId: customer.id,
+        })
+        .catch((err) =>
+          console.error(
+            `[customer.service] tenantRegistered emit failed for org ${entityId}:`,
+            err,
+          ),
+        );
+    }
+
+    return created;
   }
 }

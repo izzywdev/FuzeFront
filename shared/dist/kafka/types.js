@@ -9,6 +9,13 @@ exports.TOPICS = {
     APP_HEARTBEAT: 'app.heartbeat',
     BILLING_LLM_USAGE: 'billing.llm.usage',
     IDENTITY_USER_CREATED: 'identity.user.created',
+    IDENTITY_USER_UPDATED: 'identity.user.updated',
+    IDENTITY_USER_DELETED: 'identity.user.deleted',
+    IDENTITY_ORG_CREATED: 'identity.org.created',
+    IDENTITY_ORG_UPDATED: 'identity.org.updated',
+    IDENTITY_ORG_DELETED: 'identity.org.deleted',
+    IDENTITY_MEMBERSHIP_ADDED: 'identity.membership.added',
+    IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
     NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
     NOTIFY_EMAIL_STATUS: 'notify.email.status',
     BILLING_USAGE_RECORDED: 'billing.usage.recorded',
@@ -16,6 +23,8 @@ exports.TOPICS = {
     BILLING_PAYMENT_COMPLETED: 'billing.payment.completed',
     BILLING_TRIAL_ENDING: 'billing.trial.ending',
     BILLING_PAYMENT_FAILED: 'billing.payment.failed',
+    BILLING_TENANT_REGISTERED: 'billing.tenant.registered',
+    BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
     PORTAL_CREATED: 'portal.created',
 };
 /** Returns the dead-letter queue topic name for a given topic */

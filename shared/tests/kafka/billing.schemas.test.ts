@@ -1,6 +1,8 @@
 import {
   billingUsageRecordedSchemaV1,
   billingSubscriptionChangedSchemaV1,
+  billingTenantRegisteredSchemaV1,
+  billingPaymentMethodUpdatedSchemaV1,
   TOPICS,
 } from '../../src/kafka';
 
@@ -107,6 +109,75 @@ describe('billingSubscriptionChangedSchemaV1', () => {
   });
 });
 
+// ── billingTenantRegisteredSchemaV1 ──────────────────────────────────────────
+
+describe('billingTenantRegisteredSchemaV1', () => {
+  const valid = {
+    entityId: '550e8400-e29b-41d4-a716-446655440002',
+    entityType: 'organization' as const,
+    stripeCustomerId: 'cus_1ABC',
+  };
+
+  it('accepts a valid tenant-registered payload', () => {
+    expect(() => billingTenantRegisteredSchemaV1.parse(valid)).not.toThrow();
+  });
+
+  it('rejects a non-UUID entityId', () => {
+    expect(() =>
+      billingTenantRegisteredSchemaV1.parse({ ...valid, entityId: 'bad-id' }),
+    ).toThrow();
+  });
+
+  it('rejects entityType "user" — tenants are always organizations', () => {
+    expect(() =>
+      billingTenantRegisteredSchemaV1.parse({ ...valid, entityType: 'user' }),
+    ).toThrow();
+  });
+
+  it('rejects missing stripeCustomerId', () => {
+    const { stripeCustomerId: _omit, ...rest } = valid;
+    expect(() => billingTenantRegisteredSchemaV1.parse(rest)).toThrow();
+  });
+});
+
+// ── billingPaymentMethodUpdatedSchemaV1 ──────────────────────────────────────
+
+describe('billingPaymentMethodUpdatedSchemaV1', () => {
+  const valid = {
+    entityId: '550e8400-e29b-41d4-a716-446655440003',
+    entityType: 'organization' as const,
+    stripeCustomerId: 'cus_1ABC',
+    paymentMethodId: 'pm_1ABC',
+  };
+
+  it('accepts a valid payload without optional brand/last4', () => {
+    expect(() => billingPaymentMethodUpdatedSchemaV1.parse(valid)).not.toThrow();
+  });
+
+  it('accepts a payload with brand and last4', () => {
+    expect(() =>
+      billingPaymentMethodUpdatedSchemaV1.parse({ ...valid, brand: 'visa', last4: '4242' }),
+    ).not.toThrow();
+  });
+
+  it('accepts entityType "user"', () => {
+    expect(() =>
+      billingPaymentMethodUpdatedSchemaV1.parse({ ...valid, entityType: 'user' }),
+    ).not.toThrow();
+  });
+
+  it('rejects an invalid entityType', () => {
+    expect(() =>
+      billingPaymentMethodUpdatedSchemaV1.parse({ ...valid, entityType: 'team' }),
+    ).toThrow();
+  });
+
+  it('rejects missing paymentMethodId', () => {
+    const { paymentMethodId: _omit, ...rest } = valid;
+    expect(() => billingPaymentMethodUpdatedSchemaV1.parse(rest)).toThrow();
+  });
+});
+
 // ── TOPICS ───────────────────────────────────────────────────────────────────
 
 describe('TOPICS billing constants', () => {
@@ -124,5 +195,13 @@ describe('TOPICS billing constants', () => {
 
   it('exposes BILLING_PAYMENT_FAILED', () => {
     expect(TOPICS.BILLING_PAYMENT_FAILED).toBe('billing.payment.failed');
+  });
+
+  it('exposes BILLING_TENANT_REGISTERED', () => {
+    expect(TOPICS.BILLING_TENANT_REGISTERED).toBe('billing.tenant.registered');
+  });
+
+  it('exposes BILLING_PAYMENT_METHOD_UPDATED', () => {
+    expect(TOPICS.BILLING_PAYMENT_METHOD_UPDATED).toBe('billing.payment_method.updated');
   });
 });

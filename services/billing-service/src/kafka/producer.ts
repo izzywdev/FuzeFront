@@ -5,6 +5,10 @@ import {
   BillingSubscriptionChangedPayloadV1,
   billingPaymentCompletedSchemaV1,
   BillingPaymentCompletedPayloadV1,
+  billingTenantRegisteredSchemaV1,
+  BillingTenantRegisteredPayloadV1,
+  billingPaymentMethodUpdatedSchemaV1,
+  BillingPaymentMethodUpdatedPayloadV1,
 } from '@fuzefront/shared/dist/kafka';
 import { randomUUID } from 'crypto';
 
@@ -20,6 +24,10 @@ export interface BillingEventEmitter {
   /** trial-ending + payment-failed carry the same lightweight notify shape. */
   trialEnding(payload: TrialEndingPayload, correlationId?: string): Promise<void>;
   paymentFailed(payload: PaymentFailedPayload, correlationId?: string): Promise<void>;
+  /** A new organization Stripe Customer was created — a new corporate tenant. */
+  tenantRegistered(payload: BillingTenantRegisteredPayloadV1, correlationId?: string): Promise<void>;
+  /** A payment method was attached/updated on an existing Stripe Customer. */
+  paymentMethodUpdated(payload: BillingPaymentMethodUpdatedPayloadV1, correlationId?: string): Promise<void>;
 }
 
 export interface TrialEndingPayload {
@@ -107,5 +115,39 @@ export class KafkaBillingEmitter implements BillingEventEmitter {
         },
       ],
     });
+  }
+
+  async tenantRegistered(
+    payload: BillingTenantRegisteredPayloadV1,
+    correlationId = randomUUID(),
+  ): Promise<void> {
+    await this.producer.send(
+      TOPICS.BILLING_TENANT_REGISTERED,
+      {
+        version: '1.0',
+        topic: TOPICS.BILLING_TENANT_REGISTERED,
+        correlationId,
+        occurredAt: new Date().toISOString(),
+        payload,
+      },
+      billingTenantRegisteredSchemaV1,
+    );
+  }
+
+  async paymentMethodUpdated(
+    payload: BillingPaymentMethodUpdatedPayloadV1,
+    correlationId = randomUUID(),
+  ): Promise<void> {
+    await this.producer.send(
+      TOPICS.BILLING_PAYMENT_METHOD_UPDATED,
+      {
+        version: '1.0',
+        topic: TOPICS.BILLING_PAYMENT_METHOD_UPDATED,
+        correlationId,
+        occurredAt: new Date().toISOString(),
+        payload,
+      },
+      billingPaymentMethodUpdatedSchemaV1,
+    );
   }
 }
