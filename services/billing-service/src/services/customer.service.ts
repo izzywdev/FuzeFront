@@ -60,8 +60,12 @@ export class CustomerService {
           stripeCustomerId: customer.id,
         })
         .catch((err) =>
+          // entityId is caller-supplied — kept out of the format-string
+          // position (as a separate arg) so it can never be interpreted as a
+          // util.format specifier by console.error.
           console.error(
-            `[customer.service] tenantRegistered emit failed for org ${entityId}:`,
+            '[customer.service] tenantRegistered emit failed for org',
+            entityId,
             err,
           ),
         );
