@@ -457,6 +457,44 @@ notificationService:
       cpu: "1"
       memory: 256Mi
 
+# Selection-List service — owns the SelectionList entity domain (S14,
+# FF-EPIC-17, FFRNT-200). Ships dark by default; flip `enabled` to true in a
+# deploy window once the backend code and SealedSecret are ready.
+# Feature flag: fuzefront.selection-lists.service (added in S15).
+#
+# Port 3008: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3009=notification, 3010=payment.
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+selectionListService:
+  enabled: false
+  replicas: 1
+  port: 3008
+  image:
+    repository: fuzefront/selection-list-service
+    tag: local
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal selectionListService.port — declared explicitly, never coerced.
+    port: 3008
+    # Intra-fuzefront traffic is the primary ingress source (other platform
+    # services calling the selection-list API). The Traefik rule below covers
+    # ingress-routed external traffic once the ingress route is wired.
+    ingressControllerNamespace: kube-system
+
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
 # SECURITY_SERVICE_URL is derived in the Helm template from securityService.port
