@@ -5,15 +5,29 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   getPortalDomains,
+  getPortalIdentityMode,
+  getPortalLaunchUrl,
   rowToPortal,
   type BillingMode,
+  type IdentityMode,
   type PortalBranding,
   type PortalIdentityPolicy,
   type PortalStatus,
 } from '../repositories/portalRepository'
 import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
+import { isPortalsDirectoryEnabled } from '../utils/portalsDirectoryFlag'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
+
+// Portals Directory (backend slice S1) — the fleet-list DTO enriched with
+// `identityMode`. Optional (not part of `rowToPortal`'s base return type) so
+// existing `AdminPortalStore` mocks/consumers that predate this field stay
+// valid without modification; `createAdminPortalStore().list()` below always
+// populates it (cheap — already selected on the row), and the router decides
+// whether to actually emit it on the wire based on the feature flag.
+export type AdminPortalListItem = ReturnType<typeof rowToPortal> & {
+  identityMode?: IdentityMode
+}
 
 export interface AdminPortalStore {
   list(input: {
@@ -21,7 +35,7 @@ export interface AdminPortalStore {
     query?: string
     limit: number
     cursor?: string
-  }): Promise<{ items: ReturnType<typeof rowToPortal>[]; nextCursor: string | null }>
+  }): Promise<{ items: AdminPortalListItem[]; nextCursor: string | null }>
   create(input: {
     actorUserId: string
     name: string
@@ -80,8 +94,11 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       const rows = await query
       const hasMore = rows.length > input.limit
       const pageRows = rows.slice(0, input.limit)
-      const items = await Promise.all(
-        pageRows.map(async row => rowToPortal(row, await getPortalDomains(row.id, database)))
+      const items: AdminPortalListItem[] = await Promise.all(
+        pageRows.map(async row => ({
+          ...rowToPortal(row, await getPortalDomains(row.id, database)),
+          identityMode: getPortalIdentityMode(row),
+        }))
       )
       return {
         items,
@@ -175,8 +192,27 @@ export function createAdminPortalRouter(deps: {
       : undefined
     const cursor = typeof request.query.cursor === 'string' ? request.query.cursor : undefined
     const result = await store.list({ status, query, limit, cursor })
+
+    // Portals Directory (backend slice S1) — `identityMode` + `launchUrl` are
+    // NEW fields, gated behind the release flag (default OFF). When OFF this
+    // response must be byte-identical to the pre-flag shape: strip
+    // `identityMode` (the store always attaches it — see AdminPortalListItem)
+    // and never compute `launchUrl` at all. This never widens the existing
+    // requireRole(['admin']) gate above — it only changes what an ALREADY
+    // authorized caller sees.
+    const directoryEnabled = await isPortalsDirectoryEnabled({
+      userId: request.user?.id,
+    })
+    const items = directoryEnabled
+      ? result.items.map(item => ({
+          ...item,
+          identityMode: item.identityMode ?? 'soft',
+          launchUrl: getPortalLaunchUrl(item),
+        }))
+      : result.items.map(({ identityMode, ...rest }) => rest)
+
     response.status(200).json({
-      items: result.items,
+      items,
       page: { nextCursor: result.nextCursor },
     })
   })

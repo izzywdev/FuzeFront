@@ -354,6 +354,7 @@ export function loadLegacyProductPolicies(): ProductPolicy[] {
   return [
     require('./products/fuzemarket.policy').default,
     require('./products/mendys-datasets.policy').default,
+    require('./products/fuzefinance.policy').default,
   ]
   /* eslint-enable @typescript-eslint/no-var-requires */
 }

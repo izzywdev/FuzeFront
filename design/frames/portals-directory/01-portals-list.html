@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portals directory — frame (a)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="01-portals-list">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Portals directory · Frame (a) · route /portals</div>
+  <h1>Portals</h1>
+  <p class="lead">The master-admin's directory of the portals they can manage — reached from the
+    left menu of the FuzeFront shell. It is a <b>launcher, not a switcher</b>: there is no in-app
+    context switch. Choosing a portal opens that portal's <b>own host URL in a new browser tab</b>,
+    where management continues under the existing per-host tenant routing. Each portal is tagged by
+    identity tier — <b>soft</b> (shares the root Authentik) or <b>hard</b> (its own Authentik
+    instance). Scoped server-side to portals the caller may manage (Permit ReBAC).</p>
+
+  <div class="panel" data-panel="portals-directory">
+    <div class="panel-head">
+      <div>
+        <h2>Portals you manage</h2>
+        <p class="sub"><span data-count="portals">4</span> portals · <span data-count="active">3</span> active</p>
+      </div>
+    </div>
+
+    <div class="searchbar">
+      <label class="search" for="portal-search">
+        <span class="ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </span>
+        <input id="portal-search" type="search" placeholder="Search portals by name or domain…"
+          data-input="search" autocomplete="off" />
+      </label>
+    </div>
+
+    <div class="dir" data-list="portals" role="list">
+      <!-- soft portal — shares the root Authentik; launches at its own custom host -->
+      <div class="prow" role="listitem" data-portal="prt_northwind" data-status="active" data-tier="soft">
+        <div class="prow__main">
+          <div class="prow__top">
+            <span class="prow__name">Northwind</span>
+            <span class="status status--active" data-portal-status="active"><span class="dot"></span>Active</span>
+            <span class="tier tier--soft" data-tier="soft"><span class="glyph" aria-hidden="true">◗</span>Soft</span>
+          </div>
+          <div class="prow__meta">
+            <span class="prow__domain" data-domain="primary">portal.northwind.example</span>
+          </div>
+        </div>
+        <div class="prow__side">
+          <a class="open-portal" data-action="open-portal" data-portal-target="prt_northwind"
+            href="https://portal.northwind.example/" target="_blank" rel="noopener noreferrer">
+            Open portal <span class="ext" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- soft portal, no custom domain — launches on the root host path route /p/<slug> -->
+      <div class="prow" role="listitem" data-portal="prt_initech" data-status="active" data-tier="soft">
+        <div class="prow__main">
+          <div class="prow__top">
+            <span class="prow__name">Initech</span>
+            <span class="status status--active" data-portal-status="active"><span class="dot"></span>Active</span>
+            <span class="tier tier--soft" data-tier="soft"><span class="glyph" aria-hidden="true">◗</span>Soft</span>
+          </div>
+          <div class="prow__meta">
+            <span class="prow__domain muted" data-domain="primary">app.fuzefront.com/p/initech</span>
+            <span class="tag">no custom domain</span>
+          </div>
+        </div>
+        <div class="prow__side">
+          <a class="open-portal" data-action="open-portal" data-portal-target="prt_initech"
+            href="https://app.fuzefront.com/p/initech" target="_blank" rel="noopener noreferrer">
+            Open portal <span class="ext" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- hard portal — its own Authentik instance; launches on its own dedicated host -->
+      <div class="prow" role="listitem" data-portal="prt_mendys" data-status="active" data-tier="hard">
+        <div class="prow__main">
+          <div class="prow__top">
+            <span class="prow__name">Mendys Robotics</span>
+            <span class="status status--active" data-portal-status="active"><span class="dot"></span>Active</span>
+            <span class="tier tier--hard" data-tier="hard"><span class="glyph" aria-hidden="true">◆</span>Hard</span>
+          </div>
+          <div class="prow__meta">
+            <span class="prow__domain" data-domain="primary">live.mendysrobotics.com</span>
+            <span class="tag" title="Authenticates against its own Authentik instance">own IdP</span>
+          </div>
+        </div>
+        <div class="prow__side">
+          <a class="open-portal" data-action="open-portal" data-portal-target="prt_mendys"
+            href="https://live.mendysrobotics.com/" target="_blank" rel="noopener noreferrer">
+            Open portal <span class="ext" aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- suspended portal — no launch affordance; opening a suspended host is fail-closed -->
+      <div class="prow" role="listitem" data-portal="prt_acme" data-status="suspended" data-tier="soft">
+        <div class="prow__main">
+          <div class="prow__top">
+            <span class="prow__name">Acme Reseller</span>
+            <span class="status status--suspended" data-portal-status="suspended"><span class="dot"></span>Suspended</span>
+            <span class="tier tier--soft" data-tier="soft"><span class="glyph" aria-hidden="true">◗</span>Soft</span>
+          </div>
+          <div class="prow__meta">
+            <span class="prow__domain" data-domain="primary">portal.acme.example</span>
+          </div>
+        </div>
+        <div class="prow__side">
+          <button class="btn" data-action="open-portal" data-portal-target="prt_acme" disabled
+            title="A suspended portal cannot be opened">Open portal <span class="ext" aria-hidden="true">↗</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-foot">
+      <button class="btn btn-ghost" data-action="load-more">Load more</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract (real — <code>adminPortals</code> list).</b> Rows come from
+    <code>GET /api/v1/admin/portals</code> (cursor-paginated; "Load more" advances the cursor). The
+    S1 extension adds <code>identity_mode</code> (<code>soft</code> | <code>hard</code>) → the tier
+    badge, and <code>launchUrl</code> → the absolute <code>href</code> of "Open portal". The launch
+    anchor is a plain <code>&lt;a target="_blank" rel="noopener noreferrer"&gt;</code> to the
+    portal's <b>own host</b> — never an in-app route, never a JS <code>window.open</code> that could
+    be popup-blocked, and never a same-tab navigation that unmounts the shell. <code>launchUrl</code>
+    is server-provided (the portal's primary domain, or the root host <code>/p/{slug}</code> path
+    route when it has no custom domain); the client never composes a host from client-held data.
+    A <b>suspended</b> portal renders no launch affordance (see states frame, d5). The list is
+    scoped by Permit ReBAC to portals the caller may manage — a caller with no manage authority
+    sees the permission-denied state (d6), never a launch button. Flag
+    <code>fuzefront.platform.portals-directory</code> (default OFF).
+  </p>
+
+  <nav class="pager"><a href="index.html">Index</a><a href="02-portals-list-states.html">Next: States →</a></nav>
+</div>
+</body>
+</html>

@@ -3,6 +3,7 @@ import {
   UnsatisfiableDefaultValueError,
 } from '../../src/repositories/key-definition.repository';
 import { KeyDefinitionEntityId, NamespaceEntityId } from '../../src/types';
+import { decodeCursor, encodeCursor } from '../../src/pagination';
 
 function fakePool(queryImpl?: jest.Mock) {
   return { query: queryImpl ?? jest.fn() } as any;
@@ -190,5 +191,171 @@ describe('PgKeyDefinitionRepository.deprecate', () => {
     expect(capturedSql).toMatch(/UPDATE config_key_definitions SET deprecated_at = now\(\)/);
     expect(capturedSql).toMatch(/AND deprecated_at IS NULL/);
     expect((capturedParams[0] as string[])).toHaveLength(2);
+  });
+});
+
+function makeKeyDefRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: '0195a8f2-6c3d-7f11-8b2e-000000000001',
+    namespace_id: '0195a8f2-6c3d-7f11-8b2e-000000000099',
+    key: 'a.key',
+    display_name: 'A key',
+    description: null,
+    help_url: null,
+    category: null,
+    sort_order: 0,
+    tags: [],
+    value_type: 'string',
+    schema: null,
+    enum_values: null,
+    default_value: 'x',
+    allowed_scopes: ['user'],
+    is_system: false,
+    is_hidden: false,
+    is_secret: false,
+    is_readonly: false,
+    precedence: 'most-specific-wins',
+    requires_restart: false,
+    deprecated_at: null,
+    replaced_by: null,
+    created_at: NOW,
+    updated_at: NOW,
+    ...overrides,
+  };
+}
+
+describe('PgKeyDefinitionRepository.listPage — FFRNT-157 catalog listing', () => {
+  it('excludes is_hidden rows by default (server-side omission, per gate-pagination + S5 AC3)', async () => {
+    let capturedSql = '';
+    const query = jest.fn(async (sql: string) => {
+      capturedSql = sql;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    await repo.listPage(NAMESPACE_ID, { limit: 50, includeHidden: false });
+
+    expect(capturedSql).toMatch(/is_hidden = false/);
+  });
+
+  it('omits the is_hidden filter when includeHidden is true', async () => {
+    let capturedSql = '';
+    const query = jest.fn(async (sql: string) => {
+      capturedSql = sql;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    await repo.listPage(NAMESPACE_ID, { limit: 50, includeHidden: true });
+
+    expect(capturedSql).not.toMatch(/is_hidden = false/);
+  });
+
+  it('filters by category and free-text search when supplied', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    await repo.listPage(NAMESPACE_ID, {
+      limit: 50,
+      includeHidden: false,
+      category: 'appearance',
+      search: 'theme',
+    });
+
+    expect(capturedSql).toMatch(/category = \$\d+/);
+    expect(capturedSql).toMatch(/display_name ILIKE .* OR description ILIKE/);
+    expect(capturedParams).toContain('appearance');
+    expect(capturedParams).toContain('%theme%');
+  });
+
+  it('requests limit+1 rows and orders by key ASC (a unique, stable total order)', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    await repo.listPage(NAMESPACE_ID, { limit: 20, includeHidden: false });
+
+    expect(capturedSql).toMatch(/ORDER BY key ASC/);
+    expect(capturedParams[capturedParams.length - 1]).toBe(21);
+  });
+
+  it('reports hasNextPage:false and nextCursor:null on the last page', async () => {
+    const rows = [makeKeyDefRow({ key: 'a' }), makeKeyDefRow({ key: 'b' })];
+    const query = jest.fn(async () => ({ rows }));
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    const page = await repo.listPage(NAMESPACE_ID, { limit: 20, includeHidden: false });
+
+    expect(page.items).toHaveLength(2);
+    expect(page.pageInfo.hasNextPage).toBe(false);
+    expect(page.pageInfo.nextCursor).toBeNull();
+  });
+
+  it('reports hasNextPage:true and a usable nextCursor when there is a further page', async () => {
+    // limit+1 rows returned -> a further page exists; the extra row is trimmed.
+    const rows = [makeKeyDefRow({ key: 'a' }), makeKeyDefRow({ key: 'b' }), makeKeyDefRow({ key: 'c' })];
+    const query = jest.fn(async () => ({ rows }));
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    const page = await repo.listPage(NAMESPACE_ID, { limit: 2, includeHidden: false });
+
+    expect(page.items).toHaveLength(2);
+    expect(page.items.map((i) => i.key)).toEqual(['a', 'b']);
+    expect(page.pageInfo.hasNextPage).toBe(true);
+    expect(decodeCursor(page.pageInfo.nextCursor!)).toEqual({ key: 'b' });
+  });
+
+  it('decodes a supplied cursor into a `key > $n` keyset predicate', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+    const cursor = encodeCursor({ key: 'b' });
+
+    await repo.listPage(NAMESPACE_ID, { limit: 20, includeHidden: false, cursor });
+
+    expect(capturedSql).toMatch(/key > \$\d+/);
+    expect(capturedParams).toContain('b');
+  });
+
+  it('walks a full catalog across pages with no gaps or duplicates', async () => {
+    // In-memory simulation of the SQL the repository issues, so the
+    // walk-the-full-set assertion is exercised without a live Postgres.
+    const allRows = Array.from({ length: 25 }, (_, i) => makeKeyDefRow({ key: `key.${String(i).padStart(2, '0')}` }));
+    const query = jest.fn(async (_sql: string, params: unknown[]) => {
+      // The last two bind params are always [cursorKey?, limitPlus1] OR just [limitPlus1].
+      const limitPlus1 = params[params.length - 1] as number;
+      const cursorKey = params.length > 2 ? (params[params.length - 2] as string) : undefined;
+      const startIndex = cursorKey ? allRows.findIndex((r) => r.key > cursorKey) : 0;
+      return { rows: allRows.slice(startIndex, startIndex + limitPlus1) };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 20; i++) {
+      const page = await repo.listPage(NAMESPACE_ID, { limit: 7, includeHidden: false, cursor });
+      seen.push(...page.items.map((it) => it.key));
+      if (!page.pageInfo.hasNextPage) break;
+      cursor = page.pageInfo.nextCursor!;
+    }
+
+    expect(seen).toEqual(allRows.map((r) => r.key));
+    expect(new Set(seen).size).toBe(seen.length); // no duplicates
   });
 });

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .wrap { max-width: 980px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 72ch; }
+  .flow {
+    margin-top: var(--space-10); background: var(--bg-secondary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-6); position: relative; overflow: hidden;
+  }
+  .flow__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .flow__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+  .flow__title { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0; }
+  .flow__meta { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase; }
+  .flow__lead { color: var(--text-tertiary); font-size: var(--text-sm); margin: var(--space-3) 0 var(--space-5); max-width: 74ch; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-5);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-md); color: var(--text-primary); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .build { margin-top: var(--space-12); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .build h2 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-2); }
+  .build p.note { margin: 0 0 var(--space-4); color: var(--text-tertiary); font-size: var(--text-sm); max-width: 74ch; }
+  .build dt { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin-top: var(--space-5); }
+  .build dd { margin: var(--space-2) 0 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px 8px; margin: 0 var(--space-2) var(--space-2) 0; color: var(--text-secondary); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Design-first gate · UX approval · FFRNT-188 · FF-EPIC-17</div>
+  <h1>Selection Lists — Approval Frames</h1>
+  <p class="lead">Fourteen navigable frames covering the org-admin management UI, the translation
+    workbench, per-list access control, and the embeddable <code>&lt;SelectionListPicker&gt;</code>.
+    Approving them freezes the visual and interaction contract — and the build inventory below — before
+    any feature UI is written. Built in the fuse-seam design system (tokens only).</p>
+
+  <div class="sl-banner sl-banner--info" style="margin-top: var(--space-8);">
+    <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+    <div class="sl-banner__body">
+      <p class="sl-banner__title">Approval is per flow</p>
+      <p>Each of the four flows below is approved independently. Approving <b>Flow 1</b> unblocks its
+        implementation immediately; the other three can keep iterating. No ready flow waits on an unready
+        sibling.</p>
+    </div>
+  </div>
+
+  <!-- ==================== FLOW 1 ==================== -->
+  <section class="flow" data-flow="list-management">
+    <div class="flow__seam"></div>
+    <div class="flow__head">
+      <h2 class="flow__title">Flow 1 · List management</h2>
+      <span class="pending" data-approval-status="pending" data-flow-approval="list-management">● Awaiting approval</span>
+    </div>
+    <div class="flow__meta">SelectionListManagementFlow → /settings/selection-lists · org admin / list owner</div>
+    <p class="flow__lead">Create a list, curate its values, order them deliberately, and stay inside the
+      org's quota ceilings. Values carry an immutable service-minted id (what consuming apps persist), an
+      immutable interop <code>code</code>, and a translatable label.</p>
+    <div class="grid">
+      <a href="01-list-index.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1a</div><h3>List index</h3>
+        <p>Paginated table with status filter and search. Loading, empty and error states.</p></a>
+      <a href="02-new-list.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1b</div><h3>New list</h3>
+        <p>Name, immutable key with slug validation, source locale. Inline 400 / 409 / 403 handling.</p></a>
+      <a href="03-list-detail.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1c</div><h3>List detail / value editor</h3>
+        <p>Tabbed detail with the ordered value table. Archive vs purge made explicit. Includes 404-not-403.</p></a>
+      <a href="04-value-modal.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1d</div><h3>Add / edit value</h3>
+        <p>Code locked after create, id revealed, purge behind typed confirmation.</p></a>
+      <a href="05-reorder.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1e</div><h3>Reorder — drag in progress</h3>
+        <p>Lifted row, drop target, keyboard-reorder contract, and rollback when the save fails.</p></a>
+      <a href="06-quota.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 1f</div><h3>Quota warning &amp; wall</h3>
+        <p>All four ceilings, the ≥80% warning, and the at-limit disabled CTA with its tooltip.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 2 ==================== -->
+  <section class="flow" data-flow="translation-workbench">
+    <div class="flow__seam"></div>
+    <div class="flow__head">
+      <h2 class="flow__title">Flow 2 · Translation workbench</h2>
+      <span class="pending" data-approval-status="pending" data-flow-approval="translation-workbench">● Awaiting approval</span>
+    </div>
+    <div class="flow__meta">TranslationWorkbenchFlow → /settings/selection-lists/:listId/translations · translator</div>
+    <p class="flow__lead">Runtime i18n for org-authored content across 11 locales. Machine output is always
+      badged, human work is never overwritten, and a changed source is flagged rather than silently stale.
+      RTL (<code>ar</code>, <code>he</code>) flips the target column, not the source.</p>
+    <div class="grid">
+      <a href="07-locale-index.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 2a</div><h3>Translation index</h3>
+        <p>Per-locale completion, source marked, machine counts, and start/autofill CTAs.</p></a>
+      <a href="08-locale-editor.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 2b</div><h3>Locale editor</h3>
+        <p>Source beside translation, M badges, <code>source_hash</code> mismatch warning, RTL layout.</p></a>
+      <a href="09-autofill-modal.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 2c</div><h3>Autofill confirmation</h3>
+        <p>States the count and the source locale, and guarantees human strings survive. Partial-failure state.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 3 ==================== -->
+  <section class="flow" data-flow="access-control">
+    <div class="flow__seam"></div>
+    <div class="flow__head">
+      <h2 class="flow__title">Flow 3 · Access control</h2>
+      <span class="pending" data-approval-status="pending" data-flow-approval="access-control">● Awaiting approval</span>
+    </div>
+    <div class="flow__meta">SelectionListAccessFlow → /settings/selection-lists/:listId/access · list owner / org admin</div>
+    <p class="flow__lead">Per-list ReBAC with action granularity — five non-stacking roles. The load-bearing
+      state is <b>last-owner protection</b>: demoting or revoking the sole <code>list-owner</code> returns
+      <code>409 CONFLICT</code>, shown inline on that row.</p>
+    <div class="grid">
+      <a href="10-access-panel.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 3a</div><h3>Access panel</h3>
+        <p>Grants table, role matrix, and the 409 last-owner refusal.</p></a>
+      <a href="11-add-access-modal.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 3b</div><h3>Add access</h3>
+        <p>Member search with already-granted marking, role select with plain-language descriptions.</p></a>
+    </div>
+  </section>
+
+  <!-- ==================== FLOW 4 ==================== -->
+  <section class="flow" data-flow="picker">
+    <div class="flow__seam"></div>
+    <div class="flow__head">
+      <h2 class="flow__title">Flow 4 · SelectionListPicker</h2>
+      <span class="pending" data-approval-status="pending" data-flow-approval="picker">● Awaiting approval</span>
+    </div>
+    <div class="flow__meta">SelectionListPicker → embeddable (harness route /embed/selection-list-picker) · consuming products</div>
+    <p class="flow__lead">The embeddable component every consuming product mounts. Shown in a generic host
+      form — <b>not</b> in the FuzeFront shell — because that is where it actually lives. It persists the
+      item id and re-resolves the label per viewer, per locale.</p>
+    <div class="grid">
+      <a href="12-picker-single.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 4a</div><h3>Single select</h3>
+        <p>Combobox bound by list <code>key</code>, in authored sort order. Loading, empty, error, 404.</p></a>
+      <a href="13-picker-multi.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 4b</div><h3>Multi select</h3>
+        <p>Chips, clear-all, no-matches filtering, and a host-imposed max.</p></a>
+      <a href="14-picker-archived.html" class="frame-link" data-frame-link><div class="seam"></div>
+        <div class="step">Frame 4c</div><h3>Archived value resolved</h3>
+        <p>A stored id whose value was archived still renders its label, greyed and badged — never blank.
+          Contrasted with a purged id.</p></a>
+    </div>
+  </section>
+
+  <!-- The build inventory is APPROVED WITH THE FRAMES: it is the architectural
+       contract, not a note. Kept in sync with manifest.json `build`. -->
+  <section class="build" data-build-inventory>
+    <h2>What approving this builds</h2>
+    <p class="note">Approving these frames approves this inventory. The implementation builds exactly these
+      flows, components and packages — it cannot quietly invent a different architecture. Stories
+      <b>S9</b>, <b>S10</b>, <b>S11</b> and <b>S13</b> are blocked until the relevant flow here is approved.</p>
+    <dl>
+      <dt>Flows (4 — approved independently)</dt>
+      <dd>
+        <span class="chip" data-build-flow="list-management">SelectionListManagementFlow → /settings/selection-lists</span>
+        <span class="chip" data-build-flow="translation-workbench">TranslationWorkbenchFlow → /settings/selection-lists/:listId/translations</span>
+        <span class="chip" data-build-flow="access-control">SelectionListAccessFlow → /settings/selection-lists/:listId/access</span>
+        <span class="chip" data-build-flow="picker">SelectionListPicker → embeddable</span>
+      </dd>
+
+      <dt>Components (8)</dt>
+      <dd>
+        <span class="chip" data-build-component>SelectionListIndex</span>
+        <span class="chip" data-build-component>SelectionListDetail</span>
+        <span class="chip" data-build-component>ValueEditor</span>
+        <span class="chip" data-build-component>TranslationWorkbench</span>
+        <span class="chip" data-build-component>LocaleEditor</span>
+        <span class="chip" data-build-component>AccessPanel</span>
+        <span class="chip" data-build-component>SelectionListPicker</span>
+        <span class="chip" data-build-component>QuotaWarning</span>
+      </dd>
+
+      <dt>Packages (2)</dt>
+      <dd>
+        <span class="chip" data-build-package>@fuzeone/selection-list-client <b>— exists (S1)</b></span>
+        <span class="chip" data-build-package>@fuzeone/selection-lists-ui <b>— new (S11)</b></span>
+      </dd>
+
+      <dt>Design-system additions requested</dt>
+      <dd>
+        <span class="chip" data-ds-addition>Combobox / Listbox (single + multi, a11y)</span>
+        <span class="chip" data-ds-addition>SortableList (pointer + keyboard reorder)</span>
+        <span class="chip" data-ds-addition>Meter (quota / progress)</span>
+        <span class="chip" data-ds-addition>Tooltip (explains a disabled control)</span>
+        <span class="chip" data-ds-addition>Chip / TokenInput</span>
+        <span class="chip" data-ds-addition>Skeleton</span>
+      </dd>
+      <dd style="color: var(--text-tertiary); font-size: var(--text-sm); margin-top: var(--space-3);">
+        These are composed locally in <code>frame.css</code> for the frames. They are <b>not</b> one-offs to
+        copy into feature code: <code>frontend-engineer</code> is the sole editor of <code>design-system/</code>
+        and adds them as a foundation PR before or alongside the UI. This designer specifies the primitives;
+        it does not write them.
+      </dd>
+    </dl>
+  </section>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>services/selection-list-service/openapi.yaml</code> → <code>@fuzeone/selection-list-client</code> ·
+    Flag: <code>fuzefront.selection-lists.service</code> (default OFF, builders audience targeted).<br />
+    Epic <code>FF-EPIC-17</code> · Jira <code>FFRNT-188</code> (sub-tasks FFRNT-207, FFRNT-208, FFRNT-209).<br />
+    Approval is written <b>per flow</b> into <code>manifest.json</code> by the design-approval workflow —
+    reply <code>@claude approve &lt;flow-id&gt;</code> / <code>@claude reject: &lt;reason&gt;</code>.
+    Rejection re-dispatches <code>product-designer</code>; it does not close the thread.<br />
+    Re-stamp after any edit: <code>node scripts/stamp-frames.mjs --write --feature selection-lists</code>.
+  </p>
+</div>
+</body>
+</html>

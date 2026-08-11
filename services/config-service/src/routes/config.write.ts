@@ -22,8 +22,8 @@
 
 import { Router, Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
-import { authMiddleware } from '../auth/jwt';
-import { checkConfigPermission, ConfigAction } from '../auth/permit';
+import { requireAuth } from '../middleware/auth';
+import { checkConfigPermission, ConfigAction } from '../middleware/permit';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { PgKeyDefinitionRepository } from '../repositories/key-definition.repository';
 import {
@@ -71,7 +71,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
 
   const router = Router();
 
-  router.put('/v1/config', authMiddleware, async (req: Request, res: Response) => {
+  router.put('/v1/config', requireAuth, async (req: Request, res: Response) => {
     const principal = req.principal!;
 
     // ── 1. Structural shape (400). ──────────────────────────────────────────
@@ -154,7 +154,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
     // and an unauthorized caller must not learn which of their keys/values
     // would have been valid before learning they had no authority at all.
     // Write authority is distinct from lock authority, and from system-key
-    // authority — see src/auth/permit.ts.
+    // authority — see src/middleware/permit.ts.
     const requiredActions = new Set<ConfigAction>();
     for (const op of body.operations) {
       const def = byKey.get(op.key)!;

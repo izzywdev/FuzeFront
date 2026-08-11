@@ -10,6 +10,7 @@ import {
   ValueType,
 } from '../types';
 import { validateDefaultValue } from '../validation/schema';
+import { decodeCursor, encodeCursor, PageInfo } from '../pagination';
 
 /** S2 AC4: a key definition whose default fails its own schema must never enter the catalog. */
 export class UnsatisfiableDefaultValueError extends Error {
@@ -78,6 +79,28 @@ function mapRow(r: KeyDefinitionRow): KeyDefinition {
   };
 }
 
+export interface ListKeyDefinitionsArgs {
+  limit: number;
+  /** Opaque keyset cursor (previous page's nextCursor); undefined for page 1. */
+  cursor?: string;
+  /** Free-text filter matched against `display_name`/`description` (openapi.yaml `search`). */
+  search?: string;
+  /** Restrict to one presentation category (openapi.yaml `category`). */
+  category?: string;
+  /**
+   * Include `isHidden` keys. Callers MUST have already authorized this
+   * (openapi.yaml: "Permitted only for platform administrators; any other
+   * caller passing `true` is refused with 403") — this repository does not
+   * re-check that, it only applies the filter it is told to.
+   */
+  includeHidden: boolean;
+}
+
+export interface ListKeyDefinitionsResult {
+  items: KeyDefinition[];
+  pageInfo: PageInfo;
+}
+
 export interface KeyDefinitionRepository {
   listByNamespace(namespaceId: NamespaceEntityId): Promise<KeyDefinition[]>;
   findByKey(namespaceId: NamespaceEntityId, key: string): Promise<KeyDefinition | null>;
@@ -101,6 +124,17 @@ export interface KeyDefinitionRepository {
    * deprecated.
    */
   deprecate(ids: KeyDefinitionEntityId[]): Promise<void>;
+  /**
+   * Cursor page over one namespace's catalog (openapi.yaml `listKeyDefinitions`).
+   * Keyset on `key` ASC — unique within a namespace (migration 002's
+   * `UNIQUE (namespace_id, key)`), so it is a stable total order on its own;
+   * no separate tiebreaker column is needed.
+   */
+  listPage(namespaceId: NamespaceEntityId, args: ListKeyDefinitionsArgs): Promise<ListKeyDefinitionsResult>;
+}
+
+interface KeyDefinitionCursor {
+  key: string;
 }
 
 const SELECT_COLUMNS = `
@@ -233,5 +267,47 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
         WHERE id = ANY($1::uuid[]) AND deprecated_at IS NULL`,
       [ids.map((id) => toUuid(id))],
     );
+  }
+
+  async listPage(namespaceId: NamespaceEntityId, args: ListKeyDefinitionsArgs): Promise<ListKeyDefinitionsResult> {
+    const conds: string[] = ['namespace_id = $1'];
+    const params: unknown[] = [toUuid(namespaceId)];
+
+    if (!args.includeHidden) {
+      conds.push('is_hidden = false');
+    }
+    if (args.category) {
+      params.push(args.category);
+      conds.push(`category = $${params.length}`);
+    }
+    if (args.search) {
+      params.push(`%${args.search}%`);
+      const idx = params.length;
+      conds.push(`(display_name ILIKE $${idx} OR description ILIKE $${idx})`);
+    }
+    const cursor = args.cursor ? decodeCursor<KeyDefinitionCursor>(args.cursor) : null;
+    if (cursor && cursor.key) {
+      params.push(cursor.key);
+      conds.push(`key > $${params.length}`);
+    }
+
+    params.push(args.limit + 1);
+    const limitParamIdx = params.length;
+
+    const res = await this.pool.query<KeyDefinitionRow>(
+      `SELECT ${SELECT_COLUMNS} FROM config_key_definitions
+        WHERE ${conds.join(' AND ')}
+        ORDER BY key ASC
+        LIMIT $${limitParamIdx}`,
+      params,
+    );
+
+    const hasNextPage = res.rows.length > args.limit;
+    const rows = hasNextPage ? res.rows.slice(0, args.limit) : res.rows;
+    const items = rows.map(mapRow);
+    const last = rows[rows.length - 1];
+    const nextCursor = hasNextPage && last ? encodeCursor({ key: last.key }) : null;
+
+    return { items, pageInfo: { hasNextPage, nextCursor } };
   }
 }

@@ -5,7 +5,7 @@ import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { createKeyDefinitionsWriteRouter } from '../../src/routes/keys.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/auth/permit';
+import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
 
 beforeAll(() => {
   configureIdentity({ legacyUuidTypes: new Set(['portal', 'organization', 'user']) });

@@ -6,8 +6,8 @@
 
 import { Router, Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
-import { authMiddleware } from '../auth/jwt';
-import { checkConfigPermission } from '../auth/permit';
+import { requireAuth } from '../middleware/auth';
+import { checkConfigPermission } from '../middleware/permit';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { PgKeyDefinitionRepository, UnsatisfiableDefaultValueError } from '../repositories/key-definition.repository';
 import { PgValueRepository } from '../repositories/value.repository';
@@ -27,7 +27,7 @@ export function createKeyDefinitionsWriteRouter(pool: Pool): Router {
 
   router.put(
     '/v1/namespaces/:namespace/keys',
-    authMiddleware,
+    requireAuth,
     async (req: Request, res: Response) => {
       const principal = req.principal!;
       const namespaceName = req.params.namespace;

@@ -5,7 +5,7 @@
  */
 import { currentTenant } from '../providers/authentik/tenants'
 import express from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 
@@ -122,7 +122,7 @@ router.post('/:token/accept', async (req: any, res) => {
 
       if (!existingMembership) {
         await trx('organization_memberships').insert({
-          id: uuidv4(),
+          id: toUuid(mintId('membership')),
           user_id: req.user.id,
           organization_id: invitation.organization_id,
           role: invitation.role,

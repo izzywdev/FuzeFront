@@ -6,8 +6,8 @@
 
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
-import { authMiddleware } from '../auth/jwt';
-import { checkConfigPermission } from '../auth/permit';
+import { requireAuth } from '../middleware/auth';
+import { checkConfigPermission } from '../middleware/permit';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { validateNamespaceCreateShape } from '../validation/requestShapes';
 import { sendError } from '../http/errors';
@@ -17,7 +17,7 @@ export function createNamespacesWriteRouter(pool: Pool): Router {
   const repo = new PgNamespaceRepository(pool);
   const router = Router();
 
-  router.post('/v1/namespaces', authMiddleware, async (req: Request, res: Response) => {
+  router.post('/v1/namespaces', requireAuth, async (req: Request, res: Response) => {
     const principal = req.principal!;
 
     const shape = validateNamespaceCreateShape(req.body);

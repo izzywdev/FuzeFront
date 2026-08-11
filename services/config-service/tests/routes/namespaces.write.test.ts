@@ -3,7 +3,7 @@ import request from 'supertest';
 import { createNamespacesWriteRouter } from '../../src/routes/namespaces.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/auth/permit';
+import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
 
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
