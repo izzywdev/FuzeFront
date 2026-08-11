@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,12 +10,19 @@ import {
   validateSurfaces,
   validatePolicyWiring,
   validateSlugConvention,
+  validateNavPlacement,
   validateRegistrationDir,
 } from '../bin/validate-registration.mjs'
 
+// The shape of a manifest that is conformant on every axis EXCEPT whatever the test
+// using it is probing. `nav` is part of that baseline: an absent `nav` is itself a
+// violation now (the product sorts last in the menu by accident rather than by
+// decision), so a fixture without one is no longer a neutral starting point — it
+// would add an unrelated error to every end-to-end assertion.
 const PORTAL_STANDALONE = {
   mode: 'portal',
   modes: ['portal', 'standalone'],
+  nav: { section: 'build', order: 10 },
   routing: { path: '/app/x', host: 'x.fuzefront.com' },
 }
 
@@ -267,4 +274,82 @@ test('the exemption does NOT leak to slugs that de-prefix to 3+ chars', () => {
 
 test('a 3-char de-prefixed slug is still held to the convention', () => {
   assert.match(validateSlugConvention({ slug: 'fuzehub' })[0], /use "hub"/)
+})
+
+// ---- nav placement ------------------------------------------------------------------
+// The regression these guard is FuzeFinance shipping `nav.section: "business"`. It read
+// as a perfectly sensible section name, passed every check this kit had, and would have
+// been rejected by the platform with a 400 that register.sh treats as fatal — so the
+// product's own pod CrashLoopBackOffs in production and the failure looks like the
+// product's, not the manifest's.
+
+test('an unknown nav.section is REJECTED, and the message names the valid set', () => {
+  const errors = validateNavPlacement({ nav: { section: 'business', order: 20 } })
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors[0], /"business" is not a NavSection/)
+  // The remedy has to be in the message: the whole failure is that "business" is
+  // plausible, so telling someone it is wrong without telling them what is right just
+  // moves the guessing.
+  assert.match(errors[0], /executive, plan, build, revenue, customer, insight, platform/)
+  // And why it matters, not merely that it is invalid.
+  assert.match(errors[0], /400|CrashLoop/)
+})
+
+test('every section the CONTRACT declares is accepted — the list is not hardcoded here', () => {
+  // Read from the same generated schema the validator reads, so this test fails if the
+  // two ever disagree rather than encoding a second copy that can drift.
+  const schema = JSON.parse(
+    readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'manifest.schema.json'),
+      'utf8'
+    )
+  )
+  const sections = schema.$defs.NavSection.enum
+  assert.ok(sections.length > 0)
+  for (const section of sections) {
+    assert.deepEqual(validateNavPlacement({ nav: { section, order: 0 } }), [], section)
+  }
+})
+
+test('an ABSENT nav is rejected — sorting last must be a decision, not an accident', () => {
+  const errors = validateNavPlacement({})
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /declares no `nav`/)
+  assert.match(errors[0], /sorts LAST/)
+})
+
+test('nav.order without nav.section is rejected — order ranks WITHIN a section', () => {
+  const errors = validateNavPlacement({ nav: { order: 10 } })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /`nav.order` is set but `nav.section` is not/)
+})
+
+test('nav.order outside 0..9999 is rejected, same fatal 400 as a bad section', () => {
+  assert.match(validateNavPlacement({ nav: { section: 'build', order: 10000 } })[0], /0\.\.9999/)
+  assert.match(validateNavPlacement({ nav: { section: 'build', order: -1 } })[0], /0\.\.9999/)
+  assert.match(validateNavPlacement({ nav: { section: 'build', order: 1.5 } })[0], /0\.\.9999/)
+})
+
+test('nav.order may be omitted entirely — the platform defaults it', () => {
+  assert.deepEqual(validateNavPlacement({ nav: { section: 'build' } }), [])
+})
+
+test('a non-object nav is rejected rather than crashing the validator', () => {
+  assert.match(validateNavPlacement({ nav: 'build' })[0], /must be an object/)
+  assert.match(validateNavPlacement({ nav: ['build'] })[0], /must be an object/)
+  assert.match(validateNavPlacement({ nav: null })[0], /must be an object/)
+})
+
+test('the nav rule is wired into the end-to-end directory check', () => {
+  // A unit test on the exported function proves nothing about the CLI if the function
+  // is never called by it — which is exactly how this gap existed in the first place.
+  const dir = makeDir({
+    'manifest.json': { ...PORTAL_STANDALONE, slug: 'thing', name: 'Thing', nav: { section: 'business' } },
+    'policy.json': { name: 'Thing', resources: [], roles: [] },
+  })
+  const errors = validateRegistrationDir(dir)
+  assert.ok(
+    errors.some(e => /not a NavSection/.test(e)),
+    'nav violation did not reach validateRegistrationDir: ' + errors.join('\n')
+  )
 })
