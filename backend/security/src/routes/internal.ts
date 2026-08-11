@@ -16,6 +16,9 @@ const router = express.Router()
  *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
  *   Body:    { "userId": "<uuid>" }
  *   200 { ok: true, personalOrgId, reconciled: [{ orgId, state }] }
+ *     `personalOrgId` is `null` when `fuzefront.identity.root-membership` is
+ *     ON — no personal org is created in that path (FF-EPIC-17-S1); the user
+ *     is instead upserted as a root-org member (see `ensureRootMembership`).
  *   400 { error } missing userId
  *   401 { error } bad/missing secret (or secret not configured)
  *

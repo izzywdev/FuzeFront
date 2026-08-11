@@ -4,6 +4,8 @@ import { Organization } from '../types/shared'
 import { createTenantInPermit } from '../utils/permit/tenant-management'
 import { syncUserToPermit } from '../utils/permit/user-sync'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import {
   EventPublisher,
   defaultEventPublisher,
@@ -164,6 +166,61 @@ export async function ensurePersonalOrg(
   logger.info({ userId, orgId }, 'organizationProvisioning: personal org created')
   const created = await db('organizations').where({ id: orgId }).first()
   return rowToOrganization(created)
+}
+
+/**
+ * FF-EPIC-17-S1 — flag-ON provisioning path. Idempotently ensures the user is
+ * an active `member` of the root "FuzeFront" org (ROOT_ORG_ID) and does NOT
+ * create a `type='personal'` org. Reuses `assignOrganizationRole` (same
+ * helper `ensurePersonalOrg`'s owner-role step uses) so the Permit tenant
+ * role assignment tracks the row — `assignOrganizationRole` never throws
+ * (logs + swallows Permit failures), so a Permit outage never blocks
+ * signup/login; the next self-heal call (`runInternalProvision` on the
+ * following login) retries it.
+ *
+ * Re-running is a no-op: the DB upsert is guarded by both an existence check
+ * and `onConflict(...).ignore()` (belt-and-braces against a concurrent
+ * insert of the same (user_id, organization_id) pair racing this check).
+ */
+export async function ensureRootMembership(
+  userId: string,
+  overrides?: Partial<ProvisioningDeps>
+): Promise<void> {
+  const { db } = getDeps(overrides)
+
+  const existing = await db('organization_memberships')
+    .where({ user_id: userId, organization_id: ROOT_ORG_ID })
+    .first()
+
+  if (!existing) {
+    logger.info({ userId }, 'organizationProvisioning: creating root membership')
+    try {
+      await db('organization_memberships')
+        .insert({
+          id: uuidv4(),
+          user_id: userId,
+          organization_id: ROOT_ORG_ID,
+          role: 'member',
+          status: 'active',
+          joined_at: new Date(),
+          permissions: JSON.stringify({}),
+          metadata: JSON.stringify({}),
+        })
+        .onConflict(['user_id', 'organization_id'])
+        .ignore()
+      logger.info({ userId }, 'organizationProvisioning: root membership created')
+    } catch (error: any) {
+      logger.error(
+        { userId, err: error?.message },
+        'organizationProvisioning: root membership insert failed'
+      )
+      throw error
+    }
+  } else {
+    logger.debug({ userId }, 'organizationProvisioning: root membership already exists')
+  }
+
+  await assignOrganizationRole(userId, ROOT_ORG_ID, 'member')
 }
 
 async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
@@ -339,18 +396,35 @@ export async function reconcileOrganizationProvisioning(
 
 /**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
- * endpoint (Plan D's provisioning-service). Ensures the user's personal org
- * exists, then reconciles every org they own that isn't yet active.
+ * endpoint (Plan D's provisioning-service). Ensures the user's identity is
+ * provisioned, then reconciles every org they own that isn't yet active.
+ *
+ * FF-EPIC-17-S1 — behavior branches on `fuzefront.identity.root-membership`:
+ *   OFF (default) — today's behavior, byte-identical: ensures a personal org
+ *     (`type='personal'`) exists and returns its id as `personalOrgId`.
+ *   ON — ensures the user is a root-org `member` instead (see
+ *     `ensureRootMembership`); no personal org is created, so
+ *     `personalOrgId` is `null`.
+ * Either way, every org the user OWNS that isn't yet `active` is still
+ * reconciled — unaffected by the flag.
  */
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string
+  personalOrgId: string | null
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
-  const personal = await ensurePersonalOrg(userId, overrides)
+
+  let personalOrgId: string | null
+  if (await isRootMembershipEnabled({ userId })) {
+    await ensureRootMembership(userId, overrides)
+    personalOrgId = null
+  } else {
+    const personal = await ensurePersonalOrg(userId, overrides)
+    personalOrgId = personal.id
+  }
 
   const ownedOrgs = await db('organizations')
     .where({ owner_id: userId })
@@ -362,5 +436,5 @@ export async function runInternalProvision(
     reconciled.push({ orgId: org.id, state })
   }
 
-  return { personalOrgId: personal.id, reconciled }
+  return { personalOrgId, reconciled }
 }
