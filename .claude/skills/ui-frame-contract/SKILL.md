@@ -5,18 +5,10 @@ description: Use in the frontend-design phase, before feature-UI implementation.
 
 # ui-frame-contract
 
-> **Scope note (2026-08-10):** this skill documents the LOCAL `design/frames/**` pipeline,
-> which is now frozen to the 13 legacy features listed in `design/frames/_LEGACY_FEATURES.json`
-> (see `docs/planning/design-first-ui-pipeline.md`'s extraction addendum). It also predates
-> the `product-designer` pivot — it still says "Authored by `frontend-engineer`" below, which
-> is stale; `product-designer` is the sole author now (see that agent's definition). For any
-> NEW feature, author frames against `izzywdev/FuzeX`'s `design-frames-service` instead — this
-> skill's content does not apply there.
-
-The frontend-design phase produces static **HTML frames** of the expected UI before any feature-UI is implemented. These approved frames are part of the contract freeze (alongside the OpenAPI/event contract) — the visual source of truth the implementation is checked against, so visual/structural drift is caught against a frozen artifact rather than discovered after the fact.
+The frontend-design phase produces static **HTML frames** of the expected UI before any feature-UI is implemented. These approved frames are part of the contract freeze (alongside the OpenAPI/event contract) — the visual source of truth the implementation is checked against, so visual/structural drift is caught against a frozen artifact rather than discovered after the fact. This governs **every** feature's frames — there is no frozen/legacy split; `design/frames/**` is always authored here, in this repo.
 
 ## When
-The frontend-design phase, **before** feature-UI implementation. Authored by `frontend-engineer`; part of the contract freeze the parallel fan-out depends on (the gate). Pairs with `api-contract-first` and `frontend-design`.
+The frontend-design phase, **before** feature-UI implementation. Authored by `product-designer` (not `frontend-engineer` — see that agent's definition for why the implementer must not also author the spec it's measured against); part of the contract freeze the parallel fan-out depends on (the gate). Pairs with `api-contract-first` and `frontend-design`. After approval, optionally sync into FuzeX's `design-frames-service` for lifecycle tracking — see the `design-frames-lifecycle` skill.
 
 ## What a frame is
 A static, self-contained **HTML file** rendering the expected UI of one screen, **design-system-first** — it links the design system's stylesheet and uses only DS tokens/styles, **no raw hex/rgb, raw px spacing, or one-off type** (consistent with `design-system-conformance`). A feature may be a **single page** or an **ordered SEQUENCE** of frames demonstrating the process/flow — e.g. login → create-org → billing → checkout. The sequence shows the flow, not just isolated screens.
