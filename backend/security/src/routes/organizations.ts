@@ -120,6 +120,19 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
   return isOrgOwner(userId, orgId)
 }
 
+// Count an org's active owners. The "an org always keeps at least one owner"
+// invariant guard uses this to refuse removing/demoting the LAST owner, so an
+// org can never be left ownerless through the member-management routes.
+async function countActiveOwners(orgId: string): Promise<number> {
+  const row = await db('organization_memberships')
+    .where('organization_id', orgId)
+    .where('status', 'active')
+    .where('role', 'owner')
+    .count('* as count')
+    .first()
+  return parseInt(((row?.count as string) ?? '0'), 10)
+}
+
 // POST /api/organizations - Create a new organization
 router.post('/', authenticateToken, async (req: any, res) => {
   try {
@@ -1408,9 +1421,18 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: any, res)
       return res.status(404).json({ error: 'Member not found' })
     }
 
-    // Protect owner memberships
+    // Never let an org lose its last owner. Removing a non-last owner is fine
+    // (an org may have several owners); removing THE last owner would orphan the
+    // org, so it is refused with 409. Deactivating the org itself is a separate
+    // route that soft-deletes the org WITHOUT deleting membership rows, so this
+    // guard does not stand in the way of "unless the org is deleted".
     if (membership.role === 'owner') {
-      return res.status(403).json({ error: 'Cannot remove the organization owner' })
+      const activeOwners = await countActiveOwners(id)
+      if (activeOwners <= 1) {
+        return res.status(409).json({
+          error: 'Cannot remove the last owner of the organization',
+        })
+      }
     }
 
     await db('organization_memberships')
