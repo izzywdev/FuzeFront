@@ -85,12 +85,41 @@ const DIM = s => `\x1b[2m${s}\x1b[0m`
 /* ------------------------------------------------------------------ globbing */
 
 /**
+ * Compiled-glob cache. Without it every changed file recompiles every glob —
+ * O(files x globs) RegExp constructions on each run.
+ */
+const GLOB_CACHE = new Map()
+
+/** Longest glob we will compile. See the ReDoS note on globToRegExp. */
+const MAX_GLOB_LENGTH = 200
+
+/**
  * Translate a glob to an anchored RegExp. Supports `**`, `*`, `?` and `{a,b}`.
  * `*` never crosses a `/`; `**\/` matches zero or more directories, so
  * `frontend/src/**` matches `frontend/src/pages/X.tsx` and `**\/*.test.ts`
  * matches a test at any depth.
+ *
+ * ReDoS: this builds a RegExp from a non-literal, which Semgrep flags. The globs
+ * are repo-controlled config — governance/frames-first-policy.json and the
+ * in-repo manifests, both reviewed in a PR — not request input, so there is no
+ * untrusted-input path here. The generated shapes are also the bounded ones: a
+ * `**` directory segment emits a group whose every iteration must consume a
+ * path separator, so backtracking is anchored rather than free. `***` (which
+ * would emit adjacent unbounded wildcards) is rejected, and glob length is
+ * capped, so a typo in a manifest cannot hang CI.
  */
 export function globToRegExp(glob) {
+  const cached = GLOB_CACHE.get(glob)
+  if (cached) return cached
+
+  if (typeof glob !== 'string') throw new Error(`glob must be a string, got ${typeof glob}`)
+  if (glob.length > MAX_GLOB_LENGTH) {
+    throw new Error(`glob exceeds ${MAX_GLOB_LENGTH} chars (likely a mistake): ${glob.slice(0, 60)}…`)
+  }
+  if (glob.includes('***')) {
+    throw new Error(`glob contains "***", which is ambiguous — use "**" or "*": ${glob}`)
+  }
+
   let re = ''
   let braceDepth = 0
   for (let i = 0; i < glob.length; i++) {
@@ -121,7 +150,9 @@ export function globToRegExp(glob) {
       re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     }
   }
-  return new RegExp('^' + re + '$')
+  const compiled = new RegExp('^' + re + '$')
+  GLOB_CACHE.set(glob, compiled)
+  return compiled
 }
 
 /** True if `file` matches any glob in `globs`. */

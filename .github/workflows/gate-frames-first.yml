@@ -70,7 +70,14 @@ jobs:
       - name: Unit-test the gate itself
         run: node --test scripts/__tests__/check-frames-first.test.mjs
 
+      # `github` context data is untrusted (a branch name can carry arbitrary
+      # characters), so it goes through an intermediate env var and is quoted —
+      # interpolating ${{ ... }} straight into `run:` is a shell-injection path
+      # into the runner. Flagged by Semgrep's run-shell-injection rule on the
+      # first revision of this workflow.
       - name: Check feature UI against approved design frames
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-tags origin "${{ github.base_ref }}"
-          node scripts/check-frames-first.mjs --base "origin/${{ github.base_ref }}"
+          git fetch --no-tags origin "$BASE_REF"
+          node scripts/check-frames-first.mjs --base "origin/$BASE_REF"

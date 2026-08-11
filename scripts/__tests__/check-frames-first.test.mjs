@@ -42,6 +42,16 @@ test('globToRegExp: **/ matches zero or more directories', () => {
   assert.ok(!globToRegExp('**/*.test.ts').test('packages/chat-ui/src/useChat.ts'))
 })
 
+test('globToRegExp: rejects pathological globs rather than compiling them', () => {
+  // A typo in a manifest must not be able to hang CI on a backtracking regex.
+  assert.throws(() => globToRegExp('a***b'), /ambiguous/)
+  assert.throws(() => globToRegExp('x'.repeat(201)), /exceeds/)
+})
+
+test('globToRegExp: compiled globs are cached (same RegExp instance)', () => {
+  assert.equal(globToRegExp('frontend/src/**'), globToRegExp('frontend/src/**'))
+})
+
 test('globToRegExp: the CLAUDE.md UI globs match real repo paths', () => {
   assert.ok(matchesAny('frontend/src/pages/ApplicationsPage.tsx', REAL_POLICY.uiPaths))
   assert.ok(matchesAny('packages/chat-ui/src/lib/markdown.tsx', REAL_POLICY.uiPaths))
