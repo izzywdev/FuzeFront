@@ -1,19 +1,31 @@
 /**
- * Portals Directory (backend slice S1) — the `fuzefront.platform.portals-directory`
- * flag: gates the two NEW response fields (`identityMode`, `launchUrl`) that
- * `GET /api/v1/admin/portals` adds to the master-admin portal fleet list.
+ * Portals Directory (backend slices S1 + S5) — the
+ * `fuzefront.platform.portals-directory` flag: gates the NEW response fields
+ * (`identityMode`, `launchUrl`, and — as of S5 — `canManage`/`canOpen`) that
+ * `GET /api/v1/admin/portals` adds to the master-admin portal fleet list,
+ * AND (as of S5) the per-portal read-vs-manage authorization refinement
+ * described below.
  *
  * Type: release. Owner: backend-engineer (platform). Default: OFF — when OFF,
- * `GET /api/v1/admin/portals`'s response is byte-identical to the pre-existing
- * shape (neither new field is emitted). Removal criterion: delete this flag +
- * the OFF-path field-stripping branch in `routes/adminPortals.ts` once the
- * portals directory UI (S3) is rolled out to 100% and the flag-OFF path is no
- * longer exercised in prod.
+ * `GET /api/v1/admin/portals`'s response AND authorization are byte-identical
+ * to the pre-existing (pre-S1) shape/gate (no new fields emitted, blanket
+ * `requireRole(['admin'])`). Removal criterion: delete this flag + the
+ * OFF-path field-stripping/blanket-gate branch in `routes/adminPortals.ts`
+ * once the portals directory UI (S3, S6) is rolled out to 100% and the
+ * flag-OFF path is no longer exercised in prod.
  *
- * NOTE: this flag is rollout convenience only — it gates response SHAPE, not
- * authorization. `GET /api/v1/admin/portals` stays `requireRole(['admin'])`-
- * gated in BOTH flag states; this flag never widens who may call the route or
- * which portals they see.
+ * NOTE (updated for backend slice S5, read-vs-no-access refinement): this
+ * flag ALSO gates authorization now, not just response shape. When OFF,
+ * `GET /api/v1/admin/portals` stays `requireRole(['admin'])`-gated exactly
+ * as before. When ON, the blanket admin-role gate is replaced by a
+ * per-portal Permit `read`/`manage` check on each portal's owning
+ * organization (`utils/portalReadManageCapabilities.ts`) — a caller with
+ * `read` (but not `manage`) authority now gets 200 with read-only rows
+ * instead of a hard 403. Real authorization is still Permit's, never this
+ * flag's: the flag only decides whether the NEW, more granular Permit check
+ * runs at all, and a portal the caller cannot `read` is never returned in
+ * either state (fail-closed, BOLA-safe). See `routes/adminPortals.ts`'s
+ * `GET /` handler for the full flag-branch contract.
  *
  * Read via @fuzefront/feature-flags (OpenFeature) per the `feature-flags`
  * skill — never a hand-wired Unleash/OpenFeature call. Loaded lazily (mirrors

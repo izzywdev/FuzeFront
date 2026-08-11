@@ -5,6 +5,40 @@ bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
+## 1.3.0 — 2026-08-11 (Portals Directory read-vs-no-access refinement, backend slice S5)
+
+Additive only — no existing field/response shape changes when
+`fuzefront.platform.portals-directory` is OFF.
+
+### Added — `Portal.canManage` / `Portal.canOpen` (both OPTIONAL)
+- Only populated by `GET /api/v1/admin/portals` (the master-admin fleet
+  list), same gating as `identityMode`/`launchUrl` (the release flag
+  `fuzefront.platform.portals-directory`, default OFF).
+- `canManage`: whether the caller holds Permit `manage` (not just `read`)
+  authority on the portal's owning organization.
+- `canOpen`: the authority to launch the portal. Intentionally mirrors
+  `canManage` today (no separate Permit `open`/`launch` action exists yet);
+  kept as its own field so a future distinct launch authority is not a
+  breaking change.
+
+### Changed — `Portal.launchUrl` is now optional-per-row (non-breaking)
+- Was `[string, 'null']` (always present, occasionally `null`); now `string`
+  and OMITTED entirely on a row where `canOpen` is `false`. A read-only
+  caller must never receive the launch host for a portal they cannot open.
+  Still gated identically to `identityMode`/`canManage`/`canOpen` — absent
+  altogether when the flag is OFF.
+
+### Changed — `GET /api/v1/admin/portals` authorization (flag ON only)
+- The blanket Permit platform-admin (`requireRole(['admin'])`) gate is
+  replaced by a per-portal `read`-vs-`manage` check on each portal's owning
+  organization when `fuzefront.platform.portals-directory` is ON. A caller
+  with `read` (not `manage`) now gets 200 with read-only rows instead of a
+  hard 403; a caller with `read` authority over NONE of the matching
+  portals still gets 403 `FORBIDDEN` (unchanged no-access banner). A portal
+  the caller cannot `read` is never returned. When the flag is OFF, this
+  route's authorization is byte-identical to 1.2.0 (admin-role gate,
+  non-admin ⇒ 403 regardless of any Permit `read`/`manage` grant).
+
 ## 1.2.0 — 2026-08-11 (Portals Directory, backend slice S1)
 
 Additive only — no existing field/response shape changes.
