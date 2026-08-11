@@ -30,3 +30,12 @@
 # The prior .gitleaksignore commit (cae9e719) had the flagged variable value quoted in its
 # comment text. Suppressing that commit's finding without re-quoting the value.
 cae9e719d90e7d3c278a89576500e04ac4b25c3d:.gitleaksignore:generic-api-key:27
+# packages/selection-list-client-py — quickstart example token strings in the README
+# and module docstring that gitleaks scores as high-entropy generic-api-keys.
+# Neither value is a real credential — both are copy-paste documentation placeholders.
+# The README was sanitised in a follow-up commit (line 20 → "<your-bearer-token>");
+# the client.py docstring was sanitised in an earlier follow-up commit.
+# History is not rewritten on this repo, so the original-commit fingerprints are
+# suppressed here instead.
+db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/README.md:generic-api-key:20
+db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/fuzefront_selection_list_client/client.py:generic-api-key:13
