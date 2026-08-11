@@ -7,6 +7,7 @@ import {
 } from '../i18n/AccountSecurityI18nProvider'
 import { SignInMethodsList } from './SignInMethodsList'
 import { ConnectProviderButton } from './ConnectProviderButton'
+import { SetPasswordBanner } from './SetPasswordBanner'
 import { LoadErrorRetry } from './LoadErrorRetry'
 import { createAccountSecurityClient } from '../api/securityClient'
 import { HttpError } from '../api/http'
@@ -148,26 +149,24 @@ function ConnectedAccountsPanelInner({
   return (
     <main dir={dir} data-frame="connected-accounts" data-panel="connected-accounts">
       {onNavigate && (
-        <button
-          type="button"
-          data-route={hubRoute}
-          onClick={() => onNavigate(hubRoute)}
-          style={{
-            all: 'unset',
-            cursor: 'pointer',
-            color: 'var(--text-tertiary)',
-            fontSize: 'var(--text-sm)',
-            marginBottom: 'var(--space-3)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 'var(--space-2)',
-          }}
-        >
-          <span aria-hidden="true" style={{ display: 'inline-block', transform: dir === 'rtl' ? 'scaleX(-1)' : undefined }}>
-            ←
-          </span>
-          {m.page.title}
-        </button>
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-route={hubRoute}
+            onClick={() => onNavigate(hubRoute)}
+            leadingIcon={
+              <span
+                aria-hidden="true"
+                style={{ display: 'inline-block', transform: dir === 'rtl' ? 'scaleX(-1)' : undefined }}
+              >
+                ←
+              </span>
+            }
+          >
+            {m.page.title}
+          </Button>
+        </div>
       )}
 
       <h1
@@ -219,6 +218,10 @@ function ConnectedAccountsPanelInner({
 
       {state.status === 'ready' && (
         <div style={{ maxWidth: 'calc(var(--container-max) * 0.55)' }}>
+          {!state.connections.hasPassword && onSetPassword && (
+            <SetPasswordBanner onSetPassword={onSetPassword} />
+          )}
+
           <SignInMethodsList
             connections={state.connections}
             onUnlink={handleUnlink}
