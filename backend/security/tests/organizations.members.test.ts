@@ -56,8 +56,20 @@ jest.mock('../src/utils/permit/role-assignment', () => ({
   updateOrganizationRole: jest.fn().mockResolvedValue(true),
 }))
 
+// FF-EPIC-17-S8 — the "Employee" platformRoles catalog entry is gated behind
+// this flag. Default the mock to OFF (matches the flag's real default) so
+// every pre-existing test in this file (which never touches the flag) keeps
+// exercising the byte-identical, pre-S8 response shape.
+jest.mock('../src/utils/employeeFlag', () => ({
+  EMPLOYEE_CONSOLE_FLAG: 'fuzefront.identity.employee-console',
+  isEmployeeConsoleEnabled: jest.fn().mockResolvedValue(false),
+}))
+
 import { db } from '../src/config/database'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
+import { isEmployeeConsoleEnabled } from '../src/utils/employeeFlag'
+
+const isEmployeeConsoleEnabledMock = isEmployeeConsoleEnabled as jest.Mock
 import organizationsRouter from '../src/routes/organizations'
 
 const dbMock = db as jest.MockedFunction<any>
@@ -314,6 +326,54 @@ describe('Organization Members', () => {
       expect(res.body.resources.map((r: any) => r.key)).toEqual(
         expect.arrayContaining(['Organization', 'App', 'UserManagement', 'Docs', 'Chat'])
       )
+
+      // FF-EPIC-17-S8, flag OFF (default): response is byte-identical to
+      // before this story — no `platformRoles` field at all.
+      expect(res.body.platformRoles).toBeUndefined()
+    })
+
+    // FF-EPIC-17-S8 — the "Employee" platform-role entry, gated behind
+    // `fuzefront.identity.employee-console`. Both flag states exercised.
+    describe('FF-EPIC-17-S8 — platformRoles (Employee)', () => {
+      beforeEach(() => {
+        const callerChain = makeDbQuery({
+          id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'viewer', status: 'active',
+        })
+        dbMock.mockImplementation((table: string) =>
+          table === 'organization_memberships' ? callerChain : makeDbQuery(null)
+        )
+      })
+
+      it('flag OFF (default): omits platformRoles entirely', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(false)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.platformRoles).toBeUndefined()
+      })
+
+      it('flag ON: surfaces the Employee entry alongside (not replacing) the org roles', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(true)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        // org-assignable roles are untouched
+        expect(res.body.roles.map((r: any) => r.key)).toEqual([
+          'owner', 'admin', 'member', 'viewer',
+        ])
+        // Employee is additive, in its own field, not merged into `roles`
+        expect(res.body.platformRoles).toEqual([
+          expect.objectContaining({
+            key: 'employee',
+            name: 'Employee',
+            rebacRole: 'org-admin',
+            rebacScope: 'root',
+            assignable: false,
+          }),
+        ])
+      })
     })
 
     it('returns 403 when caller is not an active member', async () => {
