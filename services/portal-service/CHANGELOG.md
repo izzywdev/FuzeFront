@@ -5,6 +5,29 @@ bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
+## 1.2.0 — 2026-08-11 (Portals Directory, backend slice S1)
+
+Additive only — no existing field/response shape changes.
+
+### Added — `IdentityMode` schema
+- `[soft, hard]`. `soft` — shares the root FuzeFront Authentik directory (the
+  default). `hard` — owns a dedicated Authentik instance (its own directory,
+  DB, ingress host, blueprint set; e.g. MendysRobotics).
+
+### Added — `Portal.identityMode` / `Portal.launchUrl` (both OPTIONAL)
+- `identityMode`: the portal's `IdentityMode`.
+- `launchUrl`: `https://<primary domain>`, or the platform-owned default
+  subdomain (`https://<slug>.fuzefront.com`) when the portal has no primary
+  `portal_domains` row yet.
+- Currently populated ONLY by `GET /api/v1/admin/portals` (the master-admin
+  fleet list), gated behind the new release flag
+  `fuzefront.platform.portals-directory` (default OFF — when OFF, both
+  fields are omitted, byte-identical to the pre-1.2.0 response). Every other
+  `Portal`-returning endpoint (`getPortal`, `createPortal`, `updatePortal`,
+  `getCurrentPortal`) does not populate them yet.
+- Backed by `backend/src/migrations/023_portals_identity_mode.ts`
+  (`portals.identity_mode`, default `soft`).
+
 ## 1.1.0 — 2026-07-28
 
 Aligns the domain-status vocabulary with FuzeInfra's shipped Custom Hostname API

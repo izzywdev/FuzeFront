@@ -24,6 +24,17 @@ export type BillingMode = 'free' | 'platform' | 'reseller'
 export type DomainKind = 'subdomain' | 'path' | 'custom'
 export type VerificationStatus = 'pending' | 'verified' | 'failed'
 export type TlsStatus = 'none' | 'pending' | 'issued' | 'failed'
+/**
+ * Portals Directory (backend slice S1) — whether a portal shares the root
+ * FuzeFront Authentik directory (`soft`, the default) or owns a dedicated
+ * Authentik instance (`hard`, e.g. MendysRobotics — see migration
+ * `023_portals_identity_mode.ts` for the full rationale). Not yet part of
+ * `PortalDto`/the frozen `services/portal-service/openapi.yaml` `Portal`
+ * schema for every portal endpoint — currently surfaced ONLY on
+ * `GET /api/v1/admin/portals` (the fleet list), behind
+ * `fuzefront.platform.portals-directory`, via `getPortalIdentityMode` below.
+ */
+export type IdentityMode = 'soft' | 'hard'
 
 export interface PortalBranding {
   name: string
@@ -163,6 +174,42 @@ export function getPortalIdentityPolicy(row: { identity_policy?: unknown }): Por
 /** Generates a server-issued portal id matching `^prt_[A-Za-z0-9]{1,40}$`. */
 export function generatePortalId(): string {
   return `prt_${uuidv4().replace(/-/g, '')}`
+}
+
+/**
+ * The platform-owned base domain the `default_domain_create` provisioning
+ * step (`services/portalProvisioning.ts`) always creates a portal's default
+ * subdomain under (`<slug>.<PORTAL_DEFAULT_BASE_DOMAIN>`). Single source of
+ * truth for that literal so `getPortalLaunchUrl` below never drifts from the
+ * value provisioning actually writes to `portal_domains`.
+ */
+export const PORTAL_DEFAULT_BASE_DOMAIN = 'fuzefront.com'
+
+/**
+ * Reads a raw `portals` row's `identity_mode` column, fail-closed to `soft`
+ * on any missing/unrecognized value (mirrors `getPortalIdentityPolicy`'s
+ * fail-closed-to-default convention) — a broken/legacy column can never be
+ * misread as the more privileged/dedicated `hard` mode.
+ */
+export function getPortalIdentityMode(row: { identity_mode?: unknown }): IdentityMode {
+  return row.identity_mode === 'hard' ? 'hard' : 'soft'
+}
+
+/**
+ * Portals Directory (backend slice S1) — derives the master-admin fleet
+ * list's `launchUrl`: `https://<primary domain>` when the portal has one
+ * (reuses `rowToPortal`'s own `primaryDomain` projection rather than
+ * re-querying `portal_domains`), else falls back to the portal's default
+ * platform-owned subdomain (`https://<slug>.<PORTAL_DEFAULT_BASE_DOMAIN>`) —
+ * the same value `default_domain_create` provisions for every portal, so the
+ * fallback always resolves even before that row has landed/replicated.
+ */
+export function getPortalLaunchUrl(portal: {
+  slug: string
+  primaryDomain: string | null
+}): string {
+  const host = portal.primaryDomain ?? `${portal.slug}.${PORTAL_DEFAULT_BASE_DOMAIN}`
+  return `https://${host}`
 }
 
 export function rowToPortalDomain(row: any): PortalDomainDto {
