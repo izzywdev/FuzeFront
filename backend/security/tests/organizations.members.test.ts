@@ -516,6 +516,8 @@ describe('Organization Members', () => {
   // ─── DELETE /:id/members/:memberId ────────────────────────────────────────
 
   describe('DELETE /api/organizations/:id/members/:memberId', () => {
+    // Invariant: an org can never lose its last owner via member removal —
+    // a non-last owner may be removed (200), the last owner may not (409).
     it('returns 200 with success message when member is removed', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
