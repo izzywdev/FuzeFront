@@ -9,13 +9,25 @@ export interface ConnectedAccountRowProps {
   onUnlink?: (provider: SocialConnection['provider']) => void
   /** Disable the unlink control (e.g. an unlink is in flight). */
   busy?: boolean
+  /**
+   * Proactively disable the unlink control — e.g. this is the account's only
+   * remaining sign-in method (`hasPassword: false` + a single connection).
+   * Distinct from `busy`: this is a known, standing guard, not a transient
+   * in-flight state.
+   */
+  disabled?: boolean
 }
 
 /**
  * One linked social sign-in connection: provider name, a "linked" badge, and an
  * unlink control. Layout uses logical properties so it mirrors under RTL.
  */
-export function ConnectedAccountRow({ connection, onUnlink, busy }: ConnectedAccountRowProps) {
+export function ConnectedAccountRow({
+  connection,
+  onUnlink,
+  busy,
+  disabled,
+}: ConnectedAccountRowProps) {
   const { messages: m } = useAccountSecurityI18n()
   const name = providerDisplayName(connection.provider)
   return (
@@ -42,7 +54,7 @@ export function ConnectedAccountRow({ connection, onUnlink, busy }: ConnectedAcc
           variant="ghost"
           size="sm"
           data-action="unlink"
-          disabled={busy}
+          disabled={busy || disabled}
           onClick={() => onUnlink(connection.provider)}
         >
           {m.methods.remove}

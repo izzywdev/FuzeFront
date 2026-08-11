@@ -3,7 +3,12 @@
  * API paths the hub reads. All shapes come from `@fuzefront/security-client`.
  */
 import { HttpClient, type HttpClientOptions } from './http'
-import type { AccountSecurityClient, AuthMethods, IdentityConnections } from '../types'
+import type {
+  AccountSecurityClient,
+  AuthMethods,
+  IdentityConnections,
+  SocialLinkStart,
+} from '../types'
 
 const BASE = '/api/v1/security'
 
@@ -32,6 +37,18 @@ export function createAccountSecurityClient(
       // Fail-closed: rejects with HttpError(status 409) when this is the account's
       // last sign-in method — SignInMethodsList surfaces the last-method guard.
       await http.delete(`${BASE}/social/${provider}/link`)
+    },
+    async linkProvider(provider) {
+      // Contract: POST /v1/security/social/{provider}/link (packages/security/openapi.yaml).
+      // Returns { redirectUrl } for the caller to navigate the browser to.
+      // Fail-closed: rejects with HttpError(status 409) when already linked —
+      // ConnectedAccountsPanel surfaces the already-linked state.
+      return http.post<SocialLinkStart>(`${BASE}/social/${provider}/link`)
+    },
+    async setPassword(newPassword) {
+      // Contract: POST /v1/security/password (packages/security/openapi.yaml).
+      // Rejects with HttpError(status 409) if a password already exists.
+      return http.post<IdentityConnections>(`${BASE}/password`, { newPassword })
     },
   }
 }

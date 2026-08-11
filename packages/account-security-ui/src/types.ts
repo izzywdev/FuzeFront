@@ -36,6 +36,16 @@ export interface SocialConnection {
 }
 
 /**
+ * Result of beginning a social-link handshake. Mirrors `openapi.yaml`
+ * `components.schemas.SocialLinkStart` (POST /v1/security/social/{provider}/link).
+ * The SPA navigates the browser to `redirectUrl`; no vendor UI is ever rendered
+ * by FuzeFront itself.
+ */
+export interface SocialLinkStart {
+  redirectUrl: string
+}
+
+/**
  * The account's sign-in connections: linked social providers + whether a
  * password sign-in method exists. Mirrors `openapi.yaml`
  * `components.schemas.IdentityConnections` (move to the client once regenerated).
@@ -88,4 +98,21 @@ export interface AccountSecurityClient {
    * callers (SignInMethodsList) surface the last-sign-in-method guard.
    */
   unlinkProvider(provider: SocialConnection['provider']): Promise<void>
+  /**
+   * Begin linking a social provider (`POST /v1/security/social/{provider}/link`).
+   * Returns `{ redirectUrl }` for the caller to navigate the browser to — no
+   * vendor UI is ever rendered by FuzeFront itself. Fail-closed: rejects with
+   * HttpError(409) when the provider is already linked (surfaced as the
+   * `already-linked` state by ConnectedAccountsPanel).
+   *
+   * Optional so existing `AccountSecurityClient` test doubles (the hub, which
+   * doesn't offer connect) don't need to implement it.
+   */
+  linkProvider?(provider: SocialConnection['provider']): Promise<SocialLinkStart>
+  /**
+   * Set/add a password on a social-only account (`POST /v1/security/password`).
+   * Rejects with HttpError(409) if a password already exists. Optional for the
+   * same reason as `linkProvider`.
+   */
+  setPassword?(newPassword: string): Promise<IdentityConnections>
 }
