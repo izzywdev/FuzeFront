@@ -1,14 +1,27 @@
 import express, { Application, Request, Response } from 'express';
+import { Pool } from 'pg';
+import { PgNamespaceRepository } from './repositories/namespace.repository';
+import { PgKeyDefinitionRepository } from './repositories/key-definition.repository';
+import { PgValueRepository } from './repositories/value.repository';
+import { createConfigReadRouter } from './routes/config-read.routes';
+
+/**
+ * Optional, DB-backed dependencies. Omitted -> the HEALTH-CHECK-ONLY skeleton
+ * (existing behaviour, `createApp()` with no args) so the scaffold's own
+ * `/health` test keeps passing unchanged.
+ */
+export interface AppDeps {
+  pool: Pool;
+}
 
 /**
  * Assembles the config-service Express app.
  *
- * This is a HEALTH-CHECK-ONLY skeleton for FFRNT-154/155/156 (catalog schema,
- * values schema, resolution engine) — no `/v1/*` routes are mounted here.
- * FFRNT-157 (GET /v1/config, catalog listing) and FFRNT-158 (PUT /v1/config —
- * writes/locks) own the HTTP surface and build on this scaffold.
+ * FFRNT-154/155/156 shipped this as a HEALTH-CHECK-ONLY skeleton. FFRNT-157
+ * (GET /v1/config, catalog listing) and FFRNT-158 (PUT /v1/config —
+ * writes/locks) build the `/v1/*` HTTP surface on top of it.
  */
-export function createApp(): Application {
+export function createApp(deps?: AppDeps): Application {
   const app = express();
   app.use(express.json());
 
@@ -17,23 +30,17 @@ export function createApp(): Application {
   });
 
   // ── EXTENSION POINT (FFRNT-157 / FFRNT-158) ──────────────────────────────
-  // Mount here, built on THIS PR's scaffold:
-  //   - GET  /v1/namespaces               -> repositories/namespace.repository.ts
-  //   - PUT  /v1/namespaces/:namespace/keys -> repositories/key-definition.repository.ts
-  //          (KeyDefinitionRepository.create validates defaultValue via
-  //          validation/schema.ts#validateDefaultValue — S2 AC4)
-  //   - GET  /v1/config                   -> repositories/value.repository.ts
-  //          (ValueRepository.listForDefinitions) feeds
-  //          resolver/resolve.ts#resolveEffectiveConfig (pure, DB-free) which
-  //          produces the EffectiveConfigEntry[] response body.
-  //   - PUT  /v1/config                   -> repositories/value.repository.ts
-  //          (ValueRepository.setValue/unsetValue), which already refuses a
-  //          disallowed scope (ScopeNotAllowedError) or an invalid scope
-  //          reference (InvalidScopeReferenceError) before writing.
-  // Route ordering, Permit gating, ETag/If-None-Match, ConfigWriteRequest's
-  // batch-transaction semantics, and pagination (gate-pagination, for the two
-  // list endpoints) are this extension's responsibility per
-  // services/config-service/openapi.yaml — the frozen contract.
+  // Each story mounts its OWN router module here, in ITS OWN `app.use('/v1', ...)`
+  // call — both read from `deps.pool`, so a namespace/key-definition/value repo
+  // is only ever constructed once per story's router, and neither story's
+  // router touches the other's routes.
+  if (deps) {
+    const namespaceRepo = new PgNamespaceRepository(deps.pool);
+    const keyDefinitionRepo = new PgKeyDefinitionRepository(deps.pool);
+    const valueRepo = new PgValueRepository(deps.pool);
+    app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo })); // FFRNT-157 (GET routes)
+    // FFRNT-158 mounts its write router (PUT /v1/config, POST/PUT /v1/namespaces*) here too.
+  }
 
   return app;
 }
