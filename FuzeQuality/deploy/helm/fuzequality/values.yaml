@@ -67,6 +67,22 @@ ingress:
   tlsSecret: fuzequality-tls
   clusterIssuer: letsencrypt-prod
 
+# Self-registration with the FuzeFront app registry, run as an init container on
+# the backend Deployment (see templates/api.yaml). The payload is
+# FuzeQuality/registration/, vendored into files/registration/ because Helm's
+# .Files cannot read above the chart directory.
+registration:
+  enabled: true
+  # alpine, not a bespoke image: register.sh needs only sh + curl + jq, which the
+  # init container installs. Nothing product-specific is required, so there is no
+  # image here to drift against the product's own build.
+  image: alpine:3.20
+  apiUrl: http://fuzefront-applications.fuzefront.svc.cluster.local:3003
+  # Must be sealed into the fuzequality namespace. NOT optional in the pod spec:
+  # a missing secret fails the pod rather than skipping registration silently.
+  secretName: fuzefront-registration
+  configMapName: fuzequality-registration
+
 kafkaTopics:
   enabled: true
   image: apache/kafka:3.9.1

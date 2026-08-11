@@ -13,15 +13,89 @@ spec:
   template:
     metadata:
       labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: backend }
-      annotations: { prometheus.io/scrape: "true", prometheus.io/port: {{ .Values.backend.port | quote }}, prometheus.io/path: /metrics }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.backend.port | quote }}
+        prometheus.io/path: /metrics
+        {{- if .Values.registration.enabled }}
+        # Editing registration/manifest.json (or the script) must redeploy this
+        # pod, not wait for an unrelated restart — otherwise a corrected manifest
+        # sits in git looking applied while the registry still holds the old one.
+        checksum/registration: {{ (.Files.Glob "files/registration/*").AsConfig | sha256sum }}
+        {{- end }}
     spec:
       securityContext: { fsGroup: 1000, fsGroupChangePolicy: OnRootMismatch }
       volumes:
         - name: runtime-tmp
           emptyDir: { sizeLimit: 64Mi }
+        {{- if .Values.registration.enabled }}
+        - name: registration
+          configMap:
+            name: {{ .Values.registration.configMapName | quote }}
+            # 0555 = r-xr-xr-x, written in DECIMAL: defaultMode is an int32, so the
+            # literal `0555` would be read as decimal 555. register.sh is exec'd,
+            # so it must carry the execute bit.
+            defaultMode: 365
+        {{- end }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.registration.enabled }}
+      # SELF-REGISTRATION WITH FUZEFRONT — the thing that puts "Quality" in the
+      # portal menu.
+      #
+      # FuzeQuality had registration/manifest.json and registration/policy.json
+      # committed, and a chart that read NEITHER: no init container, no ConfigMap,
+      # no reference of any kind. The files were correct and inert, so the product
+      # deployed cleanly, ran fine, and simply never appeared in the portal — with
+      # nothing anywhere reporting a problem. That silence is the defect being
+      # fixed here, not a missing feature.
+      #
+      # An init container is deliberately fail-closed: register.sh exits non-zero
+      # on anything unexpected, so a registration failure CrashLoopBackOffs this
+      # pod with the reason in its log. An app that starts unregistered is up,
+      # serving, and subtly broken — FuzeQuality depends on FuzeFront for AuthN,
+      # AuthZ and org context. Loud at deploy beats silent in production.
+      #
+      # BACKEND ONLY, never the frontend or the workers: exactly one workload may
+      # register, or they race and re-register each other on every rollout.
+      initContainers:
+        - name: fuzefront-register
+          image: {{ .Values.registration.image | quote }}
+          imagePullPolicy: IfNotPresent
+          # register.sh (from @fuzefront/onboarding-kit) needs sh + curl + jq. The
+          # base image carries none of them, so they are installed here rather than
+          # maintaining a bespoke image for a 20-second container. This does mean
+          # the pod needs egress to the Alpine CDN at start — permitted by the
+          # namespace NetworkPolicy's 0.0.0.0/0:443 rule.
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -eu
+              apk add --no-cache curl jq >/dev/null
+              exec /registration/register.sh
+          env:
+            # Cluster-internal service DNS, NOT the public ingress host: this
+            # container has no reason to leave the cluster, and the public host may
+            # not resolve before ingress is ready.
+            - name: FUZEFRONT_API_URL
+              value: {{ .Values.registration.apiUrl | quote }}
+            - name: FUZEFRONT_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registration.secretName | quote }}
+                  key: token
+                  # NOT optional. A missing secret must fail the pod rather than
+                  # silently skip registration and leave the app running
+                  # unregistered — which is exactly the failure mode being removed.
+            - name: REGISTRATION_DIR
+              value: /registration
+          volumeMounts:
+            - { name: registration, mountPath: /registration, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
       {{- end }}
       containers:
         - name: backend
