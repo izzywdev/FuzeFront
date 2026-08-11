@@ -1,0 +1,109 @@
+{
+  "name": "Connected Accounts — approval frames",
+  "description": "Contract-freeze UX artifacts for the connected-accounts surface reached from the security hub's 'Connected accounts' card (/account/security/connections): connect a social sign-in provider (Google), list linked providers + password, and disconnect one while always keeping at least one way to sign in. Approving this flow approves the ConnectedAccountsPanel visual + interaction model and its component/package plan before UI implementation. Closes the connect half that securityClient does not yet implement (only unlinkProvider exists today). frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. Jira: FFRNT-296.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": [
+      "components.schemas.IdentityConnections",
+      "components.schemas.SocialConnection",
+      "components.schemas.AuthMethods"
+    ],
+    "endpoints": [
+      "GET /v1/security/identity/connections",
+      "POST /v1/security/social/{provider}/link",
+      "DELETE /v1/security/social/{provider}/link",
+      "POST /v1/security/password"
+    ],
+    "component": "@fuzefront/account-security-ui → ConnectedAccountsPanel",
+    "featureFlag": "fuzefront.account-security.hub"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "connected-accounts",
+        "orchestrator": "ConnectedAccountsPanel",
+        "route": "/account/security/connections",
+        "approved": false
+      }
+    ],
+    "components": [
+      "ConnectedAccountsPanel",
+      "SignInMethodsList",
+      "ConnectedAccountRow",
+      "ConnectProviderButton",
+      "SetPasswordBanner",
+      "StatusCallout",
+      "LoadErrorRetry"
+    ],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
+    "designSystemAdditions": [
+      "StatusCallout — soft-tinted inline banner (icon + title + text + actions) for info/warn/error states; the SAME primitive named by the account-security hub frames, not yet in @fuzefront/design-system base. frontend-engineer adds it as a foundation PR before implementation; drawn from tokens only in these frames, never one-offed into feature code.",
+      "ConnectProviderButton — a provider 'Connect' affordance (icon + label + action) composed from design-system Button + tokens; new here for the connect half. If it generalises, promote it into the base rather than one-offing."
+    ],
+    "reuses": [
+      "SignInMethodsList, ConnectedAccountRow, SetPasswordBanner and LoadErrorRetry already exist in @fuzefront/account-security-ui (packages/account-security-ui/src) — reused, not reinvented.",
+      "securityClient.unlinkProvider already implements DELETE /social/{provider}/link; implementation must ADD linkProvider (POST /social/{provider}/link → follow redirectUrl) — see FFRNT-296."
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-connections",
+      "file": "01-connections.html",
+      "label": "(a) Connections list",
+      "route": "/account/security/connections",
+      "summary": "Ways-you-sign-in list (password + each linked provider with Disconnect) plus a Connect Google affordance for providers not yet linked.",
+      "acceptanceNotes": "Renders [data-panel='connected-accounts'] and the [data-panel='sign-in-methods'] list from GET /identity/connections. Each linked provider is a [data-connection='<provider>'] row with a [data-action='unlink']. An unlinked provider shows [data-connect='<provider>'] with [data-action='connect']. No identity-vendor name in the DOM.",
+      "testHooks": [
+        "[data-frame='01-connections']",
+        "[data-panel='connected-accounts']",
+        "[data-panel='sign-in-methods']",
+        "[data-method='password']",
+        "[data-connection='google']",
+        "[data-action='unlink']",
+        "[data-connect='google']",
+        "[data-action='connect']"
+      ]
+    },
+    {
+      "id": "02-connect",
+      "file": "02-connect.html",
+      "label": "(b) Connect a provider",
+      "route": "/account/security/connections",
+      "summary": "The two steps of linking: the redirect intent (POST /social/google/link → redirectUrl) and the successful return on ?linked=google.",
+      "acceptanceNotes": "Step 1 shows [data-state='redirecting'] with [data-action='connect'] (posts to POST /social/{provider}/link and follows redirectUrl) and a [data-action='cancel']. Step 2 shows the return state [data-state='linked'][data-linked='google'] with the newly added [data-connection='google'] row. Only accounts.google.com is named, never the identity vendor.",
+      "testHooks": [
+        "[data-frame='02-connect']",
+        "[data-state='redirecting']",
+        "[data-action='connect']",
+        "[data-action='cancel']",
+        "[data-state='linked']",
+        "[data-linked='google']",
+        "[data-connection='google']"
+      ]
+    },
+    {
+      "id": "03-states",
+      "file": "03-states.html",
+      "label": "(c) States & fail-closed",
+      "route": "/account/security/connections",
+      "summary": "Loading skeleton, load error + retry, social-only account (hasPassword:false → set a password first), last-sign-in-method 409 guard, connect failed/cancelled, already-linked.",
+      "acceptanceNotes": "loading shows [data-state='loading']; error shows [data-state='error'] with [data-action='retry']; social-only shows [data-guard='set-password-first'] + [data-action='set-password'] and DISABLES unlink; last-method shows [data-guard='last-sign-in-method'] (the 409 surfaced as a guard, never a crash or silent success); connect failure shows [data-state='link-failed']; a repeat connect shows [data-state='already-linked']. No identity-vendor name in any state.",
+      "testHooks": [
+        "[data-frame='03-states']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-guard='set-password-first']",
+        "[data-action='set-password']",
+        "[data-guard='last-sign-in-method']",
+        "[data-state='link-failed']",
+        "[data-state='already-linked']"
+      ]
+    }
+  ]
+}
