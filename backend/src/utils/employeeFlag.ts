@@ -36,13 +36,6 @@
  * than crashing route/service modules at import time.
  */
 
-// Self-import — mirrors utils/identityFlag.ts's identical trick: makes the
-// exported function's internal call mockable via jest.spyOn (which only
-// mutates the shared `exports` object; a same-file call by local binding
-// would bypass it).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import * as self from './employeeFlag'
-
 export const EMPLOYEE_CONSOLE_FLAG = 'fuzefront.identity.employee-console'
 
 export interface EmployeeFlagContext {
