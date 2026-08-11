@@ -90,6 +90,24 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+// Helper: the org owner is authoritative even without a membership row.
+//
+// The ROOT platform organization adopted by migration
+// 015_seed_root_platform_organization sets `owner_id` but seeds NO owner
+// membership row (only the create path inserts one). Its owner — the seeded
+// admin — would otherwise be unable to administer the org it owns: every
+// management endpoint here keys off `organization_memberships` and would 403.
+// The list/get endpoints already resolve `owner_id` to the 'owner' role
+// regardless of a membership row (see the `user_role` fallback), so honoring
+// the owner here just makes authorization consistent with what the UI is told.
+async function isOrgOwner(userId: string, orgId: string): Promise<boolean> {
+  const org = await db('organizations')
+    .where('id', orgId)
+    .where('owner_id', userId)
+    .first()
+  return !!org
+}
+
 // Helper: check if the requesting user is owner or admin of an org
 async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<boolean> {
   const membership = await db('organization_memberships')
@@ -98,7 +116,8 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
     .where('status', 'active')
     .whereIn('role', ['owner', 'admin'])
     .first()
-  return !!membership
+  if (membership) return true
+  return isOrgOwner(userId, orgId)
 }
 
 // POST /api/organizations - Create a new organization
@@ -1028,14 +1047,15 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params
 
-    // Any active member (any role) may view the catalog
+    // Any active member (any role) may view the catalog; the owner is
+    // authoritative even without a membership row (see isOrgOwner).
     const callerMembership = await db('organization_memberships')
       .where('user_id', req.user.id)
       .where('organization_id', id)
       .where('status', 'active')
       .first()
 
-    if (!callerMembership) {
+    if (!callerMembership && !(await isOrgOwner(req.user.id, id))) {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
@@ -1124,14 +1144,15 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params
 
-    // Any active member (any role) may list members
+    // Any active member (any role) may list members; the owner is
+    // authoritative even without a membership row (see isOrgOwner).
     const callerMembership = await db('organization_memberships')
       .where('user_id', req.user.id)
       .where('organization_id', id)
       .where('status', 'active')
       .first()
 
-    if (!callerMembership) {
+    if (!callerMembership && !(await isOrgOwner(req.user.id, id))) {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 

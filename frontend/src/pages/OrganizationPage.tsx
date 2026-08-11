@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../lib/shared'
+import { getActiveAuthToken } from '../lib/accounts'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
 import { IdentityPage } from '@fuzefront/identity-ui'
@@ -514,6 +515,11 @@ function OrganizationPage() {
                 organizationId={currentOrg.id}
                 userRole={currentOrg.user_role ?? 'viewer'}
                 userId={user?.id}
+                // Without getToken the identity client omits the Authorization
+                // header, so every members/roles/invitations call goes out
+                // unauthenticated and 401s (the whole Members tab was broken).
+                // Mirror AccountSecurityPage / FuzeChatWidget.
+                getToken={() => getActiveAuthToken()}
                 onMembersChange={() => loadMembers(currentOrg.id)}
               />
             ))}
