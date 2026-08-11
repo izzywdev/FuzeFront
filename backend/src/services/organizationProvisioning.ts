@@ -242,7 +242,7 @@ export async function ensureRootMembership(
   if (!existing) {
     await db('organization_memberships')
       .insert({
-        id: uuidv4(),
+        id: toUuid(mintId('membership')),
         user_id: userId,
         organization_id: ROOT_ORG_ID,
         role: 'member',
