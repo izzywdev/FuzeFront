@@ -38,7 +38,7 @@ export interface AdminPortal extends Portal {
    * Server-authoritative — the client renders it directly as the launch
    * anchor's `href` and never composes a host from client-held data.
    */
-  launchUrl?: string | null
+  launchUrl?: string
 }
 
 export interface AdminPortalsPage {
