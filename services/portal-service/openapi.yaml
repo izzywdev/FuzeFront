@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Portal API
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     REST API for **multi-tenant portals** — the first-class `portals` object that
     lets one shared FuzeFront deployment serve many isolated white-label tenant
@@ -43,6 +43,11 @@ info:
     All portal capability is staged behind the master feature flag
     `fuzefront.platform.multi-tenant-portals` (default OFF, FF-EPIC-09-S4); authz
     stays in Permit — the flag is rollout convenience only.
+
+    The master-admin fleet list's `identityMode`/`launchUrl` fields (Portals
+    Directory, backend slice S1) are separately staged behind
+    `fuzefront.platform.portals-directory` (default OFF) — when OFF,
+    `GET /api/v1/admin/portals` omits both fields entirely (not `null`).
   license:
     name: UNLICENSED
 
@@ -417,6 +422,18 @@ components:
         `active`/`suspended` are the steady lifecycle the master-admin toggles.
       enum: [provisioning, provisioned-pending-invite, active, suspended]
 
+    IdentityMode:
+      type: string
+      description: >-
+        Whether the portal shares the root FuzeFront Authentik directory
+        (`soft`, the default for every ordinary portal) or owns a dedicated
+        Authentik instance (`hard` — its own directory, DB, ingress host, and
+        blueprint set; e.g. the MendysRobotics tenant). Currently populated
+        ONLY on `GET /api/v1/admin/portals` (the master-admin fleet list),
+        behind `fuzefront.platform.portals-directory` (default OFF) — absent
+        elsewhere until other portal endpoints adopt it.
+      enum: [soft, hard]
+
     BillingMode:
       type: string
       description: >-
@@ -726,6 +743,22 @@ components:
         primaryDomain:
           type: [string, 'null']
           description: 'Convenience: the primary domain string, or null if none yet.'
+        identityMode:
+          $ref: '#/components/schemas/IdentityMode'
+          description: >-
+            OPTIONAL — only present on `GET /api/v1/admin/portals` (list)
+            responses, and only when `fuzefront.platform.portals-directory`
+            is enabled for the caller. See `IdentityMode` for the field's own
+            description. Absent (not `null`) on every other portal response.
+        launchUrl:
+          type: [string, 'null']
+          format: uri
+          description: >-
+            OPTIONAL — same gating as `identityMode` above. `https://<primary
+            domain>` when the portal has a primary `portal_domains` row, else
+            the platform-owned default subdomain
+            (`https://<slug>.fuzefront.com`) `default_domain_create`
+            provisions for every portal.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
