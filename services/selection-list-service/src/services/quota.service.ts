@@ -93,7 +93,7 @@ interface OrgQuotaRow {
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 async function countRows(table: string, where: Record<string, unknown>): Promise<number> {
-  // Knex count() returns Dict<string|number>; cast via any to read the alias.
+  // Knex's count() returns Dict<string|number>; cast to any to access the alias.
   const result = await (db(table).where(where).count('id as count').first() as Promise<any>);
   return parseInt(String(result?.count ?? '0'), 10);
 }

@@ -16,7 +16,7 @@
 //     "Selection Lists" shell nav entry (S9). OFF = dark; ON = released for
 //     that org/env.
 //     Registry ref: packages/feature-flags/flag-registry.yaml
-//     removal criterion: when 100% of orgs are enabled -> remove flag and both
+//     removal criterion: when 100% of orgs are enabled → remove flag and both
 //     guards (route-level here + shell nav in S9).
 //
 // The in-code default is OFF (release fail-safe) so an Unleash outage degrades
@@ -59,6 +59,9 @@ export function setFlagClient(c: FlagClientLike | null): void {
 function resolveClient(): FlagClientLike | null {
   if (_injected) return _injected
   try {
+    // Lazy require so the service degrades gracefully if the package is not yet
+    // wired (absence → null → safe defaults). Mirrors the pattern in
+    // backend/applications/src/app-registry/flags.ts.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require('@fuzefront/feature-flags')
     return typeof mod.getClient === 'function' ? mod.getClient() : null
@@ -73,6 +76,9 @@ function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
     environment:
       process.env.NODE_ENV === 'production' ? 'prod' : process.env.FLAG_ENV || 'local',
     app: 'selection-list-service',
+    // The client context contract names this `orgId` (packages/feature-flags/
+    // src/types.ts). Map organizationId -> orgId so Unleash org-targeted
+    // constraints match correctly.
     ...(organizationId ? { orgId: organizationId } : {}),
     ...rest,
   }

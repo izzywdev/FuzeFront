@@ -210,6 +210,13 @@ spec:
             # Enrollment flow slug driven server-side by signup() (blueprint: flow-enrollment.yaml).
             - name: AUTHENTIK_ENROLLMENT_FLOW_SLUG
               value: {{ .Values.authentik.oidc.enrollmentFlowSlug | default "fuzefront-enrollment" | quote }}
+            # Authentication (sign-in) flow slug driven server-side by the password
+            # login (authentikPassword.ts). Default is Authentik's built-in flow
+            # (two hops: identify, then password). values-prod points this at the
+            # dedicated `fuzefront-auth` flow (blueprint: flow-authentication.yaml),
+            # whose combined identification+password stage does it in ONE hop.
+            - name: AUTHENTIK_AUTH_FLOW_SLUG
+              value: {{ .Values.authentik.oidc.authFlowSlug | default "default-authentication-flow" | quote }}
             # Empty prefix: PR #256 routes Authentik's NATIVE paths under app.fuzefront.com
             # (no /api/auth/idp prefix). Pin it so the authorize URL stays a bare native path.
             - name: SECURITY_IDP_PROXY_PREFIX

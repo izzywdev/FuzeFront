@@ -12,6 +12,19 @@ FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 
+# Native-module build toolchain (python3 + make + g++). The ROOT `npm install`
+# below installs the whole workspace, which includes native deps (sqlite3,
+# bcrypt, …). When prebuild-install finds no prebuilt binary for this Node/napi
+# target it falls back to `node-gyp rebuild`, which needs Python + a C++
+# toolchain — and node:24-bookworm-slim ships none of them, so the install dies
+# with "gyp ERR! find Python  Could not find any Python installation to use".
+# Installing them here makes the compile-from-source fallback reliable instead of
+# depending on a prebuilt-binary fetch succeeding. BUILD stage only — the
+# nginx:alpine runtime stage below never inherits these packages.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # No GitHub Packages token is needed: every @fuzefront/* package resolves from the
 # local workspace (members + file: deps + vite source aliases), so the install never
 # hits the private registry. (Verified by a clean local build with no token.) This

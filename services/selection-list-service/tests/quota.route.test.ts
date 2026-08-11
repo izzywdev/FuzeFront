@@ -57,12 +57,14 @@ function makeToken(payload: Record<string, unknown> = {}): string {
   );
 }
 
+/** An in-memory flag client that returns a fixed boolean value. */
 function flagClient(enabled: boolean) {
   return {
     getBooleanValue: jest.fn().mockResolvedValue(enabled),
   };
 }
 
+/** A well-formed QuotaUsage fixture matching the OpenAPI SelectionListQuotaStatus shape. */
 const QUOTA_FIXTURE = {
   organization_id: 'org_testorg',
   quotas: [
@@ -73,12 +75,16 @@ const QUOTA_FIXTURE = {
   ],
 };
 
-// ─── App A: Quota GET route (with JWT auth) ───────────────────────────────────
+// ─── App A: Quota GET route only (with JWT auth) ──────────────────────────────
+//
+// Minimal app: auth middleware + quota router. No DB calls in the quota
+// endpoint itself (getQuotaUsage is mocked), so no DB setup needed.
 
 function makeQuotaApp() {
   const app = express();
   app.use(express.json());
 
+  // Simplified auth: extract JWT manually (same logic as authMiddleware)
   app.use('/v1', (req, _res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader?.split(' ')[1];
@@ -87,10 +93,11 @@ function makeQuotaApp() {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       req.userId = decoded.userId;
       req.orgId = decoded.orgId;
-    } catch { /* invalid token */ }
+    } catch { /* invalid token — leave userId/orgId unset */ }
     next();
   });
 
+  // The auth guard (for 401 on missing token): a separate middleware
   app.use('/v1/selection-lists', (req, res, next) => {
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
@@ -112,16 +119,21 @@ function makeQuotaApp() {
   return app;
 }
 
-// ─── App B: Minimal middleware test apps ──────────────────────────────────────
+// ─── App B: Minimal app for middleware testing (no JWT needed) ─────────────────
+//
+// We inject orgId/userId directly via a setup middleware so we don't need to
+// involve JWT signing in middleware-focused tests.
 
 function makeListMiddlewareApp(orgId?: string, userId?: string) {
   const app = express();
   app.use(express.json());
+  // Inject identity context (what authMiddleware normally does from JWT).
   app.use((req, _res, next) => {
     if (orgId !== undefined) req.orgId = orgId;
     if (userId !== undefined) req.userId = userId;
     next();
   });
+  // Middleware under test + a dummy handler
   app.post('/lists', enforceListQuota, (_req, res) => {
     res.status(200).json({ ok: true });
   });
@@ -154,7 +166,7 @@ afterAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  setFlagClient(null);
+  setFlagClient(null); // reset to default (off) between tests
 });
 
 afterEach(() => {
@@ -167,7 +179,7 @@ afterEach(() => {
 
 describe('GET /v1/selection-lists/quota — flag OFF (default, no client)', () => {
   it('returns 404 when no flag client is installed (release default OFF)', async () => {
-    setFlagClient(null);
+    setFlagClient(null); // no client → isSelectionListsEnabled returns false
     const app = makeQuotaApp();
     const token = makeToken();
 
@@ -211,12 +223,14 @@ describe('GET /v1/selection-lists/quota — auth guard', () => {
 
   it('returns 401 when orgId claim is missing from JWT', async () => {
     const app = makeQuotaApp();
+    // Token with userId but no orgId
     const tokenNoOrg = jwt.sign({ userId: 'usr_testuser' }, JWT_SECRET);
 
     const res = await request(app)
       .get('/v1/selection-lists/quota')
       .set('Authorization', `Bearer ${tokenNoOrg}`);
 
+    // quotaRouter handler checks req.orgId and returns 401 when it's absent
     expect(res.status).toBe(401);
   });
 });
@@ -267,6 +281,7 @@ describe('GET /v1/selection-lists/quota — flag ON, happy path', () => {
       expect(entry).toHaveProperty('scope');
       expect(entry).toHaveProperty('applies_to');
       expect(typeof entry.limit).toBe('number');
+      // current is integer or null
       expect(entry.current === null || typeof entry.current === 'number').toBe(true);
     }
   });
@@ -340,7 +355,7 @@ describe('enforceListQuota middleware — flag ON', () => {
   beforeEach(() => setFlagClient(flagClient(true)));
 
   it('returns 401 when orgId is absent (no auth context)', async () => {
-    const app = makeListMiddlewareApp(undefined, undefined);
+    const app = makeListMiddlewareApp(undefined, undefined); // no orgId
 
     const res = await request(app).post('/lists').send({});
 
@@ -377,6 +392,7 @@ describe('enforceListQuota middleware — flag ON', () => {
   it('forwards non-quota errors to the error handler', async () => {
     mockCheckListQuota.mockRejectedValue(new Error('DB error'));
     const app = makeListMiddlewareApp('org_testorg', 'usr_testuser');
+    // Add a simple error handler so supertest sees a real response
     app.use((err: Error, _req: any, res: any, _next: any) => {
       res.status(500).json({ code: 'INTERNAL_ERROR', message: err.message });
     });

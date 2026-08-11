@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -109,7 +109,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -161,7 +161,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -172,7 +172,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -213,7 +213,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -233,7 +233,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -268,7 +268,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -306,7 +306,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -477,6 +477,19 @@ authentik:
     # FuzeFront security-service route, unchanged.
     issuerUrl: "https://app.fuzefront.com/application/o/fuzefront/"
     redirectUri: "https://app.fuzefront.com/api/auth/oidc/callback"
+    # Dedicated sign-in flow with a COMBINED identification+password stage
+    # (blueprint: authentik/blueprints/flow-authentication.yaml). The built-in
+    # default-authentication-flow uses two SEPARATE stages, so server-side
+    # password login pays two sequential Authentik round-trips (identify, then
+    # password); this collapses them to one. Only the server-side password path
+    # uses it; browser/admin/Google logins keep the built-in flow. MFA stays
+    # bound (fail-closed) — see the blueprint header.
+    # DEPLOY-WINDOW VERIFY after this syncs (before trusting it):
+    #   - the `fuzefront-auth` flow exists + is bound (Authentik admin > Flows),
+    #     and a password sign-in for a NON-MFA account still succeeds; and
+    #   - a password sign-in for an MFA-enrolled account is still refused on the
+    #     server path (pushed to browser SSO), i.e. MFA is not bypassed.
+    authFlowSlug: "fuzefront-auth"
     # No split-DNS in prod: real public DNS + a real Let's Encrypt cert mean the
     # backend reaches Authentik over the internet without a hostAlias or a custom
     # CA. Leave these empty so backend.yaml/security.yaml skip the dev-only bits.
@@ -545,7 +558,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -586,7 +599,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 9aa216105aa7
+    tag: 619d85d9e534
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.

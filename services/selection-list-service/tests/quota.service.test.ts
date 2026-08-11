@@ -7,14 +7,20 @@
 
 // ─── Mock the db module before any imports resolve it ────────────────────────
 
+// Each call to db(tableName) returns a chainable query builder mock.
+// Tests override `mockQueryResult` / `mockQuotaRow` per-test to control outcomes.
+
 let mockQuotaRow: Record<string, unknown> | undefined = undefined;
 let mockListCount = '0';
 let mockItemCount = '0';
 let mockUserListCount = '0';
 
+// Tracks which table was queried (for assertion in some tests)
 const queriedTables: string[] = [];
 
+// Factory that builds a chainable query builder mock
 const makeQB = (table: string) => {
+  // Track which table the test queried
   queriedTables.push(table);
 
   const qb = {
@@ -23,6 +29,7 @@ const makeQB = (table: string) => {
     first: jest.fn().mockImplementation(async () => {
       if (table === 'selection_list_org_quota') return mockQuotaRow;
       if (table === 'selection_lists') {
+        // Determine if this is a user-scoped or org-scoped query
         const whereCall = (qb.where as jest.Mock).mock.calls[0]?.[0];
         if (whereCall?.created_by) return { count: mockUserListCount };
         return { count: mockListCount };
@@ -100,7 +107,9 @@ describe('getQuota', () => {
 
   it('returns platform defaults when no row exists in DB', async () => {
     mockQuotaRow = undefined;
+
     const result = await getQuota('org_abc');
+
     expect(result.maxLists).toBe(DEFAULT_MAX_LISTS);
     expect(result.maxListsPerUser).toBe(DEFAULT_MAX_LISTS_PER_USER);
     expect(result.maxItemsPerList).toBe(DEFAULT_MAX_ITEMS_PER_LIST);
@@ -115,7 +124,9 @@ describe('getQuota', () => {
       max_items_per_list: 250,
       max_locales: 5,
     };
+
     const result = await getQuota('org_abc');
+
     expect(result.maxLists).toBe(50);
     expect(result.maxListsPerUser).toBe(10);
     expect(result.maxItemsPerList).toBe(250);
@@ -130,11 +141,13 @@ describe('getQuota', () => {
       max_items_per_list: null,
       max_locales: null,
     };
+
     const result = await getQuota('org_abc');
-    expect(result.maxLists).toBe(DEFAULT_MAX_LISTS);
-    expect(result.maxListsPerUser).toBe(5);
-    expect(result.maxItemsPerList).toBe(DEFAULT_MAX_ITEMS_PER_LIST);
-    expect(result.maxLocales).toBe(DEFAULT_MAX_LOCALES);
+
+    expect(result.maxLists).toBe(DEFAULT_MAX_LISTS);       // NULL → default
+    expect(result.maxListsPerUser).toBe(5);                 // override
+    expect(result.maxItemsPerList).toBe(DEFAULT_MAX_ITEMS_PER_LIST); // NULL → default
+    expect(result.maxLocales).toBe(DEFAULT_MAX_LOCALES);   // NULL → default
   });
 });
 
@@ -155,17 +168,21 @@ describe('checkListQuota', () => {
 
   it('throws QuotaExceededError when current count equals the limit', async () => {
     mockListCount = String(DEFAULT_MAX_LISTS);
+
     await expect(checkListQuota('org_abc')).rejects.toThrow(QuotaExceededError);
   });
 
   it('throws QuotaExceededError when current count exceeds the limit', async () => {
     mockListCount = String(DEFAULT_MAX_LISTS + 5);
+
     await expect(checkListQuota('org_abc')).rejects.toThrow(QuotaExceededError);
   });
 
   it('error uses scope=org_lists and correct current/limit', async () => {
     mockListCount = String(DEFAULT_MAX_LISTS);
+
     const err = await checkListQuota('org_abc').catch((e: QuotaExceededError) => e);
+
     expect(err).toBeInstanceOf(QuotaExceededError);
     if (err instanceof QuotaExceededError) {
       expect(err.scope).toBe('org_lists');
@@ -182,7 +199,8 @@ describe('checkListQuota', () => {
       max_items_per_list: null,
       max_locales: null,
     };
-    mockListCount = '5';
+    mockListCount = '5'; // at the override limit
+
     await expect(checkListQuota('org_abc')).rejects.toThrow(QuotaExceededError);
   });
 
@@ -194,7 +212,8 @@ describe('checkListQuota', () => {
       max_items_per_list: null,
       max_locales: null,
     };
-    mockListCount = '4';
+    mockListCount = '4'; // below the override limit
+
     await expect(checkListQuota('org_abc')).resolves.toBeUndefined();
   });
 });
@@ -226,7 +245,9 @@ describe('checkItemQuota', () => {
 
   it('error uses scope=list_items and correct current/limit', async () => {
     mockItemCount = String(DEFAULT_MAX_ITEMS_PER_LIST);
+
     const err = await checkItemQuota('list_xyz', 'org_abc').catch((e: QuotaExceededError) => e);
+
     expect(err).toBeInstanceOf(QuotaExceededError);
     if (err instanceof QuotaExceededError) {
       expect(err.scope).toBe('list_items');
@@ -243,7 +264,8 @@ describe('checkItemQuota', () => {
       max_items_per_list: 10,
       max_locales: null,
     };
-    mockItemCount = '10';
+    mockItemCount = '10'; // at the override limit
+
     await expect(checkItemQuota('list_xyz', 'org_abc')).rejects.toThrow(QuotaExceededError);
   });
 });
@@ -255,13 +277,16 @@ describe('getQuotaUsage', () => {
 
   it('returns a QuotaUsage with exactly 4 quota entries', async () => {
     const result = await getQuotaUsage('org_abc');
+
     expect(result.organization_id).toBe('org_abc');
     expect(result.quotas).toHaveLength(4);
   });
 
   it('first entry is org_lists with correct limit and current count', async () => {
     mockListCount = '12';
+
     const result = await getQuotaUsage('org_abc');
+
     const orgLists = result.quotas[0];
     expect(orgLists.scope).toBe('org_lists');
     expect(orgLists.applies_to).toBe('organization');
@@ -271,6 +296,7 @@ describe('getQuotaUsage', () => {
 
   it('second entry is user_lists with current=0 when no userId supplied', async () => {
     const result = await getQuotaUsage('org_abc');
+
     const userLists = result.quotas[1];
     expect(userLists.scope).toBe('user_lists');
     expect(userLists.applies_to).toBe('user');
@@ -280,7 +306,9 @@ describe('getQuotaUsage', () => {
 
   it('second entry is user_lists with correct count when userId is supplied', async () => {
     mockUserListCount = '3';
+
     const result = await getQuotaUsage('org_abc', 'usr_user1');
+
     const userLists = result.quotas[1];
     expect(userLists.scope).toBe('user_lists');
     expect(userLists.current).toBe(3);
@@ -288,6 +316,7 @@ describe('getQuotaUsage', () => {
 
   it('third entry is list_items with current=null (per-list ceiling)', async () => {
     const result = await getQuotaUsage('org_abc');
+
     const listItems = result.quotas[2];
     expect(listItems.scope).toBe('list_items');
     expect(listItems.applies_to).toBe('list');
@@ -297,6 +326,7 @@ describe('getQuotaUsage', () => {
 
   it('fourth entry is list_locales with current=null (per-list ceiling)', async () => {
     const result = await getQuotaUsage('org_abc');
+
     const listLocales = result.quotas[3];
     expect(listLocales.scope).toBe('list_locales');
     expect(listLocales.applies_to).toBe('list');
@@ -314,7 +344,9 @@ describe('getQuotaUsage', () => {
     };
     mockListCount = '7';
     mockUserListCount = '2';
+
     const result = await getQuotaUsage('org_abc', 'usr_user1');
+
     expect(result.quotas[0].limit).toBe(50);
     expect(result.quotas[0].current).toBe(7);
     expect(result.quotas[1].limit).toBe(5);
