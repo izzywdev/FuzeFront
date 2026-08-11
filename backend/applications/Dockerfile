@@ -53,16 +53,20 @@ RUN npm ci
 COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
 COPY packages/feature-flags/ ./packages/feature-flags/
+COPY packages/identity/ ./packages/identity/
 COPY backend/applications/ ./backend/applications/
 
-# Build the shared kafka sub-barrel, then core, then the flag client, then
-# applications-service. @fuzefront/feature-flags must be BUILT here: its
-# package `main` points at dist/, and without this the workspace symlink
-# resolves to an empty package — which is why the flag client was absent from
-# the running image and every flag silently took its in-code default.
+# Build the shared kafka sub-barrel, then core, then the flag client, then the
+# identity package, then applications-service. @fuzefront/feature-flags and
+# @izzywdev/fuzefront-identity must both be BUILT here: their package `main`
+# points at dist/, and without this the workspace symlink resolves to an empty
+# package. For feature-flags that silently defaulted every flag; for identity
+# apps.ts's top-level `mintId`/`toUuid` import would crashloop the container at
+# boot with "Cannot find module '@izzywdev/fuzefront-identity'".
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
 RUN cd packages/feature-flags && npm run build
+RUN cd packages/identity && npm run build
 RUN cd backend/applications && npm run build
 
 # ---------- production ----------
@@ -80,6 +84,10 @@ COPY --from=build --chown=applications:nodejs /app/backend/core/dist ./backend/c
 COPY --from=build --chown=applications:nodejs /app/backend/core/package.json ./backend/core/package.json
 COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
 COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
+# @izzywdev/fuzefront-identity is a workspace symlink in node_modules; ship its
+# built dist + manifest so the link resolves at runtime (see the build-stage note).
+COPY --from=build --chown=applications:nodejs /app/packages/identity/dist ./packages/identity/dist
+COPY --from=build --chown=applications:nodejs /app/packages/identity/package.json ./packages/identity/package.json
 COPY --from=build --chown=applications:nodejs /app/backend/applications/dist ./backend/applications/dist
 COPY --from=build --chown=applications:nodejs /app/backend/applications/package.json ./backend/applications/package.json
 

@@ -1,5 +1,5 @@
 import express from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { requireAppPermission } from '../middleware/permissions'
@@ -502,7 +502,7 @@ router.post(
           .json({ error: 'An app with this name already exists' })
       }
 
-      const appId = uuidv4()
+      const appId = toUuid(mintId('app'))
 
       // MEDIUM-5: only an explicit allow-list of columns is written; never the
       // raw req.body. Unknown/extra fields in the body are silently dropped.
@@ -765,7 +765,7 @@ router.post(
         }
       }
 
-      const appId = uuidv4()
+      const appId = toUuid(mintId('app'))
 
       // MEDIUM-5: explicit allow-list of columns; org ownership is bound from
       // the verified context, never from raw req.body.
