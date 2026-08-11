@@ -200,6 +200,19 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
+  # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
+  # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
+  # FuzeFront HOSTS the family Unleash; this points the client at it. Empty
+  # unleashUrl (the default here) means the env block does not render at all
+  # (see templates/security.yaml), so init is skipped and every flag resolves
+  # to its in-code default (OFF) — same degrade pattern as backend/
+  # applicationsService. The CLIENT TOKEN is a SECRET (sealed) — never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "security-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }

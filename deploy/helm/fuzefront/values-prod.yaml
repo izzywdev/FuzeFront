@@ -92,6 +92,18 @@ securityService:
   googleBrokered: "true"
   # Prod browser-facing Google callback URL (app host, not auth-dev).
   googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
+  # fuzefront.identity.root-membership (FF-EPIC-17-S1/S2, default OFF in
+  # Unleash) via utils/feature-flags.ts (init) + utils/rootMembershipFlag.ts
+  # (read). Same token the standalone Unleash chart already seals into
+  # `unleash-secrets` (key UNLEASH_CLIENT_TOKEN) — reused rather than
+  # duplicated, mirroring applicationsService/backend above. It is a CLIENT
+  # token: server-side only, never exposed to a browser.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "security-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
   # Ingress NetworkPolicy allowing mendys-prod's datasets-service to reach
   # fuzefront-security in-cluster (FuzeFront#493 / FuzeInfra#339). Base
   # values.yaml default is OFF; enabling here is the deliberate deploy-window
