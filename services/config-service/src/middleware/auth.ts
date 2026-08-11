@@ -65,7 +65,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   try {
-    const decoded = jwt.verify(token, secret) as JwtClaims;
+    // Algorithm PINNED to HS256. Without this, `jwt.verify` accepts whatever
+    // `alg` the token header claims -- including `none`, or an asymmetric
+    // algorithm whose public key the verifier is then tricked into treating as
+    // an HMAC secret. That is the classic JWT algorithm-confusion attack, and
+    // it turns "verified" into "attacker-supplied". Matches the write surface
+    // (FFRNT-158) and `@fuzefront/auth`'s legacy-hs256 verifier.
+    const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtClaims;
     if (!decoded.userId) throw new Error('token missing userId claim');
     req.userId = decoded.userId;
     // Accept either claim name; the platform JWT does not yet carry an org
