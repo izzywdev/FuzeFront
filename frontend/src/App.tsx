@@ -38,6 +38,7 @@ import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
+import PortalsDirectory from './pages/PortalsDirectory'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 
 // Authentication wrapper component
@@ -353,6 +354,7 @@ function AppContent() {
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
+            <Route path="/portals" element={<PortalsDirectory />} />
             <Route path="/app/:appId" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />

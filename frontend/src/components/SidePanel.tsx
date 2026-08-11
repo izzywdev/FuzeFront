@@ -6,6 +6,7 @@ import type { MenuItem } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
 import { isMenuSubstituted, iconGlyph, appHref } from '../platform/appManifest'
+import { useFlag } from '../platform/featureFlags'
 
 interface SidePanelProps {
   isOpen?: boolean
@@ -34,6 +35,8 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const navigate = useNavigate()
   const { apps } = useRegisteredApps()
   const activeApp = useActiveApp()
+  // Portals Directory (design/frames/portals-directory), default OFF.
+  const portalsDirectoryEnabled = useFlag('fuzefront.platform.portals-directory', false)
 
   // App-injected menu items live in the AppContext reducer, where the platform
   // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
@@ -222,6 +225,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.organizations')}
           onClick={() => handleNavigate('/organizations')}
         />
+        {portalsDirectoryEnabled && (
+          <DSMenuItem
+            icon="🧭"
+            label={t('nav.portalsDirectory', { defaultValue: 'Portals' })}
+            active={
+              typeof window !== 'undefined' &&
+              window.location.pathname.startsWith('/portals')
+            }
+            onClick={() => handleNavigate('/portals')}
+          />
+        )}
         <DSMenuItem
           icon="👤"
           label={t('nav.profile')}
