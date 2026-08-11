@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { fromUuid, mintId, toUuid } from '@izzywdev/fuzefront-identity';
 import {
   KeyDefinition,
+  KeyDefinitionEntityId,
   KeyDefinitionInput,
   NamespaceEntityId,
   Precedence,
@@ -82,6 +83,24 @@ export interface KeyDefinitionRepository {
   findByKey(namespaceId: NamespaceEntityId, key: string): Promise<KeyDefinition | null>;
   /** Validates `defaultValue` against the key's own schema before writing (S2 AC4). */
   create(namespaceId: NamespaceEntityId, input: KeyDefinitionInput): Promise<KeyDefinition>;
+  /**
+   * Overwrites every manifest-controlled field of an EXISTING key definition
+   * (FFRNT-158 manifest reconciliation, `PUT /v1/namespaces/{namespace}/keys`).
+   * Re-validates `defaultValue` against the (possibly new) schema, same as
+   * `create()` (S2 AC4 applies on update too — a metadata change must never
+   * leave the catalog holding an unsatisfiable default).
+   *
+   * Always clears `deprecated_at`: reappearing in a manifest "revives" a
+   * previously-deprecated key, matching `registerKeyDefinitions`'s
+   * idempotent/declarative contract (an app re-registers unconditionally).
+   */
+  update(id: KeyDefinitionEntityId, input: KeyDefinitionInput): Promise<KeyDefinition>;
+  /**
+   * Marks the given definitions deprecated (never deletes — deleting would
+   * destroy every tenant's stored value for them). A no-op for ids already
+   * deprecated.
+   */
+  deprecate(ids: KeyDefinitionEntityId[]): Promise<void>;
 }
 
 const SELECT_COLUMNS = `
@@ -161,5 +180,58 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
       ],
     );
     return mapRow(res.rows[0]);
+  }
+
+  async update(id: KeyDefinitionEntityId, input: KeyDefinitionInput): Promise<KeyDefinition> {
+    const check = validateDefaultValue({
+      valueType: input.valueType,
+      defaultValue: input.defaultValue,
+      schema: input.schema,
+      enumValues: input.enumValues,
+    });
+    if (!check.valid) {
+      throw new UnsatisfiableDefaultValueError(input.key, check.errors);
+    }
+
+    const res = await this.pool.query<KeyDefinitionRow>(
+      `UPDATE config_key_definitions SET
+         display_name = $2, description = $3, help_url = $4, category = $5, sort_order = $6, tags = $7::jsonb,
+         value_type = $8, schema = $9::jsonb, enum_values = $10::jsonb, default_value = $11::jsonb, allowed_scopes = $12,
+         is_system = $13, is_hidden = $14, is_secret = $15, is_readonly = $16, precedence = $17,
+         requires_restart = $18, replaced_by = $19, deprecated_at = NULL, updated_at = now()
+       WHERE id = $1
+       RETURNING ${SELECT_COLUMNS}`,
+      [
+        toUuid(id),
+        input.displayName,
+        input.description ?? null,
+        input.helpUrl ?? null,
+        input.category ?? null,
+        input.sortOrder ?? 0,
+        JSON.stringify(input.tags ?? []),
+        input.valueType,
+        input.schema ? JSON.stringify(input.schema) : null,
+        input.enumValues ? JSON.stringify(input.enumValues) : null,
+        JSON.stringify(input.defaultValue ?? null),
+        input.allowedScopes,
+        input.isSystem ?? false,
+        input.isHidden ?? false,
+        input.isSecret ?? false,
+        input.isReadonly ?? false,
+        input.precedence ?? 'most-specific-wins',
+        input.requiresRestart ?? false,
+        input.replacedBy ?? null,
+      ],
+    );
+    return mapRow(res.rows[0]);
+  }
+
+  async deprecate(ids: KeyDefinitionEntityId[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.pool.query(
+      `UPDATE config_key_definitions SET deprecated_at = now(), updated_at = now()
+        WHERE id = ANY($1::uuid[]) AND deprecated_at IS NULL`,
+      [ids.map((id) => toUuid(id))],
+    );
   }
 }

@@ -2,7 +2,7 @@ import {
   PgKeyDefinitionRepository,
   UnsatisfiableDefaultValueError,
 } from '../../src/repositories/key-definition.repository';
-import { NamespaceEntityId } from '../../src/types';
+import { KeyDefinitionEntityId, NamespaceEntityId } from '../../src/types';
 
 function fakePool(queryImpl?: jest.Mock) {
   return { query: queryImpl ?? jest.fn() } as any;
@@ -83,5 +83,112 @@ describe('PgKeyDefinitionRepository.create — S2 AC4: unsatisfiable defaults ne
     // service-minted uuid, never something the input carried (KeyDefinitionInput
     // has no `id` field at all, enforced at the type level).
     expect(capturedParams[0]).toBeDefined();
+  });
+});
+
+describe('PgKeyDefinitionRepository.update — FFRNT-158 manifest reconciliation', () => {
+  const DEFINITION_ID = 'ckd_01h455vb4pex5vsknk084sn02q' as KeyDefinitionEntityId;
+
+  it('rejects BEFORE any query when the new defaultValue fails its own (possibly new) schema', async () => {
+    const query = jest.fn();
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    await expect(
+      repo.update(DEFINITION_ID, {
+        key: 'ui.theme.mode',
+        displayName: 'Theme mode',
+        valueType: 'enum',
+        enumValues: ['light', 'dark'],
+        defaultValue: 'purple',
+        allowedScopes: ['user'],
+      }),
+    ).rejects.toThrow(UnsatisfiableDefaultValueError);
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('overwrites metadata and clears deprecated_at (a re-registered key is revived)', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return {
+        rows: [
+          {
+            id: params[0],
+            namespace_id: '11111111-1111-7111-8111-111111111111',
+            key: 'ui.theme.mode',
+            display_name: params[1],
+            description: params[2],
+            help_url: params[3],
+            category: params[4],
+            sort_order: params[5],
+            tags: JSON.parse(params[6] as string),
+            value_type: params[7],
+            schema: null,
+            enum_values: JSON.parse(params[9] as string),
+            default_value: JSON.parse(params[10] as string),
+            allowed_scopes: params[11],
+            is_system: params[12],
+            is_hidden: params[13],
+            is_secret: params[14],
+            is_readonly: params[15],
+            precedence: params[16],
+            requires_restart: params[17],
+            deprecated_at: null,
+            replaced_by: params[18],
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+      };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    const updated = await repo.update(DEFINITION_ID, {
+      key: 'ui.theme.mode',
+      displayName: 'New label',
+      valueType: 'enum',
+      enumValues: ['light', 'dark'],
+      defaultValue: 'light',
+      allowedScopes: ['user', 'org'],
+    });
+
+    expect(capturedSql).toMatch(/UPDATE config_key_definitions SET/);
+    expect(capturedSql).toMatch(/deprecated_at = NULL/);
+    expect(capturedSql).toMatch(/WHERE id = \$1/);
+    expect(capturedParams[0]).toBeDefined(); // toUuid(DEFINITION_ID) — the native storage form, not the TypeID itself
+    expect(updated.id).toBe(DEFINITION_ID);
+    expect(updated.displayName).toBe('New label');
+    expect(updated.deprecatedAt).toBeNull();
+  });
+});
+
+describe('PgKeyDefinitionRepository.deprecate', () => {
+  it('is a no-op (no query) for an empty id list', async () => {
+    const query = jest.fn();
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+    await repo.deprecate([]);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('sets deprecated_at only for ids not already deprecated', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return { rows: [] };
+    });
+    const repo = new PgKeyDefinitionRepository(fakePool(query));
+
+    const idA = 'ckd_01kzrds7mce5e96zrm3hgx80gg' as KeyDefinitionEntityId;
+    const idB = 'ckd_01kzrds7mdfwsscregja4h3qjq' as KeyDefinitionEntityId;
+    await repo.deprecate([idA, idB]);
+
+    expect(capturedSql).toMatch(/UPDATE config_key_definitions SET deprecated_at = now\(\)/);
+    expect(capturedSql).toMatch(/AND deprecated_at IS NULL/);
+    expect((capturedParams[0] as string[])).toHaveLength(2);
   });
 });

@@ -1,4 +1,5 @@
 import express, { Application, Request, Response } from 'express';
+import { createWriteRouter } from './routes/write.router';
 
 /**
  * Assembles the config-service Express app.
@@ -34,6 +35,7 @@ export function createApp(): Application {
   // batch-transaction semantics, and pagination (gate-pagination, for the two
   // list endpoints) are this extension's responsibility per
   // services/config-service/openapi.yaml — the frozen contract.
+  app.use(createWriteRouter()); // FFRNT-158 — POST /v1/namespaces, PUT /v1/namespaces/{namespace}/keys, PUT /v1/config
 
   return app;
 }
