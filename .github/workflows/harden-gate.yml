@@ -395,6 +395,26 @@ jobs:
         shell: bash
         run: python scripts/gate_identifier.py . --source
 
+  gate-toolchain:
+    # ENFORCING (#646): the Node 24 / React 19 toolchain floor (CLAUDE.md
+    # "Toolchain baseline") had no CI job checking it and "survived on review
+    # alone" — a sweep of sibling repos found Dockerfiles on node:18/20-alpine
+    # that nothing had ever caught. The Module-Federation requiredVersion half
+    # is the dangerous one: a host/remote mismatch loads two React copies and
+    # dies on "Invalid hook call" at runtime, in the browser, with nothing
+    # else in CI to catch it — that is exactly the class of defect a static
+    # gate is cheap at and human review is bad at. No `|| true` here: this
+    # repo is fully compliant as of the PR that added this gate, so there is
+    # no backlog to ratchet.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '24.x' }
+      - name: Toolchain floor gate
+        shell: bash
+        run: node scripts/gate-toolchain.mjs
+
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
     # report-only and only builds the root package.json — it never fails the actual frontend build,

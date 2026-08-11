@@ -45,6 +45,7 @@
     "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "ajv": "^8.17.1",

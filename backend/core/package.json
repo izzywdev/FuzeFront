@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/core",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Shared backend core: db config, auth middleware, types, express bootstrap. Zero business logic.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
