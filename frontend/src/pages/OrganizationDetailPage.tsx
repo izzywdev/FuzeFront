@@ -82,7 +82,6 @@ function OrganizationDetailPage() {
 
   useEffect(() => {
     void loadOrg()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const loadMembers = async (organizationId: string) => {
@@ -95,7 +94,6 @@ function OrganizationDetailPage() {
 
   useEffect(() => {
     if (org) void loadMembers(org.id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org?.id])
 
   const handleUpdate = async (updates: Partial<Organization>) => {
