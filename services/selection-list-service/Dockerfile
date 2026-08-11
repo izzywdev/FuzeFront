@@ -1,20 +1,21 @@
 # syntax=docker/dockerfile:1
+#
+# selection-list-service Dockerfile
+# Base image: node:24-alpine (mandated minimum per CLAUDE.md toolchain table).
+#
+# WORKSPACE MANIFEST COPY PATTERN: npm ci must see ALL workspace manifests before
+# installing, because npm hoists against the full manifest set. A subset install
+# computes a different hoisting tree than the lockfile and can silently drop
+# packages — the image still exits 0 and crashes at boot (see chat-service
+# Dockerfile comment for the incident history).
+# scripts/check-dockerfile-lockfile.mjs keeps this list in sync with package.json.
 
 # ---------- base: install production deps only ----------
 FROM node:24-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 
-# Workspace root manifests, so npm ci can resolve workspace links.
-# Copy EVERY workspace manifest named by the root "workspaces" array before
-# installing. npm hoists against the FULL manifest set even with --workspace, so
-# with a subset present it computes a different tree than the committed lockfile
-# and drops packages SILENTLY — the install still exits 0 and the image crashes
-# at boot days later. That is how express-rate-limit went missing from the
-# applications image, and how @izzywdev/fuzefront-identity went missing the
-# moment packages/identity became a workspace (FFRNT-254).
-#
-# scripts/check-dockerfile-lockfile.mjs keeps this list in sync.
+# Copy workspace root manifests first (npm hoisting requires all of them)
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY backend/core/package.json ./backend/core/
@@ -42,7 +43,8 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 
-RUN npm ci --workspace=services/notification-service --omit=dev --ignore-scripts
+# Install only production deps for selection-list-service
+RUN npm ci --workspace=services/selection-list-service --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -74,33 +76,38 @@ COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 
-RUN npm ci --workspace=services/notification-service --ignore-scripts
+RUN npm ci --workspace=services/selection-list-service --ignore-scripts
 
-COPY services/notification-service/ ./services/notification-service/
+# Copy source
+COPY services/selection-list-service/ ./services/selection-list-service/
 
-RUN cd services/notification-service && npm run build
+# Build
+RUN cd services/selection-list-service && npm run build
 
 # ---------- production ----------
 FROM node:24-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache dumb-init && \
-    addgroup -S notifsvc && adduser -S notifsvc -G notifsvc -u 1001
+    addgroup -S selectionlistsvc && adduser -S selectionlistsvc -G selectionlistsvc -u 1001
 
 COPY --from=base /app/node_modules ./node_modules
-COPY --from=build /app/services/notification-service/dist ./services/notification-service/dist
+COPY --from=base /app/services/selection-list-service/node_modules ./services/selection-list-service/node_modules
+COPY --from=build /app/services/selection-list-service/dist ./services/selection-list-service/dist
+# Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
+COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
 
-# Declaration files are build output, not runtime input.
-RUN find ./services/notification-service/dist -name "*.d.ts" -type f -delete
+# Remove declaration files from production image
+RUN find ./services/selection-list-service/dist -name "*.d.ts" -type f -delete
 
-WORKDIR /app/services/notification-service
+WORKDIR /app/services/selection-list-service
 
-ENV PORT=3008
+ENV PORT=3011
 ENV NODE_ENV=production
 
-EXPOSE 3008
+EXPOSE 3011
 
-USER notifsvc
+USER selectionlistsvc
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/index.js"]

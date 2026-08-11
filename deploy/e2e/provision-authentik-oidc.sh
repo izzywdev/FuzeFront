@@ -189,16 +189,28 @@ else
 fi
 
 # ── Application ───────────────────────────────────────────────────────────────
-echo "Creating FuzeFront application..."
-APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" \
-  '{name:"FuzeFront",slug:"fuzefront",provider:$provider,meta_launch_url:"https://fuzefront.dev.local/",meta_description:"FuzeFront runtime microfrontend platform",policy_engine_mode:"all",open_in_new_tab:false}')
-APP_HTTP=$(curl -s -X POST "$BASE/core/applications/" -H "$AUTH" -H "$CT" \
-  -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
-APP_RAW=$(cat /tmp/app_create.json)
-echo "Application create HTTP $APP_HTTP: $APP_RAW"
-[ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
-APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
-[ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
-echo "Created application slug=$APP_SLUG"
+# Check by slug directly — the initial search (?search=fuzefront) can return
+# 0 results even when the application exists (Authentik search is name-based,
+# not slug-based; a partial match may miss). A 404 means not found; 200 means
+# it already exists and we skip creation.
+APP_SLUG_CHECK_HTTP=$(curl -s -o /tmp/app_slug_check.json -w "%{http_code}" \
+  -H "$AUTH" "$BASE/core/applications/fuzefront/")
+echo "Application slug check HTTP $APP_SLUG_CHECK_HTTP"
+if [ "$APP_SLUG_CHECK_HTTP" = "200" ]; then
+  echo "FuzeFront application already exists (slug=fuzefront) — skipping creation"
+  APP_SLUG="fuzefront"
+else
+  echo "Creating FuzeFront application..."
+  APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" \
+    '{name:"FuzeFront",slug:"fuzefront",provider:$provider,meta_launch_url:"https://fuzefront.dev.local/",meta_description:"FuzeFront runtime microfrontend platform",policy_engine_mode:"all",open_in_new_tab:false}')
+  APP_HTTP=$(curl -s -X POST "$BASE/core/applications/" -H "$AUTH" -H "$CT" \
+    -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
+  APP_RAW=$(cat /tmp/app_create.json)
+  echo "Application create HTTP $APP_HTTP: $APP_RAW"
+  [ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
+  APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
+  [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
+  echo "Created application slug=$APP_SLUG"
+fi
 
 wait_for_discovery

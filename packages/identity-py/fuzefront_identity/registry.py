@@ -38,6 +38,11 @@ ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
         "conversation": "cnv",
         "message": "msg",
         "notification": "ntf",
+        # selection-list-service — product-local types, namespaced front_ per the
+        # namespace gate (gate_identifier.py --namespace). Prefixes are permanent once
+        # shipped: changing one is a wire-breaking change for every stored reference.
+        "selectionList": "front_sl",
+        "selectionListItem": "front_sli",
     }
 )
 
