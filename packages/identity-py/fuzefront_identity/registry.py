@@ -43,6 +43,14 @@ ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
         # shipped: changing one is a wire-breaking change for every stored reference.
         "selectionList": "front_sl",
         "selectionListItem": "front_sli",
+        # config-service (FF-EPIC-17) — bare spine prefixes, not front_-namespaced:
+        # config-service is FuzeFront-hosted for the whole family (same tier as
+        # the billing/messaging sets above), and the frozen contract
+        # (services/config-service/openapi.yaml, FFRNT-153) already declares
+        # these as bare "cns_"/"ckd_". Mirrored in scripts/gate_identifier.py
+        # SPINE_PREFIXES so --namespace accepts them.
+        "namespace": "cns",
+        "keyDefinition": "ckd",
     }
 )
 
