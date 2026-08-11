@@ -13,6 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@izzywdev/fuzefront-identity": "1.0.0",
     "@fuzefront/core": "1.0.0",
     "@fuzefront/shared": "1.0.0",
     "bcrypt": "^6.0.0",

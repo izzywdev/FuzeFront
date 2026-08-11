@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import type { Knex } from 'knex'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
@@ -362,7 +363,7 @@ export async function provisionPortal(
       try {
         switch (step) {
           case 'org_create': {
-            organizationId = uuidv4()
+            organizationId = toUuid(mintId('organization'))
             await trx('organizations').insert({
               id: organizationId,
               name: input.name,
@@ -539,7 +540,7 @@ export async function provisionPortal(
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
         await trx('organization_invitations')
           .insert({
-            id: uuidv4(),
+            id: toUuid(mintId('invitation')),
             organization_id: organizationId,
             email: input.ownerEmail,
             role: 'owner',
