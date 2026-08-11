@@ -40,6 +40,7 @@ COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
+COPY services/selection-list-service/package.json ./services/selection-list-service/
 
 RUN npm ci --workspace=services/notification-service --omit=dev --ignore-scripts
 
@@ -71,6 +72,7 @@ COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
+COPY services/selection-list-service/package.json ./services/selection-list-service/
 
 RUN npm ci --workspace=services/notification-service --ignore-scripts
 
