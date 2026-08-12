@@ -261,6 +261,19 @@ function suspendedPortal() {
   }
 }
 
+// S5 read-only rows: `canOpen:false` and NO `launchUrl` — a caller with
+// `read` but not `manage`/`open` authority over this portal's owning org
+// (backend/src/routes/adminPortals.ts, `resolvePortalReadManageCapabilities`).
+function readOnlyPortal(overrides: Partial<ReturnType<typeof softPortal>> = {}) {
+  const { launchUrl: _launchUrl, ...base } = softPortal()
+  return { ...base, canManage: false, canOpen: false, ...overrides }
+}
+
+function readOnlyHardPortal() {
+  const { launchUrl: _launchUrl, ...base } = hardPortal()
+  return { ...base, canManage: false, canOpen: false }
+}
+
 test.describe('Portals Directory — built UI (mocked contract surface)', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page)
@@ -545,35 +558,110 @@ test.describe('Portals Directory — built UI (mocked contract surface)', () => 
       assertCleanRuntime(consoleState)
     })
 
-    // FRAME/BUILD MISMATCH (reported — pending a design decision, NOT silently
-    // passed). The approved frame's d6
-    // (`design/frames/portals-directory/02-portals-list-states.html`) depicts a
-    // READ-ONLY PROJECTION on 403: rows stay visible (name/domain/tier) inside a
-    // `[data-list="portals"][data-readonly="true"]` wrapper with per-row
-    // `[data-action-absent="open-portal"]` "— no access —" spans. The BUILT app
-    // renders NO rows on 403 (banner only) because `GET /api/v1/admin/portals`
-    // denies the whole request (`requireRole(['admin'])`,
-    // `backend/src/routes/adminPortals.ts`) — the security-correct, no-leak
-    // behavior. Resolution is a design call: amend the frame to banner-only
-    // (recommended — no row leak to a denied caller), or introduce a distinct
-    // authorized-view-only state backed by a row-scoped 200. Marked fixme so the
-    // gap stays visible in the report without blocking CI or asserting a verdict.
-    test.fixme(
-      'd6b FRAME/BUILD MISMATCH: frame depicts read-only rows on 403; build renders banner-only',
-      async ({ page }) => {
-        await page.route(PORTALS_PATH, route =>
-          route.fulfill({
-            status: 403,
-            contentType: 'application/json',
-            body: JSON.stringify({ error: 'FORBIDDEN' }),
-          })
-        )
-        await page.goto('/portals')
-        await expect(
-          page.locator('[data-list="portals"][data-readonly="true"]')
-        ).toBeVisible()
-      }
-    )
+    // d6b · RESOLVED (Portals Directory S5/S6). The original FRAME/BUILD
+    // MISMATCH note here recorded that the frame's read-only projection was
+    // (mis)modeled as a variant of the 403 response, while the security-
+    // correct build denied the WHOLE request on 403 (banner-only, no rows —
+    // still asserted immediately above by `d6`). S5
+    // (`backend/src/routes/adminPortals.ts`,
+    // `resolvePortalReadManageCapabilities`) resolved the design call
+    // decisively: the fail-closed 403 stays banner-only/zero-rows (a caller
+    // with NO readable portals in this query) — `d6` above is unchanged —
+    // and the read-only projection is instead a distinct, ADDITIVE 200: rows
+    // whose owning-org Permit authority is `read` but not `manage`/`open`
+    // come back with `canOpen:false` and no `launchUrl`, still inside the
+    // SAME `[data-list="portals"]` wrapper, now carrying
+    // `data-readonly="true"` (`PortalsList`/`pageIsReadOnly`,
+    // frontend/src/services/adminPortalsService.ts). Per-row
+    // `[data-action-absent="open-portal"]` "— no access —" replaces the
+    // launch anchor for a `canOpen:false` row; a `canOpen:true` row on the
+    // SAME page still renders the real `OpenPortalLink` — the wrapper only
+    // reads `data-readonly="true"` when EVERY row on the page is read-only.
+    test('d6b read-only projection: a 200 with canOpen:false rows lists them read-only, zero launch anchors/buttons', async ({
+      page,
+    }) => {
+      const consoleState = trackConsole(page)
+      await page.route(PORTALS_PATH, route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [readOnlyPortal(), readOnlyHardPortal()],
+            page: { nextCursor: null, hasMore: false, total: 2 },
+          }),
+        })
+      )
+      await page.goto('/portals')
+
+      const list = page.locator('[data-list="portals"]')
+      await expect(list).toBeVisible()
+      await expect(list).toHaveAttribute('data-readonly', 'true')
+
+      // Rows are visible — name / primary domain / tier badge / status —
+      // this is NOT the fail-closed 403 (no permission-denied panel).
+      await expect(page.locator('[data-panel="permission-denied"]')).toHaveCount(0)
+      const northwind = page.locator('[data-portal="prt_northwind"]')
+      await expect(northwind).toBeVisible()
+      await expect(northwind).toHaveAttribute('data-can-open', 'false')
+      await expect(northwind.locator('[data-domain="primary"]')).toHaveText(
+        'portal.northwind.example'
+      )
+      await expect(northwind.locator('[data-tier="soft"]')).toBeVisible()
+      await expect(northwind.locator('[data-action-absent="open-portal"]')).toHaveText(
+        '— no access —'
+      )
+
+      const mendys = page.locator('[data-portal="prt_mendys"]')
+      await expect(mendys).toHaveAttribute('data-can-open', 'false')
+      await expect(mendys.locator('[data-action-absent="open-portal"]')).toBeVisible()
+
+      // ZERO launch anchors/buttons ANYWHERE — same load-bearing assertion
+      // as `d6`, now proven against a 200 with rows rather than a 403.
+      await expect(page.locator('a[data-action="open-portal"]')).toHaveCount(0)
+      await expect(page.locator('button[data-action="open-portal"]')).toHaveCount(0)
+      await expect(page.getByRole('link', { name: /open portal/i })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /open portal/i })).toHaveCount(0)
+
+      assertCleanRuntime(consoleState)
+    })
+
+    test('d6b mixed page: a canOpen:true row keeps its real launch anchor beside read-only rows; wrapper is not marked readonly', async ({
+      page,
+    }) => {
+      const consoleState = trackConsole(page)
+      await page.route(PORTALS_PATH, route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [{ ...softPortal(), canManage: true, canOpen: true }, readOnlyHardPortal()],
+            page: { nextCursor: null, hasMore: false, total: 2 },
+          }),
+        })
+      )
+      await page.goto('/portals')
+
+      // Not every row is read-only -> the wrapper does not carry
+      // data-readonly="true" (matches design/frames 01-portals-list, which
+      // has no data-readonly attribute at all).
+      const list = page.locator('[data-list="portals"]')
+      await expect(list).toBeVisible()
+      await expect(list).not.toHaveAttribute('data-readonly', 'true')
+
+      const northwind = page.locator('[data-portal="prt_northwind"]')
+      await expect(northwind).toHaveAttribute('data-can-open', 'true')
+      await expect(northwind.locator('a[data-action="open-portal"]')).toHaveAttribute(
+        'href',
+        'https://portal.northwind.example/'
+      )
+
+      const mendys = page.locator('[data-portal="prt_mendys"]')
+      await expect(mendys).toHaveAttribute('data-can-open', 'false')
+      await expect(mendys.locator('[data-action-absent="open-portal"]')).toBeVisible()
+      await expect(mendys.locator('a[data-action="open-portal"]')).toHaveCount(0)
+
+      assertCleanRuntime(consoleState)
+    })
 
     test('401: no error/forbidden banner — the global interceptor re-authenticates (redirects to /login)', async ({
       page,
