@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -92,6 +92,18 @@ securityService:
   googleBrokered: "true"
   # Prod browser-facing Google callback URL (app host, not auth-dev).
   googleRedirectUri: "https://app.fuzefront.com/api/v1/security/social/google/callback"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
+  # fuzefront.identity.root-membership (FF-EPIC-17-S1/S2, default OFF in
+  # Unleash) via utils/feature-flags.ts (init) + utils/rootMembershipFlag.ts
+  # (read). Same token the standalone Unleash chart already seals into
+  # `unleash-secrets` (key UNLEASH_CLIENT_TOKEN) — reused rather than
+  # duplicated, mirroring applicationsService/backend above. It is a CLIENT
+  # token: server-side only, never exposed to a browser.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "security-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
   # Ingress NetworkPolicy allowing mendys-prod's datasets-service to reach
   # fuzefront-security in-cluster (FuzeFront#493 / FuzeInfra#339). Base
   # values.yaml default is OFF; enabling here is the deliberate deploy-window
@@ -109,7 +121,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -161,7 +173,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -172,7 +184,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -200,12 +212,15 @@ emailService:
 #
 # STILL DISABLED, deliberately. Enabling it now would CrashLoop the pod: the
 # container requires SMS_AUTH_SECRET (a hard secretKeyRef, no `optional`) and the
-# Twilio credentials, and NONE of those keys exist in the fuzefront-secrets
+# Twilio API-key credentials, not all of which exist in the fuzefront-secrets
 # SealedSecret yet (verified against deploy/contabo/sealed/fuzefront-secrets.yaml).
+# Auth uses a Twilio API Key (SK… SID + secret), NOT the account Auth Token —
+# see services/sms-service/src/twilio-client.ts.
 # GO-LIVE for phone 2FA is exactly two steps, in this order:
-#   1. Owner seals the 4 keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
-#      (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID,
-#       SMS_AUTH_SECRET) into fuzefront-secrets.
+#   1. Owner seals the keys listed in deploy/contabo/SEAL_PROD_SECRETS.md
+#      (TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET,
+#       TWILIO_VERIFY_SERVICE_SID, SMS_AUTH_SECRET) into fuzefront-secrets.
+#      (SMS_AUTH_SECRET + TWILIO_ACCOUNT_SID were sealed in PR #578.)
 #   2. Flip `enabled` to true here via GitOps in a deploy window.
 # Until step 1 lands this MUST stay false — the empty tag hid a missing-secret
 # failure that would otherwise surface as a CrashLoopBackOff on the umbrella sync.
@@ -213,7 +228,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -233,7 +248,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -268,7 +283,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -306,7 +321,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -558,7 +573,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -599,7 +614,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 6ec984648ac4
+    tag: 0eb0b6a451ea
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.

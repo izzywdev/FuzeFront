@@ -169,6 +169,12 @@ http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api
 
 authenticated with the **`UNLEASH_CLIENT_TOKEN`** (the `INIT_CLIENT_API_TOKENS` value).
 
+Consumers (reuse the same `unleash-secrets`/`UNLEASH_CLIENT_TOKEN`, no per-service
+resealing): `backend` (`fuzefront-host`), `applicationsService`
+(`applications-service`), `securityService` (`security-service` — gates
+`fuzefront.identity.root-membership`, FF-EPIC-17). Each sets its own
+`appName`/`FLAG_ENV` context so Unleash targeting can distinguish origins.
+
 ### Admin UI access (NOT public)
 
 The Unleash admin UI is **not** exposed via the public app ingress. Two admin-gated

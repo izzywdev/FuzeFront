@@ -80,6 +80,12 @@ class FakeKeyDefinitionRepository implements KeyDefinitionRepository {
   async create(): Promise<KeyDefinition> {
     throw new Error('not implemented — FFRNT-158 owns writes');
   }
+  async update(): Promise<KeyDefinition> {
+    throw new Error('not implemented — FFRNT-158 owns writes');
+  }
+  async deprecate(): Promise<void> {
+    throw new Error('not implemented — FFRNT-158 owns writes');
+  }
   async listPage(namespaceId: string, args: ListKeyDefinitionsArgs): Promise<ListKeyDefinitionsResult> {
     let rows = this.definitions
       .filter((d) => d.namespaceId === namespaceId)
@@ -120,6 +126,9 @@ class FakeValueRepository implements ValueRepository {
     throw new Error('not implemented — FFRNT-158 owns writes');
   }
   async unsetValue(): Promise<void> {
+    throw new Error('not implemented — FFRNT-158 owns writes');
+  }
+  async listAllForDefinition(): Promise<ConfigValue[]> {
     throw new Error('not implemented — FFRNT-158 owns writes');
   }
 }

@@ -55,4 +55,46 @@ describe('createAccountSecurityClient', () => {
       status: 409,
     })
   })
+
+  it('begins a link handshake via POST /social/{provider}/link and returns redirectUrl', async () => {
+    const fetchImpl = mockFetch(200, { redirectUrl: 'https://app.fuzefront.com/api/v1/security/social/google/start?link=1' })
+    const client = createAccountSecurityClient({ fetchImpl, getToken: () => 'tok' })
+    const res = await client.linkProvider!('google')
+    expect(res.redirectUrl).toContain('social/google/start')
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('/api/v1/security/social/google/link')
+    expect((call[1] as RequestInit).method).toBe('POST')
+    expect((call[1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok' })
+  })
+
+  it('surfaces the already-linked 409 as an HttpError from linkProvider', async () => {
+    const fetchImpl = mockFetch(409, { error: 'already linked', code: 'ALREADY_LINKED' })
+    const client = createAccountSecurityClient({ fetchImpl })
+    await expect(client.linkProvider!('google')).rejects.toMatchObject({
+      constructor: HttpError,
+      status: 409,
+    })
+  })
+
+  it('sets a password via POST /password', async () => {
+    const fetchImpl = mockFetch(200, { providers: [{ provider: 'google' }], hasPassword: true })
+    const client = createAccountSecurityClient({ fetchImpl, getToken: () => 'tok' })
+    const res = await client.setPassword!('correct horse battery staple')
+    expect(res.hasPassword).toBe(true)
+    const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('/api/v1/security/password')
+    expect((call[1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      newPassword: 'correct horse battery staple',
+    })
+  })
+
+  it('surfaces a 409 as an HttpError from setPassword when one already exists', async () => {
+    const fetchImpl = mockFetch(409, { error: 'password exists', code: 'CONFLICT' })
+    const client = createAccountSecurityClient({ fetchImpl })
+    await expect(client.setPassword!('whatever')).rejects.toMatchObject({
+      constructor: HttpError,
+      status: 409,
+    })
+  })
 })

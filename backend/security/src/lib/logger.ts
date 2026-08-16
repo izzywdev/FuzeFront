@@ -41,7 +41,14 @@ const REDACT_PATHS = [
   'headers.Cookie',
   'cookie',
   'Cookie',
-  'set-cookie',
+  // `set-cookie` contains a hyphen, so it is NOT a valid fast-redact
+  // dot-path identifier — a bare `set-cookie` entry makes pino throw
+  // "redact paths array contains an invalid path (set-cookie)" at logger
+  // construction, crashing the service on boot. Hyphenated keys must use
+  // bracket notation. Set-Cookie is a response header, so target it there
+  // (plus a top-level bracketed form for any raw header dump).
+  'res.headers["set-cookie"]',
+  '["set-cookie"]',
   '*.token',
   '*.access_token',
   '*.refresh_token',

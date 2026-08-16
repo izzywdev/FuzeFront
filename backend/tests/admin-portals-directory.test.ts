@@ -26,21 +26,38 @@ import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 
 import * as portalsDirectoryFlagModule from '../src/utils/portalsDirectoryFlag'
+import * as permissionCheckModule from '../src/utils/permit/permission-check'
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import { authenticateToken, requireRole } from '../src/middleware/auth'
 import { createAdminPortalRouter } from '../src/routes/adminPortals'
 import { rowToPortal, getPortalDomains } from '../src/repositories/portalRepository'
 
 let directoryEnabled = false
+
+// Maps `${organizationId}:${action}` -> boolean, same pattern as
+// admin-portals-readonly-authz.test.ts (which owns the exhaustive
+// read-vs-manage authorization matrix). This file only needs Permit mocked
+// at all so its flag-ON tests — which exist to assert response SHAPE
+// (identityMode/launchUrl), not authorization semantics — can reach the 200
+// path for an admin who owns the portal they just created, instead of
+// hitting the real (unreachable-in-CI) PDP and failing closed to 403.
+let permitGrants: Record<string, boolean> = {}
+
 beforeAll(() => {
   initializeDatabaseConnection()
   jest
     .spyOn(portalsDirectoryFlagModule, 'isPortalsDirectoryEnabled')
     .mockImplementation(async () => directoryEnabled)
+  jest
+    .spyOn(permissionCheckModule, 'bulkCheckPermissions')
+    .mockImplementation(async checks =>
+      checks.map(check => permitGrants[`${check.resource.tenant}:${check.action}`] ?? false)
+    )
 })
 
 beforeEach(() => {
   directoryEnabled = false
+  permitGrants = {}
 })
 
 const app = express()
@@ -121,7 +138,13 @@ describe('GET /api/v1/admin/portals — Portals Directory (backend slice S1)', (
     directoryEnabled = true
     const adminId = await createUser(['admin'])
     const slug = `hard-${uuidv4().slice(0, 8)}`
-    await createPortal({ slug, identityMode: 'hard', domain: `${slug}.example.com` })
+    const { organizationId } = await createPortal({
+      slug,
+      identityMode: 'hard',
+      domain: `${slug}.example.com`,
+    })
+    permitGrants[`${organizationId}:read`] = true
+    permitGrants[`${organizationId}:manage`] = true
 
     const response = await request(app)
       .get(`/api/v1/admin/portals?q=${slug}`)
@@ -140,7 +163,9 @@ describe('GET /api/v1/admin/portals — Portals Directory (backend slice S1)', (
     directoryEnabled = true
     const adminId = await createUser(['admin'])
     const slug = `soft-${uuidv4().slice(0, 8)}`
-    await createPortal({ slug })
+    const { organizationId } = await createPortal({ slug })
+    permitGrants[`${organizationId}:read`] = true
+    permitGrants[`${organizationId}:manage`] = true
 
     const response = await request(app)
       .get(`/api/v1/admin/portals?q=${slug}`)

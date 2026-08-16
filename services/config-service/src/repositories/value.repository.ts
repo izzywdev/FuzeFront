@@ -88,6 +88,17 @@ export interface ValueRepository {
   setValue(input: SetValueInput): Promise<ConfigValue>;
   /** Removes the override at `scope`, so the key resolves from its parent again. */
   unsetValue(definitionId: KeyDefinitionEntityId, scope: Scope): Promise<void>;
+  /**
+   * Every stored row for ONE definition, at ANY scope (unlike
+   * {@link listForDefinitions}, which requires the caller to name the exact
+   * scopes of interest). Added for FFRNT-158's key-definition manifest
+   * reconciliation (`PUT /v1/namespaces/{namespace}/keys`): before an
+   * incompatible metadata change (e.g. a `valueType` change) is committed,
+   * every scope that has EVER set this key's value must be checked against
+   * the new schema — an unbounded set of `scopeId`s the caller cannot
+   * enumerate in advance, which is why this needs its own unscoped query.
+   */
+  listAllForDefinition(definitionId: KeyDefinitionEntityId): Promise<ConfigValue[]>;
 }
 
 interface ValueRow {
@@ -191,6 +202,16 @@ export class PgValueRepository implements ValueRepository {
       ],
     );
     return mapRow(res.rows[0]);
+  }
+
+  async listAllForDefinition(definitionId: KeyDefinitionEntityId): Promise<ConfigValue[]> {
+    const res = await this.pool.query<ValueRow>(
+      `SELECT id, definition_id, scope_type, scope_id, value, is_locked, lock_reason, set_by_user_id, created_at, updated_at
+         FROM config_values
+        WHERE definition_id = $1`,
+      [toUuid(definitionId)],
+    );
+    return res.rows.map(mapRow);
   }
 
   async unsetValue(definitionId: KeyDefinitionEntityId, scope: Scope): Promise<void> {

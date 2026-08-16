@@ -37,8 +37,39 @@ export interface AdminPortal extends Portal {
    * root host's `/p/{slug}` path route when it has no custom domain).
    * Server-authoritative — the client renders it directly as the launch
    * anchor's `href` and never composes a host from client-held data.
+   * Only present when `canOpen: true` (S5) — a read-only viewer must never
+   * receive the launch host.
    */
-  launchUrl?: string | null
+  launchUrl?: string
+  /**
+   * S5 read-vs-manage refinement (`backend/src/routes/adminPortals.ts`).
+   * Authority to MANAGE this portal (Permit ReBAC over its owning
+   * organization). Undefined on an older/flag-OFF server response — callers
+   * treat `undefined` as `true` (the pre-S5 contract: reaching a 200 at all
+   * already implied blanket admin authority).
+   */
+  canManage?: boolean
+  /**
+   * Authority to LAUNCH (open) this portal. `false` on a row the caller may
+   * only `read` — that row carries no `launchUrl` and the UI renders
+   * `[data-action-absent="open-portal"]` instead of a launch anchor/button.
+   * Undefined on an older/flag-OFF server response — treated as `true`.
+   */
+  canOpen?: boolean
+}
+
+/**
+ * A response page is a READ-ONLY projection when every row in it came back
+ * `canOpen: false` — the caller has `read` but not `manage`/`open` authority
+ * over any portal this query returned (S5). Drives the
+ * `[data-list="portals"][data-readonly="true"]` wrapper hook
+ * (design/frames/portals-directory/02-portals-list-states.html, d6b) and the
+ * directory header copy. An EMPTY page, or a page mixing manageable and
+ * read-only rows, is not "read-only" as a whole — only a page where nothing
+ * is openable is.
+ */
+export function pageIsReadOnly(items: AdminPortal[]): boolean {
+  return items.length > 0 && items.every(item => item.canOpen === false)
 }
 
 export interface AdminPortalsPage {

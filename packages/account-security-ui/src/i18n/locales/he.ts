@@ -75,4 +75,31 @@ export const he: AccountSecurityMessages = {
     remove: 'הסר/י',
     manage: 'נהל/י',
   },
+  connections: {
+    page: {
+      title: 'חשבונות מקושרים',
+      subtitle: 'קשר/י או נתק/י את הדרכים שבהן את/ה מתחבר/ת. תמיד תישאר/י עם דרך אחת לפחות.',
+    },
+    addHeading: 'הוסף/י דרך להתחבר',
+    addHint: 'אופציונלי',
+    addFootnote:
+      'קישור ספק מאפשר לך להתחבר איתו. הוא לעולם לא חושף את הסיסמה שלך ב-FuzeFront, וניתן לנתק אותו בכל עת — כל עוד נשארת דרך אחת לפחות להתחבר.',
+    continueWith: 'המשך/כי עם {provider}',
+    connectButton: 'קשר/י {provider}',
+  },
+  connect: {
+    redirectingTitle: 'תמשיך/כי אצל {provider}',
+    redirectingText:
+      'ניקח אותך אל {provider} כדי לאמת שזו את/ה, ואז נחזיר אותך לכאן. שום דבר לא מקושר עד שתאשר/י.',
+    continueButton: 'המשך/כי עם {provider}',
+    cancel: 'ביטול',
+    linkedTitle: '{provider} קושר/ה',
+    linkedText: 'כעת תוכל/י להתחבר עם {provider}. הוא נוסף לדרכים שבהן את/ה מתחבר/ת.',
+    viewConnected: 'הצג/י חשבונות מקושרים',
+    linkFailedTitle: '{provider} לא קושר/ה',
+    linkFailedText: 'החיבור בוטל או לא הושלם. שום דבר לא השתנה — ניתן לנסות לקשר שוב.',
+    tryAgain: 'נסה/י שוב',
+    alreadyLinkedTitle: '{provider} כבר מקושר/ת',
+    alreadyLinkedText: 'ספק זה כבר נמצא בין הדרכים שבהן את/ה מתחבר/ת.',
+  },
 }

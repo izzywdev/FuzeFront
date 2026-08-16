@@ -13,6 +13,7 @@ import {
 import {
   listAdminPortals,
   pageHasMore,
+  pageIsReadOnly,
   type AdminPortal,
 } from '../services/adminPortalsService'
 import { useFlag } from '../platform/featureFlags'
@@ -140,9 +141,17 @@ export function PortalsDirectoryContent() {
   }
 
   const activeCount = portals.filter(p => p.status === 'active').length
+  // S5: a 200 whose every row came back `canOpen: false` is the read-only
+  // projection (caller has `read` but not `manage`/`open` authority over any
+  // returned portal) — distinct from the fail-closed 403 no-access state
+  // (`state === 'forbidden'`, no rows at all). Both get "Read-only" header
+  // copy; only the 403 case renders zero rows.
+  const readOnlyPage = state === 'ready' && pageIsReadOnly(portals)
   const subtitle =
     state === 'ready'
-      ? `${total ?? portals.length} portal${portals.length === 1 ? '' : 's'} · ${activeCount} active`
+      ? readOnlyPage
+        ? 'Read-only'
+        : `${total ?? portals.length} portal${portals.length === 1 ? '' : 's'} · ${activeCount} active`
       : undefined
 
   return (
@@ -157,7 +166,7 @@ export function PortalsDirectoryContent() {
       </div>
 
       <PortalsDirectoryShell
-        title={state === 'forbidden' ? 'Portals' : 'Portals you manage'}
+        title={state === 'forbidden' || readOnlyPage ? 'Portals' : 'Portals you manage'}
         subtitle={state === 'forbidden' ? 'Read-only' : subtitle}
         showSearch={state !== 'forbidden' && state !== 'error'}
         searchValue={searchInput}

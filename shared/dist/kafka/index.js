@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // Kafka client + schemas — filled in by later tasks
 __exportStar(require("./types"), exports);
 __exportStar(require("./schemas"), exports);
+__exportStar(require("./registry"), exports);
 __exportStar(require("./client"), exports);
 __exportStar(require("./producer"), exports);
 __exportStar(require("./consumer"), exports);
