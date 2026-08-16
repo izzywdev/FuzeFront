@@ -115,7 +115,8 @@ describe('AppRegistryProvider — portal-scoped catalog (FF-EPIC-12-S4)', () => 
 
   it('denied / empty scoped list (flag ON, missing or malformed portal context): degrades to an empty, error-free apps list — no crash, no console error', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    (AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    const MockedClient = AppRegistryClient as unknown as ReturnType<typeof vi.fn>
+    MockedClient.mockImplementation(() => ({
       // The backend's fail-closed contract (S2 AC4) returns a normal 200
       // with an empty set — never an HTTP error — so this must resolve
       // cleanly, not throw.
