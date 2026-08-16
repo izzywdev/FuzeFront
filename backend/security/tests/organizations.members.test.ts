@@ -516,6 +516,8 @@ describe('Organization Members', () => {
   // ─── DELETE /:id/members/:memberId ────────────────────────────────────────
 
   describe('DELETE /api/organizations/:id/members/:memberId', () => {
+    // Invariant: an org can never lose its last owner via member removal —
+    // a non-last owner may be removed (200), the last owner may not (409).
     it('returns 200 with success message when member is removed', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
@@ -544,20 +546,24 @@ describe('Organization Members', () => {
       expect(res.body.message).toMatch(/Member removed/i)
     })
 
-    it('returns 403 when trying to remove an owner membership', async () => {
+    it('returns 409 when trying to remove the LAST owner', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
       })
       const ownerMembership = {
-        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'the-owner', organization_id: ORG_ID,
       }
       const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 1: this is the only owner, so removal is refused.
+      const ownerCountChain = makeDbQuery({ count: '1' })
 
       let membershipCallCount = 0
       dbMock.mockImplementation((table: string) => {
         if (table === 'organization_memberships') {
           membershipCallCount++
-          return membershipCallCount === 1 ? adminMembershipChain : targetChain
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          return ownerCountChain
         }
         return makeDbQuery(null)
       })
@@ -565,8 +571,39 @@ describe('Organization Members', () => {
       const res = await request(app)
         .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
 
-      expect(res.status).toBe(403)
-      expect(res.body.error).toMatch(/owner/i)
+      expect(res.status).toBe(409)
+      expect(res.body.error).toMatch(/last owner/i)
+    })
+
+    it('removes a non-last owner when another owner remains → 200', async () => {
+      const adminMembershipChain = makeDbQuery({
+        id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
+      })
+      const ownerMembership = {
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+      }
+      const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 2: a second owner remains, so removal is allowed.
+      const ownerCountChain = makeDbQuery({ count: '2' })
+      const deleteChain = { where: jest.fn().mockReturnThis(), delete: jest.fn().mockResolvedValue(1) }
+
+      let membershipCallCount = 0
+      dbMock.mockImplementation((table: string) => {
+        if (table === 'organization_memberships') {
+          membershipCallCount++
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          if (membershipCallCount === 3) return ownerCountChain
+          return deleteChain
+        }
+        return makeDbQuery(null)
+      })
+
+      const res = await request(app)
+        .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/Member removed/i)
     })
 
     it('returns 403 when caller is not admin or owner', async () => {
