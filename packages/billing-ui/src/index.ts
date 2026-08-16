@@ -93,3 +93,38 @@ export type {
   BillingInvoice,
   InvoiceListResponse,
 } from '@fuzefront/billing-client';
+
+// Portal-admin billing console (PortalBillingFlow, FF-EPIC-14-S4)
+export { PortalBillingFlow, type PortalBillingFlowProps } from './flows/PortalBillingFlow';
+export {
+  createPortalBillingClient,
+  deriveConnectStatus,
+  type PortalBillingClient,
+  type ConnectStatus,
+  type ConnectOnboardingStatus,
+  type ConnectStepState,
+  type PriceBookEntry,
+  type CreatePriceInput,
+} from './api/portalBillingClient';
+export { HttpClient, HttpError, type HttpClientOptions } from './api/http';
+export { BillingConsolePanel, type BillingConsolePanelProps } from './components/portal/BillingConsolePanel';
+export {
+  PlatformSubscriptionCard,
+  type PlatformSubscriptionCardProps,
+  type PlatformSubscriptionLoadState,
+} from './components/portal/PlatformSubscriptionCard';
+export {
+  ConnectOnboardingCard,
+  type ConnectOnboardingCardProps,
+  type ConnectLoadState,
+} from './components/portal/ConnectOnboardingCard';
+export { ConnectStatusStepper, type ConnectStatusStepperProps } from './components/portal/ConnectStatusStepper';
+export { ConnectErrorNotice, type ConnectErrorNoticeProps } from './components/portal/ConnectErrorNotice';
+export {
+  PriceBookTable,
+  type PriceBookTableProps,
+  type PriceBookLoadState,
+} from './components/portal/PriceBookTable';
+export { AddPriceModal, type AddPriceModalProps } from './components/portal/AddPriceModal';
+export { AccessDeniedNotice } from './components/portal/AccessDeniedNotice';
+export { ResellerNotEnabledNotice } from './components/portal/ResellerNotEnabledNotice';
