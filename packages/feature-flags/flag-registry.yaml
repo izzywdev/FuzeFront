@@ -127,6 +127,36 @@ flags:
     web_exposed: true
     jira: ~
 
+  - key: fuzefront.platform.config-management
+    type: release
+    default: false
+    description: >
+      Gates CONSUMERS reading their configuration FROM config-service
+      (FF-EPIC-17-S8) — whether a FuzeFront service resolves its settings
+      through GET /v1/config vs. its own pre-existing configuration source.
+      Does NOT gate config-service's own existence: /health always answers
+      and the /v1/* read+write surface (FFRNT-157/158) is never 503'd by
+      this flag. config-service surfaces its own evaluation of this flag
+      as `configManagementEnabled` on GET /health (informational only,
+      never affecting the status code) so a consumer has a single source
+      of truth for the rollout decision without needing direct Unleash
+      access. Each consuming service still evaluates the flag itself
+      (via @fuzefront/feature-flags, with its own org/user context) before
+      deciding whether to call config-service — see FFRNT-260 (consumer
+      integration guide).
+    owner: backend-engineer (platform / config-service)
+    removal_criterion: >
+      Delete once config-service is GA and every consumer reads through
+      it at 100% rollout; then drop the flag and the
+      `configManagementEnabled` field on config-service's GET /health.
+    gates:
+      - config-service GET /health configManagementEnabled field
+      - Consumer services' decision to read settings via @fuzefront/config-client
+    web_exposed: false
+    jira: FFRNT-255
+    epic: FF-EPIC-17
+    story: S8
+
   # ---------------------------------------------------------------------------
   # fuzefront.app-registry.*
   # ---------------------------------------------------------------------------

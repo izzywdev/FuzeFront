@@ -510,6 +510,54 @@ selectionListService:
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
 
+# Config service — namespaced, hierarchical configuration catalog + scope-chain
+# resolution engine (FF-EPIC-17-S7, FFRNT-159). Ships dark by default; flip
+# `enabled` to true in a deploy window once config-service-secrets is sealed.
+#
+# Port 3011: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3008=selection-list, 3009=notification,
+# 3010=payment. The service Dockerfile bakes ENV PORT=3009 as ITS OWN in-image
+# default (EXPOSE 3009), but the chart always passes PORT explicitly below,
+# overriding that default at runtime — 3011 was chosen here specifically so
+# every port declared in THIS chart stays unique (verified against every
+# `port:` in this file), even though the two never collide in practice (each
+# service is its own Pod/network namespace).
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+configService:
+  enabled: false
+  replicas: 1
+  port: 3011
+  image:
+    repository: fuzefront/config-service
+    tag: local
+  # In-cluster Permit PDP (permit.enabled=true renders fuzefront-permit-pdp at
+  # this address). Without this the app falls back to Permit's public cloud
+  # PDP (https://cloudpdp.api.permit.io) — set explicitly so authz checks never
+  # leave the cluster, matching applicationsService/billingService/chatService.
+  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal configService.port — declared explicitly, never coerced.
+    port: 3011
+    # Intra-fuzefront traffic is the primary ingress source (other platform
+    # services resolving config). The Traefik rule below covers ingress-routed
+    # external traffic once/if a public route is wired.
+    ingressControllerNamespace: kube-system
+
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.
 # SECURITY_SERVICE_URL is derived in the Helm template from securityService.port
