@@ -62,7 +62,7 @@ describe('AppRegistryProvider — portal-scoped catalog (FF-EPIC-12-S4)', () => 
   })
 
   it('tenant-portal session, flag ON (mode "scoped"): shows ONLY the curated apps the backend returned', async () => {
-    ;(AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    (AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       listApps: vi.fn().mockResolvedValue({ apps: [tenantApp], nextCursor: null }),
     }))
 
@@ -78,7 +78,7 @@ describe('AppRegistryProvider — portal-scoped catalog (FF-EPIC-12-S4)', () => 
   })
 
   it('root-portal session, flag ON (mode "root"): shows the FULL catalog, unfiltered', async () => {
-    ;(AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    (AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       listApps: vi.fn().mockResolvedValue({
         apps: [rootApp1, rootApp2, rootApp3],
         nextCursor: null,
@@ -96,7 +96,7 @@ describe('AppRegistryProvider — portal-scoped catalog (FF-EPIC-12-S4)', () => 
   })
 
   it('flag OFF (mode "off"): unchanged pre-epic contract — one call, whatever the backend returns is passed through as-is', async () => {
-    ;(AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    (AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       listApps: vi.fn().mockResolvedValue({ apps: [globalApp], nextCursor: null }),
     }))
 
@@ -115,7 +115,7 @@ describe('AppRegistryProvider — portal-scoped catalog (FF-EPIC-12-S4)', () => 
 
   it('denied / empty scoped list (flag ON, missing or malformed portal context): degrades to an empty, error-free apps list — no crash, no console error', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    ;(AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    (AppRegistryClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       // The backend's fail-closed contract (S2 AC4) returns a normal 200
       // with an empty set — never an HTTP error — so this must resolve
       // cleanly, not throw.
