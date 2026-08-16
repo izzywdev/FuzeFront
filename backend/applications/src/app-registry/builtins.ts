@@ -74,6 +74,27 @@ const BUILTIN_MANIFESTS: unknown[] = [
     visibility: 'public',
     roles: [],
   },
+  {
+    manifestVersion: '1',
+    slug: 'fuzequality',
+    name: 'FuzeQuality',
+    menuLabel: 'Quality',
+    description:
+      'API, frontend, test, and requirement coverage intelligence across the FuzeFront product family.',
+    icon: { kind: 'emoji', value: '🧪' },
+    mode: 'portal',
+    builtin: true,
+    integration: {
+      type: 'module-federation',
+      remoteEntry: 'https://quality.prod.fuzefront.com/remoteEntry.js',
+      scope: 'fuzequality',
+      module: './App',
+    },
+    chrome: { menu: 'host', topbar: 'host' },
+    routing: { path: '/app/fuzequality' },
+    visibility: 'organization',
+    roles: [],
+  },
 ]
 
 /**
