@@ -300,8 +300,9 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
     })
     await page.goto(LIST_INDEX_ROUTE)
     // The skeleton must appear during the load.
+    // Use .first() to avoid strict-mode violation if multiple loading skeletons render.
     await expect(
-      page.locator("[data-state='loading']"),
+      page.locator("[data-state='loading']").first(),
       '[data-state="loading"] skeleton rows must appear while the list is fetching',
     ).toBeVisible()
     // And then resolve once data lands.
@@ -946,28 +947,18 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
+    // Wait for the value editor to render — this fails in RED state (no UI) and
+    // avoids the count()==0 false-GREEN that a bare handles.count() check creates.
+    await expect(
+      page.locator("[data-panel='value-editor']"),
+      '[data-panel="value-editor"] must render before checking handle absence',
+    ).toBeVisible()
     // For roles without update_value, [data-drag-handle] must NOT be rendered —
     // the reorder affordance is removed entirely (fail-closed).
-    const handles = page.locator('[data-drag-handle]')
-    const handleCount = await handles.count()
-    if (handleCount > 0) {
-      // Defensive path: if handles are somehow rendered, triggering a reorder must
-      // surface [data-error='FORBIDDEN'] — the backend rejects it.
-      await handles.first().focus()
-      await page.keyboard.press('Space')
-      await page.keyboard.press('ArrowDown')
-      await page.keyboard.press('Space')
-      await expect(
-        page.locator("[data-error='FORBIDDEN']"),
-        '[data-error="FORBIDDEN"] must appear when reorder is attempted without update_value',
-      ).toBeVisible()
-    } else {
-      // Correct path: handles absent — no reorder affordance for read-only roles.
-      await expect(
-        handles.first(),
-        '[data-drag-handle] must not render for roles without update_value',
-      ).not.toBeVisible()
-    }
+    await expect(
+      page.locator('[data-drag-handle]').first(),
+      '[data-drag-handle] must not render for roles without update_value',
+    ).not.toBeVisible()
   })
 
   /**
@@ -1100,9 +1091,11 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
     })
     await injectListIndexData(page)
     await page.goto(LIST_INDEX_ROUTE)
+    // Scoped to the quota panel so this cannot be satisfied by the list-index
+    // loading skeleton (which resolves from a different, faster fetch).
     await expect(
-      page.locator("[data-state='loading']"),
-      '[data-state="loading"] must appear while the quota fetch is in flight',
+      page.locator("[data-frame='06-quota'] [data-state='loading']"),
+      '[data-state="loading"] must appear in [data-frame="06-quota"] while the quota fetch is in flight',
     ).toBeVisible()
   })
 

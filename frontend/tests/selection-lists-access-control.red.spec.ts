@@ -278,6 +278,20 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
   test('[data-error="FORBIDDEN"]: table is visible but read-only when manage_access is absent', async ({ page }) => {
     // Without manage_access, the table must be visible (governance stays legible)
     // but read-only — role selects disabled, Remove disabled.
+    // PUT/DELETE to specific user sub-resources: …/access/{userId}
+    // Must use ** glob because * does not cross '/'.
+    await page.route(`**/v1/selection-lists/${LIST_ID}/access/**`, async route => {
+      if (['PUT', 'DELETE'].includes(route.request().method())) {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'FORBIDDEN', message: 'manage_access required' }),
+        })
+      } else {
+        await route.fallback()
+      }
+    })
+    // GET collection: …/access and …/access?cursor=… (no sub-path slash).
     await page.route(`**/v1/selection-lists/${LIST_ID}/access*`, async route => {
       const url = route.request().url()
       if (route.request().method() === 'GET' && !url.includes('/access/')) {
@@ -286,12 +300,6 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(MOCK_ACCESS_GRANTS),
-        })
-      } else if (['PUT', 'DELETE'].includes(route.request().method())) {
-        await route.fulfill({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 'FORBIDDEN', message: 'manage_access required' }),
         })
       } else {
         await route.fallback()
@@ -391,7 +399,7 @@ test.describe('Selection Lists access-control — frame 11-add-access-modal', ()
   test('[data-role-select] in the modal and [data-action="confirm-add-access"] are present', async ({ page }) => {
     await openAddAccessModal(page)
     await expect(
-      page.locator('[data-role-select]'),
+      page.locator("[data-modal='add-access'] [data-role-select]"),
       '[data-role-select] role picker must be in the add-access modal',
     ).toBeVisible()
     await expect(
@@ -532,8 +540,9 @@ test.describe('Selection Lists access-control — frame 11-add-access-modal', ()
     await openAddAccessModal(page)
     await page.locator('[data-user-search]').fill('alice')
     await page.locator(`[data-user='${SEARCH_USER_ID}']`).click()
-    // Select a role (the select should default to something; pick list-translator).
-    await page.locator('[data-role-select]').selectOption('list-translator')
+    // Select a role — scoped to the modal to avoid strict-mode violation from
+    // the access-panel's per-row [data-role-select] elements rendering behind it.
+    await page.locator("[data-modal='add-access'] [data-role-select]").selectOption('list-translator')
     await page.locator("[data-action='confirm-add-access']").click()
     // Wait for the action to complete.
     await page.waitForTimeout(300)
