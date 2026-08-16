@@ -11,6 +11,7 @@
     "shared",
     "packages/identity",
     "billing-client",
+    "config-client",
     "custom-hostname-client",
     "packages/billing-ui",
     "packages/chat-client",
