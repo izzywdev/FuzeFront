@@ -104,3 +104,8 @@ authentik:
 # Flip to enabled once the Dockerfile and selection-list-secrets are ready.
 # selectionListService:
 #   enabled: true
+
+# config-service (FF-EPIC-17-S7 / FFRNT-159): disabled locally by default.
+# Flip to enabled once config-service-secrets is sealed for the local cluster.
+# configService:
+#   enabled: true
