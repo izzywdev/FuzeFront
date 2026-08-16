@@ -14,11 +14,14 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
+      "@fuzefront/design-system": ["../../design-system/index.d.ts", "../../design-system"],
+      "@fuzefront/design-system/*": ["../../design-system/*"],
       "vitest": ["./node_modules/vitest"],
       "vitest/*": ["./node_modules/vitest/*"],
       "@vitest/expect": ["./node_modules/@vitest/expect"],
       "@vitest/expect/*": ["./node_modules/@vitest/expect/*"]
-    }
+    },
+    "baseUrl": "."
   },
   "include": ["src"]
 }

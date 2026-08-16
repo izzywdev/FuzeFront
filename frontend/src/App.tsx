@@ -40,6 +40,12 @@ import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
 import PortalsDirectory from './pages/PortalsDirectory'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import {
+  SelectionListManagementFlow,
+  TranslationWorkbenchFlow,
+  SelectionListAccessFlow,
+  SelectionListPickerHarness,
+} from '@fuzeone/selection-lists-ui'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -276,6 +282,12 @@ function AppContent() {
     return <AcceptInvitePage />
   }
 
+  // Public picker harness — embeddable component demo/test surface.
+  // Must be accessible without authentication (Playwright tests navigate here directly).
+  if (currentPath.startsWith('/embed/selection-list-picker')) {
+    return <SelectionListPickerHarness />
+  }
+
   if (import.meta.env.DEV) {
     console.log('AppContent - Authentication state:', {
       isAuthenticated,
@@ -355,6 +367,12 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            {/* Selection Lists (EPIC-17 / FFRNT-188) */}
+            <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
+            <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
+            <Route path="/settings/selection-lists/:listId/translations" element={<TranslationWorkbenchFlow />} />
+            <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchFlow />} />
+            <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessFlow />} />
             <Route path="/app/:appId" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />

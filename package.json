@@ -28,7 +28,8 @@
     "services/chat-service",
     "services/email-service",
     "services/notification-service",
-    "services/selection-list-service"
+    "services/selection-list-service",
+    "packages/selection-lists-ui"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

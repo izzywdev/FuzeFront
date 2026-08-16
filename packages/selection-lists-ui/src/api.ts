@@ -221,12 +221,14 @@ export async function resolveItems(ids: string[]): Promise<ResolveResponse> {
 
 export async function searchUsers(
   query: string,
-): Promise<Array<{ id: string; name: string; email: string }>> {
+): Promise<Array<{ id: string; name: string; email: string; already_granted?: boolean }>> {
   const qs = new URLSearchParams({ search: query })
   const { data } = await request<
-    Array<{ id: string; name: string; email: string }>
+    | Array<{ id: string; name: string; email: string; already_granted?: boolean }>
+    | { users: Array<{ id: string; name: string; email: string; already_granted?: boolean }> }
   >(`/api/v1/users?${qs.toString()}`)
-  return data
+  if (Array.isArray(data)) return data
+  return (data as { users: Array<{ id: string; name: string; email: string; already_granted?: boolean }> }).users ?? []
 }
 
 // ── Probe reorder permission (HEAD) ──────────────────────────────────────────

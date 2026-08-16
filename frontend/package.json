@@ -23,6 +23,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@fuzeone/selection-lists-ui": "file:../packages/selection-lists-ui",
     "@fuzefront/chat-client": "file:../packages/chat-client",
     "@fuzefront/chat-ui": "file:../packages/chat-ui",
     "@originjs/vite-plugin-federation": "^1.4.1",

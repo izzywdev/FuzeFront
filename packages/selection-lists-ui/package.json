@@ -24,7 +24,7 @@
     "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.0.0",
+    "@fuzefront/design-system": "file:../../design-system",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",
