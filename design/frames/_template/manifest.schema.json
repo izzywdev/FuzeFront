@@ -25,6 +25,17 @@
       "type": "string",
       "description": "Optional path/link to the planning doc this feature derives from."
     },
+    "implementation": {
+      "type": "object",
+      "description": "Which source paths these frames cover. Read by gate-frames-first (scripts/check-frames-first.mjs) to map a changed UI file back to the flow that must be approved before it ships. DECLARED rather than inferred: feature slugs do not line up with directories (devices-sessions and mfa-management both build into packages/account-security-ui), so a filename heuristic would fire at random and be trivially bypassable. Feature-level paths apply to every flow; a flow narrows them via build.flows[].implementation.paths. Optional — a feature declaring nothing here has its UI reported as 'uncovered' (see governance/frames-first-policy.json for the ramp).",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "description": "Repo-root-relative globs matching the source these frames cover, e.g. ['packages/account-security-ui/**']. Supports **, *, ? and {a,b}.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "stamp": {
       "type": "string",
       "description": "Content stamp of design/frames/<feature>/**, DERIVED by scripts/stamp-frames.mjs — never hand-edited. Binds an approval to the exact frames the approver saw; gate-frames-stamped recomputes it, and design-approval refuses to bind to a stale stamp. Bare lowercase sha256 hex, no algorithm prefix.",
@@ -111,6 +122,17 @@
               "id": { "type": "string", "minLength": 1, "description": "Flow id; frames[].flow references it." },
               "orchestrator": { "type": "string", "minLength": 1, "description": "Component that orchestrates the flow, e.g. 'PasswordResetFlow'." },
               "route": { "type": "string", "pattern": "^/", "description": "Route the flow mounts at." },
+              "implementation": {
+                "type": "object",
+                "description": "Source paths THIS flow covers, narrowing the feature-level `implementation.paths`. Set this when flows of one feature own different code, so an unapproved flow does not block its approved sibling's files (gate-frames-first resolves per flow).",
+                "properties": {
+                  "paths": {
+                    "type": "array",
+                    "description": "Repo-root-relative globs, e.g. ['packages/account-security-ui/src/totp/**'].",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
               "approved": {
                 "type": "boolean",
                 "description": "Per-flow approval. Written by the design-approval workflow onto the frames PR head branch — never hand-set on master. Excluded from the stamp (see scripts/stamp-frames.mjs APPROVAL_KEYS) so approving does not invalidate the stamp it binds to."

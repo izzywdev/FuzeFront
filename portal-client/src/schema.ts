@@ -53,7 +53,9 @@ export interface paths {
         };
         /**
          * List portals (master-admin fleet view)
-         * @description Returns a cursor-paginated page of portals for the master-admin fleet list. Permit **platform-admin** only — a non-admin caller is denied fail-closed with 403 `FORBIDDEN`. A fresh install returns exactly one portal (the seeded root portal, slug `fuzefront`).
+         * @description Returns a cursor-paginated page of portals for the master-admin fleet list. A fresh install returns exactly one portal (the seeded root portal, slug `fuzefront`).
+         *     When `fuzefront.platform.portals-directory` is OFF, this stays Permit **platform-admin** only — a non-admin caller is denied fail-closed with 403 `FORBIDDEN`, byte-identical to the pre-1.3.0 contract.
+         *     When the flag is ON (backend slice S5), the blanket admin-only gate is replaced by a per-portal Permit `read`/`manage` check on each portal's owning organization (`Organization:read` / `Organization:manage`, including the parent-org `org-admin` derivation for platform/master admins): a caller with `manage` on a portal's org sees it with `canManage: true, canOpen: true` and a `launchUrl`; a caller with only `read` sees it read-only (`canManage: false, canOpen: false`, no `launchUrl`); a portal the caller cannot even `read` is never returned (BOLA-safe filtering, never after-the-fact leakage). A caller with `read` authority over NONE of the portals this query would otherwise return still gets the fail-closed 403 `FORBIDDEN` no-access response — the read-vs-manage refinement only ever WIDENS who sees a 200 relative to the pre-flag blanket gate, never who is denied.
          */
         get: operations["listPortals"];
         put?: never;
@@ -368,13 +370,17 @@ export interface components {
             domains: components["schemas"]["PortalDomain"][];
             /** @description Convenience: the primary domain string, or null if none yet. */
             primaryDomain?: string | null;
-            /** @description OPTIONAL — only present on `GET /api/v1/admin/portals` (list) responses, and only when `fuzefront.platform.portals-directory` is enabled for the caller. See `IdentityMode` for the field's own description. Absent (not `null`) on every other portal response. */
+            /** @description OPTIONAL — only present on `GET /api/v1/admin/portals` (list) responses, and only when `fuzefront.platform.portals-directory` is enabled for the caller. See `IdentityMode` for the field's own description. Absent (not `null`) on every other portal response. Present on EVERY row the caller may see (read-only or manage — see `canManage`/`canOpen` below). */
             identityMode?: components["schemas"]["IdentityMode"];
+            /** @description OPTIONAL (backend slice S5, read-vs-no-access refinement) — only present on `GET /api/v1/admin/portals` (list) responses when `fuzefront.platform.portals-directory` is enabled. Whether the caller holds Permit `manage` authority (not just `read`) on this portal's owning organization — derived via the existing `Organization` resource's `read`/`manage` actions and the parent-org `org-admin` ReBAC derivation (platform/master admins included). `false` renders the row read-only in the directory UI (no manage/launch affordance). Absent (not present at all) when the flag is OFF. */
+            canManage?: boolean;
+            /** @description OPTIONAL — same gating as `canManage` above. The authority to LAUNCH the portal. There is no separate Permit `open`/`launch` action on `Organization` today, so this intentionally mirrors `canManage` — a caller who can manage a portal can also launch it, and a read-only viewer can neither. If a distinct launch authority is ever introduced this field decouples from `canManage` without a contract break (it is already its own field). Absent when the flag is OFF. */
+            canOpen?: boolean;
             /**
              * Format: uri
-             * @description OPTIONAL — same gating as `identityMode` above. `https://<primary domain>` when the portal has a primary `portal_domains` row, else the platform-owned default subdomain (`https://<slug>.fuzefront.com`) `default_domain_create` provisions for every portal.
+             * @description OPTIONAL — present on `GET /api/v1/admin/portals` (list) responses only when `fuzefront.platform.portals-directory` is enabled AND `canOpen` is `true` for this row. Absent (not `null`, not present at all) for a read-only row (`canOpen: false`) — a caller without launch authority must never receive the launch host. `https://<primary domain>` when the portal has a primary `portal_domains` row, else the platform-owned default subdomain (`https://<slug>.fuzefront.com`) `default_domain_create` provisions for every portal.
              */
-            launchUrl?: string | null;
+            launchUrl?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

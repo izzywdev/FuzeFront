@@ -531,6 +531,12 @@ SPINE_PREFIXES = {
     "cnv": "FuzeFront",
     "msg": "FuzeFront",
     "ntf": "FuzeFront",
+    # configuration (FF-EPIC-17) — config-service is FuzeFront-hosted for the
+    # whole family, same tier as billing/messaging above. The frozen contract
+    # (services/config-service/openapi.yaml, FFRNT-153) already declares these
+    # as bare prefixes.
+    "cns": "FuzeFront",
+    "ckd": "FuzeFront",
 }
 
 TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)

@@ -113,7 +113,14 @@ If you rotate the signing keystore or change the key alias, all four files must 
 Frames must show loading, empty, error, and the real fail-closed cases (reveal-once token; remove-last-2FA-factor → 409; demote-the-last-admin; `hasPassword: null` → "set a password first"). **Frames that show only the happy path produce UI that only handles the happy path.**
 
 ### Enforcement — the rule, not the etiquette
-`gate-frames-first` fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) without an approved `design/frames/<feature>/manifest.json` covering it. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
+`gate-frames-first` (`.github/workflows/gate-frames-first.yml` → `scripts/check-frames-first.mjs`) fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) that a `design/frames/<feature>/manifest.json` covers without the covering **flow** being approved. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
+
+> **This section described the gate as existing for months while no workflow implemented it** — `grep -rl gate-frames-first .github/workflows/` returned nothing. The un-skippable rule was the only part of the pipeline that could actually be skipped. It is wired now, but read the two mechanics below rather than assuming the one-line summary is the whole contract; the same "a check is green so it must be working" mistake is documented under the branch-lifecycle section.
+
+- **Coverage is declared, never inferred.** `frontend/src/**` and `packages/*-ui/**` carry no feature slug, and slugs do not map to directories (`devices-sessions` and `mfa-management` both build into `packages/account-security-ui`). So a manifest states what it covers — `implementation.paths` at feature level, `build.flows[].implementation.paths` per flow — and the gate matches against that. A path no manifest claims is **uncovered**, not silently fine.
+- **The ramp is real and has an owner.** `governance/frames-first-policy.json` holds the strength. Covered-but-unapproved **always** fails. Uncovered is `mode: "warn"` today because **0 of 18 manifests declare `implementation.paths`**, so failing there would block every UI PR in flight (verified: it would have failed #585 and #591, both of which legitimately shipped). Flip to `fail` once the `ratchet.knownUncovered` worklist is claimed — owner `@izzywdev`. Mirrors the `gate-ds-conformance` changed-lines ratchet.
+
+`gate-frames-schema`, also named above, **still does not exist** — nothing validates a manifest against `design/frames/_template/manifest.schema.json`.
 
 ## UI runtime validation — the console-clean gate
 

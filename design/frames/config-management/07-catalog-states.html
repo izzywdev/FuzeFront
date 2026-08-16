@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Catalog states — Config Management Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="07-catalog-states" data-flow="key-catalog">
+  <a class="back" href="index.html">&larr; All config-management frames</a>
+  <div class="eyebrow">Flow 2 · Key catalog · Frame (g) · /admin/config/catalog</div>
+  <h1>Catalog states</h1>
+  <p class="lead">Four of these look similar and mean completely different things: <b>no namespaces exist</b>,
+    <b>this namespace declares no keys</b>, <b>your search matched nothing</b>, and <b>you may not see this
+    at all</b>. Rendering one generic "nothing here" for all four is the failure this frame prevents.</p>
+
+  <!-- Loading -->
+  <div class="state-block" data-state="loading">
+    <div class="state-label">A · Loading</div>
+    <p class="state-why">Skeleton rows in the table's own column rhythm, so the header does not reflow when
+      definitions land.</p>
+    <div class="panel" aria-busy="true" data-loading>
+      <table class="tbl">
+        <thead><tr><th>Key</th><th>Type</th><th>Settable at</th><th>Flags</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td><span class="skel" style="width:70%"></span></td><td><span class="skel skel--sm" style="width:40%"></span></td><td><span class="skel skel--sm" style="width:85%"></span></td><td><span class="skel skel--sm" style="width:55%"></span></td><td><span class="skel skel--sm" style="width:50%"></span></td></tr>
+          <tr><td><span class="skel" style="width:55%"></span></td><td><span class="skel skel--sm" style="width:40%"></span></td><td><span class="skel skel--sm" style="width:70%"></span></td><td><span class="skel skel--sm" style="width:38%"></span></td><td><span class="skel skel--sm" style="width:60%"></span></td></tr>
+          <tr><td><span class="skel" style="width:64%"></span></td><td><span class="skel skel--sm" style="width:40%"></span></td><td><span class="skel skel--sm" style="width:90%"></span></td><td><span class="skel skel--sm" style="width:45%"></span></td><td><span class="skel skel--sm" style="width:40%"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- No namespaces at all -->
+  <div class="state-block" data-state="empty-namespaces">
+    <div class="state-label">B · No namespaces registered — first run</div>
+    <p class="state-why">Nothing has ever registered configuration. This is a <b>setup</b> state, not a
+      failure, and its call to action is documentation, not "retry".</p>
+    <div class="panel"><div class="empty" data-empty="namespaces">
+      <h3>No configuration namespaces yet</h3>
+      <p>No application has registered a configuration namespace on this platform. Namespaces are declared
+        by an app's manifest, not created by hand in this console.</p>
+      <button class="btn" data-action="open-docs">How apps register configuration</button>
+    </div></div>
+  </div>
+
+  <!-- Namespace with no keys -->
+  <div class="state-block" data-state="empty-keys">
+    <div class="state-label">C · Namespace exists, declares no keys</div>
+    <p class="state-why">Distinct from B: the namespace is real, so the fix is with <b>that app</b>, and the
+      screen names it.</p>
+    <div class="panel">
+      <div class="panel-head"><h2>reporting</h2><span class="mono muted">0 key definitions</span></div>
+      <div class="empty" data-empty="keys">
+        <h3>The <span class="mono">reporting</span> namespace declares no keys</h3>
+        <p>It is registered but has published no key definitions. Nothing will appear in the settings editor
+          for this namespace at any scope.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- No search results -->
+  <div class="state-block" data-state="no-results">
+    <div class="state-label">D · Search matched nothing</div>
+    <p class="state-why">Keys <b>do</b> exist — the filter excluded them. The state must offer to clear the
+      filter, and must never be reachable when the underlying list is genuinely empty (that is B or C).</p>
+    <div class="panel">
+      <div class="toolbar">
+        <label class="search"><span class="ico">&#9906;</span><input type="text" value="webhook" data-catalog-search /></label>
+        <button class="chip" aria-pressed="true" data-catalog-filter="secret">Secret 1</button>
+      </div>
+      <div class="empty" data-empty="no-results">
+        <h3>No keys match “webhook” with <b>Secret</b> selected</h3>
+        <p>8 key definitions exist in <b>notifications</b>.</p>
+        <button class="btn" data-action="clear-filters">Clear search and filters</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="state-block" data-state="load-error">
+    <div class="state-label">E · Load failed</div>
+    <div class="panel"><div class="panel-body">
+      <p class="banner banner-error" data-error-code="LOAD_FAILED">
+        <b>Could not load the key catalog.</b>
+        <span>The configuration service did not respond. No configuration has been changed.</span>
+      </p>
+      <button class="btn btn-accent" data-action="retry">Retry</button>
+    </div></div>
+  </div>
+
+  <!-- Forbidden -->
+  <div class="state-block" data-state="forbidden">
+    <div class="state-label">F · Not a platform admin — fail closed, and <em>nothing</em> loads</div>
+    <p class="state-why">The most important state in this flow. Because the catalog is the <b>only</b>
+      surface exposing <code>isHidden</code> keys, a partial render here is a disclosure. There is no
+      "greyed-out table with the rows still in the DOM" — the request is refused and no definition data
+      reaches the browser at all.</p>
+    <div class="panel"><div class="panel-body">
+      <p class="banner banner-error" data-error-code="FORBIDDEN">
+        <b>You do not have access to the key catalog.</b>
+        <span><code class="errcode errcode--forbidden">FORBIDDEN</code>
+          Viewing key definitions requires a platform administrator grant. Your organization's settings
+          remain available in the <a href="01-settings-editor.html">settings editor</a>.</span>
+      </p>
+      <a class="btn" href="01-settings-editor.html" data-action="back-to-editor">Go to settings</a>
+    </div></div>
+    <p class="sub">QA asserts on the <b>network response</b>, not on the rendered table: a spec that only
+      checks "no rows visible" passes against a build that fetched every hidden key and hid it with CSS.</p>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>GET /v1/namespaces</code> → <code>PagedNamespaces</code> (state B),
+    <code>GET /v1/namespaces/{namespace}/keys</code> → <code>PagedKeyDefinitions</code> (states C, D),
+    <code>FORBIDDEN</code> from <code>ErrorCode</code> (state F). Permit decides; the console reflects.
+  </p>
+
+  <div class="pager">
+    <a href="06-key-definition.html">&larr; Definition &amp; diff</a>
+    <a href="08-secret-input.html">Next: Flow 3 — secrets &rarr;</a>
+  </div>
+</div>
+</body>
+</html>
