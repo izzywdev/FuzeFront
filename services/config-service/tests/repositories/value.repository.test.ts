@@ -263,3 +263,39 @@ describe('PgValueRepository.listForDefinitions', () => {
     expect(capturedSql).toMatch(/scope_type = \$4 AND scope_id = \$5/);
   });
 });
+
+describe('PgValueRepository.listAllForDefinition — FFRNT-158 manifest-compatibility check', () => {
+  it('queries by definition_id alone, with no scope filter', async () => {
+    let capturedSql = '';
+    let capturedParams: unknown[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      capturedSql = sql;
+      capturedParams = params;
+      return {
+        rows: [
+          {
+            id: 'row-1',
+            definition_id: params[0],
+            scope_type: 'org',
+            scope_id: LEGACY_ORG_UUID,
+            value: 'dark',
+            is_locked: false,
+            lock_reason: null,
+            set_by_user_id: null,
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+      };
+    });
+    const repo = new PgValueRepository(fakePool(query));
+
+    const rows = await repo.listAllForDefinition(DEFINITION_ID);
+
+    expect(capturedSql).toMatch(/WHERE definition_id = \$1/);
+    expect(capturedSql).not.toMatch(/ANY\(/);
+    expect(capturedParams).toHaveLength(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBe('dark');
+  });
+});

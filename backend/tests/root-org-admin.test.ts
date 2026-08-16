@@ -103,4 +103,79 @@ describe('ensureRootOrgAdmins', () => {
     expect(granted).toContain(b)
     expect(granted).not.toContain(a)
   })
+
+  // FF-EPIC-17-S8 — the explicit `employee` marker is an ADDITIONAL grant
+  // trigger, gated behind `fuzefront.identity.employee-console` (default
+  // OFF). Both flag states are exercised, per the `feature-flags` skill.
+  describe('FF-EPIC-17-S8 — explicit `employee` marker trigger', () => {
+    it('flag OFF (default): a user with roles=[employee] is NOT granted (today unchanged)', async () => {
+      const employeeOnlyId = await createUser(['employee'])
+      const rec = recorder()
+
+      const granted = await ensureRootOrgAdmins({
+        db,
+        assignOrgAdmin: rec.assignOrgAdmin,
+        isEmployeeTriggerEnabled: async () => false,
+      })
+
+      expect(granted).not.toContain(employeeOnlyId)
+      expect(rec.calls.map(c => c.userId)).not.toContain(employeeOnlyId)
+    })
+
+    it('flag ON: a user with roles=[employee] IS granted root org-admin', async () => {
+      const employeeOnlyId = await createUser(['employee'])
+      const rec = recorder()
+
+      const granted = await ensureRootOrgAdmins({
+        db,
+        assignOrgAdmin: rec.assignOrgAdmin,
+        isEmployeeTriggerEnabled: async () => true,
+      })
+
+      expect(granted).toContain(employeeOnlyId)
+      expect(rec.calls).toContainEqual({ userId: employeeOnlyId, orgId: ROOT_ORG_ID })
+    })
+
+    it('flag ON: legacy admin-role users are still granted (back-compat unaffected)', async () => {
+      const adminId = await createUser(['admin'])
+      const rec = recorder()
+
+      const granted = await ensureRootOrgAdmins({
+        db,
+        assignOrgAdmin: rec.assignOrgAdmin,
+        isEmployeeTriggerEnabled: async () => true,
+      })
+
+      expect(granted).toContain(adminId)
+    })
+
+    it('flag ON: a plain user (roles=[user]) is still NOT granted', async () => {
+      const plainId = await createUser(['user'])
+      const rec = recorder()
+
+      const granted = await ensureRootOrgAdmins({
+        db,
+        assignOrgAdmin: rec.assignOrgAdmin,
+        isEmployeeTriggerEnabled: async () => true,
+      })
+
+      expect(granted).not.toContain(plainId)
+    })
+
+    it('defaults isEmployeeTriggerEnabled to the real flag reader when not overridden (no override ⇒ OFF fail-safe)', async () => {
+      // No `@fuzefront/feature-flags` package resolvable in the unit-test
+      // environment ⇒ isEmployeeConsoleEnabled() resolves its documented
+      // fail-safe default: OFF. This proves the wiring falls back safely
+      // WITHOUT the caller having to inject anything.
+      const employeeOnlyId = await createUser(['employee'])
+      const rec = recorder()
+
+      const granted = await ensureRootOrgAdmins({
+        db,
+        assignOrgAdmin: rec.assignOrgAdmin,
+      })
+
+      expect(granted).not.toContain(employeeOnlyId)
+    })
+  })
 })

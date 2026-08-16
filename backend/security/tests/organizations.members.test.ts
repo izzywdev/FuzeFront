@@ -56,8 +56,20 @@ jest.mock('../src/utils/permit/role-assignment', () => ({
   updateOrganizationRole: jest.fn().mockResolvedValue(true),
 }))
 
+// FF-EPIC-17-S8 — the "Employee" platformRoles catalog entry is gated behind
+// this flag. Default the mock to OFF (matches the flag's real default) so
+// every pre-existing test in this file (which never touches the flag) keeps
+// exercising the byte-identical, pre-S8 response shape.
+jest.mock('../src/utils/employeeFlag', () => ({
+  EMPLOYEE_CONSOLE_FLAG: 'fuzefront.identity.employee-console',
+  isEmployeeConsoleEnabled: jest.fn().mockResolvedValue(false),
+}))
+
 import { db } from '../src/config/database'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
+import { isEmployeeConsoleEnabled } from '../src/utils/employeeFlag'
+
+const isEmployeeConsoleEnabledMock = isEmployeeConsoleEnabled as jest.Mock
 import organizationsRouter from '../src/routes/organizations'
 
 const dbMock = db as jest.MockedFunction<any>
@@ -314,6 +326,54 @@ describe('Organization Members', () => {
       expect(res.body.resources.map((r: any) => r.key)).toEqual(
         expect.arrayContaining(['Organization', 'App', 'UserManagement', 'Docs', 'Chat'])
       )
+
+      // FF-EPIC-17-S8, flag OFF (default): response is byte-identical to
+      // before this story — no `platformRoles` field at all.
+      expect(res.body.platformRoles).toBeUndefined()
+    })
+
+    // FF-EPIC-17-S8 — the "Employee" platform-role entry, gated behind
+    // `fuzefront.identity.employee-console`. Both flag states exercised.
+    describe('FF-EPIC-17-S8 — platformRoles (Employee)', () => {
+      beforeEach(() => {
+        const callerChain = makeDbQuery({
+          id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'viewer', status: 'active',
+        })
+        dbMock.mockImplementation((table: string) =>
+          table === 'organization_memberships' ? callerChain : makeDbQuery(null)
+        )
+      })
+
+      it('flag OFF (default): omits platformRoles entirely', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(false)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.platformRoles).toBeUndefined()
+      })
+
+      it('flag ON: surfaces the Employee entry alongside (not replacing) the org roles', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(true)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        // org-assignable roles are untouched
+        expect(res.body.roles.map((r: any) => r.key)).toEqual([
+          'owner', 'admin', 'member', 'viewer',
+        ])
+        // Employee is additive, in its own field, not merged into `roles`
+        expect(res.body.platformRoles).toEqual([
+          expect.objectContaining({
+            key: 'employee',
+            name: 'Employee',
+            rebacRole: 'org-admin',
+            rebacScope: 'root',
+            assignable: false,
+          }),
+        ])
+      })
     })
 
     it('returns 403 when caller is not an active member', async () => {
@@ -516,6 +576,8 @@ describe('Organization Members', () => {
   // ─── DELETE /:id/members/:memberId ────────────────────────────────────────
 
   describe('DELETE /api/organizations/:id/members/:memberId', () => {
+    // Invariant: an org can never lose its last owner via member removal —
+    // a non-last owner may be removed (200), the last owner may not (409).
     it('returns 200 with success message when member is removed', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
@@ -544,20 +606,24 @@ describe('Organization Members', () => {
       expect(res.body.message).toMatch(/Member removed/i)
     })
 
-    it('returns 403 when trying to remove an owner membership', async () => {
+    it('returns 409 when trying to remove the LAST owner', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
       })
       const ownerMembership = {
-        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'the-owner', organization_id: ORG_ID,
       }
       const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 1: this is the only owner, so removal is refused.
+      const ownerCountChain = makeDbQuery({ count: '1' })
 
       let membershipCallCount = 0
       dbMock.mockImplementation((table: string) => {
         if (table === 'organization_memberships') {
           membershipCallCount++
-          return membershipCallCount === 1 ? adminMembershipChain : targetChain
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          return ownerCountChain
         }
         return makeDbQuery(null)
       })
@@ -565,8 +631,39 @@ describe('Organization Members', () => {
       const res = await request(app)
         .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
 
-      expect(res.status).toBe(403)
-      expect(res.body.error).toMatch(/owner/i)
+      expect(res.status).toBe(409)
+      expect(res.body.error).toMatch(/last owner/i)
+    })
+
+    it('removes a non-last owner when another owner remains → 200', async () => {
+      const adminMembershipChain = makeDbQuery({
+        id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
+      })
+      const ownerMembership = {
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+      }
+      const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 2: a second owner remains, so removal is allowed.
+      const ownerCountChain = makeDbQuery({ count: '2' })
+      const deleteChain = { where: jest.fn().mockReturnThis(), delete: jest.fn().mockResolvedValue(1) }
+
+      let membershipCallCount = 0
+      dbMock.mockImplementation((table: string) => {
+        if (table === 'organization_memberships') {
+          membershipCallCount++
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          if (membershipCallCount === 3) return ownerCountChain
+          return deleteChain
+        }
+        return makeDbQuery(null)
+      })
+
+      const res = await request(app)
+        .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/Member removed/i)
     })
 
     it('returns 403 when caller is not admin or owner', async () => {
