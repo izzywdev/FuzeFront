@@ -19,6 +19,10 @@ export { SecurityCardGridSkeleton } from './components/SecurityCardGridSkeleton'
 export { LoadErrorRetry } from './components/LoadErrorRetry'
 export type { LoadErrorRetryProps } from './components/LoadErrorRetry'
 export { providerDisplayName } from './components/providers'
+export { ConnectProviderButton } from './components/ConnectProviderButton'
+export type { ConnectProviderButtonProps } from './components/ConnectProviderButton'
+export { ConnectedAccountsPanel } from './components/ConnectedAccountsPanel'
+export type { ConnectedAccountsPanelProps } from './components/ConnectedAccountsPanel'
 
 // ---- API client -----------------------------------------------------------
 export { createAccountSecurityClient } from './api/securityClient'
@@ -41,6 +45,7 @@ export type { AccountSecurityMessages } from './i18n/messages'
 export type {
   IdentityConnections,
   SocialConnection,
+  SocialLinkStart,
   AuthMethods,
   SocialProvider,
   ErrorBody,

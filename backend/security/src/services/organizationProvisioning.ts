@@ -2,9 +2,16 @@ import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
-import { createTenantInPermit } from '../utils/permit/tenant-management'
+import {
+  createTenantInPermit,
+  deleteTenantFromPermit,
+} from '../utils/permit/tenant-management'
 import { syncUserToPermit } from '../utils/permit/user-sync'
-import { assignOrganizationRole } from '../utils/permit/role-assignment'
+import {
+  assignOrganizationRole,
+  unassignOrganizationRole,
+} from '../utils/permit/role-assignment'
+import { deleteResourceInstance } from '../utils/permit/resource-instances'
 import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import {
@@ -409,6 +416,61 @@ export async function reconcileOrganizationProvisioning(
  * Either way, every org the user OWNS that isn't yet `active` is still
  * reconciled — unaffected by the flag.
  */
+/**
+ * Tear down an organization's Permit access when `identity.org.deleted` fires.
+ *
+ * - `cascade='soft'` (the current org DELETE — `is_active=false`, reversible):
+ *   revoke every active member's Permit role so no one retains access while the
+ *   org is deactivated, but KEEP the Permit tenant + resource instance so a
+ *   later reactivation restores cleanly.
+ * - `cascade='hard'`: additionally delete the `Organization` resource instance
+ *   and the Permit tenant.
+ *
+ * Best-effort + idempotent: Permit failures are logged, not thrown, so a retry
+ * re-runs the same no-op-safe steps. Safe for an org that was never provisioned.
+ */
+export async function deprovisionOrganization(
+  organizationId: string,
+  cascade: 'soft' | 'hard' = 'soft',
+  overrides?: Partial<ProvisioningDeps>
+): Promise<{
+  organizationId: string
+  cascade: 'soft' | 'hard'
+  rolesRevoked: number
+  tenantDeleted: boolean
+}> {
+  const { db } = getDeps(overrides)
+
+  const memberships = await db('organization_memberships')
+    .where({ organization_id: organizationId, status: 'active' })
+    .select('user_id', 'role')
+
+  let rolesRevoked = 0
+  for (const m of memberships) {
+    const ok = await unassignOrganizationRole(
+      m.user_id,
+      organizationId,
+      m.role as 'owner' | 'admin' | 'member' | 'viewer'
+    )
+    if (ok) rolesRevoked++
+  }
+
+  let tenantDeleted = false
+  if (cascade === 'hard') {
+    // Org resource instance key format is `<resource>:<key>` (see
+    // createOrganizationResourceInstance: resource 'Organization', key = org id).
+    await deleteResourceInstance(`Organization:${organizationId}`)
+    tenantDeleted = await deleteTenantFromPermit(organizationId)
+  }
+
+  logger.info(
+    { organizationId, cascade, rolesRevoked, tenantDeleted },
+    'deprovisionOrganization complete'
+  )
+
+  return { organizationId, cascade, rolesRevoked, tenantDeleted }
+}
+
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>

@@ -47,7 +47,12 @@ export function createTwilioClient(cfg: TwilioConfig): TwilioVerifyClient {
   if (cfg.mock) {
     return createMockTwilioClient();
   }
-  const client = twilio(cfg.accountSid, cfg.authToken);
+  // Prefer API Key auth (SK… SID + secret, scoped to the account) — Twilio's
+  // recommended credential, revocable without rotating the account Auth Token.
+  // Fall back to legacy account-token auth when no API key is configured.
+  const client = cfg.apiKeySid
+    ? twilio(cfg.apiKeySid, cfg.apiKeySecret, { accountSid: cfg.accountSid })
+    : twilio(cfg.accountSid, cfg.authToken);
   // Verify the SDK object exposes the Verify v2 namespace before casting.
   // The twilio SDK typings are looser than our internal interface, so we do a
   // runtime check here to surface mis-configuration (wrong SDK version, etc.)

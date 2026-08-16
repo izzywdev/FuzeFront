@@ -43,6 +43,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@originjs/vite-plugin-federation": "^1.4.1",
     "concurrently": "^8.2.2",
     "jsdom": "^26.1.0",
     "typescript": "^5.7.3",

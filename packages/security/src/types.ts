@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '0.3.0' as const;
+export const SECURITY_CONTRACT_VERSION = '0.5.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which

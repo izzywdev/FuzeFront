@@ -127,6 +127,36 @@ flags:
     web_exposed: true
     jira: ~
 
+  - key: fuzefront.platform.config-management
+    type: release
+    default: false
+    description: >
+      Gates CONSUMERS reading their configuration FROM config-service
+      (FF-EPIC-17-S8) — whether a FuzeFront service resolves its settings
+      through GET /v1/config vs. its own pre-existing configuration source.
+      Does NOT gate config-service's own existence: /health always answers
+      and the /v1/* read+write surface (FFRNT-157/158) is never 503'd by
+      this flag. config-service surfaces its own evaluation of this flag
+      as `configManagementEnabled` on GET /health (informational only,
+      never affecting the status code) so a consumer has a single source
+      of truth for the rollout decision without needing direct Unleash
+      access. Each consuming service still evaluates the flag itself
+      (via @fuzefront/feature-flags, with its own org/user context) before
+      deciding whether to call config-service — see FFRNT-260 (consumer
+      integration guide).
+    owner: backend-engineer (platform / config-service)
+    removal_criterion: >
+      Delete once config-service is GA and every consumer reads through
+      it at 100% rollout; then drop the flag and the
+      `configManagementEnabled` field on config-service's GET /health.
+    gates:
+      - config-service GET /health configManagementEnabled field
+      - Consumer services' decision to read settings via @fuzefront/config-client
+    web_exposed: false
+    jira: FFRNT-255
+    epic: FF-EPIC-17
+    story: S8
+
   # ---------------------------------------------------------------------------
   # fuzefront.app-registry.*
   # ---------------------------------------------------------------------------
@@ -222,3 +252,55 @@ flags:
                   name: developers
           # No org/user targeting at creation — enable per-org via Unleash
           # targeting rules once the service is ready for a given org.
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
+  # portal reconciliation)
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.identity.root-membership
+    type: release
+    default: false
+    description: >
+      Backend slice (FF-EPIC-17-S1/S2): on signup / auth self-heal, upserts a
+      root organization_memberships(role='member') row instead of creating a
+      type='personal' org. Frontend UI (personal-context switcher) reads
+      whatever `user_role` the org list actually returns, so it degrades
+      gracefully while this flag is OFF — root simply keeps resolving its
+      pre-flag role (today: no membership row) until backend S1/S2 ship.
+    owner: platform team (backend-engineer, FF-EPIC-17-S1/S2)
+    removal_criterion: >
+      When every environment has migrated (S2 backfill run + verified
+      idempotent) and 100% of signups take the root-membership path. Drop the
+      type='personal' provisioning branch alongside.
+    gates:
+      - organizationProvisioning.ts root-membership upsert (backend/src, backend/security/src)
+      - auth self-heal hooks (backend/security/src/routes/auth.ts)
+    web_exposed: false
+    jira: ~
+    epic: FF-EPIC-17
+    story: S1
+
+  - key: fuzefront.identity.personal-context
+    type: release
+    default: false
+    description: >
+      Gates the reconciled identity-context-switcher UI (FF-EPIC-17-S4,
+      design/frames/identity-context-switcher/**): the unified
+      ContextSwitcher (Personal + org/sub-org tree, replacing the flat org
+      list in UserMenu.tsx's OrganizationSwitcherSection) and the "My orgs &
+      sub-orgs" view superseding OrganizationPage.tsx's local `<select>`.
+      Flag OFF preserves today's UI exactly (flat org list, local `<select>`
+      + tabs) — zero regression while fuzefront.identity.root-membership is
+      still rolling out server-side.
+    owner: platform team (frontend-engineer, FF-EPIC-17-S4)
+    removal_criterion: >
+      When the reconciled switcher is GA and enabled for 100% of users; then
+      delete OrganizationPage.tsx's `<select>` branch and this flag check.
+    gates:
+      - "@fuzefront/identity-ui ContextSwitcherFlow in UserMenu.tsx (header)"
+      - "/organizations MyOrganizationsFlow (supersedes OrganizationPage.tsx select)"
+      - "/organizations/:id OrganizationDetailPage (root MEMBER badge, never GUEST)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S4
