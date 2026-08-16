@@ -170,18 +170,20 @@ function OrganizationPage() {
     }
   }
 
+  // Role badges are a categorical distinction, so they map to the design
+  // system's categorical chart palette (tokens, not raw hex — gate-ds-conformance).
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'owner':
-        return '#FFD700'
+        return 'var(--color-chart-1)'
       case 'admin':
-        return '#FF6B6B'
+        return 'var(--color-chart-2)'
       case 'member':
-        return '#4ECDC4'
+        return 'var(--color-chart-3)'
       case 'viewer':
-        return '#95A5A6'
+        return 'var(--color-chart-4)'
       default:
-        return '#BDC3C7'
+        return 'var(--color-chart-5)'
     }
   }
 
