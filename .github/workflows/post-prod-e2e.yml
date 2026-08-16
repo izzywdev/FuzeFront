@@ -39,6 +39,8 @@ on:
         required: false
       POST_PROD_PASSWORD:
         required: false
+      AUTHENTIK_ADMIN_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -73,6 +75,14 @@ jobs:
           # Falls back to the seeded admin creds inside the spec when unset.
           POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
           POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+          # Authentik admin token — required only for the credential-drift self-heal
+          # path in test 7. When POST_PROD_PASSWORD no longer matches the Authentik
+          # account (e.g. the secret was rotated), the spec calls
+          # GET /api/v3/core/users/?email=<EMAIL> then
+          # POST /api/v3/core/users/{pk}/set_password/ to reset it, then retries.
+          # Without this token the spec fails with a clear diagnostic instead of
+          # silently looping on 401.
+          AUTHENTIK_ADMIN_TOKEN: ${{ secrets.AUTHENTIK_ADMIN_TOKEN }}
         run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when
