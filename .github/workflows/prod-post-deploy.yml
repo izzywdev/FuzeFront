@@ -117,3 +117,4 @@ jobs:
     secrets:
       POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
       POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+      AUTHENTIK_ADMIN_TOKEN: ${{ secrets.AUTHENTIK_ADMIN_TOKEN }}
