@@ -166,8 +166,11 @@ export async function unassignOrganizationRole(
       tenant: organizationId,
     })
   } catch (error) {
+    // Constant format string (userId passed as an argument, not interpolated)
+    // to satisfy the log-injection SAST rule.
     console.error(
-      `Error unassigning organization role for user ${userId}:`,
+      'Error unassigning organization role for user',
+      userId,
       error
     )
     return false
