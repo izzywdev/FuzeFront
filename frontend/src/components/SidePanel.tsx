@@ -7,6 +7,7 @@ import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
 import { isMenuSubstituted, iconGlyph, appHref } from '../platform/appManifest'
 import { useFlag } from '../platform/featureFlags'
+import { isEmployeeUser } from '../utils/employee'
 
 interface SidePanelProps {
   isOpen?: boolean
@@ -37,6 +38,11 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const activeApp = useActiveApp()
   // Portals Directory (design/frames/portals-directory), default OFF.
   const portalsDirectoryEnabled = useFlag('fuzefront.platform.portals-directory', false)
+  // Employee cross-org staff console (design/frames/employee-console,
+  // FF-EPIC-17-S9), default OFF — shared flag with S8's backend. Gated on
+  // BOTH the flag and `isEmployee` so a non-Employee never even sees the nav
+  // entry (the route itself also fail-closes via StaffGuard either way).
+  const employeeConsoleEnabled = useFlag('fuzefront.identity.employee-console', false)
 
   // App-injected menu items live in the AppContext reducer, where the platform
   // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
@@ -246,6 +252,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.billing', { defaultValue: 'Billing' })}
           onClick={() => handleNavigate('/billing')}
         />
+        {employeeConsoleEnabled && isEmployeeUser(user?.roles) && (
+          <DSMenuItem
+            icon="⛨"
+            label={t('nav.staffConsole', { defaultValue: 'Staff console' })}
+            active={
+              typeof window !== 'undefined' &&
+              window.location.pathname.startsWith('/staff')
+            }
+            onClick={() => handleNavigate('/staff')}
+          />
+        )}
         {user?.roles.includes('admin') && (
           <DSMenuItem
             icon="⚙️"

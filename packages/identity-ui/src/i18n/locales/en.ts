@@ -138,4 +138,55 @@ export const en: IdentityMessages = {
     'UserManagement:remove': 'Remove members',
     'UserManagement:update_role': 'Change roles',
   },
+  employeeConsole: {
+    bannerExplorer:
+      'You are operating as platform staff (Employee). Your access here is ReBAC org-admin-on-root — it derives down the parent tree and writes no membership row in any customer org.',
+    bannerDrilldown:
+      'Viewing {org} as platform staff. You are here through inherited access — you are not a member of {org}.',
+    explorerTitle: 'Cross-org explorer',
+    explorerIntro:
+      'Every org and portal your derived staff access can reach. Scope is evaluated by Permit ReBAC — the list is never widened by a client-supplied org id.',
+    colOrganization: 'Organization',
+    colKind: 'Kind',
+    colMembers: 'Members',
+    colAccess: 'Your access',
+    kindRoot: 'root',
+    kindPortal: 'portal',
+    kindSubOrg: 'sub-org',
+    kindOrg: 'org',
+    accessRoot: 'org-admin · root',
+    accessDerived: 'derived from root',
+    derivedFootnote:
+      'Every row is tagged derived — an Employee holds no membership row in any of these orgs, so none of them show you on their own member list.',
+    loadingLabel: 'Resolving your staff scope…',
+    emptyTitle: 'No customer orgs yet',
+    emptyBody: 'On a fresh platform the only reachable org is root itself. Empty is real.',
+    errorTitle: "Couldn't load the org tree",
+    drilldownLoadingLabel: 'Resolving this organization…',
+    drilldownErrorTitle: "Couldn't load this organization",
+    drilldownIntro:
+      "A customer org. Its own member list (below) shows its direct members only — your staff access is surfaced separately, never mixed in.",
+    directMembersTitle: 'Members',
+    directOnlyBadge: 'direct only',
+    directMembersAbsent:
+      'You (platform staff) are absent from this list — by design. Direct memberships only.',
+    membersEmptyTitle: 'No direct members',
+    membersEmptyBody: 'This org has no direct members yet.',
+    membersErrorTitle: "Couldn't load this org's members",
+    inheritedTitle: 'Access via platform staff (inherited)',
+    inheritedPrincipal: 'Principal',
+    inheritedSource: 'Source',
+    inheritedSourceValue: 'ReBAC org-admin @ root → derives via parent',
+    inheritedMembershipRow: 'Membership row here',
+    inheritedMembershipRowValue: 'none — not a member of {org}',
+    inheritedScope: 'Scope',
+    inheritedScopeValue: 'read + administer under staff policy; not owner/admin of the tenant',
+    inheritedFootnote:
+      'This labelled panel is the only place inherited staff access appears. It is deliberately separated from the direct-member list so a tenant owner never mistakes derived access for a member.',
+    notStaffTitle: 'You are not platform staff',
+    notStaffBody:
+      'The staff console requires the Employee role (ReBAC org-admin-on-root). This is an authorization result — you have not been signed out.',
+    colPerson: 'Person',
+    colRole: 'Role',
+  },
 }

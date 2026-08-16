@@ -56,6 +56,30 @@ export type {
 export { buildOrgForest, flattenForest } from './components/organizations/orgTree'
 export type { OrgTreeNode } from './components/organizations/orgTree'
 
+// ---- Employee cross-org console (FF-EPIC-17-S9) ----------------------------
+// design/frames/employee-console/** — flow employee-console, route `/staff`
+// (explorer) + `/staff/orgs/:id` (drilldown), orchestrator EmployeeConsoleFlow.
+export { EmployeeConsoleFlow } from './components/employee/EmployeeConsoleFlow'
+export type { EmployeeConsoleFlowProps } from './components/employee/EmployeeConsoleFlow'
+export { EmployeeConsole } from './components/employee/EmployeeConsole'
+export type { EmployeeConsoleProps, EmployeeConsoleView } from './components/employee/EmployeeConsole'
+export { StaffGuard } from './components/employee/StaffGuard'
+export type { StaffGuardProps } from './components/employee/StaffGuard'
+export { CrossOrgExplorer } from './components/employee/CrossOrgExplorer'
+export type { CrossOrgExplorerProps } from './components/employee/CrossOrgExplorer'
+export { OrgTreeRow } from './components/employee/OrgTreeRow'
+export type { OrgTreeRowProps } from './components/employee/OrgTreeRow'
+export { DerivedAccessTag } from './components/employee/DerivedAccessTag'
+export type { DerivedAccessTagProps } from './components/employee/DerivedAccessTag'
+export { OrgDrilldownPanel } from './components/employee/OrgDrilldownPanel'
+export type { OrgDrilldownPanelProps } from './components/employee/OrgDrilldownPanel'
+export { InheritedAccessPanel } from './components/employee/InheritedAccessPanel'
+export type { InheritedAccessPanelProps } from './components/employee/InheritedAccessPanel'
+export { StaffScopeSummary } from './components/employee/StaffScopeSummary'
+export type { StaffScopeSummaryProps } from './components/employee/StaffScopeSummary'
+export { NotStaffNotice } from './components/employee/NotStaffNotice'
+export { classifyOrgKind } from './components/employee/orgKind'
+
 // ---- API tokens -----------------------------------------------------------
 export { TokenList } from './components/tokens/TokenList'
 export type { TokenListProps } from './components/tokens/TokenList'
@@ -98,4 +122,7 @@ export type {
   ListMembersOptions,
   ContextTarget,
   OrgContextItem,
+  EmployeeOrgKind,
+  EmployeeOrgNode,
+  EmployeeDirectMember,
 } from './types'
