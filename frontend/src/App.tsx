@@ -38,6 +38,7 @@ import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
+import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 
@@ -351,6 +352,7 @@ function AppContent() {
             <Route path="/organizations/new" element={<CreateOrganizationPage />} />
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
+            <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
