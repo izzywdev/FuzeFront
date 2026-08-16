@@ -40,6 +40,7 @@ import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
 import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
+import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
@@ -360,6 +361,7 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            <Route path="/portal/admin/billing" element={<PortalBillingPage />} />
             <Route path="/app/:appId" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
