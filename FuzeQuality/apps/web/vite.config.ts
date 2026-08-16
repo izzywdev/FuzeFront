@@ -14,9 +14,9 @@ export default defineConfig({
       name: 'fuzequality',
       filename: 'remoteEntry.js',
       exposes: { './App': './src/remote.tsx' },
-      shared: {
-        react: { singleton: true, requiredVersion: '^18.0.0' },
-        'react-dom': { singleton: true, requiredVersion: '^18.0.0' },
+        shared: {
+          react: { requiredVersion: '^18.0.0' },
+          'react-dom': { requiredVersion: '^18.0.0' },
       },
     }),
   ],
