@@ -1,5 +1,12 @@
 /**
- * Stateless JWT verification middleware for config-service (FFRNT-157).
+ * Stateless JWT verification middleware for config-service. The SOLE JWT
+ * verifier for this service (FFRNT-157 read + FFRNT-158 write) — see the
+ * reconciliation note on PR #641: FFRNT-157 and FFRNT-158 were built in
+ * parallel and each shipped its own verifier (this one, and the
+ * now-deleted `src/auth/jwt.ts`). This file won on merge because it landed
+ * on `master` first; it is extended here to also populate `req.principal`
+ * (the shape the write routes were built against) so neither side had to
+ * change its call sites.
  *
  * Mirrors `services/selection-list-service/src/middleware/auth.ts`: verifies
  * the bearer JWT against `JWT_SECRET` (the platform-wide signing secret) and
@@ -11,11 +18,21 @@
  *
  * Missing token -> 401 UNAUTHENTICATED. Invalid/expired token -> 401
  * UNAUTHENTICATED. Valid -> next(), with req.userId (+ req.orgId/portalId if
- * the token happens to carry those claims) populated.
+ * the token happens to carry those claims) AND req.principal populated.
  */
 
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+
+/** The write-surface's view of the authenticated caller. Set by requireAuth(). */
+export interface Principal {
+  userId: string;
+  /** Present when the token was minted with a portal context (FF-EPIC-10). */
+  portalId?: string;
+  /** Present on tokens minted with an org-scoped claim. */
+  orgId?: string;
+  roles: string[];
+}
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -31,21 +48,31 @@ declare global {
       orgId?: string;
       /** Optional portal context (FF-EPIC-10-S3 `portalId` claim), if present. */
       portalId?: string;
+      /**
+       * Same identity as userId/orgId/portalId above, reshaped into one
+       * object (+ roles) for the write-surface handlers (FFRNT-158), which
+       * were built against this shape. Always set together with
+       * userId/orgId/portalId — never populated on its own.
+       */
+      principal?: Principal;
     }
   }
 }
 
 interface JwtClaims {
-  userId: string;
+  userId?: string;
+  /** Fallback subject claim, for tokens that carry `sub` instead of `userId`. */
+  sub?: string;
   orgId?: string;
   organizationId?: string;
   portalId?: string;
+  roles?: string[] | string;
   [key: string]: unknown;
 }
 
 /**
  * Verifies the bearer JWT and attaches identity claims to the request.
- * Mounted ahead of every `/v1/*` read route (openapi.yaml `security: bearerAuth`).
+ * Mounted ahead of every `/v1/*` route (openapi.yaml `security: bearerAuth`).
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization'];
@@ -72,13 +99,24 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     // it turns "verified" into "attacker-supplied". Matches the write surface
     // (FFRNT-158) and `@fuzefront/auth`'s legacy-hs256 verifier.
     const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtClaims;
-    if (!decoded.userId) throw new Error('token missing userId claim');
-    req.userId = decoded.userId;
+    // Accept either claim name; a token minted with a `sub` subject claim
+    // (rather than `userId`) is still a valid identity — this is the write
+    // surface's fallback, additive to the strict `userId`-only read path.
+    const userId = decoded.userId ?? decoded.sub;
+    if (!userId) throw new Error('token missing userId/sub claim');
+    req.userId = userId;
     // Accept either claim name; the platform JWT does not yet carry an org
     // claim at all (see routes/config.routes.ts), but this stays
     // forward-compatible with whichever name a future token shape uses.
     req.orgId = decoded.orgId ?? decoded.organizationId;
     req.portalId = decoded.portalId;
+    const roles = Array.isArray(decoded.roles) ? decoded.roles : decoded.roles ? [decoded.roles] : [];
+    req.principal = {
+      userId,
+      portalId: req.portalId,
+      orgId: req.orgId,
+      roles,
+    };
     next();
   } catch {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'No credential, or a credential that is not valid.' });
