@@ -1,5 +1,15 @@
 /**
- * Permit.io authorization middleware for config-service (FFRNT-157).
+ * Permit.io authorization for config-service — the SOLE home of the Permit
+ * client bootstrap (FFRNT-157 read `requirePermit` middleware + FFRNT-158
+ * write `checkConfigPermission` function). See the reconciliation note on PR
+ * #641: FFRNT-157 and FFRNT-158 were built in parallel and each shipped its
+ * own byte-identical client bootstrap (this one, and the now-deleted
+ * `src/auth/permit.ts`) — a "successful" git merge would have left the
+ * service with two Permit clients. Both call shapes are legitimate and both
+ * are kept: `requirePermit()` is route-level middleware for the GET surface;
+ * `checkConfigPermission()` is a plain async function for checks that must
+ * run mid-handler, after other validation, inside the write surface's
+ * transaction — but both now share the ONE `_permitClient` singleton below.
  *
  * Mirrors `services/selection-list-service/src/middleware/permit.ts`'s design:
  *
@@ -114,4 +124,53 @@ export function requirePermit(
       res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
     }
   };
+}
+
+/**
+ * The write surface's action vocabulary (FFRNT-158 / FF-EPIC-17-S6):
+ *
+ *   'write'             — set/unset a non-system value
+ *   'lock'               — lock/unlock a value (distinct from 'write' per
+ *                          the S6 assumption: write authority at your own
+ *                          scope does not imply lock authority over the
+ *                          scopes beneath it)
+ *   'write-system'       — any operation on an `isSystem` key (platform-only)
+ *   'register-namespace' — POST /v1/namespaces
+ *   'register-keys'      — PUT /v1/namespaces/{namespace}/keys
+ */
+export type ConfigAction = 'write' | 'lock' | 'write-system' | 'register-namespace' | 'register-keys';
+
+/**
+ * Asks Permit whether `userId` may perform `action` on the config resource
+ * instance named by `resourceKey` — e.g. `${namespace}:${scopeType}:${scopeId
+ * ?? 'singleton'}` for a scope-level write, or `${namespace}` alone for a
+ * namespace/catalog-registration action. FAIL CLOSED: any error (transport,
+ * timeout, PDP unavailable) is a deny, never a silent allow.
+ *
+ * Deliberately a plain function rather than middleware: the write surface
+ * needs to run this AFTER key-existence/shape validation but BEFORE
+ * fine-grained value validation (openapi.yaml's `Forbidden` response
+ * promises a denial reveals nothing about whether the requested scope/keys
+ * are otherwise valid), which route-level middleware ordering can't express
+ * as directly as an inline call. Shares the SAME `_permitClient` singleton
+ * as `requirePermit()` above — see module doc.
+ */
+export async function checkConfigPermission(
+  userId: string,
+  action: ConfigAction,
+  resourceKey: string,
+): Promise<boolean> {
+  try {
+    const allowed: boolean = await _permitClient.check(userId, action, { type: 'Config', key: resourceKey });
+    return Boolean(allowed);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[permit] Config permission check threw — failing closed.', {
+      err,
+      userId,
+      action,
+      resourceKey,
+    });
+    return false;
+  }
 }

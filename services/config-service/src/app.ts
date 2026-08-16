@@ -4,6 +4,7 @@ import { PgNamespaceRepository } from './repositories/namespace.repository';
 import { PgKeyDefinitionRepository } from './repositories/key-definition.repository';
 import { PgValueRepository } from './repositories/value.repository';
 import { createConfigReadRouter } from './routes/config-read.routes';
+import { createWriteRouter } from './routes/write.router';
 
 /**
  * Optional, DB-backed dependencies. Omitted -> the HEALTH-CHECK-ONLY skeleton
@@ -30,16 +31,26 @@ export function createApp(deps?: AppDeps): Application {
   });
 
   // ── EXTENSION POINT (FFRNT-157 / FFRNT-158) ──────────────────────────────
-  // Each story mounts its OWN router module here, in ITS OWN `app.use('/v1', ...)`
-  // call — both read from `deps.pool`, so a namespace/key-definition/value repo
-  // is only ever constructed once per story's router, and neither story's
-  // router touches the other's routes.
+  // Each story mounts its OWN router module here, in ITS OWN `app.use(...)`
+  // call — both read from `deps.pool`, so a namespace/key-definition/value
+  // repo is only ever constructed once per story's router, and neither
+  // story's router touches the other's routes.
+  //   - GET  /v1/namespaces, GET /v1/namespaces/{namespace}/keys[/{key}],
+  //     GET  /v1/config                    -> FFRNT-157 (createConfigReadRouter)
+  //   - POST /v1/namespaces, PUT /v1/namespaces/{namespace}/keys,
+  //     PUT  /v1/config                    -> FFRNT-158 (createWriteRouter)
+  // Route ordering, Permit gating, ETag/If-None-Match, ConfigWriteRequest's
+  // batch-transaction semantics, and pagination (gate-pagination, for the
+  // list endpoints) are each router's own responsibility per
+  // services/config-service/openapi.yaml — the frozen contract.
   if (deps) {
     const namespaceRepo = new PgNamespaceRepository(deps.pool);
     const keyDefinitionRepo = new PgKeyDefinitionRepository(deps.pool);
     const valueRepo = new PgValueRepository(deps.pool);
     app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo })); // FFRNT-157 (GET routes)
-    // FFRNT-158 mounts its write router (PUT /v1/config, POST/PUT /v1/namespaces*) here too.
+    // Shares deps.pool rather than letting createWriteRouter() open its own —
+    // one pool per process, not one per story's router.
+    app.use(createWriteRouter(deps.pool)); // FFRNT-158 (POST/PUT write routes)
   }
 
   return app;
