@@ -60,7 +60,8 @@
   "overrides": {
     "@types/express": "^4.17.21",
     "@types/express-serve-static-core": "^4.19.6",
-    "tar": ">=7.5.16"
+    "tar": ">=7.5.16",
+    "brace-expansion": ">=2.1.4"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
@@ -81,6 +82,7 @@
     "@typescript-eslint/parser": "^8.38.0",
     "eslint": "^9.31.0",
     "glob": "^11.0.3",
+    "js-yaml": "^4.3.1",
     "lru-cache": "^11.1.0",
     "node-addon-api": "^8.5.0",
     "permitio": "^2.7.4",
