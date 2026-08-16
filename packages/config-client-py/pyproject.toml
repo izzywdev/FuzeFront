@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-config-client"
+version = "1.0.0"
+description = "Python client for the FuzeFront config-service (namespaced, hierarchical key/value configuration)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+license = { text = "UNLICENSED" }
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fuzefront_config_client*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
