@@ -13,6 +13,7 @@
     "mfa-management",
     "password-reset",
     "portal-admin-consoles",
+    "selection-lists",
     "white-label-portal"
   ]
 }

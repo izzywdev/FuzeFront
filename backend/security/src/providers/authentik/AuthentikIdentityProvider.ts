@@ -20,6 +20,7 @@
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../../config/database'
 import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
 import { currentTenant } from './tenants'
@@ -331,7 +332,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   // ── Session minting ───────────────────────────────────────────────────────
   private async mintSession(user: BrokeredUser, ctx?: SessionContext): Promise<BrokeredSession> {
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(this.now() + SESSION_TTL_MS)
     // `tid` binds the session to the tenant that minted it. Without it a token
     // from one directory is indistinguishable from one from another (same
@@ -804,7 +805,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
 
   async enrollFactor(token: string, input: MfaEnrollInput): Promise<MfaEnrollResult> {
     const { user } = await this.getUserInfo(token)
-    const factorId = uuidv4()
+    const factorId = toUuid(mintId('mfaFactor'))
     if (input.type === 'totp') {
       const secret = totp.generateSecret()
       const uri = totp.provisioningUri(secret, user.email)

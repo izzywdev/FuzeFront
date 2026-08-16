@@ -63,16 +63,10 @@ async function main() {
   const usageRepo = new PgUsageRepository(pool);
   const refIndex = new PgRefIndexRepository(pool);
 
-  // --- Services ---
-  const customers = new CustomerService(stripe, customerRepo);
-  const plans = new PlanService(stripe, planRepo);
-  const subscriptionService = new SubscriptionService(stripe, customers, plans, subscriptionRepo);
-  const metering = new MeteringService(stripe, usageRepo);
-
-  const permitClient = await loadPermitClient(config);
-  const permit = new PermitSyncService(permitClient);
-
   // --- Kafka ---
+  // Constructed before CustomerService below, which needs the emitter to
+  // publish billing.tenant.registered when a new organization Customer is
+  // created (#491).
   const kafka = createKafkaClient({
     clientId: config.kafka.clientId,
     brokers: config.kafka.brokers,
@@ -80,6 +74,15 @@ async function main() {
   const producer = new TypedProducer(kafka);
   await producer.connect();
   const emitter = new KafkaBillingEmitter(producer);
+
+  // --- Services ---
+  const customers = new CustomerService(stripe, customerRepo, emitter);
+  const plans = new PlanService(stripe, planRepo);
+  const subscriptionService = new SubscriptionService(stripe, customers, plans, subscriptionRepo);
+  const metering = new MeteringService(stripe, usageRepo);
+
+  const permitClient = await loadPermitClient(config);
+  const permit = new PermitSyncService(permitClient);
 
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
   // The usage consumer runs in the background; failures dead-letter via producer.

@@ -386,9 +386,14 @@ jobs:
           python scripts/gate_identifier.py . --registry-parity
           python scripts/gate_identifier.py . --namespace
           python scripts/gate_identifier.py . --adoption
-      - name: Identifier gate — source backstop (report-only)
+      - name: Identifier gate — source backstop (enforcing)
+        # Ratcheted from report-only to enforcing by FFRNT-185: every genuine
+        # entity mint now routes through mintId()/toUuid() and the residual
+        # infrastructure-row sites are allowlisted, so the count is zero. A new
+        # bare-uuid entity mint (or a drifted allowlist line) now fails CI
+        # rather than being silently reported.
         shell: bash
-        run: python scripts/gate_identifier.py . --source || true
+        run: python scripts/gate_identifier.py . --source
 
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is

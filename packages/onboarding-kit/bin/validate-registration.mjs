@@ -37,7 +37,8 @@
 // Exit code 0 = conformant, 1 = violation.
 
 import { readFileSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // The surfaces every portal-destination product must serve. `portal` is how it appears
 // in the shell; `standalone` is the only surface a mobile TWA/APK can wrap, because an
@@ -238,6 +239,112 @@ export function validatePolicyWiring(dir) {
 }
 
 /**
+ * WHY A *POLICY* GATE IS CHECKING AN ENUM — the one case where "the schema already
+ * covers it" is exactly wrong.
+ *
+ * Everything else in this file guards a rule no schema can express. This one guards a
+ * rule the schema expresses perfectly well — and that is the point: NOTHING IN A
+ * PRODUCT'S REPOSITORY EVER RUNS THAT SCHEMA. The only thing that does is the
+ * platform, at registration time, in the cluster:
+ *
+ *   registerAppRequestSchema.safeParse(req.body)   // routes/app-registry.ts
+ *   navSchema.section = z.enum(NAV_SECTIONS)       // app-registry/manifest.schema.ts
+ *
+ * So an unknown section is not a lint warning. `POST /apps` answers 400, register.sh
+ * treats any non-201/409 as fatal, and the init container CrashLoopBackOffs the
+ * product's own pod — in production, on first deploy, with the failure appearing to
+ * belong to the product rather than to its manifest.
+ *
+ * FuzeFinance shipped `nav.section: "business"` and this validator passed it, because
+ * "business" is a perfectly plausible section name that simply is not in the list.
+ * A one-word typo, free to catch here, expensive to discover in a CrashLoop.
+ *
+ * The enum is READ FROM manifest.schema.json rather than copied into a constant.
+ * scripts/build-schema.mjs generates that file from the frozen openapi.yaml and CI
+ * fails if it is stale, so reading it means this gate can never drift from the
+ * contract — a hardcoded list would silently go wrong the day a section is added.
+ *
+ * @param {Record<string, unknown>} manifest
+ * @returns {string[]} human-readable violations; empty means conformant
+ */
+export function validateNavPlacement(manifest) {
+  const errors = []
+
+  const sections = navSections()
+  if (sections === null) {
+    // Deliberately an ERROR, not a skip. A gate that quietly does nothing when its
+    // reference data is missing is worse than no gate: it reports success while
+    // checking nothing, which is the exact failure class this whole kit exists to end.
+    return [
+      'cannot read NavSection from manifest.schema.json — the kit is installed ' +
+        'incompletely, so nav placement went unchecked rather than passing',
+    ]
+  }
+
+  const nav = manifest.nav
+  if (nav === undefined) {
+    errors.push(
+      'manifest declares no `nav` — the platform defaults it to section "platform", ' +
+        'order 999, so the product sorts LAST in the side menu by accident rather than ' +
+        `by decision. Pick one of: ${sections.join(', ')}`
+    )
+    return errors
+  }
+  if (nav === null || typeof nav !== 'object' || Array.isArray(nav)) {
+    return ['`nav` must be an object']
+  }
+
+  const { section, order } = nav
+
+  if (section === undefined) {
+    errors.push(
+      '`nav.order` is set but `nav.section` is not — order ranks WITHIN a section, so ' +
+        'on its own it does nothing and the product still sorts last, in "platform". ' +
+        `Pick one of: ${sections.join(', ')}`
+    )
+  } else if (typeof section !== 'string' || !sections.includes(section)) {
+    errors.push(
+      `nav.section ${JSON.stringify(section)} is not a NavSection. The platform parses ` +
+        'the manifest with `z.enum(NAV_SECTIONS)`, so `POST /apps` answers 400, ' +
+        'register.sh treats that as fatal, and the pod CrashLoopBackOffs — the product ' +
+        `never registers at all. Valid sections, in menu order: ${sections.join(', ')}`
+    )
+  }
+
+  // Same failure mode, different field: the contract's Nav.order is
+  // `integer, minimum 0, maximum 9999`, and the platform's zod mirror rejects anything
+  // else with the same fatal 400.
+  if (order !== undefined) {
+    if (typeof order !== 'number' || !Number.isInteger(order) || order < 0 || order > 9999) {
+      errors.push(
+        `nav.order ${JSON.stringify(order)} is not an integer in 0..9999 — the platform ` +
+          'rejects the manifest with 400 and the pod CrashLoopBackOffs'
+      )
+    }
+  }
+
+  return errors
+}
+
+/**
+ * The NavSection enum, read from the kit's generated copy of the frozen contract.
+ * Returns null if it cannot be read, so the caller can report that rather than
+ * silently skipping the check.
+ *
+ * @returns {string[] | null}
+ */
+function navSections() {
+  try {
+    const schemaPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'manifest.schema.json')
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+    const values = schema?.$defs?.NavSection?.enum
+    return Array.isArray(values) && values.length > 0 ? values : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * @param {string} dir  path to a registration/ directory
  * @returns {string[]}
  */
@@ -258,6 +365,7 @@ export function validateRegistrationDir(dir) {
   return [
     ...validateSlugConvention(manifest),
     ...validateSurfaces(manifest),
+    ...validateNavPlacement(manifest),
     ...validatePolicyWiring(dir),
   ]
 }

@@ -5,15 +5,30 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   getPortalDomains,
+  getPortalIdentityMode,
+  getPortalLaunchUrl,
   rowToPortal,
   type BillingMode,
+  type IdentityMode,
   type PortalBranding,
   type PortalIdentityPolicy,
   type PortalStatus,
 } from '../repositories/portalRepository'
 import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
+import { isPortalsDirectoryEnabled } from '../utils/portalsDirectoryFlag'
+import { resolvePortalReadManageCapabilities } from '../utils/portalReadManageCapabilities'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
+
+// Portals Directory (backend slice S1) — the fleet-list DTO enriched with
+// `identityMode`. Optional (not part of `rowToPortal`'s base return type) so
+// existing `AdminPortalStore` mocks/consumers that predate this field stay
+// valid without modification; `createAdminPortalStore().list()` below always
+// populates it (cheap — already selected on the row), and the router decides
+// whether to actually emit it on the wire based on the feature flag.
+export type AdminPortalListItem = ReturnType<typeof rowToPortal> & {
+  identityMode?: IdentityMode
+}
 
 export interface AdminPortalStore {
   list(input: {
@@ -21,7 +36,7 @@ export interface AdminPortalStore {
     query?: string
     limit: number
     cursor?: string
-  }): Promise<{ items: ReturnType<typeof rowToPortal>[]; nextCursor: string | null }>
+  }): Promise<{ items: AdminPortalListItem[]; nextCursor: string | null }>
   create(input: {
     actorUserId: string
     name: string
@@ -80,8 +95,11 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       const rows = await query
       const hasMore = rows.length > input.limit
       const pageRows = rows.slice(0, input.limit)
-      const items = await Promise.all(
-        pageRows.map(async row => rowToPortal(row, await getPortalDomains(row.id, database)))
+      const items: AdminPortalListItem[] = await Promise.all(
+        pageRows.map(async row => ({
+          ...rowToPortal(row, await getPortalDomains(row.id, database)),
+          identityMode: getPortalIdentityMode(row),
+        }))
       )
       return {
         items,
@@ -165,7 +183,7 @@ export function createAdminPortalRouter(deps: {
     message: { error: 'Too many requests. Try again shortly.' },
   })
 
-  router.get('/', adminRateLimiter, authenticate, authorize, async (request, response) => {
+  function parseListQuery(request: Request) {
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(request.query.limit ?? '25'), 10) || 25))
     const status = typeof request.query.status === 'string'
       ? request.query.status as PortalStatus
@@ -174,9 +192,100 @@ export function createAdminPortalRouter(deps: {
       ? request.query.q.slice(0, 200)
       : undefined
     const cursor = typeof request.query.cursor === 'string' ? request.query.cursor : undefined
+    return { limit, status, query, cursor }
+  }
+
+  // Portals Directory (backend slice S1 + S5 read-vs-no-access refinement) —
+  // `GET /` is gated by the SAME release flag (`fuzefront.platform.portals-directory`,
+  // default OFF) at TWO layers now:
+  //   - S1 (response shape): `identityMode`/`launchUrl` only ever appear when
+  //     ON.
+  //   - S5 (authorization): flag OFF keeps the pre-existing blanket
+  //     `requireRole(['admin'])` gate (`authorize` below) — byte-identical to
+  //     pre-S5 behavior, including its 403 body. Flag ON REPLACES that gate
+  //     with a per-portal Permit `read`/`manage` check on each portal's
+  //     owning organization (`resolvePortalReadManageCapabilities`): a
+  //     caller with `read` (not `manage`) now gets 200 with read-only rows
+  //     instead of a hard 403; a caller with `read` over NONE of the
+  //     portals this query would otherwise return still gets the same 403
+  //     no-access response the blanket gate used to produce. A portal the
+  //     caller cannot `read` is NEVER returned (BOLA-safe filtering, not
+  //     after-the-fact leakage) — see `docs/planning` BOLA convention used
+  //     throughout this file's sibling routes.
+  // `authorize` is therefore deliberately NOT in this route's middleware
+  // array — it is invoked manually, only on the flag-OFF branch, so the
+  // flag-ON branch can admit a non-admin caller with real Permit `read`
+  // authority.
+  router.get('/', adminRateLimiter, authenticate, async (request, response) => {
+    const { limit, status, query, cursor } = parseListQuery(request)
+    const directoryEnabled = await isPortalsDirectoryEnabled({
+      userId: request.user?.id,
+    })
+
+    if (!directoryEnabled) {
+      // Flag OFF: byte-identical to pre-S5 behavior — blanket admin-role
+      // gate (synchronous `requireRole`/injected `authorize`), no
+      // capability fields, `identityMode` stripped (the store always
+      // attaches it — see AdminPortalListItem).
+      let authorized = false
+      authorize(request, response, () => {
+        authorized = true
+      })
+      if (!authorized) return // authorize() already sent 401/403
+
+      const result = await store.list({ status, query, limit, cursor })
+      const items = result.items.map(({ identityMode, ...rest }) => rest)
+      return response.status(200).json({
+        items,
+        page: { nextCursor: result.nextCursor },
+      })
+    }
+
+    // Flag ON (S5): per-portal read-vs-manage refinement.
+    if (!request.user?.id) {
+      return response.status(401).json({ error: 'Authentication required' })
+    }
+
     const result = await store.list({ status, query, limit, cursor })
-    response.status(200).json({
-      items: result.items,
+    const capabilities = await resolvePortalReadManageCapabilities(
+      request.user.id,
+      result.items.map(item => item.organizationId)
+    )
+    const readableItems = result.items.filter(
+      item => capabilities.get(item.organizationId)?.canRead === true
+    )
+
+    if (result.items.length > 0 && readableItems.length === 0) {
+      // No portal this query would otherwise return is readable by this
+      // caller — the SAME no-access response the blanket
+      // requireRole(['admin']) gate used to produce. Never a leaked
+      // "page exists but every row was filtered" 200.
+      return response.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    const items = readableItems.map(item => {
+      const capability = capabilities.get(item.organizationId)
+      const canManage = capability?.canManage === true
+      // `canOpen` — authority to LAUNCH the portal. No separate Permit
+      // `open`/`launch` action exists on `Organization` today (see
+      // `permit/schema.ts`), so this intentionally mirrors `canManage`;
+      // kept as its own field so a future distinct launch authority is
+      // additive, not a contract break.
+      const canOpen = canManage
+      const { identityMode, ...rest } = item
+      return {
+        ...rest,
+        identityMode: identityMode ?? 'soft',
+        canManage,
+        canOpen,
+        // Only include `launchUrl` when the caller may actually open the
+        // portal — a read-only viewer must never receive the launch host.
+        ...(canOpen ? { launchUrl: getPortalLaunchUrl(item) } : {}),
+      }
+    })
+
+    return response.status(200).json({
+      items,
       page: { nextCursor: result.nextCursor },
     })
   })

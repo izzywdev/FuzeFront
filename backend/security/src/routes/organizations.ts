@@ -1,5 +1,6 @@
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import crypto from 'crypto'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
@@ -90,24 +91,6 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
-// Helper: the org owner is authoritative even without a membership row.
-//
-// The ROOT platform organization adopted by migration
-// 015_seed_root_platform_organization sets `owner_id` but seeds NO owner
-// membership row (only the create path inserts one). Its owner — the seeded
-// admin — would otherwise be unable to administer the org it owns: every
-// management endpoint here keys off `organization_memberships` and would 403.
-// The list/get endpoints already resolve `owner_id` to the 'owner' role
-// regardless of a membership row (see the `user_role` fallback), so honoring
-// the owner here just makes authorization consistent with what the UI is told.
-async function isOrgOwner(userId: string, orgId: string): Promise<boolean> {
-  const org = await db('organizations')
-    .where('id', orgId)
-    .where('owner_id', userId)
-    .first()
-  return !!org
-}
-
 // Helper: check if the requesting user is owner or admin of an org
 async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<boolean> {
   const membership = await db('organization_memberships')
@@ -116,13 +99,12 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
     .where('status', 'active')
     .whereIn('role', ['owner', 'admin'])
     .first()
-  if (membership) return true
-  return isOrgOwner(userId, orgId)
+  return !!membership
 }
 
 // Count an org's active owners. The "an org always keeps at least one owner"
-// invariant guard uses this to refuse removing/demoting the LAST owner, so an
-// org can never be left ownerless through the member-management routes.
+// invariant guard uses this to refuse removing the LAST owner, so an org can
+// never be left ownerless through the member-management routes.
 async function countActiveOwners(orgId: string): Promise<number> {
   const row = await db('organization_memberships')
     .where('organization_id', orgId)
@@ -186,7 +168,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const organizationId = uuidv4()
+    const organizationId = toUuid(mintId('organization'))
 
     // Create organization in transaction
     await db.transaction(async trx => {
@@ -205,7 +187,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
 
       // Create owner membership
       await trx('organization_memberships').insert({
-        id: uuidv4(),
+        id: toUuid(mintId('membership')),
         user_id: req.user.id,
         organization_id: organizationId,
         role: 'owner',
@@ -744,7 +726,7 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
 
     const token = crypto.randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    const invitationId = uuidv4()
+    const invitationId = toUuid(mintId('invitation'))
     const correlationId = uuidv4()
 
     await db('organization_invitations').insert({
@@ -852,7 +834,7 @@ router.post('/:id/invitations/bulk', authenticateToken, async (req: any, res) =>
 
         const token = crypto.randomBytes(32).toString('hex')
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        const invitationId = uuidv4()
+        const invitationId = toUuid(mintId('invitation'))
         const correlationId = uuidv4()
 
         await db('organization_invitations').insert({
@@ -1060,15 +1042,14 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params
 
-    // Any active member (any role) may view the catalog; the owner is
-    // authoritative even without a membership row (see isOrgOwner).
+    // Any active member (any role) may view the catalog
     const callerMembership = await db('organization_memberships')
       .where('user_id', req.user.id)
       .where('organization_id', id)
       .where('status', 'active')
       .first()
 
-    if (!callerMembership && !(await isOrgOwner(req.user.id, id))) {
+    if (!callerMembership) {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
@@ -1157,15 +1138,14 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
   try {
     const { id } = req.params
 
-    // Any active member (any role) may list members; the owner is
-    // authoritative even without a membership row (see isOrgOwner).
+    // Any active member (any role) may list members
     const callerMembership = await db('organization_memberships')
       .where('user_id', req.user.id)
       .where('organization_id', id)
       .where('status', 'active')
       .first()
 
-    if (!callerMembership && !(await isOrgOwner(req.user.id, id))) {
+    if (!callerMembership) {
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
@@ -1288,7 +1268,7 @@ router.post('/:id/members', authenticateToken, async (req: any, res) => {
 
     const token = crypto.randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    const invitationId = uuidv4()
+    const invitationId = toUuid(mintId('invitation'))
     const correlationId = uuidv4()
 
     await db('organization_invitations').insert({

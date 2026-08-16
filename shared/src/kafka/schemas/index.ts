@@ -6,6 +6,8 @@ export * from './billing.llm.usage';
 export * from './billing.payment.completed';
 export * from './billing.subscription.changed';
 export * from './billing.usage.recorded';
+export * from './billing.tenant.registered';
+export * from './billing.payment_method.updated';
 export * from './identity.user.created';
 export * from './identity.user.updated';
 export * from './identity.user.deleted';

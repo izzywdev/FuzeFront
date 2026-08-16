@@ -709,4 +709,28 @@ describe('Organization user_role projection — GET /:id', () => {
     expect(res.status).toBe(200)
     expect(res.body.user_role).toBe('owner')
   })
+
+  // FF-EPIC-17-S1 — with root membership (flag ON), the caller's literal
+  // `organization_memberships(role='member')` row in the root "FuzeFront" org
+  // resolves through this SAME left-join/projection, unchanged. This is the
+  // regression test the epic's "Change 3 — org list" calls for: no server
+  // code change was needed, root now surfaces MEMBER instead of the GUEST
+  // state (#529) once the membership row exists.
+  it('root org resolves to user_role=member once a root membership row exists (retires the GUEST state)', async () => {
+    const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+    wireOrgGet({
+      ...baseOrg,
+      id: ROOT_ORG_ID,
+      name: 'FuzeFront',
+      slug: 'fuzefront',
+      type: 'platform',
+      owner_id: 'platform-registrar-id',
+      user_role: 'member',
+    })
+
+    const res = await request(app).get(`/api/organizations/${ROOT_ORG_ID}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.user_role).toBe('member')
+  })
 })

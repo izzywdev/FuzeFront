@@ -68,4 +68,65 @@ describe('CustomerService.ensureCustomer', () => {
     });
     expect(opts.idempotencyKey).toBe('customer-create-organization-org-42');
   });
+
+  it('emits tenantRegistered for a new organization customer (#491)', async () => {
+    const repo = new FakeCustomerRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'cus_org_1' });
+    const stripe = { customers: { create } } as any;
+    const tenantRegistered = jest.fn().mockResolvedValue(undefined);
+    const svc = new CustomerService(stripe, repo, { tenantRegistered });
+
+    await svc.ensureCustomer('organization', 'org-1');
+
+    expect(tenantRegistered).toHaveBeenCalledWith({
+      entityId: 'org-1',
+      entityType: 'organization',
+      stripeCustomerId: 'cus_org_1',
+    });
+  });
+
+  it('does NOT emit tenantRegistered for a personal (user) customer', async () => {
+    const repo = new FakeCustomerRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'cus_user_1' });
+    const stripe = { customers: { create } } as any;
+    const tenantRegistered = jest.fn().mockResolvedValue(undefined);
+    const svc = new CustomerService(stripe, repo, { tenantRegistered });
+
+    await svc.ensureCustomer('user', 'user-1');
+
+    expect(tenantRegistered).not.toHaveBeenCalled();
+  });
+
+  it('does NOT re-emit tenantRegistered on the idempotent second call', async () => {
+    const repo = new FakeCustomerRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'cus_org_1' });
+    const stripe = { customers: { create } } as any;
+    const tenantRegistered = jest.fn().mockResolvedValue(undefined);
+    const svc = new CustomerService(stripe, repo, { tenantRegistered });
+
+    await svc.ensureCustomer('organization', 'org-1');
+    await svc.ensureCustomer('organization', 'org-1');
+
+    expect(tenantRegistered).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fail customer creation when the emitter is omitted', async () => {
+    const repo = new FakeCustomerRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'cus_org_1' });
+    const stripe = { customers: { create } } as any;
+    const svc = new CustomerService(stripe, repo);
+
+    await expect(svc.ensureCustomer('organization', 'org-1')).resolves.toBeDefined();
+  });
+
+  it('does not fail customer creation when the tenantRegistered emit rejects', async () => {
+    const repo = new FakeCustomerRepo();
+    const create = jest.fn().mockResolvedValue({ id: 'cus_org_1' });
+    const stripe = { customers: { create } } as any;
+    const tenantRegistered = jest.fn().mockRejectedValue(new Error('kafka down'));
+    const svc = new CustomerService(stripe, repo, { tenantRegistered });
+
+    const result = await svc.ensureCustomer('organization', 'org-1');
+    expect(result.stripeCustomerId).toBe('cus_org_1');
+  });
 });

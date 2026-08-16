@@ -27,7 +27,8 @@
     "design-system",
     "services/chat-service",
     "services/email-service",
-    "services/notification-service"
+    "services/notification-service",
+    "services/selection-list-service"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
@@ -41,7 +42,10 @@
     "test:backend": "npm run test -w backend",
     "type-check:backend": "npm run type-check -w backend",
     "check:workspace-deps": "node scripts/check-workspace-deps.mjs",
-    "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs"
+    "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs",
+    "check:frames-stamped": "node scripts/stamp-frames.mjs --check",
+    "stamp:frames": "node scripts/stamp-frames.mjs --write",
+    "test:frames-stamped": "node --test scripts/__tests__/stamp-frames.test.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",

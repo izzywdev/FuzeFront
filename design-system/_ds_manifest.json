@@ -38,6 +38,10 @@
       "sourcePath": "components/core/Button.jsx"
     },
     {
+      "name": "ExternalLink",
+      "sourcePath": "components/core/ExternalLink.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
     },
@@ -112,6 +116,10 @@
     {
       "name": "PasswordChecklist",
       "sourcePath": "components/forms/PasswordChecklist.jsx"
+    },
+    {
+      "name": "SearchField",
+      "sourcePath": "components/forms/SearchField.jsx"
     },
     {
       "name": "Select",

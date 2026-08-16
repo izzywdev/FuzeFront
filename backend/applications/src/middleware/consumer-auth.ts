@@ -35,8 +35,20 @@ import { authenticateToken } from './auth'
 // Shaped to satisfy @fuzefront/core's User. `email` is required there; this
 // caller is a service, not a person, so it carries a non-routable sentinel
 // address rather than anything that could collide with a real account.
+//
+// `id` is DELIBERATELY NOT A UUID — there is no `users` row for a service — and
+// that is load-bearing rather than incidental. Anything that treats this id as a
+// real user id and puts it in a query against a `uuid` column will throw
+// `invalid input syntax for type uuid` in Postgres. `users.id`,
+// `organization_memberships.user_id` and friends are all `table.uuid(...)`.
+//
+// It is exported so the one place that needs to know — resolveCaller — can
+// recognise the service caller by identity instead of by shape-guessing, and so
+// this coupling is greppable rather than implicit.
+export const SYNTHETIC_CONSUMER_USER_ID = 'consumer-registration'
+
 const SYNTHETIC_CONSUMER_USER = {
-  id: 'consumer-registration',
+  id: SYNTHETIC_CONSUMER_USER_ID,
   email: 'consumer-registration@fuzefront.invalid',
   roles: ['admin'] as string[],
 }

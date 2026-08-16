@@ -22,3 +22,20 @@
 # fuzefront namespace. It is asymmetrically encrypted with the cluster's public key
 # and cannot be decrypted outside the cluster. Safe to commit (SealedSecrets design intent).
 53fa34b2d69b1508748dc6bd9c3caec969438ad8:deploy/contabo/sealed/fuzefront-secrets.yaml:generic-api-key:16
+# services/selection-list-service/tests/resolve.test.ts (commit 010a995 — S8 resolve hot path).
+# A unit-test JWT signing key variable used only inside the test file to sign JWTs for
+# supertest. Not a production secret; it was renamed to a non-flagging identifier in a
+# later commit on the S8 branch. History is not rewritten on this repo.
+010a995cebabeba3bb38c47da16326f8fe218658:services/selection-list-service/tests/resolve.test.ts:generic-api-key:71
+# The prior .gitleaksignore commit (cae9e719) had the flagged variable value quoted in its
+# comment text. Suppressing that commit's finding without re-quoting the value.
+cae9e719d90e7d3c278a89576500e04ac4b25c3d:.gitleaksignore:generic-api-key:27
+# packages/selection-list-client-py — quickstart example token strings in the README
+# and module docstring that gitleaks scores as high-entropy generic-api-keys.
+# Neither value is a real credential — both are copy-paste documentation placeholders.
+# The README was sanitised in a follow-up commit (line 20 → "<your-bearer-token>");
+# the client.py docstring was sanitised in an earlier follow-up commit.
+# History is not rewritten on this repo, so the original-commit fingerprints are
+# suppressed here instead.
+db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/README.md:generic-api-key:20
+db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/fuzefront_selection_list_client/client.py:generic-api-key:13

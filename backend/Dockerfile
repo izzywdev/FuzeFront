@@ -14,6 +14,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
+COPY packages/identity/package.json ./packages/identity/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY backend/package.json ./backend/
 
@@ -22,6 +23,7 @@ RUN npm install
 # Copy source
 COPY shared/ ./shared/
 COPY packages/feature-flags/ ./packages/feature-flags/
+COPY packages/identity/ ./packages/identity/
 COPY custom-hostname-client/ ./custom-hostname-client/
 COPY backend/ ./backend/
 
@@ -32,6 +34,11 @@ COPY backend/ ./backend/
 # silently took its in-code default.
 RUN cd shared && npm run build:kafka
 RUN cd packages/feature-flags && npm run build
+# Same reason as the flag client above: @izzywdev/fuzefront-identity's `main`
+# points at dist/, and backend/src routes/services import mintId/toUuid
+# STATICALLY. Without this build the workspace symlink resolves to an empty
+# package and the container crashloops at boot.
+RUN cd packages/identity && npm run build
 # Same reason as the flag client above: @fuzefront/custom-hostname-client's
 # `main`/`types` point at dist/, and backend/src/custom-domains imports it
 # STATICALLY. Without this build the workspace symlink resolves to an empty
@@ -60,6 +67,8 @@ COPY --from=build --chown=backend:nodejs /app/shared/dist ./shared/dist
 COPY --from=build --chown=backend:nodejs /app/shared/package.json ./shared/package.json
 COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
 COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
+COPY --from=build --chown=backend:nodejs /app/packages/identity/dist ./packages/identity/dist
+COPY --from=build --chown=backend:nodejs /app/packages/identity/package.json ./packages/identity/package.json
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/dist ./custom-hostname-client/dist
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/package.json ./custom-hostname-client/package.json
 COPY --from=build --chown=backend:nodejs /app/backend/dist ./backend/dist

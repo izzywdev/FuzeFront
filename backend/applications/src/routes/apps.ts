@@ -1,5 +1,5 @@
 import express from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { App } from '../types/shared'
@@ -412,7 +412,7 @@ router.post(
           .json({ error: 'An app with this name already exists' })
       }
 
-      const appId = uuidv4()
+      const appId = toUuid(mintId('app'))
 
       await db('apps').insert({
         id: appId,
@@ -588,7 +588,7 @@ router.post('/register', async (req: any, res) => {
       }
     }
 
-    const appId = uuidv4()
+    const appId = toUuid(mintId('app'))
 
     await db('apps').insert({
       id: appId,
