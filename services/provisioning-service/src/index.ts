@@ -8,9 +8,19 @@ import {
   identityUserCreatedSchemaV1,
   IdentityOrgCreatedPayloadV1,
   identityOrgCreatedSchemaV1,
+  IdentityOrgUpdatedPayloadV1,
+  identityOrgUpdatedSchemaV1,
+  IdentityOrgDeletedPayloadV1,
+  identityOrgDeletedSchemaV1,
 } from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
-import { handleUserCreated, handleOrgCreated, HandlerDeps } from './handler';
+import {
+  handleUserCreated,
+  handleOrgCreated,
+  handleOrgUpdated,
+  handleOrgDeleted,
+  HandlerDeps,
+} from './handler';
 import { createApp } from './app';
 
 async function main() {
@@ -85,6 +95,30 @@ async function main() {
     dlqProducer
   );
 
+  // identity.org.updated -> re-reconcile the org's Permit wiring.
+  const orgUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-updated`);
+  await orgUpdatedConsumer.connect();
+  await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
+  await orgUpdatedConsumer.run(
+    withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
+      handleOrgUpdated(event, handlerDeps)
+    ),
+    identityOrgUpdatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.org.deleted -> tear down the org's Permit access (soft/hard).
+  const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
+  await orgDeletedConsumer.connect();
+  await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
+  await orgDeletedConsumer.run(
+    withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
+      handleOrgDeleted(event, handlerDeps)
+    ),
+    identityOrgDeletedSchemaV1,
+    dlqProducer
+  );
+
   // --- HTTP health probe ---
   const app = createApp();
   app.listen(config.port, () => {
@@ -96,6 +130,8 @@ async function main() {
     console.log('[provisioning-service] Shutting down...');
     await userConsumer.disconnect();
     await orgConsumer.disconnect();
+    await orgUpdatedConsumer.disconnect();
+    await orgDeletedConsumer.disconnect();
     await dlqProducer.disconnect();
     process.exit(0);
   };
