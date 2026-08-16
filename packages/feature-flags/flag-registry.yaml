@@ -222,3 +222,55 @@ flags:
                   name: developers
           # No org/user targeting at creation — enable per-org via Unleash
           # targeting rules once the service is ready for a given org.
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
+  # portal reconciliation)
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.identity.root-membership
+    type: release
+    default: false
+    description: >
+      Backend slice (FF-EPIC-17-S1/S2): on signup / auth self-heal, upserts a
+      root organization_memberships(role='member') row instead of creating a
+      type='personal' org. Frontend UI (personal-context switcher) reads
+      whatever `user_role` the org list actually returns, so it degrades
+      gracefully while this flag is OFF — root simply keeps resolving its
+      pre-flag role (today: no membership row) until backend S1/S2 ship.
+    owner: platform team (backend-engineer, FF-EPIC-17-S1/S2)
+    removal_criterion: >
+      When every environment has migrated (S2 backfill run + verified
+      idempotent) and 100% of signups take the root-membership path. Drop the
+      type='personal' provisioning branch alongside.
+    gates:
+      - organizationProvisioning.ts root-membership upsert (backend/src, backend/security/src)
+      - auth self-heal hooks (backend/security/src/routes/auth.ts)
+    web_exposed: false
+    jira: ~
+    epic: FF-EPIC-17
+    story: S1
+
+  - key: fuzefront.identity.personal-context
+    type: release
+    default: false
+    description: >
+      Gates the reconciled identity-context-switcher UI (FF-EPIC-17-S4,
+      design/frames/identity-context-switcher/**): the unified
+      ContextSwitcher (Personal + org/sub-org tree, replacing the flat org
+      list in UserMenu.tsx's OrganizationSwitcherSection) and the "My orgs &
+      sub-orgs" view superseding OrganizationPage.tsx's local `<select>`.
+      Flag OFF preserves today's UI exactly (flat org list, local `<select>`
+      + tabs) — zero regression while fuzefront.identity.root-membership is
+      still rolling out server-side.
+    owner: platform team (frontend-engineer, FF-EPIC-17-S4)
+    removal_criterion: >
+      When the reconciled switcher is GA and enabled for 100% of users; then
+      delete OrganizationPage.tsx's `<select>` branch and this flag check.
+    gates:
+      - "@fuzefront/identity-ui ContextSwitcherFlow in UserMenu.tsx (header)"
+      - "/organizations MyOrganizationsFlow (supersedes OrganizationPage.tsx select)"
+      - "/organizations/:id OrganizationDetailPage (root MEMBER badge, never GUEST)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S4
