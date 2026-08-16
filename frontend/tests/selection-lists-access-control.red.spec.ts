@@ -85,7 +85,9 @@ async function injectAccessGrants(page: Page, grants = MOCK_ACCESS_GRANTS) {
         body: JSON.stringify({ grants }),
       })
     } else {
-      await route.continue()
+      // fallback (not continue) so that PUT/DELETE-specific handlers registered
+      // earlier in LIFO order are not bypassed by this catch-all.
+      await route.fallback()
     }
   })
 }
@@ -218,12 +220,13 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
         await route.continue()
       }
     })
-    await injectAccessGrants(page)
-    await gotoAccessPanel(page)
-
-    // Track page errors — 409 must be handled, not thrown.
+    // Track page errors before navigation so uncaught exceptions during
+    // initial render are captured (attaching after gotoAccessPanel would miss them).
     const pageErrors: string[] = []
     page.on('pageerror', err => pageErrors.push(String(err)))
+
+    await injectAccessGrants(page)
+    await gotoAccessPanel(page)
 
     // Attempt to revoke the sole owner.
     const soleOwnerRow = page.locator(`[data-grant='${SOLE_OWNER_USER_ID}']`)

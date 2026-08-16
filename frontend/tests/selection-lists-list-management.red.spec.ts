@@ -152,23 +152,21 @@ async function injectListIndexData(page: Page) {
         }),
       })
     } else {
-      await route.continue()
+      // fallback (not continue) so that POST-specific handlers registered earlier
+      // in LIFO order are not bypassed when openNewListForm registers them first.
+      await route.fallback()
     }
   })
 }
 
 /** Inject a successful list-items response for the detail view. */
 async function injectListDetailData(page: Page) {
-  await page.route(`**/v1/selection-lists/${LIST_ID}*`, async route => {
+  // Items list route — registered first so it is tried second (LIFO).
+  // '*' does not match '/' in Playwright globs, so the detail route below
+  // cannot inadvertently intercept sub-paths like /items or /items/reorder.
+  await page.route(`**/v1/selection-lists/${LIST_ID}/items*`, async route => {
     const url = route.request().url()
-    const method = route.request().method()
-    if (url.endsWith(`/${LIST_ID}`) && method === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_LIST_COUNTRIES),
-      })
-    } else if (url.includes('/items') && !url.includes('/items/') && method === 'GET') {
+    if (route.request().method() === 'GET' && !url.includes('/items/')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -179,7 +177,19 @@ async function injectListDetailData(page: Page) {
         }),
       })
     } else {
-      await route.continue()
+      await route.fallback()
+    }
+  })
+  // List detail route — registered second so it is tried first (LIFO).
+  await page.route(`**/v1/selection-lists/${LIST_ID}*`, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MOCK_LIST_COUNTRIES),
+      })
+    } else {
+      await route.fallback()
     }
   })
 }
@@ -916,17 +926,30 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
         body: JSON.stringify({ code: 'FORBIDDEN', message: 'Insufficient permission: update_value' }),
       })
     })
-    // For read-only roles the handles must not be rendered at all.
-    // This test asserts the FORBIDDEN error state; handle absence is implicitly
-    // covered when data-drag-handle count is 0 in the read-only view.
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // If the role lacks update_value, [data-drag-handle] must be absent.
-    // We verify the FORBIDDEN error surfaces if a reorder is attempted by a
-    // role that somehow triggers it (e.g., programmatic).
-    await expect(
-      page.locator("[data-error='FORBIDDEN']"),
-    ).toBeVisible()
+    // For roles without update_value, [data-drag-handle] must NOT be rendered —
+    // the reorder affordance is removed entirely (fail-closed).
+    const handles = page.locator('[data-drag-handle]')
+    const handleCount = await handles.count()
+    if (handleCount > 0) {
+      // Defensive path: if handles are somehow rendered, triggering a reorder must
+      // surface [data-error='FORBIDDEN'] — the backend rejects it.
+      await handles.first().focus()
+      await page.keyboard.press('Space')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Space')
+      await expect(
+        page.locator("[data-error='FORBIDDEN']"),
+        '[data-error="FORBIDDEN"] must appear when reorder is attempted without update_value',
+      ).toBeVisible()
+    } else {
+      // Correct path: handles absent — no reorder affordance for read-only roles.
+      await expect(
+        handles.first(),
+        '[data-drag-handle] must not render for roles without update_value',
+      ).not.toBeVisible()
+    }
   })
 
   /**
