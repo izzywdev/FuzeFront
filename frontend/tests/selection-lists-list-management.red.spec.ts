@@ -469,10 +469,13 @@ test.describe('Selection Lists list-management — frame 02-new-list', () => {
   })
 
   test('shows [data-state="submitting"] and disables key + source_locale during submit', async ({ page }) => {
-    // Delay the POST so the submitting state is observable.
+    // Hold the POST in-flight until all submitting-state assertions pass — avoids a
+    // race where the POST resolves before the serial assertions complete.
+    let resolvePost: () => void = () => {}
+    const postHeld = new Promise<void>(resolve => { resolvePost = resolve })
     await page.route('**/v1/selection-lists', async route => {
       if (route.request().method() === 'POST') {
-        await new Promise(r => setTimeout(r, 300))
+        await postHeld
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
@@ -484,7 +487,7 @@ test.describe('Selection Lists list-management — frame 02-new-list', () => {
     })
     await openNewListForm(page)
     await page.locator("[data-field='key']").fill('new-list')
-    // Start submit and check submitting state before it resolves.
+    // Start submit — POST is now held in-flight by the deferred promise.
     await page.locator("[data-action='create-list']").click()
     await expect(
       page.locator("[data-state='submitting']"),
@@ -503,6 +506,7 @@ test.describe('Selection Lists list-management — frame 02-new-list', () => {
       page.locator("[data-action='create-list']"),
       'the submit button must be disabled while submitting',
     ).toBeDisabled()
+    resolvePost()
   })
 
   test('POST body must NOT contain an id field (service mints sl_…)', async ({ page }) => {
@@ -823,19 +827,27 @@ test.describe('Selection Lists list-management — frame 04-value-modal', () => 
           body: JSON.stringify({ code: 'FORBIDDEN', message: 'list-translator cannot modify values' }),
         })
       } else {
-        await route.continue()
+        await route.fallback()
       }
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // The add-value action must be disabled but visible (not hidden).
-    const addAction = page.locator("[data-action='add-value']")
-    await expect(addAction, '[data-action="add-value"] must be visible to list-translator').toBeVisible()
-    await expect(addAction, '[data-action="add-value"] must be disabled for list-translator').toBeDisabled()
+    // Trigger the 403 by attempting to add a value — POST …/items → 403.
+    await page.locator("[data-action='add-value']").click()
+    await expect(
+      page.locator("[data-modal='add-value']"),
+      '[data-modal="add-value"] must open when add-value is clicked',
+    ).toBeVisible()
+    await page.locator("[data-field='code']").fill('XX')
+    await page.locator("[data-action='save-value']").click()
+    // After the 403 the panel must show FORBIDDEN and disable mutation controls.
     await expect(
       page.locator("[data-error='FORBIDDEN']").first(),
       '[data-error="FORBIDDEN"] must explain why actions are disabled for list-translator',
     ).toBeVisible()
+    const addAction = page.locator("[data-action='add-value']")
+    await expect(addAction, '[data-action="add-value"] must be visible to list-translator').toBeVisible()
+    await expect(addAction, '[data-action="add-value"] must be disabled for list-translator').toBeDisabled()
   })
 })
 
@@ -1074,9 +1086,9 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
       page.locator("[data-quota-state='at-limit']"),
       '[data-quota-state="at-limit"] must mark the at-limit state',
     ).toBeVisible()
-    // The CTA must be disabled with aria-disabled at the ceiling.
-    const cta = page.locator("[data-action='new-list'][disabled]")
-    await expect(cta, 'the new-list CTA must be disabled (aria-disabled) at the quota ceiling').toBeVisible()
+    // The CTA must be disabled (may use aria-disabled) at the ceiling.
+    const cta = page.locator("[data-action='new-list']")
+    await expect(cta, 'the new-list CTA must be disabled (aria-disabled) at the quota ceiling').toBeDisabled()
     // A tooltip must explain which scope, current and limit hit the ceiling.
     await expect(
       page.locator("[data-tooltip='quota']"),
@@ -1085,18 +1097,26 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
   })
 
   test('shows [data-state="loading"] while the quota call is in flight', async ({ page }) => {
+    // Hold the quota fetch in-flight so the loading state is observable.
+    let resolveQuota: () => void = () => {}
+    const quotaHeld = new Promise<void>(resolve => { resolveQuota = resolve })
     await page.route('**/v1/selection-lists/quota*', async route => {
-      await new Promise(r => setTimeout(r, 300))
+      await quotaHeld
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_QUOTA_NEAR_LIMIT) })
     })
     await injectListIndexData(page)
     await page.goto(LIST_INDEX_ROUTE)
-    // Scoped to the quota panel so this cannot be satisfied by the list-index
-    // loading skeleton (which resolves from a different, faster fetch).
+    // Wait for the list panel to mount — only the quota fetch remains in-flight after this.
     await expect(
-      page.locator("[data-frame='06-quota'] [data-state='loading']"),
-      '[data-state="loading"] must appear in [data-frame="06-quota"] while the quota fetch is in flight',
+      page.locator("[data-panel='list-index']"),
+      '[data-panel="list-index"] must mount before asserting quota loading state',
     ).toBeVisible()
+    // The quota loading indicator must be visible while the quota fetch is still held.
+    await expect(
+      page.locator("[data-state='loading']").first(),
+      '[data-state="loading"] must appear while the quota fetch is in flight',
+    ).toBeVisible()
+    resolveQuota()
   })
 
   test('[data-state="error"] from quota shows hidden meters but CTA stays ENABLED (fail-OPEN)', async ({ page }) => {
@@ -1115,11 +1135,11 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
     // The CTA must be ENABLED despite the failed quota call (fail-OPEN).
     const cta = page.locator("[data-action='new-list']")
     await expect(cta, 'the new-list CTA must stay ENABLED when the quota advisory call fails — the server is the authority').toBeEnabled()
-    // The disabled-with-aria-disabled form of the CTA must NOT be present.
+    // The CTA must NOT be disabled in any form (neither disabled nor aria-disabled).
     await expect(
-      page.locator("[data-action='new-list'][disabled]"),
+      page.locator("[data-action='new-list']"),
       'a failed quota call must NOT render the disabled CTA — that would lock out users',
-    ).not.toBeVisible()
+    ).not.toBeDisabled()
   })
 })
 

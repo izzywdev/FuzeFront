@@ -306,6 +306,13 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
       }
     })
     await gotoAccessPanel(page)
+    // Trigger the 403 by clicking Remove on the first grant — DELETE …/access/{userId} → 403.
+    await expect(
+      page.locator("[data-action='revoke-access']").first(),
+      '[data-action="revoke-access"] must be visible before triggering FORBIDDEN',
+    ).toBeVisible()
+    await page.locator("[data-action='revoke-access']").first().click()
+    // After the 403 the panel must show FORBIDDEN.
     await expect(
       page.locator("[data-error='FORBIDDEN']"),
       '[data-error="FORBIDDEN"] must appear when the caller lacks manage_access',
