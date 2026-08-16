@@ -35,6 +35,11 @@ const portalClientSrc = fileURLToPath(
 const portalBrandingUiSrc = fileURLToPath(
   new URL('../packages/portal-branding-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/portal-admin-ui (master-admin + portal-admin consoles, FF-EPIC-14)
+// — same unbuilt-dist reasoning; resolve from SOURCE, mirroring vite.config.ts.
+const portalAdminUiSrc = fileURLToPath(
+  new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
+)
 // app-registry-client (apps-client/) is an unpublished file: workspace package
 // whose dist/ is not built in CI — resolve from SOURCE, mirroring vite.config.ts.
 // Without this, tests doing a real `import { AppRegistryClient } from
@@ -104,6 +109,7 @@ export default defineConfig({
       '@fuzefront/app-registry-client': appRegistryClientSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
+      '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
