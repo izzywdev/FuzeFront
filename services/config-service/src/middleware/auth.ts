@@ -23,6 +23,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import type { Identity } from '@fuzefront/auth';
 
 /** The write-surface's view of the authenticated caller. Set by requireAuth(). */
 export interface Principal {
@@ -55,6 +56,21 @@ declare global {
        * userId/orgId/portalId — never populated on its own.
        */
       principal?: Principal;
+      /**
+       * `@fuzefront/auth`'s normalized `Identity` — the shape
+       * `src/middleware/authz.ts` reads to ask the Security API for a
+       * decision (subject + tenant). This service does NOT adopt
+       * `@fuzefront/auth`'s own `requireAuth()`; it keeps its own JWT
+       * verification above (which already handles this token's exact claim
+       * names and populates `req.principal`, relied on by the write routes)
+       * and additionally normalizes into `Identity` here, so the two
+       * middlewares stay a single source of truth rather than diverging.
+       * `tenantId` is deliberately `null` (never guessed) when the token
+       * carries no org claim — the config-service-specific 'platform'
+       * fallback is applied at the authz call site, not baked into the
+       * identity itself.
+       */
+      identity?: Identity;
     }
   }
 }
@@ -116,6 +132,17 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       portalId: req.portalId,
       orgId: req.orgId,
       roles,
+    };
+    req.identity = {
+      userId,
+      // `null`, not a guessed default — the current platform JWT carries no
+      // org/tenant claim at all. src/middleware/authz.ts applies the
+      // service's own 'platform' fallback at the point of the authz
+      // decision, matching this service's pre-existing tenant derivation
+      // (`req.orgId ?? 'platform'`).
+      tenantId: req.orgId ?? null,
+      roles,
+      authMode: 'legacy-hs256',
     };
     next();
   } catch {

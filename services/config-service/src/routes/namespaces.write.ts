@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { requireAuth } from '../middleware/auth';
-import { checkConfigPermission } from '../middleware/permit';
+import { checkConfigPermission } from '../middleware/authz';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { validateNamespaceCreateShape } from '../validation/requestShapes';
 import { sendError } from '../http/errors';
@@ -18,8 +18,6 @@ export function createNamespacesWriteRouter(pool: Pool): Router {
   const router = Router();
 
   router.post('/v1/namespaces', requireAuth, async (req: Request, res: Response) => {
-    const principal = req.principal!;
-
     const shape = validateNamespaceCreateShape(req.body);
     if (!shape.valid) {
       sendError(res, 400, {
@@ -31,7 +29,7 @@ export function createNamespacesWriteRouter(pool: Pool): Router {
     }
     const body = req.body as NamespaceCreateInput;
 
-    const allowed = await checkConfigPermission(principal.userId, 'register-namespace', body.namespace);
+    const allowed = await checkConfigPermission(req, 'register-namespace', body.namespace);
     if (!allowed) {
       sendError(res, 403, {
         code: 'FORBIDDEN',

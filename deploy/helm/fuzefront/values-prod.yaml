@@ -633,8 +633,12 @@ selectionListService:
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Ships dark (enabled: false) until
 # the SealedSecret `config-service-secrets` is provisioned in a deploy window.
+# Authorization is routed through FuzeFront's own Security API
+# (SECURITY_SERVICE_URL — plain in-cluster Service DNS, set in
+# templates/config-service-deployment.yaml, no secret needed) rather than an
+# embedded Permit.io SDK, so there is no PERMIT_API_KEY to seal here.
 # GO-LIVE steps:
-#   1. Seal DATABASE_URL, JWT_SECRET, PERMIT_API_KEY into config-service-secrets
+#   1. Seal DATABASE_URL, JWT_SECRET into config-service-secrets
 #      (see deploy/contabo/sealed/config-service-secrets.yaml.template).
 #   2. Flip `enabled` to true here via GitOps in a deploy window.
 # tag is empty because release.yml has not yet built the image (this PR only

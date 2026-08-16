@@ -10,6 +10,7 @@
     "backend/applications",
     "shared",
     "packages/identity",
+    "packages/auth",
     "billing-client",
     "custom-hostname-client",
     "packages/billing-ui",
