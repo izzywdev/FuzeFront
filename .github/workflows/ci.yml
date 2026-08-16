@@ -88,6 +88,12 @@ jobs:
         # statically, so backend's tsc cannot resolve it until this runs.
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzeone/selection-lists-ui (d.ts for frontend type-check)
+        # frontend/tsconfig.json resolves @fuzeone/selection-lists-ui to its
+        # built dist/index.d.ts; without this the type-check and vite build
+        # both fail with "Cannot find module '@fuzeone/selection-lists-ui'".
+        run: npm run -w @fuzeone/selection-lists-ui build
+
       - name: Type checking
         run: |
           cd backend && npm run type-check
@@ -207,6 +213,11 @@ jobs:
         run: |
           npm run -w @fuzefront/chat-client build
           npm run -w @fuzefront/chat-ui build
+
+      # selection-lists-ui's exports field points to dist/ so vite cannot
+      # resolve the package entry until it has been built.
+      - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
+        run: npm run -w @fuzeone/selection-lists-ui build
 
       - name: Build frontend
         run: cd frontend && npm run build
