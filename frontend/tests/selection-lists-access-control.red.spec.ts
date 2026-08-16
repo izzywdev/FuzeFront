@@ -78,11 +78,14 @@ async function injectAccessGrants(page: Page, grants = MOCK_ACCESS_GRANTS) {
   await page.route(`**/v1/selection-lists/${LIST_ID}/access*`, async route => {
     const url = route.request().url()
     const method = route.request().method()
-    if (method === 'GET' && url.endsWith('/access')) {
+    // Match GET …/access and GET …/access?cursor=… but not …/access/{userId}.
+    // url.endsWith('/access') would miss query-stringed pagination requests.
+    if (method === 'GET' && !url.includes('/access/')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ grants }),
+        // The frozen contract: GET …/access -> [SelectionListAccessGrant] (bare array).
+        body: JSON.stringify(grants),
       })
     } else {
       // fallback (not continue) so that PUT/DELETE-specific handlers registered
@@ -276,11 +279,13 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
     // Without manage_access, the table must be visible (governance stays legible)
     // but read-only — role selects disabled, Remove disabled.
     await page.route(`**/v1/selection-lists/${LIST_ID}/access*`, async route => {
-      if (route.request().method() === 'GET') {
+      const url = route.request().url()
+      if (route.request().method() === 'GET' && !url.includes('/access/')) {
+        // Frozen contract: bare array, no invented `readonly` field.
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ grants: MOCK_ACCESS_GRANTS, readonly: true }),
+          body: JSON.stringify(MOCK_ACCESS_GRANTS),
         })
       } else if (['PUT', 'DELETE'].includes(route.request().method())) {
         await route.fulfill({
@@ -289,7 +294,7 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
           body: JSON.stringify({ code: 'FORBIDDEN', message: 'manage_access required' }),
         })
       } else {
-        await route.continue()
+        await route.fallback()
       }
     })
     await gotoAccessPanel(page)
@@ -302,6 +307,8 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
     // The role selects and remove buttons must be disabled.
     const roleSelects = page.locator('[data-role-select]')
     const count = await roleSelects.count()
+    // Guard: count() does not auto-wait; if count is 0 the panel has not rendered.
+    expect(count, 'at least one [data-role-select] must be present when the access panel renders').toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
       await expect(roleSelects.nth(i), `role-select ${i} must be disabled when FORBIDDEN`).toBeDisabled()
     }
@@ -530,6 +537,10 @@ test.describe('Selection Lists access-control — frame 11-add-access-modal', ()
     await page.locator("[data-action='confirm-add-access']").click()
     // Wait for the action to complete.
     await page.waitForTimeout(300)
+    expect(
+      putBodies.length,
+      'PUT …/access/{userId} must have been captured at least once — check confirm-add-access fires the request',
+    ).toBeGreaterThan(0)
     // The PUT body must contain { role } and nothing else identifying it as a stack.
     for (const body of putBodies as Record<string, unknown>[]) {
       expect(body, 'PUT body must include a role field').toHaveProperty('role')

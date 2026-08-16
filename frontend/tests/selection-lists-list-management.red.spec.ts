@@ -526,6 +526,10 @@ test.describe('Selection Lists list-management — frame 02-new-list', () => {
     await page.locator("[data-action='create-list']").click()
     // Wait for navigation / panel close.
     await page.waitForTimeout(500)
+    expect(
+      postedBodies.length,
+      'POST /v1/selection-lists must have been captured at least once — check that the form submit fires the request',
+    ).toBeGreaterThan(0)
     for (const body of postedBodies as Record<string, unknown>[]) {
       expect(
         body,
@@ -616,16 +620,30 @@ test.describe('Selection Lists list-management — frame 03-list-detail', () => 
   })
 
   test('shows empty state [data-state="empty"] when the list has no items', async ({ page }) => {
+    // Mock the list detail metadata (the page fetches this alongside items).
     await page.route(`**/v1/selection-lists/${LIST_ID}*`, async route => {
-      const url = route.request().url()
-      if (url.includes('/items') && route.request().method() === 'GET') {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(MOCK_LIST_COUNTRIES),
+        })
+      } else {
+        await route.fallback()
+      }
+    })
+    // Override items to return empty (registered second = tried first in LIFO,
+    // so it wins over the catch-all above for /items sub-paths).
+    // '*' does not cross '/', so the detail catch-all above cannot match /items.
+    await page.route(`**/v1/selection-lists/${LIST_ID}/items*`, async route => {
+      if (route.request().method() === 'GET' && !route.request().url().includes('/items/')) {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({ data: [], next_cursor: null, total: 0 }),
         })
       } else {
-        await route.continue()
+        await route.fallback()
       }
     })
     await gotoListDetail(page)
@@ -988,6 +1006,10 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     await page.keyboard.press('Space')
     await page.waitForTimeout(400)
     // The contract: PUT body must contain item_ids covering the full list.
+    expect(
+      reorderBodies.length,
+      'PUT …/items/reorder must have been captured at least once — check that keyboard reorder fires the request',
+    ).toBeGreaterThan(0)
     for (const body of reorderBodies as Record<string, unknown>[]) {
       const itemIds = body?.item_ids as string[] | undefined
       expect(itemIds, 'PUT …/items/reorder body must include item_ids').toBeDefined()
