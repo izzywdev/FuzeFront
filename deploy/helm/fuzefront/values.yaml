@@ -121,7 +121,9 @@ secret:
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
   twilioAccountSid: ""
-  twilioAuthToken: ""
+  twilioAuthToken: "" # legacy account-token auth; prefer the API key below
+  twilioApiKeySid: "" # preferred: Twilio API Key SID (SK…)
+  twilioApiKeySecret: "" # preferred: Twilio API Key secret
   twilioVerifyServiceSid: ""
   smsAuthSecret: "dev-sms-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
