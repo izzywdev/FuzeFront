@@ -35,6 +35,17 @@ jobs:
           cd ../sdk && npm ci
           cd ../api-client && npm ci
 
+      # @fuzefront/security-client's dist must exist before the identity-ui and
+      # auth-ui d.ts builds: identity-ui now imports its DirectoryMember/
+      # DirectoryPage types (member directory, FF-EPIC-17-S5) and auth-ui
+      # re-exports its SessionResult/AuthMethods types. security-client ships
+      # its types from dist/ (not committed; built via tsup), so it has to be
+      # built first. (frontend itself only ever imports security-client TYPES
+      # straight from source via its tsconfig path — see api.ts — so it needs
+      # no build step of its own.)
+      - name: Build @fuzefront/security-client (dep for identity-ui + auth-ui builds)
+        run: npm run -w @fuzefront/security-client build
+
       # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
       # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
       # dist/index.d.ts (like @fuzefront/design-system), NOT its TSX source — so
@@ -44,15 +55,6 @@ jobs:
       # still resolve from source via the vite/vitest aliases.
       - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
         run: npm run -w @fuzefront/identity-ui build
-
-      # @fuzefront/auth-ui (AuthPanel, consumed by LoginPage.tsx) re-exports
-      # @fuzefront/security-client's SessionResult/AuthMethods types, so
-      # security-client's dist must exist before auth-ui's own d.ts build can
-      # resolve them (frontend itself only ever imports security-client TYPES
-      # straight from source via its tsconfig path — see api.ts — so it needs
-      # no build step of its own).
-      - name: Build @fuzefront/security-client (dep for auth-ui build)
-        run: npm run -w @fuzefront/security-client build
 
       # frontend/tsconfig.json resolves @fuzefront/auth-ui to its built
       # dist/index.d.ts (like identity-ui/chat-ui/i18n) — same CSSProperties-
@@ -133,6 +135,13 @@ jobs:
         run: npm ci
 
       # --- @fuzefront/identity-ui -----------------------------------------
+      # identity-ui now imports @fuzefront/security-client's DirectoryMember/
+      # DirectoryPage types (member directory, FF-EPIC-17-S5). security-client
+      # ships its types from dist/ (not committed; built via tsup), so it has
+      # to be built before identity-ui's type-check/build can resolve the module.
+      - name: Build @fuzefront/security-client (type dep for identity-ui)
+        run: npm run -w @fuzefront/security-client build
+
       - name: identity-ui — type-check (tsc --noEmit)
         run: npm run -w @fuzefront/identity-ui type-check
 
