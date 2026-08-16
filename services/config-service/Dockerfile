@@ -55,6 +55,13 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/services/config-service/node_modules ./services/config-service/node_modules
 COPY --from=build /app/services/config-service/dist ./services/config-service/dist
+# src/routes/docs.routes.ts (FFRNT-258) resolves openapi.yaml relative to its
+# OWN compiled location — dist/routes/../../openapi.yaml — i.e. the service
+# ROOT, not under dist/. tsc only emits dist/, so the committed contract has
+# to be copied into the image at that same service-root path explicitly, or
+# the pod 500s "ENOENT ... openapi.yaml" the first time GET /docs is hit —
+# same class of gap the migrations-SQL comment above already documents.
+COPY --from=build /app/services/config-service/openapi.yaml ./services/config-service/openapi.yaml
 # @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it —
 # node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
 # The base stage ships packages/identity/package.json so that link resolves
