@@ -76,9 +76,22 @@ function validEmail(value: unknown): value is string {
   return at > 0 && at === value.lastIndexOf('@') && value.indexOf('.', at + 2) > at + 1
 }
 
-export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
+// `injectedDatabase` is read live (via `injectedDatabase ?? db`) inside EACH
+// method below, rather than resolved once here as a default parameter value.
+// `db` (config/database.ts) is a module-level `let` that starts undefined
+// and is only assigned once `initializeDatabase()` runs — but this factory's
+// default export (`createAdminPortalRouter()` below) executes at MODULE
+// IMPORT time, which happens before server startup calls
+// `initializeDatabase()`. A `database: Knex = db` default parameter would
+// evaluate `db` — and capture `undefined` — at that too-early moment, and
+// since default-parameter values are copied (not live references), every
+// query in the closure would stay bound to that `undefined` forever,
+// throwing "database is not a function" on every real request. Resolving
+// `db` fresh inside each method sidesteps this entirely.
+export function createAdminPortalStore(injectedDatabase?: Knex): AdminPortalStore {
   return {
     async list(input) {
+      const database = injectedDatabase ?? db
       const query = database('portals').orderBy('id', 'asc').limit(input.limit + 1)
       if (input.status) query.where('status', input.status)
       if (input.query) {
@@ -107,6 +120,7 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       }
     },
     async create(input) {
+      const database = injectedDatabase ?? db
       // FF-EPIC-09-S2 — drives the resumable, advisory-locked provisioning
       // pipeline (org -> Permit tenant -> ReBAC instance/parent-link -> portal
       // row -> default subdomain -> owner invite) instead of a single bare
@@ -139,11 +153,13 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       return result.portal
     },
     async get(portalId) {
+      const database = injectedDatabase ?? db
       const row = await database('portals').where({ id: portalId }).first()
       if (!row) return null
       return rowToPortal(row, await getPortalDomains(portalId, database))
     },
     async update(portalId, patch) {
+      const database = injectedDatabase ?? db
       const existing = await database('portals').where({ id: portalId }).first()
       if (!existing) return null
       if (existing.is_root && patch.status === 'suspended') {
