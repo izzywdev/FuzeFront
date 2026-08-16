@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.4.0
+  version: 0.5.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -77,6 +77,10 @@ tags:
     description: Authorization decisions (check / bulk-check / permissions) + grants (write-side).
   - name: tenants
     description: Tenant, membership, and role management (neutralized authz primitives).
+  - name: organizations
+    description: >-
+      Organization-tree surfaces. The root/portal member directory — the
+      paginated, searchable list of ALL users of a tenant-root org.
   - name: tokens
     description: FuzeFront-owned machine-to-machine (M2M) token issuance and introspection.
   - name: mfa
@@ -1445,6 +1449,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
       x-pagination-reason: Singleton status for the caller.
+
+  # ─────────────────────── Root/portal member directory ─────────────────────
+  # Commissioned by the approved FF-EPIC-17 `member-directory` frames
+  # (design/frames/member-directory/**, PR #590). With literal root membership
+  # ("members of root = everyone"), a root or portal-root org's member view is a
+  # paginated, server-side-searchable USER DIRECTORY — deliberately distinct
+  # from the small-team, cursor-paged tenant member list
+  # (GET /v1/security/tenants/{tenantId}/members). "Everyone" is unbounded, so
+  # it MUST paginate (gate-pagination) and MUST NOT be fetched client-side to
+  # filter. Offset paging drives the frames' page-based pager; the response
+  # echoes page/pageSize/total so the UI can render a page-of-pages pager.
+  /organizations/{id}/directory:
+    get:
+      tags: [organizations]
+      summary: List the user directory of a root/portal organization
+      operationId: listOrganizationDirectory
+      description: >-
+        Unbounded, server-side-searchable directory of ALL users of a
+        tenant-root organization — the platform root org id OR a portal-root org
+        id ("root" is relative to the portal; `tenantId` semantics resolve
+        server-side from the org tree). Offset-paginated per the family
+        pagination standard; the `query` parameter filters server-side (the
+        client never fetches the full set to filter locally). Access is an org
+        owner/admin (or Employee/ReBAC) capability — a non-privileged caller
+        gets `403 FORBIDDEN` rendered in place, never a sign-in redirect (only
+        401 re-authenticates). An id is never a capability; authorization comes
+        from the token + Permit, not from knowing the org id.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/DirectoryQuery'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: A page of directory members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -1478,6 +1529,38 @@ components:
       required: true
       schema:
         type: string
+    OrganizationId:
+      name: id
+      in: path
+      required: true
+      description: >-
+        The tenant-root organization id — the platform root org id OR a
+        portal-root org id. The same endpoint serves any root/portal; `tenantId`
+        semantics resolve server-side from the org tree. Opaque past its prefix.
+      schema:
+        type: string
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: >-
+        0-based item offset for page navigation (offset = (page - 1) *
+        pageSize). Page-based paging over an unbounded set — deliberately an
+        offset, not a cursor, so the directory is page-navigable and
+        search-first.
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+    DirectoryQuery:
+      name: query
+      in: query
+      required: false
+      description: >-
+        Server-side search over the directory (name / email). Submitted by the
+        UI search box; the client never fetches all users to filter locally.
+      schema:
+        type: string
     FactorId:
       name: factorId
       in: path
@@ -1499,6 +1582,16 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Forbidden:
+      description: >-
+        The caller is authenticated but lacks the org owner/admin (or
+        Employee/ReBAC) capability required for this operation (`code:
+        FORBIDDEN`). Fail-closed and rendered in place with zero data — never a
+        sign-in redirect; only 401 re-authenticates.
       content:
         application/json:
           schema:
@@ -2279,6 +2372,67 @@ components:
         page:
           $ref: '#/components/schemas/PageInfo'
       required: [items, page]
+    DirectoryMember:
+      type: object
+      additionalProperties: false
+      description: >-
+        One user in a root/portal directory. `userId` REFERENCES an existing,
+        server-minted user (typed id) — the directory owns no new identity, so
+        this is not a create body. `role` is the user's membership role in THIS
+        root/portal, keyed by the UI to a pill and never hard-coded.
+      properties:
+        userId:
+          type: string
+          description: >-
+            Server-minted, typed user id (e.g. `usr_…`). Opaque past the prefix;
+            never a capability — authorization is the token + Permit.
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          description: The person's display name (frame row primary text).
+        joinedAt:
+          type: string
+          format: date-time
+          description: When the user became a member of this root/portal.
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+          description: >-
+            The user's membership role in this root/portal. With literal root
+            membership every user is at least `member`. (Employee/ReBAC staff
+            have no membership row and are not directory rows — see CHANGELOG.)
+        isSelf:
+          type: boolean
+          description: True for the calling user's own row (rendered "You"; data-self).
+      required: [userId, displayName, role]
+    DirectoryPage:
+      type: object
+      additionalProperties: false
+      description: >-
+        Page-based envelope for the searchable user directory. Deliberately
+        distinct from the cursor `PageInfo` envelope (MemberPage/TenantPage):
+        the directory is search-first and page-navigable, so it echoes the
+        1-based `page`, the effective `pageSize`, and the true server `total`
+        so the UI can render a page-of-pages pager and disable Prev/Next at the
+        boundaries. Satisfies gate-pagination (`items` + `page`).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryMember'
+        page:
+          type: integer
+          minimum: 1
+          description: 1-based current page number (derived from offset / limit).
+        pageSize:
+          type: integer
+          description: Effective page size (the server-clamped `limit`).
+        total:
+          type: integer
+          description: Total directory members matching `query` (drives the pager).
+      required: [items, page, pageSize, total]
     # ── Errors ──
     ErrorBody:
       type: object
