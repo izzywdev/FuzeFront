@@ -46,8 +46,7 @@ describe('PortalBillingPage', () => {
   beforeEach(() => {
     flagState.resellerConnectEnabled = false
     fetchMock.mockReset()
-    // @ts-expect-error test stub
-    global.fetch = fetchMock
+    global.fetch = fetchMock as unknown as typeof fetch
   })
 
   afterEach(() => {
