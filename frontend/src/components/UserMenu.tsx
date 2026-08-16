@@ -2,10 +2,24 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LanguageSelector, useT } from '@fuzefront/i18n'
 import { Button, Skeleton, StatusCallout } from '@fuzefront/design-system'
-import { User, useCurrentUser, useOrganizations } from '../lib/shared'
+import {
+  buildOrgForest,
+  MembershipRoleBadge,
+  CreateOrganizationDialog,
+  type OrgContextItem,
+  type OrgTreeNode,
+} from '@fuzefront/identity-ui'
+import { User, useCurrentUser, useOrganizations, useAppContext, ROOT_ORG_ID } from '../lib/shared'
 import { useAccounts } from '../contexts/AccountsContext'
 import { usePermissions } from './PermissionGate'
-import { getOrganizations, logout, type Organization } from '../services/api'
+import { useFlag } from '../platform/featureFlags'
+import {
+  getOrganizations,
+  createOrganization,
+  logout,
+  type Organization,
+} from '../services/api'
+import { slugForName, newSlugSuffix, organizationErrorMessage } from '../utils/organization'
 import NotificationBell from './NotificationBell'
 
 /**
@@ -324,6 +338,19 @@ function SignOutAccountButton({ accountId }: { accountId: string }) {
 
 // ── organization switcher ──────────────────────────────────────────────────
 
+/** `services/api` `Organization` → identity-ui's `OrgContextItem` — the shape
+ * the reconciled switcher's tree-building/role-badge components consume. */
+function toContextItems(orgs: Organization[]): OrgContextItem[] {
+  return orgs.map(org => ({
+    id: org.id,
+    name: org.name,
+    role: (org.user_role as OrgContextItem['role']) ?? null,
+    isRoot: org.id === ROOT_ORG_ID,
+    isPortal: org.id !== ROOT_ORG_ID && org.parentId === ROOT_ORG_ID,
+    parentId: org.parentId ?? null,
+  }))
+}
+
 export function OrganizationSwitcherSection({
   open,
   onNavigate,
@@ -334,17 +361,25 @@ export function OrganizationSwitcherSection({
   const { t } = useT()
   const navigate = useNavigate()
   const { hasPermission } = usePermissions()
+  const { dispatch: appDispatch } = useAppContext()
   const {
     organizations: contextOrganizations,
     activeOrganizationId,
     setActiveOrganization,
   } = useOrganizations()
 
+  // fuzefront.identity.personal-context (FF-EPIC-17-S4, default OFF): the
+  // reconciled Personal + org/sub-org-tree switcher. OFF preserves today's
+  // flat org list exactly — zero regression while the backend root-membership
+  // slice (fuzefront.identity.root-membership) is still rolling out.
+  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
+
   // The gate usually populates org context before the menu can be opened. Only
   // fetch when it hasn't — that is the one path with a real loading state.
   const [fetched, setFetched] = useState<Organization[] | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [canCreate, setCanCreate] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const organizations =
     contextOrganizations.length > 0 ? contextOrganizations : (fetched ?? [])
@@ -387,19 +422,38 @@ export function OrganizationSwitcherSection({
       ? 'error'
       : status === 'loading'
         ? 'loading'
-        : organizations.length === 0
+        : organizations.length === 0 && !personalContextEnabled
           ? 'empty'
           : undefined
 
   return (
     <div
       data-section="organizations"
+      data-context={personalContextEnabled ? 'switcher' : undefined}
       data-state={sectionState}
       style={{ borderTop: '1px solid var(--border-color)' }}
     >
       <SectionLabel
-        label={t('organizations.label')}
+        label={personalContextEnabled ? t('organizations.switcherLabel', { defaultValue: 'Context' }) : t('organizations.label')}
       />
+
+      {/* Personal — a first-class, non-org context (design/frames/
+          identity-context-switcher/03-switcher.html). NOT a type='personal'
+          org row: the identity itself is the principal. Rendered ahead of the
+          async org fetch since it never depends on that call. */}
+      {personalContextEnabled && (
+        <MenuRow
+          role="menuitemradio"
+          checked={activeOrganizationId === null}
+          title={t('organizations.personal', { defaultValue: 'Personal' })}
+          subtitle={t('organizations.personalSubtitle', { defaultValue: 'operate as yourself' })}
+          hooks={{ 'data-context': 'personal', 'data-switch-target': 'personal' }}
+          onClick={() => {
+            setActiveOrganization(null)
+            onNavigate()
+          }}
+        />
+      )}
 
       {status === 'loading' && (
         <div style={{ padding: 'var(--space-2) var(--space-3)' }}>
@@ -429,7 +483,7 @@ export function OrganizationSwitcherSection({
         </div>
       )}
 
-      {status === 'idle' && organizations.length === 0 && (
+      {status === 'idle' && organizations.length === 0 && !personalContextEnabled && (
         <div
           data-empty
           style={{
@@ -444,6 +498,7 @@ export function OrganizationSwitcherSection({
       )}
 
       {status === 'idle' &&
+        !personalContextEnabled &&
         organizations.map(org => (
           <MenuRow
             key={org.id}
@@ -465,7 +520,18 @@ export function OrganizationSwitcherSection({
           />
         ))}
 
-      {canCreate && (
+      {status === 'idle' && personalContextEnabled && (
+        <OrgForestRows
+          organizations={organizations}
+          activeOrganizationId={activeOrganizationId}
+          onSelect={id => {
+            setActiveOrganization(id)
+            onNavigate()
+          }}
+        />
+      )}
+
+      {canCreate && !personalContextEnabled && (
         <MenuRow
           title={`＋ ${t('organizations.create')}`}
           hooks={{ 'data-action': 'create-organization' }}
@@ -475,8 +541,72 @@ export function OrganizationSwitcherSection({
           }}
         />
       )}
+
+      {canCreate && personalContextEnabled && (
+        <MenuRow
+          title={`＋ ${t('organizations.create')}`}
+          hooks={{ 'data-action': 'create-org' }}
+          onClick={() => {
+            onNavigate()
+            setCreateOpen(true)
+          }}
+        />
+      )}
+
+      {personalContextEnabled && (
+        <CreateOrganizationDialog
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          slugForName={name => slugForName(name, newSlugSuffix())}
+          onCreate={async input => {
+            try {
+              const org = await createOrganization({ name: input.name, slug: input.slug, type: 'organization' })
+              return { id: org.id, name: org.name }
+            } catch (err) {
+              throw new Error(organizationErrorMessage(err, 'Failed to create organization'))
+            }
+          }}
+          onCreated={org => {
+            appDispatch({ type: 'SET_ORGANIZATIONS', payload: [...organizations, org] })
+            appDispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: org.id })
+          }}
+        />
+      )}
     </div>
   )
+}
+
+/** Renders the direct-membership org/sub-org forest for the reconciled switcher. */
+function OrgForestRows({
+  organizations,
+  activeOrganizationId,
+  onSelect,
+}: {
+  organizations: Organization[]
+  activeOrganizationId: string | null
+  onSelect: (id: string) => void
+}) {
+  const forest = buildOrgForest(toContextItems(organizations), ROOT_ORG_ID)
+
+  function renderNode(node: OrgTreeNode, depth: number): React.ReactNode {
+    const { item } = node
+    return (
+      <div key={item.id}>
+        <MenuRow
+          role="menuitemradio"
+          checked={item.id === activeOrganizationId}
+          title={depth > 0 ? `↳ ${item.name}` : item.name}
+          leading={depth > 0 ? <span aria-hidden="true" style={{ width: 'var(--space-4)' }} /> : undefined}
+          trailing={<MembershipRoleBadge role={item.role} />}
+          hooks={{ 'data-switch-target': item.id, 'data-role': item.role ?? 'guest' }}
+          onClick={() => onSelect(item.id)}
+        />
+        {node.children.map(child => renderNode(child, depth + 1))}
+      </div>
+    )
+  }
+
+  return <>{forest.map(node => renderNode(node, 0))}</>
 }
 
 // ── language ───────────────────────────────────────────────────────────────

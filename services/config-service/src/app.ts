@@ -5,6 +5,8 @@ import { PgKeyDefinitionRepository } from './repositories/key-definition.reposit
 import { PgValueRepository } from './repositories/value.repository';
 import { createConfigReadRouter } from './routes/config-read.routes';
 import { createWriteRouter } from './routes/write.router';
+import { createDocsRouter } from './routes/docs.routes';
+import { isConfigManagementEnabled } from './flags';
 
 /**
  * Optional, DB-backed dependencies. Omitted -> the HEALTH-CHECK-ONLY skeleton
@@ -26,9 +28,25 @@ export function createApp(deps?: AppDeps): Application {
   const app = express();
   app.use(express.json());
 
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'config-service' });
+  // `configManagementEnabled` (FFRNT-255 / FF-EPIC-17-S8): this service's own
+  // evaluation of the `fuzefront.platform.config-management` release flag
+  // (default OFF). Per the story's Acceptance Criteria the flag gates
+  // CONSUMERS reading configuration FROM config-service, NOT config-service's
+  // own existence — so it is surfaced here as informational status, not used
+  // to change `/health`'s status code or gate any `/v1/*` route (see
+  // `src/flags.ts` module doc for the full rationale). Evaluated with no
+  // per-caller identity (health checks are unauthenticated and have no user/
+  // org context) — `app` + `environment` only, per the feature-flags skill's
+  // "no context in a prod path" guidance for system/cron-like callers.
+  app.get('/health', async (_req: Request, res: Response) => {
+    const configManagementEnabled = await isConfigManagementEnabled();
+    res.json({ status: 'ok', service: 'config-service', configManagementEnabled });
   });
+
+  // Swagger UI + published spec (FFRNT-258 / FF-EPIC-17-S9). Always mounted
+  // (the contract is static and needs no DB), authenticated-developer only —
+  // see src/routes/docs.routes.ts for the full exposure policy.
+  app.use('/docs', createDocsRouter());
 
   // ── EXTENSION POINT (FFRNT-157 / FFRNT-158) ──────────────────────────────
   // Each story mounts its OWN router module here, in ITS OWN `app.use(...)`

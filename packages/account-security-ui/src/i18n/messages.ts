@@ -60,4 +60,34 @@ export interface AccountSecurityMessages {
     remove: string
     manage: string
   }
+  /** The connected-accounts page (`/account/security/connections`, FFRNT-296). */
+  connections: {
+    page: { title: string; subtitle: string }
+    addHeading: string
+    addHint: string
+    addFootnote: string
+    /** interpolates {provider} */
+    continueWith: string
+    /** interpolates {provider} */
+    connectButton: string
+  }
+  connect: {
+    /** interpolates {provider} */
+    redirectingTitle: string
+    redirectingText: string
+    /** interpolates {provider} */
+    continueButton: string
+    cancel: string
+    /** interpolates {provider} */
+    linkedTitle: string
+    linkedText: string
+    viewConnected: string
+    /** interpolates {provider} */
+    linkFailedTitle: string
+    linkFailedText: string
+    tryAgain: string
+    /** interpolates {provider} */
+    alreadyLinkedTitle: string
+    alreadyLinkedText: string
+  }
 }

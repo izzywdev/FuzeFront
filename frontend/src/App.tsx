@@ -17,7 +17,7 @@ import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
-import { FeatureFlagProvider } from './platform/featureFlags'
+import { FeatureFlagProvider, useFlag } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -38,7 +38,10 @@ import CreateOrganizationPage from './pages/CreateOrganizationPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
+import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
+import MyOrganizationsPage from './pages/MyOrganizationsPage'
+import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 
 // Authentication wrapper component
@@ -347,10 +350,12 @@ function AppContent() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/applications/new" element={<AddApplicationPage />} />
-            <Route path="/organizations" element={<OrganizationPage />} />
+            <Route path="/organizations" element={<OrganizationsRoute />} />
             <Route path="/organizations/new" element={<CreateOrganizationPage />} />
+            <Route path="/organizations/:id" element={<OrganizationDetailRoute />} />
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
+            <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
@@ -377,6 +382,29 @@ function AppRoute() {
   }
 
   return <FederatedAppLoader appId={appId} />
+}
+
+/**
+ * `/organizations` — FF-EPIC-17-S4, `fuzefront.identity.personal-context`
+ * (default OFF). Flag OFF renders today's `OrganizationPage` (local
+ * `<select>` + tabs) completely unchanged; flag ON renders the reconciled
+ * "My orgs & sub-orgs" list (`MyOrganizationsPage`), which supersedes the
+ * local `<select>` and hands off per-org management to `/organizations/:id`.
+ */
+function OrganizationsRoute() {
+  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
+  return personalContextEnabled ? <MyOrganizationsPage /> : <OrganizationPage />
+}
+
+/**
+ * `/organizations/:id` — net-new (design/frames/identity-context-switcher,
+ * 02-org-context.html). Only reachable/linked once the reconciled switcher
+ * is on; flag OFF redirects to `/organizations` (today's app never linked
+ * this route, so there is no legacy behavior to preserve here).
+ */
+function OrganizationDetailRoute() {
+  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
+  return personalContextEnabled ? <OrganizationDetailPage /> : <Navigate to="/organizations" replace />
 }
 
 // Protected admin route

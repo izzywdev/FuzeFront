@@ -17,6 +17,15 @@ export interface SignInMethodsListProps {
   onSetPassword?: () => void
   /** Link another provider (offered by the last-method guard). */
   onLinkProvider?: () => void
+  /**
+   * Proactively disable unlink when a connection is the account's ONLY
+   * remaining sign-in method (`!hasPassword && providers.length === 1`),
+   * instead of relying solely on the reactive 409. Off by default so the
+   * account-security hub's existing behaviour (reactive-only) is unchanged;
+   * `ConnectedAccountsPanel` (`/account/security/connections`) turns it on to
+   * satisfy the frame's fail-closed "DISABLES unlink" state.
+   */
+  disableUnlinkWhenOnlyMethod?: boolean
 }
 
 /**
@@ -30,10 +39,15 @@ export function SignInMethodsList({
   onUnlink,
   onSetPassword,
   onLinkProvider,
+  disableUnlinkWhenOnlyMethod,
 }: SignInMethodsListProps) {
   const { messages: m } = useAccountSecurityI18n()
   const [lastMethodGuard, setLastMethodGuard] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const onlyMethodProvider =
+    disableUnlinkWhenOnlyMethod && !connections.hasPassword && connections.providers.length === 1
+      ? connections.providers[0].provider
+      : null
 
   const handleUnlink = async (provider: SocialConnection['provider']) => {
     if (!onUnlink) return
@@ -96,6 +110,7 @@ export function SignInMethodsList({
             connection={c}
             onUnlink={onUnlink ? () => void handleUnlink(c.provider) : undefined}
             busy={busy === c.provider}
+            disabled={onlyMethodProvider === c.provider}
           />
         ))}
       </div>

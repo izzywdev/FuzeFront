@@ -241,13 +241,79 @@ test.describe('FuzeFront live post-prod smoke', () => {
       const loginResp = await request.post('/api/v1/security/session', {
         data: { email: EMAIL, password: PASSWORD },
       })
-      expect(
-        loginResp.status(),
-        `POST /api/v1/security/session -> ${loginResp.status()} — ${EMAIL} EXISTS but its ` +
-          'credentials were rejected, so POST_PROD_PASSWORD does not match the account. Reset it in ' +
-          'prod and update the secret; do NOT hard-code a password here (public repo). 5xx = backend error.'
-      ).toBe(200)
-      loginBody = await loginResp.json()
+
+      if (loginResp.status() === 401) {
+        // Self-heal: credential drift — the account exists but POST_PROD_PASSWORD
+        // no longer matches what Authentik has stored (e.g. the secret was rotated
+        // without resetting the Authentik user). Use the Authentik admin API to
+        // reset the password, then retry sign-in. Mirrors the pattern in
+        // backend/security/src/providers/authentik/accountApi.ts (findUserPk /
+        // setUserPassword). This runs only when AUTHENTIK_ADMIN_TOKEN is set; if
+        // it is not, fail with a diagnostic that names the secret to add.
+        const authentikAdminToken = process.env.AUTHENTIK_ADMIN_TOKEN
+        const authOrigin = process.env.POST_PROD_AUTH_ORIGIN || 'https://auth.fuzefront.com'
+        expect(
+          authentikAdminToken,
+          `POST /api/v1/security/session -> 401: ${EMAIL} exists but credentials were rejected. ` +
+            `Credential drift: POST_PROD_PASSWORD was likely rotated without resetting the Authentik account. ` +
+            `Set the AUTHENTIK_ADMIN_TOKEN workflow secret to enable automatic self-heal. ` +
+            `Without it, manually reset the Authentik password in prod and update POST_PROD_PASSWORD.`
+        ).toBeTruthy()
+
+        // Find the Authentik user's numeric pk via exact email match.
+        const findResp = await request.get(`${authOrigin}/api/v3/core/users/`, {
+          params: { email: EMAIL },
+          headers: { Authorization: `Bearer ${authentikAdminToken}`, Accept: 'application/json' },
+        })
+        expect(
+          findResp.status(),
+          `Self-heal: Authentik admin user lookup -> ${findResp.status()} (401/403 = admin token invalid or lacks User Manager permission)`
+        ).toBe(200)
+        const findData = await findResp.json()
+        const hits: Array<{ pk: number; email: string }> = findData?.results ?? []
+        const userPk = hits.find(u => u.email?.toLowerCase() === EMAIL.toLowerCase())?.pk
+        expect(
+          userPk,
+          `Self-heal: Authentik user not found for ${EMAIL} — was the account deleted outside the smoke?`
+        ).toBeTruthy()
+
+        // Reset the Authentik password to match the current POST_PROD_PASSWORD.
+        const resetResp = await request.post(
+          `${authOrigin}/api/v3/core/users/${userPk}/set_password/`,
+          {
+            data: { password: PASSWORD },
+            headers: { Authorization: `Bearer ${authentikAdminToken}` },
+          }
+        )
+        expect(
+          resetResp.status(),
+          `Self-heal: Authentik set_password -> ${resetResp.status()} ` +
+            `(400 = password rejected by Authentik policy; 403 = admin token lacks write permission)`
+        ).toBeLessThan(300)
+
+        // Retry sign-in — must succeed with the reset password.
+        const retryResp = await request.post('/api/v1/security/session', {
+          data: { email: EMAIL, password: PASSWORD },
+        })
+        expect(
+          retryResp.status(),
+          `Sign-in retry after self-heal (Authentik set_password) -> ${retryResp.status()}: ` +
+            `password was reset in Authentik but sign-in still failed`
+        ).toBe(200)
+        loginBody = await retryResp.json()
+        testInfo.annotations.push({
+          type: 'self-healed',
+          description:
+            `Stale Authentik password for ${EMAIL} was reset via admin API and sign-in retried successfully`,
+        })
+      } else {
+        expect(
+          loginResp.status(),
+          `POST /api/v1/security/session -> ${loginResp.status()} — ${EMAIL} EXISTS but its ` +
+            'credentials were rejected. 5xx = backend error.'
+        ).toBe(200)
+        loginBody = await loginResp.json()
+      }
     }
     expect(
       loginBody.status,
