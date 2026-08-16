@@ -8,7 +8,7 @@
 
 import express from 'express';
 import request from 'supertest';
-import { load } from 'js-yaml';
+import { parse as parseYaml } from 'yaml';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createDocsRouter, loadRawSpecYaml, loadSpec } from '../../src/routes/docs.routes';
@@ -92,7 +92,7 @@ describe('GET /docs/openapi.json', () => {
   it('never drifts from the committed openapi.yaml', async () => {
     const app = buildApp();
     const res = await request(app).get('/docs/openapi.json').set('Authorization', bearer({ userId: 'dev-1' }));
-    const sourceParsed = load(readFileSync(SOURCE_SPEC_PATH, 'utf8'));
+    const sourceParsed = parseYaml(readFileSync(SOURCE_SPEC_PATH, 'utf8'));
     expect(res.body).toEqual(sourceParsed);
   });
 });

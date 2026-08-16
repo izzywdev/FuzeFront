@@ -32,9 +32,9 @@
  * No drift: `/docs/openapi.json` and `/docs/openapi.yaml` are both derived
  * from THE SAME parse of the committed `openapi.yaml` at module load — the
  * YAML route serves the file's raw bytes verbatim and the JSON route is
- * `js-yaml`'s parse of those same bytes, so there is no second copy that
+ * the YAML parser's parse of those same bytes, so there is no second copy that
  * could silently diverge from the frozen contract. If the file fails to
- * parse, `load()` throws at require-time and the service fails to start
+ * parse, `parseYaml()` throws at require-time and the service fails to start
  * rather than serving a docs page that misdescribes the API (openapi.yaml
  * AC4) — tests additionally assert the parse succeeds and pin no-drift by
  * re-parsing the served response and diffing it against the source file.
@@ -42,7 +42,7 @@
 
 import { Router, Request, Response } from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { load } from 'js-yaml';
+import { parse as parseYaml } from 'yaml';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { requireAuth } from '../middleware/auth';
@@ -58,11 +58,11 @@ export function loadRawSpecYaml(): string {
 
 /** Parses the committed contract. Throws (fails startup) if it does not parse. */
 export function loadSpec(): object {
-  return load(loadRawSpecYaml()) as object;
+  return parseYaml(loadRawSpecYaml()) as object;
 }
 
 const rawYaml = loadRawSpecYaml();
-const spec = load(rawYaml) as object;
+const spec = parseYaml(rawYaml) as object;
 
 /**
  * `supportedSubmitMethods: ['get']` is the ENTIRE try-it-read-only control —
