@@ -15,6 +15,8 @@ import { reconcileOrganizationProvisioning } from '../services/organizationProvi
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { permitSchema } from '../permit/schema'
+import { EMPLOYEE_ROLE_CATALOG_ENTRY } from '../services/employeeRole'
+import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 
 const router = express.Router()
 
@@ -1034,6 +1036,23 @@ const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
  *                           properties:
  *                             key: { type: string }
  *                             name: { type: string }
+ *                 platformRoles:
+ *                   description: >-
+ *                     FF-EPIC-17-S8 — platform-staff roles (currently just
+ *                     "Employee") that sit ABOVE the org-assignable roles
+ *                     above: never grantable via an org membership row, held
+ *                     only via the ReBAC `org-admin`-on-root grant. Present
+ *                     only while `fuzefront.identity.employee-console` is ON.
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       key: { type: string }
+ *                       name: { type: string }
+ *                       description: { type: string }
+ *                       rebacRole: { type: string }
+ *                       rebacScope: { type: string }
+ *                       assignable: { type: boolean }
  *       403:
  *         description: Caller is not an active member of the organization
  */
@@ -1075,7 +1094,17 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
       })),
     }))
 
-    res.json({ roles, resources })
+    // FF-EPIC-17-S8 — "Employee" (platform staff, ReBAC org-admin-on-root) is
+    // NOT an org-assignable role (see ORG_ROLE_CATALOG above, which this never
+    // joins into), so it is surfaced in a separate `platformRoles` field
+    // rather than mixed into `roles`. Flag-gated: OFF keeps this endpoint's
+    // response byte-identical to before this story.
+    const responseBody: Record<string, unknown> = { roles, resources }
+    if (await isEmployeeConsoleEnabled({ userId: req.user?.id })) {
+      responseBody.platformRoles = [EMPLOYEE_ROLE_CATALOG_ENTRY]
+    }
+
+    res.json(responseBody)
   } catch (error: any) {
     console.error('Error listing organization roles:', error)
     res.status(500).json({ error: 'Failed to list organization roles' })
