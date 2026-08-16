@@ -2,8 +2,15 @@ import {
   FuzeEvent,
   IdentityUserCreatedPayloadV1,
   IdentityOrgCreatedPayloadV1,
+  IdentityOrgUpdatedPayloadV1,
+  IdentityOrgDeletedPayloadV1,
 } from '@fuzefront/shared/kafka';
-import { callProvision, HttpClient, nodeFetchClient } from './provision';
+import {
+  callProvision,
+  callDeprovision,
+  HttpClient,
+  nodeFetchClient,
+} from './provision';
 
 export interface HandlerDeps {
   securityServiceUrl: string;
@@ -76,5 +83,68 @@ export async function handleOrgCreated(
 
   console.log(
     `[provisioning-service] Reconciled org ${organizationId} (owner ${ownerId}): reconciled=${result.reconciled}`
+  );
+}
+
+/**
+ * Handles an identity.org.updated event by re-reconciling the org's Permit
+ * wiring — the same idempotent /internal/provision (by owner) re-syncs the
+ * org's current state. Skips ownerless (root/platform) orgs.
+ */
+export async function handleOrgUpdated(
+  event: FuzeEvent<IdentityOrgUpdatedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { organizationId, ownerId } = event.payload;
+
+  if (!ownerId) {
+    console.log(
+      `[provisioning-service] org ${organizationId} has no owner — skipping re-sync (correlationId=${event.correlationId})`
+    );
+    return;
+  }
+
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Re-syncing org ${organizationId} via owner ${ownerId} (correlationId=${event.correlationId})`
+  );
+
+  await callProvision(
+    ownerId,
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
+  );
+}
+
+/**
+ * Handles an identity.org.deleted event by tearing down the org's Permit access
+ * via security /internal/deprovision. `cascade` ('soft'|'hard') is forwarded so
+ * a soft delete revokes access (reversible) and a hard delete removes the
+ * tenant. The TypedConsumer already validated the payload against
+ * identityOrgDeletedSchemaV1.
+ */
+export async function handleOrgDeleted(
+  event: FuzeEvent<IdentityOrgDeletedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { organizationId, cascade } = event.payload;
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Deprovisioning org ${organizationId} (cascade=${cascade}, correlationId=${event.correlationId})`
+  );
+
+  const result = await callDeprovision(
+    organizationId,
+    cascade,
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
+  );
+
+  console.log(
+    `[provisioning-service] Deprovisioned org ${organizationId}: rolesRevoked=${result.rolesRevoked} tenantDeleted=${result.tenantDeleted}`
   );
 }
