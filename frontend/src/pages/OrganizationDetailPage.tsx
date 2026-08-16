@@ -4,6 +4,7 @@ import { useCurrentUser } from '../lib/shared'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
 import { IdentityPage, OrgContextBadge } from '@fuzefront/identity-ui'
+import { useFlag } from '../platform/featureFlags'
 import {
   getOrganizations,
   getOrganizationMembers,
@@ -57,6 +58,7 @@ function OrganizationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useCurrentUser()
   const navigate = useNavigate()
+  const memberDirectoryEnabled = useFlag('fuzefront.identity.member-directory', false)
   const [org, setOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'settings'>('overview')
@@ -211,12 +213,34 @@ function OrganizationDetailPage() {
             </p>
           </div>
         ) : (
-          <IdentityPage
-            organizationId={org.id}
-            userRole={org.user_role ?? 'viewer'}
-            userId={user?.id}
-            onMembersChange={() => void loadMembers(org.id)}
-          />
+          <>
+            {memberDirectoryEnabled && (
+              <div style={{ marginBottom: 'var(--space-4)', textAlign: 'end' }}>
+                <button
+                  type="button"
+                  data-action="open-member-directory"
+                  onClick={() => navigate(`/organizations/${org.id}/directory`)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    color: 'var(--accent-color)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: 'var(--text-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  View the full member directory →
+                </button>
+              </div>
+            )}
+            <IdentityPage
+              organizationId={org.id}
+              userRole={org.user_role ?? 'viewer'}
+              userId={user?.id}
+              onMembersChange={() => void loadMembers(org.id)}
+            />
+          </>
         ))}
 
       {activeTab === 'settings' && (

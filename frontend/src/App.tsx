@@ -42,6 +42,7 @@ import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
+import MemberDirectoryPage from './pages/MemberDirectoryPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 
 // Authentication wrapper component
@@ -353,6 +354,7 @@ function AppContent() {
             <Route path="/organizations" element={<OrganizationsRoute />} />
             <Route path="/organizations/new" element={<CreateOrganizationPage />} />
             <Route path="/organizations/:id" element={<OrganizationDetailRoute />} />
+            <Route path="/organizations/:id/directory" element={<MemberDirectoryRoute />} />
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
@@ -405,6 +407,24 @@ function OrganizationsRoute() {
 function OrganizationDetailRoute() {
   const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
   return personalContextEnabled ? <OrganizationDetailPage /> : <Navigate to="/organizations" replace />
+}
+
+/**
+ * `/organizations/:id/directory` — the root/portal member directory
+ * (design/frames/member-directory/**, FF-EPIC-17-S5), flag
+ * `fuzefront.identity.member-directory` (default OFF). Flag OFF redirects to
+ * `/organizations/:id` (today's app never linked this route, so there is no
+ * legacy behavior to preserve — zero regression, matching
+ * `OrganizationDetailRoute`'s convention for a net-new route).
+ */
+function MemberDirectoryRoute() {
+  const { id } = useParams<{ id: string }>()
+  const memberDirectoryEnabled = useFlag('fuzefront.identity.member-directory', false)
+  return memberDirectoryEnabled ? (
+    <MemberDirectoryPage />
+  ) : (
+    <Navigate to={id ? `/organizations/${id}` : '/organizations'} replace />
+  )
 }
 
 // Protected admin route
