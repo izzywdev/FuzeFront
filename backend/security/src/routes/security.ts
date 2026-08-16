@@ -9,6 +9,7 @@
  * AuthZ endpoints (`/authz/*`, `/tenants/*`) are a SEPARATE, later stream and
  * are intentionally not implemented in this AuthN slice.
  */
+import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import { getIdentityProvider } from '../providers/factory'
@@ -21,6 +22,7 @@ import {
   emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
+import { findUserPk, setUserPassword, PasswordPolicyError } from '../providers/authentik/accountApi'
 import type {
   BrokeredSession,
   BrokeredUser,
@@ -714,6 +716,74 @@ router.post('/password', async (req: Request, res: Response) => {
     res.status(200).json(conns)
   } catch (err) {
     sendError(res, err)
+  }
+})
+
+// ── Admin / internal-only ─────────────────────────────────────────────────
+//
+// These routes are on the public-ingress surface (/api/v1/security/*) but are
+// protected by the INTERNAL_PROVISION_SECRET shared secret (x-internal-secret
+// header, constant-time comparison). They are intended for service-to-service
+// calls and CI/smoke tooling — never for the browser SPA.
+
+function isInternalAuthorized(req: Request): boolean {
+  const expected = process.env.INTERNAL_PROVISION_SECRET
+  const provided = req.header('x-internal-secret')
+  const a = Buffer.from(provided || '')
+  const b = Buffer.from(expected || '')
+  return !(
+    !expected ||
+    !provided ||
+    a.length !== b.length ||
+    !crypto.timingSafeEqual(a, b)
+  )
+}
+
+/**
+ * POST /api/v1/security/admin/reset-password
+ *
+ * Forcibly resets a user's password in the identity store for the tenant
+ * resolved from the request Host. Used by the post-prod smoke test to
+ * self-heal credential drift without bypassing tenant routing.
+ *
+ * Protected by x-internal-secret: INTERNAL_PROVISION_SECRET. Tenant context
+ * is set automatically by the tenantContext middleware already applied to
+ * /api/v1/security, so findUserPk + setUserPassword target the right Authentik
+ * instance even in multi-portal deployments.
+ *
+ *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
+ *   Body:    { "email": "...", "newPassword": "..." }
+ *   200 { ok: true }
+ *   400 { error } missing/bad body, or password rejected by policy
+ *   401 { error } bad/missing secret
+ *   404 { error } user not found in the identity store
+ */
+router.post('/admin/reset-password', async (req: Request, res: Response) => {
+  if (!isInternalAuthorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const { email, newPassword } = req.body || {}
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'email is required' })
+  }
+  if (!newPassword || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'newPassword is required' })
+  }
+
+  try {
+    const pk = await findUserPk(email)
+    await setUserPassword(pk, newPassword)
+    return res.status(200).json({ ok: true })
+  } catch (err: any) {
+    if (err instanceof PasswordPolicyError) {
+      return res.status(400).json({ error: err.message, code: 'PASSWORD_POLICY' })
+    }
+    if (err?.message === 'identity store user not found') {
+      return res.status(404).json({ error: `No user found for email: ${email}` })
+    }
+    console.error('[security] admin/reset-password failed:', err)
+    return res.status(500).json({ error: 'Password reset failed', detail: String(err?.message ?? err) })
   }
 })
 
