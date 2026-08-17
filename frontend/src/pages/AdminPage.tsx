@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Alert } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
+import { useFlag } from '../platform/featureFlags'
 import {
   createApp,
   updateAppStatus,
@@ -31,6 +33,9 @@ const initialFormData: AppFormData = {
 }
 
 export default function AdminPage() {
+  const navigate = useNavigate()
+  // Key catalog (design/frames/config-management, FF-EPIC-19-S4), default OFF.
+  const configCatalogEnabled = useFlag('fuzefront.config.key-catalog', false)
   const { state, dispatch } = useAppContext()
   const [showForm, setShowForm] = useState(false)
   const [editingApp, setEditingApp] = useState<App | null>(null)
@@ -147,6 +152,14 @@ export default function AdminPage() {
           ➕ Register New App
         </button>
       </div>
+
+      {configCatalogEnabled && (
+        <div style={{ marginBottom: '1.5rem' }} data-nav="config-catalog">
+          <button className="btn btn-secondary" onClick={() => navigate('/admin/config/catalog')}>
+            🔑 Configuration key catalog
+          </button>
+        </div>
+      )}
 
       {error && (
         <Alert tone="error" onDismiss={() => setError(null)} style={{ marginBottom: '1rem' }}>

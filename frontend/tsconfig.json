@@ -32,7 +32,9 @@
       "@fuzefront/portal-branding-ui": ["../packages/portal-branding-ui/src/index.ts"],
       "@fuzefront/portal-client": ["../portal-client/src/index.ts"],
       "@fuzefront/design-system": ["../design-system/index.d.ts"],
-      "@fuzeone/selection-lists-ui": ["../packages/selection-lists-ui/dist/index.d.ts"]
+      "@fuzeone/selection-lists-ui": ["../packages/selection-lists-ui/dist/index.d.ts"],
+      "@fuzefront/config-client": ["../config-client/src/index.ts"],
+      "@fuzefront/config-ui": ["../packages/config-ui/src/index.ts"]
     }
   },
   "include": ["src"],
