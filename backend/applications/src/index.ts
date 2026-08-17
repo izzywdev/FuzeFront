@@ -31,6 +31,14 @@ import { initializeSocketIO } from './sockets/socketHandler'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
+
+// Dual-accept window: existing rows carry bare UUIDs, not TypeIDs yet.
+// configureIdentity teaches parseId/assertRef to accept a bare UUID for these
+// types while the backfill (P3) is pending. Remove after the backfill ships.
+configureIdentity({
+  legacyUuidTypes: new Set(['organization', 'user', 'portal']),
+})
 
 dotenv.config()
 
