@@ -1,6 +1,19 @@
 export function isPublicRequest(method: string, path: string) {
   return (
+    // NOTE the exact `/health` as well as the `/health/` prefix. They are two
+    // different things to Express: `startsWith('/health/')` matches
+    // /health/live and /health/ready but NOT /health itself, so the
+    // platform-wide /health convention would have 401'd here — including the
+    // kubelet, the nginx same-origin proxy and the portal's own reachability
+    // check, none of which send a token.
+    path === '/health' ||
     path.startsWith('/health/') ||
+    // The OpenAPI document describes the SHAPE of the API, never any data held
+    // in it. Requiring a token to discover the contract would gate the one
+    // thing that helps a caller construct a correctly authorized request, while
+    // protecting nothing.
+    path === '/openapi.yaml' ||
+    path === '/openapi.json' ||
     path === '/metrics' ||
     path.startsWith('/api/v1/webhooks/')
   )
