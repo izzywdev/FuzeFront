@@ -516,6 +516,19 @@ export const deleteApp = async (id: string) => {
 
 // Organizations
 export const getOrganizations = () => organizationsAPI.getOrganizations()
+/**
+ * A single org by id, via `GET /api/organizations/:id` — unlike
+ * `getOrganizations()` (membership + `type: 'platform'` scoped), this route
+ * is gated by `PermissionMiddleware.canReadOrganization` (Permit ReBAC), so
+ * it resolves correctly for a caller whose access is DERIVED (e.g. an
+ * Employee's cross-org staff authority, FF-EPIC-17-S8/S9) even though they
+ * hold no membership row and the org would not appear in their own
+ * `getOrganizations()` list.
+ */
+export const getOrganization = async (id: string): Promise<Organization> => {
+  const res = await api.get(`/organizations/${id}`)
+  return res.data
+}
 export const createOrganization = async (data: Partial<Organization>) => {
   const res = await api.post('/organizations', data)
   return res.data

@@ -149,4 +149,47 @@ export interface IdentityMessages {
     userManagement: string
   }
   scopeLabels: Record<string, string>
+  employeeConsole: {
+    bannerExplorer: string
+    bannerDrilldown: string
+    explorerTitle: string
+    explorerIntro: string
+    colOrganization: string
+    colKind: string
+    colMembers: string
+    colAccess: string
+    kindRoot: string
+    kindPortal: string
+    kindSubOrg: string
+    kindOrg: string
+    accessRoot: string
+    accessDerived: string
+    derivedFootnote: string
+    loadingLabel: string
+    emptyTitle: string
+    emptyBody: string
+    errorTitle: string
+    drilldownLoadingLabel: string
+    drilldownErrorTitle: string
+    drilldownIntro: string
+    directMembersTitle: string
+    directOnlyBadge: string
+    directMembersAbsent: string
+    membersEmptyTitle: string
+    membersEmptyBody: string
+    membersErrorTitle: string
+    inheritedTitle: string
+    inheritedPrincipal: string
+    inheritedSource: string
+    inheritedSourceValue: string
+    inheritedMembershipRow: string
+    inheritedMembershipRowValue: string
+    inheritedScope: string
+    inheritedScopeValue: string
+    inheritedFootnote: string
+    notStaffTitle: string
+    notStaffBody: string
+    colPerson: string
+    colRole: string
+  }
 }

@@ -43,6 +43,8 @@ import PortalsDirectory from './pages/PortalsDirectory'
 import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
+import EmployeeConsolePage from './pages/EmployeeConsolePage'
+import EmployeeOrgDrilldownPage from './pages/EmployeeOrgDrilldownPage'
 import MasterAdminPortalsPage from './pages/MasterAdminPortalsPage'
 import PortalAdminConsolePage from './pages/PortalAdminConsolePage'
 import MemberDirectoryPage from './pages/MemberDirectoryPage'
@@ -381,6 +383,8 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            <Route path="/staff" element={<EmployeeConsolePage />} />
+            <Route path="/staff/orgs/:id" element={<EmployeeOrgDrilldownPage />} />
             <Route path="/admin/portals" element={<MasterAdminPortalsPage />} />
             <Route path="/portal/admin" element={<PortalAdminConsolePage />} />
             <Route path="/portal/admin/billing" element={<PortalBillingPage />} />
