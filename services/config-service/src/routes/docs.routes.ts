@@ -17,7 +17,7 @@
  *     exist on write operations (POST/PUT). This is a UI-side control ONLY —
  *     it hides a button in the browser, it does NOT make the server refuse a
  *     write. The real security boundary is unchanged: every write still goes
- *     through `requireAuth` + Permit (`middleware/permit.ts`), which is what
+ *     through `requireAuth` + the Security API (`middleware/authz.ts`), which is what
  *     makes this safe — the console can only ever reach what the caller's
  *     own token already authorizes. `supportedSubmitMethods` removes the
  *     *accidental*-write risk (fat-fingering Execute on a live PUT), not a
