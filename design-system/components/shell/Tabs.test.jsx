@@ -42,6 +42,13 @@ describe("<Tabs> (controlled button mode)", () => {
     fireEvent.keyDown(invoices, { key: "End" });
     expect(onChange).toHaveBeenCalledWith("payments");
   });
+
+  it("carries each tab's value as a data-tab attribute (test-hook contract used by tabbed console shells)", () => {
+    render(<Tabs ariaLabel="Billing" value="plans" tabs={TABS} onChange={() => {}} />);
+    expect(document.querySelector('[data-tab="plans"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tab="invoices"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tab="payments"]')).toBeInTheDocument();
+  });
 });
 
 describe("<Tabs> (link mode via href)", () => {

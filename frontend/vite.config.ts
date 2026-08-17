@@ -82,12 +82,30 @@ const portalBrandingUiSrc = fileURLToPath(
 const accountSecurityUiSrc = fileURLToPath(
   new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/portal-admin-ui (packages/portal-admin-ui) is the master-admin
+// portal fleet console + portal-admin users/app-catalog console (FF-EPIC-14
+// S2/S3), built against @fuzefront/portal-client. Its dist/ is not built in
+// CI — resolve from SOURCE, same as the other unpublished workspace packages.
+const portalAdminUiSrc = fileURLToPath(
+  new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
+)
 // @fuzeone/selection-lists-ui (packages/selection-lists-ui) is an unpublished
 // file: workspace package whose dist/ is not built in the Docker image build —
 // resolve from SOURCE so the frontend Dockerfile and vite build work without a
 // separate pre-build step. CI builds dist/index.d.ts before the type-check step.
 const selectionListsUiSrc = fileURLToPath(
   new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
+)
+// @fuzefront/config-client (top-level config-client/) is the typed
+// config-service client (FFRNT-153) and @fuzefront/config-ui
+// (packages/config-ui) is the Configuration Management Console UI built
+// against it (FF-EPIC-19-S3/S4). Neither's dist/ is built in CI — resolve
+// both from SOURCE, same as billing-client/billing-ui.
+const configClientSrc = fileURLToPath(
+  new URL('../config-client/src/index.ts', import.meta.url)
+)
+const configUiSrc = fileURLToPath(
+  new URL('../packages/config-ui/src/index.ts', import.meta.url)
 )
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
@@ -115,6 +133,7 @@ export default defineConfig({
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
+      '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/i18n': i18nSrc,
       // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.
       '@fuzefront/chat-ui/styles.css': chatUiStyles,
@@ -127,6 +146,8 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
       '@fuzeone/selection-lists-ui': selectionListsUiSrc,
+      '@fuzefront/config-client': configClientSrc,
+      '@fuzefront/config-ui': configUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.

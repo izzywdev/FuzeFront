@@ -25,6 +25,7 @@ COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -33,6 +34,7 @@ COPY packages/identity-ui/package.json ./packages/identity-ui/
 COPY packages/auth-ui/package.json ./packages/auth-ui/
 COPY packages/account-security-ui/package.json ./packages/account-security-ui/
 COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
 COPY portal-client/package.json ./portal-client/
 COPY packages/i18n/package.json ./packages/i18n/
 COPY packages/i18n-translate/package.json ./packages/i18n-translate/
@@ -61,6 +63,7 @@ COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -69,6 +72,7 @@ COPY packages/identity-ui/package.json ./packages/identity-ui/
 COPY packages/auth-ui/package.json ./packages/auth-ui/
 COPY packages/account-security-ui/package.json ./packages/account-security-ui/
 COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
 COPY portal-client/package.json ./portal-client/
 COPY packages/i18n/package.json ./packages/i18n/
 COPY packages/i18n-translate/package.json ./packages/i18n-translate/

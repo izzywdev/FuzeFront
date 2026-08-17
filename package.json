@@ -20,6 +20,7 @@
     "packages/identity-ui",
     "packages/auth-ui",
     "packages/account-security-ui",
+    "packages/portal-admin-ui",
     "packages/portal-branding-ui",
     "portal-client",
     "packages/i18n",
@@ -31,7 +32,8 @@
     "services/email-service",
     "services/notification-service",
     "services/selection-list-service",
-    "packages/selection-lists-ui"
+    "packages/selection-lists-ui",
+    "packages/config-ui"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
