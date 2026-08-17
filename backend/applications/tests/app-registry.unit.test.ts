@@ -129,6 +129,62 @@ describe('app-registry manifest validation', () => {
     expect(r.success).toBe(false)
   })
 
+  // The same-origin remoteEntry shape (`/apps/<slug>/assets/remoteEntry.js`)
+  // exists so an in-cluster remote is proxied by the host ingress instead of
+  // hairpinning back through the public edge. "Starts with a slash" is NOT the
+  // same as "same origin", so the accept/reject boundary is pinned here.
+  const withEntry = (remoteEntry: string) => ({
+    ...baseManifest,
+    integration: { ...baseManifest.integration, remoteEntry },
+  })
+  const accepts = (v: string) => appManifestSchema.safeParse(withEntry(v)).success
+
+  it('accepts a same-origin absolute path as remoteEntry', () => {
+    expect(accepts('/apps/fuzequality/assets/remoteEntry.js')).toBe(true)
+    expect(accepts('/apps/clock/assets/remoteEntry.js')).toBe(true)
+  })
+
+  it('still accepts an absolute http(s) remoteEntry (externally hosted remotes)', () => {
+    expect(accepts('https://market.example.com/remoteEntry.js')).toBe(true)
+    expect(accepts('http://clock-app:8080/remoteEntry.js')).toBe(true)
+  })
+
+  it('rejects remoteEntry values that LOOK same-origin but resolve off-origin', () => {
+    // Both resolve to https://evil.example/x.js in a browser: the WHATWG URL
+    // parser treats a leading `//` as protocol-relative and folds `\` into `/`.
+    // Accepting either would execute an attacker's module inside the host
+    // shell's own origin.
+    expect(accepts('//evil.example/x.js')).toBe(false)
+    expect(accepts('/\\/evil.example/x.js')).toBe(false)
+    expect(accepts('/\\\\evil.example/x.js')).toBe(false)
+    expect(accepts('/apps/\\evil.example/x.js')).toBe(false)
+  })
+
+  it('rejects non-http schemes in remoteEntry', () => {
+    // z.string().url() alone accepts ANY scheme; these values reach an iframe
+    // src / dynamic import, so a `javascript:` manifest would be stored XSS.
+    expect(accepts('javascript:alert(1)')).toBe(false)
+    expect(accepts('data:text/html,<script>alert(1)</script>')).toBe(false)
+    expect(accepts('file:///etc/passwd')).toBe(false)
+  })
+
+  it('rejects a bare relative remoteEntry (ambiguous base)', () => {
+    expect(accepts('apps/x/remoteEntry.js')).toBe(false)
+    expect(accepts('')).toBe(false)
+  })
+
+  it('applies the same URL rules to integration.url (iframe/spa)', () => {
+    const iframeWith = (url: string) =>
+      appManifestSchema.safeParse({
+        ...baseManifest,
+        integration: { type: 'iframe' as const, url },
+      }).success
+    expect(iframeWith('/apps/fuzesocial/')).toBe(true)
+    expect(iframeWith('https://social.example.com')).toBe(true)
+    expect(iframeWith('javascript:alert(1)')).toBe(false)
+    expect(iframeWith('/\\/evil.example/')).toBe(false)
+  })
+
   it('register request requires a manifest', () => {
     expect(registerAppRequestSchema.safeParse({}).success).toBe(false)
     expect(registerAppRequestSchema.safeParse({ manifest: baseManifest }).success).toBe(true)

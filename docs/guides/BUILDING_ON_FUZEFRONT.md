@@ -24,20 +24,57 @@ dependency** on your app. Your app exposes a federated module; you register its
 import federation from '@originjs/vite-plugin-federation'
 
 export default {
+  // If your app runs in the SAME cluster as the shell, it is served at
+  // https://<shell-host>/apps/<slug>/ — see "Serving the remote" below. `base`
+  // MUST match that prefix or remoteEntry.js loads and every chunk it imports
+  // 404s against the shell's own bundle.
+  base: '/apps/myapp/',
   plugins: [
     federation({
       name: 'myApp',                 // becomes the `scope`
       filename: 'remoteEntry.js',
       exposes: { './App': './src/App.tsx' },  // becomes the `module`
-      shared: ['react', 'react-dom'], // MUST be shared singletons with the host
+      // MUST match the host's shared config EXACTLY — explicit singletons on
+      // the same React major. The bare `['react','react-dom']` shorthand does
+      // NOT set `singleton`, which lets your remote load its own React copy and
+      // die on "Invalid hook call" in the browser, with nothing in CI to catch
+      // it.
+      shared: {
+        react: { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
     }),
   ],
   build: { target: 'esnext' },
 }
 ```
 
-Serve the build with permissive CORS so the shell (a different origin) can fetch
-`remoteEntry.js`.
+### Serving the remote — prefer the shell's own origin
+
+The browser fetches `remoteEntry.js`, so **cluster-internal DNS
+(`*.svc.cluster.local`) is not an option** — the browser cannot resolve it.
+
+If your app runs in the same cluster as the shell, do **not** publish the remote
+on its own public hostname. Give it a same-origin mount instead: an Ingress in
+**your app's own namespace** (an Ingress may only target a Service in its own
+namespace; Traefik watches all namespaces and merges rules per host) that
+publishes `/apps/<slug>/*` on the shell's host and strips the prefix before
+proxying to your ClusterIP Service. See
+`FuzeQuality/deploy/helm/fuzequality/templates/ingress.yaml` for a working
+example.
+
+That buys three things a separate public hostname does not:
+
+* **No second trip through the public edge.** The asset is served in-cluster
+  rather than hairpinning out to the CDN and back.
+* **No Cloudflare Access wall.** Hosts under `*.prod.fuzefront.com` sit behind
+  the admin Zero-Trust app, which answers an asset request with an **HTML login
+  page** — the federation runtime then fails with "Failed to fetch dynamically
+  imported module", which reads like a build problem and is not one.
+* **No CORS.** Same origin as the shell, so no cross-origin headers to maintain.
+
+Only a remote genuinely hosted **outside** the cluster needs its own absolute
+URL — and then it must serve permissive CORS so the shell can fetch it.
 
 ### 1b. Register it with the platform
 
@@ -48,11 +85,18 @@ curl -X POST https://app.fuzefront.com/api/apps/register \
   -d '{
     "name": "My App",
     "integrationType": "module-federation",
-    "remoteUrl": "https://my-app.example.com/assets/remoteEntry.js",
+    "remoteUrl": "/apps/myapp/assets/remoteEntry.js",
     "scope": "myApp",
     "module": "./App"
   }'
 ```
+
+`remoteUrl` accepts either a **same-origin absolute path** (preferred for
+in-cluster apps, as above — the same value works on the prod host, a tenant
+wildcard host, and localhost) or an absolute `http(s)` URL for a remote hosted
+outside the cluster. Protocol-relative values (`//host/…`) and any non-http
+scheme are rejected: a browser resolves them off-origin, which would run someone
+else's module inside the shell's origin.
 
 Fields (`integrationType` is one of `module-federation` | `iframe` |
 `web-component` | `spa`):

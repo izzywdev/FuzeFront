@@ -314,6 +314,26 @@ mcp:
 # templates/clock-app.yaml + the clock ingress in templates/ingress.yaml).
 # Disabled by default; enabled in values-local + values-prod once the image is
 # built (release matrix — see deploy/PENDING-WORKFLOW-CHANGES.md).
+# Same-origin mounts for federated remotes that run IN THIS RELEASE'S NAMESPACE.
+#
+# templates/ingress.yaml ranges over this to publish /apps/<slug>/* on the app
+# host and proxy it to the named ClusterIP Service, so the browser loads the
+# remote from the page's own origin instead of hairpinning back out through the
+# public edge. Declared here explicitly (rather than left undefined) so the
+# `range` has a visible default a reviewer can see — an absent key renders the
+# same empty output as an intentional empty list, which is exactly how this
+# mechanism sat dead and unnoticed.
+#
+# A k8s Ingress may only target a Service in its OWN namespace, so this list is
+# limited to same-namespace apps. A family app deployed to its own namespace
+# (fuzequality, fuzeagent, …) owns an equivalent Ingress inside its own chart —
+# see FuzeQuality/deploy/helm/fuzequality/templates/ingress.yaml. Traefik
+# watches all namespaces and merges rules per host, so both routes coexist on
+# app.fuzefront.com.
+#
+# Each entry: { slug, serviceName, port, enabled }.
+federatedApps: []
+
 clockApp:
   enabled: false
   image:

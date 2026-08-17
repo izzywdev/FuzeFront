@@ -254,8 +254,9 @@
         },
         "remoteEntry": {
           "type": "string",
-          "format": "uri",
-          "description": "FULL Module-Federation remote entry URL, e.g. `https://clock.example.com/remoteEntry.js`. Required when `type = module-federation`. This freezes the legacy base-vs-entry ambiguity: the value is the complete entry URL, NOT a base."
+          "format": "uri-reference",
+          "pattern": "^(https?://[^\\s]+|/(?![/\\\\])[^\\s?#\\\\]*)$",
+          "description": "FULL Module-Federation remote entry — the complete entry, NOT a base (this freezes the legacy base-vs-entry ambiguity). Required when `type = module-federation`.\nTwo accepted shapes:\n* **Same-origin absolute path** (PREFERRED for apps deployed in the\n  same cluster as the host), e.g.\n  `/apps/fuzequality/assets/remoteEntry.js`. The browser resolves it\n  against the host shell's origin and the host ingress proxies\n  `/apps/<slug>/*` to the app's in-cluster Service, so the asset is\n  served without a second public/CDN round-trip. Host-agnostic: the\n  same manifest works on the prod host, a tenant wildcard host, and\n  localhost.\n* **Absolute `http(s)` URL**, e.g.\n  `https://clock.example.com/remoteEntry.js`, for remotes hosted\n  outside the cluster.\n\nProtocol-relative values (`//host/x.js`) are REJECTED: a browser treats them as cross-origin, defeating the purpose of the same-origin shape."
         },
         "scope": {
           "type": "string",
@@ -267,8 +268,9 @@
         },
         "url": {
           "type": "string",
-          "format": "uri",
-          "description": "Navigable URL for `iframe` and `standalone`/`spa` integrations."
+          "format": "uri-reference",
+          "pattern": "^(https?://[^\\s]+|/(?![/\\\\])[^\\s?#\\\\]*)$",
+          "description": "Navigable URL for `iframe` and `standalone`/`spa` integrations. Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps."
         }
       }
     },
