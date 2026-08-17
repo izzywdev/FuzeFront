@@ -52,7 +52,6 @@ function ConfigCatalogPage() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const load = useCallback(
@@ -87,7 +86,6 @@ function ConfigCatalogPage() {
   useEffect(() => {
     setCursorStack([undefined])
     if (namespace) void load(undefined)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namespace, search])
 
   const filterEntries = (items: KeyDefinition[]): KeyDefinition[] => {
