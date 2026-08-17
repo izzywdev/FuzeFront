@@ -631,24 +631,32 @@ selectionListService:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: ce9c6809cc69
 
-# Config service (FF-EPIC-17-S7 / FFRNT-159). Ships dark (enabled: false) until
-# the SealedSecret `config-service-secrets` is provisioned in a deploy window.
-# Authorization is routed through FuzeFront's own Security API
-# (SECURITY_SERVICE_URL — plain in-cluster Service DNS, set in
-# templates/config-service-deployment.yaml, no secret needed) rather than an
-# embedded Permit.io SDK, so there is no PERMIT_API_KEY to seal here.
-# GO-LIVE steps:
-#   1. Seal DATABASE_URL, JWT_SECRET into config-service-secrets
-#      (see deploy/contabo/sealed/config-service-secrets.yaml.template).
-#   2. Flip `enabled` to true here via GitOps in a deploy window.
-# tag is empty because release.yml has not yet built the image (this PR only
-# adds the build step) — the FIRST successful "Build & push config-service"
-# run on master bumps it off "" the same way payment-service's did. The tag:
-# line MUST stay immediately after repository: — release.yml's GitOps bump
-# step only rewrites a tag: found on the line directly following a matched
-# repository: anchor.
+# Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
+# FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster Service
+# DNS, set in templates/config-service-deployment.yaml, no secret needed)
+# rather than an embedded Permit.io SDK, so there is no PERMIT_API_KEY to seal
+# here. The image is now built by release.yml (tag below is a real, pinned
+# release SHA, not the placeholder "" this comment used to describe).
+#
+# `enabled: true` is flipped here AHEAD of go-live, but this is deliberately
+# NOT deployable yet — the PR that flips it (see PR description) is opened
+# `hold`/`blocked`, not `auto-merge`, and must stay unmerged until FuzeInfra
+# has completed BOTH of the following (config-service runs its DB migrations
+# at startup with no `optional: true` on either secretKeyRef, so skipping
+# either step is a crashloop / CreateContainerConfigError in prod, not a
+# graceful degrade):
+#   1. Provision the Postgres database + least-privilege role for
+#      config-service on the FuzeInfra Postgres instance.
+#   2. Seal DATABASE_URL (pointed at that database/role) and JWT_SECRET (same
+#      value as fuzefront-secrets' JWT_SECRET) into the `config-service-secrets`
+#      SealedSecret in the `fuzefront` namespace — replace
+#      deploy/contabo/sealed/config-service-secrets.yaml.template with real
+#      kubeseal output at deploy/contabo/sealed/config-service-secrets.yaml,
+#      per that template's own instructions.
+# Once both land, merge this PR in a deploy window; Argo syncs `enabled: true`
+# against a Secret that already exists and the Deployment comes up clean.
 configService:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
     tag: 5f45693d2900
