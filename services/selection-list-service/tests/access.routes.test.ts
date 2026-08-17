@@ -5,8 +5,13 @@
 //  B) PUT /:listId/access/:userId  — grant/update role
 //  C) DELETE /:listId/access/:userId  — revoke access
 //
-// DB is mocked via jest.mock('../src/db'); Permit client is injected via
-// _setPermitClientForTesting(); feature flag is controlled via env var.
+// DB is mocked via jest.mock('../src/db'); the Security API's AuthzClient
+// (@fuzefront/auth, via middleware/authz.ts) is injected via
+// _setAuthzClientForTesting(); feature flag is controlled via env var.
+//
+// Routed through FuzeFront's Security API instead of an embedded Permit.io
+// SDK — grant()/revoke() replace the old direct
+// permitClient.api.roleAssignments.{assign,unassign}() calls.
 
 // ─── Mock DB before any imports ───────────────────────────────────────────────
 jest.mock('../src/db', () => {
@@ -33,8 +38,9 @@ jest.mock('../src/db', () => {
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+import { AuthzClient, AuthzError } from '@fuzefront/auth';
 import accessRouter from '../src/routes/access';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../src/middleware/permit';
+import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/authz';
 import { db } from '../src/db';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -82,14 +88,22 @@ function restoreDbMock(): void {
   mockDb.update = jest.fn(() => Promise.resolve(1));
 }
 
-// Default Permit mock: allow everything.
-function makeAllowPermit(): any {
-  return { check: jest.fn().mockResolvedValue(true) };
+/** A fully-typed allow-all AuthzClient, mirroring makeNoOpProxy but with
+ * jest.fn() spies so individual tests can assert on the grant/revoke calls. */
+function makeAllowAuthzClient(overrides: Partial<AuthzClient> = {}): AuthzClient {
+  return {
+    check: jest.fn().mockResolvedValue({ allow: true }),
+    bulkCheck: jest.fn().mockResolvedValue([]),
+    grant: jest.fn().mockResolvedValue({ id: 'g1', subject: USER_ID, tenant: ORG_ID, role: 'list-viewer' }),
+    revoke: jest.fn().mockResolvedValue(undefined),
+    listGrants: jest.fn().mockResolvedValue({ items: [], page: { nextCursor: null, hasMore: false } }),
+    ...overrides,
+  };
 }
 
 afterEach(() => {
   delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
-  _setPermitClientForTesting(makeNoOpProxy());
+  _setAuthzClientForTesting(makeNoOpProxy());
   jest.clearAllMocks();
   restoreDbMock();
 });
@@ -236,13 +250,10 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.status).toBe(400);
   });
 
-  it('grants list-viewer role successfully (flag OFF)', async () => {
+  it('grants list-viewer role successfully (flag OFF) and scopes the grant to this list instance', async () => {
     restoreDbMock();
-    const mockPermit = {
-      check: jest.fn().mockResolvedValue(true),
-      api: { roleAssignments: { assign: jest.fn().mockResolvedValue(undefined) } },
-    };
-    _setPermitClientForTesting(mockPermit);
+    const grantMock = jest.fn().mockResolvedValue({ id: 'g1', subject: USER_ID, tenant: ORG_ID, role: 'list-viewer' });
+    _setAuthzClientForTesting(makeAllowAuthzClient({ grant: grantMock }));
 
     const app = makeApp();
     const res = await request(app)
@@ -256,6 +267,17 @@ describe('PUT /:listId/access/:userId', () => {
       listId: LIST_ID,
       role: 'list-viewer',
     });
+    // resource MUST reach the wire — its absence would silently turn this
+    // list-scoped grant into a tenant-wide one (real privilege escalation).
+    expect(grantMock).toHaveBeenCalledWith(
+      {
+        subject: USER_ID,
+        tenant: ORG_ID,
+        role: 'list-viewer',
+        resource: { type: 'SelectionList', key: LIST_ID },
+      },
+      expect.any(String),
+    );
   });
 
   it('returns 409 when demoting last owner (flag OFF)', async () => {
@@ -280,11 +302,8 @@ describe('PUT /:listId/access/:userId', () => {
 
   it('allows demoting an owner when another owner exists (flag OFF)', async () => {
     restoreDbMock();
-    const assignMock = jest.fn().mockResolvedValue(undefined);
-    _setPermitClientForTesting({
-      check: jest.fn().mockResolvedValue(true),
-      api: { roleAssignments: { assign: assignMock } },
-    });
+    const grantMock = jest.fn().mockResolvedValue({ id: 'g1', subject: USER_ID, tenant: ORG_ID, role: 'list-editor' });
+    _setAuthzClientForTesting(makeAllowAuthzClient({ grant: grantMock }));
 
     // existing row is list-owner, but 2 owners exist.
     mockDb.first = jest.fn()
@@ -300,17 +319,27 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.status).toBe(200);
   });
 
+  it('returns 500 and does NOT upsert the mirror row when AuthzClient.grant() throws (write-ordering fail-closed guarantee)', async () => {
+    restoreDbMock();
+    const grantMock = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', 'Security API returned 502'));
+    _setAuthzClientForTesting(makeAllowAuthzClient({ grant: grantMock }));
+
+    const app = makeApp();
+    const res = await request(app)
+      .put(`/lists/${LIST_ID}/access/${USER_ID}`)
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ role: 'list-viewer' });
+
+    expect(res.status).toBe(500);
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
   const VALID_ROLES = ['list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer'];
   VALID_ROLES.forEach((role) => {
     it(`accepts valid role: ${role}`, async () => {
       jest.clearAllMocks();
       restoreDbMock();
-      _setPermitClientForTesting(makeNoOpProxy());
-      const mockPermit = {
-        check: jest.fn().mockResolvedValue(true),
-        api: { roleAssignments: { assign: jest.fn().mockResolvedValue(undefined) } },
-      };
-      _setPermitClientForTesting(mockPermit);
+      _setAuthzClientForTesting(makeAllowAuthzClient());
 
       const app = makeApp();
       const res = await request(app)
@@ -359,13 +388,10 @@ describe('DELETE /:listId/access/:userId', () => {
     expect(res.body.code).toBe('LAST_OWNER');
   });
 
-  it('revokes access and returns 204 when not last owner', async () => {
+  it('revokes access and returns 204 when not last owner, scoping the revoke to this list instance', async () => {
     restoreDbMock();
-    const unassignMock = jest.fn().mockResolvedValue(undefined);
-    _setPermitClientForTesting({
-      check: jest.fn().mockResolvedValue(true),
-      api: { roleAssignments: { unassign: unassignMock } },
-    });
+    const revokeMock = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAllowAuthzClient({ revoke: revokeMock }));
 
     mockDb.first = jest.fn()
       .mockResolvedValueOnce({ role: 'list-owner' })    // existing grant
@@ -377,16 +403,23 @@ describe('DELETE /:listId/access/:userId', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     expect(res.status).toBe(204);
-    expect(unassignMock).toHaveBeenCalled();
+    // resource MUST reach the wire on revoke too — see the same rationale as
+    // the PUT/grant test above.
+    expect(revokeMock).toHaveBeenCalledWith(
+      {
+        subject: USER_ID,
+        tenant: ORG_ID,
+        role: 'list-owner',
+        resource: { type: 'SelectionList', key: LIST_ID },
+      },
+      expect.any(String),
+    );
   });
 
   it('revokes a non-owner role successfully', async () => {
     restoreDbMock();
-    const unassignMock = jest.fn().mockResolvedValue(undefined);
-    _setPermitClientForTesting({
-      check: jest.fn().mockResolvedValue(true),
-      api: { roleAssignments: { unassign: unassignMock } },
-    });
+    const revokeMock = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAllowAuthzClient({ revoke: revokeMock }));
 
     mockDb.first = jest.fn().mockResolvedValueOnce({ role: 'list-viewer' }); // non-owner
 
@@ -396,14 +429,34 @@ describe('DELETE /:listId/access/:userId', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     expect(res.status).toBe(204);
-    expect(unassignMock).toHaveBeenCalled();
+    expect(revokeMock).toHaveBeenCalled();
   });
 
-  it('returns 403 (fail closed) when Permit.io check throws during authz ON', async () => {
+  it('returns 500 and does NOT soft-delete the mirror row when AuthzClient.revoke() throws (write-ordering fail-closed guarantee)', async () => {
+    restoreDbMock();
+    const revokeMock = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', 'Security API returned 502'));
+    _setAuthzClientForTesting(makeAllowAuthzClient({ revoke: revokeMock }));
+
+    mockDb.first = jest.fn().mockResolvedValueOnce({ role: 'list-viewer' }); // non-owner, no last-owner guard involved
+
+    const app = makeApp();
+    const res = await request(app)
+      .delete(`/lists/${LIST_ID}/access/${USER_ID}`)
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(500);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 (fail closed) when the Security API check throws AuthzError(DECISION_UNAVAILABLE) during authz ON', async () => {
     process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
-    _setPermitClientForTesting({
-      check: jest.fn().mockRejectedValue(new Error('Permit.io timeout')),
-    });
+    _setAuthzClientForTesting({
+      check: jest.fn().mockRejectedValue(new AuthzError('DECISION_UNAVAILABLE', 'Security API request failed: timeout; denying.')),
+      bulkCheck: jest.fn(),
+      grant: jest.fn(),
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
 
     const app = makeApp();
     const res = await request(app)
@@ -414,11 +467,15 @@ describe('DELETE /:listId/access/:userId', () => {
     expect(res.body.code).toBe('FORBIDDEN');
   });
 
-  it('returns 403 when Permit.check denies delete and flag is ON', async () => {
+  it('returns 403 when the Security API denies delete and flag is ON', async () => {
     process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
-    _setPermitClientForTesting({
-      check: jest.fn().mockResolvedValue(false),
-    });
+    _setAuthzClientForTesting({
+      check: jest.fn().mockResolvedValue({ allow: false }),
+      bulkCheck: jest.fn(),
+      grant: jest.fn(),
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
 
     const app = makeApp();
     const res = await request(app)

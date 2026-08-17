@@ -1,4 +1,8 @@
-// permit.flags.ts — lightweight env-var-based feature flag helper for selection-list-service.
+// authz.flags.ts — lightweight env-var-based feature flag helper for selection-list-service.
+// (Renamed from permit.flags.ts alongside middleware/permit.ts -> middleware/authz.ts:
+// the flag itself was never Permit-specific — it gates this service's authz call
+// site generally, first against Permit directly and now against FuzeFront's
+// Security API — but the old filename read that way and no longer should.)
 //
 // Rather than pulling a full OpenFeature SDK (which requires network I/O), this
 // service resolves flags from environment variables for simple on/off release gating.
@@ -12,7 +16,8 @@
 // Administration:          feature-flags-engineer (Unleash config); this file just reads env.
 
 export const FLAGS = {
-  /** Release flag — gates all Permit.io authz checks on list-access endpoints.
+  /** Release flag — gates all authz checks (routed through the Security API)
+   *  on list-access endpoints.
    *  Default: false (OFF).  Enable by setting env var to 'true'.
    *  Kill-switch: set to 'false' to revert to pass-through mode with warning logs. */
   AUTHZ_ENABLED: 'fuzefront.selection-list.authz-enabled',
