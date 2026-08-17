@@ -109,6 +109,9 @@ jobs:
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Trivy filesystem scan (report-only, SARIF)
@@ -122,35 +125,26 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
-      # This scan is genuinely report-only (exit-code: '0' above, never fails
-      # the job) — but uploading its SARIF to GitHub's code-scanning system
-      # (upload-sarif) makes GitHub post a separate "Trivy" PR check that
-      # evaluates severity thresholds independent of this job's own outcome.
-      # Under this repo's push volume on master, that check's new-vs-baseline
-      # diff repeatedly fails to find a completed baseline analysis for
-      # refs/heads/master ("1 configuration ... was not found") and falls
-      # back to flagging every finding as "new", even when a same-methodology
-      # local diff against the current master tip shows zero actual new
-      # vulnerabilities (reproduced repeatedly). That false-failure trains
-      # reviewers to ignore a red CI check, which is worse than not running
-      # the check at all. Full dependency/vuln coverage is unaffected: NPM
-      # Security Audit, Snyk, Dependency Review, CodeQL, and the container
-      # Trivy scan (security.yml, category trivy-container) all still upload
-      # to code-scanning and have not shown this failure mode. Surface this
-      # scan's findings as a step summary + downloadable artifact instead.
-      - name: Trivy scan summary
+      # Upload with upload-sarif's OWN ref/sha detection — do not hand-roll it.
+      # This previously passed an explicit ref/sha pair computed by a bespoke
+      # "detect open PR" step, which on a pull_request event pinned the analysis
+      # to github.sha (the *merge* commit) while GitHub anchors the PR's code
+      # scanning check at the *head* commit. The mismatched pair meant the
+      # `trivy` configuration never registered against the PR, so every run
+      # reported 'Warning: 1 configuration present on refs/heads/master was not
+      # found ... trivy' and then, with no PR-side baseline to diff against,
+      # fell back to reporting pre-existing findings as "new alerts" — a
+      # permanently red check that no code change could clear. `continue-on-error`
+      # hid the broken upload, so the job stayed green while the data never
+      # landed. Keep this step failing loudly: a dependency scan that silently
+      # does not report is worse than one that is visibly broken.
+      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always()
-        run: |
-          {
-            echo "## Trivy filesystem scan (report-only)"
-            echo
-            if [ -s trivy.sarif ]; then
-              COUNT=$(jq '[.runs[].results[]] | length' trivy.sarif)
-              echo "${COUNT} finding(s) at CRITICAL/HIGH severity (unfixed CVEs excluded). Full SARIF in the run artifacts."
-            else
-              echo "No trivy.sarif produced."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+      # Keep the raw SARIF downloadable so a disputed finding can be diffed
+      # against master's scan without re-running CI.
       - name: Upload Trivy scan artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
