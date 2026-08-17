@@ -223,3 +223,156 @@ describe('migration 015 — root-membership backfill + personal-org reclassify (
     expect(rows).toHaveLength(1)
   })
 })
+
+/**
+ * 2026-08-16 P1 regression — reproduces the exact prod condition that put
+ * fuzefront-backend/-security into a crashloop: `organizations` has NO row
+ * whose id is the canonical `ROOT_ORG_ID` (`…0010`), because migration 014's
+ * "adopt a pre-existing platform org rather than creating a second one"
+ * branch had already run against a DB whose platform org was created under a
+ * random id (prod: `92f2020b-2bdb-41f0-98ff-1ef759b41741`, slug `fuzefront`).
+ * Pre-fix, migration 015 hardcoded `ROOT_ORG_ID` into the backfill INSERT,
+ * which violated `organization_memberships_organization_id_foreign` (23503)
+ * on exactly this DB shape — uncaught by `ON CONFLICT DO NOTHING` (that only
+ * dedupes committed conflicts, not a failed insert) — and knex propagated the
+ * error out of `initializeDatabase()` on every boot.
+ *
+ * Uses its own scratch DB (not the suite above) so this describe block can
+ * freely omit ROOT_ORG_ID from `organizations` without disturbing the
+ * happy-path tests, which assume it exists.
+ */
+describe('migration 015 — resilient when the canonical ROOT_ORG_ID row is absent (2026-08-16 P1 regression)', () => {
+  let reachable = false
+  let db: any
+  let ROOT_ORG_ID: string
+  let migration015: { up(knex: any): Promise<void>; down(knex: any): Promise<void> }
+  const TEST_DB2 = 'fuzefront_security_root_backfill_missing_root_test'
+
+  beforeAll(async () => {
+    reachable = await pgReachable()
+    if (!reachable) return
+
+    process.env.USE_POSTGRES = 'true'
+    process.env.NODE_ENV = 'production'
+    process.env.DB_HOST = HOST
+    process.env.DB_PORT = String(PORT)
+    process.env.DB_USER = USER
+    process.env.DB_PASSWORD = PASSWORD
+    process.env.DB_NAME = TEST_DB2
+
+    const admin = new Client({ host: HOST, port: PORT, user: USER, password: PASSWORD, database: 'postgres' })
+    await admin.connect()
+    await admin.query(`DROP DATABASE IF EXISTS ${TEST_DB2}`)
+    await admin.query(`CREATE DATABASE ${TEST_DB2}`)
+    await admin.end()
+
+    const core = require('@fuzefront/core')
+    const migDir = path.join(__dirname, '..', 'dist', 'migrations')
+    // Run only the schema chain, NOT 014/015 — this test seeds the
+    // "adopted platform org, ROOT_ORG_ID absent" condition by hand and then
+    // invokes 015's up() directly, mirroring how the real deploy runs it.
+    await core.runMigrations({ migrationsTableName: 'knex_migrations', migrationsDir: migDir })
+    core.initializeDatabaseConnection({ migrationsTableName: 'knex_migrations', migrationsDir: migDir })
+    db = core.db
+
+    const rootOrgMigration = require('../src/migrations/014_seed_root_platform_organization')
+    ROOT_ORG_ID = rootOrgMigration.ROOT_ORG_ID
+    migration015 = require('../src/migrations/015_root_membership_backfill_and_personal_org_reclassify')
+
+    // The full chain above already ran 014/015 on a zero-user DB, so they
+    // deferred (no organizations row at all yet) — confirmed below. Now
+    // simulate the prod condition: a platform org exists under a RANDOM id
+    // (adopted, e.g. by an earlier ensureRootPortal() run), and ROOT_ORG_ID
+    // itself has no row.
+    const preexisting = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+    if (preexisting) {
+      throw new Error('test setup invariant violated: ROOT_ORG_ID row should not exist yet')
+    }
+
+    const adoptedOwnerId = uuidv4()
+    await db('users').insert({
+      id: adoptedOwnerId,
+      email: 'adopted-owner@test.local',
+      first_name: 'Adopted',
+      last_name: 'Owner',
+      roles: JSON.stringify(['admin', 'user']),
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+    await db('organizations').insert({
+      id: uuidv4(),
+      name: 'FuzeFront',
+      slug: 'fuzefront', // matches prod: this slug is already taken by the adopted org
+      owner_id: adoptedOwnerId,
+      type: 'platform',
+      settings: JSON.stringify({}),
+      metadata: JSON.stringify({ root: true }),
+      is_active: true,
+      provisioning_state: 'active',
+    })
+  }, 60000)
+
+  afterAll(async () => {
+    if (db) await db.destroy()
+  })
+
+  async function createUser(): Promise<string> {
+    const id = uuidv4()
+    await db('users').insert({
+      id,
+      email: `missing-root-${id.slice(0, 8)}@test.local`,
+      first_name: 'MissingRoot',
+      last_name: 'Test',
+      roles: JSON.stringify(['user']),
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+    return id
+  }
+
+  it('does NOT throw an FK violation, backfills against the ADOPTED org, and creates no second platform org', async () => {
+    if (!reachable) return console.warn('Postgres unreachable — skipping')
+
+    // Precondition matching prod exactly.
+    const canonical = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+    expect(canonical).toBeUndefined()
+    const adopted = await db('organizations').where({ type: 'platform' }).first()
+    expect(adopted).toBeDefined()
+
+    const user = await createUser()
+
+    // Pre-fix this threw a Postgres 23503 FK violation. Post-fix it must
+    // resolve to the adopted org and succeed.
+    await expect(migration015.up(db)).resolves.toBeUndefined()
+
+    const membership = await db('organization_memberships')
+      .where({ user_id: user, organization_id: adopted.id })
+      .first()
+    expect(membership).toMatchObject({ role: 'member', status: 'active' })
+
+    // No row was ever inserted under the (still-nonexistent) canonical id.
+    const canonicalMembership = await db('organization_memberships')
+      .where({ organization_id: ROOT_ORG_ID })
+      .first()
+    expect(canonicalMembership).toBeUndefined()
+
+    // Exactly ONE platform org — the fix must never create a second one.
+    const platformOrgs = await db('organizations').where({ type: 'platform' })
+    expect(platformOrgs).toHaveLength(1)
+    expect(platformOrgs[0].id).toBe(adopted.id)
+  })
+
+  it('is idempotent when re-run against the same adopted-root DB', async () => {
+    if (!reachable) return console.warn('Postgres unreachable — skipping')
+
+    const membershipsBefore = await db('organization_memberships').select('id').orderBy('id')
+    const orgsBefore = await db('organizations').select('id', 'type').orderBy('id')
+
+    await expect(migration015.up(db)).resolves.toBeUndefined()
+
+    const membershipsAfter = await db('organization_memberships').select('id').orderBy('id')
+    const orgsAfter = await db('organizations').select('id', 'type').orderBy('id')
+    expect(membershipsAfter).toEqual(membershipsBefore)
+    expect(orgsAfter).toEqual(orgsBefore)
+  })
+})
