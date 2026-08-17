@@ -1,4 +1,9 @@
-import type { Portfolio } from '@fuzequality/contracts'
+import type {
+  AdminTenantContext,
+  OrganizationQualitySummary,
+  Portfolio,
+  TestImplementationRequest,
+} from '@fuzequality/contracts'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
@@ -36,8 +41,9 @@ export const api = {
   updateRepositoryAdministration: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/repositories/${id}/administration`, { method: 'PATCH', body: JSON.stringify(value) }),
   implementTests: (value: Record<string, unknown>) =>
-    request('/api/v1/test-implementations', { method: 'POST', body: JSON.stringify(value) }),
-  testImplementation: (id: string) => request(`/api/v1/test-implementations/${id}`),
+    request<TestImplementationRequest>('/api/v1/test-implementations', { method: 'POST', body: JSON.stringify(value) }),
+  testImplementation: (id: string) =>
+    request<TestImplementationRequest>(`/api/v1/test-implementations/${id}`),
   organizationMembers: () => request<{ items?: OrganizationMember[]; members?: OrganizationMember[] } | OrganizationMember[]>('/api/v1/organization/members'),
   inviteOrganizationMember: (email: string, role: OrganizationRole) =>
     request('/api/v1/organization/invitations', { method: 'POST', body: JSON.stringify({ email, role }) }),
@@ -45,7 +51,7 @@ export const api = {
     request(`/api/v1/organization/members/${id}`, { method: 'PUT', body: JSON.stringify({ role }) }),
   removeOrganizationMember: (id: string) =>
     request(`/api/v1/organization/members/${id}`, { method: 'DELETE' }),
-  platformOrganizations: () => request('/api/v1/admin/organizations'),
+  platformOrganizations: () => request<OrganizationQualitySummary[]>('/api/v1/admin/organizations'),
   enterOrganizationContext: (organizationId: string, reason: string) =>
-    request(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/context`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    request<AdminTenantContext>(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/context`, { method: 'POST', body: JSON.stringify({ reason }) }),
 }
