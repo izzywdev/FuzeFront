@@ -20,6 +20,7 @@
     "packages/identity-ui",
     "packages/auth-ui",
     "packages/account-security-ui",
+    "packages/portal-admin-ui",
     "packages/portal-branding-ui",
     "portal-client",
     "packages/i18n",
