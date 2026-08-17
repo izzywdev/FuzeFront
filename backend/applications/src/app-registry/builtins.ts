@@ -86,7 +86,7 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://quality.prod.fuzefront.com/remoteEntry.js',
+           remoteEntry: 'https://fuzequality.prod.fuzefront.com/remoteEntry.js',
       scope: 'fuzequality',
       module: './App',
     },
