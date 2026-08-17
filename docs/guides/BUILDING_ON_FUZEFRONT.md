@@ -196,12 +196,11 @@ so a raw string off `req.body` will not compile against a repository taking
 equivalent and relies on the runtime boundary plus the gate, so Python services need
 **more** review discipline here, not less.
 
-> **Install caveat, honestly stated.** Both packages are now correctly scoped and
-> buildable, but **nothing is published yet**. `packages-publish.yml` is still gated
-> on the repository owner, so the npm package does not reach GitHub Packages until
-> that guard flips; the Python wheel publishes on an `identity-py-v*` tag and is
-> available as a Release asset. Until the npm side lands, follow the standard's rules
-> — the package drops in without an API change.
+> **Both packages are published.** `@izzywdev/fuzefront-identity` is live on GitHub
+> Packages — add the `.npmrc` scoped registry block from §2 above and install
+> normally. The Python wheel (`fuzefront-identity`) publishes on `identity-py-v*`
+> tags and is available as a GitHub Release asset. To install from a Release:
+> `pip install https://github.com/izzywdev/FuzeFront/releases/download/identity-py-v1.0.0/fuzefront_identity-1.0.0-py3-none-any.whl`.
 
 ---
 
