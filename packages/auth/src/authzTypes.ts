@@ -68,7 +68,11 @@ export type AuthzErrorCode =
   /** The Security API could not be reached, timed out, or answered non-200. Denied. */
   | 'DECISION_UNAVAILABLE'
   /** The guard/client is misconfigured (e.g. no baseUrl). Denied. */
-  | 'AUTHZ_MISCONFIGURED';
+  | 'AUTHZ_MISCONFIGURED'
+  /** The caller supplied malformed/incomplete request arguments. */
+  | 'MALFORMED'
+  /** The authorization provider (upstream backend service) failed. Transient. */
+  | 'PROVIDER_ERROR';
 
 /** Error raised by the authz client/guard. Mirrors `AuthError`'s shape and discipline. */
 export class AuthzError extends Error {
@@ -124,6 +128,74 @@ export interface AuthzClientOptions {
   cacheMaxEntries?: number;
 }
 
+/** A grant request: assign a role and optional permission to a subject. */
+export interface GrantRequest {
+  /** Principal being granted (user or service client). */
+  subject: string;
+  /** Tenant/org scope. */
+  tenant: string;
+  /** Role key to assign. */
+  role: string;
+  /** Optional explicit `resource:action` permission alongside the role. */
+  permission?: string;
+  /** Optional resource instance to scope the grant (ReBAC). Omit for tenant-wide. */
+  resource?: ResourceRef;
+}
+
+/** A created, revocable grant. */
+export interface Grant {
+  /** Opaque grant identifier. */
+  id: string;
+  /** Principal granted. */
+  subject: string;
+  /** Tenant scope. */
+  tenant: string;
+  /** Role assigned. */
+  role: string;
+  /** Optional permission alongside the role. */
+  permission?: string;
+  /** Optional resource instance scope. */
+  resource?: ResourceRef;
+  /** Timestamp of creation (epoch ms). */
+  createdAt?: number;
+}
+
+/** Revoke a grant by id or by identity tuple (subject + tenant + role). */
+export interface GrantRevokeRequest {
+  /** Grant id to revoke. Omit to revoke by identity tuple. */
+  grantId?: string;
+  /** Subject to revoke (required if revoking by tuple). */
+  subject?: string;
+  /** Tenant to revoke within (required if revoking by tuple). */
+  tenant?: string;
+  /** Role to revoke (required if revoking by tuple). */
+  role?: string;
+  /** Optional resource to scope the revocation. */
+  resource?: ResourceRef;
+}
+
+/** Page of grants (cursor-paginated). */
+export interface GrantPage {
+  items: Grant[];
+  page: {
+    nextCursor: string | null;
+    hasMore: boolean;
+    total?: number;
+  };
+}
+
+/** Query parameters for listing grants. */
+export interface GrantListQuery {
+  /** Subject whose grants to list. Defaults to caller. */
+  subject?: string;
+  /** Tenant to list within. Required. */
+  tenant: string;
+  /** Optional limit (enforced server-side). */
+  limit?: number;
+  /** Opaque cursor for pagination. */
+  cursor?: string;
+}
+
 /** The authz client: a thin, fail-closed HTTP binding to the Security API. */
 export interface AuthzClient {
   /**
@@ -140,4 +212,24 @@ export interface AuthzClient {
    * resource's `allow` to a different resource.
    */
   bulkCheck(checks: AuthzCheck[], token: string): Promise<AuthzDecision[]>;
+  /**
+   * Grant a role (and optional permission) to a subject within a tenant.
+   * Throws `AuthzError('MALFORMED')` if required fields are missing.
+   * Throws `AuthzError('PROVIDER_ERROR')` if the backend provider fails (transient).
+   * Resolves with the created grant on success.
+   */
+  grant(req: GrantRequest, token: string): Promise<Grant>;
+  /**
+   * Revoke a grant by id, or by subject+tenant+role identity tuple.
+   * Throws `AuthzError('MALFORMED')` if neither form is provided or required fields missing.
+   * Throws `AuthzError('PROVIDER_ERROR')` if the backend provider fails (transient).
+   * Resolves on success (204 No Content from API).
+   */
+  revoke(req: GrantRevokeRequest, token: string): Promise<void>;
+  /**
+   * List grants for a subject within a tenant (cursor-paginated).
+   * Throws `AuthzError('MALFORMED')` if tenant is missing.
+   * Resolves with a page of grants.
+   */
+  listGrants(query: GrantListQuery, token: string): Promise<GrantPage>;
 }

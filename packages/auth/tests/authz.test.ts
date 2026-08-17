@@ -334,3 +334,279 @@ describe('requirePermission', () => {
     expect(() => requirePermission({ resource: 'x', action: 'y' } as any)).toThrow(AuthzError);
   });
 });
+
+describe('createAuthzClient — grant/revoke/listGrants', () => {
+  const clientWith = (responses: Array<{ status?: number; body?: unknown } | Error>) =>
+    createAuthzClient({ baseUrl: BASE, fetch: mockFetch(responses) });
+
+  it('grants a role and resolves with the created grant', async () => {
+    const fetch = mockFetch([
+      {
+        status: 201,
+        body: {
+          id: 'grant_001',
+          subject: 'user_1',
+          tenant: 'tenant_1',
+          role: 'admin',
+          permission: 'resource:write',
+          resource: { type: 'invoice', key: 'inv_123' },
+          createdAt: 1_700_000_000,
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const grant = await client.grant(
+      {
+        subject: 'user_1',
+        tenant: 'tenant_1',
+        role: 'admin',
+        permission: 'resource:write',
+        resource: { type: 'invoice', key: 'inv_123' },
+      },
+      TOKEN,
+    );
+
+    expect(grant).toEqual({
+      id: 'grant_001',
+      subject: 'user_1',
+      tenant: 'tenant_1',
+      role: 'admin',
+      permission: 'resource:write',
+      resource: { type: 'invoice', key: 'inv_123' },
+      createdAt: 1_700_000_000,
+    });
+    expect(fetch.calls[0].url).toBe(`${BASE}/api/v1/security/authz/grants`);
+    expect(fetch.calls[0].init.method).toBe('POST');
+    expect(fetch.calls[0].init.headers.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('grants a tenant-wide role (no resource scope)', async () => {
+    const fetch = mockFetch([
+      {
+        status: 201,
+        body: {
+          id: 'grant_002',
+          subject: 'user_2',
+          tenant: 'tenant_2',
+          role: 'viewer',
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const grant = await client.grant(
+      {
+        subject: 'user_2',
+        tenant: 'tenant_2',
+        role: 'viewer',
+      },
+      TOKEN,
+    );
+
+    expect(grant.id).toBe('grant_002');
+    expect(grant.resource).toBeUndefined();
+  });
+
+  it('throws MALFORMED when grant 400s', async () => {
+    const client = clientWith([
+      {
+        status: 400,
+        body: { error: 'subject, tenant and role are required', code: 'MALFORMED' },
+      },
+    ]);
+
+    await expect(
+      client.grant(
+        { subject: 'user_1', tenant: 'tenant_1', role: 'admin' },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'MALFORMED', message: expect.stringMatching(/subject, tenant and role/) });
+  });
+
+  it('throws PROVIDER_ERROR when grant 502s', async () => {
+    const client = clientWith([{ status: 502, body: { error: 'grant failed', code: 'PROVIDER_ERROR' } }]);
+
+    await expect(
+      client.grant(
+        { subject: 'user_1', tenant: 'tenant_1', role: 'admin' },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('treats timeout on grant as PROVIDER_ERROR', async () => {
+    const timeout = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    const client = clientWith([timeout]);
+
+    await expect(
+      client.grant(
+        { subject: 'user_1', tenant: 'tenant_1', role: 'admin' },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('revokes by grantId and resolves with 204', async () => {
+    const fetch = mockFetch([{ status: 204 }]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    await client.revoke({ grantId: 'grant_001' }, TOKEN);
+
+    expect(fetch.calls[0].url).toBe(`${BASE}/api/v1/security/authz/grants`);
+    expect(fetch.calls[0].init.method).toBe('DELETE');
+    expect(JSON.parse(fetch.calls[0].init.body)).toEqual({ grantId: 'grant_001' });
+  });
+
+  it('revokes by subject+tenant+role tuple', async () => {
+    const fetch = mockFetch([{ status: 204 }]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    await client.revoke(
+      {
+        subject: 'user_1',
+        tenant: 'tenant_1',
+        role: 'admin',
+      },
+      TOKEN,
+    );
+
+    expect(fetch.calls[0].init.method).toBe('DELETE');
+    expect(JSON.parse(fetch.calls[0].init.body)).toEqual({
+      subject: 'user_1',
+      tenant: 'tenant_1',
+      role: 'admin',
+    });
+  });
+
+  it('throws MALFORMED when revoke 400s', async () => {
+    const client = clientWith([
+      {
+        status: 400,
+        body: { error: 'grantId or subject+tenant+role required', code: 'MALFORMED' },
+      },
+    ]);
+
+    await expect(
+      client.revoke({ grantId: '' }, TOKEN),
+    ).rejects.toMatchObject({
+      code: 'MALFORMED',
+      message: expect.stringMatching(/grantId or subject/),
+    });
+  });
+
+  it('throws PROVIDER_ERROR when revoke 502s', async () => {
+    const client = clientWith([{ status: 502, body: { error: 'revoke failed', code: 'PROVIDER_ERROR' } }]);
+
+    await expect(
+      client.revoke({ grantId: 'grant_001' }, TOKEN),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('lists grants for a tenant', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: 'grant_001',
+              subject: 'user_1',
+              tenant: 'tenant_1',
+              role: 'admin',
+            },
+            {
+              id: 'grant_002',
+              subject: 'user_1',
+              tenant: 'tenant_1',
+              role: 'viewer',
+            },
+          ],
+          page: {
+            nextCursor: null,
+            hasMore: false,
+            total: 2,
+          },
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const page = await client.listGrants({ tenant: 'tenant_1' }, TOKEN);
+
+    expect(page.items).toHaveLength(2);
+    expect(page.items[0].id).toBe('grant_001');
+    expect(page.page.hasMore).toBe(false);
+    expect(fetch.calls[0].url).toContain('/api/v1/security/authz/grants?');
+    expect(fetch.calls[0].url).toContain('tenant=tenant_1');
+    expect(fetch.calls[0].init.method).toBe('GET');
+  });
+
+  it('listGrants with optional subject and cursor', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          items: [{ id: 'grant_003', subject: 'user_2', tenant: 'tenant_1', role: 'editor' }],
+          page: {
+            nextCursor: 'cursor_abc',
+            hasMore: true,
+          },
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    await client.listGrants(
+      {
+        tenant: 'tenant_1',
+        subject: 'user_2',
+        limit: 50,
+        cursor: 'prev_cursor',
+      },
+      TOKEN,
+    );
+
+    expect(fetch.calls[0].url).toContain('tenant=tenant_1');
+    expect(fetch.calls[0].url).toContain('subject=user_2');
+    expect(fetch.calls[0].url).toContain('limit=50');
+    expect(fetch.calls[0].url).toContain('cursor=prev_cursor');
+  });
+
+  it('throws MALFORMED when listGrants has no tenant', async () => {
+    const client = clientWith([]);
+
+    await expect(
+      client.listGrants({ tenant: '' }, TOKEN),
+    ).rejects.toMatchObject({
+      code: 'MALFORMED',
+      message: expect.stringMatching(/tenant is required/),
+    });
+  });
+
+  it('throws MALFORMED when listGrants 400s', async () => {
+    const client = clientWith([
+      {
+        status: 400,
+        body: { error: 'tenant is required', code: 'MALFORMED' },
+      },
+    ]);
+
+    await expect(
+      client.listGrants({ tenant: 'tenant_1' }, TOKEN),
+    ).rejects.toMatchObject({ code: 'MALFORMED' });
+  });
+
+  it('throws PROVIDER_ERROR when listGrants 502s', async () => {
+    const client = clientWith([
+      {
+        status: 502,
+        body: { error: 'provider error', code: 'PROVIDER_ERROR' },
+      },
+    ]);
+
+    await expect(
+      client.listGrants({ tenant: 'tenant_1' }, TOKEN),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+});
