@@ -25,7 +25,7 @@ import { getAppRegistryEmitter } from '../app-registry/events'
 import { isV1WriteEnabled, isKafkaEmitEnabled, isRefEnforceEnabled } from '../app-registry/flags'
 import { resolvePortalCatalogContext } from '../app-registry/portalContext'
 import { assertRefExists } from '@izzywdev/fuzefront-identity'
-import { db } from '@fuzefront/core'
+import { db } from '../config/database'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 
 // Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
