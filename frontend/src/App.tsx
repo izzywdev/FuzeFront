@@ -43,6 +43,8 @@ import PortalsDirectory from './pages/PortalsDirectory'
 import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
+import MasterAdminPortalsPage from './pages/MasterAdminPortalsPage'
+import PortalAdminConsolePage from './pages/PortalAdminConsolePage'
 import MemberDirectoryPage from './pages/MemberDirectoryPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import {
@@ -375,6 +377,8 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            <Route path="/admin/portals" element={<MasterAdminPortalsPage />} />
+            <Route path="/portal/admin" element={<PortalAdminConsolePage />} />
             <Route path="/portal/admin/billing" element={<PortalBillingPage />} />
             {/* Selection Lists (EPIC-17 / FFRNT-188) */}
             <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
