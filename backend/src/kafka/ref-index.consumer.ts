@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { createKafkaClient, TypedConsumer } from '@fuzefront/shared'
+import { createKafkaClient, TypedConsumer } from '@fuzefront/shared/kafka'
 import {
   applyEventToRefIndex,
   REF_INDEX_TOPICS,
