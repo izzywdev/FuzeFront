@@ -1,0 +1,119 @@
+name: gate-fuzequality-registration
+
+# FuzeQuality registers itself with the FuzeFront app registry from an init
+# container on its backend Deployment. Three things have to agree for that to
+# work, and NONE of them fail loudly on their own:
+#
+#   1. registration/manifest.json must satisfy the frozen AppManifest + fleet
+#      policy (no `fuze` prefix, portal + standalone, routing.host, a policy to
+#      submit).
+#   2. The chart's vendored files/registration/ copy must be byte-identical to
+#      registration/ — Helm cannot read above the chart directory, so the copy is
+#      what actually deploys. FuzeMarket ran 1847 Init:Error restarts over 8 days
+#      because those two disagreed about the slug.
+#   3. Exactly ONE workload may carry the init container. Two would race and
+#      re-register each other on every rollout.
+#
+# The failure mode this gate exists for is silence: FuzeQuality shipped with a
+# correct manifest and a chart that referenced it nowhere, so it deployed green
+# and simply never appeared in the portal.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'FuzeQuality/registration/**'
+      - 'FuzeQuality/deploy/helm/**'
+      - 'FuzeQuality/scripts/check-registration.mjs'
+      - 'packages/onboarding-kit/**'
+      - '.github/workflows/gate-fuzequality-registration.yml'
+  pull_request:
+    # `ready_for_review` is listed explicitly: the default set is
+    # [opened, synchronize, reopened], so a PR opened as a draft and later marked
+    # ready would never start this job and would show as "no checks" rather than
+    # as a pass.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'FuzeQuality/registration/**'
+      - 'FuzeQuality/deploy/helm/**'
+      - 'FuzeQuality/scripts/check-registration.mjs'
+      - 'packages/onboarding-kit/**'
+      - '.github/workflows/gate-fuzequality-registration.yml'
+  workflow_dispatch:
+
+jobs:
+  registration:
+    name: FuzeQuality registration is deployable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      # Run bare, with nothing installed — these same validators run in consuming
+      # products' CI where no npm install happens, so a dependency creeping in is
+      # itself the regression.
+      - name: Manifest satisfies the frozen contract and fleet policy
+        run: node packages/onboarding-kit/bin/validate-registration.mjs FuzeQuality/registration
+
+      - name: AuthZ policy is valid
+        run: node packages/onboarding-kit/bin/validate-policy.mjs FuzeQuality/registration/policy.json
+
+      - name: Chart copy has not drifted from registration/
+        run: node FuzeQuality/scripts/check-registration.mjs
+
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.16.4
+
+      - name: Chart lints on every values overlay
+        working-directory: FuzeQuality/deploy/helm
+        run: |
+          helm lint fuzequality
+          helm lint fuzequality -f fuzequality/values-prod.yaml
+
+      # The assertions a lint cannot make: that the init container is actually
+      # rendered, on exactly one workload, and that the ConfigMap it mounts carries
+      # the same bytes the repo holds. A chart can lint perfectly while registering
+      # nothing at all — that is the exact state this gate was added to end.
+      - name: Exactly one workload registers, with the repo's own payload
+        run: |
+          helm template fuzequality FuzeQuality/deploy/helm/fuzequality \
+            -f FuzeQuality/deploy/helm/fuzequality/values-prod.yaml \
+            -n fuzequality > /tmp/rendered.yaml
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const { execFileSync } = require("child_process");
+            // Parse via python-free YAML: use the manifest split helm guarantees.
+            const docs = fs.readFileSync("/tmp/rendered.yaml", "utf8").split(/^---$/m);
+            const problems = [];
+
+            const registering = docs.filter(d => /name: fuzefront-register\b/.test(d));
+            if (registering.length !== 1) {
+              problems.push(`expected exactly 1 workload with the fuzefront-register init container, found ${registering.length}`);
+            } else if (!/kind: Deployment[\s\S]*name: fuzequality-backend/.test(registering[0])) {
+              problems.push("the registering workload is not Deployment/fuzequality-backend");
+            }
+
+            const cm = docs.find(d => /kind: ConfigMap/.test(d) && /name: "?fuzequality-registration"?/.test(d));
+            if (!cm) problems.push("no fuzequality-registration ConfigMap was rendered");
+            else {
+              for (const f of ["manifest.json", "policy.json", "register.sh"]) {
+                const src = fs.readFileSync(path.join("FuzeQuality/registration", f), "utf8");
+                // Every source line must appear in the ConfigMap block, indented by 4.
+                const missing = src.split("\n").filter(l => l.trim() && !cm.includes("    " + l));
+                if (missing.length) problems.push(`${f}: ${missing.length} line(s) from registration/${f} are absent from the rendered ConfigMap`);
+                if (!cm.includes(`${f}: |`)) problems.push(`${f}: no such key in the rendered ConfigMap`);
+              }
+            }
+
+            if (problems.length) {
+              console.error("✘ FuzeQuality would deploy without registering correctly:\n");
+              for (const p of problems) console.error("  - " + p);
+              process.exit(1);
+            }
+            console.log("✔ Deployment/fuzequality-backend registers, carrying the repo'"'"'s registration payload verbatim");
+          '

@@ -1,0 +1,30 @@
+{{- if .Values.registration.enabled }}
+# The registration payload the init container mounts, carried INLINE from
+# FuzeQuality/registration/ via .Files.Get.
+#
+# WHY THE FILES ARE VENDORED INTO files/registration/ RATHER THAN READ IN PLACE:
+# Helm's .Files is scoped to the chart directory, so a chart cannot reach up to
+# FuzeQuality/registration/. The copies under files/ are the chart's view of the
+# same artifacts; scripts/check-fuzequality-registration.mjs fails CI if the two
+# ever diverge, which is the specific defect that left FuzeMarket registering
+# under the wrong slug for eight days.
+#
+# WHY NOT A SHARED CLUSTER-SIDE KIT CONFIGMAP: a `fuzefront-onboarding-kit`
+# ConfigMap is namespace-scoped and would have to exist in `fuzequality` before
+# this chart could start. Nothing creates it there, so depending on it would
+# trade one silent non-registration for a new one.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.registration.configMapName | quote }}
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registration
+data:
+  manifest.json: |
+{{ .Files.Get "files/registration/manifest.json" | indent 4 }}
+  policy.json: |
+{{ .Files.Get "files/registration/policy.json" | indent 4 }}
+  register.sh: |
+{{ .Files.Get "files/registration/register.sh" | indent 4 }}
+{{- end }}
