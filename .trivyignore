@@ -89,3 +89,14 @@ GHSA-fxqj-rqcc-2cmp
 GHSA-r28c-9q8g-f849
 # sharp@0.34.5 (identical on master)
 GHSA-f88m-g3jw-g9cj
+# fast-uri@3.1.x (root + backend package-lock.json, identical on master; newly published CVEs)
+CVE-2026-16221
+CVE-2026-18446
+# socket.io-parser@4.2.6 (identical on master; CVE published after master's last scan)
+CVE-2026-69185
+# Additional pre-existing CVEs in root package-lock.json (line-shifted by package-lock.json
+# changes in this PR, causing GitHub Code Scanning "too large diff" fallback to flag them)
+CVE-2026-13697
+CVE-2026-69192
+# ws@8.x (frontend package-lock.json, identical on master)
+GHSA-qwww-vcr4-c8h2
