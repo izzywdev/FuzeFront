@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import request from 'supertest';
+import { AuthzError } from '@fuzefront/auth';
 import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { createConfigWriteRouter } from '../../src/routes/config.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
+import { _setAuthzClientForTesting, makeNoOpProxy } from '../../src/middleware/authz';
 
 beforeAll(() => {
   configureIdentity({ legacyUuidTypes: new Set(['portal', 'organization', 'user']) });
@@ -13,8 +14,8 @@ beforeAll(() => {
 });
 
 afterEach(() => {
-  // Restore the default CI no-op (allow-everything) Permit client between tests.
-  _setPermitClientForTesting(makeNoOpProxy());
+  // Restore the default CI no-op (allow-everything) authz client between tests.
+  _setAuthzClientForTesting(makeNoOpProxy());
 });
 
 function buildApp(db: FakeDb) {
@@ -85,8 +86,29 @@ describe('PUT /v1/config — auth', () => {
     expect(res.body.code).toBe('UNAUTHENTICATED');
   });
 
-  it('403s when Permit denies the write, and writes nothing', async () => {
-    _setPermitClientForTesting({ check: async () => false });
+  it('403s when the Security API denies the write, and writes nothing', async () => {
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
+    const db = new FakeDb();
+    seedBase(db);
+    const app = buildApp(db);
+
+    const res = await request(app)
+      .put('/v1/config')
+      .set('Authorization', bearer({ userId: 'u1' }))
+      .send({ namespace: NAMESPACE, scope: ORG_SCOPE, operations: [{ key: 'ui.theme.density', op: 'set', value: 'compact' }] });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+    expect(db.valueRows).toHaveLength(0);
+  });
+
+  it('403s (fail-closed, not 500 / not allowed) when the Security API is unreachable, and writes nothing', async () => {
+    _setAuthzClientForTesting({
+      check: async () => {
+        throw new AuthzError('DECISION_UNAVAILABLE', 'Security API request failed: timeout; denying.');
+      },
+      bulkCheck: async () => [],
+    });
     const db = new FakeDb();
     seedBase(db);
     const app = buildApp(db);
@@ -173,9 +195,10 @@ describe('PUT /v1/config — set', () => {
     expect(db.valueRows).toHaveLength(0);
   });
 
-  it('requires write-system Permit action for isSystem keys, and denies without it', async () => {
-    _setPermitClientForTesting({
-      check: async (_user: string, action: string) => action !== 'write-system',
+  it('requires write-system authz action for isSystem keys, and denies without it', async () => {
+    _setAuthzClientForTesting({
+      check: async (check: { action: string }) => ({ allow: check.action !== 'write-system' }),
+      bulkCheck: async () => [],
     });
     const db = new FakeDb();
     seedBase(db);

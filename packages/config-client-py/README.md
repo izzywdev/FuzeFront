@@ -35,7 +35,7 @@ pip install https://github.com/izzywdev/FuzeFront/releases/download/config-clien
 from fuzefront_config_client import ConfigClient, Scope, ScopeType, is_not_modified
 
 client = ConfigClient(
-    base_url="http://fuzefront-config-service:3013",  # Kubernetes Service DNS
+    base_url="http://fuzefront-config-service:3011",  # Kubernetes Service DNS
     token=lambda: session.access_token,
 )
 

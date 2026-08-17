@@ -19,7 +19,7 @@ import { KeyDefinitionRepository } from '../repositories/key-definition.reposito
 import { ValueRepository } from '../repositories/value.repository';
 import { resolveEffectiveConfig } from '../resolver/resolve';
 import { requireAuth } from '../middleware/auth';
-import { CONFIG_CATALOG_RESOURCE, CONFIG_SCOPE_RESOURCE, getPermitClient, requirePermit } from '../middleware/permit';
+import { CONFIG_CATALOG_RESOURCE, CONFIG_SCOPE_RESOURCE, checkAuthorization, requireConfigPermission } from '../middleware/authz';
 import { parseLimit } from '../pagination';
 import { EffectiveConfigEntry, KeyDefinition, Scope, ScopeType } from '../types';
 
@@ -105,7 +105,7 @@ function buildScopeChain(target: Scope): Scope[] {
   return [platform, target];
 }
 
-/** Best-effort Permit tenant for a scope: an org scope IS its own tenant; other tiers fall back to the caller's own org context, or a fixed 'platform' tenant when none is known. */
+/** Best-effort authz tenant for a scope: an org scope IS its own tenant; other tiers fall back to the caller's own org context, or a fixed 'platform' tenant when none is known. */
 function deriveTenant(scope: Scope, req: Request): string {
   if (scope.scopeType === 'org' && scope.scopeId) return scope.scopeId;
   return req.orgId ?? 'platform';
@@ -119,7 +119,7 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
   router.get(
     '/namespaces',
     requireAuth,
-    requirePermit(CONFIG_CATALOG_RESOURCE, 'read'),
+    requireConfigPermission(CONFIG_CATALOG_RESOURCE, 'read'),
     async (req: Request, res: Response) => {
       const limit = parseLimit(req.query.limit);
       const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
@@ -139,7 +139,7 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
   router.get(
     '/namespaces/:namespace/keys',
     requireAuth,
-    requirePermit(CONFIG_CATALOG_RESOURCE, 'read', (req) => req.params.namespace),
+    requireConfigPermission(CONFIG_CATALOG_RESOURCE, 'read', (req) => req.params.namespace),
     async (req: Request, res: Response) => {
       const { namespace: namespaceName } = req.params;
       const includeHidden = String(req.query.includeHidden ?? '') === 'true';
@@ -149,7 +149,7 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
         // other caller passing `true` is refused with 403 rather than
         // silently receiving a filtered list." A dedicated 'admin' action
         // check, on top of the 'read' check above.
-        const isAdmin = await checkPermit(req, CONFIG_CATALOG_RESOURCE, 'admin', namespaceName);
+        const isAdmin = await checkAuthorization(req, CONFIG_CATALOG_RESOURCE, 'admin', namespaceName);
         if (!isAdmin) {
           res.status(403).json(errorBody('FORBIDDEN', 'includeHidden is restricted to platform administrators.'));
           return;
@@ -191,7 +191,7 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
   router.get(
     '/namespaces/:namespace/keys/:key',
     requireAuth,
-    requirePermit(CONFIG_CATALOG_RESOURCE, 'read', (req) => req.params.namespace),
+    requireConfigPermission(CONFIG_CATALOG_RESOURCE, 'read', (req) => req.params.namespace),
     async (req: Request, res: Response) => {
       const { namespace: namespaceName, key } = req.params;
 
@@ -263,10 +263,10 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
 
     const targetScope: Scope = { scopeType, scopeId: scopeType === 'platform' ? null : (scopeIdRaw as string) };
 
-    // Permit check happens BEFORE any existence check: a caller with no
+    // The authz check happens BEFORE any existence check: a caller with no
     // authority over the requested scope gets 403 and learns nothing about
     // whether the namespace/scope exists (openapi.yaml `Forbidden`, S5 AC4).
-    const allowed = await checkPermit(req, CONFIG_SCOPE_RESOURCE, 'read', `${namespaceName}:${scopeType}:${scopeIdRaw ?? 'platform'}`, deriveTenant(targetScope, req));
+    const allowed = await checkAuthorization(req, CONFIG_SCOPE_RESOURCE, 'read', `${namespaceName}:${scopeType}:${scopeIdRaw ?? 'platform'}`, deriveTenant(targetScope, req));
     if (!allowed) {
       res.status(403).json(errorBody('FORBIDDEN', 'Permission denied.'));
       return;
@@ -306,27 +306,6 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
   });
 
   return router;
-}
-
-/** Directly invokes the Permit client (see middleware/permit.ts) for a query-param-derived instance, outside the static-key `requirePermit()` middleware chain. */
-async function checkPermit(
-  req: Request,
-  resource: string,
-  action: string,
-  key?: string,
-  tenant?: string,
-): Promise<boolean> {
-  const userId = req.userId;
-  if (!userId) return false;
-  const client = getPermitClient();
-  const resourceInstance = key ? { type: resource, tenant: tenant ?? req.orgId ?? 'platform', key } : { type: resource, tenant: tenant ?? req.orgId ?? 'platform' };
-  try {
-    return await client.check(userId, action, resourceInstance);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[permit] Permit.io check threw — failing closed.', { err, userId, resource, action });
-    return false;
-  }
 }
 
 /** Strips the ETag quoting/weak-validator prefix so a raw comparison against `version` works. Returns null for anything unparseable — treated as "no If-None-Match" per openapi.yaml. */

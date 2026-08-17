@@ -5,14 +5,14 @@ import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { createKeyDefinitionsWriteRouter } from '../../src/routes/keys.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
+import { _setAuthzClientForTesting, makeNoOpProxy } from '../../src/middleware/authz';
 
 beforeAll(() => {
   configureIdentity({ legacyUuidTypes: new Set(['portal', 'organization', 'user']) });
   process.env.JWT_SECRET = TEST_JWT_SECRET;
 });
 afterEach(() => {
-  _setPermitClientForTesting(makeNoOpProxy());
+  _setAuthzClientForTesting(makeNoOpProxy());
 });
 
 function buildApp(db: FakeDb) {
@@ -154,8 +154,8 @@ describe('PUT /v1/namespaces/{namespace}/keys', () => {
     expect(db.keyDefRows[0].enum_values).toEqual(['light', 'dark']);
   });
 
-  it('403s when Permit denies key registration for this namespace', async () => {
-    _setPermitClientForTesting({ check: async () => false });
+  it('403s when the Security API denies key registration for this namespace', async () => {
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
     const db = new FakeDb();
     seedNamespace(db);
     const app = buildApp(db);
