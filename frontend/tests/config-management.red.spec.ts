@@ -209,13 +209,6 @@ async function gotoHistory(page: Page, key: string) {
   await page.goto(historyRoute(key), { waitUntil: 'domcontentloaded' })
 }
 
-/** Matches `[data-state='X']` whether it sits ON the entry row or wraps it —
- *  the frames document the STATE, not a mandated DOM nesting. */
-function stateNear(page: Page, key: string, state: string) {
-  return page.locator(
-    `[data-entry='${key}'][data-state='${state}'], [data-entry='${key}'] [data-state='${state}'], [data-state='${state}']:has([data-entry='${key}']), [data-state='${state}'] [data-entry='${key}']`,
-  )
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // Flow 1 — settings-editor (/config)
@@ -817,7 +810,7 @@ test.describe('Settings editor — save failures (frame 04-save-conflict)', () =
   test('VERSION_CONFLICT: re-read-and-merge — NO blind Retry, NO force-save/overwrite control', async ({ page }) => {
     const fx = baseFixture()
     await mockJson(page, PATH.config, 'GET', () => ({ status: 200, body: fx.config }))
-    let putCalls: any[] = []
+    const putCalls: any[] = []
     await page.route(pathMatches(PATH.config), async route => {
       if (route.request().method() !== 'PUT') return route.continue()
       const body = route.request().postDataJSON()
