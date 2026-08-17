@@ -91,6 +91,35 @@ describe('requireAuth', () => {
     expect(req.portalId).toBe('prt_1');
   });
 
+  it('also populates req.identity (the @fuzefront/auth shape src/middleware/authz.ts reads)', () => {
+    const token = jwt.sign({ userId: 'usr_1', orgId: 'org_1', roles: ['admin'] }, JWT_SECRET);
+    const req = makeReq({ authorization: `Bearer ${token}` });
+    const res = makeRes();
+    const next = jest.fn();
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.identity).toEqual({
+      userId: 'usr_1',
+      tenantId: 'org_1',
+      roles: ['admin'],
+      authMode: 'legacy-hs256',
+    });
+  });
+
+  it('req.identity.tenantId is null (not guessed) when the token carries no org claim', () => {
+    const token = jwt.sign({ userId: 'usr_1' }, JWT_SECRET);
+    const req = makeReq({ authorization: `Bearer ${token}` });
+    const res = makeRes();
+    const next = jest.fn();
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.identity?.tenantId).toBeNull();
+  });
+
   it('accepts the organizationId claim alias for orgId', () => {
     const token = jwt.sign({ userId: 'usr_1', organizationId: 'org_2' }, JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
