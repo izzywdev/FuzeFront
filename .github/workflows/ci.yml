@@ -617,9 +617,15 @@ jobs:
       # code change could clear, which is exactly the kind of check people
       # learn to ignore.
       #
-      # This job's scan is unfiltered by severity while the other two are
-      # CRITICAL,HIGH — which is why the phantom "new alerts" always included a
-      # medium and a low that no other scan could have produced.
+      # NOTE, recorded because it was guessed wrong once: this job's scan is
+      # unfiltered by severity while the other two are CRITICAL,HIGH, and it was
+      # assumed that explained the medium+low in the phantom "new alerts". It
+      # does NOT. Run 32040683880 removed this upload and the counts stayed
+      # byte-identical at 2 high / 1 medium / 1 low, which disproves it — GitHub
+      # re-buckets Trivy findings into its own severity bands from the SARIF
+      # security-severity (CVSS) score, so a Trivy HIGH can surface as a GitHub
+      # medium or low. The alert set never changed; only the baseline diff was
+      # broken. Do not re-derive the old explanation from the severity config.
       #
       # Deduplicated: harden-gate.yml is now the single code-scanning source
       # for the filesystem scan. The scan still RUNS here and its full,
