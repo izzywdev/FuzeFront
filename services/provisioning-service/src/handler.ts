@@ -1,6 +1,8 @@
 import {
   FuzeEvent,
   IdentityUserCreatedPayloadV1,
+  IdentityUserUpdatedPayloadV1,
+  IdentityUserDeletedPayloadV1,
   IdentityOrgCreatedPayloadV1,
   IdentityOrgUpdatedPayloadV1,
   IdentityOrgDeletedPayloadV1,
@@ -8,6 +10,8 @@ import {
 import {
   callProvision,
   callDeprovision,
+  callUserSync,
+  callUserDelete,
   HttpClient,
   nodeFetchClient,
 } from './provision';
@@ -146,5 +150,63 @@ export async function handleOrgDeleted(
 
   console.log(
     `[provisioning-service] Deprovisioned org ${organizationId}: rolesRevoked=${result.rolesRevoked} tenantDeleted=${result.tenantDeleted}`
+  );
+}
+
+/**
+ * Handles an identity.user.updated event by re-syncing the user's profile into
+ * Permit via security /internal/user-sync. The TypedConsumer already validated
+ * the payload against identityUserUpdatedSchemaV1.
+ */
+export async function handleUserUpdated(
+  event: FuzeEvent<IdentityUserUpdatedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { userId, email, firstName, lastName } = event.payload;
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Re-syncing user ${userId} profile (correlationId=${event.correlationId})`
+  );
+
+  const result = await callUserSync(
+    { userId, email, firstName, lastName },
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
+  );
+
+  console.log(
+    `[provisioning-service] Re-synced user ${userId}: permitSynced=${result.permitSynced}`
+  );
+}
+
+/**
+ * Handles an identity.user.deleted event by tearing down the user's external
+ * state (Permit principal + sessions) via security /internal/user-delete.
+ * `cascade` ('soft'|'hard') is forwarded. The TypedConsumer already validated
+ * the payload against identityUserDeletedSchemaV1.
+ */
+export async function handleUserDeleted(
+  event: FuzeEvent<IdentityUserDeletedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { userId, cascade } = event.payload;
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Deprovisioning user ${userId} (cascade=${cascade}, correlationId=${event.correlationId})`
+  );
+
+  const result = await callUserDelete(
+    userId,
+    cascade,
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
+  );
+
+  console.log(
+    `[provisioning-service] Deprovisioned user ${userId}: permitDeleted=${result.permitDeleted} sessionsRevoked=${result.sessionsRevoked}`
   );
 }
