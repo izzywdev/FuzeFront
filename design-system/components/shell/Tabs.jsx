@@ -65,6 +65,7 @@ export function Tabs({ tabs = [], value, onChange, ariaLabel, style, ...rest }) 
             type={tab.href ? undefined : "button"}
             href={tab.href}
             id={tab.id || `tab-${tab.value}`}
+            data-tab={tab.value}
             aria-selected={selected}
             aria-controls={tab.controls}
             tabIndex={selected ? 0 : -1}

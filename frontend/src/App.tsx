@@ -44,6 +44,8 @@ import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import EmployeeConsolePage from './pages/EmployeeConsolePage'
 import EmployeeOrgDrilldownPage from './pages/EmployeeOrgDrilldownPage'
+import MasterAdminPortalsPage from './pages/MasterAdminPortalsPage'
+import PortalAdminConsolePage from './pages/PortalAdminConsolePage'
 import MemberDirectoryPage from './pages/MemberDirectoryPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import {
@@ -378,6 +380,8 @@ function AppContent() {
             <Route path="/portals" element={<PortalsDirectory />} />
             <Route path="/staff" element={<EmployeeConsolePage />} />
             <Route path="/staff/orgs/:id" element={<EmployeeOrgDrilldownPage />} />
+            <Route path="/admin/portals" element={<MasterAdminPortalsPage />} />
+            <Route path="/portal/admin" element={<PortalAdminConsolePage />} />
             {/* Selection Lists (EPIC-17 / FFRNT-188) */}
             <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
             <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
