@@ -40,6 +40,7 @@ import BillingPage from './pages/BillingPage'
 import AccountSecurityPage from './pages/AccountSecurityPage'
 import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
+import PortalBillingPage from './pages/PortalBillingPage'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import MasterAdminPortalsPage from './pages/MasterAdminPortalsPage'
@@ -378,6 +379,7 @@ function AppContent() {
             <Route path="/portals" element={<PortalsDirectory />} />
             <Route path="/admin/portals" element={<MasterAdminPortalsPage />} />
             <Route path="/portal/admin" element={<PortalAdminConsolePage />} />
+            <Route path="/portal/admin/billing" element={<PortalBillingPage />} />
             {/* Selection Lists (EPIC-17 / FFRNT-188) */}
             <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
             <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
