@@ -112,6 +112,69 @@ export interface ListMembersOptions {
   search?: string
 }
 
+// ---------------------------------------------------------------------------
+// Employee cross-org console (FF-EPIC-17-S9) — design/frames/employee-console/**
+// flow `employee-console`, orchestrator EmployeeConsoleFlow, routes `/staff`
+// (explorer) + `/staff/orgs/:id` (drilldown).
+//
+// An "Employee" is FuzeFront platform staff: the Permit ReBAC `org-admin`
+// grant held on the platform root org, which DERIVES DOWN the `parent` tree
+// (FF-EPIC-17-S8, backend/src/services/employeeRole.ts's
+// `resolveEmployeeStatus`/`isEmployeeByUserRoles`). An Employee holds ZERO
+// `organization_memberships` rows in any customer org — every row this
+// console shows an Employee is `derived` access, never a membership, and a
+// customer org's OWN member list never shows the Employee (no row to show).
+//
+// `isEmployee` here is a CONTROLLED prop the host resolves and passes in
+// (this package never fetches). Today there is no dedicated backend route
+// wired to `resolveEmployeeStatus()` — the host derives it client-side from
+// the authenticated user's `roles` (the same predicate
+// `isEmployeeByUserRoles` uses server-side), gated behind the SAME
+// `fuzefront.identity.employee-console` flag. This is a UI-only convenience
+// gate, not authorization: nothing here can widen what data the caller
+// actually receives (that stays enforced server-side, per-endpoint, via
+// Permit). See the FF-EPIC-17-S9 PR description for the follow-up to wire a
+// server-authoritative employee-status endpoint.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a reachable org sits relative to the platform root, for the explorer
+ * row's "Kind" column. Derived purely from tree shape (`classifyOrgKind`) —
+ * see that module's doc for why this is a presentational heuristic, not a
+ * backend-modeled distinction.
+ */
+export type EmployeeOrgKind = 'root' | 'portal' | 'sub-org' | 'org'
+
+/**
+ * One row in the cross-org explorer (01-org-explorer.html). Every row's
+ * access is implicitly `derived` (see module doc above) — there is no
+ * "direct" variant of this type, unlike `OrgContextItem`.
+ */
+export interface EmployeeOrgNode {
+  id: string
+  name: string
+  kind: EmployeeOrgKind
+  parentId?: string | null
+  /** Known member count; `undefined` when the data source can't supply one
+   * — rendered as unknown, never fabricated (today's `GET /api/organizations`
+   * does not project a member count). */
+  memberCount?: number
+}
+
+/**
+ * One row in a customer org's OWN direct-member list, as shown in the
+ * drilldown (02-org-drilldown.html). Deliberately a separate, read-only
+ * shape from `Member` (MembersTable's richer, mutation-capable type) — the
+ * staff console never edits a customer org's membership from here, and this
+ * list must never include the Employee (they hold no row).
+ */
+export interface EmployeeDirectMember {
+  id: string
+  name: string
+  email?: string
+  role: OrgRole | string
+}
+
 export interface IdentityApiClient {
   listMembers(orgId: string, opts?: ListMembersOptions): Promise<MembersPage>
   listRoles(orgId: string): Promise<RolesCatalog>
