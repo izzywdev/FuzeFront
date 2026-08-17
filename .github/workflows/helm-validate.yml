@@ -74,6 +74,7 @@ jobs:
             --set smsService.enabled=true \
             --set provisioningService.enabled=true \
             --set permit.enabled=true \
+            --set configService.enabled=true \
             --output-dir rendered
 
           # Strict: reject unknown fields. Skip CRDs cert-manager/sealed-secrets

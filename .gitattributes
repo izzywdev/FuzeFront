@@ -47,3 +47,4 @@ lerna.json      text eol=lf
 backend/security/src/services/authentikPassword.ts text eol=lf
 backend/security/tests/authentik-password-login.test.ts text eol=lf
 backend/src/routes/organizations.ts text eol=lf
+backend/security/src/routes/security.ts text eol=lf

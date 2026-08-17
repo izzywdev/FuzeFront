@@ -244,52 +244,31 @@ test.describe('FuzeFront live post-prod smoke', () => {
 
       if (loginResp.status() === 401) {
         // Self-heal: credential drift — the account exists but POST_PROD_PASSWORD
-        // no longer matches what Authentik has stored (e.g. the secret was rotated
-        // without resetting the Authentik user). Use the Authentik admin API to
-        // reset the password, then retry sign-in. Mirrors the pattern in
-        // backend/security/src/providers/authentik/accountApi.ts (findUserPk /
-        // setUserPassword). This runs only when AUTHENTIK_ADMIN_TOKEN is set; if
-        // it is not, fail with a diagnostic that names the secret to add.
-        const authentikAdminToken = process.env.AUTHENTIK_ADMIN_TOKEN
-        const authOrigin = process.env.POST_PROD_AUTH_ORIGIN || 'https://auth.fuzefront.com'
+        // no longer matches what the identity store has (e.g. the secret was rotated
+        // without resetting the account). Delegate to the security service's admin
+        // reset-password endpoint, which routes through the tenant-aware accountApi
+        // (findUserPk / setUserPassword) so the right Authentik instance is always
+        // targeted, even in multi-portal deployments. Protected by INTERNAL_PROVISION_SECRET.
+        const internalSecret = process.env.INTERNAL_PROVISION_SECRET
         expect(
-          authentikAdminToken,
+          internalSecret,
           `POST /api/v1/security/session -> 401: ${EMAIL} exists but credentials were rejected. ` +
-            `Credential drift: POST_PROD_PASSWORD was likely rotated without resetting the Authentik account. ` +
-            `Set the AUTHENTIK_ADMIN_TOKEN workflow secret to enable automatic self-heal. ` +
-            `Without it, manually reset the Authentik password in prod and update POST_PROD_PASSWORD.`
+            `Credential drift: POST_PROD_PASSWORD was likely rotated without resetting the identity account. ` +
+            `Set the INTERNAL_PROVISION_SECRET workflow secret to enable automatic self-heal. ` +
+            `Without it, manually reset the account password in prod and update POST_PROD_PASSWORD.`
         ).toBeTruthy()
 
-        // Find the Authentik user's numeric pk via exact email match.
-        const findResp = await request.get(`${authOrigin}/api/v3/core/users/`, {
-          params: { email: EMAIL },
-          headers: { Authorization: `Bearer ${authentikAdminToken}`, Accept: 'application/json' },
+        // Reset the password via the security service — tenant-aware, no direct Authentik access needed.
+        const resetResp = await request.post('/api/v1/security/admin/reset-password', {
+          data: { email: EMAIL, newPassword: PASSWORD },
+          headers: { 'x-internal-secret': internalSecret! },
         })
         expect(
-          findResp.status(),
-          `Self-heal: Authentik admin user lookup -> ${findResp.status()} (401/403 = admin token invalid or lacks User Manager permission)`
-        ).toBe(200)
-        const findData = await findResp.json()
-        const hits: Array<{ pk: number; email: string }> = findData?.results ?? []
-        const userPk = hits.find(u => u.email?.toLowerCase() === EMAIL.toLowerCase())?.pk
-        expect(
-          userPk,
-          `Self-heal: Authentik user not found for ${EMAIL} — was the account deleted outside the smoke?`
-        ).toBeTruthy()
-
-        // Reset the Authentik password to match the current POST_PROD_PASSWORD.
-        const resetResp = await request.post(
-          `${authOrigin}/api/v3/core/users/${userPk}/set_password/`,
-          {
-            data: { password: PASSWORD },
-            headers: { Authorization: `Bearer ${authentikAdminToken}` },
-          }
-        )
-        expect(
           resetResp.status(),
-          `Self-heal: Authentik set_password -> ${resetResp.status()} ` +
-            `(400 = password rejected by Authentik policy; 403 = admin token lacks write permission)`
-        ).toBeLessThan(300)
+          `Self-heal: POST /api/v1/security/admin/reset-password -> ${resetResp.status()} ` +
+            `(401 = INTERNAL_PROVISION_SECRET mismatch; 404 = user not found; ` +
+            `400 = password rejected by policy; 500 = security service error)`
+        ).toBe(200)
 
         // Retry sign-in — must succeed with the reset password.
         const retryResp = await request.post('/api/v1/security/session', {
@@ -297,14 +276,14 @@ test.describe('FuzeFront live post-prod smoke', () => {
         })
         expect(
           retryResp.status(),
-          `Sign-in retry after self-heal (Authentik set_password) -> ${retryResp.status()}: ` +
-            `password was reset in Authentik but sign-in still failed`
+          `Sign-in retry after self-heal (admin/reset-password) -> ${retryResp.status()}: ` +
+            `password was reset but sign-in still failed`
         ).toBe(200)
         loginBody = await retryResp.json()
         testInfo.annotations.push({
           type: 'self-healed',
           description:
-            `Stale Authentik password for ${EMAIL} was reset via admin API and sign-in retried successfully`,
+            `Stale password for ${EMAIL} was reset via /api/v1/security/admin/reset-password and sign-in retried successfully`,
         })
       } else {
         expect(
