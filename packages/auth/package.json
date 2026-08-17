@@ -2,8 +2,8 @@
   "name": "@fuzefront/auth",
   "version": "0.2.0",
   "description": "Consumable authN/authZ middleware for the FuzeFront family \u2014 stable Identity shape with a pluggable, fail-closed token verifier (legacy-hs256 today, federated-jwks target). Verifies only; never mints tokens.",
-  "main": "dist/index.cjs",
-  "module": "dist/index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "license": "MIT",
   "sideEffects": false,
@@ -46,8 +46,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "dependencies": {

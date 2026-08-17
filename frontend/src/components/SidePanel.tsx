@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { MenuItem as DSMenuItem } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
 import { useCurrentUser, useAppContext } from '../lib/shared'
@@ -37,6 +37,8 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const activeApp = useActiveApp()
   // Portals Directory (design/frames/portals-directory), default OFF.
   const portalsDirectoryEnabled = useFlag('fuzefront.platform.portals-directory', false)
+  const { pathname } = useLocation()
+  const selectionListsActive = pathname.startsWith('/settings/selection-lists')
 
   // App-injected menu items live in the AppContext reducer, where the platform
   // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
@@ -246,6 +248,18 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.billing', { defaultValue: 'Billing' })}
           onClick={() => handleNavigate('/billing')}
         />
+        {/* Selection Lists nav item — data-nav wrapper for Playwright test hook */}
+        <div
+          data-nav="selection-lists"
+          className={selectionListsActive ? 'active' : ''}
+        >
+          <DSMenuItem
+            icon="📋"
+            label={t('nav.selectionLists', { defaultValue: 'Selection Lists' })}
+            active={selectionListsActive}
+            onClick={() => handleNavigate('/settings/selection-lists')}
+          />
+        </div>
         {user?.roles.includes('admin') && (
           <DSMenuItem
             icon="⚙️"

@@ -23,7 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { requireAuth } from '../middleware/auth';
-import { checkConfigPermission, ConfigAction } from '../middleware/permit';
+import { checkConfigPermission, ConfigAction } from '../middleware/authz';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { PgKeyDefinitionRepository } from '../repositories/key-definition.repository';
 import {
@@ -154,7 +154,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
     // and an unauthorized caller must not learn which of their keys/values
     // would have been valid before learning they had no authority at all.
     // Write authority is distinct from lock authority, and from system-key
-    // authority — see src/middleware/permit.ts.
+    // authority — see src/middleware/authz.ts.
     const requiredActions = new Set<ConfigAction>();
     for (const op of body.operations) {
       const def = byKey.get(op.key)!;
@@ -163,7 +163,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
     }
     const resourceKey = `${body.namespace}:${body.scope.scopeType}:${body.scope.scopeId ?? 'singleton'}`;
     for (const action of requiredActions) {
-      const allowed = await checkConfigPermission(principal.userId, action, resourceKey);
+      const allowed = await checkConfigPermission(req, action, resourceKey);
       if (!allowed) {
         sendError(res, 403, {
           code: 'FORBIDDEN',

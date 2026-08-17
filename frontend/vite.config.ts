@@ -89,6 +89,13 @@ const accountSecurityUiSrc = fileURLToPath(
 const portalAdminUiSrc = fileURLToPath(
   new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
 )
+// @fuzeone/selection-lists-ui (packages/selection-lists-ui) is an unpublished
+// file: workspace package whose dist/ is not built in the Docker image build —
+// resolve from SOURCE so the frontend Dockerfile and vite build work without a
+// separate pre-build step. CI builds dist/index.d.ts before the type-check step.
+const selectionListsUiSrc = fileURLToPath(
+  new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
+)
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
 // reaches frontend/node_modules for those files. This resolver fills the gap: it
@@ -127,6 +134,7 @@ export default defineConfig({
       '@fuzefront/security-client': securityClientSrc,
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/selection-lists-ui': selectionListsUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
