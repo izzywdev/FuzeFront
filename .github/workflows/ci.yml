@@ -600,52 +600,40 @@ jobs:
           exit-code: '0'
           trivyignores: '.trivyignore'
 
-      - name: Detect open PR (associate SARIF with PR comparison when dispatched)
-        id: detect-pr
+      # This scan is a byte-for-byte duplicate of harden-gate.yml's
+      # gate-dependency-scan (same scan-type: fs, scan-ref: ., ignore-unfixed,
+      # .trivyignore) and it used to upload its SARIF to code scanning too.
+      # GitHub creates ONE check run per SARIF *tool*, so all three Trivy
+      # uploads in this repo (this one, harden-gate.yml's `trivy`, and
+      # security.yml's `trivy-container`) were aggregated into a single "Trivy"
+      # check. Their jobs finish at very different times — ~23s here, ~25s for
+      # harden-gate, ~6min for the container scan — so the check was finalised
+      # before every configuration had reported. Verified on run 32038539365:
+      # the check completed at 14:18:05 while harden-gate's analysis was still
+      # processing until 14:18:10, producing 'Warning: 1 configuration present
+      # on refs/heads/master was not found ... trivy' on every single run. With
+      # no complete baseline to diff against, code scanning then reported
+      # PRE-EXISTING findings as "new alerts" — a permanently red check that no
+      # code change could clear, which is exactly the kind of check people
+      # learn to ignore.
+      #
+      # This job's scan is unfiltered by severity while the other two are
+      # CRITICAL,HIGH — which is why the phantom "new alerts" always included a
+      # medium and a low that no other scan could have produced.
+      #
+      # Deduplicated: harden-gate.yml is now the single code-scanning source
+      # for the filesystem scan. The scan still RUNS here and its full,
+      # all-severity SARIF is kept as a build artifact, so nothing stops being
+      # scanned and no finding becomes invisible — it just stops being uploaded
+      # twice under one tool identity. Do not re-add an upload-sarif step here
+      # without first giving it a distinct SARIF tool name.
+      - name: Upload Trivy scan artifact (all severities)
         if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.ref_name }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
-            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
-              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
-            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
-              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
-              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha')
-              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
-                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-              else
-                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
-        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          sarif_file: 'trivy-results.sarif'
-          # No explicit category — matches master's baseline analysis key so the
-          # PR comparison check can find this upload as ci.yml:security-scan.
-          ref: ${{ steps.detect-pr.outputs.upload_ref }}
-          sha: ${{ steps.detect-pr.outputs.upload_sha }}
+          name: trivy-ci-fs-scan-sarif
+          path: trivy-results.sarif
+          retention-days: 30
 
   deploy-docs:
     name: Deploy Documentation
