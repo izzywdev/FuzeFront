@@ -294,3 +294,5 @@ rather than one-off styling.
 - Operational deployment runbook: `docs/deployment/CONTABO_DEPLOYMENT.md`
 - Module Federation deep-dive: `docs/guides/MODULE_FEDERATION_GUIDE.md`
 - Developer guide: `docs/guides/DEVELOPER_GUIDE.md`
+- Consuming durable, typed settings from config-service (not the feature-flag
+  system): `docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md`

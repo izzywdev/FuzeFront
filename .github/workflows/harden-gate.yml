@@ -419,5 +419,7 @@ jobs:
         run: |
           npm run -w @fuzefront/chat-client build
           npm run -w @fuzefront/chat-ui build
+      - name: Build @fuzeone/selection-lists-ui (frontend bundles its dist)
+        run: npm run -w @fuzeone/selection-lists-ui build
       - name: Build frontend (vite build — MUST pass)
         run: cd frontend && npm run build

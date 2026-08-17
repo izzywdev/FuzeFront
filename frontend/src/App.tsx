@@ -42,7 +42,14 @@ import AccountConnectionsPage from './pages/AccountConnectionsPage'
 import PortalsDirectory from './pages/PortalsDirectory'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
+import MemberDirectoryPage from './pages/MemberDirectoryPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import {
+  SelectionListManagementFlow,
+  TranslationWorkbenchFlow,
+  SelectionListAccessFlow,
+  SelectionListPickerHarness,
+} from '@fuzeone/selection-lists-ui'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -279,6 +286,12 @@ function AppContent() {
     return <AcceptInvitePage />
   }
 
+  // Public picker harness — embeddable component demo/test surface.
+  // Must be accessible without authentication (Playwright tests navigate here directly).
+  if (currentPath.startsWith('/embed/selection-list-picker')) {
+    return <SelectionListPickerHarness />
+  }
+
   if (import.meta.env.DEV) {
     console.log('AppContent - Authentication state:', {
       isAuthenticated,
@@ -353,6 +366,7 @@ function AppContent() {
             <Route path="/organizations" element={<OrganizationsRoute />} />
             <Route path="/organizations/new" element={<CreateOrganizationPage />} />
             <Route path="/organizations/:id" element={<OrganizationDetailRoute />} />
+            <Route path="/organizations/:id/directory" element={<MemberDirectoryRoute />} />
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
@@ -360,6 +374,12 @@ function AppContent() {
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
+            {/* Selection Lists (EPIC-17 / FFRNT-188) */}
+            <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
+            <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
+            <Route path="/settings/selection-lists/:listId/translations" element={<TranslationWorkbenchFlow />} />
+            <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchFlow />} />
+            <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessFlow />} />
             <Route path="/app/:appId" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
@@ -405,6 +425,24 @@ function OrganizationsRoute() {
 function OrganizationDetailRoute() {
   const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
   return personalContextEnabled ? <OrganizationDetailPage /> : <Navigate to="/organizations" replace />
+}
+
+/**
+ * `/organizations/:id/directory` — the root/portal member directory
+ * (design/frames/member-directory/**, FF-EPIC-17-S5), flag
+ * `fuzefront.identity.member-directory` (default OFF). Flag OFF redirects to
+ * `/organizations/:id` (today's app never linked this route, so there is no
+ * legacy behavior to preserve — zero regression, matching
+ * `OrganizationDetailRoute`'s convention for a net-new route).
+ */
+function MemberDirectoryRoute() {
+  const { id } = useParams<{ id: string }>()
+  const memberDirectoryEnabled = useFlag('fuzefront.identity.member-directory', false)
+  return memberDirectoryEnabled ? (
+    <MemberDirectoryPage />
+  ) : (
+    <Navigate to={id ? `/organizations/${id}` : '/organizations'} replace />
+  )
 }
 
 // Protected admin route
