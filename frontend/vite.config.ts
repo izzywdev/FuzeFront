@@ -82,6 +82,13 @@ const portalBrandingUiSrc = fileURLToPath(
 const accountSecurityUiSrc = fileURLToPath(
   new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/portal-admin-ui (packages/portal-admin-ui) is the master-admin
+// portal fleet console + portal-admin users/app-catalog console (FF-EPIC-14
+// S2/S3), built against @fuzefront/portal-client. Its dist/ is not built in
+// CI — resolve from SOURCE, same as the other unpublished workspace packages.
+const portalAdminUiSrc = fileURLToPath(
+  new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
+)
 // @fuzeone/selection-lists-ui (packages/selection-lists-ui) is an unpublished
 // file: workspace package whose dist/ is not built in the Docker image build —
 // resolve from SOURCE so the frontend Dockerfile and vite build work without a
@@ -115,6 +122,7 @@ export default defineConfig({
       '@fuzefront/identity-ui': identityUiSrc,
       '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
+      '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/i18n': i18nSrc,
       // Exact stylesheet subpath must precede the bare '@fuzefront/chat-ui' alias.
       '@fuzefront/chat-ui/styles.css': chatUiStyles,
