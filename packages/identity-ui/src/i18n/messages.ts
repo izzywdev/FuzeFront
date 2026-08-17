@@ -121,6 +121,28 @@ export interface IdentityMessages {
     pageInfo: string
     summary: string
   }
+  directory: {
+    title: string
+    subtitle: string
+    searchLabel: string
+    searchPlaceholder: string
+    countLabel: string
+    person: string
+    email: string
+    joined: string
+    role: string
+    emptyTitle: string
+    emptyBody: string
+    noResultsTitle: string
+    noResultsBody: string
+    clearSearch: string
+    errorTitle: string
+    errorBody: string
+    forbiddenTitle: string
+    forbiddenBody: string
+    you: string
+    pagerInfo: string
+  }
   scopeGroups: {
     apps: string
     organization: string

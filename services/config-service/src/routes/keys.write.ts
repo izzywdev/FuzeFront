@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { requireAuth } from '../middleware/auth';
-import { checkConfigPermission } from '../middleware/permit';
+import { checkConfigPermission } from '../middleware/authz';
 import { PgNamespaceRepository } from '../repositories/namespace.repository';
 import { PgKeyDefinitionRepository, UnsatisfiableDefaultValueError } from '../repositories/key-definition.repository';
 import { PgValueRepository } from '../repositories/value.repository';
@@ -29,7 +29,6 @@ export function createKeyDefinitionsWriteRouter(pool: Pool): Router {
     '/v1/namespaces/:namespace/keys',
     requireAuth,
     async (req: Request, res: Response) => {
-      const principal = req.principal!;
       const namespaceName = req.params.namespace;
 
       const shape = validateKeyDefinitionManifestShape(req.body);
@@ -66,7 +65,7 @@ export function createKeyDefinitionsWriteRouter(pool: Pool): Router {
         return;
       }
 
-      const allowed = await checkConfigPermission(principal.userId, 'register-keys', namespaceName);
+      const allowed = await checkConfigPermission(req, 'register-keys', namespaceName);
       if (!allowed) {
         sendError(res, 403, { code: 'FORBIDDEN', message: 'Not permitted to register key definitions for this namespace.' });
         return;

@@ -140,6 +140,44 @@ export async function assignOrganizationRole(
 }
 
 /**
+ * Unassigns the Permit role that corresponds to a membership role — the mirror
+ * of `assignOrganizationRole` (same role mapping). Best-effort: returns false
+ * rather than throwing.
+ */
+export async function unassignOrganizationRole(
+  userId: string,
+  organizationId: string,
+  membershipRole: 'owner' | 'admin' | 'member' | 'viewer'
+): Promise<boolean> {
+  try {
+    // Same mapping as assignOrganizationRole.
+    const roleMapping: Record<string, string> = {
+      owner: 'admin',
+      admin: 'admin',
+      member: 'editor',
+      viewer: 'viewer',
+    }
+
+    const permitRole = roleMapping[membershipRole] || 'viewer'
+
+    return await unassignRoleInPermit({
+      user: userId,
+      role: permitRole,
+      tenant: organizationId,
+    })
+  } catch (error) {
+    // Constant format string (userId passed as an argument, not interpolated)
+    // to satisfy the log-injection SAST rule.
+    console.error(
+      'Error unassigning organization role for user',
+      userId,
+      error
+    )
+    return false
+  }
+}
+
+/**
  * Updates user role when membership role changes
  */
 export async function updateOrganizationRole(

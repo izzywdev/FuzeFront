@@ -3,13 +3,13 @@ import request from 'supertest';
 import { createNamespacesWriteRouter } from '../../src/routes/namespaces.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
+import { _setAuthzClientForTesting, makeNoOpProxy } from '../../src/middleware/authz';
 
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
 });
 afterEach(() => {
-  _setPermitClientForTesting(makeNoOpProxy());
+  _setAuthzClientForTesting(makeNoOpProxy());
 });
 
 function buildApp(db: FakeDb) {
@@ -81,8 +81,8 @@ describe('POST /v1/namespaces', () => {
     expect(res.status).toBe(400);
   });
 
-  it('403s when Permit denies namespace registration', async () => {
-    _setPermitClientForTesting({ check: async () => false });
+  it('403s when the Security API denies namespace registration', async () => {
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
     const db = new FakeDb();
     const app = buildApp(db);
     const res = await request(app)

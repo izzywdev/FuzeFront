@@ -72,3 +72,59 @@ export async function callProvision(
 
   throw lastError ?? new Error('callProvision: exhausted retries');
 }
+
+export interface DeprovisionResult {
+  ok: boolean;
+  organizationId: string;
+  cascade: string;
+  rolesRevoked: number;
+  tenantDeleted: boolean;
+}
+
+/**
+ * Calls security-service POST /internal/deprovision to tear down an org's Permit
+ * access. Same retry/backoff + idempotency contract as callProvision.
+ */
+export async function callDeprovision(
+  organizationId: string,
+  cascade: string,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient = nodeFetchClient
+): Promise<DeprovisionResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_COUNT; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(RETRY_BASE_MS * Math.pow(RETRY_FACTOR, attempt - 1), RETRY_MAX_MS);
+      await sleep(delay);
+    }
+
+    const response = await http.fetch(`${securityServiceUrl}/internal/deprovision`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalProvisionSecret,
+      },
+      body: JSON.stringify({ organizationId, cascade }),
+    });
+
+    if (response.status === 200) {
+      const body = await response.json();
+      return body as DeprovisionResult;
+    }
+
+    if (response.status >= 500) {
+      lastError = new Error(`security-service returned ${response.status} (attempt ${attempt + 1})`);
+      console.warn(`[provisioning-service] Transient error: ${lastError.message}`);
+      continue;
+    }
+
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      `security-service returned ${response.status}: ${JSON.stringify(body)}`
+    );
+  }
+
+  throw lastError ?? new Error('callDeprovision: exhausted retries');
+}
