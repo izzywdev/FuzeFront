@@ -1,14 +1,20 @@
 # FFRNT-185 — typed-id rollout across the remaining services
 
-Status: **storage-form mint migrated; wire-prefix still pending.** All 28 genuine
-entity mints now route through `toUuid(mintId(<type>))` (Order-of-work steps 1–2),
-the three services declare the `@izzywdev/fuzefront-identity` dependency and ship
-its built `dist` in their production images, and the `--source` backstop is
-ratcheted to **enforcing** (step 6). Still deliberately deferred: taking
-`EntityId<T>` in the repository signatures (step 3) and prefixing the wire form
-behind `fuzefront.identity.prefixed-ids` with its dual-accept window and row
-backfill (steps 4–5). This document remains the measured inventory and the order
-of work; the "Why this is staged" reasons below still govern the deferred steps.
+Status: **steps 1–5 complete; window remains open until client migration + backfill.**
+All 28 genuine entity mints route through `toUuid(mintId(<type>))` (steps 1–2);
+the three services declare `@izzywdev/fuzefront-identity` and ship its built `dist`
+in their production images; the `--source` backstop is ratcheted to **enforcing**
+(step 6). Step 3 (`EntityId<T>` at repository/service method boundaries) and
+step 5 (`configureIdentity({ legacyUuidTypes })` dual-accept window) are
+**implemented** across `backend/`, `backend/security/`, and `backend/applications/`.
+Step 4 (wire-prefix behind `fuzefront.identity.prefixed-ids`, default OFF) is
+**implemented** in `identity/flags.ts` + `identity/serializer.ts` per-service;
+it is currently OFF everywhere in production. **Deliberately open:** the
+`legacyUuidTypes` window stays in place until the client-side migration is
+coordinated and the row backfill is complete; closing it (step 5 window-close)
+and dropping types from `legacyUuidTypes` is a deliberate follow-up per the
+Shopify note — do not run two identity models indefinitely. This document remains
+the measured inventory and the order of work.
 
 ## What the backlog actually is
 

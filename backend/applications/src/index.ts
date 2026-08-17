@@ -28,6 +28,7 @@ import portalCatalogRoutes from './routes/portal-catalog'
 import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
 
 dotenv.config()
 
@@ -102,6 +103,24 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront applications-service...')
+
+    // Step 5 (FFRNT-185): configure the dual-accept window so that
+    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
+    // predate the TypeID wire form. Flag `fuzefront.identity.prefixed-ids`
+    // (step 4) controls whether RESPONSES emit TypeID form; these types remain
+    // in legacyUuidTypes until their row backfill is complete.
+    configureIdentity({
+      legacyUuidTypes: new Set([
+        'organization',
+        'membership',
+        'invitation',
+        'session',
+        'mfaFactor',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     const dbOptions = {
       migrationsTableName: 'knex_migrations_apps',
       migrationsDir: path.join(__dirname, 'migrations'),
