@@ -23,6 +23,7 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
@@ -58,6 +59,7 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY custom-hostname-client/package.json ./custom-hostname-client/

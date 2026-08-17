@@ -92,13 +92,16 @@ info:
     created**, and every create body is `additionalProperties: false`. Scope
     references are polymorphic and therefore always carry their type
     (`scopeType` + `scopeId`) — a bare id is never resolved. An id is never a
-    capability: authorization comes from the token and Permit, never from the
-    caller having known an id.
+    capability: authorization comes from the token and FuzeFront's Security
+    API, never from the caller having known an id.
 
 
     ### Authorization
 
-    Every operation is Permit-gated on the acting principal. Reads are scoped —
+    Every operation is gated by a policy decision from FuzeFront's Security
+    API (the acting principal's own token is forwarded for the decision; the
+    policy engine behind that API is a server-side deployment detail this
+    contract does not name). Reads are scoped —
     a caller reading a scope they have no authority over gets **403** and learns
     nothing about whether that scope exists. Writes additionally distinguish
     *write* authority from *lock* authority: being able to set a value at your
@@ -432,8 +435,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        The acting principal's access token. Authorization is decided by Permit
-        against this principal; knowing an id never grants access.
+        The acting principal's access token. Authorization is decided by
+        FuzeFront's Security API against this principal; knowing an id never
+        grants access.
   parameters:
     Cursor:
       name: cursor
@@ -912,9 +916,9 @@ components:
           type: boolean
           description: >-
             Whether **this caller** may change it at the scope being read,
-            accounting for the lock, `isReadonly`, `allowedScopes` and Permit. A
-            disabled input is a courtesy; the server refuses the write
-            regardless.
+            accounting for the lock, `isReadonly`, `allowedScopes` and the
+            Security API's authorization decision. A disabled input is a
+            courtesy; the server refuses the write regardless.
         warning:
           type: [string, 'null']
           description: >-

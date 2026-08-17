@@ -535,11 +535,15 @@ configService:
   image:
     repository: fuzefront/config-service
     tag: local
-  # In-cluster Permit PDP (permit.enabled=true renders fuzefront-permit-pdp at
-  # this address). Without this the app falls back to Permit's public cloud
-  # PDP (https://cloudpdp.api.permit.io) — set explicitly so authz checks never
-  # leave the cluster, matching applicationsService/billingService/chatService.
-  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  # config-service's authorization is routed through FuzeFront's own Security
+  # API (backend/security's /api/v1/security/authz/*, via @fuzefront/auth's
+  # createAuthzClient — see src/middleware/authz.ts) rather than an embedded
+  # Permit.io SDK. Permit is now purely an implementation detail behind
+  # backend/security's AuthorizationProvider seam; config-service knows
+  # nothing about it and carries no PERMIT_API_KEY/PDP URL of its own.
+  # SECURITY_SERVICE_URL is derived in templates/config-service-deployment.yaml
+  # from securityService.port, matching provisioning-service's convention —
+  # no separate key needed here.
   resources:
     requests:
       cpu: 100m

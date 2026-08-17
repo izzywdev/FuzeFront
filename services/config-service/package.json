@@ -16,12 +16,12 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@fuzefront/auth": "file:../../packages/auth",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "express": "4.22.2",
     "jsonwebtoken": "^9.0.2",
-    "permitio": "^2.7.6",
     "pg": "^8.11.5",
     "swagger-ui-express": "^5.0.0",
     "yaml": "^2.9.0"

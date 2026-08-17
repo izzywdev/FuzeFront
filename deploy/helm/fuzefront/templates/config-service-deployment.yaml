@@ -43,13 +43,13 @@ spec:
                 secretKeyRef:
                   name: config-service-secrets
                   key: JWT_SECRET
-            - name: PERMIT_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: config-service-secrets
-                  key: PERMIT_API_KEY
-            - name: PERMIT_PDP_URL
-              value: {{ .Values.configService.permitPdpUrl | quote }}
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service
+              # (port 3002). See templates/security.yaml and
+              # services/provisioning-service.yaml, which uses the same convention.
+              # config-service's authorization is routed through this Service
+              # (src/middleware/authz.ts) instead of an embedded Permit.io SDK.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
           readinessProbe:
             httpGet:
               path: /health
