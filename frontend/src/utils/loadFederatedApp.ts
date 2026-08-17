@@ -47,18 +47,61 @@ const getRetryDelay = (
 }
 
 /**
+ * Resolve a contract `remoteEntry` to the absolute URL the federation runtime
+ * registers.
+ *
+ * The frozen contract accepts two shapes (see openapi.yaml `Integration`):
+ * an absolute `http(s)` URL for remotes hosted outside the cluster, and a
+ * same-origin absolute path (`/apps/<slug>/assets/remoteEntry.js`) for apps the
+ * host ingress proxies to an in-cluster Service. Resolving the path here
+ * against the page origin keeps the module cache key stable and means the SAME
+ * manifest works on the prod host, a tenant wildcard host, and localhost.
+ *
+ * Defence in depth: anything not written as an explicit `http(s)://` URL is
+ * REQUIRED to resolve back to this page's origin. `URL` silently resolves both
+ * `//host/x.js` and `/\/host/x.js` (the WHATWG parser folds a backslash into a
+ * slash) to a cross-origin host — a manifest that reads as a harmless path
+ * would then execute an attacker's module inside the host shell's origin. The
+ * manifest schema rejects those shapes on write, but rows registered before
+ * that validation existed are still in the database, so the browser re-checks
+ * rather than trusting the stored value.
+ */
+export function resolveRemoteEntry(remoteEntry: string): string {
+  const origin = window.location.origin
+  const resolved = new URL(remoteEntry, origin)
+  const isExplicitlyAbsolute = /^https?:\/\//i.test(remoteEntry)
+
+  if (!isExplicitlyAbsolute && resolved.origin !== origin) {
+    throw new Error(
+      `Refusing to load remote entry '${remoteEntry}': a same-origin path must ` +
+        `not resolve off-origin (got ${resolved.origin}).`
+    )
+  }
+
+  if (!/^https?:$/.test(resolved.protocol)) {
+    throw new Error(
+      `Refusing to load remote entry '${remoteEntry}': unsupported scheme ` +
+        `'${resolved.protocol}'.`
+    )
+  }
+
+  return resolved.toString()
+}
+
+/**
  * Load a remote module at runtime via @originjs/vite-plugin-federation:
  * register the remote dynamically, fetch the exposed module, unwrap its default.
  *
- * `remoteEntry` is the FULL entry URL (e.g. `https://…/remoteEntry.js`) — the
- * frozen contract resolved the legacy base-vs-entry ambiguity in favor of the
- * complete entry URL, so we register it verbatim.
+ * `remoteEntry` is the FULL entry (URL or same-origin path) — the frozen
+ * contract resolved the legacy base-vs-entry ambiguity in favor of the complete
+ * entry, so we register it as-is once resolved to an absolute URL.
  */
 async function loadRemoteModule(
-  remoteEntry: string,
+  remoteEntryInput: string,
   scope: string,
   module: string
 ): Promise<LoadedModule> {
+  const remoteEntry = resolveRemoteEntry(remoteEntryInput)
   const cacheKey = `${remoteEntry}:${scope}:${module}`
 
   // Return cached module if available

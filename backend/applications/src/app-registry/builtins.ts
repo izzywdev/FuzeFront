@@ -64,7 +64,9 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://app.fuzefront.com/apps/clock/assets/remoteEntry.js',
+      // Same-origin path, not an absolute app-host URL: identical value works on
+      // app.fuzefront.com, a tenant wildcard host, and localhost.
+      remoteEntry: '/apps/clock/assets/remoteEntry.js',
       scope: 'clockApp',
       module: './ClockApp',
     },
@@ -86,7 +88,7 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-           remoteEntry: 'https://fuzequality.prod.fuzefront.com/remoteEntry.js',
+      remoteEntry: '/apps/fuzequality/assets/remoteEntry.js',
       scope: 'fuzequality',
       module: './App',
     },
