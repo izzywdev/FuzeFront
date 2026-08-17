@@ -26,6 +26,7 @@ COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -63,6 +64,7 @@ COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/

@@ -43,8 +43,12 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   // BOTH the flag and `isEmployee` so a non-Employee never even sees the nav
   // entry (the route itself also fail-closes via StaffGuard either way).
   const employeeConsoleEnabled = useFlag('fuzefront.identity.employee-console', false)
+  // Configuration Management Console (design/frames/config-management,
+  // FF-EPIC-19-S3/S4), default OFF.
+  const configConsoleEnabled = useFlag('fuzefront.config.management-console', false)
   const { pathname } = useLocation()
   const selectionListsActive = pathname.startsWith('/settings/selection-lists')
+  const configActive = pathname.startsWith('/config') || pathname.startsWith('/admin/config')
 
   // App-injected menu items live in the AppContext reducer, where the platform
   // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
@@ -277,6 +281,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
             onClick={() => handleNavigate('/settings/selection-lists')}
           />
         </div>
+        {/* Configuration nav item — data-nav wrapper for Playwright test hook, matching the Selection Lists convention above. */}
+        {configConsoleEnabled && (
+          <div data-nav="config" className={configActive ? 'active' : ''}>
+            <DSMenuItem
+              icon="🛠️"
+              label={t('nav.configuration', { defaultValue: 'Configuration' })}
+              active={configActive}
+              onClick={() => handleNavigate('/config')}
+            />
+          </div>
+        )}
         {user?.roles.includes('admin') && (
           <DSMenuItem
             icon="⚙️"
