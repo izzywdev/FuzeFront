@@ -16,7 +16,7 @@ Quick start::
     from fuzefront_config_client import ConfigClient, Scope, ScopeType, is_not_modified
 
     client = ConfigClient(
-        base_url="http://fuzefront-config-service:3013",
+        base_url="http://fuzefront-config-service:3011",
         token="<bearer-token>",
     )
     resolved = client.get_effective_config(
