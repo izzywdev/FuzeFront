@@ -1,5 +1,84 @@
 # Changelog — @fuzefront/security-client
 
+## 0.7.0 — Portal CRUD as org-tree operations (FF-EPIC-17-S7, unreleased)
+
+Folds portal management onto the unified organizations+parent_id org tree. A
+"portal" is now an `organizations` row whose `parentOrgId` is the platform root
+org (`00000000-0000-0000-0000-000000000010`) AND that carries a portal-root
+attribute (`isPortalRoot: true`) + tenant attributes (custom domain /
+white-label branding / per-portal app catalog / reseller billing) that ordinary
+sub-orgs lack — NOT a separate `portals`-table entity.
+`SECURITY_CONTRACT_VERSION` 0.6.0 → 0.7.0 (spec `info.version` 0.6.0 → 0.7.0).
+**Additive/minor — no existing shape changes.**
+
+### Supersedes (reconciliation, not greenfield)
+
+A standalone `portals` table already ships (migrations `012_create_portals_table`
+/ `018_portal_provisioning`, the live `GET /api/v1/admin/portals` route, the
+`fuzefront.platform.portals-directory` flag — PR #640/#642) and
+`services/portal-service/openapi.yaml` (`@fuzefront/portal-client`). This
+contract SUPERSEDES that model:
+
+- `services/portal-service/openapi.yaml` is marked **superseded** (deprecation
+  banner + `x-superseded-by`); `@fuzefront/portal-client` should be **retired**
+  once the backend fan-out moves to `@fuzefront/security-client` (recommend —
+  not executed here).
+- `GET /api/v1/admin/portals` (portals-directory) is superseded by
+  `GET /api/v1/security/portals`. The backend fan-out **replaces** it, rather
+  than running both models in parallel.
+- **Storage of the tenant attributes is an owner/orchestrator decision, NOT
+  frozen here.** Recommended: an `organizations`-keyed **extension table**
+  (additive, non-destructive) rather than migrating off the existing `portals`
+  table in place.
+- **FK-retarget follow-ups (tracked, not done here):** FF-EPIC-11's
+  `home_portal_id → portals.id`, and FF-EPIC-12/13/15/16 references to
+  `portals.id`, retarget onto `organizations.id`. Each needs its own migration.
+
+### Added
+
+- **`GET /api/v1/security/portals?limit=&cursor=&status=`**
+  (`operationId: listPortals`, tag `portals`) — lists organizations whose
+  `parentOrgId` is the platform root AND that carry the portal-root attribute.
+  The platform root org is NEVER listed (it has no `parentOrgId`).
+  Cursor-paginated per the family standard (`limit` + opaque `cursor`,
+  `{ items, page }` envelope). `limit`/`cursor` params + envelope are **inlined**
+  (structurally identical to `Limit`/`Cursor`/`PortalPage`) so `gate-pagination`
+  — which does not resolve `$ref` — sees them directly. `403 FORBIDDEN` for a
+  non-platform-admin, fail-closed via the same Permit ReBAC parent→child
+  derivation as the rest of the org tree.
+- **`POST /api/v1/security/portals`** (`operationId: createPortal`, tag
+  `portals`) — creates an `organizations` row with `parentOrgId` = the platform
+  root + tenant attributes, reusing the resumable provisioning backbone (NOT a
+  `portals`-table insert). Per the identifier standard the owning service mints
+  the org id: `PortalCreate` sets `additionalProperties: false` and declares no
+  `id`; the parent is fixed to the platform root by the endpoint (no
+  client-supplied parent reference). `409 CONFLICT` on duplicate slug.
+- **`GET /api/v1/security/portals/{portalOrgId}`** (`operationId: getPortal`) —
+  the portal org + its tenant attributes. `portalOrgId` REFERENCES an existing
+  server-minted org (typed id); an id is never a capability.
+- **`POST /api/v1/security/portals/{portalOrgId}/suspend`**
+  (`operationId: suspendPortal`) / **`.../resume`** (`operationId: resumePortal`)
+  — org-level status flips reusing the org status model (`PortalStatus`), not a
+  portal-specific state machine. Idempotent. The platform root is not a portal
+  and cannot be suspended (`409 CONFLICT`).
+- **Schemas:** `Portal`, `PortalCreate`, `PortalPage`, `PortalStatus`,
+  `PortalBranding`, `PortalBillingMode`, `PortalAppCatalogMode`; parameter
+  `PortalOrgId`; tag `portals`; root `x-supersedes` note.
+
+### Authorization
+
+Every portal op is **platform-admin-only** and fail-closed. A non-platform-admin
+gets `403 FORBIDDEN` rendered in place (never a sign-in redirect; only `401`
+re-authenticates), derived via the SAME Permit ReBAC parent→child derivation as
+every other org surface — never a separate or weaker portal-specific authz path.
+An id is never a capability; the decision is the token + Permit.
+
+### Consumers
+
+Exact `@fuzefront/security-client` pins bumped `0.6.0 → 0.7.0` in
+`packages/identity-ui`, `packages/auth-ui`, `packages/account-security-ui`
+(peer `^0.5.0` ranges unchanged, matching the prior 0.5→0.6 bump).
+
 ## 0.6.0 — Employee status + cross-org listing (FF-EPIC-17-S9, unreleased)
 
 Closes the FF-EPIC-17-S9 Employee-console contract gap flagged by the merged
