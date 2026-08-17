@@ -1,3 +1,8 @@
+> **Related:** for the FF-EPIC-17 identity flags' GA (100%, production) push,
+> see `docs/runbooks/unleash-enable-ff-epic-17-flags.md`, which reuses the
+> "Executable version" access pattern below and supersedes the staged
+> rollout in `docs/runbooks/unleash-flag-fuzefront-identity-root-membership.md`.
+
 # Runbook — Unleash on the Cloudflare Access launcher + "developers see all features"
 
 Two related asks:

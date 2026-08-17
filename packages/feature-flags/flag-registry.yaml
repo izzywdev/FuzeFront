@@ -230,7 +230,7 @@ flags:
       in selection-list-service/flags.ts.
     gates:
       - selection-list-service Helm deployment (service-side)
-      - "Selection Lists" shell left-sidebar nav entry (UI-side, S9)
+      - '"Selection Lists" shell left-sidebar nav entry (UI-side, S9)'
     web_exposed: true
     jira: FFRNT-201
     sub_tasks:
@@ -304,3 +304,53 @@ flags:
     jira: ~
     epic: FF-EPIC-17
     story: S4
+
+  - key: fuzefront.identity.member-directory
+    type: release
+    default: false
+    description: >
+      Gates the NEW root/portal member-directory surface (FF-EPIC-17-S5):
+      the paginated, server-side-searchable `GET /api/organizations/:id/directory`
+      endpoint (backend, #671) and its `/organizations/:id/directory` UI
+      (frontend, #672, design/frames/member-directory/**). Flag OFF => the
+      endpoint does not exist (404, zero regression — it is new surface, not
+      a modified one) and the directory link/route is hidden.
+    owner: backend-engineer (identity, FF-EPIC-17-S5)
+    removal_criterion: >
+      Delete once the member-directory UI is rolled out to 100% of users and
+      the flag-OFF (disabled) path is no longer exercised in prod; then drop
+      the flag checks in both the route and the frontend.
+    gates:
+      - "GET /api/organizations/:id/directory (backend/security/src/routes/organizations.ts)"
+      - "/organizations/:id/directory MemberDirectoryPage + OrganizationDetailPage link"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S5
+
+  - key: fuzefront.identity.employee-console
+    type: release
+    default: false
+    description: >
+      Gates the "Employee" formalization (FF-EPIC-17-S8, #655) and its
+      cross-org staff console (FF-EPIC-17-S9, #673): widening the root
+      org-admin grant trigger to also recognize the EXPLICIT `employee`
+      user-role marker (the legacy implicit `roles ~ admin` trigger is
+      unaffected and always active regardless of this flag), surfacing
+      "Employee" in the role catalog (`GET /api/organizations/:id/roles`),
+      and the `/staff` + `/staff/orgs/:id` cross-org console UI. Flag OFF
+      preserves today's implicit-admin-only behavior with zero regression.
+      Rollout convenience only — never replaces the ReBAC `org-admin`-on-root
+      grant / a `permit.check`.
+    owner: backend-engineer (identity, FF-EPIC-17-S8/S9)
+    removal_criterion: >
+      Delete once the Employee label + explicit-marker trigger + console are
+      100% rolled out and the flag-OFF path is no longer exercised in prod.
+    gates:
+      - "rootOrgAdmin.ts explicit employee-marker grant trigger (backend/src, backend/security/src)"
+      - "GET /api/organizations/:id/roles Employee catalog entry"
+      - "/staff, /staff/orgs/:id EmployeeConsoleFlow UI (SidePanel nav entry)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S8/S9
