@@ -89,6 +89,17 @@ const accountSecurityUiSrc = fileURLToPath(
 const selectionListsUiSrc = fileURLToPath(
   new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/config-client (top-level config-client/) is the typed
+// config-service client (FFRNT-153) and @fuzefront/config-ui
+// (packages/config-ui) is the Configuration Management Console UI built
+// against it (FF-EPIC-19-S3/S4). Neither's dist/ is built in CI — resolve
+// both from SOURCE, same as billing-client/billing-ui.
+const configClientSrc = fileURLToPath(
+  new URL('../config-client/src/index.ts', import.meta.url)
+)
+const configUiSrc = fileURLToPath(
+  new URL('../packages/config-ui/src/index.ts', import.meta.url)
+)
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
 // reaches frontend/node_modules for those files. This resolver fills the gap: it
@@ -127,6 +138,8 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
       '@fuzeone/selection-lists-ui': selectionListsUiSrc,
+      '@fuzefront/config-client': configClientSrc,
+      '@fuzefront/config-ui': configUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.

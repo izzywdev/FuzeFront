@@ -43,6 +43,10 @@ import PortalsDirectory from './pages/PortalsDirectory'
 import MyOrganizationsPage from './pages/MyOrganizationsPage'
 import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import MemberDirectoryPage from './pages/MemberDirectoryPage'
+import ConfigPage from './pages/ConfigPage'
+import ConfigCatalogPage from './pages/ConfigCatalogPage'
+import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
+import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import {
   SelectionListManagementFlow,
@@ -375,6 +379,10 @@ function AppContent() {
             <Route path="/billing/payments" element={<BillingPage />} />
             <Route path="/portals" element={<PortalsDirectory />} />
             {/* Selection Lists (EPIC-17 / FFRNT-188) */}
+            <Route path="/config" element={<ConfigRoute />} />
+            <Route path="/admin/config/catalog" element={<ConfigCatalogRoute />} />
+            <Route path="/admin/config/catalog/:key" element={<ConfigKeyDefinitionRoute />} />
+            <Route path="/admin/config/keys/:key/history" element={<ConfigAuditHistoryRoute />} />
             <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
             <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
             <Route path="/settings/selection-lists/:listId/translations" element={<TranslationWorkbenchFlow />} />
@@ -443,6 +451,44 @@ function MemberDirectoryRoute() {
   ) : (
     <Navigate to={id ? `/organizations/${id}` : '/organizations'} replace />
   )
+}
+
+/**
+ * `/config` — the Configuration Management Console's settings editor
+ * (FF-EPIC-19-S3, design/frames/config-management flow `settings-editor`),
+ * flag `fuzefront.config.management-console` (default OFF). This is a
+ * net-new route with nothing to preserve on OFF, matching
+ * `OrganizationDetailRoute`'s convention: redirect rather than render
+ * nothing, so a stale link (or the nav item briefly outrunning the flag
+ * fetch) never dead-ends the user.
+ */
+function ConfigRoute() {
+  const enabled = useFlag('fuzefront.config.management-console', false)
+  return enabled ? <ConfigPage /> : <Navigate to="/dashboard" replace />
+}
+
+/**
+ * `/admin/config/catalog` — the platform-admin key catalog (FF-EPIC-19-S4,
+ * flow `key-catalog`), flag `fuzefront.config.key-catalog` (default OFF).
+ */
+function ConfigCatalogRoute() {
+  const enabled = useFlag('fuzefront.config.key-catalog', false)
+  return enabled ? <ConfigCatalogPage /> : <Navigate to="/dashboard" replace />
+}
+
+/** `/admin/config/catalog/:key` — one key's definition + resolution chain, same flag as the catalog list. */
+function ConfigKeyDefinitionRoute() {
+  const enabled = useFlag('fuzefront.config.key-catalog', false)
+  return enabled ? <ConfigKeyDefinitionPage /> : <Navigate to="/admin/config/catalog" replace />
+}
+
+/**
+ * `/admin/config/keys/:key/history` — change history + revert (FF-EPIC-19-S4,
+ * flow `secret-audit`), flag `fuzefront.config.secrets-audit` (default OFF).
+ */
+function ConfigAuditHistoryRoute() {
+  const enabled = useFlag('fuzefront.config.secrets-audit', false)
+  return enabled ? <ConfigAuditHistoryPage /> : <Navigate to="/dashboard" replace />
 }
 
 // Protected admin route
