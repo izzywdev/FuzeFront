@@ -1,5 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
-import { fromUuid, EntityId } from '@izzywdev/fuzefront-identity'
+import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
+
+// Allow bare UUIDs as EntityId<T> in tests — production rows are not yet
+// backfilled, so the dual-accept window must be open for test helpers to pass
+// plain UUIDs to the typed service functions without converting them.
+configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
 
 // Avoid importing the real Permit SDK (which requires PERMIT_API_KEY at import
 // time). These tests inject fake Permit clients, so the default client built on
@@ -96,7 +101,7 @@ async function createUser(): Promise<EntityId<'user'>> {
     created_at: new Date(),
     updated_at: new Date(),
   })
-  return fromUuid('user', id)
+  return parseId('user', id)
 }
 
 async function createOrg(ownerId: string, type = 'organization'): Promise<EntityId<'organization'>> {
@@ -112,7 +117,7 @@ async function createOrg(ownerId: string, type = 'organization'): Promise<Entity
     is_active: true,
     provisioning_state: 'pending',
   })
-  return fromUuid('organization', id)
+  return parseId('organization', id)
 }
 
 // ---- tests -------------------------------------------------------------
@@ -272,7 +277,7 @@ describe('reconcileOrganizationProvisioning', () => {
     const rootExists = await db('organizations').where({ id: ROOT_ORG_ID }).first()
     expect(rootExists).toBeTruthy() // seeded by migration 015
 
-    await reconcileOrganizationProvisioning(fromUuid('organization', ROOT_ORG_ID), deps(permit, publisher))
+    await reconcileOrganizationProvisioning(parseId('organization', ROOT_ORG_ID), deps(permit, publisher))
 
     expect((permit as any).parentLinks).toEqual([])
   })
