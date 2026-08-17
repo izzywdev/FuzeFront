@@ -12,6 +12,10 @@ import {
   identityOrgUpdatedSchemaV1,
   IdentityOrgDeletedPayloadV1,
   identityOrgDeletedSchemaV1,
+  IdentityUserUpdatedPayloadV1,
+  identityUserUpdatedSchemaV1,
+  IdentityUserDeletedPayloadV1,
+  identityUserDeletedSchemaV1,
 } from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
 import {
@@ -19,6 +23,8 @@ import {
   handleOrgCreated,
   handleOrgUpdated,
   handleOrgDeleted,
+  handleUserUpdated,
+  handleUserDeleted,
   HandlerDeps,
 } from './handler';
 import { createApp } from './app';
@@ -119,6 +125,30 @@ async function main() {
     dlqProducer
   );
 
+  // identity.user.updated -> re-sync the user's profile into Permit.
+  const userUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-updated`);
+  await userUpdatedConsumer.connect();
+  await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
+  await userUpdatedConsumer.run(
+    withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
+      handleUserUpdated(event, handlerDeps)
+    ),
+    identityUserUpdatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.user.deleted -> tear down the user's Permit principal + sessions.
+  const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
+  await userDeletedConsumer.connect();
+  await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
+  await userDeletedConsumer.run(
+    withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
+      handleUserDeleted(event, handlerDeps)
+    ),
+    identityUserDeletedSchemaV1,
+    dlqProducer
+  );
+
   // --- HTTP health probe ---
   const app = createApp();
   app.listen(config.port, () => {
@@ -132,6 +162,8 @@ async function main() {
     await orgConsumer.disconnect();
     await orgUpdatedConsumer.disconnect();
     await orgDeletedConsumer.disconnect();
+    await userUpdatedConsumer.disconnect();
+    await userDeletedConsumer.disconnect();
     await dlqProducer.disconnect();
     process.exit(0);
   };
