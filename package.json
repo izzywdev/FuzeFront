@@ -32,7 +32,8 @@
     "services/email-service",
     "services/notification-service",
     "services/selection-list-service",
-    "packages/selection-lists-ui"
+    "packages/selection-lists-ui",
+    "packages/config-ui"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",

@@ -27,6 +27,12 @@ const billingClientSrc = fileURLToPath(
 const accountSecurityUiSrc = fileURLToPath(
   new URL('../packages/account-security-ui/src/index.ts', import.meta.url)
 )
+const configClientSrc = fileURLToPath(
+  new URL('../config-client/src/index.ts', import.meta.url)
+)
+const configUiSrc = fileURLToPath(
+  new URL('../packages/config-ui/src/index.ts', import.meta.url)
+)
 // @fuzefront/portal-client + @fuzefront/portal-branding-ui — same unbuilt-dist
 // reasoning as account-security-ui/security-client above (FF-EPIC-10/13).
 const portalClientSrc = fileURLToPath(
@@ -111,6 +117,12 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
+      // config-client + config-ui: same unbuilt-dist case as billing-* above.
+      // package.json main points at a dist/ that CI never builds, so the Config
+      // pages fail to resolve them unless aliased to SOURCE here too. vite.config.ts
+      // already does this; vitest.config.ts is a SEPARATE config and needs its own.
+      '@fuzefront/config-client': configClientSrc,
+      '@fuzefront/config-ui': configUiSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe
