@@ -1,5 +1,79 @@
 # Changelog — @fuzefront/security-client
 
+## 0.6.0 — Employee status + cross-org listing (FF-EPIC-17-S9, unreleased)
+
+Closes the FF-EPIC-17-S9 Employee-console contract gap flagged by the merged
+cross-org console UI (PR #673): two server-authoritative reads did not exist,
+so the console derived Employee status client-side and could only list its
+membership-scoped orgs (a pure Employee — zero membership rows — saw only
+root). Both reads are backed by the S8 domain logic `resolveEmployeeStatus`
+(PR #655). `SECURITY_CONTRACT_VERSION` 0.5.0 → 0.6.0 (spec `info.version`
+0.5.0 → 0.6.0). **Additive/minor — no existing shape changes.**
+
+An **Employee** = FuzeFront platform staff = Permit ReBAC `org-admin` held on
+the platform root org (derived down the `parent` org tree), with zero
+`organization_memberships` rows in customer orgs — so staff status is NEVER
+inferred from membership rows.
+
+### Added
+
+- **`GET /api/v1/security/employee/status`** (`operationId: getEmployeeStatus`,
+  tag `organizations`) — server-authoritative Employee status for the calling
+  user, backed by `resolveEmployeeStatus`. `isEmployee` comes ONLY from the
+  ReBAC `org-admin`-on-root grant, never from membership rows.
+  `directOrgMemberships` is informational (the caller's DIRECT customer-org
+  memberships, EXCLUDING root; empty for a pure Employee).
+  - **Path choice:** `/v1/security/employee/status`, not `/api/employee/status`
+    — the `/v1/security/…` prefix is the dominant route convention (every route
+    but the one `/organizations/{id}/directory` outlier), keeping consumers on a
+    single uniform same-origin base.
+  - **Responses:** `200` `EmployeeStatus`; `401` Unauthorized. No `403`: this
+    endpoint REPORTS status and does not gate on it — a non-Employee simply gets
+    `isEmployee: false`.
+  - **Pagination:** `x-pagination: exempt` — a singleton per-caller status;
+    `directOrgMemberships` is a bounded per-user set, not user-controlled growth.
+- **`GET /api/v1/security/employee/orgs?limit=&cursor=`**
+  (`operationId: listEmployeeOrgs`, tag `organizations`) — the org/portal
+  subtree an Employee can reach via the ReBAC `org-admin`-on-root grant (root +
+  descendants), for the console's CrossOrgExplorer. **ReBAC-authoritative, NOT
+  membership-scoped.**
+  - **Flat, not a tree:** returns a FLAT paginated list of nodes each carrying
+    `parentOrgId`; the client assembles the tree. An explicit nested tree over an
+    unbounded org set cannot be paginated (a page boundary cannot split a
+    subtree), whereas a forward page-walk to `hasMore: false` reconstructs the
+    tree exactly and mirrors the existing directory listing shape.
+  - **Pagination (gate-pagination):** cursor-paginated via the family cursor
+    `PageInfo` envelope (like `MemberPage`/`TenantPage`) — `limit` (default 50,
+    max 200) + opaque `cursor`, `{ items, page }` response. Cursor (not offset)
+    because the explorer page-walks the whole subtree; it never needs random
+    page access.
+  - **Responses:** `200` `EmployeeOrgPage`; `401` Unauthorized; **`403`
+    Forbidden** (non-Employee caller — real fail-closed, rendered in place, never
+    a re-auth redirect; `code: FORBIDDEN`). An id is never a capability;
+    authorization is the token + Permit.
+- **Schemas** (client types): `EmployeeStatus`
+  (`isEmployee`, `directOrgMemberships: DirectMembershipRef[]`;
+  `additionalProperties: false`), `DirectMembershipRef`
+  (`orgId` typed-id reference, `orgName`, `role` enum
+  `owner|admin|member|viewer`; `additionalProperties: false`),
+  `EmployeeOrgNode` (`orgId`/`parentOrgId` typed-id references, `name`, `kind`
+  enum `root|portal|organization`, `depth`, optional `memberCount`;
+  `additionalProperties: false`), and `EmployeeOrgPage`
+  (`{ items, page }` cursor envelope reusing `PageInfo`).
+  - **Identifier standard:** no create bodies here (both are GETs). Every
+    reference field NAMES its referent type — `orgId`, `parentOrgId` — so no
+    bare polymorphic id is resolved (gate-identifier `parentId` would have
+    required a `parentType` sibling; `parentOrgId` carries the type in the name).
+
+### Consumer version pins
+
+- Bumped the exact devDependency pin `@fuzefront/security-client` `0.5.0` → `0.6.0`
+  in `packages/account-security-ui`, `packages/auth-ui`, and
+  `packages/identity-ui`, and regenerated `package-lock.json`, so the workspace
+  resolves the local `0.6.0` package (an exact `0.5.0` pin no longer satisfies
+  it and would fall back to the registry — the #653 bite). The `^0.5.0`
+  peerDependency ranges already accept `0.6.0` and are left unchanged.
+
 ## 0.5.0 — Root/portal member directory (unreleased)
 
 Freezes the contract commissioned by the approved FF-EPIC-17 `member-directory`
