@@ -9,6 +9,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 import { User } from '../types/shared'
 import { getOidcService } from '../services/oidc'
 import {
@@ -237,10 +239,11 @@ router.post('/login', async (req, res) => {
     // Self-heal provisioning in the background (does not block the response).
     selfHealProvisioningOnLogin(user.id)
 
+    const prefixed = await isPrefixedIdsEnabled({ userId: user.id })
     res.json({
       token,
-      user,
-      sessionId,
+      user: prefixDtoIds(user as any, prefixed, { id: 'user' }),
+      ...prefixDtoIds({ sessionId }, prefixed, { sessionId: 'session' }),
     })
   } catch (error) {
     console.error(`💥 [${requestId}] Login error:`, {
@@ -293,7 +296,9 @@ router.post('/login', async (req, res) => {
  */
 // GET /auth/user - Get current user
 router.get('/user', authenticateToken, async (req, res) => {
-  res.json({ user: req.user })
+  const flagCtx = { userId: (req as any).user?.id }
+  const prefixed = await isPrefixedIdsEnabled(flagCtx)
+  res.json({ user: prefixDtoIds((req as any).user as any, prefixed, { id: 'user' }) })
 })
 
 /**
@@ -587,7 +592,12 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
     selfHealProvisioningOnLogin(user.id)
 
     console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
-    return res.json({ token, user, sessionId })
+    const prefixedOidc = await isPrefixedIdsEnabled({ userId: user.id })
+    return res.json({
+      token,
+      user: prefixDtoIds(user as any, prefixedOidc, { id: 'user' }),
+      ...prefixDtoIds({ sessionId }, prefixedOidc, { sessionId: 'session' }),
+    })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
       console.log('❌ Authentik rejected credentials', { requestId })
@@ -827,7 +837,8 @@ router.post('/token-exchange', async (req, res) => {
   if (!pending) {
     return res.status(401).json({ error: 'invalid or expired code' })
   }
-  return res.json({ token: pending.token, sessionId: pending.sessionId })
+  const prefixedExchange = await isPrefixedIdsEnabled({})
+  return res.json(prefixDtoIds({ token: pending.token, sessionId: pending.sessionId }, prefixedExchange, { sessionId: 'session' }))
 })
 
 export default router
