@@ -3,7 +3,7 @@ name: test-engineer
 model: sonnet
 description: Writes the INDEPENDENT acceptance/contract/integration test suite against the frozen spec — the objective verification that an implementation actually works. Does NOT implement the feature. Use as the verification stream in a contract-first fan-out, separate from the implementers.
 # Figma is reserved for frontend-engineer; pure-code agent gets core tools only (no MCP).
-tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite
+tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__github__list_issues, mcp__github__issue_read, mcp__github__pull_request_read, mcp__github__get_check_run
 skills: [verification-protocol, ticket-creator, model-cascade]
 ---
 
