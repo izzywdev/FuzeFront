@@ -4,15 +4,15 @@ import {
   AccountSecurityI18nProvider,
   useAccountSecurityI18n,
   type AccountSecurityLocale,
-} from '../i18n/AccountSecurityI18nProvider'
-import { SignInMethodsList } from './SignInMethodsList'
+} from '../../i18n/AccountSecurityI18nProvider'
+import { SignInMethodsList } from '../hub/SignInMethodsList'
 import { ConnectProviderButton } from './ConnectProviderButton'
-import { SetPasswordBanner } from './SetPasswordBanner'
-import { LoadErrorRetry } from './LoadErrorRetry'
-import { createAccountSecurityClient } from '../api/securityClient'
-import { HttpError } from '../api/http'
+import { SetPasswordBanner } from '../hub/SetPasswordBanner'
+import { LoadErrorRetry } from '../hub/LoadErrorRetry'
+import { createAccountSecurityClient } from '../../api/securityClient'
+import { HttpError } from '../../api/http'
 import { providerDisplayName } from './providers'
-import type { AccountSecurityClient, IdentityConnections, SocialProvider } from '../types'
+import type { AccountSecurityClient, IdentityConnections, SocialProvider } from '../../types'
 
 /** The social-provider catalogue this panel offers to connect. Extensible. */
 const ALL_PROVIDERS: SocialProvider[] = ['google']

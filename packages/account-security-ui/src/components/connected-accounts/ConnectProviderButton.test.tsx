@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConnectProviderButton } from './ConnectProviderButton'
-import { AccountSecurityI18nProvider } from '../i18n/AccountSecurityI18nProvider'
+import { AccountSecurityI18nProvider } from '../../i18n/AccountSecurityI18nProvider'
 
 describe('ConnectProviderButton', () => {
   it('renders the data-connect hook and invokes onConnect with the provider', async () => {

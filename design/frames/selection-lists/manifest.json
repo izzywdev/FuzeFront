@@ -2,6 +2,11 @@
   "name": "Selection Lists — management UI, translation workbench and embeddable picker",
   "description": "Contract-freeze UX artifacts for FF-EPIC-17 (FFRNT-188). Approving these frames freezes the visual + interaction model AND the build inventory (4 flows, 8 components, 2 packages) for the org-admin management UI, the runtime-i18n translation workbench, per-list ReBAC access control, and the embeddable <SelectionListPicker>, before any feature UI exists. Approval is PER FLOW. Merging an approved flow dispatches UX QA to write ALL-RED Playwright specs against the data-* hooks below, then frontend-engineers implement components -> flow orchestrators -> the @fuzeone/selection-lists-ui package. S9, S10, S11 and S13 are blocked on approval here; gate-frames-first fails any frontend/src/** or packages/*-ui/** PR not covered by an approved flow in this manifest.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/selection-lists-ui/src/**"
+    ]
+  },
   "plan": "docs/planning/epics/EPIC-17-selection-lists.md",
   "jira": "FFRNT-188",
   "epic": "FF-EPIC-17",
@@ -482,5 +487,5 @@
     ],
     "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds these as a foundation PR before or alongside the feature UI — they must not be re-implemented as one-offs in feature code. product-designer specifies the primitives; it does not write them."
   },
-  "stamp": "2b2894bdf45e185cca50b5f3821e25290aaaf20464e6e53add50b2e917c8a989"
+  "stamp": "f4b4fadd27d792851f8c9e4169e2acdafd7cc5cd43042212839a06d5d930e388"
 }
