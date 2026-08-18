@@ -14,6 +14,7 @@ import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 
 /**
@@ -425,14 +426,46 @@ export async function reconcileOrganizationProvisioning(
  * endpoint (Plan D's provisioning-service). Ensures the user's personal org
  * exists, then reconciles every org they own that isn't yet active.
  */
+/**
+ * Upserts a `member` row for `userId` in the root platform organization.
+ * Idempotent and race-safe: ON CONFLICT DO NOTHING means concurrent calls
+ * yield exactly one row. Used by `runInternalProvision` when the
+ * `fuzefront.identity.root-membership` flag is ON (FF-EPIC-17-S1).
+ */
+export async function ensureRootMembership(
+  userId: string,
+  deps: { db: Knex }
+): Promise<void> {
+  await deps.db('organization_memberships')
+    .insert({
+      id: toUuid(mintId('membership')),
+      user_id: userId,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
+    })
+    .onConflict(['user_id', 'organization_id'])
+    .ignore()
+}
+
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string
+  personalOrgId: string | null
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
+
+  const rootMembership = await isRootMembershipEnabled({ userId })
+  if (rootMembership) {
+    await ensureRootMembership(userId, { db })
+    return { personalOrgId: null, reconciled: [] }
+  }
+
   const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')

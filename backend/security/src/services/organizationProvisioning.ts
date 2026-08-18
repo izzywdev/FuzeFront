@@ -9,6 +9,8 @@ import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 import { logger } from '../lib/logger'
 
@@ -339,6 +341,31 @@ export async function reconcileOrganizationProvisioning(
 }
 
 /**
+ * Idempotently upserts the user's membership in the root platform org (type=root).
+ * A dedicated root-org membership lets platform APIs enumerate all users without
+ * yield exactly one row. Used by `runInternalProvision` when the
+ * `fuzefront.identity.root-membership` flag is ON.
+ */
+export async function ensureRootMembership(
+  userId: string,
+  deps: { db: Knex }
+): Promise<void> {
+  await deps.db('organization_memberships')
+    .insert({
+      id: toUuid(mintId('membership')),
+      user_id: userId,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
+    })
+    .onConflict(['user_id', 'organization_id'])
+    .ignore()
+}
+
+/**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
  * endpoint (Plan D's provisioning-service). Ensures the user's personal org
  * exists, then reconciles every org they own that isn't yet active.
@@ -347,10 +374,17 @@ export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string
+  personalOrgId: string | null
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
+
+  const rootMembership = await isRootMembershipEnabled({ userId })
+  if (rootMembership) {
+    await ensureRootMembership(userId, { db })
+    return { personalOrgId: null, reconciled: [] }
+  }
+
   const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')
