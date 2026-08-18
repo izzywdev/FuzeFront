@@ -4,7 +4,11 @@
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
-      "packages/config-ui/src/**"
+      "packages/config-ui/src/**",
+      "frontend/src/pages/ConfigPage.tsx",
+      "frontend/src/pages/ConfigCatalogPage.tsx",
+      "frontend/src/pages/ConfigAuditHistoryPage.tsx",
+      "frontend/src/pages/ConfigKeyDefinitionPage.tsx"
     ]
   },
   "plan": "docs/planning/epics/EPIC-19-configuration-management-ui.md",
@@ -435,5 +439,5 @@
       "CodeField — monospace JSON / duration input"
     ]
   },
-  "stamp": "c46c7880b4156d3742ce3e9a173ebc0f63b49636f5a12ba5ee91c96b90e998b5"
+  "stamp": "8a9d7194c7a8bf6ac9e3c4bd48847d4d569d0c46c95dd43d7f7a76f3f7dda7f7"
 }
