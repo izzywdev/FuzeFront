@@ -22,6 +22,23 @@
 import { EntityType, fromUuid } from '@izzywdev/fuzefront-identity'
 
 /**
+ * `generatePortalId()` in portalRepository.ts used to produce
+ * `prt_<hex32>` — a UUID v4 with dashes stripped, not standard TypeID.
+ * This pattern lets `toWireId` detect that legacy form and re-insert the
+ * dashes before handing it to `fromUuid`, which expects a bare UUID.
+ * Matched only when `type === 'portal'` so the overhead is negligible.
+ * Remove once migration 024 has converted all stored rows to bare UUIDs.
+ */
+const LEGACY_PORTAL_HEX_RE = /^prt_([0-9a-f]{32})$/
+
+function legacyPortalIdToUuid(id: string): string | null {
+  const m = LEGACY_PORTAL_HEX_RE.exec(id)
+  if (!m) return null
+  const hex = m[1]
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/**
  * Converts a storage-form entity id (bare UUID from the DB column) to the
  * appropriate API wire form:
  *
@@ -34,6 +51,14 @@ import { EntityType, fromUuid } from '@izzywdev/fuzefront-identity'
 export function toWireId(type: EntityType, uuid: string, prefixed: boolean): string {
   if (!prefixed) return uuid
   try {
+    // Special case: portals stored before migration 024 use the legacy
+    // prt_<hex32> form rather than a bare UUID. Detect and normalise.
+    if (type === 'portal') {
+      const bareUuid = legacyPortalIdToUuid(uuid)
+      if (bareUuid !== null) {
+        return fromUuid(type, bareUuid)
+      }
+    }
     return fromUuid(type, uuid)
   } catch {
     // Malformed UUID in the DB — return bare form rather than 500.
