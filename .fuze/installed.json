@@ -19,15 +19,15 @@
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/backend-engineer.md",
-      "sourceSha256": "eefbb85cf686a6c0a0ecc8623af90ed2244c11821a5d033ece48a77ba3ee9868",
-      "renderedSha256": "eefbb85cf686a6c0a0ecc8623af90ed2244c11821a5d033ece48a77ba3ee9868"
+      "sourceSha256": "19d770b9133bff5fa199affe79e15d91c0eeeaef145cfff1fc39522a1f40a312",
+      "renderedSha256": "19d770b9133bff5fa199affe79e15d91c0eeeaef145cfff1fc39522a1f40a312"
     },
     ".claude/agents/billing-payments-engineer.md": {
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/billing-payments-engineer.md",
-      "sourceSha256": "9147a452cce88a012f93d7f60cbe65b9aba32a644ed56e120a5e7562122582b6",
-      "renderedSha256": "9147a452cce88a012f93d7f60cbe65b9aba32a644ed56e120a5e7562122582b6"
+      "sourceSha256": "ff16996460f0a135a9820fcfe92045ae3e8b13df385999847cc8a638571bf8f7",
+      "renderedSha256": "ff16996460f0a135a9820fcfe92045ae3e8b13df385999847cc8a638571bf8f7"
     },
     ".claude/agents/contract-designer.md": {
       "capability": "core-agents",
@@ -40,29 +40,29 @@
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/database-engineer.md",
-      "sourceSha256": "0eee2813a846910b220c4c586f910571750dbcea0ccf9622491a9644f0636dab",
-      "renderedSha256": "0eee2813a846910b220c4c586f910571750dbcea0ccf9622491a9644f0636dab"
+      "sourceSha256": "469c17a2e7eef16a5154128440630841bd8b52d6cc8ab0b36f13ba324b4660d7",
+      "renderedSha256": "469c17a2e7eef16a5154128440630841bd8b52d6cc8ab0b36f13ba324b4660d7"
     },
     ".claude/agents/devops-engineer.md": {
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/devops-engineer.md",
-      "sourceSha256": "282f60005144669906d7b96bc2e534f67d4e3db8f5df05e1a7b04baf47083be1",
-      "renderedSha256": "282f60005144669906d7b96bc2e534f67d4e3db8f5df05e1a7b04baf47083be1"
+      "sourceSha256": "4d67f10a83df88cd5cb4e3d0be2f70a364c8c0701009e167221f57e207ec97fe",
+      "renderedSha256": "4d67f10a83df88cd5cb4e3d0be2f70a364c8c0701009e167221f57e207ec97fe"
     },
     ".claude/agents/docs-maintainer.md": {
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/docs-maintainer.md",
-      "sourceSha256": "62581d7936a330055acc455d94f08fbe9ae97aa3f5023633f96062a23a5be01e",
-      "renderedSha256": "62581d7936a330055acc455d94f08fbe9ae97aa3f5023633f96062a23a5be01e"
+      "sourceSha256": "0bea0439212a2ef3bb1d612b67f7ea329ac3039bced4018b6079aa25754f367c",
+      "renderedSha256": "0bea0439212a2ef3bb1d612b67f7ea329ac3039bced4018b6079aa25754f367c"
     },
     ".claude/agents/feature-flags-engineer.md": {
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/feature-flags-engineer.md",
-      "sourceSha256": "013bb0252b0578ae1e25c1e823b3e8795d07632483df7c7e0070eb4c88820544",
-      "renderedSha256": "013bb0252b0578ae1e25c1e823b3e8795d07632483df7c7e0070eb4c88820544"
+      "sourceSha256": "64c25ea55acbe4fabbacad7a3f838b7aa806d3383a76fda26ff464517ff66b27",
+      "renderedSha256": "64c25ea55acbe4fabbacad7a3f838b7aa806d3383a76fda26ff464517ff66b27"
     },
     ".claude/agents/frontend-engineer.md": {
       "capability": "core-agents",
@@ -96,15 +96,15 @@
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/telephony-integrator.md",
-      "sourceSha256": "081c07befc56dbaf8c92d8671b7fcb42f594c25f8e1ddf2b64d7f9aeea4c0e84",
-      "renderedSha256": "081c07befc56dbaf8c92d8671b7fcb42f594c25f8e1ddf2b64d7f9aeea4c0e84"
+      "sourceSha256": "47743dd70ccd7a3a3f00510bfe87bc0c5dd1e91a1b2d73fba1939faa48d46ff8",
+      "renderedSha256": "47743dd70ccd7a3a3f00510bfe87bc0c5dd1e91a1b2d73fba1939faa48d46ff8"
     },
     ".claude/agents/test-engineer.md": {
       "capability": "core-agents",
       "mode": "managed",
       "sourcePath": "agents/test-engineer.md",
-      "sourceSha256": "07d19c4cd581e9a680014d8aceaf5ca02b70c6c2cd156b71a422be7abed69de1",
-      "renderedSha256": "07d19c4cd581e9a680014d8aceaf5ca02b70c6c2cd156b71a422be7abed69de1"
+      "sourceSha256": "13d5767b93bd23abb310c76d9f85fafbc4b32467af3a220d5cf985b2c016a9fb",
+      "renderedSha256": "13d5767b93bd23abb310c76d9f85fafbc4b32467af3a220d5cf985b2c016a9fb"
     },
     ".claude/skills/api-contract-first/SKILL.md": {
       "capability": "skills",
@@ -152,8 +152,8 @@
       "capability": "skills",
       "mode": "managed",
       "sourcePath": "skills/fuzefront-ui-package/SKILL.md",
-      "sourceSha256": "772c7031eca212e59f8509b8a4e773c975aeb5f63b6595d549c96f9c127af600",
-      "renderedSha256": "772c7031eca212e59f8509b8a4e773c975aeb5f63b6595d549c96f9c127af600"
+      "sourceSha256": "516db73f20f26cbf99f2b37b5adc48f2d7c192e61612092570f2ca97ee41b9b8",
+      "renderedSha256": "516db73f20f26cbf99f2b37b5adc48f2d7c192e61612092570f2ca97ee41b9b8"
     },
     ".claude/skills/logging/SKILL.md": {
       "capability": "skills",
@@ -1323,8 +1323,8 @@
       "capability": "portal-registration",
       "mode": "managed",
       "sourcePath": "scripts/check-registration.mjs",
-      "sourceSha256": "82debe9d9c9ddfb24854a4a30a5d4602f13efa147209f5daa9698d187a922e0b",
-      "renderedSha256": "82debe9d9c9ddfb24854a4a30a5d4602f13efa147209f5daa9698d187a922e0b"
+      "sourceSha256": "fab83bb03d7505832d12095db184c019c7565d8e050c23b8f2482436c2302f30",
+      "renderedSha256": "fab83bb03d7505832d12095db184c019c7565d8e050c23b8f2482436c2302f30"
     },
     "scripts/gate_ds_conformance.py": {
       "capability": "design-system",
@@ -1365,8 +1365,8 @@
       "capability": "portal-registration",
       "mode": "managed",
       "sourcePath": "scripts/sync-chart-files.sh",
-      "sourceSha256": "1d6a570f53a8ad1b0fd76b383fe4d54329a6f6568a150d8d0a07d7d2c0bd8534",
-      "renderedSha256": "1d6a570f53a8ad1b0fd76b383fe4d54329a6f6568a150d8d0a07d7d2c0bd8534"
+      "sourceSha256": "b53985271e99279897baa5f3ae229e2676400e5ae2b2944a692cf0f54bde9d57",
+      "renderedSha256": "b53985271e99279897baa5f3ae229e2676400e5ae2b2944a692cf0f54bde9d57"
     },
     "sdk/.npmrc": {
       "capability": "npm-registry",

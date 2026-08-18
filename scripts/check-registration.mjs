@@ -1,31 +1,74 @@
 #!/usr/bin/env node
 /**
- * Guards the AuthZ-policy half of FuzeFront registration. Zero dependencies —
- * runs on a bare `actions/setup-node` with no install step.
+ * Guards FuzeFront registration end to end. Zero dependencies — runs on a bare
+ * `actions/setup-node` with no install step.
  *
  *   node scripts/check-registration.mjs
  *
- * Two checks, for the two ways this silently breaks:
+ * Three checks, for the three ways this silently breaks:
  *
- * 1. `registration/policy.json` is VALID against FuzeFront's frozen ProductPolicy
+ * 1. `registration/manifest.json`'s `nav.section` is a real NavSection. This is a
+ *    production-incident-derived guard: FuzeFinance once shipped `nav.section:
+ *    "business"` — a perfectly plausible name that is not in the enum — and every
+ *    existing gate passed it, because `@fuzefront/onboarding-kit`'s
+ *    validate-registration.mjs is an opt-in npm-installed fleet-policy checker, not
+ *    something every repo runs, and nothing dependency-free re-validated the shape.
+ *    The platform parses the manifest with `registerAppRequestSchema.safeParse`
+ *    (FuzeFront `backend/applications/src/app-registry/manifest.schema.ts`), whose
+ *    `nav.section` is `z.enum(NAV_SECTIONS)` — an unknown section fails the parse,
+ *    `POST /apps` answers 400, and register.sh treats any non-201/409 as fatal, so
+ *    the pod CrashLoopBackOffs and the product never appears in the portal. That is
+ *    a symptom nobody reads as "bad nav.section" — it reads as "the app is broken".
+ *
+ * 2. `registration/policy.json` is VALID against FuzeFront's frozen ProductPolicy
  *    contract. An invalid policy is rejected with a 400 inside an init container at
  *    deploy time — an error in a pod log nobody tails. A policy that is *accepted*
  *    but whose role names an action the document never declares is worse: nothing
  *    errors anywhere, Permit creates the role, and it grants nothing. The symptom is
  *    "our users have no permissions", which reads as a bug in this app.
  *
- * 2. The registration ConfigMap actually SHIPS that policy, byte-equivalent. The
+ * 3. The registration ConfigMap actually SHIPS that policy, byte-equivalent. The
  *    ConfigMap inlines its own copies of the registration files, so the file in this
  *    repo is decorative unless the ConfigMap carries it — which is exactly how this
  *    app ended up with a committed, correct policy.json that no deploy ever sent.
  *
  * Mirrors bin/validate-policy.mjs in @fuzefront/onboarding-kit. Keep in step with it.
+ *
+ * History: this file used to check ONLY #2 and #3. Several repos (FuzeExecutive,
+ * FuzeBI, among others) had their OWN repo-local check-registration.mjs that also
+ * caught #1 — written after the FuzeFinance CrashLoopBackOff above. The installer's
+ * `--adopt-canonical` replaced those repo-local scripts with this one, silently
+ * dropping #1 from every repo that received it, while gate-registration.yml kept
+ * calling this script and kept claiming the nav.section guarantee in its header —
+ * green, and enforcing nothing. #1 is restored here, in the canonical, so the whole
+ * fleet gets it back in one place instead of forking it again per repo.
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+const MANIFEST_PATH = 'registration/manifest.json'
 const POLICY_PATH = 'registration/policy.json'
+
+// Mirrors `NAV_SECTIONS` in FuzeFront's
+// `backend/applications/src/app-registry/manifest.schema.ts` (also exported as the
+// `NavSection` enum in `packages/onboarding-kit/manifest.schema.json`). The ARRAY
+// ORDER is the portal's render order — the side menu groups by lifecycle stage:
+// steer -> plan -> build -> sell -> serve -> measure -> operate. Confirmed
+// identical, independently, in FuzeExecutive's and FuzeBI's own (now-superseded)
+// repo-local check-registration.mjs before this file absorbed the check. There is
+// no dependency-free way to import the enum across repos, so it is vendored here
+// deliberately — if FuzeFront ever changes it, this constant is the place to
+// update, same as those two scripts were.
+const NAV_SECTIONS = [
+  'executive',
+  'plan',
+  'build',
+  'revenue',
+  'customer',
+  'insight',
+  'platform',
+]
 
 // `_` is the `<slug>_<Key>` namespace separator FuzeFront prepends; a bare key
 // containing one could not be split back apart.
@@ -36,7 +79,41 @@ const TOP_LEVEL = new Set(['product', 'name', 'resources', 'roles'])
 const problems = []
 const fail = m => problems.push(m)
 
-// ── 1. the policy itself ──────────────────────────────────────────────────────
+// ── 1. nav.section is a real NavSection ───────────────────────────────────────
+let manifest = null
+if (!existsSync(MANIFEST_PATH)) {
+  fail(`${MANIFEST_PATH} is missing — this app declares no placement to FuzeFront`)
+} else {
+  const raw = readFileSync(MANIFEST_PATH, 'utf8')
+  try {
+    manifest = JSON.parse(raw)
+  } catch (err) {
+    fail(`${MANIFEST_PATH} is not valid JSON — ${err.message}`)
+  }
+}
+
+let navSection = null
+if (manifest) {
+  const nav = manifest.nav
+  const section = nav && typeof nav === 'object' ? nav.section : undefined
+  if (section === undefined) {
+    fail(
+      `${MANIFEST_PATH}: nav.section is absent — the app sorts LAST, in "platform", by ` +
+        `platform default rather than by decision. Valid: ${NAV_SECTIONS.join(', ')}`
+    )
+  } else if (typeof section !== 'string' || !NAV_SECTIONS.includes(section)) {
+    fail(
+      `${MANIFEST_PATH}: nav.section ${JSON.stringify(section)} is not a NavSection. ` +
+        'The platform parses the manifest with `z.enum(NAV_SECTIONS)`, so `POST /apps` ' +
+        'answers 400, register.sh treats that as fatal, and the pod CrashLoopBackOffs — ' +
+        `the product never registers at all. Valid, in menu order: ${NAV_SECTIONS.join(', ')}`
+    )
+  } else {
+    navSection = section
+  }
+}
+
+// ── 2. the policy itself ──────────────────────────────────────────────────────
 if (!existsSync(POLICY_PATH)) {
   fail(`${POLICY_PATH} is missing — this app declares no roles to FuzeFront`)
 }
@@ -102,7 +179,7 @@ if (policy) {
   }
 }
 
-// ── 2. the ConfigMap actually ships it ────────────────────────────────────────
+// ── 3. the ConfigMap actually ships it ────────────────────────────────────────
 function findConfigMaps(dir, found = []) {
   if (!existsSync(dir)) return found
   for (const entry of readdirSync(dir)) {
@@ -208,6 +285,7 @@ if (problems.length) {
   process.exit(1)
 }
 console.log(
-  `✔ registration OK — ${policy.resources.length} resource(s), ${policy.roles.length} ` +
-    `role(s), shipped by ${configMaps.length} ConfigMap(s) and submitted by register.sh`
+  `✔ registration OK — nav "${navSection}", ${policy.resources.length} resource(s), ` +
+    `${policy.roles.length} role(s), shipped by ${configMaps.length} ConfigMap(s) and ` +
+    'submitted by register.sh'
 )
