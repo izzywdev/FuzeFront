@@ -1,8 +1,26 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Portal API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
+    **⚠️ SUPERSEDED (FF-EPIC-17-S7).** The standalone-`portals`-table model this
+    contract froze — including the master-admin CRUD (`/api/v1/admin/portals`)
+    and its generated `@fuzefront/portal-client` — is SUPERSEDED by portal CRUD
+    expressed as ORG-TREE operations in the Security API
+    (`packages/security/openapi.yaml`, tag `portals`, `@fuzefront/security-client`
+    ≥ 0.7.0). A "portal" is now an `organizations` row whose `parentOrgId` is the
+    platform root, carrying a portal-root + tenant attributes — NOT a separate
+    `portals` entity. New work MUST target the org-tree endpoints. This file is
+    retained for reference during the backend migration and for the still-live
+    surfaces (`GET /api/v1/portal/context`, `GET /api/v1/portal/current`) until
+    those are reconciled too; `@fuzefront/portal-client` should be **retired**
+    once the fan-out moves off it. Retirement, the tenant-attribute storage
+    decision (recommended: an `organizations`-keyed extension table), and the
+    `portals.id → organizations.id` FK-retargets (FF-EPIC-11/12/13/15/16) are an
+    owner/orchestrator decision + migration follow-up, tracked in the
+    FF-EPIC-17-S7 contract PR — not executed here.
+
+
     REST API for **multi-tenant portals** — the first-class `portals` object that
     lets one shared FuzeFront deployment serve many isolated white-label tenant
     portals. This contract freezes two surfaces:
@@ -56,6 +74,18 @@ info:
     nothing — the route stays admin-role gated exactly as before.
   license:
     name: UNLICENSED
+
+x-superseded-by:
+  by: packages/security/openapi.yaml
+  client: '@fuzefront/security-client'
+  since: FF-EPIC-17-S7
+  reason: >-
+    Portal CRUD is reconciled onto the unified organizations+parent_id org tree
+    (tag `portals`). The standalone `portals`-table model and
+    `@fuzefront/portal-client` are superseded; `GET /api/v1/admin/portals` is
+    replaced by `GET /api/v1/security/portals`. Retirement of this client and
+    the `portals.id → organizations.id` FK-retargets are a migration follow-up,
+    not executed in the contract PR.
 
 servers:
   - url: '{baseUrl}'

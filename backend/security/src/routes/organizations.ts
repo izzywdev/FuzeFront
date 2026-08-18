@@ -15,10 +15,6 @@ import { reconcileOrganizationProvisioning } from '../services/organizationProvi
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { permitSchema } from '../permit/schema'
-import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/employeeRole'
-import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
-import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
-import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -104,19 +100,6 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
     .whereIn('role', ['owner', 'admin'])
     .first()
   return !!membership
-}
-
-// Count an org's active owners. The "an org always keeps at least one owner"
-// invariant guard uses this to refuse removing the LAST owner, so an org can
-// never be left ownerless through the member-management routes.
-async function countActiveOwners(orgId: string): Promise<number> {
-  const row = await db('organization_memberships')
-    .where('organization_id', orgId)
-    .where('status', 'active')
-    .where('role', 'owner')
-    .count('* as count')
-    .first()
-  return parseInt(((row?.count as string) ?? '0'), 10)
 }
 
 // POST /api/organizations - Create a new organization
@@ -1038,23 +1021,6 @@ const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
  *                           properties:
  *                             key: { type: string }
  *                             name: { type: string }
- *                 platformRoles:
- *                   description: >-
- *                     FF-EPIC-17-S8 — platform-staff roles (currently just
- *                     "Employee") that sit ABOVE the org-assignable roles
- *                     above: never grantable via an org membership row, held
- *                     only via the ReBAC `org-admin`-on-root grant. Present
- *                     only while `fuzefront.identity.employee-console` is ON.
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       key: { type: string }
- *                       name: { type: string }
- *                       description: { type: string }
- *                       rebacRole: { type: string }
- *                       rebacScope: { type: string }
- *                       assignable: { type: boolean }
  *       403:
  *         description: Caller is not an active member of the organization
  */
@@ -1096,17 +1062,7 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
       })),
     }))
 
-    // FF-EPIC-17-S8 — "Employee" (platform staff, ReBAC org-admin-on-root) is
-    // NOT an org-assignable role (see ORG_ROLE_CATALOG above, which this never
-    // joins into), so it is surfaced in a separate `platformRoles` field
-    // rather than mixed into `roles`. Flag-gated: OFF keeps this endpoint's
-    // response byte-identical to before this story.
-    const responseBody: Record<string, unknown> = { roles, resources }
-    if (await isEmployeeConsoleEnabled({ userId: req.user?.id })) {
-      responseBody.platformRoles = [EMPLOYEE_ROLE_CATALOG_ENTRY]
-    }
-
-    res.json(responseBody)
+    res.json({ roles, resources })
   } catch (error: any) {
     console.error('Error listing organization roles:', error)
     res.status(500).json({ error: 'Failed to list organization roles' })
@@ -1257,192 +1213,6 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
   } catch (error: any) {
     console.error('Error listing members:', error)
     res.status(500).json({ error: 'Failed to list members' })
-  }
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Directory sub-route: /api/organizations/:id/directory
-// FF-EPIC-17-S5 — root/portal member directory (frozen contract:
-// `packages/security/openapi.yaml` `listOrganizationDirectory`).
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Clamp helpers for the directory's offset-paginated envelope (page/pageSize/
-// total). Junk/out-of-range input clamps to the contract defaults rather than
-// 400ing — mirrors GET /:id/members' pagination handling in this file.
-function parseDirectoryLimit(raw: any): number {
-  const n = parseInt(String(raw), 10)
-  if (!Number.isFinite(n) || n < 1) return 50
-  return Math.min(n, 200)
-}
-function parseDirectoryOffset(raw: any): number {
-  const n = parseInt(String(raw), 10)
-  if (!Number.isFinite(n) || n < 0) return 0
-  return n
-}
-
-/**
- * @swagger
- * /api/organizations/{id}/directory:
- *   get:
- *     summary: List the user directory of a root/portal organization
- *     description: >-
- *       Unbounded, server-side-searchable directory of ALL users of a
- *       tenant-root organization (the platform root org id OR a portal-root
- *       org id — a direct child of the platform root). Offset-paginated;
- *       `query` filters server-side over email/displayName. Access is an org
- *       owner/admin (or Employee/ReBAC) capability. Behind
- *       `fuzefront.identity.member-directory` (default OFF — OFF renders 404,
- *       exactly as if the route did not exist).
- *     tags: [Organizations]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *       - in: query
- *         name: query
- *         schema: { type: string }
- *       - in: query
- *         name: limit
- *         schema: { type: integer, default: 50, maximum: 200 }
- *       - in: query
- *         name: offset
- *         schema: { type: integer, default: 0, minimum: 0 }
- *     responses:
- *       200:
- *         description: A page of directory members.
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Non-privileged caller (FORBIDDEN)
- *       404:
- *         description: Org not found, not a root/portal-root org, or the flag is OFF
- */
-// GET /api/organizations/:id/directory — root/portal member directory
-router.get('/:id/directory', authenticateToken, async (req: any, res) => {
-  try {
-    const { id } = req.params
-
-    // Flag OFF => render exactly as if this route does not exist (404), no
-    // DB access at all. This is a NEW endpoint (no pre-story behavior to
-    // preserve beyond "the route is absent").
-    const directoryEnabled = await isMemberDirectoryEnabled({
-      userId: req.user?.id,
-      organizationId: id,
-    })
-    if (!directoryEnabled) {
-      return res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
-    }
-
-    // Resolve the target org and validate it is a directory-eligible
-    // tenant-root: either the platform root itself, or a "portal root" — an
-    // org that is a direct child of the platform root (FF-EPIC-17 Feature 3's
-    // org-tree model: a portal IS an org, one level below root). Any other
-    // org id is not a valid directory scope and 404s, same as "not found".
-    const org = await db('organizations').where('id', id).first()
-    if (!org) {
-      return res.status(404).json({ error: 'Organization not found', code: 'NOT_FOUND' })
-    }
-    const isRootOrPortalRoot = id === ROOT_ORG_ID || org.parent_id === ROOT_ORG_ID
-    if (!isRootOrPortalRoot) {
-      return res.status(404).json({ error: 'Organization not found', code: 'NOT_FOUND' })
-    }
-
-    // Real authz: org owner/admin of THIS org, or an Employee (ReBAC
-    // org-admin-on-root, cross-org authority) — never derived from the id
-    // itself (an id is never a capability; the token + Permit decide).
-    const isOrgAdmin = await requireOrgAdminOrOwner(req.user.id, id)
-    let isEmployee = false
-    if (!isOrgAdmin) {
-      const employeeStatus = await resolveEmployeeStatus(req.user.id)
-      isEmployee = employeeStatus.isEmployee
-    }
-    if (!isOrgAdmin && !isEmployee) {
-      return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' })
-    }
-
-    const limit = parseDirectoryLimit(req.query.limit)
-    const offset = parseDirectoryOffset(req.query.offset)
-    const query =
-      typeof req.query.query === 'string' ? req.query.query.trim() : ''
-
-    // Shared filter builder — applied to both the count and the page query so
-    // `total` reflects the same search predicate as the returned rows. Search
-    // is server-side over email/first_name/last_name (displayName is
-    // composed from first/last at render time; see below).
-    const applyFilters = (q: any) => {
-      q.where('organization_memberships.organization_id', id).where(
-        'organization_memberships.status',
-        'active'
-      )
-      if (query) {
-        const like = `%${query.toLowerCase()}%`
-        q.whereRaw(
-          '(LOWER(users.email) LIKE ? OR LOWER(users.first_name) LIKE ? OR LOWER(users.last_name) LIKE ?)',
-          [like, like, like]
-        )
-      }
-      return q
-    }
-
-    const countQuery = applyFilters(
-      db('organization_memberships').join(
-        'users',
-        'users.id',
-        'organization_memberships.user_id'
-      )
-    )
-    const countRow = await countQuery
-      .count('organization_memberships.id as count')
-      .first()
-    const total = parseInt((countRow?.count as string) || '0', 10) || 0
-
-    const rows = await applyFilters(
-      db('organization_memberships')
-        .select(
-          'organization_memberships.role',
-          'organization_memberships.joined_at',
-          'users.id as user_id',
-          'users.email as user_email',
-          'users.first_name',
-          'users.last_name'
-        )
-        .join('users', 'users.id', 'organization_memberships.user_id')
-    )
-      // Deterministic paging under concurrent writes: sort key (joined_at)
-      // + tiebreaker (user_id) so the same offset window never gaps/dupes.
-      .orderBy('organization_memberships.joined_at', 'asc')
-      .orderBy('users.id', 'asc')
-      .limit(limit)
-      .offset(offset)
-
-    const items = rows.map((row: any) => {
-      const displayName =
-        `${row.first_name || ''} ${row.last_name || ''}`.trim() ||
-        row.user_email
-      // The org owner is authoritative over any membership row's `role` — an
-      // owner always resolves to 'owner' even if the joined membership row
-      // says otherwise (mirrors GET /:id and GET / user_role projection).
-      const role = org.owner_id === row.user_id ? 'owner' : row.role
-
-      return {
-        userId: row.user_id,
-        email: row.user_email,
-        displayName,
-        joinedAt: row.joined_at,
-        role,
-        isSelf: row.user_id === req.user.id,
-      }
-    })
-
-    const page = Math.floor(offset / limit) + 1
-
-    res.json({ items, page, pageSize: limit, total })
-  } catch (error: any) {
-    console.error('Error listing organization directory:', error)
-    res.status(500).json({ error: 'Failed to list organization directory' })
   }
 })
 
@@ -1618,18 +1388,9 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: any, res)
       return res.status(404).json({ error: 'Member not found' })
     }
 
-    // Never let an org lose its last owner. Removing a non-last owner is fine
-    // (an org may have several owners); removing THE last owner would orphan the
-    // org, so it is refused with 409. Deactivating the org itself is a separate
-    // route that soft-deletes the org WITHOUT deleting membership rows, so this
-    // guard does not stand in the way of "unless the org is deleted".
+    // Protect owner memberships
     if (membership.role === 'owner') {
-      const activeOwners = await countActiveOwners(id)
-      if (activeOwners <= 1) {
-        return res.status(409).json({
-          error: 'Cannot remove the last owner of the organization',
-        })
-      }
+      return res.status(403).json({ error: 'Cannot remove the organization owner' })
     }
 
     await db('organization_memberships')

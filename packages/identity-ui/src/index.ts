@@ -79,6 +79,7 @@ export { StaffScopeSummary } from './components/employee/StaffScopeSummary'
 export type { StaffScopeSummaryProps } from './components/employee/StaffScopeSummary'
 export { NotStaffNotice } from './components/employee/NotStaffNotice'
 export { classifyOrgKind } from './components/employee/orgKind'
+export { mapEmployeeOrgKind, assembleEmployeeOrgTree } from './components/employee/orgTree'
 // ---- Root/portal member directory (FF-EPIC-17-S5) --------------------------
 // design/frames/member-directory/** — flow `member-directory`, route
 // `/organizations/:id/directory`. Flag `fuzefront.identity.member-directory`.
@@ -117,6 +118,14 @@ export { createTokensClient } from './api/tokens'
 export type { CreateTokenInput, TokensClient } from './api/tokens'
 export { createDirectoryClient, isDirectoryForbidden } from './api/directoryClient'
 export type { DirectoryApiClient, DirectoryMember, DirectoryPage, ListDirectoryOptions } from './api/directoryClient'
+export { createEmployeeClient, isEmployeeForbidden } from './api/employeeClient'
+export type {
+  EmployeeApiClient,
+  EmployeeStatus,
+  EmployeeOrgListItem,
+  EmployeeOrgPage,
+  ListEmployeeOrgsOptions,
+} from './api/employeeClient'
 export { HttpClient, HttpError } from './api/http'
 export type { HttpClientOptions } from './api/http'
 

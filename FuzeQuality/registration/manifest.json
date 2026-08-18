@@ -9,9 +9,9 @@
   "builtin": false,
   "integration": {
     "type": "module-federation",
-    "remoteEntry": "https://fuzequality.prod.fuzefront.com/remoteEntry.js",
-    "scope": "fuzequalityApp",
-    "module": "./FuzeQualityApp"
+    "remoteEntry": "/apps/fuzequality/assets/remoteEntry.js",
+    "scope": "fuzequality",
+    "module": "./App"
   },
   "nav": { "section": "build", "order": 30 },
   "chrome": { "menu": "host", "topbar": "host" },

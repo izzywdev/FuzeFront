@@ -67,6 +67,20 @@ ingress:
   tlsSecret: fuzequality-tls
   clusterIssuer: letsencrypt-prod
 
+# Same-origin mount of the Module-Federation remote on the HOST SHELL's origin,
+# so the browser loads remoteEntry.js + chunks from https://<host>/apps/<slug>/…
+# and the request is proxied in-cluster instead of hairpinning back out through
+# the public edge. See templates/ingress.yaml for the full rationale.
+#
+# `slug` MUST match the app-registry slug AND the Vite `base` the frontend is
+# built with (apps/web/vite.config.ts) — a mismatch serves remoteEntry.js fine
+# and then 404s every chunk it imports.
+federatedMount:
+  enabled: false
+  className: traefik
+  host: ""            # e.g. app.fuzefront.com — the host shell's origin
+  slug: fuzequality
+
 kafkaTopics:
   enabled: true
   image: apache/kafka:3.9.1
