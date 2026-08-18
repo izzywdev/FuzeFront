@@ -11,5 +11,8 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tests/tsconfig.json' }],
   },
+  // Configure the identity dual-accept window (bare UUIDs for legacy types)
+  // before any test module runs. See tests/jest.setup.ts.
+  setupFiles: ['<rootDir>/tests/jest.setup.ts'],
   testTimeout: 30000,
 }

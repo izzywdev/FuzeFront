@@ -410,9 +410,9 @@
           "05-reorder",
           "06-quota"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:10:06.026Z"
       },
       {
         "id": "translation-workbench",
@@ -424,9 +424,9 @@
           "08-locale-editor",
           "09-autofill-modal"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:11:53.121Z"
       },
       {
         "id": "access-control",
@@ -437,9 +437,9 @@
           "10-access-panel",
           "11-add-access-modal"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:11:38.689Z"
       },
       {
         "id": "picker",
@@ -452,9 +452,9 @@
           "13-picker-multi",
           "14-picker-archived"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:12:59.463Z"
       }
     ],
     "components": [

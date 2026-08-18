@@ -69,6 +69,10 @@ import {
 // from here: every migration in both chains is written idempotently and core
 // sets `disableMigrationsListValidation`, so re-applying is a no-op.
 const BACKEND_MIGRATIONS_DIR = path.resolve(__dirname, '../../src/migrations')
+// This service's own chain — creates app_ref_index (migration 008) and other
+// applications-service tables. Uses a separate knex_migrations_apps table to
+// avoid colliding with the backend chain's knex_migrations table.
+const APPS_MIGRATIONS_DIR = path.resolve(__dirname, '../src/migrations')
 
 function buildApp(): express.Application {
   const app = express()
@@ -130,6 +134,10 @@ describe('app installations', () => {
     await runMigrations({
       migrationsTableName: 'knex_migrations',
       migrationsDir: BACKEND_MIGRATIONS_DIR,
+    })
+    await runMigrations({
+      migrationsTableName: 'knex_migrations_apps',
+      migrationsDir: APPS_MIGRATIONS_DIR,
     })
     initializeDatabaseConnection()
     app = buildApp()

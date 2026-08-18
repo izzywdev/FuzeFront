@@ -1,5 +1,158 @@
 # Changelog — @fuzefront/security-client
 
+## 0.7.0 — Portal CRUD as org-tree operations (FF-EPIC-17-S7, unreleased)
+
+Folds portal management onto the unified organizations+parent_id org tree. A
+"portal" is now an `organizations` row whose `parentOrgId` is the platform root
+org (`00000000-0000-0000-0000-000000000010`) AND that carries a portal-root
+attribute (`isPortalRoot: true`) + tenant attributes (custom domain /
+white-label branding / per-portal app catalog / reseller billing) that ordinary
+sub-orgs lack — NOT a separate `portals`-table entity.
+`SECURITY_CONTRACT_VERSION` 0.6.0 → 0.7.0 (spec `info.version` 0.6.0 → 0.7.0).
+**Additive/minor — no existing shape changes.**
+
+### Supersedes (reconciliation, not greenfield)
+
+A standalone `portals` table already ships (migrations `012_create_portals_table`
+/ `018_portal_provisioning`, the live `GET /api/v1/admin/portals` route, the
+`fuzefront.platform.portals-directory` flag — PR #640/#642) and
+`services/portal-service/openapi.yaml` (`@fuzefront/portal-client`). This
+contract SUPERSEDES that model:
+
+- `services/portal-service/openapi.yaml` is marked **superseded** (deprecation
+  banner + `x-superseded-by`); `@fuzefront/portal-client` should be **retired**
+  once the backend fan-out moves to `@fuzefront/security-client` (recommend —
+  not executed here).
+- `GET /api/v1/admin/portals` (portals-directory) is superseded by
+  `GET /api/v1/security/portals`. The backend fan-out **replaces** it, rather
+  than running both models in parallel.
+- **Storage of the tenant attributes is an owner/orchestrator decision, NOT
+  frozen here.** Recommended: an `organizations`-keyed **extension table**
+  (additive, non-destructive) rather than migrating off the existing `portals`
+  table in place.
+- **FK-retarget follow-ups (tracked, not done here):** FF-EPIC-11's
+  `home_portal_id → portals.id`, and FF-EPIC-12/13/15/16 references to
+  `portals.id`, retarget onto `organizations.id`. Each needs its own migration.
+
+### Added
+
+- **`GET /api/v1/security/portals?limit=&cursor=&status=`**
+  (`operationId: listPortals`, tag `portals`) — lists organizations whose
+  `parentOrgId` is the platform root AND that carry the portal-root attribute.
+  The platform root org is NEVER listed (it has no `parentOrgId`).
+  Cursor-paginated per the family standard (`limit` + opaque `cursor`,
+  `{ items, page }` envelope). `limit`/`cursor` params + envelope are **inlined**
+  (structurally identical to `Limit`/`Cursor`/`PortalPage`) so `gate-pagination`
+  — which does not resolve `$ref` — sees them directly. `403 FORBIDDEN` for a
+  non-platform-admin, fail-closed via the same Permit ReBAC parent→child
+  derivation as the rest of the org tree.
+- **`POST /api/v1/security/portals`** (`operationId: createPortal`, tag
+  `portals`) — creates an `organizations` row with `parentOrgId` = the platform
+  root + tenant attributes, reusing the resumable provisioning backbone (NOT a
+  `portals`-table insert). Per the identifier standard the owning service mints
+  the org id: `PortalCreate` sets `additionalProperties: false` and declares no
+  `id`; the parent is fixed to the platform root by the endpoint (no
+  client-supplied parent reference). `409 CONFLICT` on duplicate slug.
+- **`GET /api/v1/security/portals/{portalOrgId}`** (`operationId: getPortal`) —
+  the portal org + its tenant attributes. `portalOrgId` REFERENCES an existing
+  server-minted org (typed id); an id is never a capability.
+- **`POST /api/v1/security/portals/{portalOrgId}/suspend`**
+  (`operationId: suspendPortal`) / **`.../resume`** (`operationId: resumePortal`)
+  — org-level status flips reusing the org status model (`PortalStatus`), not a
+  portal-specific state machine. Idempotent. The platform root is not a portal
+  and cannot be suspended (`409 CONFLICT`).
+- **Schemas:** `Portal`, `PortalCreate`, `PortalPage`, `PortalStatus`,
+  `PortalBranding`, `PortalBillingMode`, `PortalAppCatalogMode`; parameter
+  `PortalOrgId`; tag `portals`; root `x-supersedes` note.
+
+### Authorization
+
+Every portal op is **platform-admin-only** and fail-closed. A non-platform-admin
+gets `403 FORBIDDEN` rendered in place (never a sign-in redirect; only `401`
+re-authenticates), derived via the SAME Permit ReBAC parent→child derivation as
+every other org surface — never a separate or weaker portal-specific authz path.
+An id is never a capability; the decision is the token + Permit.
+
+### Consumers
+
+Exact `@fuzefront/security-client` pins bumped `0.6.0 → 0.7.0` in
+`packages/identity-ui`, `packages/auth-ui`, `packages/account-security-ui`
+(peer `^0.5.0` ranges unchanged, matching the prior 0.5→0.6 bump).
+
+## 0.6.0 — Employee status + cross-org listing (FF-EPIC-17-S9, unreleased)
+
+Closes the FF-EPIC-17-S9 Employee-console contract gap flagged by the merged
+cross-org console UI (PR #673): two server-authoritative reads did not exist,
+so the console derived Employee status client-side and could only list its
+membership-scoped orgs (a pure Employee — zero membership rows — saw only
+root). Both reads are backed by the S8 domain logic `resolveEmployeeStatus`
+(PR #655). `SECURITY_CONTRACT_VERSION` 0.5.0 → 0.6.0 (spec `info.version`
+0.5.0 → 0.6.0). **Additive/minor — no existing shape changes.**
+
+An **Employee** = FuzeFront platform staff = Permit ReBAC `org-admin` held on
+the platform root org (derived down the `parent` org tree), with zero
+`organization_memberships` rows in customer orgs — so staff status is NEVER
+inferred from membership rows.
+
+### Added
+
+- **`GET /api/v1/security/employee/status`** (`operationId: getEmployeeStatus`,
+  tag `organizations`) — server-authoritative Employee status for the calling
+  user, backed by `resolveEmployeeStatus`. `isEmployee` comes ONLY from the
+  ReBAC `org-admin`-on-root grant, never from membership rows.
+  `directOrgMemberships` is informational (the caller's DIRECT customer-org
+  memberships, EXCLUDING root; empty for a pure Employee).
+  - **Path choice:** `/v1/security/employee/status`, not `/api/employee/status`
+    — the `/v1/security/…` prefix is the dominant route convention (every route
+    but the one `/organizations/{id}/directory` outlier), keeping consumers on a
+    single uniform same-origin base.
+  - **Responses:** `200` `EmployeeStatus`; `401` Unauthorized. No `403`: this
+    endpoint REPORTS status and does not gate on it — a non-Employee simply gets
+    `isEmployee: false`.
+  - **Pagination:** `x-pagination: exempt` — a singleton per-caller status;
+    `directOrgMemberships` is a bounded per-user set, not user-controlled growth.
+- **`GET /api/v1/security/employee/orgs?limit=&cursor=`**
+  (`operationId: listEmployeeOrgs`, tag `organizations`) — the org/portal
+  subtree an Employee can reach via the ReBAC `org-admin`-on-root grant (root +
+  descendants), for the console's CrossOrgExplorer. **ReBAC-authoritative, NOT
+  membership-scoped.**
+  - **Flat, not a tree:** returns a FLAT paginated list of nodes each carrying
+    `parentOrgId`; the client assembles the tree. An explicit nested tree over an
+    unbounded org set cannot be paginated (a page boundary cannot split a
+    subtree), whereas a forward page-walk to `hasMore: false` reconstructs the
+    tree exactly and mirrors the existing directory listing shape.
+  - **Pagination (gate-pagination):** cursor-paginated via the family cursor
+    `PageInfo` envelope (like `MemberPage`/`TenantPage`) — `limit` (default 50,
+    max 200) + opaque `cursor`, `{ items, page }` response. Cursor (not offset)
+    because the explorer page-walks the whole subtree; it never needs random
+    page access.
+  - **Responses:** `200` `EmployeeOrgPage`; `401` Unauthorized; **`403`
+    Forbidden** (non-Employee caller — real fail-closed, rendered in place, never
+    a re-auth redirect; `code: FORBIDDEN`). An id is never a capability;
+    authorization is the token + Permit.
+- **Schemas** (client types): `EmployeeStatus`
+  (`isEmployee`, `directOrgMemberships: DirectMembershipRef[]`;
+  `additionalProperties: false`), `DirectMembershipRef`
+  (`orgId` typed-id reference, `orgName`, `role` enum
+  `owner|admin|member|viewer`; `additionalProperties: false`),
+  `EmployeeOrgNode` (`orgId`/`parentOrgId` typed-id references, `name`, `kind`
+  enum `root|portal|organization`, `depth`, optional `memberCount`;
+  `additionalProperties: false`), and `EmployeeOrgPage`
+  (`{ items, page }` cursor envelope reusing `PageInfo`).
+  - **Identifier standard:** no create bodies here (both are GETs). Every
+    reference field NAMES its referent type — `orgId`, `parentOrgId` — so no
+    bare polymorphic id is resolved (gate-identifier `parentId` would have
+    required a `parentType` sibling; `parentOrgId` carries the type in the name).
+
+### Consumer version pins
+
+- Bumped the exact devDependency pin `@fuzefront/security-client` `0.5.0` → `0.6.0`
+  in `packages/account-security-ui`, `packages/auth-ui`, and
+  `packages/identity-ui`, and regenerated `package-lock.json`, so the workspace
+  resolves the local `0.6.0` package (an exact `0.5.0` pin no longer satisfies
+  it and would fall back to the registry — the #653 bite). The `^0.5.0`
+  peerDependency ranges already accept `0.6.0` and are left unchanged.
+
 ## 0.5.0 — Root/portal member directory (unreleased)
 
 Freezes the contract commissioned by the approved FF-EPIC-17 `member-directory`

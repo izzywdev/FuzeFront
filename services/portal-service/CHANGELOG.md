@@ -5,6 +5,27 @@ bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
+## 1.4.0 — 2026-08-17 (SUPERSEDED by the org-tree portal model — FF-EPIC-17-S7)
+
+Documentation-only. Marks this contract **superseded**: portal CRUD is
+reconciled onto the unified organizations+parent_id org tree in the Security API
+(`packages/security/openapi.yaml`, tag `portals`, `@fuzefront/security-client`
+≥ 0.7.0). Adds a deprecation banner to `info.description` and a machine-readable
+`x-superseded-by`. No schema or path change — the generated
+`@fuzefront/portal-client` types are unaffected (a description-only edit), so the
+client is **not** regenerated here.
+
+- `GET /api/v1/admin/portals` (portals-directory) is superseded by
+  `GET /api/v1/security/portals`; the backend fan-out replaces it.
+- `@fuzefront/portal-client` should be **retired** once the fan-out moves to
+  `@fuzefront/security-client` (recommendation — not executed here).
+- Tenant-attribute storage (recommended: an `organizations`-keyed extension
+  table) and the `portals.id → organizations.id` FK-retargets
+  (FF-EPIC-11/12/13/15/16) are an owner/orchestrator decision + migration
+  follow-up, tracked in the FF-EPIC-17-S7 contract PR — not done here.
+- The still-live pre-auth surfaces (`GET /api/v1/portal/context`,
+  `GET /api/v1/portal/current`) remain readable here until separately reconciled.
+
 ## 1.3.0 — 2026-08-11 (Portals Directory read-vs-no-access refinement, backend slice S5)
 
 Additive only — no existing field/response shape changes when

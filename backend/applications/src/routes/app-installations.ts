@@ -37,6 +37,16 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
+import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { isRefEnforceEnabled } from '../app-registry/flags'
+import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
+
+// Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
+let _refStore: KnexRefIndexRepository | null = null
+function getRefStore(): KnexRefIndexRepository {
+  if (!_refStore) _refStore = new KnexRefIndexRepository(db)
+  return _refStore
+}
 
 const router = express.Router()
 
@@ -401,6 +411,23 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
         })
       }
       organizationId = body.organizationId
+
+      // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
+      // Assert the organizationId is known to the local ref_index projection
+      // before paying the cost of a membership lookup.
+      // OFF (default): warn + continue; ON: hard-fail with 422.
+      const refMode = (await isRefEnforceEnabled({ organizationId, userId }))
+        ? 'enforce'
+        : 'warn'
+      try {
+        await assertRefExists(getRefStore(), 'organization', organizationId, { mode: refMode })
+      } catch {
+        return res.status(422).json({
+          error: 'unprocessable_entity',
+          message: 'Organization not found',
+          code: 'ORG_REF_MISSING',
+        })
+      }
 
       const role = await getMembershipRole(userId, organizationId)
       if (role === null) {

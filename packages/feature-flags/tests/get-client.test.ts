@@ -85,6 +85,14 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     const keys = WEB_EXPOSED_FLAGS.map(f => f.key);
     expect(keys).toContain('fuzefront.account-security.hub');
     expect(keys).toContain('fuzefront.billing.invoice-history');
+    // FF-EPIC-17 identity UI flags must be web-exposed, or flipping them in
+    // Unleash leaves the browser UI dark (GET /api/flags never discloses them).
+    expect(keys).toContain('fuzefront.identity.personal-context');
+    expect(keys).toContain('fuzefront.identity.member-directory');
+    expect(keys).toContain('fuzefront.identity.employee-console');
+    // root-membership is server-only (security-service provisioning) — the
+    // browser must never see it.
+    expect(keys).not.toContain('fuzefront.identity.root-membership');
     // Server-only app-registry flags must not be disclosed to the browser.
     expect(keys).not.toContain('fuzefront.app-registry.v1-registry-write');
     expect(keys).not.toContain('fuzefront.app-registry.kafka-events-kill-switch');

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
-import { EmployeeConsoleFlow } from '@fuzefront/identity-ui'
+import { EmployeeConsoleFlow, createEmployeeClient } from '@fuzefront/identity-ui'
 import type { EmployeeDirectMember } from '@fuzefront/identity-ui'
 import { useCurrentUser } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
+import { getActiveAuthToken } from '../lib/accounts'
 import { isEmployeeUser } from '../utils/employee'
 import api, { getOrganization } from '../services/api'
 import { EMPLOYEE_CONSOLE_FLAG } from './EmployeeConsolePage'
@@ -45,15 +46,19 @@ async function fetchDirectMembers(orgId: string): Promise<EmployeeDirectMember[]
  * design/frames/employee-console/02-org-drilldown.html), same flag as
  * `EmployeeConsolePage`. Flag OFF ships dark, same convention.
  *
- * Unlike the explorer's org LIST (`GET /api/organizations`, membership +
- * `type: 'platform'`-scoped — see the contract-gap note on
- * `EmployeeConsolePage`), a single org's header
+ * `isEmployee` is now resolved the SAME way as the explorer (PR #698 /
+ * `@fuzefront/security-client` 0.6.0): `getEmployeeStatus()` is the
+ * AUTHORITATIVE gate; `isEmployeeUser(roles)` (`utils/employee.ts`) is kept
+ * only as an optimistic first-paint hint. See `EmployeeConsolePage.tsx`'s
+ * module doc for the full rationale — identical here.
+ *
+ * Unlike the explorer's org tree (now `GET /v1/security/employee/orgs` —
+ * see `EmployeeConsolePage.tsx`), a single org's header
  * (`GET /api/organizations/:id`, via `getOrganization`) and its member list
  * (`GET /api/organizations/:id/members`) are both gated by
- * `PermissionMiddleware.canReadOrganization` — real Permit ReBAC — so they
+ * `PermissionMiddleware.canReadOrganization` (real Permit ReBAC), so they
  * already resolve correctly for an Employee's DERIVED access, with no
- * membership row required. Once the cross-org listing gap above is closed,
- * this screen needs zero changes.
+ * membership row required — unchanged by this rewire.
  */
 function EmployeeOrgDrilldownPage() {
   const enabled = useFlag(EMPLOYEE_CONSOLE_FLAG, false)
@@ -70,7 +75,11 @@ function EmployeeOrgDrilldownPage() {
 function EmployeeOrgDrilldownContent() {
   const { id } = useParams<{ id: string }>()
   const { user } = useCurrentUser()
-  const isEmployee = isEmployeeUser(user?.roles)
+  const statusHint = isEmployeeUser(user?.roles)
+
+  const client = useRef(createEmployeeClient({ getToken: getActiveAuthToken })).current
+  const [isEmployee, setIsEmployee] = useState(statusHint)
+  const [statusResolved, setStatusResolved] = useState(false)
 
   const [orgName, setOrgName] = useState<string | undefined>(undefined)
   const [orgLoading, setOrgLoading] = useState(true)
@@ -79,6 +88,18 @@ function EmployeeOrgDrilldownContent() {
   const [members, setMembers] = useState<EmployeeDirectMember[]>([])
   const [membersLoading, setMembersLoading] = useState(true)
   const [membersError, setMembersError] = useState<string | null>(null)
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const status = await client.getStatus()
+      setIsEmployee(status.isEmployee)
+    } catch (err) {
+      console.error('Failed to resolve Employee status:', err)
+      setIsEmployee(false)
+    } finally {
+      setStatusResolved(true)
+    }
+  }, [client])
 
   const loadOrg = useCallback(async () => {
     if (!id) return
@@ -110,13 +131,19 @@ function EmployeeOrgDrilldownContent() {
   }, [id])
 
   useEffect(() => {
-    if (isEmployee) {
+    void loadStatus()
+  }, [loadStatus])
+
+  useEffect(() => {
+    if (statusResolved && isEmployee) {
       void loadOrg()
       void loadMembers()
     }
-  }, [isEmployee, loadOrg, loadMembers])
+  }, [statusResolved, isEmployee, loadOrg, loadMembers])
 
   if (!id) return <Navigate to="/staff" replace />
+
+  const showLoading = !statusResolved || (isEmployee && orgLoading)
 
   return (
     <div style={{ padding: 'var(--space-8)' }}>
@@ -125,8 +152,8 @@ function EmployeeOrgDrilldownContent() {
         view={{ kind: 'drilldown', orgId: id, orgName }}
         principalName={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.email || ''}
         organizations={[]}
-        loading={isEmployee && orgLoading}
-        error={isEmployee ? orgError : null}
+        loading={showLoading}
+        error={statusResolved && isEmployee ? orgError : null}
         onRetry={() => void loadOrg()}
         onSelectOrg={() => {}}
         directMembers={members}

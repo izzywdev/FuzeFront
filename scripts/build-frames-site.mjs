@@ -280,7 +280,8 @@ ${features.length ? cards : empty}
     <code>.github/workflows/pages-frames.yml</code> ·
     source: <a href="https://github.com/izzywdev/FuzeFront/tree/master/design/frames">design/frames</a><br />
     Approval state is read from each feature's <code>manifest.json</code>. Approve via the in-frame
-    control, not by editing this page.
+    control, not by editing this page.<br />
+    <a href="api/">API Docs →</a> — browsable Swagger UI for every service that ships an <code>openapi.yaml</code>.
   </footer>
 </div>
 </body>

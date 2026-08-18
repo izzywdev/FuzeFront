@@ -10,6 +10,7 @@ import {
   initializeDatabase,
   checkDatabaseHealth,
   closeDatabase,
+  db,
 } from '@fuzefront/core'
 import path from 'path'
 
@@ -25,7 +26,10 @@ import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
+import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
@@ -104,6 +108,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [security-service] Received ${signal}. Shutting down...`)
   httpServer.close(async () => {
     outboxRelay?.stop()
+    await stopRefIndexProjection().catch(() => undefined)
     await closeDatabase().catch(() => undefined)
     process.exit(0)
   })
@@ -115,6 +120,25 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
+
+    // Step 5 (FFRNT-185): configure the dual-accept window so that
+    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
+    // were written before the TypeID wire form was adopted. The flag
+    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
+    // emit TypeID form; these types stay in legacyUuidTypes until the row
+    // backfill is complete and the window is deliberately closed.
+    configureIdentity({
+      legacyUuidTypes: new Set([
+        'organization',
+        'membership',
+        'invitation',
+        'session',
+        'mfaFactor',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
@@ -164,6 +188,11 @@ async function startServer() {
     // so there is no separate kick-off here. Each tenant self-heals
     // independently: one tenant's Authentik being down neither blocks nor
     // resets another's.
+
+    // Projects portal.created and identity lifecycle events into sec_ref_index
+    // so assertRefExists can answer without an RPC to the host backend.
+    const refIndexStore = new KnexRefIndexRepository(db)
+    await startRefIndexProjection(refIndexStore)
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

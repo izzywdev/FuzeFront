@@ -128,3 +128,120 @@ export async function callDeprovision(
 
   throw lastError ?? new Error('callDeprovision: exhausted retries');
 }
+
+export interface UserSyncPayload {
+  userId: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+export interface UserSyncResult {
+  ok: boolean;
+  userId: string;
+  permitSynced: boolean;
+}
+
+/**
+ * Calls security-service POST /internal/user-sync to re-sync a user's profile
+ * into Permit. Same retry/backoff + idempotency contract as callProvision.
+ */
+export async function callUserSync(
+  payload: UserSyncPayload,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient = nodeFetchClient
+): Promise<UserSyncResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_COUNT; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(RETRY_BASE_MS * Math.pow(RETRY_FACTOR, attempt - 1), RETRY_MAX_MS);
+      await sleep(delay);
+    }
+
+    const response = await http.fetch(`${securityServiceUrl}/internal/user-sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalProvisionSecret,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 200) {
+      const body = await response.json();
+      return body as UserSyncResult;
+    }
+
+    if (response.status >= 500) {
+      lastError = new Error(`security-service returned ${response.status} (attempt ${attempt + 1})`);
+      console.warn(`[provisioning-service] Transient error: ${lastError.message}`);
+      continue;
+    }
+
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      `security-service returned ${response.status}: ${JSON.stringify(body)}`
+    );
+  }
+
+  throw lastError ?? new Error('callUserSync: exhausted retries');
+}
+
+export interface UserDeleteResult {
+  ok: boolean;
+  userId: string;
+  cascade: string;
+  permitDeleted: boolean;
+  sessionsRevoked: number;
+}
+
+/**
+ * Calls security-service POST /internal/user-delete to tear down a user's
+ * external state (Permit principal + sessions). Same retry/backoff + idempotency
+ * contract as callProvision.
+ */
+export async function callUserDelete(
+  userId: string,
+  cascade: string,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient = nodeFetchClient
+): Promise<UserDeleteResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_COUNT; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(RETRY_BASE_MS * Math.pow(RETRY_FACTOR, attempt - 1), RETRY_MAX_MS);
+      await sleep(delay);
+    }
+
+    const response = await http.fetch(`${securityServiceUrl}/internal/user-delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalProvisionSecret,
+      },
+      body: JSON.stringify({ userId, cascade }),
+    });
+
+    if (response.status === 200) {
+      const body = await response.json();
+      return body as UserDeleteResult;
+    }
+
+    if (response.status >= 500) {
+      lastError = new Error(`security-service returned ${response.status} (attempt ${attempt + 1})`);
+      console.warn(`[provisioning-service] Transient error: ${lastError.message}`);
+      continue;
+    }
+
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      `security-service returned ${response.status}: ${JSON.stringify(body)}`
+    );
+  }
+
+  throw lastError ?? new Error('callUserDelete: exhausted retries');
+}
