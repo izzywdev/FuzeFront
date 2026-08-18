@@ -179,9 +179,9 @@
         "orchestrator": "PortalBillingFlow",
         "route": "/portal/admin/billing",
         "story": "FF-EPIC-14-S4",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T22:31:04.298Z",
         "contract": {
           "client": "@fuzefront/billing-client (real subscription) + anticipated Connect / price-book",
           "status": "mixed",
