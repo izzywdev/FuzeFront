@@ -55,6 +55,16 @@ export const FLAGS = {
   V1_REGISTRY_WRITE: 'fuzefront.app-registry.v1-registry-write',
   KAFKA_EVENTS_KILL_SWITCH: 'fuzefront.app-registry.kafka-events-kill-switch',
   PORTAL_CATALOG: 'fuzefront.apps.portal-catalog',
+  /**
+   * fuzefront.ref-index.enforce-ref-checks
+   * type: release | default: OFF
+   * owner: backend-engineer (app-registry / P2)
+   * When ON: assertRefExists uses mode:'enforce' — foreign-key violations 422.
+   * When OFF: mode:'warn' — logs a warning but allows the request through.
+   * removal criterion: delete once ref_index projection is stable in prod and
+   *   enforcement is the permanent behavior (no traffic with missing refs).
+   */
+  REF_INDEX_ENFORCE: 'fuzefront.ref-index.enforce-ref-checks',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -130,6 +140,23 @@ export async function isPortalCatalogEnabled(ctx?: Partial<FlagContext>): Promis
   if (!client) return false // fail-safe: release default OFF
   try {
     return await client.getBooleanValue(FLAGS.PORTAL_CATALOG, false, buildContext(ctx))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * FFRNT P2 — release flag (default OFF): should ref-index checks use
+ * mode:'enforce' (reject with 422) rather than mode:'warn' (log, allow)?
+ *
+ * OFF (default): projection degrades gracefully — unknown orgs log a warning.
+ * ON: strict — any organizationId not in the local ref_index returns 422.
+ */
+export async function isRefEnforceEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.REF_INDEX_ENFORCE, false, buildContext(ctx))
   } catch {
     return false
   }

@@ -89,13 +89,15 @@ RUN npm ci --workspace=services/chat-service --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/identity/ ./packages/identity/
 COPY services/chat-service/ ./services/chat-service/
 
 # Copy the product docs corpus the chat-doc-indexer Job indexes (RAG source).
 COPY docs/ ./services/chat-service/docs/
 
-# Build shared first, then chat-service
+# Build shared first, then identity (required by ref-index consumer), then chat-service
 RUN cd shared && npm run build
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd services/chat-service && npm run build
 
 # ---------- production ----------
@@ -115,6 +117,11 @@ COPY --from=base /app/services/chat-service/node_modules ./services/chat-service
 # was the one that missed it.
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
+# @izzywdev/fuzefront-identity is a `file:` workspace dep; node_modules links it to
+# /app/packages/identity. The base stage ships packages/identity/package.json so the
+# symlink doesn't dangle; here we populate the target with the built dist.
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
 # Product docs corpus for the chat-doc-indexer Job.
 COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs

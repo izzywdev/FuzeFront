@@ -1,6 +1,10 @@
 {
   "name": "@fuzeone/selection-lists-ui",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Selection Lists UI (list management, translation workbench, access control, embeddable picker) for FuzeFront EPIC-17 / FFRNT-188, on the fuse-seam design system",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,6 +32,7 @@
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.0",
