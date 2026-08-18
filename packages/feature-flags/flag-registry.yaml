@@ -334,6 +334,33 @@ flags:
     epic: FF-EPIC-17
     story: S5
 
+  - key: fuzefront.identity.prefixed-ids
+    type: release
+    default: false
+    description: >
+      Gates the TypeID-prefixed wire form on all entity-returning API responses
+      (FFRNT-185 step 4). When ON, response bodies carry prefixed TypeID strings
+      (e.g. `org_01h…`, `usr_01h…`) instead of bare UUIDs. The dual-accept
+      window — `configureIdentity({ legacyUuidTypes })` in each backend's
+      startup — ensures incoming bare UUIDs are still accepted during the client
+      migration period, so flipping this flag is safe for existing clients.
+      In-code default is OFF (fail-safe when Unleash is unreachable); Unleash
+      production strategy is global 100 % flexibleRollout.
+    owner: backend-engineer (identity, FFRNT-185)
+    removal_criterion: >
+      Delete once every entity type in FFRNT-185 has completed its dual-accept
+      window closure (removed from legacyUuidTypes), no call-site in the
+      codebase still references this flag, and the TypeID wire form is the sole
+      accepted format. Remove the flag from Unleash AND all isPrefixedIdsEnabled
+      call-sites in the same PR.
+    gates:
+      - "prefixDtoIds wired into all entity-returning route handlers (backend/src, backend/security/src, backend/applications/src)"
+      - "configureIdentity({ legacyUuidTypes }) set at startup in all three backends"
+    web_exposed: false
+    jira: FFRNT-185
+    epic: ~
+    story: step 4
+
   - key: fuzefront.identity.employee-console
     type: release
     default: false

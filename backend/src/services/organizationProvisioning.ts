@@ -433,21 +433,19 @@ export async function ensureRootMembership(
   const db = overrides?.db ?? defaultDb
   await db('organization_memberships')
     .insert({
+      id: toUuid(mintId('membership')),
       user_id: userId,
       organization_id: ROOT_ORG_ID,
       role: 'member',
       status: 'active',
       joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
     })
     .onConflict(['user_id', 'organization_id'])
     .ignore()
 }
 
-/**
- * Single-sourced entry point used by login self-heal AND the internal HTTP
- * endpoint (Plan D's provisioning-service). When the `root-membership` flag is
- * ON, upserts a root org `member` row instead of creating a personal org.
- */
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>

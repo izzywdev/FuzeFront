@@ -24,13 +24,22 @@ name: design-approval
 # (scripts/stamp-frames.mjs), so flipping a flow to approved does not change the
 # stamp — sibling flows keep the same valid stamp and per-flow approval works.
 #
-# on: issues:[opened] ONLY — edits can't re-fire (avoids double-trigger). Every
-# expectation is DERIVED from a source of truth (stamp from files, flip target from
-# the parsed issue, authorization from CODEOWNERS); nothing is hand-mirrored.
+# on: issues:[opened, labeled]. `opened` is the happy path (the in-frame Approve
+# link opens a prefilled issue already carrying the `design-approval` label). But
+# some GitHub clients (notably the mobile app / mobile web) SILENTLY DROP the
+# `labels=` query param when submitting that prefilled form, so the issue opens
+# WITHOUT the label and the `if:` guard below skips the job — the approval is lost
+# with no signal. `labeled` recovers exactly that case: a maintainer (or an agent)
+# adds the `design-approval` label to the already-open issue and the job re-fires,
+# now that the guard passes. Re-firing is safe: the idempotency check (step 3)
+# treats an already-approved-at-this-stamp flow as a no-op, so an issue that opened
+# WITH the label (both events fire) is not double-approved. Every expectation is
+# DERIVED from a source of truth (stamp from files, flip target from the parsed
+# issue, authorization from CODEOWNERS); nothing is hand-mirrored.
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 permissions:
   contents: write   # flip the manifest on master via Contents API

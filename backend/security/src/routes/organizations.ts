@@ -1,7 +1,9 @@
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
 import crypto from 'crypto'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   PermissionMiddleware,
@@ -15,6 +17,10 @@ import { reconcileOrganizationProvisioning } from '../services/organizationProvi
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { permitSchema } from '../permit/schema'
+import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/employeeRole'
+import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
+import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -244,7 +250,9 @@ router.post('/', authenticateToken, async (req: any, res) => {
       )
     }
 
-    res.status(201).json(organization)
+    const flagCtx = { orgId: organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    res.status(201).json(prefixDtoIds(organization as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
   } catch (error: any) {
     console.error('Error creating organization:', error)
 
@@ -382,8 +390,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
         (org.owner_id === req.user.id ? 'owner' : null),
     }))
 
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedOrgs = transformedOrganizations.map(org =>
+      prefixDtoIds(org as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' })
+    )
     res.json({
-      organizations: transformedOrganizations,
+      organizations: prefixedOrgs,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -464,7 +477,9 @@ router.get(
           (organization.owner_id === req.user.id ? 'owner' : null),
       }
 
-      res.json(result)
+      const flagCtx = { orgId: id, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error fetching organization:', error)
       res.status(500).json({ error: 'Failed to fetch organization' })
@@ -567,7 +582,9 @@ router.put(
         updated_at: updatedOrganization.updated_at,
       }
 
-      res.json(result)
+      const flagCtx = { orgId: id, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error updating organization:', error)
 
@@ -668,7 +685,12 @@ router.get('/:id/invitations', authenticateToken, async (req: any, res) => {
       .whereIn('status', ['pending'])
       .orderBy('created_at', 'desc')
 
-    res.json({ invitations })
+    const flagCtx = { orgId: id, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedInvitations = invitations.map((inv: any) =>
+      prefixDtoIds(inv, prefixed, { id: 'invitation', organization_id: 'organization', invited_by: 'user' })
+    )
+    res.json({ invitations: prefixedInvitations })
   } catch (error: any) {
     console.error('Error listing invitations:', error)
     res.status(500).json({ error: 'Failed to list invitations' })
@@ -750,15 +772,11 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
+    const flagCtxInv = { orgId: id, userId: req.user?.id }
+    const prefixedInv = await isPrefixedIdsEnabled(flagCtxInv)
+    const invitationDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: {
-        id: invitationId,
-        organizationId: id,
-        email: normalizedEmail,
-        role,
-        expiresAt,
-        status: 'pending',
-      },
+      invitation: prefixDtoIds(invitationDto, prefixedInv, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating invitation:', error)
@@ -1209,10 +1227,207 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       invited_at: null,
     }))
 
-    res.json({ members, pagination: { page, pageSize, total } })
+    const flagCtx = { orgId: id, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedMembers = members.map((m: any) => ({
+      ...prefixDtoIds(m, prefixed, { id: 'membership' }),
+      user: prefixDtoIds(m.user, prefixed, { id: 'user' }),
+    }))
+    res.json({ members: prefixedMembers, pagination: { page, pageSize, total } })
   } catch (error: any) {
     console.error('Error listing members:', error)
     res.status(500).json({ error: 'Failed to list members' })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Directory sub-route: /api/organizations/:id/directory
+// FF-EPIC-17-S5 — root/portal member directory (frozen contract:
+// `packages/security/openapi.yaml` `listOrganizationDirectory`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Clamp helpers for the directory's offset-paginated envelope (page/pageSize/
+// total). Junk/out-of-range input clamps to the contract defaults rather than
+// 400ing — mirrors GET /:id/members' pagination handling in this file.
+function parseDirectoryLimit(raw: any): number {
+  const n = parseInt(String(raw), 10)
+  if (!Number.isFinite(n) || n < 1) return 50
+  return Math.min(n, 200)
+}
+function parseDirectoryOffset(raw: any): number {
+  const n = parseInt(String(raw), 10)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
+}
+
+/**
+ * @swagger
+ * /api/organizations/{id}/directory:
+ *   get:
+ *     summary: List the user directory of a root/portal organization
+ *     description: >-
+ *       Unbounded, server-side-searchable directory of ALL users of a
+ *       tenant-root organization (the platform root org id OR a portal-root
+ *       org id — a direct child of the platform root). Offset-paginated;
+ *       `query` filters server-side over email/displayName. Access is an org
+ *       owner/admin (or Employee/ReBAC) capability. Behind
+ *       `fuzefront.identity.member-directory` (default OFF — OFF renders 404,
+ *       exactly as if the route did not exist).
+ *     tags: [Organizations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: query
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, default: 0, minimum: 0 }
+ *     responses:
+ *       200:
+ *         description: A page of directory members.
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Non-privileged caller (FORBIDDEN)
+ *       404:
+ *         description: Org not found, not a root/portal-root org, or the flag is OFF
+ */
+// GET /api/organizations/:id/directory — root/portal member directory
+router.get('/:id/directory', authenticateToken, async (req: any, res) => {
+  try {
+    const { id } = req.params
+
+    // Flag OFF => render exactly as if this route does not exist (404), no
+    // DB access at all. This is a NEW endpoint (no pre-story behavior to
+    // preserve beyond "the route is absent").
+    const directoryEnabled = await isMemberDirectoryEnabled({
+      userId: req.user?.id,
+      organizationId: id,
+    })
+    if (!directoryEnabled) {
+      return res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })
+    }
+
+    // Resolve the target org and validate it is a directory-eligible
+    // tenant-root: either the platform root itself, or a "portal root" — an
+    // org that is a direct child of the platform root (FF-EPIC-17 Feature 3's
+    // org-tree model: a portal IS an org, one level below root). Any other
+    // org id is not a valid directory scope and 404s, same as "not found".
+    const org = await db('organizations').where('id', id).first()
+    if (!org) {
+      return res.status(404).json({ error: 'Organization not found', code: 'NOT_FOUND' })
+    }
+    const isRootOrPortalRoot = id === ROOT_ORG_ID || org.parent_id === ROOT_ORG_ID
+    if (!isRootOrPortalRoot) {
+      return res.status(404).json({ error: 'Organization not found', code: 'NOT_FOUND' })
+    }
+
+    // Real authz: org owner/admin of THIS org, or an Employee (ReBAC
+    // org-admin-on-root, cross-org authority) — never derived from the id
+    // itself (an id is never a capability; the token + Permit decide).
+    const isOrgAdmin = await requireOrgAdminOrOwner(req.user.id, id)
+    let isEmployee = false
+    if (!isOrgAdmin) {
+      const employeeStatus = await resolveEmployeeStatus(req.user.id)
+      isEmployee = employeeStatus.isEmployee
+    }
+    if (!isOrgAdmin && !isEmployee) {
+      return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' })
+    }
+
+    const limit = parseDirectoryLimit(req.query.limit)
+    const offset = parseDirectoryOffset(req.query.offset)
+    const query =
+      typeof req.query.query === 'string' ? req.query.query.trim() : ''
+
+    // Shared filter builder — applied to both the count and the page query so
+    // `total` reflects the same search predicate as the returned rows. Search
+    // is server-side over email/first_name/last_name (displayName is
+    // composed from first/last at render time; see below).
+    const applyFilters = (q: any) => {
+      q.where('organization_memberships.organization_id', id).where(
+        'organization_memberships.status',
+        'active'
+      )
+      if (query) {
+        const like = `%${query.toLowerCase()}%`
+        q.whereRaw(
+          '(LOWER(users.email) LIKE ? OR LOWER(users.first_name) LIKE ? OR LOWER(users.last_name) LIKE ?)',
+          [like, like, like]
+        )
+      }
+      return q
+    }
+
+    const countQuery = applyFilters(
+      db('organization_memberships').join(
+        'users',
+        'users.id',
+        'organization_memberships.user_id'
+      )
+    )
+    const countRow = await countQuery
+      .count('organization_memberships.id as count')
+      .first()
+    const total = parseInt((countRow?.count as string) || '0', 10) || 0
+
+    const rows = await applyFilters(
+      db('organization_memberships')
+        .select(
+          'organization_memberships.role',
+          'organization_memberships.joined_at',
+          'users.id as user_id',
+          'users.email as user_email',
+          'users.first_name',
+          'users.last_name'
+        )
+        .join('users', 'users.id', 'organization_memberships.user_id')
+    )
+      // Deterministic paging under concurrent writes: sort key (joined_at)
+      // + tiebreaker (user_id) so the same offset window never gaps/dupes.
+      .orderBy('organization_memberships.joined_at', 'asc')
+      .orderBy('users.id', 'asc')
+      .limit(limit)
+      .offset(offset)
+
+    const items = rows.map((row: any) => {
+      const displayName =
+        `${row.first_name || ''} ${row.last_name || ''}`.trim() ||
+        row.user_email
+      // The org owner is authoritative over any membership row's `role` — an
+      // owner always resolves to 'owner' even if the joined membership row
+      // says otherwise (mirrors GET /:id and GET / user_role projection).
+      const role = org.owner_id === row.user_id ? 'owner' : row.role
+
+      return {
+        userId: row.user_id,
+        email: row.user_email,
+        displayName,
+        joinedAt: row.joined_at,
+        role,
+        isSelf: row.user_id === req.user.id,
+      }
+    })
+
+    const page = Math.floor(offset / limit) + 1
+
+    const flagCtxDir = { orgId: id, userId: req.user?.id }
+    const prefixedDir = await isPrefixedIdsEnabled(flagCtxDir)
+    const prefixedItems = items.map((item: any) =>
+      prefixDtoIds(item, prefixedDir, { userId: 'user' })
+    )
+    res.json({ items: prefixedItems, page, pageSize: limit, total })
+  } catch (error: any) {
+    console.error('Error listing organization directory:', error)
+    res.status(500).json({ error: 'Failed to list organization directory' })
   }
 })
 
@@ -1292,15 +1507,11 @@ router.post('/:id/members', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
+    const flagCtxMem = { orgId: id, userId: req.user?.id }
+    const prefixedMem = await isPrefixedIdsEnabled(flagCtxMem)
+    const legacyInvDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: {
-        id: invitationId,
-        organizationId: id,
-        email: normalizedEmail,
-        role,
-        expiresAt,
-        status: 'pending',
-      },
+      invitation: prefixDtoIds(legacyInvDto, prefixedMem, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating member invitation:', error)
@@ -1360,7 +1571,9 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
       console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr)
     }
 
-    res.json(updated)
+    const flagCtxRole = { orgId: id, userId: req.user?.id }
+    const prefixedRole = await isPrefixedIdsEnabled(flagCtxRole)
+    res.json(prefixDtoIds(updated, prefixedRole, { id: 'membership', user_id: 'user', organization_id: 'organization' }))
   } catch (error: any) {
     console.error('Error updating member role:', error)
     res.status(500).json({ error: 'Failed to update member role' })
