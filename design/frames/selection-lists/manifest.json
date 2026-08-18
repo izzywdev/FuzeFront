@@ -452,9 +452,9 @@
           "13-picker-multi",
           "14-picker-archived"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:12:59.463Z"
       }
     ],
     "components": [
