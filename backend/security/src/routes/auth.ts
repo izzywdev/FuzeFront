@@ -294,8 +294,17 @@ router.post('/login', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+// Authenticated endpoint — generous cap to allow normal polling while blocking scraping.
+const getUserRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again later.' },
+})
+
 // GET /auth/user - Get current user
-router.get('/user', authenticateToken, async (req, res) => {
+router.get('/user', getUserRateLimiter, authenticateToken, async (req, res) => {
   const flagCtx = { userId: (req as any).user?.id }
   const prefixed = await isPrefixedIdsEnabled(flagCtx)
   res.json({ user: prefixDtoIds((req as any).user as any, prefixed, { id: 'user' }) })
