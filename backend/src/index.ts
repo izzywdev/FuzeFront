@@ -34,6 +34,7 @@ import {
   initializeDatabase,
   closeDatabase,
   checkDatabaseHealth,
+  db,
 } from './config/database'
 import { oidcService } from './services/oidc'
 import { setupMetrics } from './metrics'

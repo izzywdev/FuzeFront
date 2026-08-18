@@ -10,6 +10,7 @@ import {
   initializeDatabase,
   checkDatabaseHealth,
   closeDatabase,
+  db,
 } from '@fuzefront/core'
 import path from 'path'
 
