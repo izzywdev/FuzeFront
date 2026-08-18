@@ -96,7 +96,9 @@ jobs:
         # Install from the workspace ROOT, matching backend-tests.yml: root
         # `overrides` (e.g. the @types/express v4 pin) only apply from there,
         # and custom-hostname-client is a workspace member.
-        run: npm ci
+        # --foreground-scripts serialises postinstall execution (npm 9+), preventing
+        # the ETXTBSY race on esbuild in workspace UI packages (vite devDependency).
+        run: npm ci --foreground-scripts
 
       - name: Regenerate types and fail on drift
         working-directory: custom-hostname-client

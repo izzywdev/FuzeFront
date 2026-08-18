@@ -46,6 +46,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   // Configuration Management Console (design/frames/config-management,
   // FF-EPIC-19-S3/S4), default OFF.
   const configConsoleEnabled = useFlag('fuzefront.config.management-console', false)
+  const selectionListsServiceEnabled = useFlag('fuzefront.selection-lists.service', false)
   const { pathname } = useLocation()
   const selectionListsActive = pathname.startsWith('/settings/selection-lists')
   const configActive = pathname.startsWith('/config') || pathname.startsWith('/admin/config')
@@ -269,18 +270,19 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
             onClick={() => handleNavigate('/staff')}
           />
         )}
-        {/* Selection Lists nav item — data-nav wrapper for Playwright test hook */}
-        <div
-          data-nav="selection-lists"
-          className={selectionListsActive ? 'active' : ''}
-        >
-          <DSMenuItem
-            icon="📋"
-            label={t('nav.selectionLists', { defaultValue: 'Selection Lists' })}
-            active={selectionListsActive}
-            onClick={() => handleNavigate('/settings/selection-lists')}
-          />
-        </div>
+        {selectionListsServiceEnabled && (
+          <div
+            data-nav="selection-lists"
+            className={selectionListsActive ? 'active' : ''}
+          >
+            <DSMenuItem
+              icon="📋"
+              label={t('nav.selectionLists', { defaultValue: 'Selection Lists' })}
+              active={selectionListsActive}
+              onClick={() => handleNavigate('/settings/selection-lists')}
+            />
+          </div>
+        )}
         {/* Configuration nav item — data-nav wrapper for Playwright test hook, matching the Selection Lists convention above. */}
         {configConsoleEnabled && (
           <div data-nav="config" className={configActive ? 'active' : ''}>

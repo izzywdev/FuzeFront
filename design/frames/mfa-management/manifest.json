@@ -2,6 +2,11 @@
   "name": "MFA management — approval frames",
   "description": "Contract-freeze UX artifacts for two-factor authentication management: enrol an authenticator (TOTP) or phone (text message), one-time recovery codes, remove a method, and the step-up challenge shown mid sign-in. Approving a flow approves its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. No provider name appears in any consumer surface.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/account-security-ui/src/components/mfa/**"
+    ]
+  },
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -212,5 +217,5 @@
       ]
     }
   ],
-  "stamp": "d67fea98b2def18da2ed65bc1b7133cba3028284101821e50b43786759deec50"
+  "stamp": "c3192d0d18be096625094fbc4d4ca973ba47b063c3e33bd21390316d4fe39c5b"
 }

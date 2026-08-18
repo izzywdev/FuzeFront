@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   AccountSecurityI18nProvider,
   type AccountSecurityLocale,
-} from '../i18n/AccountSecurityI18nProvider'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+} from '../../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { SecurityHub, type SecurityHubRoutes } from './SecurityHub'
 import { SecurityCardGridSkeleton } from './SecurityCardGridSkeleton'
 import { LoadErrorRetry } from './LoadErrorRetry'
-import { createAccountSecurityClient } from '../api/securityClient'
-import type { AccountSecurityClient, SecurityOverview } from '../types'
+import { createAccountSecurityClient } from '../../api/securityClient'
+import type { AccountSecurityClient, SecurityOverview } from '../../types'
 
 export interface AccountSecurityHubProps {
   /** Injected client (tests/host). Defaults to a same-origin client. */

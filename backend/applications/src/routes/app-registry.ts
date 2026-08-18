@@ -22,8 +22,19 @@ import { appRegistryService, canRead, canMutate } from '../app-registry/service'
 import { resolveCaller } from '../app-registry/caller'
 import { checkAppRegistryPermission } from '../app-registry/permit'
 import { getAppRegistryEmitter } from '../app-registry/events'
-import { isV1WriteEnabled, isKafkaEmitEnabled } from '../app-registry/flags'
+import { isV1WriteEnabled, isKafkaEmitEnabled, isRefEnforceEnabled } from '../app-registry/flags'
 import { resolvePortalCatalogContext } from '../app-registry/portalContext'
+import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { db } from '../config/database'
+import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
+
+// Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
+// Lazy init so it resolves after db.initialize() runs at startup.
+let _refStore: KnexRefIndexRepository | null = null
+function getRefStore(): KnexRefIndexRepository {
+  if (!_refStore) _refStore = new KnexRefIndexRepository(db)
+  return _refStore
+}
 
 const router = express.Router()
 
@@ -111,6 +122,24 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     const caller = await resolveCaller(req.user)
     // release flag (default OFF): the new write surface is dark until released.
     if (!(await v1WriteGate(caller, orgId, res))) return
+
+    // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
+    // Assert that the supplied organizationId is known to the local ref_index
+    // projection. OFF (default): warn + continue; ON: hard-fail with 422.
+    if (orgId) {
+      const refMode = (await isRefEnforceEnabled({ organizationId: orgId, userId: caller.userId }))
+        ? 'enforce'
+        : 'warn'
+      try {
+        await assertRefExists(getRefStore(), 'organization', orgId, { mode: refMode })
+      } catch {
+        return res.status(422).json({
+          error: 'unprocessable_entity',
+          message: 'Organization not found',
+          code: 'ORG_REF_MISSING',
+        })
+      }
+    }
 
     // AuthZ: apps:register scoped to the target org (Permit). Object-level: a
     // non-admin caller may only register into an org they belong to.

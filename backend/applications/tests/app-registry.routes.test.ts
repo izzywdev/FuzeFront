@@ -203,8 +203,12 @@ function compare(a0: any, op: string, b0: any): boolean {
 
 const fakeDb: any = (table: string) => makeQuery(table)
 fakeDb.fn = { now: () => new Date() }
+// KnexRefIndexRepository.has() calls db.raw() to check app_ref_index. Return
+// empty rows so assertRefExists in warn mode (the test default) sees "not found"
+// and logs a warning rather than throwing or blocking the request.
+fakeDb.raw = async (_sql: string, _params?: any[]) => ({ rows: [] })
 
-jest.mock('../src/config/database', () => ({ db: (t: string) => fakeDb(t) }))
+jest.mock('../src/config/database', () => ({ db: fakeDb }))
 
 // Auth middleware: inject the test user.
 jest.mock('../src/middleware/auth', () => ({
