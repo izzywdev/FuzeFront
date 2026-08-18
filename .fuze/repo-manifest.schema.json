@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/governance/repo-manifest.schema.json",
+  "title": "Fuze repo manifest",
+  "description": "Declares which canonical FuzeSDLC agents/skills a repo instantiates and its hardening settings. Lives at .fuze/manifest.json in each consuming repo; sdlc-bootstrap reads it.",
+  "type": "object",
+  "required": ["repo", "class", "tier", "expert", "agents"],
+  "additionalProperties": false,
+  "properties": {
+    "repo": { "type": "string", "description": "owner/name, e.g. izzywdev/FuzeFront" },
+    "class": { "enum": ["oss-public", "commercial-private"], "description": "Licensing/contribution posture (see governance/repo-classes.md). Must match visibility: public=oss-public (MIT, open), private=commercial-private (proprietary LICENSE+NOTICE, internal-only). A commercial-private repo must NOT ship a permissive OSS license." },
+    "tier": { "enum": ["governance", "infra", "product", "library"], "description": "Position in the repo-tier model." },
+    "expert": { "type": "string", "description": "The required <repo>-expert agent name, e.g. fuzefront-expert." },
+    "baselineRef": { "type": "string", "default": "v1", "description": "FuzeSDLC ref this repo pins its baseline/agents/skills to; governance-sync reconciles against it. Use the moving major tag 'v1' — re-pointed on every compatible policy update, so propagation stays automatic while breaking changes land as 'v2' and are opted into per repo. Pin an immutable 'v1.x.y' only to deliberately freeze a repo. Do NOT pin 'main': unreviewed policy would propagate instantly. See governance/versioning.md." },
+    "agents": {
+      "type": "array",
+      "description": "Canonical agent names this repo instantiates (subset of FuzeSDLC/agents). Conditional channel agents only when the repo ships that channel.",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "roles": {
+      "type": "object",
+      "description": "OPTIONAL Managed-Agents role definitions this repo provisions (agent-templates/). The FRAMEWORK (schema/roles/_base/sync/providers) is canonical in FuzeSDLC — stamped by sdlc-bootstrap, reconciled by governance-sync; the concrete roles/environments/vaults/coordinators are the repo's own. Present -> the repo gets the provision-sync.yml caller. See skills/managed-agents-roles.",
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "default": "agent-templates/", "description": "Path to the agent-templates tree in this repo." },
+        "runtime": { "enum": ["managed-agents"], "default": "managed-agents", "description": "Agent runtime the roles target." },
+        "provider": { "enum": ["anthropic", "openai", "hermes"], "default": "anthropic", "description": "Provider the roles are provisioned to (providers/<name>/adapter.py)." },
+        "defined": {
+          "type": "array",
+          "description": "Role keys defined under roles/<key>/ (excluding _base), e.g. backend, frontend, devops.",
+          "items": { "type": "string" }
+        },
+        "environments": {
+          "type": "array",
+          "description": "Environment names defined under environments/, e.g. cloud-backend, selfhosted-devops.",
+          "items": { "type": "string" }
+        },
+        "coordinators": {
+          "type": "array",
+          "description": "Coordinator role keys under coordinator/, e.g. coordinator, exec-coordinator.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "description": "DEPRECATED — declare the typed block instead (`mcp`, `mobile`, …). This array names a channel without configuring it, and the two have drifted completely apart: 13 repos carry an `mcp` block with no `mcp` channel, and not one of the 10 repos with a `mobile` block declares `mobile-app`. Only FuzeAgent and FuzePlan agree with themselves. The typed block is authoritative for capability installation. Deliberately NOT linked to the blocks by `dependentRequired` — any such constraint fails 19 of 22 manifests today, which would make the schema unadoptable rather than make the fleet correct.",
+      "items": { "enum": ["mobile-app", "desktop-app", "cli", "mcp", "wordpress"] }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Node/React floor for this repo. MANAGED — governance_sync reconciles every key except `enforce` from governance/toolchain.json, so raising the family floor is one edit in the canonical rather than 20 PRs. `moduleFederationRequiredVersion` is the one with a runtime consequence: it must be byte-identical in the MF host and every remote, or the remote loads its own React copy and dies on 'Invalid hook call' in the browser with nothing in CI to catch it.",
+      "properties": {
+        "node": { "type": "string", "description": "engines.node floor, e.g. '>=24.0.0'." },
+        "npm": { "type": "string", "description": "engines.npm floor, e.g. '>=10.0.0'." },
+        "typesNode": { "type": "string", "description": "@types/node range." },
+        "react": { "type": "string", "description": "react / react-dom app dependency range." },
+        "reactPeerRange": { "type": "string", "description": "peerDependencies React range for published packages." },
+        "typesReact": { "type": "string", "description": "@types/react and @types/react-dom range." },
+        "moduleFederationRequiredVersion": { "type": "string", "description": "MF shared requiredVersion. Must match the host EXACTLY." },
+        "dockerBaseImage": { "type": "string", "description": "Mandated Docker base image, e.g. 'node:24-alpine'." },
+        "ciNodeVersion": { "type": "string", "description": "setup-node node-version, e.g. '24.x'." },
+        "enforce": { "type": "boolean", "default": false, "description": "REPO-OWNED, never reconciled. false = gate-toolchain warns; true = it fails. Each repo flips this in the same PR that lands its bumps, so the gate is real from the first commit at which the repo can pass it. governance-nightly reports anyone still on false, so it cannot quietly become permanent." },
+        "note": { "type": "string" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Entity-identifier standard (governance/identifier-standard.md). Declaring this block is what makes gate-identifier's --adoption check ENFORCING for the repo, so it is an opt-in with teeth rather than a label.",
+      "properties": {
+        "namespace": { "type": "string", "pattern": "^[a-z][a-z0-9]*$", "description": "Prefix namespace for this product's entity types. DECLARED, never derived from the repo directory name — a rename would otherwise silently orphan every id already issued, surfacing much later as unresolvable references with no obvious cause. Only FuzeFront may mint the bare reserved spine prefixes (usr/org/prt/app, billing, messaging); a product's own types namespace as <namespace>_<type>." },
+        "packages": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The identity package this repo depends on. gate-identifier --adoption fails a repo that mints entity ids without one.",
+          "properties": {
+            "node": { "type": "string", "description": "e.g. '@izzywdev/fuzefront-identity'." },
+            "python": { "type": "string", "description": "e.g. 'fuzefront-identity' — installed from a tagged GitHub Release wheel, because GitHub Packages has no PyPI registry." }
+          }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Whether this repo registers itself as an app in the FuzeFront portal.",
+      "properties": {
+        "registers": { "type": "boolean", "description": "false opts the repo out of portal registration entirely; bootstrap skips the portal-registration capability." },
+        "reason": { "type": "string", "description": "Why, when registers is false." }
+      }
+    },
+    "platformAuth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "NEW BLOCK — no repo declares it yet, and that is the point: it gates the platform-auth capability. Consume @fuzefront/auth (published as @izzywdev/fuzefront-auth) rather than a bespoke verifier. A product NEVER calls Permit directly; it knows exactly one thing, the base URL of FuzeFront's Security API.",
+      "properties": {
+        "mode": { "enum": ["federated-jwks", "legacy-hs256", "session-delegation"], "description": "federated-jwks verifies Authentik-issued tokens against a cached JWKS and is the target. legacy-hs256 is a symmetric shared secret — a minting capability, interim only. session-delegation calls GET /api/v1/security/session instead of verifying locally." },
+        "package": { "type": "string", "description": "e.g. '@izzywdev/fuzefront-auth'." },
+        "authzBaseUrl": { "type": "string", "description": "Base URL of the FuzeFront Security API for createAuthzClient. Same-origin in the portal; never an absolute API host baked into a frontend." },
+        "note": { "type": "string" }
+      }
+    },
+    "a2a": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent-to-agent surface. Mirrors the frozen contract at FuzeAgent/agent-templates/contracts/a2a/v1/schema/manifest-a2a-extension.schema.json — mirrored rather than $ref'd because this file carries an absolute $id, which hijacks relative reference resolution and turns the ref into a GitHub HTML URL no validator will fetch. Note the AUTHORITATIVE caller allowlist is the top-level `providesTo`, not anything here: absent is NOT the same as empty, and absent must fail closed.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false, "description": "Whether this repo publishes an A2A agent surface at all. Mirrors the Helm enabled gate." },
+        "servingRoles": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_-]+$" }, "description": "Role keys projected into card skills. Order is preserved and becomes skill order." },
+        "entryRole": { "type": "string", "pattern": "^[a-z0-9_-]+$", "description": "Role that receives an incoming SendMessage when the caller names no skill. Optional — FuzeInfra declares servingRoles without it, so this must not be required." },
+        "external": { "type": "boolean", "default": false, "description": "true also publishes the card through the Cloudflare tunnel with Access in front. Default false = in-cluster service DNS only." },
+        "documentationUrl": { "type": "string", "format": "uri" },
+        "iconUrl": { "type": "string", "format": "uri" },
+        "note": { "type": "string" },
+        "_note": { "type": "string", "description": "Legacy spelling of `note`, used by FuzeKeys. Accepted so the schema does not reject real manifests — a bare $ref to the frozen contract rejects 6 of 16 over exactly this. Prefer `note` in new work." }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Model Context Protocol surface. The fleet standardised on the SHARED OpenAPI->MCP gateway image rather than per-repo server code, so `servers[]` has two legitimate and mutually-exclusive dialects — see its description. Do not add a `required` that assumes one.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "entryServer": { "type": "string", "description": "Which entry in servers[] is the default target." },
+        "transport": { "type": "string", "description": "Repo-level default transport. Legitimately also appears per-server; the per-server value wins." },
+        "protocolVersion": { "type": "string", "description": "MCP spec date, e.g. '2025-06-18'." },
+        "toolCount": { "type": "integer", "description": "Expected tool count, verified by booting the gateway against the repo's spec." },
+        "irreversibleTools": { "type": "array", "items": { "type": "string" }, "description": "Tools that mutate irreversibly. Each MUST resolve in the generated tools.json with mutates:true — the gateway refuses to start on a contradictory override, and that refusal IS the test." },
+        "note": { "type": "string" },
+        "servers": {
+          "type": "array",
+          "description": "TWO DIALECTS, both valid. (a) stdio/entry: {name, transport, entry} where entry points at server code. (b) gateway: {name, transport, image, implementation, spec, overrides, manifest, deployment, endpoints} with NO entry, because the shared gateway needs no per-repo server code. A third hybrid sets kind:'openapi-gateway' with entry pointing at the spec. Only `name` and `transport` are universal — requiring `entry` would reject FuzeSales and FuzeService.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "transport"],
+            "properties": {
+              "name": { "type": "string" },
+              "transport": { "type": "string", "description": "e.g. 'stdio' or 'sse'." },
+              "kind": { "type": "string", "description": "e.g. 'openapi-gateway'." },
+              "entry": { "type": "string", "description": "Path to server code, or to the spec in the hybrid dialect." },
+              "image": { "type": "string", "description": "Shared gateway image, e.g. 'ghcr.io/izzywdev/fuze-mcp-gateway'." },
+              "implementation": { "type": "string" },
+              "spec": { "type": "string", "description": "OpenAPI contract the gateway projects into tools." },
+              "overrides": { "type": "string", "description": "e.g. 'mcp/tools.overrides.yaml'." },
+              "manifest": { "type": "string", "description": "Generated tool manifest, e.g. 'mcp/tools.json'." },
+              "toolManifest": { "type": "string", "description": "Alternate spelling of `manifest`, used by FuzeX." },
+              "deployment": { "type": "string", "description": "Chart template that deploys the gateway." },
+              "endpoints": {
+                "type": "object",
+                "description": "Served paths, e.g. {sse, messages, health, tools}.",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mobile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required"],
+      "description": "Mobile requirements. Mirrors agent-templates/schema/mobile-requirements.schema.json, whose own description already sanctions living as a `mobile` block inside .fuze/manifest.json. Mirrored rather than $ref'd: that file's $id omits its own `schema/` path segment so it is not findable by $id, and this file's absolute $id breaks relative resolution. All 10 real blocks validate against the mirrored shape.",
+      "properties": {
+        "$schema": { "type": "string" },
+        "product": { "type": "string" },
+        "required": { "type": "boolean", "description": "Whether mobile support is mandatory for this product." },
+        "strategy": { "enum": ["responsive-web", "pwa", "react-native", "flutter"] },
+        "targets": { "type": "array", "items": { "enum": ["ios", "android", "mobile-web"] } },
+        "responsive": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_width": { "type": "integer", "description": "Narrowest supported viewport; no horizontal scroll at this width." },
+            "breakpoints": { "type": "array", "items": { "type": "integer" } },
+            "min_tap_target_px": { "type": "integer", "default": 44 }
+          }
+        },
+        "acceptance": {
+          "type": "array",
+          "description": "Prose criteria, or a scored check. States are contract: cover loading/empty/error, not just the happy path.",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["check"],
+                "properties": {
+                  "check": { "type": "string" },
+                  "min_score": { "type": "number" },
+                  "at_width": { "type": "integer" }
+                }
+              }
+            ]
+          }
+        },
+        "packages": { "type": "array", "items": { "type": "string" } },
+        "owner": { "type": "string" }
+      }
+    },
+    "designSystem": {
+      "type": "object",
+      "description": "Frontend repos only.",
+      "properties": {
+        "base": { "type": "string", "default": "@fuzefront/design-system", "description": "The inherited base DS package." },
+        "extendsAs": { "type": "string", "description": "This repo's local DS package that extends the base, e.g. @fuzex/design-system." }
+      }
+    },
+    "hardening": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ruleset": { "type": "boolean", "default": true },
+        "requireSignatures": { "type": "boolean", "default": true },
+        "requiredChecks": {
+          "type": "array",
+          "description": "Extra repo-specific required status-check contexts beyond the six gate-* (e.g. FuzeInfra: test-infrastructure).",
+          "items": { "type": "string" }
+        },
+        "deployOnPush": { "type": "boolean", "default": false, "description": "If true, never bot-merge; merge in a deploy window." }
+      }
+    },
+    "modelCascade": {
+      "type": "object",
+      "description": "OPTIONAL per-repo overrides for the model cascade (governance/model-cascade.md). Absent → canonical defaults from the copied agent files apply.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Set false to opt this repo out of tiered cascade execution (run single-tier)." },
+        "tierOverrides": {
+          "type": "object",
+          "description": "Per-agent default-tier overrides, e.g. { \"backend-engineer\": \"opus\" }. Keys are canonical agent names; values are the tier to run that agent at in this repo.",
+          "additionalProperties": { "enum": ["opus", "sonnet", "haiku", "fable"] }
+        }
+      }
+    },
+    "platformServices": {
+      "type": "object",
+      "description": "Which shared platform-spine services this product consumes + the integration point for each (governance/platform-services.md). Every product consumes all that apply.",
+      "additionalProperties": false,
+      "properties": {
+        "deploy": { "type": "string", "description": "FuzeDeploy CI/CD integration." },
+        "front": { "type": "string", "description": "FuzeFront UX/portal: module-federation remote + @fuzefront/design-system." },
+        "infra": { "type": "string", "description": "FuzeInfra: vendored submodule + consumer-test + Helm/Argo." },
+        "plan": { "type": "string", "description": "FuzePlan (Both): @fuzefront/fuzeplan-client + tracked project." },
+        "agent": { "type": "string", "description": "FuzeAgent: agent dispatch/launch via the FuzeAgent orchestrator." },
+        "keys": { "type": "string", "description": "FuzeKeys: identity + PII tokenize/detokenize client." },
+        "picker": { "type": "string", "description": "FuzePicker: real-time in-browser user-comms widget." }
+      }
+    },
+    "dataTier": {
+      "type": "array",
+      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@claude please provision' request (governance/shared-cluster-deploy.md §5). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses — a role granted on the wrong db name is the classic silent-empty-data bug.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["store", "database", "role"],
+        "properties": {
+          "store": { "enum": ["postgres", "mongo", "redis", "neo4j", "chroma"], "description": "Shared datastore this role needs access in." },
+          "database": { "type": "string", "description": "The exact database/keyspace name the app reads/writes (e.g. robot_catalog). The role MUST be granted on THIS name; provisioning verifies it." },
+          "role": { "type": "string", "description": "The per-service role/user (e.g. mendys)." },
+          "privileges": { "enum": ["readWrite", "read", "admin"], "default": "readWrite", "description": "Privilege level to grant the role on `database`." },
+          "authSource": { "type": "string", "description": "Mongo authSource db the role authenticates against (e.g. admin), when it differs from `database`." }
+        }
+      }
+    },
+    "egress": {
+      "type": "array",
+      "description": "External hosts the product's pods need outbound HTTPS to. The shared cluster is egress-restricted (HTTP-only behind the Cloudflare tunnel; no default outbound to third-party APIs), so every external dependency MUST be declared here. FuzeInfra's reconciler turns these into namespace egress allow-rules (NetworkPolicy / egress gateway). Declare each third-party API explicitly (e.g. LLM providers).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["host"],
+        "properties": {
+          "host": { "type": "string", "description": "FQDN, e.g. api.openai.com." },
+          "port": { "type": "integer", "default": 443, "description": "Destination port (default 443)." },
+          "reason": { "type": "string", "description": "Why the product needs it (e.g. 'AI keyword generation')." }
+        }
+      }
+    },
+    "dependsOn": {
+      "type": "array",
+      "description": "Product-to-product dependencies this repo consumes beyond the spine (e.g. FuzeService dependsOn FuzeContact, FuzeBI).",
+      "items": { "type": "string" }
+    },
+    "providesTo": {
+      "type": "array",
+      "description": "Products that consume this one (e.g. FuzeContact providesTo FuzeService, FuzeSales).",
+      "items": { "type": "string" }
+    },
+    "expertMonitors": {
+      "type": "array",
+      "description": "Files and directories the repo's expert agent monitors for drift. governance-nightly reads these paths and compares their content against the expert's claims; if significant drift is found it opens an auto-refresh PR. Declare paths that are 'architecture-defining' for this repo: Helm charts, CI workflows, the service's main OpenAPI spec, key source directories. Example: [\"deploy/helm/\", \".github/workflows/\", \"openapi.yaml\", \"src/services/\"].",
+      "items": { "type": "string" }
+    }
+  }
+}

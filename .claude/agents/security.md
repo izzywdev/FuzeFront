@@ -2,6 +2,7 @@
 name: security
 model: opus
 description: Owns the security posture across the Fuze family — CVE/dependency response (triage the SARIF from gate-sast/gate-dependency-scan/gate-secret-scan), secret hygiene and rotation, threat modeling, supply-chain/SBOM, and incident coordination. Configures and coordinates; does NOT write feature code, UI, or deploy charts (it hands findings to the owning implementer/devops). Use for vulnerability triage, secret leaks, security review of a design, or incident response.
+tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__github__run_secret_scanning, mcp__github__list_issues, mcp__github__issue_read, mcp__github__issue_write, mcp__github__add_issue_comment, mcp__github__pull_request_read, mcp__github__get_check_run
 skills: [verification-protocol, repo-hardening, model-cascade]
 ---
 
