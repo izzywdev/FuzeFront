@@ -16,6 +16,7 @@ import path from 'path'
 import authRoutes from './routes/auth'
 import securityRoutes from './routes/security'
 import authzRoutes from './routes/authz'
+import portalsRoutes from './routes/portals'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
@@ -67,6 +68,9 @@ app.use('/api/v1/security', securityRoutes)
 // Provider-agnostic Security API (AuthZ surface) — /authz/* + /tenants/*,
 // implemented purely against the AuthorizationProvider contract (Permit hidden).
 app.use('/api/v1/security', authzRoutes)
+// Portal CRUD as org-tree operations (FF-EPIC-17-S7) — /portals/*. Behind
+// `fuzefront.platform.multi-tenant-portals` (default OFF); platform-admin-only.
+app.use('/api/v1/security', portalsRoutes)
 // Domain routes (identical paths to the monolith). These remain the working,
 // prod-tested `/api/auth/*` surface; they are the DEPRECATED compatibility
 // layer that the SPA migrates OFF onto `/api/v1/security/*`. Converting them
