@@ -2,6 +2,12 @@
   "name": "Connected Accounts — approval frames",
   "description": "Contract-freeze UX artifacts for the connected-accounts surface reached from the security hub's 'Connected accounts' card (/account/security/connections): connect a social sign-in provider (Google), list linked providers + password, and disconnect one while always keeping at least one way to sign in. Approving this flow approves the ConnectedAccountsPanel visual + interaction model and its component/package plan before UI implementation. Closes the connect half that securityClient does not yet implement (only unlinkProvider exists today). frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. Jira: FFRNT-296.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/account-security-ui/src/components/connected-accounts/**",
+      "frontend/src/pages/AccountConnectionsPage.tsx"
+    ]
+  },
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -108,5 +114,5 @@
       ]
     }
   ],
-  "stamp": "b15a04cd8f5c2ea2b6cfb871f8e27540b986c33b52920e00a2a68c2613d76047"
+  "stamp": "f08f77fab5899cb86d1c89c5b05cf82a1cf44291f1d6fbc38cc9f9635418dbc1"
 }

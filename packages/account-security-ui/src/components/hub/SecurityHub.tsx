@@ -1,11 +1,11 @@
 import { Badge } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { SecurityPostureSummary } from './SecurityPostureSummary'
 import { SecurityCard } from './SecurityCard'
 import { SetPasswordBanner } from './SetPasswordBanner'
 import { SignInMethodsList } from './SignInMethodsList'
-import { providerDisplayName } from './providers'
-import type { SecurityOverview, SocialConnection } from '../types'
+import { providerDisplayName } from '../connected-accounts/providers'
+import type { SecurityOverview, SocialConnection } from '../../types'
 
 export interface SecurityHubRoutes {
   password: string

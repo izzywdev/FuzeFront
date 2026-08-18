@@ -76,16 +76,25 @@
     "$comment": [
       "A changed feature-UI file that matches NO manifest's declared `implementation.paths`.",
       "",
-      "mode=warn  — report it, exit 0. This is the RAMP, and it is where the repo is today:",
-      "             0 of 18 feature manifests declare `implementation.paths`, so with",
-      "             mode=fail every UI PR in flight would fail on day one.",
-      "mode=fail  — the destination. Flip this once coverage is declared for the features",
-      "             that own live UI. From then on, feature UI with no frames at all cannot",
-      "             merge, which is the headline promise in CLAUDE.md.",
+      "mode=warn  — report it, exit 0. This is the RAMP, and it is where the repo still is.",
+      "             As of the 2026-08-18 coverage pass, 19 of 22 feature manifests declare",
+      "             `implementation.paths` (was 0). Uncovered feature-UI files dropped from",
+      "             290 to 116. But the flip is NOT yet safe — see below.",
+      "mode=fail  — the destination. From then on, feature UI with no frames at all cannot",
+      "             merge, which is the headline promise in CLAUDE.md. The gate does NOT",
+      "             grandfather pre-existing uncovered files (the ratchet is a worklist, not",
+      "             an allowlist), so flipping today would fail the NEXT PR that touches any",
+      "             of the 116 still-uncovered files — which are REAL, still-unframed feature",
+      "             UI: `packages/chat-ui/src/**` (no frames at all), `packages/auth-ui/src/**`,",
+      "             and the `frontend/src` app shell (Layout, TopBar, SidePanel, LoginPage,",
+      "             DashboardPage, the config/org pages, ...). That is retroactively blocking",
+      "             the existing app, not just new unframed UI, so mode stays `warn`.",
       "",
       "REMOVAL CRITERION for mode=warn: flip to `fail` when every path in",
       "`ratchet.knownUncovered` below has either been claimed by a manifest's",
-      "`implementation.paths` or moved into `nonFeaturePaths`. Owner: @izzywdev."
+      "`implementation.paths` or moved into `nonFeaturePaths`. Concretely, the remaining",
+      "work before a safe flip is: (a) author frames for chat + auth + the app shell (or",
+      "(b) decide they are structural and move them into `nonFeaturePaths`). Owner: @izzywdev."
     ],
     "mode": "warn",
     "owner": "izzywdev"
@@ -111,11 +120,21 @@
       "it to skip a check. It is the worklist that defines when `uncovered.mode` can flip to",
       "`fail`, so the ramp has an end date instead of becoming permanent.",
       "",
-      "Regenerate with:  node scripts/check-frames-first.mjs --report-uncovered"
+      "Regenerate with:  node scripts/check-frames-first.mjs --report-uncovered",
+      "",
+      "Updated 2026-08-18 by the coverage pass: 19 of 22 manifests now declare",
+      "`implementation.paths`, so `billing-ui` and `portal-branding-ui` left this list",
+      "(fully claimed), and the identity-ui / account-security-ui entries now cover only",
+      "the shared core + not-yet-framed subdirs rather than the whole package. The globs",
+      "below are what still blocks a safe flip to `mode: fail`."
     ],
-    "observedOn": "2026-08-11",
-    "observedFileCount": 150,
+    "observedOn": "2026-08-18",
+    "observedFileCount": 116,
     "knownUncovered": [
+      "packages/chat-ui/src/**",
+      "packages/auth-ui/src/**",
+      "packages/identity-ui/src/**",
+      "packages/account-security-ui/src/**",
       "frontend/src/**",
       "frontend/src/components/**",
       "frontend/src/contexts/**",
@@ -123,13 +142,7 @@
       "frontend/src/pages/**",
       "frontend/src/platform/**",
       "frontend/src/services/**",
-      "frontend/src/utils/**",
-      "packages/account-security-ui/src/**",
-      "packages/auth-ui/src/**",
-      "packages/billing-ui/src/**",
-      "packages/chat-ui/src/**",
-      "packages/identity-ui/src/**",
-      "packages/portal-branding-ui/src/**"
+      "frontend/src/utils/**"
     ]
   }
 }

@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConnectedAccountsPanel } from './ConnectedAccountsPanel'
-import { HttpError } from '../api/http'
-import type { AccountSecurityClient } from '../types'
+import { HttpError } from '../../api/http'
+import type { AccountSecurityClient } from '../../types'
 
 const baseClient = (overrides: Partial<AccountSecurityClient> = {}): AccountSecurityClient => ({
   getConnections: vi.fn(async () => ({ providers: [{ provider: 'google' }], hasPassword: true })),

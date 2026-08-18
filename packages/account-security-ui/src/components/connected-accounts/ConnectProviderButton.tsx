@@ -1,7 +1,7 @@
 import { Button } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { providerDisplayName } from './providers'
-import type { SocialProvider } from '../types'
+import type { SocialProvider } from '../../types'
 
 export interface ConnectProviderButtonProps {
   provider: SocialProvider
