@@ -10,6 +10,7 @@ import {
   setOrganizationParent,
 } from '../utils/permit/resource-instances'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import {
   EventPublisher,
   defaultEventPublisher,
@@ -421,18 +422,47 @@ export async function reconcileOrganizationProvisioning(
 }
 
 /**
+ * FF-EPIC-17-S1 — idempotently upsert the user as a `member` of the root
+ * FuzeFront organization. Race-safe: the unique constraint on
+ * (user_id, organization_id) makes concurrent calls converge to one row.
+ */
+export async function ensureRootMembership(
+  userId: string,
+  overrides?: Pick<ProvisioningDeps, 'db'>
+): Promise<void> {
+  const db = overrides?.db ?? defaultDb
+  await db('organization_memberships')
+    .insert({
+      user_id: userId,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+    })
+    .onConflict(['user_id', 'organization_id'])
+    .ignore()
+}
+
+/**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
- * endpoint (Plan D's provisioning-service). Ensures the user's personal org
- * exists, then reconciles every org they own that isn't yet active.
+ * endpoint (Plan D's provisioning-service). When the `root-membership` flag is
+ * ON, upserts a root org `member` row instead of creating a personal org.
  */
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string
+  personalOrgId: string | null
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
+
+  const rootMembership = await isRootMembershipEnabled({ userId })
+  if (rootMembership) {
+    await ensureRootMembership(userId, overrides)
+    return { personalOrgId: null, reconciled: [] }
+  }
+
   const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')
