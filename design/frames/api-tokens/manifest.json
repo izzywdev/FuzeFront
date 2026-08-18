@@ -31,9 +31,9 @@
         "id": "service-tokens",
         "orchestrator": "ServiceTokensFlow",
         "route": "/settings/tokens",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:35:42.442Z"
       }
     ],
     "components": [
