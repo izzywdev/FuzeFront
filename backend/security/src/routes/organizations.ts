@@ -1,6 +1,6 @@
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
 import crypto from 'crypto'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
@@ -253,7 +253,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
     // in `pending` and will self-heal on the user's next login (or via the
     // internal provision endpoint), so we swallow reconciler errors here.
     try {
-      await reconcileOrganizationProvisioning(organizationId)
+      await reconcileOrganizationProvisioning(fromUuid('organization', organizationId))
     } catch (error) {
       console.error(
         `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid, fromUuid, EntityId } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
 import { createTenantInPermit } from '../utils/permit/tenant-management'
@@ -131,24 +131,26 @@ export function rowToOrganization(row: any): Organization {
  * with an owner membership. Returns the personal org. Re-running is a no-op.
  */
 export async function ensurePersonalOrg(
-  userId: string,
+  userId: EntityId<'user'>,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<Organization> {
   const { db } = getDeps(overrides)
+  // toUuid converts TypeID wire form → native UUID string for all DB queries.
+  const userUuid = toUuid(userId)
 
   const existing = await db('organizations')
-    .where({ owner_id: userId, type: 'personal' })
+    .where({ owner_id: userUuid, type: 'personal' })
     .first()
   if (existing) return rowToOrganization(existing)
 
-  const user = await db('users').where({ id: userId }).first()
-  if (!user) throw new Error(`Cannot create personal org: user ${userId} not found`)
+  const user = await db('users').where({ id: userUuid }).first()
+  if (!user) throw new Error(`Cannot create personal org: user ${userUuid} not found`)
 
   const orgId = toUuid(mintId('organization'))
-  // Use the full userId so the slug is globally unique per user (M1 — a
+  // Use the full userUuid so the slug is globally unique per user (M1 — a
   // truncated 8-char prefix shares only 32 bits of entropy and two different
   // users can produce the same slug, silently losing the loser's personal org).
-  const baseSlug = `personal-${userId}`
+  const baseSlug = `personal-${userUuid}`
 
   try {
     await db.transaction(async trx => {
@@ -161,7 +163,7 @@ export async function ensurePersonalOrg(
           name: 'Personal',
           slug: baseSlug,
           parent_id: null,
-          owner_id: userId,
+          owner_id: userUuid,
           type: 'personal',
           settings: JSON.stringify({}),
           metadata: JSON.stringify({ personal: true }),
@@ -174,11 +176,11 @@ export async function ensurePersonalOrg(
       // Re-select the authoritative row: if the INSERT was a no-op (race lost),
       // actualOrg.id differs from orgId; the membership must use the real id.
       const actualOrg = await trx('organizations')
-        .where({ owner_id: userId, type: 'personal' })
+        .where({ owner_id: userUuid, type: 'personal' })
         .first()
 
       if (!actualOrg) {
-        throw new Error(`Personal org still missing for user ${userId} after insert attempt`)
+        throw new Error(`Personal org still missing for user ${userUuid} after insert attempt`)
       }
 
       // Upsert the owner membership so re-runs of ensurePersonalOrg are safe even
@@ -187,7 +189,7 @@ export async function ensurePersonalOrg(
       await trx('organization_memberships')
         .insert({
           id: toUuid(mintId('membership')),
-          user_id: userId,
+          user_id: userUuid,
           organization_id: actualOrg.id,
           role: 'owner',
           status: 'active',
@@ -202,7 +204,7 @@ export async function ensurePersonalOrg(
     // Safety net for any remaining error (e.g. slug conflict from a concurrent
     // create that hits a different index than the owner_id partial index).
     const raced = await db('organizations')
-      .where({ owner_id: userId, type: 'personal' })
+      .where({ owner_id: userUuid, type: 'personal' })
       .first()
     if (raced) return rowToOrganization(raced)
     throw error
@@ -210,7 +212,7 @@ export async function ensurePersonalOrg(
 
   // Return the personal org — either the one we created or the one that won the race.
   const created = await db('organizations')
-    .where({ owner_id: userId, type: 'personal' })
+    .where({ owner_id: userUuid, type: 'personal' })
     .first()
   return rowToOrganization(created)
 }
@@ -387,41 +389,43 @@ async function runStep(
  * Returns the org's final provisioning_state.
  */
 export async function reconcileOrganizationProvisioning(
-  orgId: string,
+  orgId: EntityId<'organization'>,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<'active' | 'pending' | 'failed'> {
   const deps = getDeps(overrides)
   const { db } = deps
+  // toUuid converts TypeID wire form → native UUID string for all DB queries.
+  const orgUuid = toUuid(orgId)
 
   // I2 — serialize concurrent reconciles of the same org with a Postgres
   // advisory transaction lock so two concurrent callers never both execute the
   // `welcome_email` step (or any step) simultaneously.  The lock is held for
   // the duration of the transaction and released automatically on commit/rollback.
   return db.transaction(async trx => {
-    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [orgId])
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [orgUuid])
 
-    const orgRow = await trx('organizations').where({ id: orgId }).first()
-    if (!orgRow) throw new Error(`reconcile: organization ${orgId} not found`)
+    const orgRow = await trx('organizations').where({ id: orgUuid }).first()
+    if (!orgRow) throw new Error(`reconcile: organization ${orgUuid} not found`)
     const org = rowToOrganization(orgRow)
 
     const owner = await trx('users').where({ id: org.owner_id }).first()
     const ownerEmail: string = owner?.email || `${org.owner_id}@unknown.local`
 
     // ensureStepRows must use the same transaction so its upsert is within the lock.
-    await ensureStepRowsTrx(trx, orgId)
+    await ensureStepRowsTrx(trx, orgUuid)
 
     let anyFailed = false
 
     for (const step of PROVISIONING_STEPS) {
       const row = await trx('organization_provisioning')
-        .where({ organization_id: orgId, step })
+        .where({ organization_id: orgUuid, step })
         .first()
       if (row?.status === 'done') continue
 
       try {
         await runStep({ ...deps, db: trx as unknown as typeof db }, org, ownerEmail, step)
         await trx('organization_provisioning')
-          .where({ organization_id: orgId, step })
+          .where({ organization_id: orgUuid, step })
           .update({
             status: 'done',
             attempts: (row?.attempts || 0) + 1,
@@ -431,7 +435,7 @@ export async function reconcileOrganizationProvisioning(
       } catch (error: any) {
         anyFailed = true
         await trx('organization_provisioning')
-          .where({ organization_id: orgId, step })
+          .where({ organization_id: orgUuid, step })
           .update({
             status: 'failed',
             attempts: (row?.attempts || 0) + 1,
@@ -444,7 +448,7 @@ export async function reconcileOrganizationProvisioning(
     }
 
     const steps = await trx('organization_provisioning').where({
-      organization_id: orgId,
+      organization_id: orgUuid,
     })
     const allDone =
       steps.length === PROVISIONING_STEPS.length &&
@@ -457,7 +461,7 @@ export async function reconcileOrganizationProvisioning(
         : 'pending'
 
     await trx('organizations')
-      .where({ id: orgId })
+      .where({ id: orgUuid })
       .update({ provisioning_state: newState, updated_at: new Date() })
 
     return newState
@@ -486,13 +490,17 @@ export async function runInternalProvision(
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
+  // Brand the incoming userId string for typed service calls. fromUuid creates
+  // an EntityId<'user'> from a UUID so typed downstream callers compile; toUuid
+  // inside ensurePersonalOrg converts it back to UUID for DB queries.
+  const brandedUserId = fromUuid('user', userId)
 
   let personalOrgId: string | null
   if (await isRootMembershipEnabled({ userId })) {
     await ensureRootMembership(userId, overrides)
     personalOrgId = null
   } else {
-    const personal = await ensurePersonalOrg(userId, overrides)
+    const personal = await ensurePersonalOrg(brandedUserId, overrides)
     personalOrgId = personal.id
   }
 
@@ -502,7 +510,9 @@ export async function runInternalProvision(
 
   const reconciled: Array<{ orgId: string; state: string }> = []
   for (const org of ownedOrgs) {
-    const state = await reconcileOrganizationProvisioning(org.id, overrides)
+    // Brand each org id for the typed reconcile call; toUuid inside the
+    // function converts back to UUID for DB access.
+    const state = await reconcileOrganizationProvisioning(fromUuid('organization', org.id), overrides)
     reconciled.push({ orgId: org.id, state })
   }
 

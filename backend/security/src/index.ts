@@ -25,6 +25,7 @@ import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
 
 dotenv.config()
@@ -115,6 +116,25 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
+
+    // Step 5 (FFRNT-185): configure the dual-accept window so that
+    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
+    // were written before the TypeID wire form was adopted. The flag
+    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
+    // emit TypeID form; these types stay in legacyUuidTypes until the row
+    // backfill is complete and the window is deliberately closed.
+    configureIdentity({
+      legacyUuidTypes: new Set([
+        'organization',
+        'membership',
+        'invitation',
+        'session',
+        'mfaFactor',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
