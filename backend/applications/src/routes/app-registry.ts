@@ -10,6 +10,8 @@ import { randomBytes } from 'crypto'
 // then JWT session. authenticateToken is no longer referenced directly here — it
 // is reached through authenticateConsumerOrSession's fall-through.
 import { authenticateConsumerOrSession } from '../middleware/consumer-auth'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 import {
   appManifestSchema,
   registerAppRequestSchema,
@@ -102,7 +104,12 @@ router.get('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     const portalCtx = await resolvePortalCatalogContext(req)
 
     const result = await appRegistryService.list({ status, mode, limit, cursor }, caller, portalCtx)
-    return res.json(result)
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    return res.json({
+      ...result,
+      apps: result.apps.map((app: any) => prefixDtoIds(app, prefixed, { organizationId: 'organization' })),
+    })
   } catch (err) {
     console.error('[app-registry] listApps error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to list apps' })
@@ -189,7 +196,9 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
 
     // Return the heartbeat token in a header (out-of-band, not on the App shape).
     res.setHeader('X-App-Heartbeat-Token', heartbeatToken)
-    return res.status(201).json(app)
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    return res.status(201).json(prefixDtoIds(app as any, prefixed, { organizationId: 'organization' }))
   } catch (err: any) {
     // Unique-constraint race → 409.
     if (err?.code === '23505' || /duplicate key|unique/i.test(err?.message || '')) {
@@ -218,7 +227,9 @@ router.get('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) =
     if (!app) return notFound(res)
     // BOLA: do not reveal existence of apps outside the caller's visibility → 404.
     if (!canRead(app, caller)) return notFound(res)
-    return res.json(app)
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    return res.json(prefixDtoIds(app as any, prefixed, { organizationId: 'organization' }))
   } catch (err) {
     console.error('[app-registry] getApp error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to get app' })
@@ -278,7 +289,9 @@ router.put('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) =
     }
 
     const updated = await appRegistryService.updateManifest(existing, manifest)
-    return res.json(updated)
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    return res.json(prefixDtoIds(updated as any, prefixed, { organizationId: 'organization' }))
   } catch (err) {
     console.error('[app-registry] updateApp error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to update app' })
@@ -448,6 +461,8 @@ async function transition(
 ): Promise<express.Response> {
   try {
     const caller = await resolveCaller(req.user)
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const existing = await appRegistryService.findBySlug(req.params.slug)
     if (!existing) return notFound(res)
     if (!canRead(existing, caller)) return notFound(res)
@@ -470,7 +485,7 @@ async function transition(
     // suspended, but both activate and suspend are idempotent no-ops if already
     // in the target state, and an app may be re-activated from suspended.
     if (existing.status === target) {
-      return res.json(existing) // idempotent no-op
+      return res.json(prefixDtoIds(existing as any, prefixed, { organizationId: 'organization' })) // idempotent no-op
     }
 
     const updated = await appRegistryService.setStatus(existing.slug, target)
@@ -502,7 +517,7 @@ async function transition(
       timestamp: new Date().toISOString(),
     })
 
-    return res.json(updated)
+    return res.json(prefixDtoIds(updated as any, prefixed, { organizationId: 'organization' }))
   } catch (err) {
     console.error('[app-registry]', target, 'error:', err)
     return res.status(500).json({ error: 'internal_error', message: `Failed to ${target} app` })
