@@ -71,7 +71,12 @@ flags:
     description: >
       Master switch for the multi-tenant portals feature (FF-EPIC-09-S4).
       Gates the portal bootstrap surface. Custom domains (see
-      fuzefront.platform.portal-domains) require BOTH flags.
+      fuzefront.platform.portal-domains) require BOTH flags. FF-EPIC-17-S7
+      additionally reuses it to gate the master-admin portal fleet console
+      (`/admin/portals`, `MasterAdminPortalsFlow`,
+      `@fuzefront/security-client` 0.7.0) rather than minting a new flag —
+      the fleet console has nothing to manage while the platform-wide
+      capability itself is off.
     owner: platform team
     removal_criterion: >
       When multi-tenant portals are GA and enabled for 100% of orgs.
@@ -79,7 +84,8 @@ flags:
     gates:
       - Portal shell and PortalLoginFlow boot surface
       - Custom-domain feature (conjunction with portal-domains)
-    web_exposed: false
+      - Master-admin portal fleet console (FF-EPIC-17-S7, UI-side)
+    web_exposed: true
     jira: ~
 
   - key: fuzefront.platform.portal-domains

@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, EmptyState } from '@fuzefront/design-system'
-import { createAdminPortalsClient, type AdminPortalsClient } from '../api/adminPortalsClient'
+import { createAdminPortalsClient, isPortalsForbidden, isSlugConflict, type AdminPortalsClient } from '../api/adminPortalsClient'
 import { PortalsTable } from '../components/master/PortalsTable'
 import { CreatePortalDialog } from '../components/master/CreatePortalDialog'
 import { PortalDetailPanel } from '../components/master/PortalDetailPanel'
 import { SuspendPortalDialog } from '../components/master/SuspendPortalDialog'
-import type { BillingMode, Portal } from '../types'
+import type { AdminPortal, AdminPortalCreate } from '../types'
 
 export interface MasterAdminPortalsFlowProps {
   /** Bearer-token accessor. Defaults to no token (tests/host inject their own). */
   getToken?: () => string | null | undefined
   /** Same-origin base URL override, for tests. Default ''. */
   baseUrl?: string
-  /** Injected client (tests). Defaults to a same-origin `@fuzefront/portal-client`-backed client. */
+  /** Injected client (tests). Defaults to a same-origin `@fuzefront/security-client`-backed client. */
   client?: AdminPortalsClient
 }
 
@@ -21,39 +21,45 @@ type View = 'list' | 'detail'
 
 const PAGE_LIMIT = 25
 
-function httpStatus(err: unknown): number | undefined {
-  return (err as { response?: { status?: number } })?.response?.status
-}
-
-function errorCode(err: unknown): string | undefined {
-  return (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-}
-
 /**
- * S2 orchestrator — `MasterAdminPortalsFlow` (route `/admin/portals`,
- * FF-EPIC-14-S2). Wires the real `@fuzefront/portal-client` fleet CRUD.
- * Every request that returns 403 renders the fail-closed access-denied state
- * IN PLACE (frame 04-master-states, d7) — this component never redirects on
- * a 403 (only a 401, handled by the host's shared interceptor upstream of
+ * FF-EPIC-17-S7 orchestrator — `MasterAdminPortalsFlow` (route
+ * `/admin/portals`). Wires the REAL, merged org-tree portal contract
+ * (`@fuzefront/security-client` 0.7.0, PR #704:
+ * `GET/POST /api/v1/security/portals`,
+ * `GET/POST(suspend|resume) /api/v1/security/portals/{portalOrgId}`),
+ * superseding the earlier build against the anticipated
+ * `@fuzefront/portal-client`. Every request that returns 403 renders the
+ * fail-closed access-denied state IN PLACE — this component never redirects
+ * on a 403 (only a 401, handled by the host's shared interceptor upstream of
  * this package, re-authenticates).
+ *
+ * DEVIATION from the (unapproved, pre-reconciliation) design frame
+ * `04-master-states.html`: the platform root org is NEVER returned by
+ * `GET /api/v1/security/portals` (per the contract — "The platform root org
+ * itself is NEVER listed"), so there is no seeded "root" row in this table
+ * to guard against suspending, and a fresh install's real empty state is
+ * simply zero portals — not "only the root portal" as the frame (built
+ * against the superseded model, which DID list a root row) shows. See the PR
+ * description for the full list of frame/contract deviations this migration
+ * required.
  */
 export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdminPortalsFlowProps) {
   const api = client ?? createAdminPortalsClient({ getToken, baseUrl })
 
   const [listState, setListState] = useState<ListState>('loading')
-  const [portals, setPortals] = useState<Portal[]>([])
+  const [portals, setPortals] = useState<AdminPortal[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
 
   const [view, setView] = useState<View>('list')
-  const [selectedPortal, setSelectedPortal] = useState<Portal | null>(null)
+  const [selectedPortal, setSelectedPortal] = useState<AdminPortal | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [slugTaken, setSlugTaken] = useState(false)
 
-  const [suspendTarget, setSuspendTarget] = useState<Portal | null>(null)
+  const [suspendTarget, setSuspendTarget] = useState<AdminPortal | null>(null)
   const [suspending, setSuspending] = useState(false)
 
   const load = useCallback(() => {
@@ -67,14 +73,16 @@ export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdmi
         setListState('ready')
       })
       .catch((err: unknown) => {
-        if (httpStatus(err) === 403) {
+        if (isPortalsForbidden(err)) {
           setListState('forbidden')
           setPortals([])
           return
         }
         setListState('error')
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `react-hooks/exhaustive-deps` is off repo-wide (frontend/.eslintrc.cjs) —
+    // `api` is a stable per-render client (injected in tests, constructed once
+    // otherwise), so an empty dep array is intentional, not an omission.
   }, [])
 
   useEffect(() => {
@@ -97,7 +105,7 @@ export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdmi
       .finally(() => setLoadingMore(false))
   }
 
-  const openPortal = (portal: Portal) => {
+  const openPortal = (portal: AdminPortal) => {
     setSelectedPortal(portal)
     setView('detail')
   }
@@ -107,33 +115,35 @@ export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdmi
     setSelectedPortal(null)
   }
 
-  const applyUpdatedPortal = (updated: Portal) => {
-    setPortals(prev => prev.map(p => (p.id === updated.id ? updated : p)))
-    setSelectedPortal(prev => (prev && prev.id === updated.id ? updated : prev))
+  const applyUpdatedPortal = (updated: AdminPortal) => {
+    setPortals(prev => prev.map(p => (p.orgId === updated.orgId ? updated : p)))
+    setSelectedPortal(prev => (prev && prev.orgId === updated.orgId ? updated : prev))
   }
 
-  const handleSuspendRequest = (portal: Portal) => setSuspendTarget(portal)
+  const handleSuspendRequest = (portal: AdminPortal) => setSuspendTarget(portal)
 
-  const handleSuspendConfirm = (portal: Portal) => {
+  const handleSuspendConfirm = (portal: AdminPortal) => {
     setSuspending(true)
     api
-      .suspendPortal(portal.id)
+      .suspendPortal(portal.orgId)
       .then(updated => {
         applyUpdatedPortal(updated)
         setSuspendTarget(null)
       })
       .catch(() => {
-        // ROOT_PORTAL_PROTECTED (409) is already client-guarded (disabled control);
-        // any other failure leaves the dialog open so the caller can retry.
+        // Leaves the dialog open so the caller can retry (e.g. a transient
+        // failure, or the server's 409 CONFLICT refusal on the platform root
+        // — which cannot be reached through this UI, since it is never a row
+        // in the fleet table, but the client stays defensive regardless).
       })
       .finally(() => setSuspending(false))
   }
 
-  const handleResume = (portal: Portal) => {
-    api.resumePortal(portal.id).then(applyUpdatedPortal).catch(() => undefined)
+  const handleResume = (portal: AdminPortal) => {
+    api.resumePortal(portal.orgId).then(applyUpdatedPortal).catch(() => undefined)
   }
 
-  const handleCreateSubmit = (input: { name: string; slug: string; ownerEmail: string; billingMode: BillingMode }) => {
+  const handleCreateSubmit = (input: AdminPortalCreate) => {
     setCreating(true)
     setSlugTaken(false)
     api
@@ -143,17 +153,16 @@ export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdmi
         load()
       })
       .catch((err: unknown) => {
-        if (httpStatus(err) === 409 && errorCode(err) === 'SLUG_TAKEN') {
+        if (isSlugConflict(err)) {
           setSlugTaken(true)
-          return
         }
       })
       .finally(() => setCreating(false))
   }
 
-  // A fresh install has only the seeded root portal — a REAL empty state
-  // (frame 04-master-states, d2), not a table with one unmanageable row.
-  const isFreshInstall = portals.length === 0 || portals.every(p => p.isRoot)
+  // A fresh install has ZERO portals in this list — the platform root org is
+  // never returned by GET /api/v1/security/portals (see module doc).
+  const isFreshInstall = portals.length === 0
 
   if (listState === 'forbidden') {
     return (
@@ -226,7 +235,7 @@ export function MasterAdminPortalsFlow({ getToken, baseUrl, client }: MasterAdmi
                 <EmptyState
                   icon="🏢"
                   title="No tenant portals yet"
-                  body="Only the seeded root portal exists. Create the first tenant portal to onboard a customer — they'll get their own users, catalog, and billing."
+                  body="Create the first tenant portal to onboard a customer — they'll get their own users, catalog, and billing."
                   action={
                     <Button variant="primary" data-action="create-portal" onClick={() => setCreateOpen(true)}>
                       Create the first portal
