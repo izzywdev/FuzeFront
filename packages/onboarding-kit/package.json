@@ -37,5 +37,9 @@
     "url": "git+https://github.com/izzywdev/FuzeFront.git",
     "directory": "packages/onboarding-kit"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
 }

@@ -7,9 +7,15 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json --emitDeclarationOnly",
@@ -40,6 +46,17 @@
     "vite-plugin-dts": "^4.0.0",
     "vitest": "^2.1.0"
   },
-  "publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" },
-  "repository": { "type": "git", "url": "https://github.com/izzywdev/FuzeFront.git", "directory": "packages/selection-lists-ui" }
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/selection-lists-ui"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
 }
