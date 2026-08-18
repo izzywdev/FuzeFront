@@ -42,12 +42,12 @@
 
 # Outbox rows: infrastructure records of an event, not entities.
 src backend/core/src/events/outbox.ts:34                    # event_outbox row id
-src backend/src/services/organizationProvisioning.ts:323    # event_outbox row id
+src backend/src/services/organizationProvisioning.ts:324    # event_outbox row id
 src backend/src/services/portalProvisioning.ts:591          # event_outbox row id
 src backend/security/src/services/organizationProvisioning.ts:230  # event_outbox row id
 
 # Provisioning workflow step rows: bookkeeping for a saga, not entities.
-src backend/src/services/organizationProvisioning.ts:231    # organization_provisioning step row
+src backend/src/services/organizationProvisioning.ts:232    # organization_provisioning step row
 src backend/security/src/services/organizationProvisioning.ts:184  # organization_provisioning step row
 src backend/src/services/portalProvisioning.ts:250          # portal_provisioning step row
 

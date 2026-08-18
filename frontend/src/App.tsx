@@ -30,6 +30,7 @@ import StatusPage from './pages/StatusPage'
 import HelpPage from './pages/HelpPage'
 import TestPage from './pages/TestPage'
 import { FederatedAppLoader } from './components/FederatedAppLoader'
+import { FederatedAppErrorBoundary } from './components/FederatedAppErrorBoundary'
 import { getCurrentUser } from './services/api'
 import websocketService from './services/websocket'
 import { UserProfileManagement } from './components/UserProfileManagement'
@@ -393,11 +394,11 @@ function AppContent() {
             <Route path="/admin/config/catalog" element={<ConfigCatalogRoute />} />
             <Route path="/admin/config/catalog/:key" element={<ConfigKeyDefinitionRoute />} />
             <Route path="/admin/config/keys/:key/history" element={<ConfigAuditHistoryRoute />} />
-            <Route path="/settings/selection-lists" element={<SelectionListManagementFlow />} />
-            <Route path="/settings/selection-lists/:listId" element={<SelectionListManagementFlow />} />
-            <Route path="/settings/selection-lists/:listId/translations" element={<TranslationWorkbenchFlow />} />
-            <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchFlow />} />
-            <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessFlow />} />
+            <Route path="/settings/selection-lists" element={<SelectionListsRoute />} />
+            <Route path="/settings/selection-lists/:listId" element={<SelectionListsRoute />} />
+            <Route path="/settings/selection-lists/:listId/translations" element={<TranslationWorkbenchRoute />} />
+            <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchRoute />} />
+            <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessRoute />} />
             <Route path="/app/:appId" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
@@ -499,6 +500,44 @@ function ConfigKeyDefinitionRoute() {
 function ConfigAuditHistoryRoute() {
   const enabled = useFlag('fuzefront.config.secrets-audit', false)
   return enabled ? <ConfigAuditHistoryPage /> : <Navigate to="/dashboard" replace />
+}
+
+/**
+ * `/settings/selection-lists` — Selection List management (EPIC-17 / FFRNT-188),
+ * flag `fuzefront.selection-lists.service` (default OFF). The service must be
+ * deployed before the API is reachable; redirect to /dashboard when the flag
+ * is OFF so a stale link never dead-ends the user. ErrorBoundary prevents a
+ * render-time crash from unmounting the whole React tree (which caused the
+ * Back button to also show a blank page).
+ */
+function SelectionListsRoute() {
+  const enabled = useFlag('fuzefront.selection-lists.service', false)
+  if (!enabled) return <Navigate to="/dashboard" replace />
+  return (
+    <FederatedAppErrorBoundary appName="Selection Lists">
+      <SelectionListManagementFlow />
+    </FederatedAppErrorBoundary>
+  )
+}
+
+function TranslationWorkbenchRoute() {
+  const enabled = useFlag('fuzefront.selection-lists.service', false)
+  if (!enabled) return <Navigate to="/dashboard" replace />
+  return (
+    <FederatedAppErrorBoundary appName="Translation Workbench">
+      <TranslationWorkbenchFlow />
+    </FederatedAppErrorBoundary>
+  )
+}
+
+function SelectionListAccessRoute() {
+  const enabled = useFlag('fuzefront.selection-lists.service', false)
+  if (!enabled) return <Navigate to="/dashboard" replace />
+  return (
+    <FederatedAppErrorBoundary appName="Selection List Access">
+      <SelectionListAccessFlow />
+    </FederatedAppErrorBoundary>
+  )
 }
 
 // Protected admin route
