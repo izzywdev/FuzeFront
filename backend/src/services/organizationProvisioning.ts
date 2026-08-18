@@ -428,7 +428,7 @@ export async function reconcileOrganizationProvisioning(
  */
 export async function ensureRootMembership(
   userId: string,
-  overrides?: Pick<ProvisioningDeps, 'db'>
+  overrides?: Partial<Pick<ProvisioningDeps, 'db'>>
 ): Promise<void> {
   const db = overrides?.db ?? defaultDb
   await db('organization_memberships')
