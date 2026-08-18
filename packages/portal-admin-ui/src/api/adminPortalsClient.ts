@@ -1,72 +1,68 @@
 /**
- * S2 — master-admin portal fleet API. Thin wrapper over the generated
- * `@fuzefront/portal-client` (services/portal-service/openapi.yaml is its
- * source of truth); every method here maps 1:1 onto a `PortalClient` method
- * so the shape of a portal row stays a compile-time link to the frozen
- * contract, exactly as `frontend/src/services/adminPortalsService.ts` already
- * does for the Portals Directory feature.
+ * FF-EPIC-17-S7 — master-admin portal fleet API, migrated onto the REAL,
+ * merged org-tree portal contract (`@fuzefront/security-client` 0.7.0,
+ * PR #704): `GET/POST /api/v1/security/portals`,
+ * `GET /api/v1/security/portals/{portalOrgId}`,
+ * `POST .../{portalOrgId}/suspend` + `/resume`.
  *
- * A fresh `PortalClient` is constructed per call (cheap — just `axios.create`)
- * so the bearer token always reflects the CURRENT active account, matching
- * this package's `getToken` callback convention rather than baking a token in
- * at client-construction time.
+ * This SUPERSEDES the earlier build against the anticipated
+ * `@fuzefront/portal-client` (`/api/v1/admin/portals`) — see the
+ * security-client CHANGELOG's "Supersedes" note and `types.ts`'s
+ * `AdminPortal*` doc comment. Every shape below is taken straight from the
+ * generated `@fuzefront/security-client` contract types
+ * (`components['schemas']`), never hand-restated, so contract drift is a
+ * compile error.
+ *
+ * Uses this package's own `HttpClient` (same convention as every other
+ * `@fuzefront/*-ui` API client — see `identity-ui`'s `employeeClient.ts`)
+ * rather than a generated runtime client, because `@fuzefront/security-client`
+ * ships types + an OpenAPI doc only, no HTTP client class.
  */
-import { PortalClient } from '@fuzefront/portal-client'
-import type {
-  AdminPortalsPage,
-  CreatePortalInput,
-  ListAdminPortalsParams,
-  Portal,
-  PortalStatus,
-} from '../types'
+import { HttpClient, HttpError, type HttpClientOptions } from './http'
+import type { AdminPortal, AdminPortalCreate, AdminPortalPageEnvelope, ListAdminPortalFleetParams } from '../types'
 
-export interface AdminPortalsClientOptions {
-  /** Same-origin base URL. Default ''. */
-  baseUrl?: string
-  getToken?: () => string | null | undefined
-}
+export interface AdminPortalsClientOptions extends HttpClientOptions {}
 
 export interface AdminPortalsClient {
-  listPortals(params?: ListAdminPortalsParams): Promise<AdminPortalsPage>
-  createPortal(input: CreatePortalInput): Promise<Portal>
-  getPortal(portalId: string): Promise<Portal>
-  suspendPortal(portalId: string): Promise<Portal>
-  resumePortal(portalId: string): Promise<Portal>
+  listPortals(params?: ListAdminPortalFleetParams): Promise<AdminPortalPageEnvelope>
+  createPortal(input: AdminPortalCreate): Promise<AdminPortal>
+  getPortal(portalOrgId: string): Promise<AdminPortal>
+  suspendPortal(portalOrgId: string): Promise<AdminPortal>
+  resumePortal(portalOrgId: string): Promise<AdminPortal>
 }
 
 export function createAdminPortalsClient(opts: AdminPortalsClientOptions = {}): AdminPortalsClient {
-  const makeClient = () =>
-    new PortalClient({ baseUrl: opts.baseUrl ?? '', token: opts.getToken?.() ?? undefined })
+  const http = new HttpClient(opts)
 
   return {
-    async listPortals(params = {}) {
-      const page = await makeClient().listPortals({
-        status: params.status as PortalStatus | undefined,
-        q: params.q,
+    listPortals(params = {}) {
+      return http.get<AdminPortalPageEnvelope>('/api/v1/security/portals', {
         limit: params.limit,
         cursor: params.cursor,
+        status: params.status,
       })
-      return {
-        items: page.items,
-        page: { nextCursor: page.page.nextCursor, hasMore: page.page.nextCursor !== null, total: page.page.total },
-      }
     },
     createPortal(input) {
-      return makeClient().createPortal({
-        name: input.name,
-        slug: input.slug,
-        ownerEmail: input.ownerEmail,
-        billingMode: input.billingMode,
-      })
+      return http.post<AdminPortal>('/api/v1/security/portals', input)
     },
-    getPortal(portalId) {
-      return makeClient().getPortal(portalId)
+    getPortal(portalOrgId) {
+      return http.get<AdminPortal>(`/api/v1/security/portals/${encodeURIComponent(portalOrgId)}`)
     },
-    suspendPortal(portalId) {
-      return makeClient().suspendPortal(portalId)
+    suspendPortal(portalOrgId) {
+      return http.post<AdminPortal>(`/api/v1/security/portals/${encodeURIComponent(portalOrgId)}/suspend`)
     },
-    resumePortal(portalId) {
-      return makeClient().resumePortal(portalId)
+    resumePortal(portalOrgId) {
+      return http.post<AdminPortal>(`/api/v1/security/portals/${encodeURIComponent(portalOrgId)}/resume`)
     },
   }
+}
+
+/** True when `err` is the fail-closed 403 the fleet endpoints return for a non-platform-admin. */
+export function isPortalsForbidden(err: unknown): boolean {
+  return err instanceof HttpError && err.status === 403
+}
+
+/** True when `err` is the 409 `CONFLICT` `createPortal` returns for a duplicate slug. */
+export function isSlugConflict(err: unknown): boolean {
+  return err instanceof HttpError && err.status === 409 && err.code === 'CONFLICT'
 }

@@ -1,28 +1,34 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MasterAdminPortalsFlow } from './MasterAdminPortalsFlow'
 import type { AdminPortalsClient } from '../api/adminPortalsClient'
-import type { Portal } from '../types'
+import { HttpError } from '../api/http'
+import type { AdminPortal } from '../types'
 
-function makePortal(overrides: Partial<Portal> = {}): Portal {
+function makePortal(overrides: Partial<AdminPortal> = {}): AdminPortal {
   return {
-    id: 'prt_test',
-    slug: 'test-tenant',
+    orgId: 'org_test',
+    parentOrgId: 'org_00000000-0000-0000-0000-000000000010',
     name: 'Test Tenant',
+    slug: 'test-tenant',
+    kind: 'portal',
     status: 'active',
-    isRoot: false,
-    organizationId: 'org_1',
+    isPortalRoot: true,
     ownerEmail: 'owner@test-tenant.example',
+    customDomain: null,
+    branding: { name: 'Test Tenant' },
     billingMode: 'platform',
-    domains: [],
+    appCatalogMode: 'inherit',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
-  } as Portal
+  }
 }
 
 function makeClient(overrides: Partial<AdminPortalsClient> = {}): AdminPortalsClient {
   return {
-    listPortals: vi.fn().mockResolvedValue({ items: [], page: { nextCursor: null } }),
+    listPortals: vi.fn().mockResolvedValue({ items: [], page: { nextCursor: null, hasMore: false } }),
     createPortal: vi.fn(),
     getPortal: vi.fn(),
     suspendPortal: vi.fn(),
@@ -33,8 +39,8 @@ function makeClient(overrides: Partial<AdminPortalsClient> = {}): AdminPortalsCl
 
 describe('MasterAdminPortalsFlow', () => {
   it('renders the fleet table with a create-portal action when portals exist', async () => {
-    const portals = [makePortal({ id: 'prt_root', slug: 'fuzefront', name: 'FuzeFront', isRoot: true }), makePortal()]
-    const client = makeClient({ listPortals: vi.fn().mockResolvedValue({ items: portals, page: { nextCursor: null } }) })
+    const portals = [makePortal()]
+    const client = makeClient({ listPortals: vi.fn().mockResolvedValue({ items: portals, page: { nextCursor: null, hasMore: false } }) })
 
     render(<MasterAdminPortalsFlow client={client} />)
 
@@ -43,12 +49,9 @@ describe('MasterAdminPortalsFlow', () => {
     expect(document.querySelector("[data-action='create-portal']")).toBeInTheDocument()
   })
 
-  it('shows the fresh-install empty state when only the root portal exists', async () => {
+  it('shows the real empty state when zero portals exist (the platform root is never listed)', async () => {
     const client = makeClient({
-      listPortals: vi.fn().mockResolvedValue({
-        items: [makePortal({ id: 'prt_root', slug: 'fuzefront', isRoot: true })],
-        page: { nextCursor: null },
-      }),
+      listPortals: vi.fn().mockResolvedValue({ items: [], page: { nextCursor: null, hasMore: false } }),
     })
 
     render(<MasterAdminPortalsFlow client={client} />)
@@ -72,8 +75,7 @@ describe('MasterAdminPortalsFlow', () => {
   })
 
   it('renders the fail-closed access-denied state for a non-platform-admin (403), never a blank table', async () => {
-    const forbiddenError = { response: { status: 403, data: { error: 'FORBIDDEN' } } }
-    const client = makeClient({ listPortals: vi.fn().mockRejectedValue(forbiddenError) })
+    const client = makeClient({ listPortals: vi.fn().mockRejectedValue(new HttpError(403, 'Forbidden', { error: 'Forbidden', code: 'FORBIDDEN' })) })
 
     render(<MasterAdminPortalsFlow client={client} />)
 
@@ -83,23 +85,11 @@ describe('MasterAdminPortalsFlow', () => {
     expect(document.querySelector('[data-portal]')).not.toBeInTheDocument()
   })
 
-  it('disables Suspend on the root portal row (client pre-disable guard)', async () => {
-    const portals = [makePortal({ id: 'prt_root', slug: 'fuzefront', isRoot: true }), makePortal()]
-    const client = makeClient({ listPortals: vi.fn().mockResolvedValue({ items: portals, page: { nextCursor: null } }) })
-
-    render(<MasterAdminPortalsFlow client={client} />)
-
-    const row = await screen.findByText('fuzefront')
-    const tr = row.closest('tr') as HTMLElement
-    const suspendBtn = within(tr).getByText('Suspend')
-    expect(suspendBtn).toBeDisabled()
-  })
-
-  it('creating a portal with a taken slug renders 409 SLUG_TAKEN inline, keeping the form filled', async () => {
+  it('creating a portal with a taken slug renders the 409 CONFLICT inline, keeping the form filled', async () => {
     const user = userEvent.setup()
     const client = makeClient({
-      listPortals: vi.fn().mockResolvedValue({ items: [makePortal()], page: { nextCursor: null } }),
-      createPortal: vi.fn().mockRejectedValue({ response: { status: 409, data: { error: 'SLUG_TAKEN' } } }),
+      listPortals: vi.fn().mockResolvedValue({ items: [makePortal()], page: { nextCursor: null, hasMore: false } }),
+      createPortal: vi.fn().mockRejectedValue(new HttpError(409, 'Conflict', { error: 'A portal with this slug already exists', code: 'CONFLICT' })),
     })
 
     render(<MasterAdminPortalsFlow client={client} />)
@@ -111,15 +101,51 @@ describe('MasterAdminPortalsFlow', () => {
     await user.type(document.querySelector("[data-input='owner-email']") as HTMLElement, 'owner@duplicate.example')
     await user.click(document.querySelector("[data-action='submit-create-portal']") as HTMLElement)
 
-    await waitFor(() => expect(document.querySelector("[data-error-code='SLUG_TAKEN']")).toBeInTheDocument())
+    await waitFor(() => expect(document.querySelector("[data-error-code='CONFLICT']")).toBeInTheDocument())
     expect((document.querySelector("[data-input='slug']") as HTMLInputElement).value).toBe('test-tenant')
   })
 
-  it('suspending a non-root portal calls the API and flips the row status without a full reload', async () => {
+  it('creating a portal submits the full tenant-attribute payload (custom domain, branding, catalog mode, billing mode)', async () => {
+    const user = userEvent.setup()
+    const createPortal = vi.fn().mockResolvedValue(makePortal({ orgId: 'org_new', slug: 'new-tenant' }))
+    const client = makeClient({
+      listPortals: vi
+        .fn()
+        .mockResolvedValueOnce({ items: [], page: { nextCursor: null, hasMore: false } })
+        .mockResolvedValueOnce({ items: [makePortal({ orgId: 'org_new', slug: 'new-tenant' })], page: { nextCursor: null, hasMore: false } }),
+      createPortal,
+    })
+
+    render(<MasterAdminPortalsFlow client={client} />)
+    await waitFor(() => expect(document.querySelector("[data-state='empty']")).toBeInTheDocument())
+
+    await user.click(document.querySelector("[data-action='create-portal']") as HTMLElement)
+    await user.type(document.querySelector("[data-input='name']") as HTMLElement, 'New Tenant')
+    await user.type(document.querySelector("[data-input='slug']") as HTMLElement, 'new-tenant')
+    await user.type(document.querySelector("[data-input='owner-email']") as HTMLElement, 'owner@new-tenant.example')
+    await user.type(document.querySelector("[data-input='custom-domain']") as HTMLElement, 'portal.new-tenant.example')
+    await user.click(document.querySelector("[data-catalog-option='custom']") as HTMLElement)
+    await user.click(document.querySelector("[data-plan-option='reseller']") as HTMLElement)
+    await user.click(document.querySelector("[data-action='submit-create-portal']") as HTMLElement)
+
+    await waitFor(() =>
+      expect(createPortal).toHaveBeenCalledWith({
+        name: 'New Tenant',
+        slug: 'new-tenant',
+        ownerEmail: 'owner@new-tenant.example',
+        customDomain: 'portal.new-tenant.example',
+        branding: { name: 'New Tenant' },
+        billingMode: 'reseller',
+        appCatalogMode: 'custom',
+      })
+    )
+  })
+
+  it('suspending a portal calls the API and flips the row status without a full reload', async () => {
     const user = userEvent.setup()
     const portal = makePortal()
     const suspended = { ...portal, status: 'suspended' as const }
-    const listPortals = vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null } })
+    const listPortals = vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null, hasMore: false } })
     const client = makeClient({ listPortals, suspendPortal: vi.fn().mockResolvedValue(suspended) })
 
     render(<MasterAdminPortalsFlow client={client} />)
@@ -128,29 +154,24 @@ describe('MasterAdminPortalsFlow', () => {
     await user.click(document.querySelector("[data-action='suspend-portal']") as HTMLElement)
     await user.click(document.querySelector("[data-action='confirm-suspend-portal']") as HTMLElement)
 
-    await waitFor(() => expect(client.suspendPortal).toHaveBeenCalledWith('prt_test'))
+    await waitFor(() => expect(client.suspendPortal).toHaveBeenCalledWith('org_test'))
     // listPortals was only called once (initial load) — no full reload on suspend.
     expect(listPortals).toHaveBeenCalledTimes(1)
   })
 
-  it('opens a portal to the read-only detail view (stat cards, domain status) and back again', async () => {
+  it('opens a portal to the read-only detail view (stat cards, branding, custom domain) and back again', async () => {
     const user = userEvent.setup()
-    const portal = makePortal({
-      domains: [
-        { id: 'd1', portalId: 'prt_test', domain: 'test-tenant.example', kind: 'custom', verificationStatus: 'verified', tlsStatus: 'active', active: true, isPrimary: true },
-        { id: 'd2', portalId: 'prt_test', domain: 'test-tenant.fuzefront.com', kind: 'subdomain', verificationStatus: 'pending', tlsStatus: 'none', active: true, isPrimary: false },
-      ],
-    } as any)
-    const client = makeClient({ listPortals: vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null } }) })
+    const portal = makePortal({ customDomain: 'test-tenant.example' })
+    const client = makeClient({ listPortals: vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null, hasMore: false } }) })
 
     render(<MasterAdminPortalsFlow client={client} />)
     await screen.findByText('Test Tenant')
     await user.click(document.querySelector("[data-action='view-portal']") as HTMLElement)
 
     expect(document.querySelector("[data-panel='portal-stats']")).toBeInTheDocument()
-    expect(document.querySelector("[data-panel='domain-status']")).toBeInTheDocument()
-    expect(document.querySelector('[data-domain-status="verified"]')).toBeInTheDocument()
-    expect(document.querySelector('[data-domain-status="pending"]')).toBeInTheDocument()
+    expect(document.querySelector("[data-panel='branding-summary']")).toBeInTheDocument()
+    // Renders in BOTH the "Custom domain" stat card and the branding summary — assert at least one.
+    expect(screen.getAllByText('test-tenant.example').length).toBeGreaterThan(0)
     expect(document.querySelector("[data-action='suspend-portal']")).toBeInTheDocument()
 
     await user.click(document.querySelector("[data-action='back-to-portals']") as HTMLElement)
@@ -162,7 +183,7 @@ describe('MasterAdminPortalsFlow', () => {
     const portal = makePortal({ status: 'suspended' })
     const resumed = { ...portal, status: 'active' as const }
     const client = makeClient({
-      listPortals: vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null } }),
+      listPortals: vi.fn().mockResolvedValue({ items: [portal], page: { nextCursor: null, hasMore: false } }),
       resumePortal: vi.fn().mockResolvedValue(resumed),
     })
 
@@ -170,13 +191,13 @@ describe('MasterAdminPortalsFlow', () => {
     await screen.findByText('Test Tenant')
     await user.click(document.querySelector("[data-action='resume-portal']") as HTMLElement)
 
-    await waitFor(() => expect(client.resumePortal).toHaveBeenCalledWith('prt_test'))
+    await waitFor(() => expect(client.resumePortal).toHaveBeenCalledWith('org_test'))
   })
 
   it('loads more portals via the cursor and appends them without replacing the page', async () => {
     const user = userEvent.setup()
-    const first = makePortal({ id: 'prt_1', slug: 'first' })
-    const second = makePortal({ id: 'prt_2', slug: 'second', name: 'Second Tenant' })
+    const first = makePortal({ orgId: 'org_1', slug: 'first' })
+    const second = makePortal({ orgId: 'org_2', slug: 'second', name: 'Second Tenant' })
     const listPortals = vi
       .fn()
       .mockResolvedValueOnce({ items: [first], page: { nextCursor: 'c1', hasMore: true } })
