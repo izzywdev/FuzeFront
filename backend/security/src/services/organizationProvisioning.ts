@@ -339,6 +339,43 @@ export async function reconcileOrganizationProvisioning(
 }
 
 /**
+ * Deprovision an organization.
+ *
+ * - soft: marks is_active=false (reversible; data retained).
+ * - hard: deletes memberships, provisioning steps, and the org row (irreversible).
+ *
+ * Idempotent: if the org is already gone, returns deprovisioned=true without error.
+ */
+export async function deprovisionOrganization(
+  orgId: string,
+  mode: 'soft' | 'hard',
+  overrides?: Partial<ProvisioningDeps>
+): Promise<{ organizationId: string; mode: string; deprovisioned: boolean }> {
+  const { db } = getDeps(overrides)
+
+  const org = await db('organizations').where({ id: orgId }).first()
+  if (!org) {
+    logger.info({ orgId, mode }, 'organizationProvisioning: deprovision — org not found, already gone')
+    return { organizationId: orgId, mode, deprovisioned: true }
+  }
+
+  if (mode === 'hard') {
+    await db.transaction(async trx => {
+      await trx('organization_memberships').where({ organization_id: orgId }).delete()
+      await trx('organization_provisioning').where({ organization_id: orgId }).delete()
+      await trx('organizations').where({ id: orgId }).delete()
+    })
+  } else {
+    await db('organizations')
+      .where({ id: orgId })
+      .update({ is_active: false, provisioning_state: 'deprovisioned', updated_at: new Date() })
+  }
+
+  logger.info({ orgId, mode }, 'organizationProvisioning: deprovisioned')
+  return { organizationId: orgId, mode, deprovisioned: true }
+}
+
+/**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
  * endpoint (Plan D's provisioning-service). Ensures the user's personal org
  * exists, then reconciles every org they own that isn't yet active.
