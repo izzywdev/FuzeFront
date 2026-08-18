@@ -19,6 +19,7 @@ import {
   initializeDatabaseConnection,
   configureDatabase,
   waitForTable,
+  db,
 } from '@fuzefront/core'
 
 import appsRoutes from './routes/apps'
@@ -29,6 +30,8 @@ import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
+import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
@@ -83,6 +86,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [applications-service] Received ${signal}. Shutting down...`)
   httpServer.close(() => {
     io.close(async () => {
+      await stopRefIndexProjection().catch(() => undefined)
       await closeDatabase().catch(() => undefined)
       process.exit(0)
     })
@@ -151,6 +155,11 @@ async function startServer() {
     // consult Unleash. Non-fatal: on failure they keep their in-code fail-safe
     // defaults (release OFF / kill-switch ON).
     await initFeatureFlags('applications-service')
+
+    // Projects identity.org.* events into app_ref_index so assertRefExists can
+    // answer at request time without an RPC. Non-fatal + no-op when KAFKA_BROKERS unset.
+    const refIndexStore = new KnexRefIndexRepository(db)
+    await startRefIndexProjection(refIndexStore)
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

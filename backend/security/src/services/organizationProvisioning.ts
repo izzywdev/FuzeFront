@@ -1,19 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid, fromUuid, EntityId } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
-import {
-  createTenantInPermit,
-  deleteTenantFromPermit,
-} from '../utils/permit/tenant-management'
+import { createTenantInPermit } from '../utils/permit/tenant-management'
 import { syncUserToPermit } from '../utils/permit/user-sync'
-import {
-  assignOrganizationRole,
-  unassignOrganizationRole,
-} from '../utils/permit/role-assignment'
-import { deleteResourceInstance } from '../utils/permit/resource-instances'
-import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
-import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import {
   EventPublisher,
   defaultEventPublisher,
@@ -110,29 +101,28 @@ function rowToOrganization(row: any): Organization {
  * with an owner membership. Returns the personal org. Re-running is a no-op.
  */
 export async function ensurePersonalOrg(
-  userId: EntityId<'user'>,
+  userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<Organization> {
   const { db } = getDeps(overrides)
-  const userUuid = toUuid(userId)
 
   const existing = await db('organizations')
-    .where({ owner_id: userUuid, type: 'personal' })
+    .where({ owner_id: userId, type: 'personal' })
     .first()
   if (existing) {
-    logger.debug({ userId: userUuid, orgId: existing.id }, 'organizationProvisioning: personal org already exists')
+    logger.debug({ userId, orgId: existing.id }, 'organizationProvisioning: personal org already exists')
     return rowToOrganization(existing)
   }
-  logger.info({ userId: userUuid }, 'organizationProvisioning: creating personal org')
+  logger.info({ userId }, 'organizationProvisioning: creating personal org')
 
-  const user = await db('users').where({ id: userUuid }).first()
-  if (!user) throw new Error(`Cannot create personal org: user ${userUuid} not found`)
+  const user = await db('users').where({ id: userId }).first()
+  if (!user) throw new Error(`Cannot create personal org: user ${userId} not found`)
 
   const orgId = toUuid(mintId('organization'))
-  // Use the full userUuid so the slug is globally unique per user (M1 — a
+  // Use the full userId so the slug is globally unique per user (M1 — a
   // truncated 8-char prefix shares only 32 bits of entropy and two different
   // users can produce the same slug, silently losing the loser's personal org).
-  const baseSlug = `personal-${userUuid}`
+  const baseSlug = `personal-${userId}`
 
   try {
     await db.transaction(async trx => {
@@ -141,7 +131,7 @@ export async function ensurePersonalOrg(
         name: 'Personal',
         slug: baseSlug,
         parent_id: null,
-        owner_id: userUuid,
+        owner_id: userId,
         type: 'personal',
         settings: JSON.stringify({}),
         metadata: JSON.stringify({ personal: true }),
@@ -150,7 +140,7 @@ export async function ensurePersonalOrg(
       })
       await trx('organization_memberships').insert({
         id: toUuid(mintId('membership')),
-        user_id: userUuid,
+        user_id: userId,
         organization_id: orgId,
         role: 'owner',
         status: 'active',
@@ -162,74 +152,19 @@ export async function ensurePersonalOrg(
   } catch (error: any) {
     // Concurrent create lost the race — return whatever personal org now exists.
     const raced = await db('organizations')
-      .where({ owner_id: userUuid, type: 'personal' })
+      .where({ owner_id: userId, type: 'personal' })
       .first()
     if (raced) {
-      logger.info({ userId: userUuid, orgId: raced.id }, 'organizationProvisioning: personal org create raced — using winner')
+      logger.info({ userId, orgId: raced.id }, 'organizationProvisioning: personal org create raced — using winner')
       return rowToOrganization(raced)
     }
-    logger.error({ userId: userUuid, err: error?.message }, 'organizationProvisioning: personal org create failed')
+    logger.error({ userId, err: error?.message }, 'organizationProvisioning: personal org create failed')
     throw error
   }
 
-  logger.info({ userId: userUuid, orgId }, 'organizationProvisioning: personal org created')
+  logger.info({ userId, orgId }, 'organizationProvisioning: personal org created')
   const created = await db('organizations').where({ id: orgId }).first()
   return rowToOrganization(created)
-}
-
-/**
- * FF-EPIC-17-S1 — flag-ON provisioning path. Idempotently ensures the user is
- * an active `member` of the root "FuzeFront" org (ROOT_ORG_ID) and does NOT
- * create a `type='personal'` org. Reuses `assignOrganizationRole` (same
- * helper `ensurePersonalOrg`'s owner-role step uses) so the Permit tenant
- * role assignment tracks the row — `assignOrganizationRole` never throws
- * (logs + swallows Permit failures), so a Permit outage never blocks
- * signup/login; the next self-heal call (`runInternalProvision` on the
- * following login) retries it.
- *
- * Re-running is a no-op: the DB upsert is guarded by both an existence check
- * and `onConflict(...).ignore()` (belt-and-braces against a concurrent
- * insert of the same (user_id, organization_id) pair racing this check).
- */
-export async function ensureRootMembership(
-  userId: string,
-  overrides?: Partial<ProvisioningDeps>
-): Promise<void> {
-  const { db } = getDeps(overrides)
-
-  const existing = await db('organization_memberships')
-    .where({ user_id: userId, organization_id: ROOT_ORG_ID })
-    .first()
-
-  if (!existing) {
-    logger.info({ userId }, 'organizationProvisioning: creating root membership')
-    try {
-      await db('organization_memberships')
-        .insert({
-          id: toUuid(mintId('membership')),
-          user_id: userId,
-          organization_id: ROOT_ORG_ID,
-          role: 'member',
-          status: 'active',
-          joined_at: new Date(),
-          permissions: JSON.stringify({}),
-          metadata: JSON.stringify({}),
-        })
-        .onConflict(['user_id', 'organization_id'])
-        .ignore()
-      logger.info({ userId }, 'organizationProvisioning: root membership created')
-    } catch (error: any) {
-      logger.error(
-        { userId, err: error?.message },
-        'organizationProvisioning: root membership insert failed'
-      )
-      throw error
-    }
-  } else {
-    logger.debug({ userId }, 'organizationProvisioning: root membership already exists')
-  }
-
-  await assignOrganizationRole(userId, ROOT_ORG_ID, 'member')
 }
 
 async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
@@ -315,60 +250,58 @@ async function runStep(
  * Returns the org's final provisioning_state.
  */
 export async function reconcileOrganizationProvisioning(
-  orgId: EntityId<'organization'>,
+  orgId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<'active' | 'pending' | 'failed'> {
   const deps = getDeps(overrides)
   const { db } = deps
   const reconcileStart = Date.now()
-  // toUuid converts TypeID wire form → native UUID for DB queries.
-  const orgUuid = toUuid(orgId)
-  logger.info({ orgId: orgUuid }, 'organizationProvisioning: reconcile start')
+  logger.info({ orgId }, 'organizationProvisioning: reconcile start')
 
   // I2 — serialize concurrent reconciles of the same org with a Postgres
   // advisory transaction lock so two concurrent callers never both execute the
   // `welcome_email` step (or any step) simultaneously.  The lock is held for
   // the duration of the transaction and released automatically on commit/rollback.
   return db.transaction(async trx => {
-    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [orgUuid])
+    await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [orgId])
 
-    const orgRow = await trx('organizations').where({ id: orgUuid }).first()
-    if (!orgRow) throw new Error(`reconcile: organization ${orgUuid} not found`)
+    const orgRow = await trx('organizations').where({ id: orgId }).first()
+    if (!orgRow) throw new Error(`reconcile: organization ${orgId} not found`)
     const org = rowToOrganization(orgRow)
 
     const owner = await trx('users').where({ id: org.owner_id }).first()
     const ownerEmail: string = owner?.email || `${org.owner_id}@unknown.local`
 
     // ensureStepRows must use the same transaction so its upsert is within the lock.
-    await ensureStepRowsTrx(trx, orgUuid)
+    await ensureStepRowsTrx(trx, orgId)
 
     let anyFailed = false
 
     for (const step of PROVISIONING_STEPS) {
       const row = await trx('organization_provisioning')
-        .where({ organization_id: orgUuid, step })
+        .where({ organization_id: orgId, step })
         .first()
       if (row?.status === 'done') continue
 
       try {
         await runStep({ ...deps, db: trx as unknown as typeof db }, org, ownerEmail, step)
         await trx('organization_provisioning')
-          .where({ organization_id: orgUuid, step })
+          .where({ organization_id: orgId, step })
           .update({
             status: 'done',
             attempts: (row?.attempts || 0) + 1,
             last_error: null,
             updated_at: new Date(),
           })
-        logger.debug({ orgId: orgUuid, step }, 'organizationProvisioning: step done')
+        logger.debug({ orgId, step }, 'organizationProvisioning: step done')
       } catch (error: any) {
         anyFailed = true
         logger.error(
-          { orgId: orgUuid, step, attempts: (row?.attempts || 0) + 1, err: String(error?.message ?? error) },
+          { orgId, step, attempts: (row?.attempts || 0) + 1, err: String(error?.message ?? error) },
           'organizationProvisioning: step failed'
         )
         await trx('organization_provisioning')
-          .where({ organization_id: orgUuid, step })
+          .where({ organization_id: orgId, step })
           .update({
             status: 'failed',
             attempts: (row?.attempts || 0) + 1,
@@ -381,7 +314,7 @@ export async function reconcileOrganizationProvisioning(
     }
 
     const steps = await trx('organization_provisioning').where({
-      organization_id: orgUuid,
+      organization_id: orgId,
     })
     const allDone =
       steps.length === PROVISIONING_STEPS.length &&
@@ -394,11 +327,11 @@ export async function reconcileOrganizationProvisioning(
         : 'pending'
 
     await trx('organizations')
-      .where({ id: orgUuid })
+      .where({ id: orgId })
       .update({ provisioning_state: newState, updated_at: new Date() })
 
     logger.info(
-      { orgId: orgUuid, newState, elapsedMs: Date.now() - reconcileStart },
+      { orgId, newState, elapsedMs: Date.now() - reconcileStart },
       'organizationProvisioning: reconcile end'
     )
     return newState
@@ -407,94 +340,18 @@ export async function reconcileOrganizationProvisioning(
 
 /**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
- * endpoint (Plan D's provisioning-service). Ensures the user's identity is
- * provisioned, then reconciles every org they own that isn't yet active.
- *
- * FF-EPIC-17-S1 — behavior branches on `fuzefront.identity.root-membership`:
- *   OFF (default) — today's behavior, byte-identical: ensures a personal org
- *     (`type='personal'`) exists and returns its id as `personalOrgId`.
- *   ON — ensures the user is a root-org `member` instead (see
- *     `ensureRootMembership`); no personal org is created, so
- *     `personalOrgId` is `null`.
- * Either way, every org the user OWNS that isn't yet `active` is still
- * reconciled — unaffected by the flag.
+ * endpoint (Plan D's provisioning-service). Ensures the user's personal org
+ * exists, then reconciles every org they own that isn't yet active.
  */
-/**
- * Tear down an organization's Permit access when `identity.org.deleted` fires.
- *
- * - `cascade='soft'` (the current org DELETE — `is_active=false`, reversible):
- *   revoke every active member's Permit role so no one retains access while the
- *   org is deactivated, but KEEP the Permit tenant + resource instance so a
- *   later reactivation restores cleanly.
- * - `cascade='hard'`: additionally delete the `Organization` resource instance
- *   and the Permit tenant.
- *
- * Best-effort + idempotent: Permit failures are logged, not thrown, so a retry
- * re-runs the same no-op-safe steps. Safe for an org that was never provisioned.
- */
-export async function deprovisionOrganization(
-  organizationId: string,
-  cascade: 'soft' | 'hard' = 'soft',
-  overrides?: Partial<ProvisioningDeps>
-): Promise<{
-  organizationId: string
-  cascade: 'soft' | 'hard'
-  rolesRevoked: number
-  tenantDeleted: boolean
-}> {
-  const { db } = getDeps(overrides)
-
-  const memberships = await db('organization_memberships')
-    .where({ organization_id: organizationId, status: 'active' })
-    .select('user_id', 'role')
-
-  let rolesRevoked = 0
-  for (const m of memberships) {
-    const ok = await unassignOrganizationRole(
-      m.user_id,
-      organizationId,
-      m.role as 'owner' | 'admin' | 'member' | 'viewer'
-    )
-    if (ok) rolesRevoked++
-  }
-
-  let tenantDeleted = false
-  if (cascade === 'hard') {
-    // Org resource instance key format is `<resource>:<key>` (see
-    // createOrganizationResourceInstance: resource 'Organization', key = org id).
-    await deleteResourceInstance(`Organization:${organizationId}`)
-    tenantDeleted = await deleteTenantFromPermit(organizationId)
-  }
-
-  logger.info(
-    { organizationId, cascade, rolesRevoked, tenantDeleted },
-    'deprovisionOrganization complete'
-  )
-
-  return { organizationId, cascade, rolesRevoked, tenantDeleted }
-}
-
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string | null
+  personalOrgId: string
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
-  // Brand the incoming userId string for typed service calls. fromUuid creates
-  // an EntityId<'user'> from a UUID so typed downstream callers compile; toUuid
-  // inside ensurePersonalOrg converts it back to UUID for DB queries.
-  const brandedUserId = fromUuid('user', userId)
-
-  let personalOrgId: string | null
-  if (await isRootMembershipEnabled({ userId })) {
-    await ensureRootMembership(userId, overrides)
-    personalOrgId = null
-  } else {
-    const personal = await ensurePersonalOrg(brandedUserId, overrides)
-    personalOrgId = personal.id
-  }
+  const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')
     .where({ owner_id: userId })
@@ -502,11 +359,9 @@ export async function runInternalProvision(
 
   const reconciled: Array<{ orgId: string; state: string }> = []
   for (const org of ownedOrgs) {
-    // Brand each org id for the typed reconcile call; toUuid inside the
-    // function converts back to UUID for DB access.
-    const state = await reconcileOrganizationProvisioning(fromUuid('organization', org.id), overrides)
+    const state = await reconcileOrganizationProvisioning(org.id, overrides)
     reconciled.push({ orgId: org.id, state })
   }
 
-  return { personalOrgId, reconciled }
+  return { personalOrgId: personal.id, reconciled }
 }

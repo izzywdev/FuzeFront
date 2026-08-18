@@ -14,9 +14,22 @@ import { MessagesRepository } from './db/repositories/messages';
 import { FeedbackRepository } from './db/repositories/feedback';
 import { BillingEmitter } from './billing/emitter';
 import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer';
+import { KnexRefIndexRepository } from './repositories/ref-index.repository';
 
 async function main() {
   const config = loadConfig();
+
+  // Run all migrations (including the new 003_ref_index migration) at startup.
+  // Best-effort: migration failure is logged but does not abort the service.
+  try {
+    await db.migrate.latest();
+    // eslint-disable-next-line no-console
+    console.log('[chat-service] Database migrations complete');
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[chat-service] Migration failed (continuing):', err);
+  }
 
   // --- LLM gateway + RAG pipeline (read-only retrieval) ---
   const llm = new LiteLLMClient({
@@ -52,6 +65,13 @@ async function main() {
   });
   const billing = new BillingEmitter(producer);
 
+  // --- L1 referential-integrity projection (FFRNT P2) ---
+  // Projects identity.user.* and identity.org.* events into chat_ref_index so
+  // assertRefExists can answer at request time without an RPC to the owning
+  // services. Non-fatal + no-op when KAFKA_BROKERS is unset.
+  const refIndexStore = new KnexRefIndexRepository(db);
+  await startRefIndexProjection(refIndexStore);
+
   // --- App ---
   const app = createApp({
     chat: {
@@ -73,6 +93,7 @@ async function main() {
   const shutdown = async () => {
     // eslint-disable-next-line no-console
     console.log('[chat-service] Shutting down...');
+    await stopRefIndexProjection().catch(() => {});
     await producer.disconnect().catch(() => {});
     server.close(() => process.exit(0));
   };

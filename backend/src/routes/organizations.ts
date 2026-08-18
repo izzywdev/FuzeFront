@@ -2,7 +2,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   PermissionMiddleware,
@@ -201,7 +201,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
     // in `pending` and will self-heal on the user's next login (or via the
     // internal provision endpoint), so we swallow reconciler errors here.
     try {
-      await reconcileOrganizationProvisioning(fromUuid('organization', organizationId))
+      await reconcileOrganizationProvisioning(organizationId)
     } catch (error) {
       console.error(
         `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
@@ -288,13 +288,10 @@ router.get('/', authenticateToken, async (req: any, res) => {
     }
 
     if (search) {
-      // Coerce to string and cap length; ILIKE value is a bound parameter (not
-      // interpolated SQL), so this is a defensive length guard only.
-      const searchPattern = `%${String(search).slice(0, 200)}%`
       query = query.where(function () {
-        this.whereRaw('organizations.name ILIKE ?', [searchPattern]).orWhereRaw(
-          'organizations.slug ILIKE ?',
-          [searchPattern]
+        this.whereILike('organizations.name', `%${search}%`).orWhereILike(
+          'organizations.slug',
+          `%${search}%`
         )
       })
     }

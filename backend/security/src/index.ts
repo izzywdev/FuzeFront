@@ -10,6 +10,7 @@ import {
   initializeDatabase,
   checkDatabaseHealth,
   closeDatabase,
+  db,
 } from '@fuzefront/core'
 import path from 'path'
 
@@ -27,6 +28,8 @@ import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
+import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
@@ -105,6 +108,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [security-service] Received ${signal}. Shutting down...`)
   httpServer.close(async () => {
     outboxRelay?.stop()
+    await stopRefIndexProjection().catch(() => undefined)
     await closeDatabase().catch(() => undefined)
     process.exit(0)
   })
@@ -184,6 +188,11 @@ async function startServer() {
     // so there is no separate kick-off here. Each tenant self-heals
     // independently: one tenant's Authentik being down neither blocks nor
     // resets another's.
+
+    // Projects portal.created and identity lifecycle events into sec_ref_index
+    // so assertRefExists can answer without an RPC to the host backend.
+    const refIndexStore = new KnexRefIndexRepository(db)
+    await startRefIndexProjection(refIndexStore)
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {
