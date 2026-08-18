@@ -18,6 +18,11 @@ COPY backend/security/package.json ./backend/security/
 # manifest MUST be present so `npm install` links it from the local workspace
 # instead of trying to fetch @izzywdev/fuzefront-identity@1.0.0 from the registry.
 COPY packages/identity/package.json ./packages/identity/
+# @fuzefront/feature-flags is a workspace package (packages/feature-flags/).
+# Its manifest MUST be present so `npm install` links it from the local workspace
+# instead of trying to fetch @fuzefront/feature-flags@1.0.0 from the registry
+# (where it is not published — it is GitHub Packages-only).
+COPY packages/feature-flags/package.json ./packages/feature-flags/
 
 # --no-package-lock: the root package-lock.json is stale — express-rate-limit
 # (a backend/security dependency) is an orphan entry not linked to the security
@@ -30,15 +35,19 @@ RUN npm install --no-package-lock
 COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
 COPY packages/identity/ ./packages/identity/
+COPY packages/feature-flags/ ./packages/feature-flags/
 COPY backend/security/ ./backend/security/
 
 # Build the shared kafka sub-barrel, then core, then identity, then
-# security-service. @izzywdev/fuzefront-identity must be BUILT here: its package
-# `main` points at dist/, and auth.ts/organizations.ts import mintId/toUuid at
-# the top level, so an unbuilt (empty) package crashloops the container at boot.
+# feature-flags, then security-service. @izzywdev/fuzefront-identity must be
+# BUILT here: its package `main` points at dist/, and auth.ts/organizations.ts
+# import mintId/toUuid at the top level, so an unbuilt (empty) package
+# crashloops the container at boot. @fuzefront/feature-flags likewise points at
+# dist/ and must be built before security-service compiles against it.
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
 RUN cd packages/identity && npm run build
+RUN cd packages/feature-flags && npm run build
 RUN cd backend/security && npm run build
 
 # ---------- production ----------

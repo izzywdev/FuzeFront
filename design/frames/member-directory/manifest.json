@@ -3,6 +3,12 @@
   "feature": "member-directory",
   "description": "Contract-freeze UX artifacts for the root/portal member directory. With literal root membership, 'members of root = everyone', so the platform (or a portal's) member view is a paginated, searchable USER DIRECTORY — distinct from the per-org Members & roles surface (authz-admin) which lists a single org's direct members. Subject to gate-pagination: page-based paging and server-side search are contract. Approving the flow approves its visual + interaction model AND commissions a new directory endpoint. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/directory/**",
+      "packages/identity-ui/src/components/members/**"
+    ]
+  },
   "plan": "docs/planning/design-first-ui-pipeline.md",
   "entry": "index.html",
   "contract": {
@@ -92,5 +98,5 @@
       ]
     }
   ],
-  "stamp": "3dee750cf325f5ca0358661f433c3bbe5548f4ecd0b6bc72f0a01a75436bbbdb"
+  "stamp": "4806ce131d11e3fc86298851042d42fcc174a2e22fc4936fc3ca7035924c7d8d"
 }

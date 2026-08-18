@@ -125,49 +125,33 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
-      - name: Detect open PR for SARIF upload ref
-        id: detect-pr
-        if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.ref_name }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "push" ]; then
-            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
-              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
-            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
-              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
-              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha // empty')
-              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
-                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-              else
-                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          fi
+      # Upload with upload-sarif's OWN ref/sha detection — do not hand-roll it.
+      # This previously passed an explicit ref/sha pair computed by a bespoke
+      # "detect open PR" step, which on a pull_request event pinned the analysis
+      # to github.sha (the *merge* commit) while GitHub anchors the PR's code
+      # scanning check at the *head* commit. The mismatched pair meant the
+      # `trivy` configuration never registered against the PR, so every run
+      # reported 'Warning: 1 configuration present on refs/heads/master was not
+      # found ... trivy' and then, with no PR-side baseline to diff against,
+      # fell back to reporting pre-existing findings as "new alerts" — a
+      # permanently red check that no code change could clear. `continue-on-error`
+      # hid the broken upload, so the job stayed green while the data never
+      # landed. Keep this step failing loudly: a dependency scan that silently
+      # does not report is worse than one that is visibly broken.
       - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        continue-on-error: true
         if: always()
         with:
           sarif_file: trivy.sarif
           category: trivy
-          ref: ${{ steps.detect-pr.outputs.upload_ref }}
-          sha: ${{ steps.detect-pr.outputs.upload_sha }}
+      # Keep the raw SARIF downloadable so a disputed finding can be diffed
+      # against master's scan without re-running CI.
+      - name: Upload Trivy scan artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-fs-scan-sarif
+          path: trivy.sarif
+          retention-days: 30
 
   gate-authz:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
@@ -394,6 +378,26 @@ jobs:
         # rather than being silently reported.
         shell: bash
         run: python scripts/gate_identifier.py . --source
+
+  gate-toolchain:
+    # ENFORCING (#646): the Node 24 / React 19 toolchain floor (CLAUDE.md
+    # "Toolchain baseline") had no CI job checking it and "survived on review
+    # alone" — a sweep of sibling repos found Dockerfiles on node:18/20-alpine
+    # that nothing had ever caught. The Module-Federation requiredVersion half
+    # is the dangerous one: a host/remote mismatch loads two React copies and
+    # dies on "Invalid hook call" at runtime, in the browser, with nothing
+    # else in CI to catch it — that is exactly the class of defect a static
+    # gate is cheap at and human review is bad at. No `|| true` here: this
+    # repo is fully compliant as of the PR that added this gate, so there is
+    # no backlog to ratchet.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '24.x' }
+      - name: Toolchain floor gate
+        shell: bash
+        run: node scripts/gate-toolchain.mjs
 
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is

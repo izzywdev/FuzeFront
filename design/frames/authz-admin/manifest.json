@@ -2,6 +2,11 @@
   "name": "Access administration — approval frames",
   "description": "Contract-freeze UX artifacts for the vendor-neutral tenant/org access-administration surface (members, roles, invite/add, change-role, remove) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. RECONCILED to the personal-identity/root-membership model: this per-org list shows DIRECT active memberships only — access from above (parent/root/reseller ReBAC) has no membership row and is hidden here by omission; the root/portal org (members=everyone) uses the paginated member-directory feature instead; and the per-org GUEST/non-member state no longer applies to the root org, which now resolves to user_role='member' (MEMBER badge, #529 GUEST retired).",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/permissions/**"
+    ]
+  },
   "entry": "index.html",
   "reconciles": [
     "design/frames/member-directory (root/portal 'members = everyone' uses the directory, not this small-team list)",
@@ -56,7 +61,7 @@
       "AccessDeniedNotice"
     ],
     "packages": [
-      "@fuzefront/access-admin-ui"
+      "@fuzefront/identity-ui"
     ]
   },
   "frames": [
@@ -153,5 +158,5 @@
       ]
     }
   ],
-  "stamp": "796b97a9180d74dd4150a2c6f39d61993898f7beff3271e203127d1b025a1499"
+  "stamp": "d3b5b7bd90ad7782097b343112e3aff2c09f0f06dc9009bd763d0172539e98bb"
 }

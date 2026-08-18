@@ -1,5 +1,5 @@
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
-import type { PostureLevel, SecurityOverview } from '../types'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
+import type { PostureLevel, SecurityOverview } from '../../types'
 
 export interface SecurityPostureSummaryProps {
   overview: SecurityOverview

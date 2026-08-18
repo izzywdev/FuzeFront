@@ -31,11 +31,15 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const script = path.join(repoRoot, 'scripts', 'stamp-frames.mjs');
 
-// The ground-truth fixture: the account-security frames' stamp from when the
-// tool was first written. Whatever the algorithm is, it MUST reproduce this for
-// the unchanged frames — see PR #314 / #353 and FFRNT-301.
+// The ground-truth fixture: the account-security frames' stamp for the CURRENT
+// committed content. Whatever the algorithm is, it MUST reproduce this — an
+// unexplained change means computeStamp() drifted (do NOT re-stamp to hide that).
+// This value is updated only when the account-security frames themselves change,
+// in the SAME PR as the change, exactly like re-stamping the manifest. It last
+// moved when the frames-first coverage rollout added `implementation.paths` to
+// the manifest (part of the content hash) — see PR #314 / #353 and FFRNT-301.
 const ACCOUNT_SECURITY_STAMP =
-  '4ac159cdb36a94855a88b9ffb8739f26267b1b1d2ef6ef214658c7fef169060e';
+  '4ca39fddc0c7f3f46efde7b04937026683b5f417a6144639635adc81efff1a9b';
 
 test('stamp-frames.mjs is present in the repo', () => {
   assert.ok(

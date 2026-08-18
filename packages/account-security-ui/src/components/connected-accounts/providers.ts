@@ -1,4 +1,4 @@
-import type { SocialProvider } from '../types'
+import type { SocialProvider } from '../../types'
 
 /**
  * Human display names for social providers. These are the SOCIAL provider names

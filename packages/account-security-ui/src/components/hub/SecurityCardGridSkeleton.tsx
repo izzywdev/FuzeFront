@@ -1,5 +1,5 @@
 import { Skeleton } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 
 /**
  * Loading placeholder for the hub: a summary row + a 2×2 card grid of shimmer

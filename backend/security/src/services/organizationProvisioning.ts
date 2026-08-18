@@ -343,7 +343,7 @@ export async function reconcileOrganizationProvisioning(
 /**
  * Idempotently upserts the user's membership in the root platform org (type=root).
  * A dedicated root-org membership lets platform APIs enumerate all users without
- * yield exactly one row. Used by `runInternalProvision` when the
+ * yielding exactly one row. Used by `runInternalProvision` when the
  * `fuzefront.identity.root-membership` flag is ON.
  */
 export async function ensureRootMembership(
@@ -363,6 +363,43 @@ export async function ensureRootMembership(
     })
     .onConflict(['user_id', 'organization_id'])
     .ignore()
+}
+
+/**
+ * Deprovision an organization.
+ *
+ * - soft: marks is_active=false (reversible; data retained).
+ * - hard: deletes memberships, provisioning steps, and the org row (irreversible).
+ *
+ * Idempotent: if the org is already gone, returns deprovisioned=true without error.
+ */
+export async function deprovisionOrganization(
+  orgId: string,
+  mode: 'soft' | 'hard',
+  overrides?: Partial<ProvisioningDeps>
+): Promise<{ organizationId: string; mode: string; deprovisioned: boolean }> {
+  const { db } = getDeps(overrides)
+
+  const org = await db('organizations').where({ id: orgId }).first()
+  if (!org) {
+    logger.info({ orgId, mode }, 'organizationProvisioning: deprovision — org not found, already gone')
+    return { organizationId: orgId, mode, deprovisioned: true }
+  }
+
+  if (mode === 'hard') {
+    await db.transaction(async trx => {
+      await trx('organization_memberships').where({ organization_id: orgId }).delete()
+      await trx('organization_provisioning').where({ organization_id: orgId }).delete()
+      await trx('organizations').where({ id: orgId }).delete()
+    })
+  } else {
+    await db('organizations')
+      .where({ id: orgId })
+      .update({ is_active: false, provisioning_state: 'deprovisioned', updated_at: new Date() })
+  }
+
+  logger.info({ orgId, mode }, 'organizationProvisioning: deprovisioned')
+  return { organizationId: orgId, mode, deprovisioned: true }
 }
 
 /**

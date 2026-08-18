@@ -1,5 +1,5 @@
 import { StatusCallout, Button } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 
 export interface LoadErrorRetryProps {
   onRetry: () => void

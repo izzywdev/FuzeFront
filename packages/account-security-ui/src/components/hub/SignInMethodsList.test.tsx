@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SignInMethodsList } from './SignInMethodsList'
-import { AccountSecurityI18nProvider } from '../i18n/AccountSecurityI18nProvider'
-import { HttpError } from '../api/http'
-import type { IdentityConnections } from '../types'
+import { AccountSecurityI18nProvider } from '../../i18n/AccountSecurityI18nProvider'
+import { HttpError } from '../../api/http'
+import type { IdentityConnections } from '../../types'
 
 const connections: IdentityConnections = {
   providers: [{ provider: 'google' }],
