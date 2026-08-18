@@ -4,6 +4,8 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { requireAppPermission } from '../middleware/permissions'
 import { App } from '../types/shared'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
@@ -237,7 +239,9 @@ router.get('/health', authenticateToken, async (req: any, res) => {
       })
     )
 
-    res.json(healthChecks)
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    res.json(healthChecks.map((item: any) => prefixDtoIds(item, prefixed, { id: 'app' })))
   } catch (error) {
     console.error('Error checking app health:', error)
     res.status(500).json({ error: 'Failed to check app health' })
@@ -315,17 +319,20 @@ router.get('/', authenticateToken, async (req: any, res) => {
       })
     )
 
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+
     // If healthyOnly is requested, filter by health status
     if (healthyOnly === 'true') {
       const healthyApps = appsWithHealth.filter((app: any) => app.isHealthy)
       res.json(
         healthyApps.map((app: any) => {
           const { isHealthy, ...appWithoutHealth } = app
-          return appWithoutHealth
+          return prefixDtoIds(appWithoutHealth, prefixed, { id: 'app' })
         })
       )
     } else {
-      res.json(appsWithHealth)
+      res.json(appsWithHealth.map((app: any) => prefixDtoIds(app, prefixed, { id: 'app' })))
     }
   } catch (error) {
     console.error('Error fetching apps:', error)
@@ -535,7 +542,9 @@ router.post(
         installCount: 0,
       }
 
-      res.status(201).json(newApp)
+      const flagCtx = { userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.status(201).json(prefixDtoIds(newApp, prefixed, { id: 'app' }))
     } catch (error: any) {
       console.error('Error creating app:', error)
 
@@ -811,7 +820,9 @@ router.post(
 
       console.log(`App "${name}" self-registered successfully`)
 
-      res.status(201).json(newApp)
+      const flagCtx = { userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.status(201).json(prefixDtoIds(newApp, prefixed, { id: 'app' }))
     } catch (error: any) {
       console.error('Error in self-registration:', error)
 
@@ -845,7 +856,9 @@ router.post(
               isMarketplaceApproved: false,
               installCount: 0,
             }
-            return res.status(200).json(app)
+            const flagCtx2 = { userId: req.user?.id }
+            const prefixed2 = await isPrefixedIdsEnabled(flagCtx2)
+            return res.status(200).json(prefixDtoIds(app, prefixed2, { id: 'app' }))
           }
         } catch (fetchError) {
           console.error('Error fetching existing app:', fetchError)
