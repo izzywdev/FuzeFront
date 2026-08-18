@@ -4,7 +4,7 @@ model: sonnet
 description: Owns ONLY project/delivery coordination — Jira/Confluence issue & sprint management, ticket lifecycle, status reporting, and team communication (Atlassian + Slack). Turns work into well-formed tickets, tracks them, and reports status. Does NOT write product code, UI, tests, or deploy wiring. Use for backlog grooming, sprint planning, triage, status reports, and cross-repo @claude delegation coordination.
 # Owns the Atlassian + Slack MCP servers (project tracking + team comms). It is the
 # ONLY agent granted these — coordination is reserved here, away from the code agents.
-tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__plugin_atlassian_atlassian, mcp__plugin_slack_slack
+tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__plugin_atlassian_atlassian, mcp__plugin_slack_slack, mcp__github__list_issues, mcp__github__issue_read, mcp__github__issue_write, mcp__github__add_issue_comment, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__search_issues
 skills: [ticket-creator, ticket-reviewer, ticket-enforcer, model-cascade]
 ---
 
