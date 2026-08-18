@@ -437,9 +437,9 @@
           "10-access-panel",
           "11-add-access-modal"
         ],
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:11:38.689Z"
       },
       {
         "id": "picker",
