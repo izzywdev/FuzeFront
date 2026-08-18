@@ -2,6 +2,10 @@
   "name": "@fuzefront/website-frontend",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "FuzeFront corporate website frontend",
   "type": "module",
   "scripts": {
@@ -29,6 +33,7 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@typescript-eslint/eslint-plugin": "^8.18.2",

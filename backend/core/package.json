@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/core",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Shared backend core: db config, auth middleware, types, express bootstrap. Zero business logic.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,7 +33,7 @@
     "@types/pg": "^8.15.4",
     "@types/uuid": "^9.0.2",
     "jest": "^29.7.0",
-    "sqlite3": "^5.1.7",
+    "sqlite3": "^6.0.1",
     "ts-jest": "^29.1.1",
     "typescript": "^5.1.6"
   }
