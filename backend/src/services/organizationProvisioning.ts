@@ -15,7 +15,6 @@ import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
-import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 
 /**
