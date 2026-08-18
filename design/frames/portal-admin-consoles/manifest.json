@@ -116,9 +116,9 @@
         "orchestrator": "MasterAdminPortalsFlow",
         "route": "/admin/portals",
         "story": "FF-EPIC-14-S2",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null,
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T22:31:06.672Z",
         "contract": {
           "client": "@fuzefront/portal-client",
           "status": "anticipated",
