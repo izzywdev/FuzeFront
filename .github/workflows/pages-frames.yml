@@ -1,16 +1,21 @@
 name: pages-frames
 
-# Publishes design/frames/** to GitHub Pages so every feature awaiting UX approval
-# has a real, clickable URL: https://izzywdev.github.io/FuzeFront/
-# The top-level index is DERIVED from the directories present under design/frames/
-# (scripts/build-frames-site.mjs) — never a hand-maintained list.
+# Publishes design/frames/** and services/*/openapi.yaml to GitHub Pages.
+# Design frames: https://izzywdev.github.io/FuzeFront/
+# API docs:      https://izzywdev.github.io/FuzeFront/api/
+#
+# Both indexes are DERIVED — never hand-maintained lists:
+#   design/frames/*/ → build-frames-site.mjs
+#   services/*/openapi.yaml → build-api-docs.mjs
 
 on:
   push:
     branches: [master]
     paths:
       - 'design/frames/**'
+      - 'services/**/openapi.yaml'
       - 'scripts/build-frames-site.mjs'
+      - 'scripts/build-api-docs.mjs'
       - '.github/workflows/pages-frames.yml'
   workflow_dispatch:
 
@@ -39,6 +44,9 @@ jobs:
 
       - name: Build frames site (index derived from design/frames/*/)
         run: node scripts/build-frames-site.mjs --out _site
+
+      - name: Build API docs (Swagger UI per services/*/openapi.yaml)
+        run: node scripts/build-api-docs.mjs --out _site/api
 
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5
 
