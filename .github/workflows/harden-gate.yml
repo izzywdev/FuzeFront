@@ -121,7 +121,18 @@ jobs:
           scan-ref: .
           format: sarif
           output: trivy.sarif
-          severity: CRITICAL,HIGH
+          # ALL severities, deliberately and explicitly. When ci.yml's duplicate
+          # filesystem scan stopped uploading to code scanning (it was the same
+          # scan racing this one under a shared SARIF tool identity), this job
+          # became the only filesystem config reaching the Security tab — and it
+          # was CRITICAL,HIGH only, while ci.yml's had no severity filter at all.
+          # Net effect was that LOW and MEDIUM filesystem findings silently
+          # stopped producing alerts: a real coverage regression that arrived as
+          # a side effect of a de-duplication, which is exactly how coverage gets
+          # lost without anyone deciding to lose it. Listed out rather than
+          # omitted so the intent is visible at the call site; omitting `severity`
+          # defaults to the same set but reads like an oversight.
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
