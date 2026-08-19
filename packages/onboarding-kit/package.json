@@ -1,7 +1,11 @@
 {
   "name": "@fuzefront/onboarding-kit",
   "version": "1.0.0",
-  "description": "Drop-in self-registration kit for FuzeFront apps \u2014 registration script, manifest schema, policy/billing templates, and the Helm init-container snippet",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "Drop-in self-registration kit for FuzeFront apps — registration script, manifest schema, policy/billing templates, and the Helm init-container snippet",
   "files": [
     "bin",
     "templates",
@@ -24,7 +28,7 @@
     "test:registration": "node --test tests/validate-registration.test.mjs",
     "test:migrate": "node --test tests/migrate-slug.test.mjs"
   },
-  "//devDependencies": "The zero-dependencies rule this kit lives by is about RUNTIME: bin/register.sh and bin/validate-policy.mjs run inside a product's init container, where no npm install is possible, and neither may ever require a module. scripts/build-schema.mjs is a CI/dev generator, is not in `files`, and never ships \u2014 so a devDependency here does not violate that rule. Pinned exactly because a generator that silently changes its output across a minor bump is worse than no generator. Do not move this to `dependencies`.",
+  "//devDependencies": "The zero-dependencies rule this kit lives by is about RUNTIME: bin/register.sh and bin/validate-policy.mjs run inside a product's init container, where no npm install is possible, and neither may ever require a module. scripts/build-schema.mjs is a CI/dev generator, is not in `files`, and never ships — so a devDependency here does not violate that rule. Pinned exactly because a generator that silently changes its output across a minor bump is worse than no generator. Do not move this to `dependencies`.",
   "devDependencies": {
     "js-yaml": "4.1.0"
   },

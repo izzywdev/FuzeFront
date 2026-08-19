@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/identity-ui",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Reusable identity / org-member / API-token management UI for FuzeFront, on the fuse-seam design system",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -41,6 +45,7 @@
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",
+    "@types/node": "^24.13.3",
     "@types/papaparse": "5.3.15",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -61,9 +66,5 @@
     "type": "git",
     "url": "https://github.com/izzywdev/FuzeFront.git",
     "directory": "packages/identity-ui"
-  },
-  "engines": {
-    "node": ">=24.0.0",
-    "npm": ">=10.0.0"
   }
 }

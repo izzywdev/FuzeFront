@@ -2,6 +2,10 @@
   "name": "@fuzefront/frontend",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "FuzeFront container shell application",
   "type": "module",
   "scripts": {

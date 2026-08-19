@@ -2,6 +2,11 @@
   "name": "Password reset & change — approval frames",
   "description": "Contract-freeze UX artifacts for three password flows: unauthenticated self-service reset, signed-in change-password, and set-first-password for a social-only account. The 'check your email' screen renders the deliberate no-enumeration 202 honestly. Approving each flow approves its slice of the component/package plan. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/account-security-ui/src/components/password/**"
+    ]
+  },
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -174,5 +179,5 @@
       ]
     }
   ],
-  "stamp": "366a56f70ef7835dc8876ba6c3b7400adccb8e33b3e5598b176b78c10ab1dd9b"
+  "stamp": "1205e18d7825717ba88ad389546e38e06963cbb534a3f8da365abe3b02151422"
 }

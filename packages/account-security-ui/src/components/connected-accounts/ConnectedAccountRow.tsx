@@ -1,7 +1,7 @@
 import { Badge, Button } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
 import { providerDisplayName } from './providers'
-import type { SocialConnection } from '../types'
+import type { SocialConnection } from '../../types'
 
 export interface ConnectedAccountRowProps {
   connection: SocialConnection

@@ -2,6 +2,11 @@
   "name": "Service tokens (M2M) — approval frames",
   "description": "Contract-freeze UX artifacts for the vendor-neutral machine-to-machine service-token surface (create-scoped → reveal-once secret → list → revoke) backed by FuzeFront's Security API. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. The reveal-once screen (03) is the most important in the flow.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/tokens/**"
+    ]
+  },
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -48,7 +53,7 @@
       "AccessDeniedNotice"
     ],
     "packages": [
-      "@fuzefront/service-tokens-ui"
+      "@fuzefront/identity-ui"
     ]
   },
   "frames": [
@@ -145,5 +150,5 @@
       ]
     }
   ],
-  "stamp": "90a5c56f35cef4568d83f505cd06fc62390bb648b2eb655d1f8f03d9d2992bf9"
+  "stamp": "b68d7a63997bea13989c844140b286f1f076623d1dd846f11a03b78e47e6b220"
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AccountSecurityHub } from './AccountSecurityHub'
-import type { AccountSecurityClient } from '../types'
+import type { AccountSecurityClient } from '../../types'
 
 const goodOverviewClient = (): AccountSecurityClient => ({
   getConnections: vi.fn(async () => ({ providers: [{ provider: 'google' }], hasPassword: true })),

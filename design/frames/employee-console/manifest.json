@@ -3,6 +3,11 @@
   "feature": "employee-console",
   "description": "Contract-freeze UX artifacts for the Employee (platform staff) cross-org console. An Employee is the existing Permit ReBAC org-admin-on-root capability (derives down the parent tree) formalized as a named, scoped role. An Employee operates across customer orgs from the root/portal-management console WITHOUT a membership row in any customer org — so a customer's own member list never shows them. This console is the only place that inherited/derived staff access is surfaced, as a clearly separated, labelled panel. Approving the flow approves its visual + interaction model AND commissions the 'Employee' role in the role catalog. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/employee/**"
+    ]
+  },
   "plan": "docs/planning/design-first-ui-pipeline.md",
   "entry": "index.html",
   "reconciles": [
@@ -111,5 +116,5 @@
       ]
     }
   ],
-  "stamp": "365ecfd0380e9661430435381307a9554fd7da0dc4863e5ddbf7d2e9e06aeae5"
+  "stamp": "3b08b1061044c2a54f76db7dc9169602bde3023d078e0c41d022084e1668120a"
 }

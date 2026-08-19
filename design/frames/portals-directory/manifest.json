@@ -3,6 +3,12 @@
   "feature": "portals-directory",
   "description": "Contract-freeze UX artifacts for the Portals Directory: a left-menu directory in the FuzeFront shell where a master-admin sees the portals they can manage and OPENS a chosen portal in a NEW browser tab at that portal's own host URL (launchUrl). Management continues on that host under the existing per-host tenant routing — there is deliberately NO in-app portal switcher and no context switch. Each portal carries an identity tier badge: soft (shares the root Authentik) or hard (its own Authentik instance, e.g. Mendys Robotics). Approving the flow approves its visual + interaction model AND its component/contract build inventory before any UI is written. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. PortalsDirectory is a shell page in frontend/src — NOT a new npm package. States are contract: loading, empty, error+retry, suspended (no launch), and the fail-closed permission-denied / read-only case (no manage authority => zero launch affordances).",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "frontend/src/pages/PortalsDirectory.tsx",
+      "frontend/src/components/portalsDirectory/**"
+    ]
+  },
   "entry": "index.html",
   "plan": "docs/planning/design-first-ui-pipeline.md",
   "contract": {
@@ -123,5 +129,5 @@
       ]
     }
   ],
-  "stamp": "7ed83b6dfc0110c5f535e2b90f237454f99ed6d9c82e3e8afe067d74aeb23139"
+  "stamp": "0ead155c2a1e8381c2480598eabfad0a11c50a5cb7506b8e06dacabf8a77431d"
 }

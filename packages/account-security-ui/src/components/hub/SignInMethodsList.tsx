@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Badge, Button, StatusCallout } from '@fuzefront/design-system'
-import { useAccountSecurityI18n } from '../i18n/AccountSecurityI18nProvider'
-import { ConnectedAccountRow } from './ConnectedAccountRow'
-import { HttpError } from '../api/http'
-import type { IdentityConnections, SocialConnection } from '../types'
+import { useAccountSecurityI18n } from '../../i18n/AccountSecurityI18nProvider'
+import { ConnectedAccountRow } from '../connected-accounts/ConnectedAccountRow'
+import { HttpError } from '../../api/http'
+import type { IdentityConnections, SocialConnection } from '../../types'
 
 export interface SignInMethodsListProps {
   connections: IdentityConnections

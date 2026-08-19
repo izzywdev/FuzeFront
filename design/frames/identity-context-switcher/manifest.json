@@ -3,6 +3,12 @@
   "feature": "identity-context-switcher",
   "description": "Contract-freeze UX artifacts for the reconciled identity/tenancy model: the user identity is the base principal, signup makes a user a member of the root FuzeFront org (the platform tenant), and orgs are opt-in tenants. Operating 'as yourself' is a first-class Personal (non-org) context; the root org shows a MEMBER badge, never GUEST; type='personal' orgs are dropped. Unifies the local <select> in OrganizationPage.tsx and the persisted setActiveOrganization in UserMenu.tsx into one ContextSwitcher. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/context/**",
+      "packages/identity-ui/src/components/organizations/**"
+    ]
+  },
   "plan": "docs/planning/design-first-ui-pipeline.md",
   "entry": "index.html",
   "reconciles": [
@@ -161,5 +167,5 @@
       ]
     }
   ],
-  "stamp": "4ad875f2604dbf6000f6e81dbbc2731bf640fede265774a352c1a1ef40876f75"
+  "stamp": "f0ceb3d95d359a1942157f67ef7294733b14cf29942a4e5bbbe1e02cb5c1ab6b"
 }
