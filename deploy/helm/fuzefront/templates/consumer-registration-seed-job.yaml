@@ -40,7 +40,15 @@ spec:
       serviceAccountName: consumer-registration-seed
       containers:
         - name: seed
-          image: bitnami/kubectl:1.29
+          # Kubernetes' own kubectl image on the community registry.
+          # DO NOT switch back to bitnami/kubectl: in Aug 2025 Broadcom removed
+          # the free bitnami/* images from Docker Hub (old tags relocated to
+          # docker.io/bitnamilegacy/*), so `bitnami/kubectl:1.29` no longer pulls
+          # — the pod ImagePullBackOff'd, the PostSync hook never completed, and
+          # Secret/fuzefront-registration was never seeded (FuzeFront#688 /
+          # FuzeInfra#552). registry.k8s.io is auth-free and always available.
+          # Overridable via .Values.consumerRegistrationSeed.image for pinning.
+          image: {{ .Values.consumerRegistrationSeed.image | default "registry.k8s.io/kubectl:v1.29.10" }}
           command:
             - /bin/sh
             - -c

@@ -77,6 +77,13 @@ database:
 
 # Secret handling. Either let the chart create a Secret from the values here
 # (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
+# consumer-registration-seed post-upgrade Job (templates/consumer-registration-seed-job.yaml).
+# It copies secret.consumerRegistrationSecret into Secret/fuzefront-registration in this
+# namespace so consumer CIs can read/seal/commit it. Uses the community kubectl image —
+# NOT bitnami/kubectl, which Broadcom pulled from Docker Hub in Aug 2025 (FuzeFront#688).
+consumerRegistrationSeed:
+  image: "registry.k8s.io/kubectl:v1.29.10"
+
 secret:
   existingSecret: ""        # e.g. "fuzefront-secrets" created out-of-band
   # Dev-only placeholders. OVERRIDE for anything real, e.g.:
