@@ -13,8 +13,10 @@
 //   - @types/react / @types/react-dom >=19.2.0 where declared
 //   - peerDependencies react/react-dom >=19.0.0 (and does not admit 18) where
 //     a package already declares a React peer
-//   - Module-Federation `shared.react(-dom).requiredVersion` — every
-//     federation config found must read '^19.0.0', AND the host
+//   - Module-Federation `shared.react(-dom)` — every federation config found
+//     must use the explicit object form (the bare-array shorthand is rejected:
+//     it requests no singleton semantics), must carry `singleton: true`, must
+//     read requiredVersion '^19.0.0', AND the host
 //     (frontend/vite.config.ts) must match every remote found in-repo. A
 //     silent mismatch here is the dangerous half of this gate: the remote
 //     loads its own React copy and dies on "Invalid hook call" at runtime,
@@ -194,6 +196,27 @@ for (const f of federationConfigs) {
   if (!/@originjs\/vite-plugin-federation|ModuleFederationPlugin/.test(text)) continue
   if (!/shared\s*:/.test(text)) continue
 
+  // The BARE-ARRAY shorthand — `shared: ['react', 'react-dom']` — requests no
+  // singleton semantics at all, so version agreement is not even the question:
+  // the remote can load its own React copy regardless of what any version
+  // string says. It has to be caught structurally, because it presents as an
+  // ABSENCE (no requiredVersion to compare) rather than as a wrong value — the
+  // requiredVersion scan below finds nothing and would otherwise skip the file
+  // as "not part of this repo's MF contract". See #658 Group B, where four
+  // sibling repos adopted this form after a real constraint (never list
+  // `@fuzefront/*` in `shared`, it hits ENOTDIR on source-aliased paths) was
+  // over-generalised into "shared must be a bare array". The object form is
+  // compatible with that constraint; the host proves it.
+  const bareArrayShared = text.match(/shared\s*:\s*\[([^\]]*)\]/)
+  if (bareArrayShared && /['"]react(-dom)?['"]/.test(bareArrayShared[1])) {
+    violations.push(
+      `${f}: shared uses the bare-array shorthand (shared: [${bareArrayShared[1].trim()}]) — it never requests ` +
+        `singleton semantics, so the remote may load its own React copy and die on "Invalid hook call" at runtime. ` +
+        `Use the explicit object form: { react: { singleton: true, requiredVersion: '^19.0.0' }, ... }`
+    )
+    continue
+  }
+
   // Find requiredVersion for the react and react-dom entries specifically —
   // scan each shared-block entry's local text window rather than a single
   // global regex, since react and react-dom are separate keys.
@@ -210,6 +233,25 @@ for (const f of federationConfigs) {
       violations.push(`${f}: shared.${label} declared but has no requiredVersion`)
     } else if (spec !== '^19.0.0') {
       violations.push(`${f}: shared.${label}.requiredVersion is "${spec}", expected "^19.0.0"`)
+    }
+  }
+
+  // `singleton: true` is the half that actually forces one React instance —
+  // a matching requiredVersion without it still permits a second copy. Checked
+  // separately from the version so a config that drops ONLY the singleton flag
+  // cannot pass: that exact regression reached master during #647, where a
+  // remote's shared block briefly lost `singleton: true` alongside its version
+  // revert, and only the version half was detectable at the time.
+  for (const [label, pattern] of [
+    ['react', /(['"]?)react\1\s*:\s*\{[^}]*singleton:\s*true/],
+    ['react-dom', /(['"]?)react-dom\1\s*:\s*\{[^}]*singleton:\s*true/],
+  ]) {
+    const declared = label === 'react' ? reactMatch : reactDomMatch
+    if (declared && !pattern.test(text)) {
+      violations.push(
+        `${f}: shared.${label} is missing "singleton: true" — requiredVersion alone does not force a single ` +
+          `React instance across the federation boundary; the remote can still load its own copy`
+      )
     }
   }
 }
