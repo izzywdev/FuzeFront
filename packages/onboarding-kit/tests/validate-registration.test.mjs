@@ -103,93 +103,90 @@ test('a manifest with no mode and no modes is rejected outright', () => {
   assert.match(errors[0], /neither/)
 })
 
-// ---- slug convention ----------------------------------------------------------------
-// The owner's rule: a Fuze product registers WITHOUT the prefix — slug `service`, name
-// `Service`. Twelve of thirteen products got this wrong; FuzePicker (slug `picker`) shows
-// the convention already existed and was simply never enforced.
+// ---- naming convention -------------------------------------------------------------
+// CORRECTED 2026-08-19 by owner ruling. The prefix comes off the DISPLAY STRING, not the
+// slug: `slug: "fuzeservice"`, `name: "Service"`. These tests previously asserted the
+// exact opposite and passed, which is the point worth remembering — a green suite proves
+// the code matches the tests, never that either matches the intent.
 
-test('a `fuze`-prefixed slug is REJECTED and the message names the replacement', () => {
-  const errors = validateSlugConvention({ slug: 'fuzeservice', name: 'Service' })
-  assert.equal(errors.length, 1, errors.join('\n'))
-  assert.match(errors[0], /slug "fuzeservice" starts with "fuze"/)
-  assert.match(errors[0], /use "service"/)
-})
-
-test('the message says the mistake is UNFIXABLE, because that is the whole point', () => {
-  // A slug typo is normally a one-line edit. This one costs a register-then-delete
-  // migration that orphans Permit grants and CASCADE-deletes installation rows, so the
-  // error has to say so — otherwise it reads as pedantry and gets argued with.
-  const [error] = validateSlugConvention({ slug: 'fuzeplan' })
-  assert.match(error, /immutable/)
-})
-
-test('a `Fuze`-prefixed NAME is rejected too — the rule covers both halves', () => {
-  const errors = validateSlugConvention({ slug: 'service', name: 'FuzeService' })
+test('a `Fuze`-prefixed NAME is rejected, and the message names the replacement', () => {
+  const errors = validateSlugConvention({ slug: 'fuzeservice', name: 'FuzeService' })
   assert.equal(errors.length, 1, errors.join('\n'))
   assert.match(errors[0], /name "FuzeService"/)
   assert.match(errors[0], /use "Service"/)
 })
 
-test('slug AND name both prefixed produces BOTH violations, not just the first', () => {
-  // The real fuzeservice/FuzeService shape. Reporting one at a time means two build
-  // cycles to fix one manifest.
-  assert.equal(validateSlugConvention({ slug: 'fuzeservice', name: 'FuzeService' }).length, 2)
+test('menuLabel is checked too — FuzeBI is the live half-fix this catches', () => {
+  // Measured on FuzeBI's default branch: menuLabel "BI" (already right) with name
+  // "FuzeBI" (not). Checking only one display field would call that conformant.
+  const errors = validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI', menuLabel: 'BI' })
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors[0], /name "FuzeBI"/)
+})
+
+test('both display fields prefixed produces BOTH violations, not just the first', () => {
+  // FuzeX's measured shape. Reporting one at a time costs two build cycles for one file.
+  const errors = validateSlugConvention({ slug: 'fuzex', name: 'FuzeX', menuLabel: 'FuzeX' })
+  assert.equal(errors.length, 2, errors.join('\n'))
+  assert.match(errors.join('\n'), /name "FuzeX"/)
+  assert.match(errors.join('\n'), /menuLabel "FuzeX"/)
+})
+
+// ---- the slug is NOT checked, in either direction -----------------------------------
+// This is the load-bearing half of the correction. `slug` is immutable, so the only way
+// to "fix" one is to register a second app and delete the first, which orphans Permit
+// grants and CASCADE-deletes app_installations rows. A red build over a value nobody can
+// safely change does not prevent the mistake, it pressures someone into the migration.
+
+test('a PREFIXED slug is accepted — this is the convention for new products', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzeservice', name: 'Service' }), [])
+})
+
+test('a DE-PREFIXED slug is accepted too — seven live products have one', () => {
+  // deploy, call, executive, finance, keys, market, picker. All registered, all
+  // immutable. Flagging them would red seven repos with no safe remedy.
+  for (const slug of ['deploy', 'call', 'executive', 'finance', 'keys', 'market', 'picker']) {
+    assert.deepEqual(validateSlugConvention({ slug }), [], slug)
+  }
+})
+
+test('bare `fuze` as a slug is NOT this gate\'s problem either', () => {
+  // It is a bad slug, but it is an immutable one. Shape belongs to the contract.
+  assert.deepEqual(validateSlugConvention({ slug: 'fuze' }), [])
 })
 
 test('the conformant form passes', () => {
-  assert.deepEqual(validateSlugConvention({ slug: 'service', name: 'Service' }), [])
+  assert.deepEqual(
+    validateSlugConvention({ slug: 'fuzeservice', name: 'Service', menuLabel: 'Service' }),
+    []
+  )
 })
 
-test('picker/FuzePicker: the slug is already right, only the name is flagged', () => {
-  // Measured current state — FuzePicker registers as `picker`. Exactly one violation.
-  const errors = validateSlugConvention({ slug: 'picker', name: 'FuzePicker' })
-  assert.equal(errors.length, 1)
-  assert.match(errors[0], /name "FuzePicker"/)
-})
-
-test('fuzecontact/Contact: the name is already right, only the slug is flagged', () => {
-  const errors = validateSlugConvention({ slug: 'fuzecontact', name: 'Contact' })
-  assert.equal(errors.length, 1)
-  assert.match(errors[0], /slug "fuzecontact"/)
-})
-
-test('a hyphenated prefix (`fuze-market`) is caught too', () => {
-  assert.equal(validateSlugConvention({ slug: 'fuze-market' }).length, 1)
-})
-
-test('bare `fuze` is rejected — no product de-prefixes to it', () => {
-  // De-prefixing "FuzeX" yields "x", so there is no product for which `fuze` is the
-  // correct short slug. Allowing it as "not really a prefix" would be a loophole.
-  assert.equal(validateSlugConvention({ slug: 'fuze' }).length, 1)
-})
-
-test('a slug merely CONTAINING fuze is fine — the rule is anchored to the start', () => {
+test('a name merely CONTAINING fuze is fine — the rule is anchored to the start', () => {
   assert.deepEqual(validateSlugConvention({ slug: 'defuze', name: 'Defuze' }), [])
 })
 
 test('a missing slug/name is not this check\'s problem', () => {
-  // Shape is the schema's job. Reporting "slug is absent" here would duplicate the
+  // Shape is the schema's job. Reporting "name is absent" here would duplicate the
   // contract and produce two errors for one mistake.
   assert.deepEqual(validateSlugConvention({}), [])
 })
 
 test('THE SHIPPED TEMPLATE is itself conformant', () => {
   // templates/ is what every product copies, so a violation there propagates to the
-  // whole fleet before anyone notices. It happens to be clean today (`myapp`, not
-  // `fuzemyapp`) — this pins that, so the gate can never be undermined by the one
-  // manifest it does not otherwise get run against.
+  // whole fleet before anyone notices.
   const templates = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates')
   assert.deepEqual(validateRegistrationDir(templates), [])
 })
 
-test('the slug rule is wired into the end-to-end directory check', () => {
+test('the naming rule is wired into the end-to-end directory check', () => {
   const dir = makeDir({
     'manifest.json': { ...PORTAL_STANDALONE, slug: 'fuzeservice', name: 'FuzeService' },
     'policy.json': { product: 'fuzeservice' },
   })
   const errors = validateRegistrationDir(dir)
-  assert.equal(errors.length, 2, errors.join('\n'))
-  assert.match(errors.join('\n'), /starts with "fuze"/)
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors.join('\n'), /name "FuzeService"/)
 })
 
 test('missing policy.json is reported', () => {
@@ -256,24 +253,25 @@ test('malformed manifest JSON is reported, not thrown', () => {
   assert.match(errors[0], /not valid JSON/)
 })
 
-test('a slug that de-prefixes below 3 chars keeps the prefix — FuzeBI', () => {
-  // `fuzebi` -> `bi` is REJECTED by the contract's Slug pattern (min 3 chars),
-  // so there is no conformant slug to move to and the prefix is load-bearing.
-  assert.deepEqual(validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI' }), [])
+// The SHORT-NAME EXEMPTION that used to live here is GONE, and its absence is the
+// correction. It existed because the contract's Slug pattern needs 3+ characters, so
+// `fuzebi` -> `bi` and `fuzex` -> `x` had no conformant slug to move to and the prefix
+// was load-bearing. With the slug no longer checked at all, there is nothing to exempt.
+//
+// It does not transfer to the display fields either: `name` and `menuLabel` are free
+// text with no length floor, so "BI" and "X" are perfectly good labels. The two repos
+// the exemption was written for are exactly the two the display rule now catches.
+
+test('the retired short-name exemption does NOT protect a prefixed display name', () => {
+  // `fuzebi`/`fuzex` were the exemption's whole reason to exist. Both are flagged now —
+  // on the name, which is mutable, not the slug, which is not.
+  assert.match(validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI' })[0], /use "BI"/)
+  assert.match(validateSlugConvention({ slug: 'fuzex', name: 'FuzeX' })[0], /use "X"/)
 })
 
-test('the same exemption covers FuzeX', () => {
-  assert.deepEqual(validateSlugConvention({ slug: 'fuzex', name: 'FuzeX' }), [])
-})
-
-test('the exemption does NOT leak to slugs that de-prefix to 3+ chars', () => {
-  const errors = validateSlugConvention({ slug: 'fuzebio', name: 'FuzeBio' })
-  assert.equal(errors.length, 2, errors.join('\n'))
-  assert.match(errors[0], /use "bio"/)
-})
-
-test('a 3-char de-prefixed slug is still held to the convention', () => {
-  assert.match(validateSlugConvention({ slug: 'fuzehub' })[0], /use "hub"/)
+test('their slugs stay accepted — the exemption is retired, not inverted', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzebi', name: 'BI' }), [])
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzex', name: 'X' }), [])
 })
 
 // ---- nav placement ------------------------------------------------------------------
