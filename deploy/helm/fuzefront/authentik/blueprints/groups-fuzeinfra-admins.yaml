@@ -38,12 +38,30 @@ entries:
       # makes this account able to administer the IdP, not just consume it.
       is_superuser: true
 
+  # The username here MUST match the account Google actually authenticates into,
+  # because Authentik matches this entry by `username`, not by email.
+  #
+  # It used to be `izzy`, which was a guess and never matched anything. The real
+  # account is created with username == email: FuzeFront's brokered Google path
+  # provisions via the Admin API with `username: email` (see accountApi.ts
+  # findOrCreateUserPk), and the Authentik Google source links to it by email.
+  # Verified against prod — /api/v3/core/users/me/ after a Google login returns:
+  #   {"pk":12,"username":"izzy.weinberg@gmail.com","groups":[],...}
+  #
+  # So this blueprint was assigning the admin group to a phantom `izzy` row while
+  # the account being logged into had no groups at all. Symptom: Google login
+  # succeeds, then Authentik denies at the application authorization step, and
+  # Grafana would have silently landed on the non-admin branch of
+  # roleAttributePath while ArgoCD's policy.csv matched nothing.
+  #
+  # If the login username ever changes, this must change with it. A durable fix
+  # is to derive group membership from the email claim instead of pinning a
+  # username; that is a larger change and is tracked separately.
   - model: authentik_core.user
     state: present
     identifiers:
-      username: izzy
+      username: izzy.weinberg@gmail.com
     attrs:
-      username: izzy
       name: Izzy Weinberg
       email: izzy.weinberg@gmail.com
       is_active: true
