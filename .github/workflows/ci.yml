@@ -235,6 +235,10 @@ jobs:
         run: cd sdk && npm run build
 
       - name: Upload build artifacts
+        # Only upload on release events — 1,928 copies at 6.36 GB was the dominant
+        # storage consumer. integration-tests below rebuilds from source so the
+        # artifact is not needed on every PR/push run.
+        if: github.event_name == 'release'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-artifacts
@@ -242,6 +246,7 @@ jobs:
             backend/dist/
             frontend/dist/
             sdk/dist/
+          retention-days: 7
 
   chat-service-tests:
     name: Chat service (unit)
@@ -401,11 +406,6 @@ jobs:
         with:
           node-version: '24.x'
           cache: 'npm'
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: build-artifacts
 
       - name: Install dependencies
         run: |

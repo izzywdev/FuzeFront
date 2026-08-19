@@ -172,7 +172,7 @@ jobs:
           path: |
             backend/coverage/
             backend/test-results/
-          retention-days: 30
+          retention-days: 7
 
   # Permit.io integration tests run in a separate non-matrix job so the
   # permit-pdp service container (which needs secrets.PERMIT_API_KEY in its
