@@ -23,6 +23,8 @@ paths = [
   # FuzeQuality application credentials are asymmetrically encrypted by
   # Sealed Secrets and cannot be decrypted outside the target cluster.
   '''FuzeQuality/deploy/helm/fuzequality/templates/bootstrap-sealed-secret\.yaml''',
+  '''FuzeQuality/deploy/helm/fuzequality/templates/chroma-sealed-secret\.yaml''',
+  '''FuzeQuality/deploy/helm/fuzequality/templates/ghcr-pull-sealed-secret\.yaml''',
   # Historical prod values file that had a Cloudflare CF SealedSecret inlined at
   # commit 7cfe0429; the kubesealed blob is asymmetrically encrypted and safe to commit.
   '''deploy/helm/fuzefront/values-prod\.yaml''',
@@ -64,6 +66,11 @@ regexes = [
   # Documentation curl-command examples — placeholder tokens, not real credentials.
   '''YOUR_JWT_TOKEN''',
   '''YOUR_TOKEN''',
+  # resolve.test.ts unit-test JWT signing key — not a real credential; restored
+  # verbatim from the pre-existing tree in commit 7db5a406 (which had to re-add
+  # this file after d96d4bfc accidentally deleted it), so gitleaks sees it as a
+  # new addition even though the content was already on master.
+  '''resolve-test-jwt-secret-2026''',
   # Historical placeholder value from docker-compose.yml / Dockerfile (pre-93cec2a purge).
   '''fuzefront-production-secret-change-this''',
   # Historical hardcoded DB password from backend/database.ts (pre-93cec2a purge); rotated.
