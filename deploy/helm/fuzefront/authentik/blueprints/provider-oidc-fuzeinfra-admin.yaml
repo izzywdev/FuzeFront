@@ -278,6 +278,20 @@ entries:
       name: FuzeInfra Kafka UI
       client_type: confidential
       client_id: "kafka-ui"
+      # ROTATING THIS SECRET REQUIRES AN AUTHENTIK POD ROLL, and the roll is not
+      # automatic. The value arrives as env from the fuzefront-secrets
+      # SealedSecret, and Kubernetes does NOT restart a pod when a Secret changes
+      # (env is read once at start). The blueprint therefore keeps applying the
+      # OLD value until the pod restarts.
+      #
+      # `checksum/blueprints` on the authentik deployments rolls the pods whenever
+      # the blueprint ConfigMap changes — so a rotation must touch a blueprint
+      # file in the SAME change that reseals the secret, or the two halves of the
+      # pair silently diverge: the consumer gets the new secret while Authentik
+      # still presents the old one, and the token exchange fails with a generic
+      # "Invalid credentials" that points at neither side.
+      #
+      # Rotated 2026-08-19 together with FuzeInfra deploy/sealed-secrets/kafka-ui-oidc.yaml.
       client_secret: !Env [AUTHENTIK_KAFKA_UI_CLIENT_SECRET, ""]
       redirect_uris:
         # The trailing path segment is Spring's registration id, which kafka-ui
