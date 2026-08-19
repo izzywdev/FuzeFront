@@ -134,6 +134,15 @@
       name: {{ include "fuzefront.secretName" . }}
       key: AIRFLOW_CLIENT_SECRET
       optional: true
+# LiteLLM's admin console (its "generic" OIDC provider). The consumer side is
+# fuzeinfra/litellm-oidc, gated behind sso.enabled in izzywdev/FuzeInfra's
+# helm/litellm/values-contabo.yaml.
+- name: AUTHENTIK_LITELLM_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: LITELLM_CLIENT_SECRET
+      optional: true
 {{- if .Values.smsService.enabled }}
 # SMS MFA — the stages-sms blueprint reads these env vars at apply time.
 # AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster

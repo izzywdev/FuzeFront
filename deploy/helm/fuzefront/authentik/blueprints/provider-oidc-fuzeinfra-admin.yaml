@@ -14,6 +14,9 @@
 #   airflow            replaces the local `admin` account on the Airflow UI.
 #                      Webserver only — Flower has no generic OIDC handler, and
 #                      the REST API keeps basic_auth for machine callers.
+#   litellm            adds SSO to the LiteLLM console, whose only identity
+#                      layer was the Cloudflare Access wall. UI only:
+#                      LITELLM_MASTER_KEY still gates every API call.
 #
 # client_secret is injected at blueprint-apply time via Authentik's !Env YAML
 # tag, read from the worker pod's environment (sourced from the chart Secret via
@@ -387,6 +390,70 @@ entries:
       policy_engine_mode: all
       open_in_new_tab: false
 
+  # ── Provider: LiteLLM ────────────────────────────────────────────────────────
+  # Consumed by the LiteLLM admin UI (its "generic" OIDC provider), gated behind
+  # sso.enabled in izzywdev/FuzeInfra's helm/litellm/values-contabo.yaml.
+  #
+  # WHY THIS ONE MATTERS MOST: litellm.prod.fuzefront.com serves the API and the
+  # console on a single port with no path split, and the console's only identity
+  # layer today is the Cloudflare Access wall. This adds a second.
+  #
+  # LICENCE NOTE, carried here so it is visible from the IdP side too: LiteLLM
+  # SSO is an Enterprise feature that upstream made free for up to FIVE users
+  # (v1.76.0+). This provider is correct regardless, but a sixth admin is a
+  # commercial decision on the consumer side, not a change to this entry.
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: FuzeInfra LiteLLM
+    attrs:
+      name: FuzeInfra LiteLLM
+      client_type: confidential
+      client_id: "litellm"
+      client_secret: !Env [AUTHENTIK_LITELLM_CLIENT_SECRET, ""]
+      redirect_uris:
+        # LiteLLM builds this as "<PROXY_BASE_URL>/sso/callback". PROXY_BASE_URL
+        # is set without a trailing slash in the FuzeInfra chart, so this is the
+        # exact string it sends — matching_mode strict means a stray slash on
+        # either side is a rejected authorize request.
+        - matching_mode: strict
+          url: "https://litellm.prod.fuzefront.com/sso/callback"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+        # Not required by LiteLLM today — it does not map roles from groups —
+        # but requested by the consumer's GENERIC_SCOPE, and an unknown scope in
+        # the request is what produces an invalid_scope error. Granting it keeps
+        # the two sides consistent and leaves room for role mapping later.
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - groups"]]
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
+      # Without this the entry fails SILENTLY and no provider is created.
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # REQUIRED on Authentik 2026.x — see the identical note on the providers
+      # above. Without it every authorize request comes back as
+      # error=invalid_request.
+      grant_types:
+        - authorization_code
+        - refresh_token
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: litellm
+    attrs:
+      name: LiteLLM
+      slug: litellm
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, FuzeInfra LiteLLM]]
+      # /ui rather than /, matching the launcher tile in FuzeInfra's
+      # terraform/contabo/cloudflare.tf — "/" only redirects there anyway.
+      meta_launch_url: "https://litellm.prod.fuzefront.com/ui"
+      meta_description: "FuzeInfra LLM gateway console"
+      policy_engine_mode: all
+      open_in_new_tab: false
+
   # ── Authorization: only fuzeinfra-admins may reach these Applications ────────
   #
   # THIS IS THE GATE THAT WAS MISSING. Every Application above declares
@@ -469,6 +536,18 @@ entries:
     state: present
     identifiers:
       target: !Find [authentik_core.application, [slug, airflow]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, litellm]]
       policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
     attrs:
       order: 0
