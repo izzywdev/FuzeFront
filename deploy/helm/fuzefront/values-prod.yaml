@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -121,7 +121,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -173,7 +173,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -184,7 +184,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -228,7 +228,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -248,7 +248,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -283,7 +283,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -321,7 +321,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -573,7 +573,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -614,7 +614,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -659,7 +659,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: 548d56b6ca2e
+    tag: 1107482f0948
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +
