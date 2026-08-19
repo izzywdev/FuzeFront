@@ -9,6 +9,8 @@ import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 import { logger } from '../lib/logger'
 
@@ -339,6 +341,68 @@ export async function reconcileOrganizationProvisioning(
 }
 
 /**
+ * Idempotently upserts the user's membership in the root platform org (type=root).
+ * A dedicated root-org membership lets platform APIs enumerate all users without
+ * yielding exactly one row. Used by `runInternalProvision` when the
+ * `fuzefront.identity.root-membership` flag is ON.
+ */
+export async function ensureRootMembership(
+  userId: string,
+  deps: { db: Knex }
+): Promise<void> {
+  await deps.db('organization_memberships')
+    .insert({
+      id: toUuid(mintId('membership')),
+      user_id: userId,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
+    })
+    .onConflict(['user_id', 'organization_id'])
+    .ignore()
+}
+
+/**
+ * Deprovision an organization.
+ *
+ * - soft: marks is_active=false (reversible; data retained).
+ * - hard: deletes memberships, provisioning steps, and the org row (irreversible).
+ *
+ * Idempotent: if the org is already gone, returns deprovisioned=true without error.
+ */
+export async function deprovisionOrganization(
+  orgId: string,
+  mode: 'soft' | 'hard',
+  overrides?: Partial<ProvisioningDeps>
+): Promise<{ organizationId: string; mode: string; deprovisioned: boolean }> {
+  const { db } = getDeps(overrides)
+
+  const org = await db('organizations').where({ id: orgId }).first()
+  if (!org) {
+    logger.info({ orgId, mode }, 'organizationProvisioning: deprovision — org not found, already gone')
+    return { organizationId: orgId, mode, deprovisioned: true }
+  }
+
+  if (mode === 'hard') {
+    await db.transaction(async trx => {
+      await trx('organization_memberships').where({ organization_id: orgId }).delete()
+      await trx('organization_provisioning').where({ organization_id: orgId }).delete()
+      await trx('organizations').where({ id: orgId }).delete()
+    })
+  } else {
+    await db('organizations')
+      .where({ id: orgId })
+      .update({ is_active: false, provisioning_state: 'deprovisioned', updated_at: new Date() })
+  }
+
+  logger.info({ orgId, mode }, 'organizationProvisioning: deprovisioned')
+  return { organizationId: orgId, mode, deprovisioned: true }
+}
+
+/**
  * Single-sourced entry point used by login self-heal AND the internal HTTP
  * endpoint (Plan D's provisioning-service). Ensures the user's personal org
  * exists, then reconciles every org they own that isn't yet active.
@@ -347,10 +411,17 @@ export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
 ): Promise<{
-  personalOrgId: string
+  personalOrgId: string | null
   reconciled: Array<{ orgId: string; state: string }>
 }> {
   const { db } = getDeps(overrides)
+
+  const rootMembership = await isRootMembershipEnabled({ userId })
+  if (rootMembership) {
+    await ensureRootMembership(userId, { db })
+    return { personalOrgId: null, reconciled: [] }
+  }
+
   const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')

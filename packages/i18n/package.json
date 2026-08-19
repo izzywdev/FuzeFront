@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/i18n",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Shared FuzeFront internationalization runtime: i18next + react-i18next provider, design-system language selector, and centralized RTL/LTR direction management.",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -69,6 +73,7 @@
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "jsdom": "^24.1.0",

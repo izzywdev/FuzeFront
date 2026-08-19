@@ -56,3 +56,41 @@ prometheus.io/port: {{ .port | quote }}
 prometheus.io/path: {{ .path | default $m.path | default "/metrics" | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The ONLY Authentik paths that may be reachable from the public internet.
+
+Authentik is an IdP for public products (FuzeFront, and MendysRobotics via
+marketplace.mendysrobotics.com, whose /api/auth/oidc/login 302s to this IdP), so
+its OIDC protocol and login-flow surface cannot be made private without breaking
+customer logins. Its ADMINISTRATION surface can, and must be.
+
+The critical entry is what is ABSENT: a bare "/if". That prefix served
+/if/admin/ — the full Authentik admin interface — from every public host. Only
+/if/flow (the login/enrollment flow executor UI) and /if/session-end are needed
+by a browser. Admins reach the admin UI at authentik.<prod domain>, which sits
+behind Cloudflare Access.
+
+Do NOT re-add "/if", and do not add "/if/user": FuzeFront owns its own profile
+and MFA UI (mfa_factors is native, not an Authentik stage).
+
+/api/v3 has to stay for now — Authentik's flow-executor page is a SPA that calls
+it from the browser, and fuzefront-backend currently reaches Authentik's Admin API
+by hairpinning out through this same public edge (it sets no AUTHENTIK_BASE_URL,
+so authentik-admin.ts falls back to deriving it from AUTHENTIK_ISSUER_URL). It is
+authenticated — /api/v3/core/users/me/ returns 403 unauthenticated — but it is
+surface that should shrink once that hairpin is repointed in-cluster.
+*/}}
+{{- define "fuzefront.authentikPublicPaths" -}}
+- /application
+- /if/flow
+- /if/session-end
+- /source
+- /flows
+- /ws
+- /-
+- /outpost.goauthentik.io
+- /api/v3
+- /static/dist
+- /static/authentik
+{{- end -}}

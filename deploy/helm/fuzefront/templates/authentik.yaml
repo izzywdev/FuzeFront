@@ -345,12 +345,21 @@ spec:
     - host: {{ $ak.host | quote }}
       http:
         paths:
-          - path: /
+          {{- /* Was `path: /` — the ENTIRE Authentik, including /if/admin/ and
+                 /api/v3, served publicly on this host. Verified against prod:
+                 /if/admin/, /if/flow/default-authentication-flow/ and
+                 /api/v3/root/config/ all returned 200 to an anonymous client.
+                 Narrowed to the same protocol+login set the app-host proxy uses.
+                 This host cannot simply be deleted: marketplace.mendysrobotics.com
+                 is live and its /api/auth/oidc/login 302s here. */ -}}
+          {{- range $p := (include "fuzefront.authentikPublicPaths" $ | fromYamlArray) }}
+          - path: {{ $p }}
             pathType: Prefix
             backend:
               service:
                 name: authentik-server
                 port:
                   number: 9000
+          {{- end }}
 {{- end }}
 {{- end }}

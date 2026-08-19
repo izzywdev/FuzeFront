@@ -2,6 +2,16 @@
   "name": "Account Security hub — approval frames",
   "description": "Contract-freeze UX artifacts for the account-security hub: the navigational spine linking password, two-factor, devices & sessions, API tokens, and connected accounts. Approving these frames approves the AccountSecurityHub visual + interaction model and its component/package plan before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/account-security-ui/src/components/hub/**",
+      "packages/account-security-ui/src/api/**",
+      "packages/account-security-ui/src/i18n/**",
+      "packages/account-security-ui/src/types.ts",
+      "packages/account-security-ui/src/index.ts",
+      "frontend/src/pages/AccountSecurityPage.tsx"
+    ]
+  },
   "entry": "index.html",
   "contract": {
     "openapi": "packages/security/openapi.yaml",
@@ -84,5 +94,5 @@
       ]
     }
   ],
-  "stamp": "4ac159cdb36a94855a88b9ffb8739f26267b1b1d2ef6ef214658c7fef169060e"
+  "stamp": "4ca39fddc0c7f3f46efde7b04937026683b5f417a6144639635adc81efff1a9b"
 }

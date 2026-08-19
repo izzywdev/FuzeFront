@@ -17,6 +17,8 @@ import {
 import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
 import { isPortalsDirectoryEnabled } from '../utils/portalsDirectoryFlag'
 import { resolvePortalReadManageCapabilities } from '../utils/portalReadManageCapabilities'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
 
@@ -182,6 +184,18 @@ export function createAdminPortalStore(injectedDatabase?: Knex): AdminPortalStor
   }
 }
 
+/** Prefix a portal DTO's `id` and `organizationId`, plus each nested domain's `portalId`. */
+async function prefixPortalDto(dto: any, userId?: string): Promise<any> {
+  const prefixed = await isPrefixedIdsEnabled({ userId })
+  const top = prefixDtoIds(dto, prefixed, { id: 'portal', organizationId: 'organization' })
+  return {
+    ...top,
+    domains: Array.isArray(dto.domains)
+      ? dto.domains.map((d: any) => prefixDtoIds(d, prefixed, { portalId: 'portal' }))
+      : top.domains ?? [],
+  }
+}
+
 export function createAdminPortalRouter(deps: {
   store?: AdminPortalStore
   authenticate?: Middleware
@@ -250,7 +264,8 @@ export function createAdminPortalRouter(deps: {
       if (!authorized) return // authorize() already sent 401/403
 
       const result = await store.list({ status, query, limit, cursor })
-      const items = result.items.map(({ identityMode, ...rest }) => rest)
+      const rawItems = result.items.map(({ identityMode, ...rest }) => rest)
+      const items = await Promise.all(rawItems.map(item => prefixPortalDto(item, request.user?.id)))
       return response.status(200).json({
         items,
         page: { nextCursor: result.nextCursor },
@@ -300,8 +315,9 @@ export function createAdminPortalRouter(deps: {
       }
     })
 
+    const prefixedItems = await Promise.all(items.map((item: any) => prefixPortalDto(item, request.user?.id)))
     return response.status(200).json({
-      items,
+      items: prefixedItems,
       page: { nextCursor: result.nextCursor },
     })
   })
@@ -332,7 +348,7 @@ export function createAdminPortalRouter(deps: {
         branding: body.branding,
         identityPolicy: body.identityPolicy,
       })
-      return response.status(201).json(portal)
+      return response.status(201).json(await prefixPortalDto(portal, (request as any).user?.id))
     } catch (error: any) {
       if (error instanceof SlugTakenError || error?.code === '23505') {
         return response.status(409).json({ error: 'SLUG_TAKEN' })
@@ -346,7 +362,7 @@ export function createAdminPortalRouter(deps: {
     if (!portal) {
       return response.status(404).json({ error: 'NOT_FOUND' })
     }
-    return response.status(200).json(portal)
+    return response.status(200).json(await prefixPortalDto(portal, request.user?.id))
   })
 
   router.patch('/:portalId', adminRateLimiter, authenticate, authorize, async (request, response) => {
@@ -374,7 +390,7 @@ export function createAdminPortalRouter(deps: {
         identityPolicy: body.identityPolicy,
       })
       if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-      return response.status(200).json(updated)
+      return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
     } catch (error: any) {
       if (error?.code === 'ROOT_PORTAL_PROTECTED') {
         return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
@@ -387,7 +403,7 @@ export function createAdminPortalRouter(deps: {
     try {
       const updated = await store.update(request.params.portalId, { status: 'suspended' })
       if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-      return response.status(200).json(updated)
+      return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
     } catch (error: any) {
       if (error?.code === 'ROOT_PORTAL_PROTECTED') {
         return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
@@ -399,7 +415,7 @@ export function createAdminPortalRouter(deps: {
   router.post('/:portalId/resume', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const updated = await store.update(request.params.portalId, { status: 'active' })
     if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-    return response.status(200).json(updated)
+    return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
   })
 
   return router

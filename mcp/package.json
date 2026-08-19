@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/mcp-server",
   "version": "0.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "private": true,
   "type": "module",
   "description": "MCP (Model Context Protocol) stdio server scaffold for the FuzeFront platform. enabled:false in .fuze/manifest.json until a working tool is wired. Owned by mcp-maintainer for upkeep; tool behaviour is backend-engineer's.",
