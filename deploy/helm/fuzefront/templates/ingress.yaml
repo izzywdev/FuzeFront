@@ -360,7 +360,10 @@ spec:
                  (password/enrollment flow driver). Must route to authentik-server,
                  or flow-executor calls hit FuzeFront's /api and fail with
                  PROVIDER_UNAVAILABLE. Does not collide with FuzeFront's /api/v1/*. */ -}}
-          {{- range $p := list "/application" "/if" "/source" "/flows" "/ws" "/-" "/outpost.goauthentik.io" "/api/v3" "/static/dist" "/static/authentik" }}
+          {{- /* Single source of truth, shared with the auth.<zone> Ingress in
+                 authentik.yaml so the two public surfaces cannot drift. Notably
+                 has NO bare "/if" — that is what exposed /if/admin/. */ -}}
+          {{- range $p := (include "fuzefront.authentikPublicPaths" $ | fromYamlArray) }}
           - path: {{ $p }}
             pathType: Prefix
             backend:
