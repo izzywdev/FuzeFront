@@ -253,6 +253,12 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - openid"]]
         - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - email"]]
         - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - profile"]]
+        # groups was MISSING here while Grafana and ArgoCD both had it. Kafka UI
+        # therefore received no group claim and could not role-gate even in
+        # principle, which is why it treats every authenticated user as a
+        # write-capable admin. Granting the scope is the precondition for giving
+        # it an actual role model.
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "FuzeInfra Admin OIDC scope - groups"]]
       sub_mode: user_email
       include_claims_in_id_token: true
       authorization_flow: !Find [authentik_flows.flow, [slug, fuzeinfra-admin-authorization-implicit-consent]]
@@ -270,3 +276,81 @@ entries:
       meta_description: "Kafka topics, consumers and cluster config"
       policy_engine_mode: all
       open_in_new_tab: false
+
+  # ── Authorization: only fuzeinfra-admins may reach these Applications ────────
+  #
+  # THIS IS THE GATE THAT WAS MISSING. Every Application above declares
+  # `policy_engine_mode: all`, but "all" over an EMPTY policy set evaluates to
+  # PASS — so any user who existed in the directory could obtain a token for
+  # cloudflare-access, grafana, argocd and kafka-ui.
+  #
+  # That matters because FuzeFront is a product with self-serve signup: any
+  # Google account that completes the handshake is provisioned as an active
+  # internal user, by design. Enrollment is therefore the WRONG place to gate —
+  # closing it would break customer registration. The right place is here, on the
+  # four admin-plane Applications, which no customer should ever reach.
+  #
+  # Until now the only thing standing between an ordinary product user and the
+  # admin plane was `require { email = allowed_admin_emails }` on the Cloudflare
+  # Access policy, in a different repo. This makes Authentik enforce it too, so
+  # neither layer is load-bearing alone.
+  - model: authentik_policies_expression.expressionpolicy
+    state: present
+    identifiers:
+      name: fuzeinfra-admin-group-required
+    attrs:
+      name: fuzeinfra-admin-group-required
+      # ak_is_group_member is Authentik's built-in helper; `name` matches the
+      # group created in groups-fuzeinfra-admins.yaml, which is a cross-repo
+      # contract also consumed by Grafana roleAttributePath and ArgoCD policy.csv.
+      # Renaming that group silently locks everyone out of all four apps.
+      expression: |
+        return ak_is_group_member(request.user, name="fuzeinfra-admins")
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, cloudflare-access]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, grafana]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, argocd]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
+
+  - model: authentik_policies.policybinding
+    state: present
+    identifiers:
+      target: !Find [authentik_core.application, [slug, kafka-ui]]
+      policy: !Find [authentik_policies_expression.expressionpolicy, [name, fuzeinfra-admin-group-required]]
+    attrs:
+      order: 0
+      enabled: true
+      negate: false
+      timeout: 30
+      failure_result: false
