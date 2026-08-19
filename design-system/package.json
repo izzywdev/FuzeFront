@@ -56,5 +56,9 @@
     "type": "git",
     "url": "https://github.com/izzywdev/FuzeFront.git",
     "directory": "design-system"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }
