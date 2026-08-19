@@ -75,6 +75,22 @@ database:
       secretName: ""
       secretKey: DB_SUPERUSER_PASSWORD
 
+# Image for the consumer-registration-seed post-upgrade Job
+# (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
+# kubectl, so it uses Kubernetes' own community-published image.
+#
+# DO NOT put a bitnami/* image here. This field exists because the Job was pinned to
+# `bitnami/kubectl:1.29`, and in Aug 2025 Broadcom removed the free bitnami/* images
+# from Docker Hub (old tags moved to docker.io/bitnamilegacy/*). The tag stopped
+# pulling, the Job pod ImagePullBackOff'd, and Secret/fuzefront-registration was never
+# published -- which is what broke FuzeInfra's credential handoff for eight days
+# (FuzeFront#688, FuzeInfra#552). registry.k8s.io is auth-free and not rate-limited.
+#
+# The default is declared HERE, visibly, rather than only as a `| default` at the
+# render site -- per this repo's Helm values-hygiene rule.
+consumerRegistrationSeed:
+  image: "registry.k8s.io/kubectl:v1.29.10"
+
 # Secret handling. Either let the chart create a Secret from the values here
 # (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
 secret:
