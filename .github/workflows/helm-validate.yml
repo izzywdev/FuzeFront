@@ -97,6 +97,53 @@ jobs:
             -summary \
             rendered/fuzefront/templates/
 
+      - name: Guard seed-Job image is pullable (${{ matrix.values }})
+        run: |
+          # WHY THIS EXISTS. `helm lint` and kubeconform validate that `image:` is a
+          # non-empty string. They cannot tell a real tag from one that was deleted
+          # out from under us -- and that is exactly the failure that happened:
+          # consumer-registration-seed was pinned to `bitnami/kubectl:1.29`, Broadcom
+          # removed the free bitnami/* images from Docker Hub in Aug 2025, the pod
+          # ImagePullBackOff'd, and Secret/fuzefront-registration was silently never
+          # published. Eight days of FuzeInfra's credential handoff failing every 6h
+          # was the only signal, and it pointed at the wrong repo (FuzeInfra#552,
+          # FuzeFront#688). CI stayed green throughout.
+          #
+          # SCOPE, deliberately narrow: only the seed Job's image, and only when it is
+          # hosted on registry.k8s.io. That registry serves manifests anonymously and
+          # does not rate-limit, so the check is deterministic. Extending this to every
+          # image in the chart would mean authenticating to ghcr.io and absorbing
+          # Docker Hub's anonymous pull limits -- i.e. trading a real check for a flaky
+          # one. If the image is moved off registry.k8s.io this step SKIPS, and says so
+          # loudly, because a check that quietly stops checking is worse than no check.
+          set -euo pipefail
+          img=$(awk '/^          image: /{print $2; exit}' \
+                rendered/fuzefront/templates/consumer-registration-seed-job.yaml)
+          if [ -z "$img" ]; then
+            echo "::error::could not extract the seed Job image from the rendered chart"
+            exit 1
+          fi
+          echo "seed image: $img"
+          case "$img" in
+            registry.k8s.io/*) ;;
+            *)
+              echo "::warning::seed image '$img' is not on registry.k8s.io — pullability NOT verified by this gate"
+              exit 0
+              ;;
+          esac
+          repo="${img%:*}"; tag="${img##*:}"
+          path="${repo#registry.k8s.io/}"
+          code=$(curl -sSL -o /dev/null -w '%{http_code}' \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+            "https://registry.k8s.io/v2/${path}/manifests/${tag}")
+          if [ "$code" != "200" ]; then
+            echo "::error::registry.k8s.io/${path}:${tag} does not resolve (HTTP $code) — this image would ImagePullBackOff in the cluster"
+            exit 1
+          fi
+          echo "OK: ${img} resolves (HTTP 200)"
+
       - name: Guard NetworkPolicy port values (${{ matrix.values }})
         run: |
           # kubeconform validates SHAPE (NetworkPolicyPort.port is IntOrString) but
