@@ -1,9 +1,0 @@
-# Build output — published to the registry from CI, never committed.
-dist/
-node_modules/
-*.tsbuildinfo
-
-# Standalone (non-workspace) package. No sibling client commits a nested
-# lockfile — see selection-list-client, portal-client, apps-client. It only
-# appears here because building the package requires a local install.
-package-lock.json

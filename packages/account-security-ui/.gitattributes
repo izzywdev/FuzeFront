@@ -1,2 +1,0 @@
-# Enforce LF for this package (gate-line-endings). CRLF here broke PR #657.
-* text=auto eol=lf

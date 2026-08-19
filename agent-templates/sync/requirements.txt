@@ -1,3 +1,0 @@
-# sync/ uses only the Python standard library at runtime (urllib) for API calls.
-# jsonschema is needed only for `validate.py`.
-jsonschema>=4.0

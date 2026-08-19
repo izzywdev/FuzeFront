@@ -1,5 +1,0 @@
-# Caddy terminates TLS (automatic Let's Encrypt for $DOMAIN) and proxies to the app.
-{$DOMAIN} {
-	encode gzip
-	reverse_proxy app:8787
-}
