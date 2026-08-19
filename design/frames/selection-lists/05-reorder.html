@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Reorder (drag in progress)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Dana Okafor">DO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☗</span> Organizations</a>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <!-- S9 adds this entry. Frames freeze it as active for every management screen. -->
+      <a class="nav-item active" href="01-list-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <a class="nav-item" href="#"><span class="ico">☷</span> Billing</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="05-reorder">
+
+      <h1 class="page-title">Reorder values</h1>
+      <p class="page-sub">Sort order is explicit and authored — never alphabetical by accident. A drop sends the
+        <b>full permutation</b> of item ids, so the server never has to infer intent from a single moved row.</p>
+
+      <section class="sl-panel" data-panel="value-editor" data-state="dragging">
+        <div class="sl-panel__seam"></div>
+        <table class="sl-table">
+          <thead>
+            <tr>
+              <th scope="col" style="width: var(--space-8);"><span class="sl-field__lock">Sort</span></th>
+              <th scope="col">Label (en)</th>
+              <th scope="col">Code</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody data-reorderable="true" aria-live="polite">
+            <tr data-item="sli_01h455vb4pex5vsknk084sn02q" data-sort-order="1">
+              <td><span class="sl-drag" data-drag-handle>⠿</span></td>
+              <td class="name">United States</td>
+              <td><span class="sl-key">US</span></td>
+              <td><span class="sl-pill sl-pill--active">active</span></td>
+            </tr>
+            <!-- drop target: where the dragged row will land -->
+            <tr class="sl-droptarget" data-drop-target="true">
+              <td colspan="4" style="padding: var(--space-1) var(--space-4); color: var(--accent-color); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);">
+                DROP HERE — position 2
+              </td>
+            </tr>
+            <!-- the row under the cursor, lifted -->
+            <tr class="sl-row--dragging" data-item="sli_03h455vb4pex5vsknk084sn02q" data-dragging="true" aria-grabbed="true">
+              <td><span class="sl-drag" data-drag-handle>⠿</span></td>
+              <td class="name">United Kingdom</td>
+              <td><span class="sl-key">GB</span></td>
+              <td><span class="sl-pill sl-pill--active">active</span></td>
+            </tr>
+            <!-- the gap it left behind -->
+            <tr class="sl-row--ghost" data-item="sli_02h455vb4pex5vsknk084sn02q">
+              <td><span class="sl-drag">⠿</span></td>
+              <td class="name">Canada</td>
+              <td><span class="sl-key">CA</span></td>
+              <td><span class="sl-pill sl-pill--active">active</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="sl-banner sl-banner--info" style="margin-top: var(--space-5);" data-note="reorder-a11y">
+        <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+        <div class="sl-banner__body">
+          <p class="sl-banner__title">Drag is not the only way to reorder</p>
+          <p>The handle is focusable: <b>Space</b> lifts a row, <b>↑ / ↓</b> move it, <b>Space</b> drops,
+            <b>Esc</b> cancels. Each move is announced in a live region. A pointer-only reorder would make
+            the list uneditable by keyboard and screen-reader users.</p>
+        </div>
+      </div>
+
+      <div class="sl-section" style="margin-top: var(--space-10);">
+        <h2>States</h2>
+
+        <div class="sl-banner sl-banner--warn" data-state="saving">
+          <span class="sl-banner__ico" aria-hidden="true">⟳</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Saving new order…</p>
+            <p>The new order is shown optimistically. Further drags are blocked until the save settles —
+              two overlapping permutations would race.</p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--error" data-state="error" data-error="reorder-failed">
+          <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Couldn't save the new order</p>
+            <p>The rows have been <b>put back</b> where they were — the frame never leaves an optimistic
+              order on screen that the server rejected.
+              <button class="btn btn-ghost sl-btn-sm" data-action="retry" style="margin-left: var(--space-2);">Retry</button></p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--error" data-state="error" data-error="VALIDATION_ERROR">
+          <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Order rejected — <code class="sl-code">400 VALIDATION_ERROR</code></p>
+            <p>The submitted ids were not a full permutation of this list's items — someone added or removed
+              a value while you were dragging. The list has been reloaded.</p>
+          </div>
+        </div>
+
+        <div class="sl-banner sl-banner--warn" data-state="error" data-error="FORBIDDEN">
+          <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Read-only for your role — <code class="sl-code">403 FORBIDDEN</code></p>
+            <p>Reordering needs <code class="sl-code">update_value</code>. For <b>list-viewer</b> and
+              <b>list-translator</b> the handles are not rendered and rows are not draggable.</p>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='05-reorder']</code> · <code>[data-reorderable='true']</code> · <code>[data-dragging='true']</code> · <code>[data-drop-target='true']</code> · <code>[data-drag-handle]</code> · <code>[data-state='saving']</code> · <code>[data-error='reorder-failed']</code> · <code>[data-error='VALIDATION_ERROR']</code> · <code>[data-error='FORBIDDEN']</code> · <code>[data-note='reorder-a11y']</code><br />
+        Contract: <code>PUT /v1/selection-lists/{listId}/items/reorder</code> body <code>{ item_ids: string[] }</code> — a <b>full permutation</b>, not a delta.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="04-value-modal.html" data-nav="prev">← Add / edit value</a>
+  <span class="caption"><b>(1e) Reorder (drag in progress)</b> · Flow 1 · List management · frame 5 of 14</span>
+  <a class="btn btn-primary" href="06-quota.html" data-nav="next">Quota warning & wall →</a>
+</nav>
+</body>
+</html>

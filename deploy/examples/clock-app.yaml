@@ -1,0 +1,79 @@
+# Example on-the-fly microfrontend deployed independently of the host.
+# It shares NOTHING with FuzeFront at build time — it is reached by the browser
+# at its own ingress host and registered into the hub by configuration.
+#
+#   kubectl apply -f deploy/examples/clock-app.yaml
+#   # add to hosts:  127.0.0.1 clock.dev.local
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clock-app
+  namespace: fuzefront
+  labels:
+    app: clock-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clock-app
+  template:
+    metadata:
+      labels:
+        app: clock-app
+    spec:
+      containers:
+        - name: clock-app
+          image: fuzefront/clock-app:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clock-app
+  namespace: fuzefront
+  labels:
+    app: clock-app
+spec:
+  selector:
+    app: clock-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clock-app
+  namespace: fuzefront
+  annotations:
+    # Trusted local TLS so the federated remote loads over https without a
+    # mixed-content block (FuzeFront is served over https).
+    cert-manager.io/cluster-issuer: fuzefront-local-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - clock.dev.local
+      secretName: clock-dev-local-tls
+  rules:
+    - host: clock.dev.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clock-app
+                port:
+                  number: 8080

@@ -1,0 +1,62 @@
+{{- if .Values.securityService.enabled }}
+# Idempotent admin bootstrap. Runs AFTER the security service is up (post-install/
+# post-upgrade hook) — by then the security migrations have created the `users`
+# table — and inserts the admin user only if absent (safe to re-run every rollout).
+# Credentials: FUZEFRONT_ADMIN_EMAIL (value) + FUZEFRONT_ADMIN_PASSWORD (sealed in
+# fuzefront-secrets; if unset the script no-ops, so it never blocks a release).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-security-seed-admin
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: security-seed-admin
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: security-seed-admin
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: seed-admin
+          image: "{{ .Values.securityService.image.repository }}:{{ .Values.securityService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/scripts/seed-admin.js"]
+          env:
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+            - name: FUZEFRONT_ADMIN_EMAIL
+              value: {{ .Values.securityService.adminEmail | default "<EMAIL>" | quote }}
+            - name: FUZEFRONT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: FUZEFRONT_ADMIN_PASSWORD
+                  optional: true
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+{{- end }}

@@ -1,0 +1,120 @@
+name: Post-deploy verification
+
+# Runs after a release has shipped: waits for ArgoCD to sync, polls the public
+# health endpoint (prod-smoke.yml), separately polls chat-service's health
+# through the same public ingress, then runs the read-only post-prod Playwright
+# smoke (post-prod-e2e.yml). A failure there triggers claude-autofix-post-prod.yml.
+#
+# CHAT-SERVICE HEALTH — why this exists
+# --------------------------------------
+# Before this, NOTHING in the post-deploy path checked chat-service. It has its
+# own history of silently failing to deploy: #499 the migrate Job crash-looped
+# against the shared backend DB (fixed in #508 with a dedicated fuzefront_chat
+# database), and before that #432/#442 the image wasn't even in the release
+# matrix. A chart change that reintroduces any of those would ship green here
+# and only be discovered by a human noticing the widget is broken.
+#
+# GET /chat-api/health is UNAUTHENTICATED (services/chat-service/src/app.ts) and
+# proxied same-origin by nginx (frontend/nginx.conf `location /chat-api/`), so
+# polling it black-box over the public ingress needs no cluster credentials —
+# identical shape to the existing /api/health check, just a different path and
+# upstream service. A 200 here proves the pod exists, isn't crash-looping, the
+# Service resolves, and the ingress chain is wired — it does NOT prove the
+# LiteLLM gateway path works (that needs an authenticated /chat/stream call,
+# which post-prod-e2e's live-smoke could add later); this is deliberately the
+# same-weight signal as the existing backend health check, not a full chat e2e.
+#
+# WHY THIS IS DISPATCHED AND NOT `workflow_run`
+# ---------------------------------------------
+# This workflow previously triggered on `workflow_run` of "Release (images +
+# GitOps bump)". That never fired ONCE: the workflow is registered and
+# `state: active`, its name matcher is byte-exact against release.yml's `name:`,
+# it has lived on the default branch since 2026-07-27, and release.yml has
+# completed successfully many times since — yet the run count was ZERO. The
+# post-prod E2E it exists to run therefore never ran automatically.
+#
+# Rather than keep guessing at GitHub's workflow_run semantics, release.yml now
+# ends with an explicit `gh workflow run prod-post-deploy.yml`. workflow_dispatch
+# is documented as EXEMPT from the GITHUB_TOKEN recursion guard (the same
+# property auto-merge.yml already relies on to dispatch release.yml), and it is
+# immune to the `[skip ci]` token that killed prod-smoke's push trigger. An
+# explicit dispatch is observable and debuggable; a silent event that never
+# arrives is neither.
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 'The released commit SHA (for traceability in the run log)'
+        required: false
+        default: ''
+      reason:
+        description: 'Why this verification run was started'
+        required: false
+        default: 'manual post-deploy verification'
+      base_url:
+        description: 'Target base URL'
+        required: false
+        default: 'https://app.fuzefront.com'
+
+permissions:
+  contents: read
+
+# Do NOT cancel in progress: a verification run that is cancelled by the next
+# release leaves the earlier deploy unverified, which is the exact failure this
+# workflow exists to prevent.
+concurrency:
+  group: prod-post-deploy
+  cancel-in-progress: false
+
+jobs:
+  announce:
+    name: What is being verified
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log the target
+        env:
+          SHA: ${{ inputs.release_sha }}
+          REASON: ${{ inputs.reason }}
+          BASE: ${{ inputs.base_url }}
+        run: |
+          echo "Verifying release: ${SHA:-<unspecified>}"
+          echo "Reason:            ${REASON}"
+          echo "Base URL:          ${BASE}"
+
+  # Waits for the Argo rollout, then black-box polls /api/health.
+  health:
+    name: Health
+    needs: announce
+    uses: ./.github/workflows/prod-smoke.yml
+    with:
+      # workflow_dispatch supplies the default, so this is never empty.
+      url: ${{ inputs.base_url }}/api/health
+      # Argo's detection + rollout is slower than a bare ingress check, so wait
+      # longer here than prod-smoke's manual default.
+      wait_seconds: 360
+
+  # Separate poll for chat-service, same shape as `health` above but a
+  # different upstream/path. Runs after `health` (Argo has already rolled out
+  # by then) so wait_seconds: 0 — no reason to sleep twice. Deliberately NOT a
+  # dependency of `e2e` below: a chat-service regression must not suppress the
+  # auth/UI journey check, which covers unrelated ground.
+  chat-health:
+    name: Chat service health
+    needs: health
+    uses: ./.github/workflows/prod-smoke.yml
+    with:
+      url: ${{ inputs.base_url }}/chat-api/health
+      wait_seconds: 0
+
+  # Only worth running the browser journey once the API is actually answering.
+  e2e:
+    name: Live smoke
+    needs: health
+    uses: ./.github/workflows/post-prod-e2e.yml
+    with:
+      base_url: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+      run_authn_boundary: false
+    secrets:
+      POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
+      POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+      INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}

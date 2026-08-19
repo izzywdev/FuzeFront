@@ -1,0 +1,136 @@
+<!-- @dsCard group="Motion" viewport="800x480" name="Motion" subtitle="seam animations, easing, focus" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: var(--space-5); font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-4); }
+  .label { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); font-weight: 600; margin-bottom: var(--space-3); }
+  .anim-tile { margin-bottom: var(--space-3); }
+  .anim-name { font-family: var(--font-mono); font-size: 11px; color: var(--accent-color); font-weight: 600; margin-bottom: 6px; }
+  .anim-strip { height: 5px; border-radius: 999px; background: var(--seam); margin-bottom: 4px; }
+  .anim-meta  { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); }
+  .ease-row { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4); }
+  .ease-label { flex: 1; }
+  .ease-name { font-family: var(--font-mono); font-size: 10px; color: var(--accent-color); font-weight: 600; }
+  .ease-val  { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-top: 2px; }
+  .ease-use  { font-size: var(--text-xs); color: var(--text-secondary); margin-top: 3px; }
+  .dur-row { display: flex; gap: var(--space-2); }
+  .dur-chip { flex: 1; text-align: center; padding: 7px 4px; background: var(--bg-quaternary); border-radius: var(--radius-sm); }
+  .dur-token { font-family: var(--font-mono); font-size: 9px; color: var(--accent-color); }
+  .dur-val   { font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); margin-top: 2px; }
+
+  @keyframes ffSeamDraw    { 0% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0 0% 0 0); } }
+  @keyframes ffPulse       { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+  @keyframes ffShimmer     { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes ffSeamGlow    { 0%, 100% { box-shadow: 0 0 8px -2px color-mix(in srgb, var(--accent-color) 40%, transparent); } 50% { box-shadow: 0 0 22px -2px var(--accent-color); } }
+</style></head><body>
+  <div class="grid">
+
+    <!-- Animation catalog -->
+    <div class="card">
+      <div class="label">Named seam animations</div>
+
+      <div class="anim-tile">
+        <div class="anim-name">seam-draw</div>
+        <div class="anim-strip" style="animation: ffSeamDraw 1.4s cubic-bezier(0.16,1,0.3,1) infinite alternate;"></div>
+        <div class="anim-meta">ffSeamDraw · 260ms ease-out · card hover, overlay enter</div>
+      </div>
+
+      <div class="anim-tile">
+        <div class="anim-name">seam-pulse</div>
+        <div class="anim-strip" style="animation: ffPulse 1.8s ease-in-out infinite;"></div>
+        <div class="anim-meta">ffPulse · 1.8s ease-in-out ∞ · status indicators, loading</div>
+      </div>
+
+      <div class="anim-tile">
+        <div class="anim-name">seam-shimmer</div>
+        <div class="anim-strip" style="background: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 45%, var(--accent-color) 100%); background-size: 300% 100%; animation: ffShimmer 1.6s ease-in-out infinite;"></div>
+        <div class="anim-meta">ffShimmer · 1.6s linear ∞ · skeleton loaders</div>
+      </div>
+
+      <div class="anim-tile">
+        <div class="anim-name">seam-glow</div>
+        <div class="anim-strip" style="animation: ffSeamGlow 2s ease-in-out infinite;"></div>
+        <div class="anim-meta">ffSeamGlow · 2s ease-in-out ∞ · active accent, notifications</div>
+      </div>
+
+      <div class="anim-tile" style="margin-bottom:0;">
+        <div class="anim-name">seam-reveal</div>
+        <div class="anim-strip" style="opacity: 0.35;"></div>
+        <div class="anim-meta">ffSeamReveal · 280ms ease-out · overlay/modal enter</div>
+      </div>
+    </div>
+
+    <!-- Easing + durations -->
+    <div class="card">
+      <div class="label">Easing curves</div>
+
+      <div class="ease-row">
+        <svg width="56" height="48" viewBox="0 0 80 64" fill="none" style="flex:none;">
+          <rect width="80" height="64" rx="4" fill="var(--bg-quaternary)"/>
+          <line x1="0" y1="64" x2="80" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <line x1="0" y1="0" x2="0" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <line x1="0" y1="64" x2="32" y2="64" stroke="var(--border-strong)" stroke-width="0.8" stroke-dasharray="2,2"/>
+          <line x1="80" y1="0" x2="16" y2="0" stroke="var(--border-strong)" stroke-width="0.8" stroke-dasharray="2,2"/>
+          <circle cx="32" cy="64" r="2.5" fill="var(--text-tertiary)"/>
+          <circle cx="16" cy="0" r="2.5" fill="var(--text-tertiary)"/>
+          <path d="M 0,64 C 32,64 16,0 80,0" stroke="var(--accent-color)" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="0" cy="64" r="3" fill="var(--accent-color)"/>
+          <circle cx="80" cy="0" r="3" fill="var(--accent-color)"/>
+        </svg>
+        <div class="ease-label">
+          <div class="ease-name">--ease-standard</div>
+          <div class="ease-val">(0.4, 0, 0.2, 1)</div>
+          <div class="ease-use">UI transitions · tab switches · theme</div>
+        </div>
+      </div>
+
+      <div class="ease-row">
+        <svg width="56" height="48" viewBox="0 0 80 64" fill="none" style="flex:none;">
+          <rect width="80" height="64" rx="4" fill="var(--bg-quaternary)"/>
+          <line x1="0" y1="64" x2="80" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <line x1="0" y1="0" x2="0" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <line x1="0" y1="64" x2="13" y2="0" stroke="var(--border-strong)" stroke-width="0.8" stroke-dasharray="2,2"/>
+          <line x1="80" y1="0" x2="24" y2="0" stroke="var(--border-strong)" stroke-width="0.8" stroke-dasharray="2,2"/>
+          <circle cx="13" cy="0" r="2.5" fill="var(--text-tertiary)"/>
+          <circle cx="24" cy="0" r="2.5" fill="var(--text-tertiary)"/>
+          <path d="M 0,64 C 13,0 24,0 80,0" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="0" cy="64" r="3" fill="var(--accent-2)"/>
+          <circle cx="80" cy="0" r="3" fill="var(--accent-2)"/>
+        </svg>
+        <div class="ease-label">
+          <div class="ease-name" style="color:var(--accent-2);">--ease-out / --ease-seam</div>
+          <div class="ease-val">(0.16, 1, 0.3, 1)</div>
+          <div class="ease-use">Overlay enter · seam draw · springy</div>
+        </div>
+      </div>
+
+      <div class="ease-row" style="margin-bottom: var(--space-4);">
+        <svg width="56" height="48" viewBox="0 0 80 64" fill="none" style="flex:none;">
+          <rect width="80" height="64" rx="4" fill="var(--bg-quaternary)"/>
+          <line x1="0" y1="64" x2="80" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <line x1="0" y1="0" x2="0" y2="64" stroke="var(--border-color)" stroke-width="1"/>
+          <path d="M 0,64 L 80,0" stroke="var(--text-tertiary)" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="4,3"/>
+          <circle cx="0" cy="64" r="3" fill="var(--text-tertiary)"/>
+          <circle cx="80" cy="0" r="3" fill="var(--text-tertiary)"/>
+        </svg>
+        <div class="ease-label">
+          <div class="ease-name" style="color:var(--text-secondary);">linear</div>
+          <div class="ease-val">(0, 0, 1, 1)</div>
+          <div class="ease-use">Infinite loops · spin · shimmer</div>
+        </div>
+      </div>
+
+      <div class="label" style="margin-top: var(--space-1);">Duration tokens</div>
+      <div class="dur-row">
+        <div class="dur-chip"><div class="dur-token">--duration-fast</div><div class="dur-val">120ms</div></div>
+        <div class="dur-chip"><div class="dur-token">--duration-base</div><div class="dur-val">200ms</div></div>
+        <div class="dur-chip"><div class="dur-token">--duration-enter</div><div class="dur-val">260ms</div></div>
+        <div class="dur-chip"><div class="dur-token">--duration-exit</div><div class="dur-val">180ms</div></div>
+      </div>
+    </div>
+
+  </div>
+</body></html>

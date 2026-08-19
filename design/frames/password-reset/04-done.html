@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reset — password updated · /reset/done</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .auth { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8); }
+  .card { width: 100%; max-width: 400px; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl); padding: var(--space-8); position: relative; overflow: hidden;
+    box-shadow: var(--shadow-lg); text-align: center; }
+  .card__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .brand { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-lg);
+    letter-spacing: var(--tracking-display); margin-bottom: var(--space-6); }
+  .brand .fuse { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .check { width: 56px; height: 56px; margin: 0 auto var(--space-5); border-radius: var(--radius-pill);
+    display: grid; place-items: center; background: var(--success-soft); color: var(--success-color);
+    font-size: var(--text-xl); border: 2px solid rgba(52,211,153,0.4); }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-3); letter-spacing: var(--tracking-display); }
+  .desc { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 var(--space-2); line-height: 1.6; }
+  .note { margin-top: var(--space-5); padding: var(--space-4); border-radius: var(--radius-md);
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-tertiary);
+    font-size: var(--text-xs); line-height: 1.6; text-align: left; }
+  .btn-block { width: 100%; margin-top: var(--space-6); justify-content: center; display: flex; }
+</style>
+</head>
+<body>
+<div class="auth">
+  <div class="card" data-frame="04-done" data-panel="reset-done">
+    <div class="card__seam"></div>
+    <div class="brand"><span class="fuse">Fuze</span>Front</div>
+    <div class="check" aria-hidden="true">✓</div>
+    <h1>Password updated</h1>
+    <p class="desc">Your new password is ready. Use it next time you sign in.</p>
+    <div class="note" data-security-note="sessions-revoked">
+      For your safety we signed out every other device that was using the old password.
+      You'll need to sign in again on those.
+    </div>
+    <a href="#" class="btn btn-primary btn-block" data-action="go-sign-in">Sign in</a>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Step 4</b> · Password updated · other sessions revoked · flow complete</span>
+  <span>
+    <a href="03-set-new.html" class="btn btn-ghost">← Set password</a>
+    <a href="index.html" class="btn btn-primary">Overview ↩</a>
+  </span>
+</nav>
+</body>
+</html>

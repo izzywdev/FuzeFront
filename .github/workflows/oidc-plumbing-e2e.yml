@@ -1,0 +1,174 @@
+name: OIDC Plumbing E2E
+
+# Full end-to-end test of the OIDC authentication stack using a LOCAL Authentik
+# user — no Google OAuth credentials or Cloudflare tunnel required.
+#
+# What is tested (every component is real, nothing is mocked):
+#   FuzeFront frontend → backend /api/auth/oidc/login → Authentik authorization
+#   endpoint → Playwright fills native Authentik login UI → Authentik issues code
+#   → backend /api/auth/oidc/callback (real PKCE) → backend POSTs Authentik
+#   /token/ (real token exchange) → Authentik returns signed JWT → backend
+#   creates session → frontend stores JWT → /dashboard
+#
+# This job runs on EVERY push and pull_request to master — it is a required
+# check for the integration. It replaces the mocked "E2E" tests (google-signin.spec.ts)
+# that only tested frontend rendering logic without touching Authentik.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/helm/fuzefront/authentik/blueprints/**'
+      - 'docker-compose.e2e.yml'
+      - 'deploy/e2e/**'
+      - '.github/actions/e2e-stack/**'
+      - '.github/workflows/oidc-plumbing-e2e.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/helm/fuzefront/authentik/blueprints/**'
+      - 'docker-compose.e2e.yml'
+      - 'deploy/e2e/**'
+      - '.github/actions/e2e-stack/**'
+      - '.github/workflows/oidc-plumbing-e2e.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: oidc-plumbing-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oidc-plumbing-e2e:
+    name: OIDC plumbing (local user, no Google)
+    runs-on: ubuntu-latest
+
+    env:
+      # No tunnel — backend and browser both reach Authentik via Docker-published port 9000.
+      # The /etc/hosts step below maps authentik-server → 127.0.0.1 for Playwright.
+      AUTHENTIK_EXTERNAL_URL: http://authentik-server:9000
+      AUTHENTIK_ISSUER_URL: http://authentik-server:9000/application/o/fuzefront/
+      AUTHENTIK_COOKIE_DOMAIN: authentik-server
+      AUTHENTIK_OIDC_CLIENT_SECRET: e2e-oidc-client-secret
+      # Test user created by the "Create E2E test user" step below
+      E2E_USER_EMAIL: e2e@test.local
+      E2E_USER_PASSWORD: E2eP@ssw0rd123
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install root workspace (for frontend + Playwright deps)
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browsers (Chromium only)
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # ── Bring up the stack: compose + Authentik OIDC provisioning + test user
+      # + platform projection. Shared with .github/workflows/e2e.yml so the two
+      # cannot drift — that drift is what broke `E2E (sign-in)` for 30+ runs.
+      - name: Start and provision the E2E stack
+        uses: ./.github/actions/e2e-stack
+        with:
+          e2e-user-email: ${{ env.E2E_USER_EMAIL }}
+          e2e-user-password: ${{ env.E2E_USER_PASSWORD }}
+          authentik-oidc-client-secret: ${{ env.AUTHENTIK_OIDC_CLIENT_SECRET }}
+
+      - name: Map authentik-server to localhost for Playwright
+        run: echo "127.0.0.1 authentik-server" | sudo tee -a /etc/hosts
+
+      - name: Wait for backend OIDC login to be ready
+        run: |
+          echo "Waiting for backend OIDC login endpoint (up to 90s)..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -o /dev/null -w "%{http_code}" -s --max-redirs 0 http://localhost:3001/api/auth/oidc/login)
+            if [ "$STATUS" = "302" ]; then
+              echo "Backend OIDC login ready (returned 302) after $((i * 5))s"
+              break
+            fi
+            echo "Attempt $i: OIDC login returned $STATUS, waiting..."
+            if [ "$i" -eq 18 ]; then
+              echo "::error::Backend OIDC login not ready after 90s"
+              docker compose -f docker-compose.e2e.yml logs backend | tail -30
+              exit 1
+            fi
+            sleep 5
+          done
+
+      # ── Run OIDC plumbing E2E tests ────────────────────────────────────────
+      - name: Run OIDC plumbing E2E tests
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:4173
+          BACKEND_URL: http://localhost:3001
+          AUTHENTIK_URL: http://authentik-server:9000
+          E2E_USER_EMAIL: ${{ env.E2E_USER_EMAIL }}
+          E2E_USER_PASSWORD: ${{ env.E2E_USER_PASSWORD }}
+          # The plumbing test doesn't need Google-specific env vars.
+          # Run headless (Authentik login page has no bot detection).
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ''
+        run: npx playwright test tests/oidc-plumbing.e2e.spec.ts --project=chromium --reporter=list,html --timeout 180000
+
+      # ── Real sign-in through the UI, against the REAL stack ────────────────
+      # This is the coverage that did not exist. The other sign-in job
+      # (.github/workflows/e2e.yml) runs the monolith with NO Authentik and seeds
+      # a local bcrypt row, so it cannot exercise the Security API path the SPA
+      # actually uses — it has been failing since the cutover for exactly that
+      # reason. Here the account exists in Authentik, the security service is in
+      # the stack (docker-compose.e2e.yml), and nginx routes /api/v1/security to
+      # it — so a pass means password sign-in genuinely works end to end.
+      - name: Run sign-in E2E (real Authentik user, via the Security API)
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:4173
+          E2E_USER_EMAIL: ${{ env.E2E_USER_EMAIL }}
+          E2E_USER_PASSWORD: ${{ env.E2E_USER_PASSWORD }}
+        run: npx playwright test tests/auth-simple.spec.ts --project=chromium --reporter=list --timeout 120000
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oidc-plumbing-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          echo "=== authentik-server (last 200 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-server | tail -200
+          echo "=== authentik-worker (last 50 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs authentik-worker | tail -50
+          echo "=== frontend (last 50 lines) ==="
+          docker compose -f docker-compose.e2e.yml logs frontend | tail -50
+          echo "=== backend: full log last 100 lines ==="
+          docker compose -f docker-compose.e2e.yml logs backend | tail -100
+          echo "=== backend: OIDC/auth/error lines only (all time) ==="
+          docker compose -f docker-compose.e2e.yml logs backend 2>/dev/null \
+            | grep -aE "(❌|⚠️|\[oidc\]|oidc/callback|token-exchange|authentication_failed|codeVerif|outbox|syncUser|Error:|exception|Initialized OIDC|Created new user|Updated existing user)" \
+            | head -300 || true
+          echo "=== backend: authentikPassword DIAGNOSTIC lines only (all time, FuzeFront#557) ==="
+          # The tail -100 dump above only catches the LAST attempt's tail end
+          # of a verbose retry loop, which drops the per-hop Set-Cookie/CSRF
+          # diagnostics from earlier hops in the same attempt. Grep the full,
+          # untruncated backend log for just the diagnostic lines instead.
+          docker compose -f docker-compose.e2e.yml logs backend 2>/dev/null \
+            | grep -aiE "DIAGNOSTIC|csrf" \
+            | head -400 || true
+
+      - name: Tear down E2E stack
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v

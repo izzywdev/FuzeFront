@@ -1,0 +1,37 @@
+{
+  "manifestVersion": "1",
+  "slug": "myapp",
+  "name": "MyApp",
+  "menuLabel": "MyApp",
+  "description": "One line describing what this product does, shown in the app launcher.",
+  "icon": {
+    "kind": "emoji",
+    "value": "\ud83d\udce6"
+  },
+  "mode": "portal",
+  "modes": [
+    "portal",
+    "standalone"
+  ],
+  "builtin": false,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "/apps/myapp/assets/remoteEntry.js",
+    "scope": "myappApp",
+    "module": "./MyApp"
+  },
+  "nav": {
+    "section": "build",
+    "order": 10
+  },
+  "chrome": {
+    "menu": "host",
+    "topbar": "host"
+  },
+  "routing": {
+    "path": "/app/myapp",
+    "host": "myapp.fuzefront.com"
+  },
+  "visibility": "organization",
+  "roles": []
+}

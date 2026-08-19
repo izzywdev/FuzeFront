@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Add member — authz-admin frame (b)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-add-member">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (b) · route /settings/access</div>
+  <h1>Add member</h1>
+  <p class="lead">Adding someone to the organization and choosing what they can do is one step,
+    not two. Role is required — there is no "add now, decide later" path that leaves a person
+    in the org with undefined access.</p>
+
+  <div class="modal" data-panel="add-member">
+    <div class="modal-head"><h2>Add member to Northwind</h2></div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="label" for="email">Email address</label>
+        <input class="input" id="email" data-input="email" type="email" value="hedy@northwind.example" />
+        <p class="hint">They get access as soon as you add them.</p>
+      </div>
+
+      <div class="field">
+        <span class="label">Role</span>
+        <label class="radio-row" data-role-option="admin">
+          <input type="radio" name="role" value="admin" />
+          <span>
+            <span class="rl">Admin</span>
+            <span class="rd">Full access, including managing members and roles.</span>
+          </span>
+        </label>
+        <label class="radio-row" data-role-option="editor" data-selected="true">
+          <input type="radio" name="role" value="editor" checked />
+          <span>
+            <span class="rl">Editor</span>
+            <span class="rd">Create and change apps and content. Cannot manage members.</span>
+          </span>
+        </label>
+        <label class="radio-row" data-role-option="viewer">
+          <input type="radio" name="role" value="viewer" />
+          <span>
+            <span class="rl">Viewer</span>
+            <span class="rd">Read-only access.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+      <button class="btn btn-accent" data-action="submit-add-member">Add member</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> <code>POST /v1/security/tenants/{tenantId}/members</code> (<code>MemberCreate</code>
+    → <code>201 Member</code>). Role options are rendered from
+    <code>GET /v1/security/tenants/{tenantId}/roles</code> — <b>never hard-coded</b>. The three shown
+    (<code>admin</code>/<code>editor</code>/<code>viewer</code>) are today's catalogue, not a fixed list.
+    <br /><br />
+    <b>Fail-closed — an empty role catalogue is not an empty form.</b> The roles endpoint returns
+    <code>{ items: [] }</code> both when a tenant genuinely has no roles <i>and</i> when the policy
+    engine is unreachable. This form must never render zero role options and stay submittable:
+    if <code>items</code> is empty, disable submit and show the error state in frame (e). Silently
+    adding a person with no role is the failure this rule exists to prevent.
+  </p>
+
+  <nav class="pager"><a href="01-members.html">← Members</a><a href="03-change-role.html">Next: Change role →</a></nav>
+</div>
+</body>
+</html>

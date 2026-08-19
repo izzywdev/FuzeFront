@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+coverage
+package-lock.json
+# Helm chart templates contain Go-template syntax that is not valid YAML.
+deploy/helm/**/templates/
+*.tpl

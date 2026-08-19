@@ -1,0 +1,691 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ['24.x']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
+          cd ../sdk && npm ci
+          cd ../api-client && npm ci
+
+      # @fuzefront/security-client's dist must exist before the identity-ui and
+      # auth-ui d.ts builds: identity-ui now imports its DirectoryMember/
+      # DirectoryPage types (member directory, FF-EPIC-17-S5) and auth-ui
+      # re-exports its SessionResult/AuthMethods types. security-client ships
+      # its types from dist/ (not committed; built via tsup), so it has to be
+      # built first. (frontend itself only ever imports security-client TYPES
+      # straight from source via its tsconfig path — see api.ts — so it needs
+      # no build step of its own.)
+      - name: Build @fuzefront/security-client (dep for identity-ui + auth-ui builds)
+        run: npm run -w @fuzefront/security-client build
+
+      # Build the @fuzefront/identity-ui d.ts BEFORE the frontend type-check.
+      # frontend/tsconfig.json resolves @fuzefront/identity-ui to its built
+      # dist/index.d.ts (like @fuzefront/design-system), NOT its TSX source — so
+      # the frontend's tsc consumes validated types instead of recompiling the
+      # package's source under the frontend's separate @types/react + csstype
+      # copy (which produced the csstype CSSProperties clash). Bundling/tests
+      # still resolve from source via the vite/vitest aliases.
+      - name: Build @fuzefront/identity-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/identity-ui build
+
+      # frontend/tsconfig.json resolves @fuzefront/auth-ui to its built
+      # dist/index.d.ts (like identity-ui/chat-ui/i18n) — same CSSProperties-
+      # clash reasoning as the identity-ui comment above. Bundling/tests still
+      # resolve it from source via the vite/vitest aliases.
+      - name: Build @fuzefront/auth-ui (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/auth-ui build
+
+      - name: auth-ui — type-check (tsc --noEmit)
+        run: npm run -w @fuzefront/auth-ui type-check
+
+      - name: auth-ui — unit tests (vitest)
+        run: npm run -w @fuzefront/auth-ui test
+
+      # @fuzefront/chat-ui is consumed by the host frontend (FuzeChatWidget) and
+      # has NO vite source alias, so both the frontend type-check (tsconfig →
+      # chat-ui/dist/index.d.ts) and `vite build` resolve it from dist. Build its
+      # dependency @fuzefront/chat-client first, then chat-ui.
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend type-check)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+
+      # @fuzefront/i18n is consumed by the host (main.tsx, contexts, components).
+      # frontend/tsconfig.json resolves it to dist/index.d.ts (like identity-ui),
+      # so build it before the frontend type-check. vite/vitest still alias it to
+      # source for bundling/tests.
+      - name: Build @fuzefront/i18n (d.ts for frontend type-check)
+        run: npm run -w @fuzefront/i18n build
+
+      - name: Build @fuzefront/custom-hostname-client (d.ts for backend type-check)
+        # Its `types` points at dist/, and backend/src/custom-domains imports it
+        # statically, so backend's tsc cannot resolve it until this runs.
+        run: npm run -w @fuzefront/custom-hostname-client build
+
+      - name: Build @fuzeone/selection-lists-ui (d.ts for frontend type-check)
+        # frontend/tsconfig.json resolves @fuzeone/selection-lists-ui to its
+        # built dist/index.d.ts; without this the type-check and vite build
+        # both fail with "Cannot find module '@fuzeone/selection-lists-ui'".
+        run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Type checking
+        run: |
+          cd backend && npm run type-check
+          cd ../frontend && npm run type-check
+          cd ../sdk && npm run type-check
+          cd ../api-client && npm run type-check
+
+      - name: Lint code
+        run: |
+          cd backend && npm run lint
+          cd ../frontend && npm run lint
+          cd ../sdk && npm run lint
+
+      # Backend tests need a Postgres service (and the Permit PDP), so they run
+      # in the dedicated jobs that provide that infra — the `integration-tests`
+      # job below and the `Backend Authentication Tests` workflow — not in this
+      # infra-less lint/type/unit job.
+
+      - name: Run frontend tests
+        run: cd frontend && npm test
+
+      - name: Run SDK tests
+        run: cd sdk && npm test
+
+  identity-ui-and-security:
+    name: Identity UI + Security (unit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      # Root install links the @fuzefront/* workspaces (design-system,
+      # identity-ui, security-service, core, shared) as local symlinks, so no
+      # GitHub Packages auth is needed here.
+      - name: Install dependencies (root workspaces)
+        run: npm ci
+
+      # --- @fuzefront/identity-ui -----------------------------------------
+      # identity-ui now imports @fuzefront/security-client's DirectoryMember/
+      # DirectoryPage types (member directory, FF-EPIC-17-S5). security-client
+      # ships its types from dist/ (not committed; built via tsup), so it has
+      # to be built before identity-ui's type-check/build can resolve the module.
+      - name: Build @fuzefront/security-client (type dep for identity-ui)
+        run: npm run -w @fuzefront/security-client build
+
+      - name: identity-ui — type-check (tsc --noEmit)
+        run: npm run -w @fuzefront/identity-ui type-check
+
+      - name: identity-ui — unit tests (vitest)
+        run: npm run -w @fuzefront/identity-ui test
+
+      - name: identity-ui — library build (es/cjs/d.ts)
+        run: npm run -w @fuzefront/identity-ui build
+
+      - name: identity-ui — assert build artifacts
+        run: |
+          test -f packages/identity-ui/dist/index.js
+          test -f packages/identity-ui/dist/index.cjs
+          test -f packages/identity-ui/dist/index.d.ts
+          echo "identity-ui dist artifacts present (es + cjs + d.ts)"
+
+      # --- @fuzefront/security-service (API tokens) -----------------------
+      # core + shared/kafka must be built first — the jest moduleNameMapper
+      # resolves them from their dist/ output.
+      - name: build core + shared (jest deps)
+        # shared MUST build before core — @fuzefront/core now imports
+        # @fuzefront/shared/kafka (the schema registry), and tsc resolves it
+        # through shared/dist, so shared has to be current first.
+        run: |
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/core build
+
+      - name: security — API-token jest suite (DB mocked, no Postgres)
+        run: |
+          cd backend/security
+          npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
+
+      - name: security — OIDC unit tests (openid-client mocked, no Authentik required)
+        run: |
+          cd backend/security
+          npx jest tests/oidc-google-signin.test.ts tests/oidc-state.test.ts tests/oidc-code-exchange.test.ts
+
+  build:
+    name: Build Applications
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
+          cd ../sdk && npm ci
+
+      # backend/src/custom-domains imports @fuzefront/custom-hostname-client
+      # statically and its `types` points at dist/, so the workspace symlink
+      # resolves to an empty package until this runs. Must precede the backend
+      # build, exactly like @fuzefront/shared's kafka sub-tree.
+      - name: Build @fuzefront/custom-hostname-client (for backend build)
+        run: npm run -w @fuzefront/custom-hostname-client build
+
+      - name: Build backend
+        run: cd backend && npm run build
+
+      # chat-ui is bundled into the host frontend from its dist (no vite source
+      # alias), and depends on chat-client — build both before `vite build`.
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend bundle)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+
+      # selection-lists-ui's exports field points to dist/ so vite cannot
+      # resolve the package entry until it has been built.
+      - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
+        run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Build SDK
+        run: cd sdk && npm run build
+
+      - name: Upload build artifacts
+        # Only upload on release events — 1,928 copies at 6.36 GB was the dominant
+        # storage consumer. integration-tests below rebuilds from source so the
+        # artifact is not needed on every PR/push run.
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-artifacts
+          path: |
+            backend/dist/
+            frontend/dist/
+            sdk/dist/
+          retention-days: 7
+
+  chat-service-tests:
+    name: Chat service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      # SHA-pinned per the convention the newer workflows in this repo already
+      # follow (billing-service-tests, chat-packages-publish, claude, ...): a
+      # mutable @v4 tag can be silently repointed by the action owner. Same
+      # SHAs already vetted elsewhere in .github/workflows, so behaviour is
+      # unchanged. The rest of this file still uses mutable tags — pinning it
+      # wholesale is a separate, security-owned change.
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      # chat-service IS a root workspace, so `npm ci` installs its deps and links
+      # @fuzefront/shared — no manual symlink needed (unlike the email-service job
+      # below, which predates that). Its Dockerfile relies on the same workspace
+      # membership via `npm ci --workspace=services/chat-service`.
+      - name: Install workspace
+        run: npm ci
+
+      - name: Build @fuzefront/shared
+        # chat-service imports the Kafka client + billing.llm.usage schema from
+        # shared, and tsc resolves it through shared/dist.
+        run: npm run -w @fuzefront/shared build
+
+      - name: Type-check chat-service
+        run: npm run -w @fuzefront/chat-service build
+
+      - name: Run chat-service unit tests
+        # Covers the RAG pipeline, agent loop + tools, Permit gating, repos
+        # (incl. the continuous-thread resolution), routes, and the db-migrate
+        # Job entrypoint. These had never run in CI before.
+        run: npm run -w @fuzefront/chat-service test
+
+  notification-service-tests:
+    name: Notification service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      # notification-service is a root workspace, so `npm ci` installs its deps.
+      # It depends on no other workspace package, so nothing needs building first.
+      - name: Install workspace
+        run: npm ci
+
+      - name: Type-check notification-service
+        run: npm run -w @fuzefront/notification-service build
+
+      - name: Run notification-service unit tests
+        # Covers the routes (auth derivation, internal-publish fail-closed,
+        # read vs seen), the SSE hub (per-user isolation, stream cap, dead-client
+        # handling) and the auth middleware.
+        run: npm run -w @fuzefront/notification-service test
+
+  applications-service-tests:
+    name: Applications service (unit + integration)
+    runs-on: ubuntu-latest
+    needs: build
+
+    # This job did not exist before. The applications-service serves /api/apps in
+    # every deployed configuration, and NO workflow ran its tests — which is how
+    # a suite could sit red on master (a zod narrowing error under
+    # `strict: false`) with nothing reporting it, and how the app-installation
+    # routes could be absent from the service that actually owns the path.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fuzefront_platform
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install workspace
+        run: npm ci
+
+      # applications-service imports @fuzefront/core from its build output.
+      - name: Build @fuzefront/core
+        run: npm run -w @fuzefront/core build
+
+      - name: Type-check applications-service
+        run: npm run -w @fuzefront/applications-service build
+
+      - name: Run applications-service tests
+        # Includes the app-installation suite (27 cases): scope_level vs install
+        # scope, org membership, owner/admin for `everyone`, non-disclosing 404s,
+        # the rate limiter, and the DB CHECK + partial unique indexes.
+        env:
+          NODE_ENV: test
+          USE_POSTGRES: 'true'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: fuzefront_platform
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: test-jwt-secret-key-for-testing-only
+        run: npm run -w @fuzefront/applications-service test
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: frontfuse_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci   # root workspace (backend + shared) — applies root overrides
+          cd frontend && npm ci
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/frontfuse_test
+          NODE_ENV: test
+          # The backend reads individual DB_* vars (not DATABASE_URL). Point them
+          # at the pre-created `frontfuse_test` service DB: ensureDatabase now
+          # verifies the DB exists (no auto-create since the bootstrap split), so
+          # DB_NAME must match the POSTGRES_DB the service created.
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: frontfuse_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          # Use real PERMIT_API_KEY when available (secret); fall back to ci-noop
+          # so the job doesn't fail when the secret is absent (e.g. forks).
+          PERMIT_API_KEY: ${{ secrets.PERMIT_API_KEY || 'ci-noop' }}
+          PERMIT_PDP_URL: http://localhost:7766
+        # Real integration tests (auth + apps + permissions) against the Postgres
+        # service — they genuinely assert behavior, so a failure is a real bug.
+        run: cd backend && npm run test:integration
+
+  email-integration:
+    name: Email Integration (MailHog)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install root workspace (shared deps)
+        run: npm ci
+
+      - name: Install email-service deps
+        # email-service is not in the root workspace so npm install can't resolve
+        # @fuzefront/shared via workspace symlinks. Link shared directly first,
+        # then install remaining deps (no package-lock.json, so npm install not ci).
+        run: |
+          mkdir -p services/email-service/node_modules/@fuzefront
+          ln -sf "$(pwd)/shared" services/email-service/node_modules/@fuzefront/shared
+          cd services/email-service && npm install --ignore-scripts
+
+      - name: Build email-service
+        run: cd services/email-service && npm run build
+
+      - name: Start MailHog + Kafka + email-service
+        run: |
+          # Start Kafka + MailHog first. Use --wait so docker compose blocks until
+          # ALL declared healthchecks pass. For Kafka-KRaft the healthcheck waits
+          # for the broker to be fully initialised (not just the TCP port binding),
+          # which eliminates the race where kafka-topics --create runs before the
+          # broker is ready to serve requests.
+          docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 mailhog kafka-test
+          echo "Kafka and MailHog are healthy."
+          echo "Pre-creating Kafka topic notify.email.requested..."
+          docker exec test-kafka kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --create --topic notify.email.requested \
+            --partitions 1 --replication-factor 1 --if-not-exists
+          echo "Topic created."
+          echo "Starting email-service..."
+          docker compose -f docker-compose.test.yml up -d email-service-test
+          echo "Waiting for email-service health (up to 60s)..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3004/health >/dev/null 2>&1; then echo "email-service up"; break; fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: email-service did not become healthy after 60s" >&2
+              docker compose -f docker-compose.test.yml logs email-service-test
+              exit 1
+            fi
+            sleep 2
+          done
+          # Give the Kafka consumer inside email-service time to join its group
+          # and establish partition assignment before the test produces messages.
+          echo "Waiting 10s for Kafka consumer group to stabilise..."
+          sleep 10
+
+      - name: Run email integration tests
+        env:
+          KAFKA_BROKERS: localhost:9094
+          MAILHOG_API: http://localhost:8025
+        run: cd services/email-service && npm test
+
+      - name: Dump email-service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs email-service-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  # ── Tier 4: Contract ─────────────────────────────────────────────────────
+  contract-tests:
+    name: Contract Tests (OpenAPI)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Discover OpenAPI specs
+        id: discover
+        run: |
+          # packages/ is searched as well as services/: packages/security and
+          # packages/auth ship contracts too, and being outside this glob is
+          # why packages/security/openapi.yaml drifted (its create schemas were
+          # missing `additionalProperties: false` and nothing flagged it).
+          specs=$(find services packages -maxdepth 2 -type f \( -name 'openapi.yaml' -o -name 'openapi.yml' \) 2>/dev/null || true)
+          if [ -z "$specs" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Specs found:"; echo "$specs"
+          fi
+          {
+            echo 'specs<<EOF'
+            echo "$specs"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Lint specs (Spectral) + smoke the Prism mock
+        if: steps.discover.outputs.found == 'true'
+        run: |
+          # Pin the CLIs: unpinned installs pull a spectral-cli whose transitive
+          # @asyncapi/specs ships an ESM index that crashes on CJS require
+          # ("module is not defined in ES module scope") before any lint runs.
+          # 6.11.1 predates that break and lints OpenAPI 3.1 fine.
+          npm install -g @stoplight/spectral-cli@6.11.1 @stoplight/prism-cli@5.8.1
+          echo "${{ steps.discover.outputs.specs }}" | while read -r spec; do
+            [ -z "$spec" ] && continue
+            echo "=== $spec ==="
+            spectral lint "$spec" || exit 1
+            # Stand the contract up as a mock and confirm it boots.
+            prism mock "$spec" --port 4010 >/tmp/prism.log 2>&1 &
+            prism_pid=$!
+            for _ in $(seq 1 15); do
+              # No -f: the spec defines no GET / so Prism answers 404, which still
+              # proves the mock is up; -f would treat that as not-ready forever.
+              if curl -s -o /dev/null http://localhost:4010 2>/dev/null; then echo "prism mock up for $spec"; break; fi
+              sleep 1
+            done
+            kill "$prism_pid" 2>/dev/null || true
+          done
+
+      - name: No contracts yet (stub)
+        if: steps.discover.outputs.found != 'true'
+        run: |
+          echo "::notice title=Contract tier::No services/*/openapi.yaml found yet."
+          echo "TODO (contract-first, see CLAUDE.md): freeze + PR an OpenAPI spec per"
+          echo "service, generate the @fuzefront/<svc>-client from it, and this tier"
+          echo "will Spectral-lint each spec and boot a Prism mock automatically —"
+          echo "no workflow edits required (discovery is already wired above)."
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          exit-code: '0'
+          trivyignores: '.trivyignore'
+
+      # This scan is a byte-for-byte duplicate of harden-gate.yml's
+      # gate-dependency-scan (same scan-type: fs, scan-ref: ., ignore-unfixed,
+      # .trivyignore) and it used to upload its SARIF to code scanning too.
+      # GitHub creates ONE check run per SARIF *tool*, so all three Trivy
+      # uploads in this repo (this one, harden-gate.yml's `trivy`, and
+      # security.yml's `trivy-container`) were aggregated into a single "Trivy"
+      # check. Their jobs finish at very different times — ~23s here, ~25s for
+      # harden-gate, ~6min for the container scan — so the check was finalised
+      # before every configuration had reported. Verified on run 32038539365:
+      # the check completed at 14:18:05 while harden-gate's analysis was still
+      # processing until 14:18:10, producing 'Warning: 1 configuration present
+      # on refs/heads/master was not found ... trivy' on every single run. With
+      # no complete baseline to diff against, code scanning then reported
+      # PRE-EXISTING findings as "new alerts" — a permanently red check that no
+      # code change could clear, which is exactly the kind of check people
+      # learn to ignore.
+      #
+      # NOTE, recorded because it was guessed wrong once: this job's scan is
+      # unfiltered by severity while the other two are CRITICAL,HIGH, and it was
+      # assumed that explained the medium+low in the phantom "new alerts". It
+      # does NOT. Run 32040683880 removed this upload and the counts stayed
+      # byte-identical at 2 high / 1 medium / 1 low, which disproves it — GitHub
+      # re-buckets Trivy findings into its own severity bands from the SARIF
+      # security-severity (CVSS) score, so a Trivy HIGH can surface as a GitHub
+      # medium or low. The alert set never changed; only the baseline diff was
+      # broken. Do not re-derive the old explanation from the severity config.
+      #
+      # Deduplicated: harden-gate.yml is now the single code-scanning source
+      # for the filesystem scan. The scan still RUNS here and its full,
+      # all-severity SARIF is kept as a build artifact, so nothing stops being
+      # scanned and no finding becomes invisible — it just stops being uploaded
+      # twice under one tool identity. Do not re-add an upload-sarif step here
+      # without first giving it a distinct SARIF tool name.
+      - name: Upload Trivy scan artifact (all severities)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-ci-fs-scan-sarif
+          path: trivy-results.sarif
+          retention-days: 30
+
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    permissions:
+      contents: write # peaceiris/actions-gh-pages creates/pushes the gh-pages branch
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Build documentation
+        run: |
+          mkdir -p docs
+          cp sdk/README.md docs/sdk-guide.md
+          cp README.md docs/index.md
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+
+  # Platform image build/push moved to release.yml (GHCR + GitOps tag bump).
+
+  notify:
+    name: Notify Team
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, build, integration-tests, email-integration]
+    if: always()
+
+    steps:
+      - name: Notify on success
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' }}
+        run: |
+          echo "✅ All checks passed! Ready for deployment."
+
+      - name: Notify on failure
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' }}
+        run: |
+          echo "❌ Some checks failed. Please review the logs."
+          exit 1

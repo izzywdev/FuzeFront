@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.fuzefront.app",
+      "sha256_cert_fingerprints": [
+        "CF:79:24:8E:4A:89:77:1E:C8:B6:69:83:4B:D4:AF:0C:8E:2C:B8:A4:5B:D6:FA:57:D0:06:9C:34:33:6F:68:AA"
+      ]
+    }
+  }
+]

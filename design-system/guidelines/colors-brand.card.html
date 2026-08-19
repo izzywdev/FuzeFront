@@ -1,0 +1,37 @@
+<!-- @dsCard group="Colors" viewport="720x200" name="Brand — Indigo & the Seam" subtitle="Electric indigo + cyan signal that fuse along the seam" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 24px; font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
+  .ramp { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+  .sw { border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-color); background: var(--bg-tertiary); }
+  .chip { height: 52px; }
+  .meta { padding: 7px 9px; }
+  .name { font-size: var(--text-2xs); font-weight: 600; color: var(--text-primary); }
+  .hex { margin-top: 2px; font-size: var(--text-2xs); color: var(--text-tertiary); font-family: var(--font-mono); text-transform: uppercase; }
+  .seam-spec { margin-top: 16px; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border-color); }
+  .seam-bar { height: 56px; background: var(--seam); }
+  .seam-meta { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 12px; background: var(--bg-tertiary); }
+  .seam-name { font-family: var(--font-display); font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+  .seam-name .sig { background: var(--seam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .seam-val { font-size: var(--text-2xs); color: var(--text-tertiary); font-family: var(--font-mono); }
+</style></head><body>
+  <div class="ramp">
+    <div class="sw"><div class="chip" style="background:var(--indigo-50)"></div><div class="meta"><div class="name">Indigo 50</div><div class="hex">#F0EEFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--indigo-100)"></div><div class="meta"><div class="name">Indigo 100</div><div class="hex">#E0DCFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--indigo-300)"></div><div class="meta"><div class="name">Indigo 300</div><div class="hex">#B3A9FF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--indigo-400)"></div><div class="meta"><div class="name">Indigo 400</div><div class="hex">#8C7CFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--indigo-500)"></div><div class="meta"><div class="name">Indigo 500 ·accent</div><div class="hex">#6E5CFF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--indigo-700)"></div><div class="meta"><div class="name">Indigo 700 ·hover</div><div class="hex">#5847E6</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--cyan-400)"></div><div class="meta"><div class="name">Cyan 400 ·accent-2</div><div class="hex">#29D3E6</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--cyan-500)"></div><div class="meta"><div class="name">Cyan 500</div><div class="hex">#0BB6C9</div></div></div>
+  </div>
+  <div class="seam-spec">
+    <div class="seam-bar"></div>
+    <div class="seam-meta">
+      <div class="seam-name">The <span class="sig">fuse seam</span> · signature gradient</div>
+      <div class="seam-val">--seam · linear-gradient(90deg, #6E5CFF → #29D3E6)</div>
+    </div>
+  </div>
+</body></html>

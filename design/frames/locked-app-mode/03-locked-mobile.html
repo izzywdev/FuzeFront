@@ -1,0 +1,55 @@
+<!-- @dsCard group="Locked App Mode" viewport="375x760" name="(c) Locked mobile shell" subtitle="375px white-label product surface — touch nav, no FuzeFront chrome" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Locked App Mode — (c) Locked mobile shell</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  :root { --brand-accent: #ff4d6d; }
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0; }
+  /* 375px phone canvas — the mobile locked surface / TWA viewport. */
+  .phone { width: 375px; min-height: 720px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
+  .m-topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); }
+  .m-topbar .glyph { font-size: 20px; }
+  .m-topbar .name { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-md); }
+  .m-topbar .spacer { flex: 1; }
+  .m-topbar .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-accent), #ffb36b); }
+  .m-feed { flex: 1; padding: 14px; overflow: auto; }
+  .m-composer { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 12px 14px; color: var(--text-tertiary); font-size: var(--text-sm); margin-bottom: 12px; }
+  .m-post { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 12px; }
+  .m-post .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .m-post .who .dot { width: 24px; height: 24px; border-radius: 50%; background: var(--seam); }
+  .m-post .who b { font-size: var(--text-sm); }
+  .m-post p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  /* Bottom tab bar — touch nav with safe-area padding (TWA). Product's own. */
+  .m-tabbar { display: flex; justify-content: space-around; padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-color); background: var(--bg-secondary); }
+  .m-tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--text-tertiary); min-width: 56px; min-height: 44px; justify-content: center; }
+  .m-tab.active { color: var(--brand-accent); }
+  .m-tab .ic { font-size: 18px; }
+</style>
+</head>
+<body data-frame="03-locked-mobile">
+<div class="phone" data-mode="locked" data-app="fuzesocial" data-viewport="375" data-whitelabel="true">
+  <header class="m-topbar" data-owner="app">
+    <span class="glyph">💬</span><span class="name">FuzeSocial</span>
+    <span class="spacer"></span>
+    <span class="avatar"></span>
+  </header>
+  <main class="m-feed">
+    <div class="m-composer">What's happening?</div>
+    <article class="m-post"><div class="who"><span class="dot"></span><b>Ava Chen</b></div><p>Feels like a native app because it is one — locked to FuzeSocial.</p></article>
+    <article class="m-post"><div class="who"><span class="dot"></span><b>Marco Diaz</b></div><p>Push notifications land instantly. 🔔</p></article>
+    <article class="m-post"><div class="who"><span class="dot"></span><b>Priya N.</b></div><p>No app-switcher, no clutter — just my feed.</p></article>
+  </main>
+  <nav class="m-tabbar" data-owner="app">
+    <div class="m-tab active"><span class="ic">🏠</span>Home</div>
+    <div class="m-tab"><span class="ic">🔎</span>Explore</div>
+    <div class="m-tab"><span class="ic">➕</span>Post</div>
+    <div class="m-tab"><span class="ic">🔔</span>Alerts</div>
+    <div class="m-tab"><span class="ic">👤</span>You</div>
+  </nav>
+</div>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Secret shown once — api-tokens frame (c)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="03-reveal-once">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Frame (c) · route /settings/tokens</div>
+  <h1>Copy your token now</h1>
+  <p class="lead">This is the one moment the full secret exists on screen. We store only a hash of
+    it — we can't show it again and we can't recover it. If you lose it, revoke this token and
+    create a new one. This is the most important screen in the flow.</p>
+
+  <div class="modal" data-panel="reveal-once" style="max-width: 560px">
+    <div class="modal-head"><h2>“CI deploy bot” is ready</h2></div>
+    <div class="modal-body">
+      <div class="field">
+        <span class="label">Token secret</span>
+        <div class="secret" data-panel="secret">
+          <code data-token-secret>ff_tok_EXAMPLE_NOT_A_REAL_TOKEN</code>
+          <button class="copy-btn" data-action="copy-secret" aria-label="Copy token to clipboard">
+            <span aria-hidden="true">⧉</span> Copy
+          </button>
+        </div>
+        <p class="hint" data-copy-status hidden>Copied to your clipboard.</p>
+      </div>
+
+      <div class="banner banner-error" data-warning="unrecoverable">
+        <span>
+          <b>You won't see this again</b>
+          <p>We keep only a one-way hash of this secret. Once you leave this screen it is gone for
+            good — there is no “show token” button anywhere. Store it in your secrets manager now.</p>
+        </span>
+      </div>
+
+      <label class="ack-row" data-input="ack">
+        <input type="checkbox" data-ack-checkbox />
+        <span class="at">I've stored this token somewhere safe. I understand it can't be shown again.</span>
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-accent" data-action="done" disabled data-requires-ack>Done</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> The raw secret is the <code>token</code> field returned <b>only</b> on the
+    <code>201</code> from <code>POST /api/organizations/{orgId}/tokens</code>
+    (<code>backend/security/src/routes/api-tokens.ts</code> reveals it once and stores a hash). No
+    list or get endpoint ever returns it again.
+    <br /><br />
+    <b>Interaction rules this frame freezes.</b> (1) <b>Copy affordance</b> —
+    <code>data-action="copy-secret"</code> writes the full secret to the clipboard and confirms via
+    <code>data-copy-status</code>. (2) <b>Explicit acknowledgement</b> — <code>Done</code> stays
+    disabled (<code>data-requires-ack</code>) until the user ticks <code>data-ack-checkbox</code>,
+    so no one dismisses the only copy by reflex. (3) <b>Honest, unrecoverable warning</b> — the
+    copy shown is an obviously-fake placeholder; a real implementation never logs or re-renders the
+    secret. Navigating away discards it from the DOM.
+  </p>
+
+  <nav class="pager"><a href="02-create-token.html">← Create token</a><a href="04-revoke.html">Next: Revoke →</a></nav>
+</div>
+</body>
+</html>

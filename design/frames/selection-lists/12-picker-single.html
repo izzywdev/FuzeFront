@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Picker — single select</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="content" data-frame="12-picker-single" style="padding-top: var(--space-12);">
+
+      <h1 class="page-title" style="text-align:center;">SelectionListPicker — single select</h1>
+      <p class="page-sub" style="text-align:center;">Bound to <code class="sl-code">key="sales-regions"</code>.</p>
+
+    <div class="sl-banner sl-banner--info" style="max-width: 560px; margin: 0 auto var(--space-6);" data-note="embeddable">
+      <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+      <div class="sl-banner__body">
+        <p class="sl-banner__title">This is a host page, not the FuzeFront shell</p>
+        <p><code class="sl-code">&lt;SelectionListPicker&gt;</code> is embeddable: it mounts inside a consuming
+          product's own form, beside that product's own fields. It is bound by list
+          <code class="sl-code">key</code>, never by a hard-coded option array.</p>
+      </div>
+    </div>
+
+      <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready">
+        <h2 class="sl-host__title">New opportunity</h2>
+        <p class="sl-host__sub">CRM · a consuming product's form</p>
+
+        <div class="sl-field">
+          <label class="sl-field__label" for="h-name">Account name</label>
+          <input class="sl-input" id="h-name" value="Northwind Logistics" />
+        </div>
+
+        <!-- the embedded picker -->
+        <div class="sl-field" data-picker="sales-regions">
+          <label class="sl-field__label" for="p-region">Sales region</label>
+          <div class="sl-combo">
+            <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true"
+                 aria-controls="p-menu" id="p-region" tabindex="0" data-combo-control>
+              <span class="sl-combo__value" data-selected-label>EMEA</span>
+              <span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <div class="sl-combo__menu" id="p-menu" role="listbox" data-combo-menu>
+              <div class="sl-combo__search">
+                <input class="sl-input" type="search" placeholder="Filter regions…" data-combo-search />
+              </div>
+              <div class="sl-combo__list">
+                <!-- ACTIVE values only, in authored sort_order, labels in the viewer's locale -->
+                <div class="sl-opt" role="option" aria-selected="false" data-item="sli_11h455vb4pex5vsknk084sn02q"><span>Americas</span></div>
+                <div class="sl-opt" role="option" aria-selected="true" data-item="sli_12h455vb4pex5vsknk084sn02q">
+                  <span>EMEA</span><span class="sl-opt__check" aria-hidden="true">✓</span>
+                </div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="sli_13h455vb4pex5vsknk084sn02q"><span>APAC</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="sli_14h455vb4pex5vsknk084sn02q"><span>Japan</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="sli_15h455vb4pex5vsknk084sn02q"><span>Greater China</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="sl-field__hint">Sorted by the list's authored <code class="sl-code">sort_order</code> — not
+            alphabetically, and not by id.</p>
+        </div>
+
+        <div class="sl-persist" data-persisted>
+          <div class="sl-persist__label">What the host form submits</div>
+          <code>{ "sales_region": "sli_12h455vb4pex5vsknk084sn02q" }</code>
+          <p class="sl-field__hint" style="margin-top: var(--space-2);">The <b>id</b>, never the label and never
+            the code. The label is presentation and is re-resolved per viewer, per locale.</p>
+        </div>
+      </div>
+
+      <div class="sl-section" style="margin-top: var(--space-10);">
+        <h2>States</h2>
+        <p class="sl-caption">The picker is embedded in someone else's form. It must never blow up that form,
+          and must never silently render an empty control.</p>
+
+        <div class="sl-host" data-panel="picker" data-state="loading" style="margin-bottom: var(--space-5);">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo__control" aria-busy="true">
+              <span class="sl-skel" style="width: 45%;"></span>
+              <span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <p class="sl-field__hint">Skeleton inside the control at its final height — the surrounding form
+              never reflows when values arrive.</p>
+          </div>
+        </div>
+
+        <div class="sl-host" data-panel="picker" data-state="empty" style="margin-bottom: var(--space-5);">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo__control" aria-disabled="true" style="opacity:0.6;">
+              <span class="sl-combo__value sl-combo__value--ph">No options available</span>
+              <span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <p class="sl-field__err"><span aria-hidden="true">ℹ</span>
+              <span>The list exists but has <b>no active values</b> — every value is archived, or none was ever
+              added. The control is disabled and says so, rather than opening an empty menu.</span></p>
+          </div>
+        </div>
+
+        <div class="sl-host" data-panel="picker" data-state="error" style="margin-bottom: var(--space-5);">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo__control is-invalid" style="border-color: var(--error-color);">
+              <span class="sl-combo__value sl-combo__value--ph">Couldn't load options</span>
+              <button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button>
+            </div>
+            <p class="sl-field__err" data-error="load-failed"><span aria-hidden="true">⚠</span>
+              <span>The picker fails <b>visibly and locally</b>: it shows a retry in place and keeps any
+              already-selected value. It never throws into the host form's render tree, and never submits a
+              silently-empty field.</span></p>
+          </div>
+        </div>
+
+        <div class="sl-host" data-panel="picker" data-state="not-found">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo__control" aria-disabled="true" style="opacity:0.6;">
+              <span class="sl-combo__value sl-combo__value--ph">List unavailable</span>
+            </div>
+            <p class="sl-field__err" data-error="NOT_FOUND"><span aria-hidden="true">⚠</span>
+              <span>No list with key <code class="sl-code">sales-regions</code> in this organization, or the
+              viewer can't read it — the service answers <code class="sl-code">404</code> either way, so the
+              picker cannot be used to probe another org's lists.</span></p>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='12-picker-single']</code> · <code>[data-panel='picker']</code> · <code>[data-mode='single']</code> · <code>[data-picker='sales-regions']</code> · <code>[data-combo-control]</code> · <code>[data-combo-menu]</code> · <code>[data-combo-search]</code> · <code>[data-selected-label]</code> · <code>[data-item='sli_12h455vb4pex5vsknk084sn02q']</code> · <code>[data-persisted]</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-note='embeddable']</code><br />
+        Contract: <code>GET /v1/selection-lists/{listId}/items?status=active&amp;locale=</code> to populate · <code>POST /v1/resolve</code> to render a stored id.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="11-add-access-modal.html" data-nav="prev">← Add access</a>
+  <span class="caption"><b>(4a) Picker — single select</b> · Flow 4 · SelectionListPicker · frame 12 of 14</span>
+  <a class="btn btn-primary" href="13-picker-multi.html" data-nav="next">Picker — multi select →</a>
+</nav>
+</body>
+</html>

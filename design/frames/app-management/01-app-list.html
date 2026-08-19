@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App list — frame (a)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="01-app-list">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">App list · Frame (a) · route /apps</div>
+  <h1>App management · All applications</h1>
+  <p class="lead">The management surface FuzeFront has never had — every registered app in one
+    searchable, filterable, paginated view. Not the add-app flow (that is federated-apps): this is
+    where an admin finds an app by name/slug, sees its lifecycle state, visibility and owning org,
+    and drills into one to manage it. Rows bind to the real
+    <code>@fuzefront/app-registry-client</code> <code>GET /api/v1/app-registry/apps</code>.</p>
+
+  <div class="panel" data-panel="app-list">
+    <div class="toolbar">
+      <div class="search" data-search="apps">
+        <span class="ico" aria-hidden="true">⌕</span>
+        <input type="search" data-input="search" placeholder="Search apps by name or slug…" aria-label="Search apps" value="" />
+      </div>
+      <div class="filters" data-filters="apps">
+        <button class="chip" data-filter="state" data-value="all" aria-pressed="true">All states</button>
+        <button class="chip" data-filter="state" data-value="activated" aria-pressed="false">Activated</button>
+        <button class="chip" data-filter="state" data-value="registered" aria-pressed="false">Registered</button>
+        <button class="chip" data-filter="state" data-value="suspended" aria-pressed="false">Suspended</button>
+        <button class="chip" data-filter="visibility" data-value="public" aria-pressed="false">Public</button>
+        <button class="chip" data-filter="org" data-value="mine" aria-pressed="false">My org</button>
+      </div>
+      <div class="viewtoggle" role="group" aria-label="View">
+        <button data-action="view-table" aria-pressed="true" aria-label="Table view">▤</button>
+        <button data-action="view-grid" aria-pressed="false" aria-label="Grid view">▦</button>
+      </div>
+    </div>
+
+    <table class="tbl" data-view="table">
+      <thead>
+        <tr>
+          <th>App</th><th>Slug</th><th>State</th><th>Visibility</th><th>Owning org</th><th class="right">Integration</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-app="clock" data-app-state="activated" onclick="location.href='02-app-detail.html'">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">⏰</div><span class="appname">Clock</span>
+            <span class="tag builtin-tag" data-builtin="true">built-in</span></div></td>
+          <td class="slug-cell">clock</td>
+          <td><span class="status status--activated"><span class="dot"></span>Activated</span></td>
+          <td><span class="vis vis--public">Public</span></td>
+          <td class="muted">Platform</td>
+          <td class="right"><span class="tag">builtin</span></td>
+        </tr>
+        <tr data-app="crm" data-app-state="activated" onclick="location.href='02-app-detail.html'">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">📇</div><span class="appname">Northwind CRM</span></div></td>
+          <td class="slug-cell">crm</td>
+          <td><span class="status status--activated"><span class="dot"></span>Activated</span></td>
+          <td><span class="vis vis--organization">Organization</span></td>
+          <td>Northwind Inc.</td>
+          <td class="right"><span class="tag">module-federation</span></td>
+        </tr>
+        <tr data-app="analytics" data-app-state="registered" onclick="location.href='02-app-detail.html'">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">📊</div><span class="appname">Analytics Studio</span></div></td>
+          <td class="slug-cell">analytics</td>
+          <td><span class="status status--registered"><span class="dot"></span>Registered</span></td>
+          <td><span class="vis vis--private">Private</span></td>
+          <td>Northwind Inc.</td>
+          <td class="right"><span class="tag">iframe</span></td>
+        </tr>
+        <tr data-app="billing-portal" data-app-state="suspended" onclick="location.href='02-app-detail.html'">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">💳</div><span class="appname">Billing Portal</span></div></td>
+          <td class="slug-cell">billing-portal</td>
+          <td><span class="status status--suspended"><span class="dot"></span>Suspended</span></td>
+          <td><span class="vis vis--organization">Organization</span></td>
+          <td>Contoso Ltd.</td>
+          <td class="right"><span class="tag">module-federation</span></td>
+        </tr>
+        <tr data-app="marketplace-app" data-app-state="activated" onclick="location.href='02-app-detail.html'">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">🛍️</div><span class="appname">Shop Connector</span></div></td>
+          <td class="slug-cell">shop-connector</td>
+          <td><span class="status status--activated"><span class="dot"></span>Activated</span></td>
+          <td><span class="vis vis--marketplace">Marketplace</span></td>
+          <td class="muted">Platform</td>
+          <td class="right"><span class="tag">module-federation</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="panel-foot">
+      <span class="muted"><span data-count="apps">5</span> of <span data-count="total">42</span> apps</span>
+      <button class="btn btn-sm" data-action="load-more">Load more</button>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Rows render from <code>GET /api/v1/app-registry/apps</code> (paged; the list is a
+    collection GET, so it is cursor-paginated — <code>data-action="load-more"</code> fetches the next
+    page, never an unbounded fetch). <b>Search</b> filters by name/slug; <b>filter chips</b> narrow by
+    lifecycle <code>status</code> (registered / activated / suspended), <code>visibility</code>
+    (private / organization / public / marketplace), and owning org — applied server-side as query
+    params, reflected in the URL. A row is a link to <code>/apps/{slug}</code> (frame b). Built-in apps
+    (<code>builtin: true</code>, e.g. <code>clock</code>) are tagged and behave differently downstream
+    (non-deletable). Loading / empty / error / permission-denied are contract — see frame (e).
+  </p>
+
+  <nav class="pager"><a href="index.html">← All frames</a><a href="05-app-list-states.html">Next: App-list states →</a></nav>
+</div>
+</body>
+</html>

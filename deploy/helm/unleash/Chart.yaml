@@ -1,0 +1,11 @@
+apiVersion: v2
+name: unleash
+description: >-
+  Self-hosted Unleash (feature-flag) server for the Fuze family. FuzeFront
+  HOSTS this deployment per the family flag-service standard; it is
+  independently-lifecycled from the fuzefront umbrella chart (own release
+  cadence, own external image, own Argo Application) even though it runs in
+  the `fuzefront` namespace and shares the fuzeinfra-postgres instance.
+type: application
+version: 0.1.0
+appVersion: "5.12.0"

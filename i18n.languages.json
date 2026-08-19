@@ -1,0 +1,17 @@
+{
+  "$comment": "Curated supported-language list for FuzeFront. English is the maintained source; every other language is AI-translated at BUILD time by @fuzefront/i18n-translate. Adding a language = add an entry here, then rebuild. `dir` drives RTL/LTR. `nativeName` is shown in the LanguageSelector.",
+  "sourceLanguage": "en",
+  "languages": [
+    { "code": "en", "name": "English", "nativeName": "English", "dir": "ltr" },
+    { "code": "es", "name": "Spanish", "nativeName": "Español", "dir": "ltr" },
+    { "code": "fr", "name": "French", "nativeName": "Français", "dir": "ltr" },
+    { "code": "de", "name": "German", "nativeName": "Deutsch", "dir": "ltr" },
+    { "code": "pt", "name": "Portuguese", "nativeName": "Português", "dir": "ltr" },
+    { "code": "ru", "name": "Russian", "nativeName": "Русский", "dir": "ltr" },
+    { "code": "zh", "name": "Chinese (Simplified)", "nativeName": "简体中文", "dir": "ltr" },
+    { "code": "ja", "name": "Japanese", "nativeName": "日本語", "dir": "ltr" },
+    { "code": "hi", "name": "Hindi", "nativeName": "हिन्दी", "dir": "ltr" },
+    { "code": "ar", "name": "Arabic", "nativeName": "العربية", "dir": "rtl" },
+    { "code": "he", "name": "Hebrew", "nativeName": "עברית", "dir": "rtl" }
+  ]
+}

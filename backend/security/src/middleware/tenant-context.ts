@@ -1,0 +1,138 @@
+/**
+ * Resolves the identity tenant for an inbound request and makes it the ambient
+ * tenant for everything downstream.
+ *
+ * security-service fronts several tenants, each backed by its own Authentik
+ * instance and therefore its own account directory. The request host is what
+ * distinguishes them, so this middleware must run BEFORE any handler that
+ * touches identity.
+ *
+ * FAIL CLOSED. If no tenant claims the host, the request is rejected — it is
+ * never served by "the first" or "the default" tenant. Falling back would
+ * authenticate the user against the wrong directory, silently rejoining two
+ * directories that are deliberately separate. That is the exact failure this
+ * design exists to prevent, so it is worth a hard 400.
+ *
+ * In legacy single-tenant mode (`SECURITY_TENANTS` unset) resolution always
+ * succeeds, so mounting this is a no-op for existing deployments.
+ */
+import { NextFunction, Request, Response } from 'express'
+import { logger } from '../lib/logger'
+import {
+  AuthentikTenant,
+  currentTenant,
+  currentTenantOrUndefined,
+  isMultiTenant,
+  normaliseHost,
+  resolveTenantByHost,
+  runWithTenant,
+} from '../providers/authentik/tenants'
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      /** The identity tenant serving this request. Set by tenantContext. */
+      identityTenant?: AuthentikTenant
+    }
+  }
+}
+
+/**
+ * The host used to select the tenant — the RAW `Host` header, deliberately.
+ *
+ * Do NOT use Express's `req.hostname` here. The service runs with
+ * `trust proxy` enabled (it needs it for `req.ip`), and under that setting
+ * `req.hostname` resolves from **X-Forwarded-Host** in preference to `Host`.
+ * X-Forwarded-Host is caller-supplied unless every proxy in front overwrites
+ * it, so selecting the tenant from it lets a client pick which account
+ * directory to authenticate against by adding one header — which is precisely
+ * the boundary this middleware exists to hold. A regression test covers it
+ * (tests/tenant-session-roundtrip.test.ts), because the earlier version of
+ * this function did exactly that and the accompanying comment claimed it did
+ * not.
+ *
+ * `Host` is what the ingress routes on, so it is also the correct key: a
+ * request only reaches this service on a given host because a rule matched
+ * that host.
+ */
+function requestHost(req: Request): string {
+  return normaliseHost(req.headers.host)
+}
+
+export function tenantContext(req: Request, res: Response, next: NextFunction): void {
+  const host = requestHost(req)
+  const tenant = resolveTenantByHost(host)
+
+  if (!tenant) {
+    logger.warn({ host, path: req.path }, 'tenant: rejected request from unclaimed host')
+    res.status(400).json({
+      error: 'unknown_host',
+      message: 'This host is not configured for authentication.',
+    })
+    return
+  }
+
+  req.identityTenant = tenant
+  // Bind for the remainder of the request so code far from the route — which
+  // cannot reasonably take a tenant parameter — reads the right configuration.
+  runWithTenant(tenant, () => next())
+}
+
+/**
+ * The tenant id to stamp into a freshly minted session, as the `tid` claim.
+ *
+ * Sessions MUST carry their tenant. Without it a token minted in one directory
+ * is indistinguishable from one minted in another — same signing secret, same
+ * shape — so the only thing standing between the two account directories would
+ * be the request host, which the token holder chooses.
+ */
+export function sessionTenantId(): string {
+  return currentTenant('session tenant claim').id
+}
+
+/**
+ * Ambient-context variant of assertTenantMatches, for callers with no `req`
+ * (the provider verifies session tokens well below the route layer). Same
+ * rules: a mismatch is rejected, and a claimless token is accepted only while
+ * single-tenant, where there is nothing to confuse it with.
+ */
+export function assertAmbientTenant(
+  tokenTenantId: string | undefined
+): { ok: true } | { ok: false; reason: string } {
+  const expected = currentTenantOrUndefined()?.id
+  if (!expected) return { ok: false, reason: 'no tenant context' }
+  if (!tokenTenantId) {
+    if (!isMultiTenant()) return { ok: true }
+    return { ok: false, reason: 'token carries no tenant claim' }
+  }
+  if (tokenTenantId !== expected) {
+    return { ok: false, reason: `token is for tenant "${tokenTenantId}", host serves "${expected}"` }
+  }
+  return { ok: true }
+}
+
+/**
+ * Assert that a session/token minted for `tokenTenantId` is being presented to
+ * the tenant that issued it. A session is only valid within its own directory;
+ * accepting one across tenants would let an account in one silo act in another.
+ */
+export function assertTenantMatches(
+  req: Request,
+  tokenTenantId: string | undefined
+): { ok: true } | { ok: false; reason: string } {
+  const expected = req.identityTenant?.id
+  if (!expected) return { ok: false, reason: 'no tenant context on request' }
+
+  if (!tokenTenantId) {
+    // Sessions minted before tenancy existed carry no tenant claim. Accept them
+    // only while single-tenant, where there is nothing to confuse them with.
+    if (!isMultiTenant()) return { ok: true }
+    return { ok: false, reason: 'token carries no tenant claim' }
+  }
+
+  if (tokenTenantId !== expected) {
+    return { ok: false, reason: `token is for tenant "${tokenTenantId}", host serves "${expected}"` }
+  }
+  return { ok: true }
+}

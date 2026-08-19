@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Federated App Platform — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 880px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .head { margin-bottom: var(--space-8); }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3);
+  }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 64ch; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-8); }
+  .frame-link {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); position: relative; overflow: hidden;
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .cap { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--cyan-400); margin-top: var(--space-3); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .start { margin-top: var(--space-8); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="eyebrow">Contract-freeze · UX approval</div>
+    <h1>Federated App Platform — Approval Frames</h1>
+    <p class="lead">Click through the four frames below as a sequence. They demonstrate the
+       UX the App Manifest contract produces. <b>Approving these frames approves the model</b>
+       (the manifest schema + lifecycle) before any UI is implemented. Built in the fuse-seam
+       design-system tokens.</p>
+  </div>
+
+  <div class="grid">
+    <a href="01-app-menu.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (a)</div>
+      <h3>🕐 Application menu</h3>
+      <p>The app menu + launcher with the built-in <b>Clock</b> app and a newly-registered <b>Market</b> app.</p>
+      <div class="cap">capability 1 + 4 · registration / built-in</div>
+    </a>
+    <a href="02-register-activate.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (b)</div>
+      <h3>＋ Register → Activate</h3>
+      <p>The Add-application form (manifest fields) → <b>registered</b> → activate → visible.</p>
+      <div class="cap">capability 1 · lifecycle</div>
+    </a>
+    <a href="03-menu-substitution.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (c)</div>
+      <h3>🎛️ Menu substitution</h3>
+      <p>A federated app (<b>Studio</b>) that has substituted the portal side menu with its own.</p>
+      <div class="cap">capability 2 · chrome.menu = substitute</div>
+    </a>
+    <a href="04-standalone.html" class="frame-link">
+      <div class="seam"></div>
+      <div class="step">Frame (d)</div>
+      <h3>🌐 Standalone app</h3>
+      <p>A standalone non-portal landing page — FuzeFront infra, no portal chrome.</p>
+      <div class="cap">capability 3 · mode = standalone</div>
+    </a>
+  </div>
+
+  <div class="start">
+    <a href="01-app-menu.html" class="btn btn-primary">Start the walkthrough →</a>
+  </div>
+
+  <p class="meta">
+    Contract: <code>services/app-registry-service/openapi.yaml</code> ·
+    Manifest schema: <code>components.schemas.AppManifest</code> ·
+    Client: <code>@fuzefront/app-registry-client</code> ·
+    Events: <code>shared/src/kafka/schemas/app.*</code> ·
+    Design write-up: <code>DESIGN.md</code>
+  </p>
+</div>
+</body>
+</html>

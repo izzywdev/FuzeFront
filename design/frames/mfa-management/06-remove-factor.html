@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Remove a method — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 720px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); max-width: 480px; }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__seam.danger { background: var(--error-color); }
+  .card__seam.warn { background: var(--warning-color); }
+  .card__body { padding: var(--space-6); }
+  .card h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .card p { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .target { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    margin-bottom: var(--space-5); }
+  .target .ico { width: 32px; height: 32px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); }
+  .target b { color: var(--text-primary); } .target small { display:block; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .actions { display: flex; gap: var(--space-3); }
+  .btn-danger { background: var(--error-color); color: var(--bg-primary); border: 1px solid transparent; }
+  .btn-danger:hover { filter: brightness(1.05); }
+  .notice { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4);
+    border-radius: var(--radius-md); font-size: var(--text-sm); line-height: 1.55; margin-bottom: var(--space-5); }
+  .notice.block { background: var(--error-soft); color: var(--text-secondary); }
+  .notice.block b { color: var(--text-primary); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="06-remove-factor" data-route="/account/security/mfa">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item active" href="01-mfa-overview.html"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Remove a method</h1>
+      <p class="page-sub">Removing a method means we won't ask for it at sign-in anymore.</p>
+
+      <!-- ═══ Confirm remove (one of several factors) ═══ -->
+      <div class="state-label">State · confirm (another factor remains)</div>
+      <div class="card" data-component="remove-factor-dialog" data-state="confirm" role="alertdialog" aria-labelledby="rm1">
+        <div class="card__seam danger"></div>
+        <div class="card__body">
+          <h3 id="rm1">Remove text-message codes?</h3>
+          <div class="target" data-factor-id="fct_sms_1" data-factor="sms">
+            <span class="ico" aria-hidden="true">💬</span>
+            <span><b>Text message</b><small>Sent to •••• •• 4471</small></span>
+          </div>
+          <p>You'll still have your authenticator app, so two-factor stays on.</p>
+          <div class="actions">
+            <button class="btn btn-danger" data-action="remove-confirm">Remove</button>
+            <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Remove-last BLOCKED (409) — fail-closed ═══ -->
+      <div class="state-label">State · removing your only method (409 — blocked)</div>
+      <div class="card" data-component="remove-factor-dialog" data-state="remove-last-blocked"
+           data-http-status="409" role="alertdialog" aria-labelledby="rm2">
+        <div class="card__seam warn"></div>
+        <div class="card__body">
+          <h3 id="rm2">You can't remove your only method</h3>
+          <div class="target" data-factor-id="fct_totp_1" data-factor="totp">
+            <span class="ico" aria-hidden="true">🔑</span>
+            <span><b>Authenticator app</b><small>Your last remaining method</small></span>
+          </div>
+          <div class="notice block" data-error="remove-last">
+            <span aria-hidden="true">🔒</span>
+            <span><b>Two-factor is required for this account.</b> Removing your only method would lock you
+              out. Add another method first, then you can remove this one.</span>
+          </div>
+          <div class="actions">
+            <a class="btn btn-primary" href="02-totp-enroll.html" style="text-decoration:none">Add another method</a>
+            <button class="btn btn-ghost" data-action="cancel">Keep it</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Removed (success toast) ═══ -->
+      <div class="state-label">State · removed</div>
+      <div class="card" data-component="remove-factor-dialog" data-state="removed">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <h3>Text-message codes removed</h3>
+          <p>We won't ask for a text code at sign-in anymore. You can add it back any time.</p>
+          <div class="actions">
+            <a class="btn btn-ghost" href="01-mfa-overview.html" style="text-decoration:none">Back to methods</a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>06 / 06</b> · Remove a method · <b>/account/security/mfa</b></span>
+    <span><a class="btn btn-ghost" href="05-step-up-challenge.html">← Step-up</a> <a class="btn btn-primary" href="index.html" style="text-decoration:none">Back to all frames</a></span>
+  </div>
+</div>
+</body>
+</html>

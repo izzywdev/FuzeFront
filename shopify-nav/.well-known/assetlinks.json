@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.fuzefront.shopifynav",
+      "sha256_cert_fingerprints": [
+        "6A:C8:E6:33:73:F1:6F:A5:5C:F8:15:5F:41:62:24:84:2C:9F:B4:C7:C3:5F:34:73:1D:CF:8A:B2:F9:AD:1D:28"
+      ]
+    }
+  }
+]

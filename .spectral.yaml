@@ -1,0 +1,18 @@
+# Root Spectral ruleset used by the CI contract-tests job, which runs
+# `spectral lint services/*/openapi.yaml` from the repo root.  Spectral
+# searches for a ruleset starting from the CWD (repo root), so this file is
+# the single entry-point for all service specs linted from here.
+#
+# Rules match the per-service overrides in services/*/.spectral.yaml — they
+# apply uniformly to every internal, cluster-only microservice.
+extends: ['spectral:oas']
+
+rules:
+  # Internal services: no externally-hosted contact/license URL required.
+  info-contact: off
+  license-url: off
+  # operationId + summary + tags are present on every operation; descriptions
+  # are present on operations but we keep this as a warning, not an error.
+  operation-description: warn
+  # oas3-valid-schema-example can false-positive on `examples` arrays in 3.1.
+  oas3-valid-schema-example: warn

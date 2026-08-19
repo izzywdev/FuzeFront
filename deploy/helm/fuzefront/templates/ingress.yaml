@@ -1,0 +1,441 @@
+{{- /*
+  The full path fan-out, defined ONCE here and included by BOTH the canonical
+  host rule and the tenant-wildcard Ingress at the bottom of this file.
+  Structural, not a review item: a tenant subdomain cannot route differently
+  from app.fuzefront.com, because there is only one definition of the list.
+
+  This was originally a YAML anchor (&fanout / *fanout). That worked while both
+  rules lived in one Ingress object, but the wildcard had to move to its own
+  object to carry a Traefik router.priority annotation (see the comment there),
+  and a YAML anchor cannot be referenced across documents. Both call sites now
+  include this helper instead, which preserves the same guarantee.
+
+  Do NOT inline these paths into the wildcard rule. FF-EPIC-16 / FFRNT-91.
+*/}}
+{{- define "fuzefront.ingress.fanout" -}}
+{{- if .Values.securityService.enabled }}
+# Security-service direct paths (ingress-nginx longest-prefix-match
+# makes these win over the /api catch-all below). /internal is NOT
+# exposed — it stays cluster-internal (pod-to-pod via Service DNS).
+# /api/v1/security is the provider-neutral Security API (AuthN/AuthZ);
+# /api/auth + /api/organizations are the deprecated shims kept for one
+# release.
+- path: /api/v1/security
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/auth
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/organizations
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+{{- end }}
+{{- if .Values.applicationsService.enabled }}
+# Applications-service direct paths (+ Socket.IO).
+- path: /api/apps
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-applications
+      port:
+        number: {{ .Values.applicationsService.port }}
+- path: /socket.io
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-applications
+      port:
+        number: {{ .Values.applicationsService.port }}
+{{- end }}
+{{- if .Values.billingService.enabled }}
+# Billing webhook carve-out: the Stripe webhook is the ONLY publicly
+# reachable billing path (Stripe-signature verified via STRIPE_WEBHOOK_SECRET).
+# Exact match so the rest of /api/v1/billing/* stays internal (no ingress) —
+# internal callers reach it in-cluster with BILLING_INTERNAL_TOKEN.
+- path: /api/v1/billing/webhooks/stripe
+  pathType: Exact
+  backend:
+    service:
+      name: fuzefront-billing-service
+      port:
+        number: {{ .Values.billingService.port }}
+{{- end }}
+{{- if or .Values.securityService.enabled .Values.applicationsService.enabled }}
+# Thin backend: health + any remaining /api/* (still dual-serving the
+# domain routes during the soak; this is the catch-all under the
+# service-specific prefixes above).
+- path: /api
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-backend
+      port:
+        number: {{ .Values.backend.port }}
+{{- end }}
+# Frontend catch-all. The frontend nginx also fans /api and /socket.io
+# to the per-service backends for in-pod / port-forward scenarios.
+- path: /
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-frontend
+      port:
+        number: {{ .Values.frontend.port }}
+{{- end -}}
+
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
+{{- if .Values.ingress.wildcardHost }}
+---
+# Tenant subdomains — FF-EPIC-16 / FFRNT-91.
+#
+# A SEPARATE Ingress object, NOT a second rule on the main one. That is a
+# correctness requirement on Traefik, not a style choice:
+#
+#   Traefik orders routers by RULE LENGTH, not host specificity. The rule it
+#   generates for a wildcard host is a HostRegexp(...), which is LONGER than
+#   Host(`plan.fuzefront.com`) — so the wildcard OUTRANKS every exact single-
+#   label host in the cluster and silently swallows it.
+#
+#   This is not theoretical. Shipping the wildcard as a second rule on the main
+#   Ingress (PR #431) took FuzePlan down in production: plan.fuzefront.com
+#   served the FuzeFront shell instead of fuzeplan-frontend. Reverted in #437.
+#
+#   MEASURED on rancher/mirrored-library-traefik:3.6.13 (the prod image), file
+#   provider, two routers, no explicit priority:
+#     Host: plan.fuzefront.com  -> wildcard-fuzefront@file  (WRONG — shadowed)
+#   With `priority: 1` on the wildcard router only:
+#     Host: plan.fuzefront.com  -> exact-plan@file          (correct)
+#     Host: corpabc.fuzefront.com -> wildcard-fuzefront@file (correct)
+#
+# `router.priority` is a PER-INGRESS-OBJECT annotation, so the wildcard rule
+# cannot be de-prioritised while it shares an object with the canonical host.
+# Hence the split. Do not merge this back into the main Ingress.
+#
+# ingress-nginx (local) follows the Kubernetes spec and prefers exact hosts on
+# its own, so the annotation is inert there and this is harmless.
+#
+# NO tls: block, deliberately — Cloudflare terminates edge TLS (Universal SSL
+# covers one wildcard label) and the tunnel delivers plain HTTP.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-tenant-wildcard
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tenant-wildcard
+  annotations:
+    {{- if eq .Values.ingress.className "traefik" }}
+    # Lower number = lower precedence. Any exact-host router (whose priority
+    # defaults to its rule length, far above this) therefore wins.
+    traefik.ingress.kubernetes.io/router.priority: {{ .Values.ingress.wildcardPriority | default 1 | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    # Same fan-out as the canonical host, from the same helper — a tenant
+    # subdomain cannot drift from app.fuzefront.com because there is one
+    # definition. (A YAML anchor cannot cross documents, so this includes the
+    # helper directly rather than aliasing *fanout.)
+    - host: {{ .Values.ingress.wildcardHost | quote }}
+      http:
+        paths:
+          {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
+{{- end }}
+{{- if .Values.clockApp.enabled }}
+---
+# Clock-app remote, same-origin under the app host at /apps/clock/. A SEPARATE
+# Ingress (not a path on the main one) so its prefix-strip rewrite is scoped to
+# clock-app only and does not touch the host shell / API routes. The browser
+# fetches https://<host>/apps/clock/remoteEntry.js → stripped to /remoteEntry.js
+# at the clock nginx (matches the seeded built-in manifest remoteEntry).
+#   - nginx-ingress: rewrite-target + a capture-group path.
+#   - traefik:       the clock-app-stripprefix Middleware (templates/clock-app.yaml).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-clock-app
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clock-app
+  annotations:
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-clock-app-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq .Values.ingress.className "nginx" }}
+          # Capture group 2 ($2) is everything after /apps/clock, fed to
+          # rewrite-target so /apps/clock/remoteEntry.js → /remoteEntry.js.
+          - path: /apps/clock(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: clock-app
+                port:
+                  number: {{ .Values.clockApp.port }}
+          {{- else }}
+          # traefik strips /apps/clock via the Middleware; route the prefix.
+          - path: /apps/clock
+            pathType: Prefix
+            backend:
+              service:
+                name: clock-app
+                port:
+                  number: {{ .Values.clockApp.port }}
+          {{- end }}
+{{- end }}
+{{- range .Values.federatedApps }}
+{{- if .enabled }}
+---
+# Federated remote: {{ .slug }}
+# Browser fetches /apps/{{ .slug }}/remoteEntry.js (same-origin) → nginx
+# strips the prefix and proxies to the in-cluster Service → no WAN hairpin.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-federated-{{ .slug }}
+  labels:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: federated-remote-{{ .slug }}
+  annotations:
+    {{- if eq $.Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq $.Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ $.Release.Namespace }}-federated-{{ .slug }}-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with $.Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $.Values.ingress.className }}
+  {{- if $.Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $.Values.ingress.host | quote }}
+      secretName: {{ $.Values.ingress.tls.secretName | default (printf "%s-tls" $.Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ $.Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq $.Values.ingress.className "nginx" }}
+          - path: /apps/{{ .slug }}(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .serviceName }}
+                port:
+                  number: {{ .port }}
+          {{- else }}
+          - path: /apps/{{ .slug }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .serviceName }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+{{- if eq $.Values.ingress.className "traefik" }}
+---
+# Traefik strip-prefix middleware for federated remote {{ .slug }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: federated-{{ .slug }}-stripprefix
+  labels:
+    app.kubernetes.io/part-of: fuzefront
+spec:
+  stripPrefix:
+    prefixes:
+      - /apps/{{ .slug }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.authentik.enabled }}
+---
+# IdP reverse-proxy — the provider-agnostic security boundary.
+#
+# The browser must transit a small set of Authentik OAuth endpoints (authorize /
+# social-source redirect). We expose them ONLY under the FuzeFront-owned host at
+# app.fuzefront.com/api/auth/idp/* → authentik-server (ClusterIP, no public
+# Ingress of its own). The IdP host `auth.fuzefront.com` is invisible to the
+# browser and named in no consumer contract.
+#
+# A SEPARATE Ingress (not a path on the main one) so the prefix-strip +
+# forwarded-proto middlewares are scoped to the IdP proxy only and never touch
+# the host shell / API / security-service routes.
+#   - traefik: authentik-idp-stripprefix (strips /api/auth/idp, sets
+#     X-Forwarded-Prefix) + authentik-forwarded-proto (pins https), so the OIDC
+#     discovery/issuer resolve to https://app.fuzefront.com/api/auth/idp/...
+#   - nginx (local): rewrite-target strips the prefix; the issuer path stays
+#     app-hosted. Authentik would otherwise 404 the app-prefixed paths.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-authentik-idp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authentik-idp
+  annotations:
+    {{- if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
+    {{- else if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          # Route Authentik's OWN native root paths under the app host (NO prefix,
+          # NO strip). Authentik ignores X-Forwarded-Prefix, so it builds absolute
+          # OIDC discovery/authorize URLs at these root paths using the forwarded
+          # Host (app.fuzefront.com) — which must therefore be routable here.
+          # These prefixes don't overlap the app's /api, /apps, /socket.io, / routes.
+          {{- /* /api/v3 = Authentik's flow-executor + REST API, called BOTH by the
+                 login-page SPA (browser) AND server-side by the security-service
+                 (password/enrollment flow driver). Must route to authentik-server,
+                 or flow-executor calls hit FuzeFront's /api and fail with
+                 PROVIDER_UNAVAILABLE. Does not collide with FuzeFront's /api/v1/*. */ -}}
+          {{- /* Single source of truth, shared with the auth.<zone> Ingress in
+                 authentik.yaml so the two public surfaces cannot drift. Notably
+                 has NO bare "/if" — that is what exposed /if/admin/. */ -}}
+          {{- range $p := (include "fuzefront.authentikPublicPaths" $ | fromYamlArray) }}
+          - path: {{ $p }}
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 9000
+          {{- end }}
+{{- end }}
+{{- end }}
+
+{{- /*
+  Authentik ADMIN Ingress — a dedicated, CF-Access-gated admin host for the
+  Authentik UI. Deliberately SEPARATE from the OIDC reverse-proxy above.
+
+  Why a second host instead of exposing auth.fuzefront.com:
+    - The block above deliberately keeps the IdP invisible by serving Authentik's
+      native paths UNDER app.fuzefront.com so the browser never sees an IdP host.
+      That path carries live OIDC traffic (discovery/authorize/token/flow-executor).
+      Putting an auth gate in front of it would break sign-in for every user.
+    - This admin host serves the SAME service on a different hostname that carries
+      NO OIDC traffic, so gating it cannot affect the login flow.
+
+  Gating: authentik.prod.fuzefront.com is covered by the wildcard proxied CNAME
+  *.prod.fuzefront.com -> the CF tunnel, whose ingress catch-all targets
+  traefik.kube-system:80, and by the wildcard Cloudflare Access app
+  "FuzeInfra Admin Services" (*.prod.fuzefront.com, admin email allowlist / OTP).
+  Cloudflare Access authenticates via email OTP — NOT via Authentik — so gating
+  Authentik behind Access creates no circular dependency.
+*/}}
+{{- if and .Values.authentik.enabled .Values.authentik.adminIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-authentik-admin
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: authentik-admin
+  annotations:
+    # NOT OPTIONAL. Authentik derives every URL it advertises — issuer,
+    # authorization_endpoint, token_endpoint, jwks_uri — from the incoming
+    # request, so without X-Forwarded-Proto it builds them as http:// even though
+    # the client arrived over TLS.
+    #
+    # This Ingress was the only one of the three Authentik ingresses missing it.
+    # That went unnoticed while the host served just the admin UI, and broke the
+    # moment FuzeInfra pointed OIDC consumers here: discovery returned
+    #   "issuer": "http://authentik.prod.fuzefront.com/application/o/kafka-ui/"
+    # and every client that validates the iss claim against its configured https
+    # issuer rejected the login. Kafka UI and ArgoCD self-discover and both
+    # failed with a bare /login?error; Grafana uses explicit URLs so it degraded
+    # more quietly.
+    #
+    # Keep this in sync with the other two: templates/ingress.yaml
+    # (fuzefront-authentik-idp) and templates/authentik.yaml (the auth.<zone>
+    # Ingress) both set the same middleware.
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
+    {{- with .Values.authentik.adminIngress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.authentik.adminIngress.className | default .Values.ingress.className }}
+  rules:
+    - host: {{ required "authentik.adminIngress.host is required when authentik.adminIngress.enabled" .Values.authentik.adminIngress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 9000
+{{- end }}

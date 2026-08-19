@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Security hub — /account/security</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .maxw { max-width: 860px; }
+  .sec-summary { display: flex; align-items: center; gap: var(--space-5); background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6);
+    position: relative; overflow: hidden; margin-bottom: var(--space-6); }
+  .sec-summary__seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); }
+  .score { width: 56px; height: 56px; border-radius: var(--radius-pill); flex: none; display: grid;
+    place-items: center; font-family: var(--font-display); font-weight: var(--weight-semibold);
+    font-size: var(--text-xl); color: var(--success-color); border: 2px solid rgba(52,211,153,0.4);
+    background: var(--success-soft); }
+  .sec-summary__txt h2 { margin: 0 0 var(--space-1); font-family: var(--font-display); font-size: var(--text-lg); }
+  .sec-summary__txt p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  @media (max-width: 720px){ .cards { grid-template-columns: 1fr; } }
+  .card { display: flex; flex-direction: column; gap: var(--space-2); text-decoration: none; color: inherit;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-5); transition: border-color var(--duration-base), transform var(--duration-base); }
+  .card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+  .card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .card__title { display: flex; align-items: center; gap: var(--space-3); font-weight: var(--weight-medium);
+    font-size: var(--text-md); }
+  .card__ico { width: 30px; height: 30px; border-radius: var(--radius-md); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); font-size: var(--text-md); flex: none; }
+  .card__desc { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0; }
+  .card__meta { margin-top: var(--space-2); color: var(--text-secondary); font-size: var(--text-sm); }
+  .chevron { color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher">⊞</div>
+    <div class="avatar">JW</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">◔</span> Profile</a>
+      <a class="nav-item active" href="01-hub.html"><span class="ico">🛡</span> Security</a>
+      <a class="nav-item" href="#"><span class="ico">🔔</span> Notifications</a>
+      <a class="nav-item" href="#"><span class="ico">💳</span> Billing</a>
+    </nav>
+    <main class="content" data-frame="01-hub" data-panel="security-hub">
+      <h1 class="page-title">Security</h1>
+      <p class="page-sub">Manage how you sign in and keep your account safe.</p>
+
+      <div class="maxw">
+        <section class="sec-summary" data-posture="good" aria-label="Security posture">
+          <div class="sec-summary__seam"></div>
+          <div class="score" aria-hidden="true">✓</div>
+          <div class="sec-summary__txt">
+            <h2>Your account is well protected</h2>
+            <p>Password set · two-factor on · 2 active devices · 1 connected account.</p>
+          </div>
+        </section>
+
+        <div class="cards">
+          <a class="card" href="#" data-card="password" data-route="/account/security/password">
+            <div class="card__head">
+              <span class="card__title"><span class="card__ico">🔑</span> Password</span>
+              <span class="chevron">→</span>
+            </div>
+            <p class="card__desc">Change your password or, if you sign in with Google only, add one.</p>
+            <div class="card__meta"><span class="badge activated">● Set</span></div>
+          </a>
+
+          <a class="card" href="#" data-card="two-factor" data-route="/account/security/two-factor">
+            <div class="card__head">
+              <span class="card__title"><span class="card__ico">📱</span> Two-factor auth</span>
+              <span class="chevron">→</span>
+            </div>
+            <p class="card__desc">Add a second step at sign-in with an authenticator app or a code by SMS.</p>
+            <div class="card__meta"><span class="badge activated">● On · 1 factor</span></div>
+          </a>
+
+          <a class="card" href="#" data-card="sessions" data-route="/account/security/devices">
+            <div class="card__head">
+              <span class="card__title"><span class="card__ico">💻</span> Devices &amp; sessions</span>
+              <span class="chevron">→</span>
+            </div>
+            <p class="card__desc">See where you're signed in and sign out of any device.</p>
+            <div class="card__meta"><span class="badge">2 active</span></div>
+          </a>
+
+          <a class="card" href="#" data-card="tokens" data-route="/account/security/tokens">
+            <div class="card__head">
+              <span class="card__title"><span class="card__ico">🔓</span> API tokens</span>
+              <span class="chevron">→</span>
+            </div>
+            <p class="card__desc">Create and revoke machine tokens for scripts and services.</p>
+            <div class="card__meta"><span class="badge">0 active</span></div>
+          </a>
+
+          <a class="card" href="#" data-card="connected" data-route="/account/security/connections" style="grid-column: 1 / -1;">
+            <div class="card__head">
+              <span class="card__title"><span class="card__ico">🔗</span> Connected accounts</span>
+              <span class="chevron">→</span>
+            </div>
+            <p class="card__desc">Link or unlink sign-in providers. You'll always keep at least one way to sign in.</p>
+            <div class="card__meta">
+              <span class="badge mf">● Google · linked</span>
+              <span class="badge">Password · enabled</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Frame (a)</b> · Security hub · <code class="mono">/account/security</code></span>
+  <span>
+    <a href="index.html" class="btn btn-ghost">↩ Overview</a>
+    <a href="02-states.html" class="btn btn-primary">States &amp; fail-closed →</a>
+  </span>
+</nav>
+</body>
+</html>

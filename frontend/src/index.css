@@ -1,0 +1,1743 @@
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+/* FuzeFront type system: Space Grotesk (display) / Inter (body) / JetBrains Mono (data) */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@custom-variant dark (&:is([data-theme='dark'] *));
+
+@theme inline {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --color-fuse: var(--accent-color);
+  --color-fuse-2: var(--accent-2);
+  --color-success: var(--success-color);
+  --color-warning: var(--warning-color);
+  --color-error: var(--error-color);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  --radius: 0.625rem;
+}
+
+/* ============================================================
+   FuzeFront design tokens — "runtime fabric"
+   Dark is the default. One source of truth feeds BOTH the host's
+   legacy --bg-* and --text-* vars and the shadcn token layer, so
+   shadcn components no longer fall back to light on a dark shell.
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  /* surfaces — deep blue-graphite, layered from shell to raised */
+  --bg-secondary: #0b0e15; /* app shell / top bar (deepest) */
+  --bg-primary: #0f131c; /* content canvas */
+  --bg-tertiary: #141a26; /* panels & cards */
+  --bg-quaternary: #1c2433; /* raised / hover */
+  --border-color: #232c3d;
+  --border-strong: #303b50;
+  /* text */
+  --text-primary: #e7ecf5;
+  --text-secondary: #9fa9bc;
+  --text-tertiary: #66718a;
+  /* the fuse — electric indigo paired with a cyan signal */
+  --accent-color: #6e5cff;
+  --accent-hover: #5847e6;
+  --accent-soft: rgba(110, 92, 255, 0.14);
+  --accent-2: #29d3e6;
+  /* status — one warm spark (amber/coral) in an otherwise cool set */
+  --success-color: #34d399;
+  --warning-color: #f5a623;
+  --error-color: #f26b7a;
+  --error-soft: rgba(242, 107, 122, 0.12); /* ds-conformance-allow: token definition */
+  --shadow: rgba(0, 0, 0, 0.45);
+  /* modal / dialog scrim — dims the shell behind overlays */
+  --scrim: rgba(0, 0, 0, 0.55);
+  /* signature: the seam where modules fuse at runtime */
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  /* shadcn token layer — kept in sync with the surfaces above */
+  --background: #0f131c;
+  --foreground: #e7ecf5;
+  --card: #141a26;
+  --card-foreground: #e7ecf5;
+  --popover: #141a26;
+  --popover-foreground: #e7ecf5;
+  --primary: #6e5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #1c2433;
+  --secondary-foreground: #e7ecf5;
+  --muted: #1c2433;
+  --muted-foreground: #9fa9bc;
+  --accent: #1c2433;
+  --accent-foreground: #e7ecf5;
+  --destructive: #f26b7a;
+  --border: #232c3d;
+  --input: #232c3d;
+  --ring: #6e5cff;
+  --chart-1: #6e5cff;
+  --chart-2: #29d3e6;
+  --chart-3: #34d399;
+  --chart-4: #f5a623;
+  --chart-5: #f26b7a;
+  --sidebar: #141a26;
+  --sidebar-foreground: #e7ecf5;
+  --sidebar-primary: #6e5cff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2433;
+  --sidebar-accent-foreground: #e7ecf5;
+  --sidebar-border: #232c3d;
+  --sidebar-ring: #6e5cff;
+}
+
+/* Light theme — cool, instrument-grade white */
+[data-theme='light'] {
+  --bg-secondary: #ffffff;
+  --bg-primary: #f6f8fc;
+  --bg-tertiary: #ffffff;
+  --bg-quaternary: #eef1f7;
+  --border-color: #e4e9f2;
+  --border-strong: #d2d9e6;
+  --text-primary: #131722;
+  --text-secondary: #54607a;
+  --text-tertiary: #8a93a6;
+  --accent-color: #6048f5;
+  --accent-hover: #4f3ae0;
+  --accent-soft: rgba(96, 72, 245, 0.1);
+  --accent-2: #0bb6c9;
+  --success-color: #10b981;
+  --warning-color: #d98313;
+  --error-color: #e0556b;
+  --error-soft: rgba(224, 85, 107, 0.1); /* ds-conformance-allow: token definition */
+  --shadow: rgba(15, 23, 42, 0.12);
+  --scrim: rgba(15, 23, 42, 0.32);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--accent-2) 100%);
+
+  --background: #f6f8fc;
+  --foreground: #131722;
+  --card: #ffffff;
+  --card-foreground: #131722;
+  --popover: #ffffff;
+  --popover-foreground: #131722;
+  --primary: #6048f5;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f7;
+  --secondary-foreground: #131722;
+  --muted: #eef1f7;
+  --muted-foreground: #54607a;
+  --accent: #eef1f7;
+  --accent-foreground: #131722;
+  --destructive: #e0556b;
+  --border: #e4e9f2;
+  --input: #e4e9f2;
+  --ring: #6048f5;
+  --chart-1: #6048f5;
+  --chart-2: #0bb6c9;
+  --chart-3: #10b981;
+  --chart-4: #d98313;
+  --chart-5: #e0556b;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #131722;
+  --sidebar-primary: #6048f5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef1f7;
+  --sidebar-accent-foreground: #131722;
+  --sidebar-border: #e4e9f2;
+  --sidebar-ring: #6048f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+#root {
+  width: 100%;
+  height: 100dvh;
+  margin: 0 auto;
+  text-align: center;
+}
+
+/* ============================================================
+   Typography — Space Grotesk carries the personality; Inter does
+   the reading; JetBrains Mono speaks for the machine (IDs, scopes,
+   remote URLs — the technical data that defines this product).
+   ============================================================ */
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+/* Brand wordmark: "Fuze" + "Front" joined by the seam. */
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.brand-mark .brand-accent {
+  background: var(--seam);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Technical data reads in mono — connection IDs, scopes, remoteEntry URLs. */
+.mono,
+code,
+kbd,
+.app-id,
+.remote-url {
+  font-family: var(--font-mono);
+  font-feature-settings: 'ss01' 1;
+}
+
+/* Quality floor: a visible, on-brand keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   Provisioning spinner — the seam animates as a progress ring
+   while the platform wires up a new workspace at runtime.
+   ============================================================ */
+
+/* Semantic alias so progress/track surfaces have a consistent name */
+:root,
+[data-theme='dark'] {
+  --spinner-track: var(--border-strong);
+}
+
+[data-theme='light'] {
+  --spinner-track: var(--border-strong);
+}
+
+@keyframes seam-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Provisioning card — mirrors .auth-form structure but purpose-built for
+   async-wait states (workspace creation, org setup, migration). */
+.provisioning-card {
+  position: relative;
+  max-width: 420px;
+  margin: 2rem auto;
+  padding: 2.5rem 2rem;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 24px 60px -24px var(--shadow);
+  overflow: hidden;
+  text-align: center;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+/* Seam at the top: the "fuse" moment where the runtime wires the workspace in. */
+.provisioning-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--seam);
+}
+
+.provisioning-spinner {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 1.5rem;
+  border-radius: 50%;
+  border: 4px solid var(--spinner-track);
+  border-top-color: var(--accent-color);
+  animation: seam-spin 0.9s linear infinite;
+}
+
+.provisioning-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
+}
+
+.provisioning-description {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* dynamic viewport height — avoids iOS/Android address-bar bounce */
+}
+
+.top-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  height: 60px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+/* Signature: a glowing "fuse seam" marking where the host shell joins
+   the content the runtime modules render into. */
+.top-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--seam);
+  opacity: 0.7;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.side-panel {
+  width: 250px;
+  background-color: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  padding: 1rem 0;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.content-area {
+  flex: 1;
+  padding: 1rem;
+  overflow: auto;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
+}
+
+/* ============================================================
+   Hamburger button — mobile-only nav trigger
+   ============================================================ */
+.hamburger-btn {
+  display: none; /* hidden on desktop */
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 10px 8px;
+  margin-right: 4px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background-color 0.18s ease;
+  flex-shrink: 0;
+}
+
+.hamburger-btn:hover,
+.hamburger-btn:focus-visible {
+  background-color: var(--bg-quaternary);
+}
+
+.hamburger-bar {
+  display: block;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background-color: currentColor;
+}
+
+/* ============================================================
+   Scrim — mobile overlay behind open drawer
+   ============================================================ */
+.sidebar-scrim {
+  display: none; /* rendered by React only when open; CSS shows it on mobile */
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: var(--scrim);
+  animation: scrim-in 0.2s ease forwards;
+}
+
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ============================================================
+   Mobile shell — drawer sidebar, collapsed top-bar
+   ============================================================ */
+@media (max-width: 768px) {
+  .hamburger-btn {
+    display: flex;
+  }
+
+  .sidebar-scrim {
+    display: block;
+  }
+
+  /* Sidebar becomes a fixed overlay drawer */
+  .side-panel {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(280px, 80vw);
+    height: 100%;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    /* Safe-area insets for notched/rounded devices */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* RTL: drawer slides in from the right */
+  [dir='rtl'] .side-panel {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+
+  .side-panel[data-open='true'] {
+    transform: translateX(0);
+  }
+
+  /* Content area fills full width — sidebar no longer in document flow */
+  .main-content {
+    position: relative;
+  }
+
+  /* Collapse language selector on narrow viewports */
+  .lang-selector-wrap {
+    display: none;
+  }
+
+  /* Ensure top-bar items don't overflow */
+  .top-bar {
+    padding: 0 0.75rem;
+    gap: 4px;
+  }
+
+  .top-bar-actions {
+    gap: 6px !important;
+  }
+
+  /* Touch targets: menu items must be ≥ 44 px tall */
+  .menu-item {
+    min-height: 44px;
+  }
+
+  /* Dashboard grid — single column on mobile */
+  .app-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0.125rem 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.menu-item:hover {
+  background-color: var(--bg-quaternary);
+  color: var(--text-primary);
+}
+
+/* Active item carries the seam as a left edge, not a slab of color. */
+.menu-item.active {
+  background-color: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1.1rem;
+  border-radius: 3px;
+  background: var(--seam);
+}
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: var(--bg-secondary);
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px var(--shadow);
+  z-index: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.dropdown-item {
+  color: var(--text-primary);
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-quaternary);
+}
+
+.auth-form {
+  position: relative;
+  max-width: 400px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 24px 60px -24px var(--shadow);
+  overflow: hidden;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+/* The card opens with the seam — the first hint of the fuse identity. */
+.auth-form::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--seam);
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+.form-group input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.05s ease;
+  color: white;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #fff;
+  box-shadow: 0 6px 18px -8px var(--accent-color);
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  background-color: var(--bg-quaternary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* ============================================================
+   Dashboard — the launcher grid. App cards are the primary
+   surface the runtime fabric renders; each carries the seam on
+   hover, the moment before a module fuses into the shell.
+   ============================================================ */
+.dashboard {
+  padding: 2rem;
+}
+
+.dashboard-header {
+  margin-bottom: 2rem;
+}
+
+.dashboard-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin: 0.25rem 0 0;
+}
+
+.section-title {
+  margin-bottom: 1.5rem;
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.app-card {
+  position: relative;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-tertiary);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-card:hover {
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px -20px var(--shadow);
+}
+
+/* Seam reveals along the top edge as a card lifts toward you. */
+.app-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--seam);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.app-card:hover::before {
+  opacity: 1;
+}
+
+.app-card.is-offline {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: grayscale(0.5);
+}
+
+.app-card.is-offline:hover {
+  border-color: var(--border-color);
+  transform: none;
+  box-shadow: none;
+}
+
+.app-card.is-offline:hover::before {
+  opacity: 0;
+}
+
+.app-card-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.app-card-icon {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.app-icon-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.app-icon-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  background: var(--bg-quaternary);
+}
+
+/* Integration types read by hue, all tuned to the cool palette. */
+.app-icon-fallback.type-module-federation {
+  background: linear-gradient(135deg, #15414f, var(--accent-2));
+}
+.app-icon-fallback.type-iframe {
+  background: linear-gradient(135deg, #4a3a12, var(--warning-color));
+}
+.app-icon-fallback.type-web-component,
+.app-icon-fallback.type-other {
+  background: linear-gradient(135deg, #2f1f4f, var(--accent-color));
+}
+
+.health-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--success-color);
+  border: 2px solid var(--bg-tertiary);
+}
+
+.health-dot.offline {
+  background-color: var(--error-color);
+}
+
+.app-card-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.app-card.is-offline .app-card-title {
+  color: var(--text-tertiary);
+}
+
+.app-offline-tag {
+  color: var(--error-color);
+  font-size: 0.9rem;
+  margin-left: 8px;
+}
+
+.app-type-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-soft);
+  color: var(--accent-color);
+  text-transform: lowercase;
+}
+
+.app-card-desc {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.dashboard-empty {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+}
+
+.quick-actions {
+  margin-top: 3rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-tertiary);
+}
+
+.quick-actions-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+/* Theme toggle button styles */
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.theme-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='light'] .theme-toggle:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Chat Panel Styles */
+.chat-panel {
+  position: fixed;
+  top: 60px; /* Below top bar */
+  right: 0;
+  width: 400px;
+  height: calc(100vh - 60px);
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  box-shadow: -2px 0 10px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  transition:
+    transform 0.3s ease,
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+  transform: translateX(100%);
+}
+
+.chat-panel.open {
+  transform: translateX(0);
+}
+
+.chat-panel.closed {
+  transform: translateX(calc(100% - 60px)); /* Show only toggle button */
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background-color: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.chat-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.chat-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+  min-width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-toggle-btn:hover {
+  background-color: var(--bg-quaternary);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chat-welcome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.welcome-message {
+  padding: 2rem;
+  background-color: var(--bg-tertiary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 85%;
+}
+
+.chat-message.user {
+  align-self: flex-end;
+}
+
+.chat-message.assistant {
+  align-self: flex-start;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.25rem;
+}
+
+.message-sender {
+  font-weight: 600;
+}
+
+.message-time {
+  opacity: 0.7;
+}
+
+.message-content {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.chat-message.user .message-content {
+  background-color: var(--accent-color);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-message.assistant .message-content {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.message-content.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--text-tertiary);
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.message-feedback {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.chat-message.assistant:hover .message-feedback {
+  opacity: 1;
+}
+
+.feedback-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.feedback-btn:hover {
+  opacity: 1;
+  background-color: var(--bg-quaternary);
+}
+
+.feedback-btn.active {
+  opacity: 1;
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.chat-input-area {
+  padding: 1rem;
+  background-color: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.input-container {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  resize: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  transition: all 0.3s ease;
+  max-height: 120px;
+  min-height: 42px;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.2);
+}
+
+.chat-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.send-btn {
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem;
+  cursor: pointer;
+  font-size: 1rem;
+  min-width: 44px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.send-btn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  transform: scale(1.05);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-align: center;
+  opacity: 0.8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .chat-panel {
+    width: 100%;
+    right: 0;
+  }
+
+  .chat-panel.closed {
+    transform: translateX(calc(100% - 50px));
+  }
+
+  .chat-header h3 {
+    font-size: 0.9rem;
+  }
+
+  .welcome-message {
+    max-width: 240px;
+    padding: 1.5rem;
+  }
+
+  .chat-message {
+    max-width: 90%;
+  }
+}
+
+/* Adjust content area when chat is open */
+.app-layout.chat-open .content-area {
+  margin-right: 400px;
+  transition: margin-right 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .app-layout.chat-open .content-area {
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-layout.chat-open .content-area {
+    display: none;
+  }
+}
+
+/* Help Page Styles */
+.help-page {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.help-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.help-header h1 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+  font-size: 2.5rem;
+}
+
+.help-header p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.help-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  gap: 0.5rem;
+}
+
+.help-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-size: 1rem;
+  font-weight: 400;
+  min-width: fit-content;
+}
+
+.help-tab:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+}
+
+.help-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: 600;
+}
+
+.help-tab .tab-icon {
+  font-size: 1.2rem;
+}
+
+.help-content-container {
+  min-height: 500px;
+}
+
+.help-content {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.help-card {
+  padding: 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--bg-secondary);
+  transition: all 0.3s ease;
+  margin-bottom: 2rem;
+}
+
+.help-card:hover {
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px var(--shadow);
+}
+
+.help-card h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+}
+
+.help-card h4 {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+.help-card h5 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.help-card p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.help-card ul,
+.help-card ol {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.help-card li {
+  margin-bottom: 0.5rem;
+}
+
+.help-card code {
+  background-color: var(--bg-tertiary);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  color: var(--accent-color);
+}
+
+/* API Documentation Styles */
+.api-section {
+  margin: 2rem 0;
+}
+
+.api-link-container {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.api-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(45deg, #646cff, #747bff);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(100, 108, 255, 0.3);
+}
+
+.api-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(100, 108, 255, 0.4);
+  color: white;
+}
+
+.code-block {
+  margin: 1rem 0;
+  background-color: var(--bg-quaternary);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 1.5rem;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.endpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.endpoint-card {
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+}
+
+.endpoint-card h5 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.endpoint-card ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.endpoint-card li {
+  margin-bottom: 0.5rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+/* Developer Guide Styles */
+.step-by-step {
+  margin: 2rem 0;
+}
+
+.step {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+}
+
+.step h5 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--accent-color);
+  font-size: 1.2rem;
+}
+
+.integration-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.integration-card {
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  transition: all 0.3s ease;
+}
+
+.integration-card:hover {
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+}
+
+.integration-card h5 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.guide-link-container {
+  margin: 2rem 0;
+  text-align: center;
+}
+
+.guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(45deg, #28a745, #20c997);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+}
+
+.guide-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+  color: white;
+}
+
+/* Deployment Guide Styles */
+.deployment-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.deployment-card {
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+}
+
+.deployment-card h5 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Support Page Styles */
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.contact-card {
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+  text-align: center;
+}
+
+.contact-card h5 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.contact-card a {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.contact-card a:hover {
+  text-decoration: underline;
+}
+
+.troubleshooting-section {
+  margin: 2rem 0;
+}
+
+.troubleshooting-section details {
+  margin-bottom: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-tertiary);
+}
+
+.troubleshooting-section summary {
+  padding: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  border-radius: 8px 8px 0 0;
+}
+
+.troubleshooting-section summary:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.troubleshooting-section details[open] summary {
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 8px 8px 0 0;
+}
+
+.troubleshooting-section details p {
+  padding: 1rem;
+  margin: 0;
+}
+
+.system-info {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.system-info p {
+  margin: 0.5rem 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .help-page {
+    padding: 1rem;
+  }
+
+  .help-header h1 {
+    font-size: 2rem;
+  }
+
+  .help-tabs {
+    flex-direction: column;
+    border-bottom: none;
+    border-right: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+  }
+
+  .help-tab {
+    border-bottom: none;
+    border-right: 2px solid transparent;
+    justify-content: flex-start;
+  }
+
+  .help-tab.active {
+    border-bottom: none;
+    border-right-color: var(--accent-color);
+  }
+
+  .help-card {
+    padding: 1.5rem;
+  }
+
+  .endpoint-grid,
+  .integration-types,
+  .deployment-options,
+  .contact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .code-block pre {
+    padding: 1rem;
+    font-size: 0.8rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

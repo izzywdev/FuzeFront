@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Install scope — Frame (c)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-10) var(--space-8) var(--space-16); }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 68ch; }
+  h2.sec { font-family: var(--font-display); font-size: var(--text-lg); margin: var(--space-10) 0 var(--space-4); }
+  .notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); max-width: 78ch; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes li { margin-bottom: var(--space-2); }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  table.matrix th, table.matrix td { text-align: left; padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  table.matrix th { font-family: var(--font-mono); font-size: var(--text-2xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
+  table.matrix code { font-family: var(--font-mono); color: var(--cyan-400); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="03-install-scope">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame (c)</div>
+  <h1>Installing an app: where, and for whom</h1>
+  <p class="lead">Every registered app declares a <b>scope level</b> — <code>personal</code>,
+    <code>organization</code>, or <code>both</code>. The dialog only ever asks questions the app and
+    the caller's role actually leave open; a single-scope app installs without a scope question at all.</p>
+
+  <div class="ffs-grid">
+
+    <div class="ffs-case" data-case="both-scopes">
+      <div class="ffs-case__label">scopeLevel = both, caller is org owner</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true"
+           aria-labelledby="t1" data-dialog="install-app" data-scope-level="both">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title" id="t1">Install Timesheets</h2>
+          <p class="ffi-dialog__lead">Choose where this app is installed.</p>
+
+          <div class="ffi-group" data-group="scope" role="radiogroup" aria-label="Install scope">
+            <div class="ffi-legend">Install to</div>
+            <div class="ffi-card" role="radio" aria-checked="false" data-scope="personal">
+              <div>
+                <div class="ffi-card__title">My personal space</div>
+                <div class="ffi-card__desc">Only you see it. It follows you across organizations.</div>
+              </div>
+            </div>
+            <div class="ffi-card" role="radio" aria-checked="true" data-scope="organization">
+              <div>
+                <div class="ffi-card__title">Northwind Labs</div>
+                <div class="ffi-card__desc">Installed into the organization you are currently in.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ffi-group" data-group="mode" role="radiogroup"
+               aria-label="Who can use it" style="margin-top: var(--space-6);">
+            <div class="ffi-legend">Who can use it</div>
+            <div class="ffi-card" role="radio" aria-checked="true" data-mode="self">
+              <div>
+                <div class="ffi-card__title">Install for me</div>
+                <div class="ffi-card__desc">Adds it to your launcher in this organization only.</div>
+              </div>
+            </div>
+            <div class="ffi-card" role="radio" aria-checked="false" data-mode="everyone">
+              <div>
+                <div class="ffi-card__title">Install for everyone</div>
+                <div class="ffi-card__desc">Adds it to every member's launcher in Northwind Labs.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary" data-action="install">Install</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">The “who can use it” group appears only when the organization scope is
+        selected. Selecting the personal scope hides it — a personal install is always just you.</p>
+    </div>
+
+    <div class="ffs-case" data-case="member-cannot-install-for-everyone">
+      <div class="ffs-case__label">Caller is a plain member — fail-closed</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true"
+           data-dialog="install-app" data-scope-level="organization">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title">Install Timesheets</h2>
+          <p class="ffi-dialog__lead">Installing into <b>Northwind Labs</b>.</p>
+          <div class="ffi-group" data-group="mode" role="radiogroup" aria-label="Who can use it">
+            <div class="ffi-legend">Who can use it</div>
+            <div class="ffi-card" role="radio" aria-checked="true" data-mode="self">
+              <div>
+                <div class="ffi-card__title">Install for me</div>
+                <div class="ffi-card__desc">Adds it to your launcher in this organization only.</div>
+              </div>
+            </div>
+            <div class="ffi-card ffi-card--disabled" role="radio" aria-checked="false"
+                 aria-disabled="true" data-mode="everyone" data-guard="requires-org-admin">
+              <div>
+                <div class="ffi-card__title">Install for everyone</div>
+                <div class="ffi-card__desc">Requires an organization owner or admin.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary" data-action="install">Install</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">One member must not be able to push an app into every colleague's
+        launcher. The option is visible but disabled and says why, so the user learns the rule rather
+        than hitting a 403 after committing.</p>
+    </div>
+
+    <div class="ffs-case" data-case="personal-only">
+      <div class="ffs-case__label">scopeLevel = personal — no scope question</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true"
+           data-dialog="install-app" data-scope-level="personal">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title">Install Focus Timer</h2>
+          <p class="ffi-dialog__lead">This app installs to your personal space. Only you will see it.</p>
+          <div class="ffs-callout ffs-callout--warning" data-note="scope-fixed">
+            Focus Timer is a personal app — it cannot be installed for an organization.
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary" data-action="install">Install</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">A single-scope app asks nothing. The dialog still confirms, because
+        installing is a write the user should acknowledge.</p>
+    </div>
+
+    <div class="ffs-case" data-case="already-installed">
+      <div class="ffs-case__label">Already installed for everyone</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true" data-dialog="install-app">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title">Timesheets</h2>
+          <p class="ffi-dialog__lead">Installed for everyone in <b>Northwind Labs</b> by Ada Rivera.</p>
+          <div class="ffs-callout ffs-callout--warning" data-guard="already-installed">
+            Uninstalling removes it from every member's launcher in this organization.
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Close</button>
+          <button class="btn btn-primary" data-action="uninstall">Uninstall</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">Install is idempotent per target, so re-opening shows the existing
+        installation and offers the reverse action instead of a second install.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">What the API accepts</h2>
+  <table class="matrix">
+    <thead><tr><th>App scopeLevel</th><th>Requested scope</th><th>Mode</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td><code>both</code></td><td><code>personal</code></td><td><code>self</code></td><td>Installed for the caller.</td></tr>
+      <tr><td><code>both</code></td><td><code>organization</code></td><td><code>self</code></td><td>Requires active membership.</td></tr>
+      <tr><td><code>both</code></td><td><code>organization</code></td><td><code>everyone</code></td><td>Requires <code>owner</code> or <code>admin</code>, else <b>403</b>.</td></tr>
+      <tr><td><code>personal</code></td><td><code>organization</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
+      <tr><td><code>organization</code></td><td><code>personal</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
+      <tr><td>any</td><td>any</td><td>any</td><td>App not visible to the caller → <b>404</b>, never 403 (id probing).</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <ul>
+      <li>Installation is not the authorization boundary. <code>visibility</code>, org membership and
+        Permit still gate what a user may see and do; scope decides only <i>where an app lands</i>.</li>
+      <li>Uninstall is a soft revoke, so an app can be uninstalled and reinstalled without colliding
+        with the unique-per-target constraint.</li>
+    </ul>
+    Test hooks: <code>[data-dialog='install-app']</code> · <code>[data-scope-level]</code> ·
+    <code>[data-scope='personal'|'organization']</code> · <code>[data-mode='self'|'everyone']</code> ·
+    <code>[data-guard='requires-org-admin']</code> · <code>[data-guard='already-installed']</code> ·
+    <code>[data-action='install'|'uninstall'|'cancel']</code>.
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption"><b>Frame (c)</b> — install scope &amp; mode</span>
+  <a href="04-notifications.html" class="btn btn-primary">Next: notifications →</a>
+</div>
+</body>
+</html>

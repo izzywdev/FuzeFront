@@ -1,0 +1,82 @@
+<!-- @dsCard group="Mobile" viewport="800x520" name="Mobile layout" subtitle="breakpoints, shell patterns, tokens" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: var(--space-5); font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-4); }
+  .label { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); font-weight: 600; margin-bottom: var(--space-3); }
+  .token-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-quaternary); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; margin-bottom: 5px; }
+  .token-name { color: var(--accent-color); }
+  .token-val  { color: var(--text-tertiary); }
+  .bp-row { display: flex; align-items: center; gap: var(--space-3); padding: 7px 0; border-bottom: 1px solid var(--border-color); font-size: var(--text-xs); }
+  .bp-bar { height: 4px; border-radius: 999px; background: var(--seam); flex: none; }
+  .bp-key { font-family: var(--font-mono); font-size: 11px; color: var(--accent-color); width: 24px; flex: none; }
+  .bp-px  { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); width: 60px; flex: none; }
+  .sub-map { display: flex; flex-direction: column; gap: 7px; }
+  .sub-row { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: 11px; }
+  .sub-from { color: var(--text-tertiary); width: 110px; flex: none; }
+  .sub-to   { color: var(--accent-color); }
+  .seam-line { height: 2px; background: var(--seam); border-radius: 999px; margin: var(--space-2) 0; }
+</style></head><body>
+  <div class="grid">
+
+    <!-- Breakpoints -->
+    <div class="card">
+      <div class="label">Breakpoints</div>
+      <div class="bp-row" style="border-top: 1px solid var(--border-color);">
+        <div class="bp-bar" style="width:24px; opacity:1;"></div>
+        <span class="bp-key">xs</span><span class="bp-px">&lt; 480px</span>
+        <span style="color:var(--text-secondary);">Phone · BottomNav + Drawer</span>
+      </div>
+      <div class="bp-row">
+        <div class="bp-bar" style="width:44px; opacity:.7;"></div>
+        <span class="bp-key">sm</span><span class="bp-px">480px</span>
+        <span style="color:var(--text-secondary);">Phone landscape</span>
+      </div>
+      <div class="bp-row">
+        <div class="bp-bar" style="width:70px; opacity:.45;"></div>
+        <span class="bp-key">md</span><span class="bp-px">768px</span>
+        <span style="color:var(--text-secondary);">Tablet · SidePanel returns</span>
+      </div>
+      <div class="bp-row">
+        <div class="bp-bar" style="width:96px; opacity:.25;"></div>
+        <span class="bp-key">lg</span><span class="bp-px">1024px</span>
+        <span style="color:var(--text-secondary);">Desktop</span>
+      </div>
+      <div class="bp-row" style="border-bottom:none;">
+        <div class="bp-bar" style="width:120px; opacity:.1;"></div>
+        <span class="bp-key">xl</span><span class="bp-px">1280px</span>
+        <span style="color:var(--text-secondary);">Wide</span>
+      </div>
+    </div>
+
+    <!-- Mobile tokens -->
+    <div class="card">
+      <div class="label">Mobile layout tokens</div>
+      <div class="token-row"><span class="token-name">--bottom-nav-height</span><span class="token-val">56px</span></div>
+      <div class="token-row"><span class="token-name">--top-bar-height-mobile</span><span class="token-val">52px</span></div>
+      <div class="token-row"><span class="token-name">--touch-target</span><span class="token-val">44px</span></div>
+      <div class="token-row"><span class="token-name">--drawer-width</span><span class="token-val">280px</span></div>
+      <div class="token-row"><span class="token-name">--sheet-max-h</span><span class="token-val">80dvh</span></div>
+      <div class="token-row"><span class="token-name">--safe-area-top</span><span class="token-val">env(safe-area-inset-top)</span></div>
+      <div class="token-row"><span class="token-name">--safe-area-bottom</span><span class="token-val">env(safe-area-inset-bottom)</span></div>
+    </div>
+
+    <!-- Responsive substitution map -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="label">Responsive substitution map · desktop → mobile (&lt;768px)</div>
+      <div class="seam-line"></div>
+      <div class="sub-map">
+        <div class="sub-row"><span class="sub-from">SidePanel</span><span style="color:var(--border-strong);">→</span><span class="sub-to">BottomNav + Drawer</span></div>
+        <div class="sub-row"><span class="sub-from">Modal</span><span style="color:var(--border-strong);">→</span><span class="sub-to">BottomSheet</span></div>
+        <div class="sub-row"><span class="sub-from">TopBar</span><span style="color:var(--border-strong);">→</span><span class="sub-to">TopBar (collapsed — wordmark + avatar + hamburger)</span></div>
+        <div class="sub-row"><span class="sub-from">app-grid</span><span style="color:var(--border-strong);">→</span><span class="sub-to">2-col (sm) / 1-col (xs)</span></div>
+        <div class="sub-row"><span class="sub-from">CommandPalette</span><span style="color:var(--border-strong);">→</span><span class="sub-to">SearchSheet (BottomSheet with search input)</span></div>
+        <div class="sub-row"><span class="sub-from">Tooltip</span><span style="color:var(--border-strong);">→</span><span class="sub-to">long-press popover</span></div>
+      </div>
+    </div>
+
+  </div>
+</body></html>

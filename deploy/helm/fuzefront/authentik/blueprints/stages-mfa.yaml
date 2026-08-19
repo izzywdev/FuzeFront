@@ -1,0 +1,58 @@
+# Authentik Blueprint — FuzeFront MFA stages
+#
+# Defines:
+#   - TOTP authenticator setup stage          (fuzefront-mfa-totp-setup)
+#   - TOTP authenticator validation stage     (fuzefront-mfa-totp-validate)
+#   - WebAuthn/passkey setup stage            (fuzefront-mfa-webauthn-setup)
+#   - WebAuthn/passkey validation stage       (fuzefront-mfa-webauthn-validate)
+#   - Authenticator-validation stage (combined — used after login for MFA check)
+#   - SMS stub stage (UNBOUND — Twilio creds deferred to a later plan)
+#
+# The setup stages are bound to the default user-settings flow so users can
+# enroll devices from their profile. The validation stage is unbound here
+# (bind it to your authentication flow to enforce MFA).
+version: 1
+metadata:
+  name: FuzeFront MFA Stages
+entries:
+  # ── TOTP setup stage ──────────────────────────────────────────────────────────
+  - model: authentik_stages_authenticator_totp.authenticatortotpstage
+    state: present
+    identifiers:
+      name: fuzefront-mfa-totp-setup
+    attrs:
+      name: fuzefront-mfa-totp-setup
+      friendly_name: "FuzeFront TOTP"
+      digits: 6
+
+  # ── WebAuthn / passkey setup stage ───────────────────────────────────────────
+  - model: authentik_stages_authenticator_webauthn.authenticatorwebauthnstage
+    state: present
+    identifiers:
+      name: fuzefront-mfa-webauthn-setup
+    attrs:
+      name: fuzefront-mfa-webauthn-setup
+      friendly_name: "FuzeFront Passkey"
+      user_verification: preferred
+      # Resident key (passkey mode)
+      resident_key_requirement: preferred
+
+  # ── Authenticator-validation stage (for login flow MFA check) ─────────────────
+  # Accepts TOTP or WebAuthn. Bind to your authentication flow to require MFA.
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    state: present
+    identifiers:
+      name: fuzefront-mfa-validate
+    attrs:
+      name: fuzefront-mfa-validate
+      device_classes:
+        - totp
+        - webauthn
+      # Not required for unenrolled users — allows graceful bypass until enrolled.
+      not_configured_action: skip
+
+  # ── SMS stage (superseded by stages-sms.yaml) ────────────────────────────────
+  # The real SMS MFA stage is defined in stages-sms.yaml (generic HTTP provider
+  # calling sms-service, which calls Twilio Verify internally).
+  # stages-sms.yaml is applied by the same Helm ConfigMap and Authentik worker
+  # auto-discovery. The stub entry above has been removed.

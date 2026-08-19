@@ -1,0 +1,437 @@
+{
+  "name": "Portal admin consoles — approval frames",
+  "feature": "portal-admin-consoles",
+  "description": "Contract-freeze UX artifacts for the two multi-tenant admin surfaces: a master-admin (portal-management) console to run the portal fleet (list/create/suspend/resume + domain status) and a portal-admin console for a tenant to run its own users, app catalog, and billing (Stripe Connect). Approving a flow approves its visual + interaction model AND its component/package/contract build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. UI-only (FF-EPIC-14) consuming FF-EPIC-09/11/12/15. RECONCILED to the unified org-tree model (see modelReconciliation): a portal is an ORG that is a direct child of the platform root (organizations + parent_id), NOT a separate portal-service entity — the anticipated @fuzefront/portal-client / portal-service surface is SUPERSEDED by org-tree CRUD carrying tenant attributes. The same org/membership/role machinery applies recursively ('root' is relative to the portal). Portal-scoped members reuse the per-org access-admin surface; the portal member VIEW (members=everyone in the portal) uses the member-directory feature; cross-org platform staff are the Employee console.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/portal-admin-ui/src/**",
+      "packages/billing-ui/src/components/portal/**",
+      "packages/billing-ui/src/flows/**",
+      "packages/billing-ui/src/api/portalBillingClient.ts",
+      "frontend/src/pages/MasterAdminPortalsPage.tsx",
+      "frontend/src/pages/PortalAdminConsolePage.tsx",
+      "frontend/src/pages/PortalBillingPage.tsx"
+    ]
+  },
+  "entry": "index.html",
+  "modelReconciliation": {
+    "decision": "Portal = org-tree node with tenant attributes, on the unified organizations + parent_id tree. No separate portal-service.",
+    "supersedes": "The 'anticipated' @fuzefront/portal-client + services/portal-service/openapi.yaml surface below is superseded: portal CRUD maps onto ORG CRUD for second-level org children (parent_id = platform root), plus a portal-attributes extension (custom domain, white-label branding, per-portal app catalog, reseller billing) that ordinary sub-orgs lack. contract-designer freezes this as an organizations extension, not a new service.",
+    "portalIsOrg": "A 'portal' row in these frames is the org whose parent_id = 00000000-0000-0000-0000-000000000010 (platform root) and which is flagged as a tenant root. 'Suspend portal' = suspend that org subtree. The root portal (slug 'fuzefront') is the root org itself and is guarded.",
+    "reconciles": [
+      "design/frames/member-directory (portal member VIEW — 'members = everyone in the portal' — is the directory, not a bespoke portal users table)",
+      "design/frames/employee-console (FuzeFront platform staff operate across portals via ReBAC org-admin-on-root, no membership row; that is the Employee console, distinct from a portal's own admins)",
+      "design/frames/authz-admin (portal-scoped members & roles reuse the per-org access-admin machinery recursively)"
+    ]
+  },
+  "epics": [
+    "FF-EPIC-14",
+    "FF-EPIC-09",
+    "FF-EPIC-11",
+    "FF-EPIC-12",
+    "FF-EPIC-15"
+  ],
+  "contracts": {
+    "real": [
+      {
+        "client": "@fuzefront/security-client",
+        "openapi": "packages/security/openapi.yaml",
+        "usedFor": "Portal-scoped members & roles (the tenant is the portal's org). tenantId is resolved from the session, never accepted from the client.",
+        "endpoints": [
+          "GET /v1/security/tenants/{tenantId}/members",
+          "GET /v1/security/tenants/{tenantId}/roles",
+          "PUT /v1/security/tenants/{tenantId}/members/{userId}/roles"
+        ]
+      },
+      {
+        "client": "@fuzefront/app-registry-client",
+        "openapi": "services/app-registry-service/openapi.yaml",
+        "usedFor": "App display fields for the catalog (slug, name, menuLabel, integration, icon). Global registry — read-only here.",
+        "endpoints": [
+          "GET /apps"
+        ]
+      },
+      {
+        "client": "@fuzefront/billing-client",
+        "openapi": "services/billing-service/openapi.yaml",
+        "usedFor": "The portal's own FuzeFront subscription (platform-billed): plans, subscription status, hosted management portal.",
+        "endpoints": [
+          "GET /api/v1/billing/plans",
+          "GET /api/v1/billing/subscriptions/{id}",
+          "POST /api/v1/billing/portal"
+        ]
+      }
+    ],
+    "anticipated": [
+      {
+        "client": "@fuzefront/portal-client",
+        "openapi": "services/portal-service/openapi.yaml (NOT frozen — commissioned by these frames, FF-EPIC-09-S3)",
+        "usedFor": "Master-admin portal CRUD + a portal's self-scoped identity (GET /portal/current).",
+        "endpoints": [
+          "GET /api/v1/admin/portals",
+          "POST /api/v1/admin/portals",
+          "GET /api/v1/admin/portals/{portalId}",
+          "PATCH /api/v1/admin/portals/{portalId}",
+          "GET /api/v1/portal/current"
+        ]
+      },
+      {
+        "client": "@fuzefront/security-client (extension) / portal invitation surface",
+        "openapi": "portal-scoped invitation route (NOT native to the monolith today — FF-EPIC-11-S3)",
+        "usedFor": "Portal-scoped user invitations (invite/resend/revoke), scoped to the caller's own portal.",
+        "endpoints": [
+          "POST /api/v1/portal/invitations",
+          "POST /api/v1/portal/invitations/{id}/resend",
+          "DELETE /api/v1/portal/invitations/{id}"
+        ]
+      },
+      {
+        "client": "@fuzefront/portal-client (catalog admin) / app-registry extension",
+        "openapi": "per-portal catalog admin — portal_apps entity (NOT frozen — FF-EPIC-12-S3)",
+        "usedFor": "Per-portal enable/disable + reorder (portal_apps.enabled, portal_apps.pinned_order).",
+        "endpoints": [
+          "GET /api/v1/portal/catalog",
+          "PUT /api/v1/portal/catalog/{appId}",
+          "PATCH /api/v1/portal/catalog/order"
+        ]
+      },
+      {
+        "client": "@fuzefront/billing-client (extension)",
+        "openapi": "Stripe Connect + price book (NOT frozen — FF-EPIC-15-S2/S3/S5)",
+        "usedFor": "Connect Express onboarding + status (connected_accounts: charges_enabled, payouts_enabled, onboarding_status) and the reseller price book (tenant_plans).",
+        "endpoints": [
+          "GET /api/v1/portal/connect/status",
+          "POST /api/v1/portal/connect/account-link",
+          "GET /api/v1/portal/price-book",
+          "POST /api/v1/portal/price-book"
+        ]
+      }
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "master-admin-portals",
+        "orchestrator": "MasterAdminPortalsFlow",
+        "route": "/admin/portals",
+        "story": "FF-EPIC-14-S2",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T22:31:06.672Z",
+        "contract": {
+          "client": "@fuzefront/portal-client",
+          "status": "anticipated",
+          "openapi": "services/portal-service/openapi.yaml (commissioned — FF-EPIC-09-S3)",
+          "endpoints": [
+            "GET /api/v1/admin/portals",
+            "POST /api/v1/admin/portals",
+            "GET /api/v1/admin/portals/{portalId}",
+            "PATCH /api/v1/admin/portals/{portalId}"
+          ],
+          "component": "@fuzefront/portal-admin-ui → MasterAdminPortalsFlow",
+          "featureFlag": "fuzefront.platform.multi-tenant-portals"
+        },
+        "frames": [
+          "01-portals-list",
+          "02-create-portal",
+          "03-portal-detail",
+          "04-master-states"
+        ]
+      },
+      {
+        "id": "portal-console",
+        "orchestrator": "PortalAdminConsoleFlow",
+        "route": "/portal/admin",
+        "story": "FF-EPIC-14-S3",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T22:31:09.269Z",
+        "contract": {
+          "client": "@fuzefront/security-client + @fuzefront/app-registry-client (real) + anticipated portal invitation & portal_apps routes",
+          "status": "mixed",
+          "openapi": "packages/security/openapi.yaml + services/app-registry-service/openapi.yaml + anticipated FF-EPIC-11-S3 / FF-EPIC-12-S3",
+          "endpoints": [
+            "GET /v1/security/tenants/{tenantId}/members",
+            "GET /v1/security/tenants/{tenantId}/roles",
+            "PUT /v1/security/tenants/{tenantId}/members/{userId}/roles",
+            "GET /apps",
+            "POST /api/v1/portal/invitations",
+            "GET /api/v1/portal/catalog",
+            "PUT /api/v1/portal/catalog/{appId}",
+            "PATCH /api/v1/portal/catalog/order"
+          ],
+          "component": "@fuzefront/portal-admin-ui → PortalAdminConsoleFlow",
+          "featureFlag": [
+            "fuzefront.identity.portal-scoped-users",
+            "fuzefront.apps.portal-catalog"
+          ]
+        },
+        "frames": [
+          "05-overview",
+          "06-users",
+          "07-catalog",
+          "09-portal-states"
+        ]
+      },
+      {
+        "id": "portal-billing",
+        "orchestrator": "PortalBillingFlow",
+        "route": "/portal/admin/billing",
+        "story": "FF-EPIC-14-S4",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T22:31:04.298Z",
+        "contract": {
+          "client": "@fuzefront/billing-client (real subscription) + anticipated Connect / price-book",
+          "status": "mixed",
+          "openapi": "services/billing-service/openapi.yaml + anticipated FF-EPIC-15-S2/S3/S5",
+          "endpoints": [
+            "GET /api/v1/billing/plans",
+            "GET /api/v1/billing/subscriptions/{id}",
+            "POST /api/v1/billing/portal",
+            "GET /api/v1/portal/connect/status",
+            "POST /api/v1/portal/connect/account-link",
+            "GET /api/v1/portal/price-book",
+            "POST /api/v1/portal/price-book"
+          ],
+          "component": "@fuzefront/billing-ui → PortalBillingFlow",
+          "featureFlag": "fuzefront.billing.reseller-connect"
+        },
+        "frames": [
+          "08-billing",
+          "09-portal-states"
+        ]
+      }
+    ],
+    "components": [
+      "PortalsTable",
+      "PortalRow",
+      "PortalStatusPill",
+      "PlanBadge",
+      "CreatePortalDialog",
+      "PortalDetailPanel",
+      "DomainStatusList",
+      "SuspendPortalDialog",
+      "MasterAdminGuard",
+      "PortalConsoleShell",
+      "PortalTabs",
+      "PortalOverviewCards",
+      "PortalUsersTable",
+      "InviteUserDialog",
+      "PortalRolePicker",
+      "AppCatalogList",
+      "CatalogItemRow",
+      "AddAppDialog",
+      "ReorderControls",
+      "PortalSuspendedNotice",
+      "CrossTenantDeniedNotice",
+      "BillingConsolePanel",
+      "ConnectOnboardingCard",
+      "ConnectStatusStepper",
+      "PriceBookTable",
+      "PlatformSubscriptionCard",
+      "ConnectErrorNotice"
+    ],
+    "packages": [
+      "@fuzefront/portal-admin-ui",
+      "@fuzefront/billing-ui"
+    ],
+    "dsPrimitivesNeeded": [
+      "Tabs — tabbed console shell; not in @fuzefront/design-system today",
+      "StatusPill — semantic lifecycle pill (active/suspended/pending/restricted)",
+      "StatCard — summary metric card",
+      "Stepper — Connect onboarding step list",
+      "SortableList — keyboard + drag reorder for the catalog"
+    ]
+  },
+  "commissionedByApproval": [
+    "RECONCILED: portal-management CRUD is org-tree CRUD on second-level org children (parent_id = platform root) PLUS a portal-attributes extension (custom domain, white-label branding, per-portal app catalog, reseller billing). This SUPERSEDES a standalone portal-service — contract-designer freezes it as an organizations extension, not a new service. The 'anticipated @fuzefront/portal-client' entries below are the pre-reconciliation shape, kept for traceability only.",
+    "@fuzefront/portal-client and all /portals* routes — does not exist in the contract today (FF-EPIC-09-S3); superseded by the org-tree reconciliation above",
+    "Portal-scoped invitation routes (POST /api/v1/portal/invitations, resend, revoke) — not native to the monolith today (FF-EPIC-11-S3)",
+    "Per-portal catalog admin (portal_apps: enabled, pinned_order) — does not exist today (FF-EPIC-12-S3)",
+    "Stripe Connect onboarding + status + price book (connected_accounts, tenant_plans) — no Connect surface exists today (FF-EPIC-15-S2/S3/S5)",
+    "409 ROOT_PORTAL_PROTECTED on suspend of the root portal — proposed guard",
+    "409 SLUG_TAKEN on create with a duplicate slug — proposed validation",
+    "403 PORTAL_SUSPENDED (whole console) and 403 FORBIDDEN_PORTAL (cross-tenant) fail-closed responses"
+  ],
+  "frames": [
+    {
+      "id": "01-portals-list",
+      "file": "01-portals-list.html",
+      "label": "(a) Portals",
+      "route": "/admin/portals",
+      "flow": "master-admin-portals",
+      "summary": "Master-admin fleet list: name, slug, status pill, primary domain, plan badge. Create, per-row suspend/resume, root-portal guard, cursor 'Load more'.",
+      "acceptanceNotes": "Rows render from GET /api/v1/admin/portals (PortalPage, cursor). Status is the portal lifecycle (active/suspended). Suspend/resume is PATCH .../{portalId} { status } and flips the row in place. The root portal (slug fuzefront) Suspend is disabled (client affordance; server enforces 409 ROOT_PORTAL_PROTECTED). Platform-admin only.",
+      "testHooks": [
+        "[data-frame='01-portals-list']",
+        "[data-panel='portals-list']",
+        "[data-portal='prt_northwind']",
+        "[data-portal-status='suspended']",
+        "[data-plan='pro']",
+        "[data-action='create-portal']",
+        "[data-action='suspend-portal']",
+        "[data-action='resume-portal']",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "02-create-portal",
+      "file": "02-create-portal.html",
+      "label": "(b) Create portal",
+      "route": "/admin/portals/new",
+      "flow": "master-admin-portals",
+      "summary": "Create-portal form: name, slug (immutable), owner email, plan/billing-mode (free/platform/reseller). Reseller mode unlocks the Connect billing console.",
+      "acceptanceNotes": "POST /api/v1/admin/portals (PortalCreate -> 201). Slug uniqueness validated server-side; 409 SLUG_TAKEN renders inline on the field (see 04, d6). New portal is provisioned-pending-invite; the owner invite dispatches with provisioning. billingMode=reseller is the switch that surfaces the Connect console.",
+      "testHooks": [
+        "[data-frame='02-create-portal']",
+        "[data-panel='create-portal']",
+        "[data-input='name']",
+        "[data-input='slug']",
+        "[data-input='owner-email']",
+        "[data-plan-option='reseller']",
+        "[data-action='submit-create-portal']"
+      ]
+    },
+    {
+      "id": "03-portal-detail",
+      "file": "03-portal-detail.html",
+      "label": "(c) Portal detail",
+      "route": "/admin/portals/{portalId}",
+      "flow": "master-admin-portals",
+      "summary": "One portal at a glance: stat cards (users/apps/domains/plan), branding summary, domains + verification status (read-only), and the suspend action.",
+      "acceptanceNotes": "GET /api/v1/admin/portals/{portalId}. portal_domains carries domain/kind (subdomain|path|custom)/verification+TLS status, rendered read-only (add/verify is FF-EPIC-16). Suspend is PATCH .../{portalId} { status: suspended } confirmed via a dialog. Counts reference the real member surface + anticipated portal_apps.",
+      "testHooks": [
+        "[data-frame='03-portal-detail']",
+        "[data-panel='portal-stats']",
+        "[data-panel='branding-summary']",
+        "[data-panel='domain-status']",
+        "[data-domain-status='pending']",
+        "[data-stat='users']",
+        "[data-action='suspend-portal']"
+      ]
+    },
+    {
+      "id": "04-master-states",
+      "file": "04-master-states.html",
+      "label": "(d) Master-admin states",
+      "route": "/admin/portals",
+      "flow": "master-admin-portals",
+      "summary": "Loading skeleton, fresh-install empty (only the root portal), load error+retry, suspend confirm, root-portal refusal (409), create slug-taken (409), and 403 access-denied for a non-platform-admin.",
+      "acceptanceNotes": "d1 loading = aria-busy skeleton for GET /portals. d2 empty is real (a fresh install has only the seeded root portal). d3 error shows data-action=retry. d4 confirms the suspend PATCH. d5: root portal is refused 409 ROOT_PORTAL_PROTECTED (client pre-disable + server guard). d6: 409 SLUG_TAKEN renders inline, never a toast that loses the form. d7: a 403 is an AUTHORIZATION denial (platform-admin only, Permit ReBAC) shown in place — NEVER a sign-in redirect; only a 401 re-authenticates.",
+      "testHooks": [
+        "[data-frame='04-master-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='confirm']",
+        "[data-error-code='ROOT_PORTAL_PROTECTED']",
+        "[data-error-code='SLUG_TAKEN']",
+        "[data-state='forbidden']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-http='403']"
+      ]
+    },
+    {
+      "id": "05-overview",
+      "file": "05-overview.html",
+      "label": "(e) Portal overview",
+      "route": "/portal/admin",
+      "flow": "portal-console",
+      "summary": "Portal-scoped home with the tabbed console shell (Overview/Users/App catalog/Billing): user/app/billing/plan stat cards, portal identity (domain, owner, status), and setup tasks.",
+      "acceptanceNotes": "Aggregates read-only counts: users from the real security-client member surface, apps from the anticipated portal_apps catalog, billing/Connect status from the anticipated Connect surface. Portal identity from GET /api/v1/portal/current — scoped to the caller's own portal; no portalId is accepted from the client. The tabs are the console shell shared by 05-08.",
+      "testHooks": [
+        "[data-frame='05-overview']",
+        "[data-panel='portal-tabs']",
+        "[data-tab='overview']",
+        "[data-panel='overview-stats']",
+        "[data-stat='users']",
+        "[data-connect-status='active']"
+      ]
+    },
+    {
+      "id": "06-users",
+      "file": "06-users.html",
+      "label": "(f) Users",
+      "route": "/portal/admin/users",
+      "flow": "portal-console",
+      "summary": "Portal-scoped users + roles, status (active/invited), invite dialog with role choice, resend/revoke invite. Self-role-change guard.",
+      "acceptanceNotes": "Members from the REAL @fuzefront/security-client GET /v1/security/tenants/{tenantId}/members (tenantId resolved from session, never client). Roles from GET .../roles; change is PUT .../members/{userId}/roles. Invite is the anticipated portal-scoped route POST /api/v1/portal/invitations, scoped to the caller's own portal (cross-portal invite -> 403, see 09 i6). You cannot change your own role.",
+      "testHooks": [
+        "[data-frame='06-users']",
+        "[data-panel='portal-users']",
+        "[data-user='u_2002']",
+        "[data-role-pill='portal-admin']",
+        "[data-user-status='invited']",
+        "[data-action='invite-user']",
+        "[data-panel='invite-user']",
+        "[data-action='submit-invite']",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "07-catalog",
+      "file": "07-catalog.html",
+      "label": "(g) App catalog",
+      "route": "/portal/admin/catalog",
+      "flow": "portal-console",
+      "summary": "Enabled apps with drag + ▲▼ reorder and enabled status, plus an add-app panel listing available apps from the FuzeFront catalog.",
+      "acceptanceNotes": "App display fields (slug/name/menuLabel/integration/icon) from the REAL @fuzefront/app-registry-client GET /apps. Enablement + order are per-portal and ANTICIPATED (portal_apps): add/remove PUT /api/v1/portal/catalog/{appId} { enabled }; reorder PATCH /api/v1/portal/catalog/order { order } persisted to pinned_order, reflected without a full reload. Drag is primary; ▲▼ is the keyboard-accessible equivalent, endpoints disable the unusable direction.",
+      "testHooks": [
+        "[data-frame='07-catalog']",
+        "[data-panel='catalog-enabled']",
+        "[data-list='enabled-apps']",
+        "[data-app='crm']",
+        "[data-app-status='enabled']",
+        "[data-action='add-app']",
+        "[data-action='enable-app']",
+        "[data-action='move-up']",
+        "[data-action='move-down']"
+      ]
+    },
+    {
+      "id": "08-billing",
+      "file": "08-billing.html",
+      "label": "(h) Billing",
+      "route": "/portal/admin/billing",
+      "flow": "portal-billing",
+      "summary": "Onboarded billing console: Connect onboarding status (stepper, all steps done), the reseller price book, and the portal's own FuzeFront platform subscription.",
+      "acceptanceNotes": "Platform subscription binds to the REAL @fuzefront/billing-client (GET /plans, GET /subscriptions/{id} -> BillingSubscription.status, manage via POST /portal). Connect + price book are ANTICIPATED (FF-EPIC-15): 'Onboarded' requires charges_enabled AND payouts_enabled both true; price book is tenant_plans. Creating a price is fail-closed on charges_enabled=false (see 09 i10). No vendor secret is rendered. Flag fuzefront.billing.reseller-connect (default OFF).",
+      "testHooks": [
+        "[data-frame='08-billing']",
+        "[data-panel='connect-status']",
+        "[data-connect-status='active']",
+        "[data-list='connect-steps']",
+        "[data-panel='price-book']",
+        "[data-panel='platform-subscription']",
+        "[data-subscription-status='active']",
+        "[data-action='add-price']"
+      ]
+    },
+    {
+      "id": "09-portal-states",
+      "file": "09-portal-states.html",
+      "label": "(i) Portal-admin states",
+      "route": "/portal/admin/*",
+      "flow": "portal-console",
+      "summary": "Users/catalog loading+empty+error, the two fail-closed authz cases (suspended portal 403, cross-tenant invite 403), and the Connect onboarding state machine (not-started, in-progress, restricted, charges-gated price create).",
+      "acceptanceNotes": "i1-i4 in-flight/empty/non-2xx for the real member surface + anticipated portal_apps. i5: a suspended portal returns 403 PORTAL_SUSPENDED for the whole console — in place, never a redirect. i6: the portal is resolved from the session; a request against a portal you don't administer is 403 FORBIDDEN_PORTAL with zero cross-tenant data. i7-i10: Connect state derives from charges_enabled/payouts_enabled/onboarding_status — 'active' only when both flags true, so in-progress/restricted are never rendered active, and a price cannot be published while charges are disabled.",
+      "testHooks": [
+        "[data-frame='09-portal-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-error-code='PORTAL_SUSPENDED']",
+        "[data-error-code='FORBIDDEN_PORTAL']",
+        "[data-http='403']",
+        "[data-connect-status='not-started']",
+        "[data-connect-status='in-progress']",
+        "[data-connect-status='restricted']",
+        "[data-error-code='CHARGES_NOT_ENABLED']"
+      ]
+    }
+  ],
+  "stamp": "c295cdea480c6baad0ecd61f71f5a501e52acb358e55848450e0e0e750061cd0"
+}

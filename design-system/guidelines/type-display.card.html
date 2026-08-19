@@ -1,0 +1,108 @@
+<!-- @dsCard group="Type" viewport="720x300" name="Display — Space Grotesk" subtitle="Headings, hero & the wordmark; tight tracking" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-6);
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: var(--space-8);
+    align-items: start;
+  }
+  .specimen { display: grid; gap: var(--space-5); }
+  .row { display: grid; gap: var(--space-1); }
+  .disp {
+    font-family: var(--font-display);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-tight);
+    color: var(--text-primary);
+    margin: 0;
+  }
+  .h1 { font-size: var(--text-2xl); }
+  .h2 { font-size: var(--text-xl); }
+  .h3 { font-size: var(--text-lg); }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* wordmark panel */
+  .mark {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    box-shadow: var(--shadow-sm);
+    display: grid;
+    gap: var(--space-3);
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: var(--weight-bold);
+    letter-spacing: var(--tracking-display);
+    font-size: var(--text-3xl);
+    line-height: var(--leading-tight);
+  }
+  .fuze {
+    background: var(--seam);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .front { color: var(--text-primary); }
+  .caption {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    line-height: var(--leading-snug);
+  }
+  .caption b { color: var(--text-secondary); font-weight: var(--weight-medium); }
+  .swatch {
+    display: inline-block;
+    width: 56px;
+    height: 8px;
+    border-radius: var(--radius-pill);
+    background: var(--seam);
+    vertical-align: middle;
+  }
+</style></head><body>
+  <div class="grid">
+    <div class="specimen">
+      <div class="row">
+        <h1 class="disp h1">Modules fuse at runtime</h1>
+        <div class="meta">--font-display · --text-2xl (1.75rem) · 600 · tracking -0.02em</div>
+      </div>
+      <div class="row">
+        <h2 class="disp h2">A single composed shell</h2>
+        <div class="meta">--font-display · --text-xl (1.35rem) · 600 · tracking -0.02em</div>
+      </div>
+      <div class="row">
+        <h3 class="disp h3">Section heading</h3>
+        <div class="meta">--font-display · --text-lg (1.1rem) · 600 · tracking -0.02em</div>
+      </div>
+    </div>
+
+    <div class="mark">
+      <div class="wordmark"><span class="fuze">Fuze</span><span class="front">Front</span></div>
+      <div class="caption">
+        <span class="swatch"></span><br />
+        <b>Fuze</b> — --seam (indigo &rarr; cyan)<br />
+        #6e5cff &rarr; #29d3e6<br />
+        <b>Front</b> — --text-primary · #e7ecf5<br />
+        --font-display · 700 · tracking -0.02em
+      </div>
+    </div>
+  </div>
+</body></html>

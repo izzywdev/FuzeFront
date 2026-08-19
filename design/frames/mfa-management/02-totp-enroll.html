@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Add authenticator — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 720px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__body { padding: var(--space-6); }
+  .steps { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); font-size: var(--text-sm); }
+  .steps span { color: var(--text-tertiary); }
+  .steps b { color: var(--accent-color); }
+  .enroll { display: grid; grid-template-columns: auto 1fr; gap: var(--space-6); align-items: start; }
+  @media (max-width: 560px){ .enroll { grid-template-columns: 1fr; } }
+  .qr { width: 168px; height: 168px; border-radius: var(--radius-md); background: var(--text-primary);
+    display: grid; place-items: center; color: var(--bg-primary); font-family: var(--font-mono);
+    font-size: var(--text-2xs); text-align: center; padding: var(--space-3); }
+  .qr__grid { width: 132px; height: 132px; background:
+    repeating-conic-gradient(var(--bg-primary) 0deg 90deg, var(--text-primary) 90deg 180deg) 0 0 / 22px 22px; border-radius: var(--radius-sm); }
+  .instr { color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; margin: 0 0 var(--space-4); }
+  .setup-key { display: flex; align-items: center; gap: var(--space-3); background: var(--bg-secondary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+  .setup-key code { font-family: var(--font-mono); letter-spacing: 0.12em; color: var(--text-primary);
+    font-size: var(--text-md); }
+  .setup-key button { margin-left: auto; }
+  .verify { margin-top: var(--space-6); border-top: 1px solid var(--border-color); padding-top: var(--space-6); }
+  .verify label { display: block; font-weight: var(--weight-medium); margin-bottom: var(--space-2); }
+  /* OtpInput — proposed DS primitive (segmented one-time-code field) */
+  .otp { display: flex; gap: var(--space-2); }
+  .otp input { width: 44px; height: 52px; text-align: center; font-family: var(--font-mono);
+    font-size: var(--text-xl); color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+  .otp input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .otp.is-error input { border-color: var(--error-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); margin-top: var(--space-3);
+    display: flex; align-items: center; gap: var(--space-2); }
+  .actions { margin-top: var(--space-6); display: flex; gap: var(--space-3); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="02-totp-enroll" data-route="/account/security/mfa/add/authenticator">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item active" href="01-mfa-overview.html"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Add an authenticator app</h1>
+      <p class="page-sub">Use an app like the ones on your phone to generate 6-digit codes. Works without
+        signal or a SIM.</p>
+
+      <div class="card" data-component="totp-enroll" data-state="scan">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="steps"><b>1 · Scan</b><span>›</span><span>2 · Confirm</span></div>
+          <div class="enroll">
+            <div class="qr" data-provisioning-uri="otpauth://totp/…" aria-label="Setup QR code">
+              <div class="qr__grid"></div>
+            </div>
+            <div>
+              <p class="instr">Scan this with your authenticator app. Can't scan? Enter the setup key by hand.</p>
+              <div class="setup-key" data-component="setup-key">
+                <code data-secret>JBSW Y3DP EHPK 3PXP</code>
+                <button class="btn btn-ghost" data-action="copy-secret">Copy</button>
+              </div>
+
+              <div class="verify" data-step="verify">
+                <label for="otp">Enter the 6-digit code from the app</label>
+                <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+                  <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 1" />
+                  <input inputmode="numeric" maxlength="1" value="9" aria-label="digit 2" />
+                  <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 3" />
+                  <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 4" />
+                  <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 5" />
+                  <input inputmode="numeric" maxlength="1" value="7" aria-label="digit 6" />
+                </div>
+                <div class="actions">
+                  <button class="btn btn-primary" data-action="activate-factor">Turn on</button>
+                  <a class="btn btn-ghost" href="01-mfa-overview.html" style="text-decoration:none">Cancel</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Invalid code (400 on activate) ═══ -->
+      <div class="state-label">State · wrong code (fail-closed)</div>
+      <div class="card" data-component="totp-enroll" data-state="error-invalid">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <label>Enter the 6-digit code from the app</label>
+          <div class="otp is-error" data-component="otp-input" role="group" aria-label="One-time code">
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 1" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 2" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 3" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 4" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 5" />
+            <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 6" />
+          </div>
+          <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>
+            That code didn't match. Codes change every 30 seconds — enter the current one.</div>
+        </div>
+      </div>
+
+      <!-- ═══ Expired code ═══ -->
+      <div class="state-label">State · code expired</div>
+      <div class="card" data-component="totp-enroll" data-state="error-expired">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <div class="field-error" data-error="expired-code"><span aria-hidden="true">⚠</span>
+            This code expired. Wait for the next one to appear in your app, then enter it.</div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="activate-factor">Try again</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>02 / 06</b> · Add authenticator · <b>…/mfa/add/authenticator</b></span>
+    <span><a class="btn btn-ghost" href="01-mfa-overview.html">← Overview</a> <a class="btn btn-primary" href="03-sms-enroll.html" style="text-decoration:none">Next: add phone →</a></span>
+  </div>
+</div>
+</body>
+</html>

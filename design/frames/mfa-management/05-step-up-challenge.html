@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Step-up challenge — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8) var(--space-6) 80px; }
+  .stack { display: grid; gap: var(--space-6); width: 100%; max-width: 420px; }
+  .brand { text-align: center; margin-bottom: var(--space-2); }
+  .brand .wordmark { font-size: var(--text-xl); }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__body { padding: var(--space-6); }
+  .card h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .card p.sub { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.5; }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); text-align: center; }
+  .otp { display: flex; gap: var(--space-2); justify-content: center; }
+  .otp input { width: 44px; height: 52px; text-align: center; font-family: var(--font-mono);
+    font-size: var(--text-xl); color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+  .otp input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .otp.is-error input { border-color: var(--error-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); margin-top: var(--space-3);
+    display: flex; align-items: center; gap: var(--space-2); justify-content: center; }
+  .actions { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
+  .switch { text-align: center; margin-top: var(--space-4); font-size: var(--text-sm); }
+  .switch a { color: var(--accent-color); }
+  /* FactorPicker */
+  .picker { display: grid; gap: var(--space-3); }
+  .picker button { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center;
+    text-align: left; padding: var(--space-4); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); color: var(--text-primary); cursor: pointer; font-family: var(--font-sans); }
+  .picker button:hover { border-color: var(--border-strong); }
+  .picker .ico { width: 32px; height: 32px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); }
+  .picker small { display: block; color: var(--text-tertiary); font-size: var(--text-sm); }
+</style>
+</head>
+<body>
+<div class="auth-wrap" data-frame="05-step-up-challenge" data-route="/login/mfa">
+  <div class="stack">
+    <div class="brand"><span class="wordmark">Fuze<span class="fuse">Front</span></span></div>
+
+    <!-- ═══ TOTP prompt (default factor) ═══ -->
+    <div class="card" data-component="mfa-challenge" data-state="totp-prompt" data-factor="totp">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Enter your code</h2>
+        <p class="sub">Open your authenticator app and enter the 6-digit code for <b>amara@rowan.co</b>.</p>
+        <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+          <input inputmode="numeric" maxlength="1" aria-label="digit 1" />
+          <input inputmode="numeric" maxlength="1" aria-label="digit 2" />
+          <input inputmode="numeric" maxlength="1" aria-label="digit 3" />
+          <input inputmode="numeric" maxlength="1" aria-label="digit 4" />
+          <input inputmode="numeric" maxlength="1" aria-label="digit 5" />
+          <input inputmode="numeric" maxlength="1" aria-label="digit 6" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-mfa">Verify &amp; sign in</button>
+        </div>
+        <div class="switch"><a href="#" data-action="choose-factor">Use a different method</a></div>
+      </div>
+    </div>
+
+    <!-- ═══ Choose a factor ═══ -->
+    <div class="state-label">State · choose a factor</div>
+    <div class="card" data-component="mfa-challenge" data-state="choose-factor">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Verify it's you</h2>
+        <p class="sub">Choose how to get your code.</p>
+        <div class="picker" data-component="factor-picker">
+          <button data-factor="totp" data-factor-id="fct_totp_1" data-action="challenge">
+            <span class="ico" aria-hidden="true">🔑</span>
+            <span>Authenticator app<small>Enter a code from your app</small></span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <button data-factor="sms" data-factor-id="fct_sms_1" data-action="challenge">
+            <span class="ico" aria-hidden="true">💬</span>
+            <span>Text message<small>Send a code to •••• •• 4471</small></span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <button data-factor="recovery" data-action="use-recovery">
+            <span class="ico" aria-hidden="true">🗝️</span>
+            <span>Recovery code<small>Use one of your saved backup codes</small></span>
+            <span aria-hidden="true">›</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Invalid / expired code ═══ -->
+    <div class="state-label">State · wrong or expired code (fail-closed)</div>
+    <div class="card" data-component="mfa-challenge" data-state="error-invalid">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>Enter your code</h2>
+        <p class="sub">That didn't work. Enter the current 6-digit code.</p>
+        <div class="otp is-error" data-component="otp-input" role="group" aria-label="One-time code">
+          <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 1" />
+          <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 2" />
+          <input inputmode="numeric" maxlength="1" value="3" aria-label="digit 3" />
+          <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 4" />
+          <input inputmode="numeric" maxlength="1" value="5" aria-label="digit 5" />
+          <input inputmode="numeric" maxlength="1" value="6" aria-label="digit 6" />
+        </div>
+        <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>
+          Wrong or expired code. Codes change every 30 seconds.</div>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="verify-mfa">Try again</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Delivery failed (SMS challenge couldn't send) ═══ -->
+    <div class="state-label">State · couldn't send the text</div>
+    <div class="card" data-component="mfa-challenge" data-state="error-delivery" data-factor="sms">
+      <div class="card__seam"></div>
+      <div class="card__body">
+        <h2>We couldn't send your code</h2>
+        <p class="sub">The text didn't go through. Try again, or use your authenticator app or a recovery code instead.</p>
+        <div class="actions">
+          <button class="btn btn-primary" data-action="challenge">Resend text</button>
+          <button class="btn btn-ghost" data-action="choose-factor">Use another method</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>05 / 06</b> · Step-up challenge · <b>/login/mfa</b></span>
+    <span><a class="btn btn-ghost" href="04-recovery-codes.html">← Recovery codes</a> <a class="btn btn-primary" href="06-remove-factor.html" style="text-decoration:none">Next: remove method →</a></span>
+  </div>
+</div>
+</body>
+</html>

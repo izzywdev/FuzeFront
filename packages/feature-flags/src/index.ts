@@ -1,0 +1,25 @@
+/**
+ * @fuzefront/feature-flags — OpenFeature-based feature flags for FuzeFront.
+ *
+ * The default entrypoint is the SERVER surface (Node services). Browser /
+ * micro-frontend consumers import from `@fuzefront/feature-flags/web`.
+ *
+ * Public evaluation surface is OpenFeature; the Unleash provider is wrapped
+ * behind it with graceful degradation to caller-supplied defaults.
+ */
+export {
+  init,
+  setContext,
+  getBoolean,
+  getString,
+  getNumber,
+  getClient,
+  close,
+} from './server';
+
+export { toEvaluationContext } from './context';
+export { UnleashOpenFeatureProvider, toUnleashContext } from './unleash-provider';
+export { WEB_EXPOSED_FLAGS, FLAG_KEYS } from './catalog';
+export type { FlagDescriptor, FlagType } from './catalog';
+export type { FuzeFlagsClient } from './server';
+export type { FuzeFlagsContext, FuzeFlagsOptions } from './types';

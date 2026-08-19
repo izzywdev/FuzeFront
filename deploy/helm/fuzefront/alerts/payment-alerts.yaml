@@ -1,0 +1,61 @@
+# Prometheus alert rules for the FuzeFront payment-service (vendor-neutral payment
+# gateway). Shipped as a ConfigMap labeled prometheus_rule: "1" (glob alerts/*.yaml
+# in observability.yaml) so the FuzeInfra Prometheus discovers + loads it. Plain
+# rule-group file (NOT a PrometheusRule CRD) — FuzeInfra runs vanilla Prometheus.
+#
+# These are payment-DOMAIN signals on top of the generic fuzefront.* alerts
+# (crash-loop / not-ready / 5xx / latency / target-down already cover the payment
+# pod since its service label matches fuzefront.*). The metric names below are the
+# EXPECTED payment-service emissions (prom-client) — the service does not emit them
+# yet (it is a SCAFFOLD), so these rules stay INERT until it does; shipping them
+# early is harmless. devops owns the alert wiring; the implementer owns the metric
+# names — reconcile the names at integration when the gateway grows a /metrics
+# endpoint (and add a dedicated Grafana dashboard then; a dashboard now would be
+# inert with no series to plot).
+groups:
+  - name: fuzefront.payment.rules
+    rules:
+      # Vendor (provider) API error ratio — checkout/customers/invoices calls.
+      # Elevated errors degrade every downstream payment flow routed through the
+      # gateway.
+      - alert: PaymentProviderApiErrorRate
+        expr: |
+          100 * sum(rate(payment_provider_api_errors_total{namespace="fuzefront"}[5m]))
+          / clamp_min(sum(rate(payment_provider_api_requests_total{namespace="fuzefront"}[5m])), 1) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-payment-service
+        annotations:
+          summary: "Elevated payment-provider API error rate from payment-service"
+          description: ">5% of vendor API calls routed through the payment gateway are erroring over 10m."
+
+      # Webhook processing failures — payment correctness signal. A spike means
+      # payment/subscription state may diverge from the vendor.
+      - alert: PaymentWebhookFailures
+        expr: |
+          increase(payment_webhook_failed_total{namespace="fuzefront"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: fuzefront
+          service: fuzefront-payment-service
+        annotations:
+          summary: "payment-service is failing to process provider webhooks"
+          description: "payment_webhook_failed_total increased over 10m — payment state may drift from the vendor."
+
+      # Gateway target down: the payment pod is unreachable by Prometheus while
+      # the service is enabled. (Generic target-down also covers this; kept
+      # explicit so the payment on-call context is attached.)
+      - alert: PaymentServiceTargetDown
+        expr: |
+          up{job=~".*", service="fuzefront-payment-service", namespace="fuzefront"} == 0
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-payment-service
+        annotations:
+          summary: "payment-service scrape target is down"
+          description: "Prometheus cannot scrape the payment-service pod for >10m while it is enabled."

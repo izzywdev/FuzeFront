@@ -1,0 +1,125 @@
+{{- if .Values.billingService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-billing-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: billing-service
+spec:
+  replicas: {{ .Values.billingService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-billing-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-billing-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+      annotations:
+        {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.billingService.port "root" .) | nindent 8 }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.billingService "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: billing-service
+          image: "{{ .Values.billingService.image.repository }}:{{ .Values.billingService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.billingService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.billingService.port | quote }}
+            - name: KAFKA_BROKERS
+              value: {{ .Values.billingService.kafka.brokers | quote }}
+            - name: KAFKA_CLIENT_ID
+              value: {{ .Values.billingService.kafka.clientId | quote }}
+            - name: KAFKA_GROUP_ID
+              value: {{ .Values.billingService.kafka.groupId | quote }}
+            - name: BILLING_METER_FLUSH_INTERVAL_SEC
+              value: {{ .Values.billingService.meterFlushIntervalSec | quote }}
+            # DB connection: billing-service connects with the least-privilege
+            # billing_svc role (granted on schema `billing` + read on public).
+            # DB_PASSWORD comes from the chart Secret; assembled into DATABASE_URL.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: BILLING_DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.billingService.dbUser }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+            # Always rendered when billing is enabled — the per-service billing-secrets
+            # SealedSecret provides these at runtime (the pod stays pending until the
+            # keys are sealed). No Helm-values gate (values are empty under SealedSecrets).
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: STRIPE_WEBHOOK_SECRET
+            - name: BILLING_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: BILLING_INTERNAL_TOKEN
+            - name: PERMIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: PERMIT_API_KEY
+            - name: PERMIT_PDP_URL
+              value: {{ .Values.billingService.permitPdpUrl | quote }}
+            # Payment-path enablement — plain config, not secrets. Fail-closed:
+            # an empty/unset productKeys allowlist rejects every checkout key.
+            {{- with .Values.billingService.payment }}
+            {{- if .productKeys }}
+            - name: BILLING_PRODUCT_KEYS
+              value: {{ .productKeys | quote }}
+            {{- end }}
+            {{- if .currencies }}
+            - name: BILLING_PAYMENT_CURRENCIES
+              value: {{ .currencies | quote }}
+            {{- end }}
+            {{- if .maxTotalCents }}
+            - name: BILLING_PAYMENT_MAX_TOTAL_CENTS
+              value: {{ .maxTotalCents | quote }}
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.billingService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.billingService.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.billingService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-billing-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: fuzefront-billing-service
+  ports:
+    - port: {{ .Values.billingService.port }}
+      targetPort: {{ .Values.billingService.port }}
+{{- end }}

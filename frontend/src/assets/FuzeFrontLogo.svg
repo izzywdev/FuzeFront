@@ -1,0 +1,17 @@
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FuzeFront">
+  <defs>
+    <linearGradient id="ffSeam" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <!-- Fuse-seam mark: two panels split by a diagonal seam -->
+  <rect x="2" y="4" width="32" height="32" rx="8" fill="url(#ffSeam)"/>
+  <path d="M12 30 L24 10" stroke="#0b1020" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="12" cy="30" r="2.6" fill="#0b1020"/>
+  <circle cx="24" cy="10" r="2.6" fill="#0b1020"/>
+  <!-- Wordmark: Fuze (accent) + Front -->
+  <text x="44" y="27" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="20" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="url(#ffSeam)">Fuze</tspan><tspan fill="currentColor">Front</tspan>
+  </text>
+</svg>

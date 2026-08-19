@@ -1,0 +1,104 @@
+{{- if .Values.clockApp.enabled }}
+# =============================================================================
+# Clock-app — the built-in reference Module-Federation REMOTE shipped with the
+# platform. It is a static nginx image (clock-app/Dockerfile) that serves the
+# built MF remote (remoteEntry.js + assets). It shares NOTHING with the host at
+# build time; the browser loads it SAME-ORIGIN under the app host at
+# /apps/clock/ (so the seeded manifest's
+#   https://<app-host>/apps/clock/remoteEntry.js
+# resolves with no cross-origin / mixed-content). The /apps/clock path → this
+# Service is wired in templates/ingress.yaml (prefix-stripped to the nginx root).
+#
+# Hybrid Argo model: clock-app is an independently-lifecycled built-in remote,
+# but its templates live in THIS umbrella chart, so (exactly like billing) it is
+# synced by the umbrella `fuzefront` Argo Application gated on clockApp.enabled —
+# a SECOND Argo Application on the same chart path would double-claim these
+# objects. A dedicated Argo app is only correct once clock-app is extracted into
+# its own chart. NEVER hand-deploy — flip clockApp.enabled via GitOps.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clock-app
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clock-app
+spec:
+  replicas: {{ .Values.clockApp.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: clock-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: clock-app
+      # No prometheus.io/scrape: the clock-app is a static nginx serving the MF
+      # remote and exposes NO /metrics endpoint (scraping /health would error).
+      # Pod up/availability is covered by kube-state-metrics (ClockAppRemoteDown
+      # alert keys off up{service="clock-app"}).
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.clockApp "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: clock-app
+          image: "{{ .Values.clockApp.image.repository }}:{{ .Values.clockApp.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.clockApp.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.clockApp.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Name is significant: the ingress /apps/clock path routes to
+  # http://clock-app:<port>. Keep in sync with templates/ingress.yaml.
+  name: clock-app
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clock-app
+spec:
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: clock-app
+  ports:
+    - name: http
+      port: {{ .Values.clockApp.port }}
+      targetPort: http
+{{- if eq .Values.ingress.className "traefik" }}
+---
+# Traefik prefix-strip so a browser request for /apps/clock/remoteEntry.js hits
+# the clock nginx at its root (/remoteEntry.js). nginx-ingress uses the rewrite
+# annotation in ingress.yaml instead; this Middleware only renders under traefik.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: clock-app-stripprefix
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clock-app
+spec:
+  stripPrefix:
+    prefixes:
+      - /apps/clock
+{{- end }}
+{{- end }}

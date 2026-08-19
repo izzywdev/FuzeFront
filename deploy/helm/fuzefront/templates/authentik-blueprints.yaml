@@ -1,0 +1,27 @@
+{{- /*
+  authentik-blueprints.yaml — ConfigMap containing all FuzeFront Authentik
+  blueprints, mounted at /blueprints/fuzefront/ on the server and worker pods.
+
+  Authentik's worker auto-discovers and applies every *.yaml file under
+  /blueprints/ on startup (idempotently). Adding this ConfigMap + the volume
+  mounts in authentik.yaml is all that is needed; no manual seeding required.
+
+  Blueprint files live in: deploy/helm/fuzefront/authentik/blueprints/
+  The ConfigMap is rebuilt on every `helm upgrade`, so blueprint changes are
+  applied on the next pod restart.
+*/}}
+{{- if .Values.authentik.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app: authentik
+data:
+  {{- range $path, $content := .Files.Glob "authentik/blueprints/*.yaml" }}
+  {{- /* Strip the directory prefix so each key is just the filename. */}}
+  {{ base $path }}: |
+    {{- $content | toString | nindent 4 }}
+  {{- end }}
+{{- end }}

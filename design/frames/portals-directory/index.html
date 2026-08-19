@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portals directory — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .grouplabel { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin: var(--space-8) 0 var(--space-3); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: var(--hairline); background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-10); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+  .inv .lead2 { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-5); }
+  .flowcard { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-5);
+    margin-bottom: var(--space-4); }
+  .flowcard h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+  .flowcard .rt { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); margin-top: var(--space-1); }
+  .flowcard .comps { margin: var(--space-3) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .flowcard .comps code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    padding: 0 var(--space-2); }
+  .inv-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-5); }
+  @media (max-width: 720px){ .inv-grid2 { grid-template-columns: 1fr; } }
+  .inv-col h4 { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin: 0 0 var(--space-3); }
+  .inv-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .inv-col li { font-size: var(--text-sm); color: var(--text-secondary); }
+  .inv-col code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); }
+  .pending { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid var(--border-color); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+  .legend { display: flex; gap: var(--space-4); flex-wrap: wrap; margin: 0 0 var(--space-4); }
+  .legend .li { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm);
+    color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Portals directory · Approval Frames</h1>
+  <p class="lead">A directory in the FuzeFront shell's left menu where a <b>master-admin</b> sees the
+    portals they can manage and <b>opens a chosen portal in a new browser tab at that portal's own
+    host URL</b>. Management then happens on that host via the existing per-host tenant routing —
+    there is <b>no in-app portal switcher and no context switch</b>. Every portal carries an identity
+    tier: <b>soft</b> (shares the root Authentik) or <b>hard</b> (its own Authentik instance, e.g.
+    Mendys Robotics). These frames freeze the flow, its states, and the build inventory. Walk each
+    frame; approve <b>per flow</b>.</p>
+
+  <div class="legend">
+    <span class="li"><span class="tier tier--soft"><span class="glyph" aria-hidden="true">◗</span>Soft</span> shares the root Authentik</span>
+    <span class="li"><span class="tier tier--hard"><span class="glyph" aria-hidden="true">◆</span>Hard</span> its own Authentik instance</span>
+  </div>
+
+  <div class="grouplabel">Portals directory · route /portals · page PortalsDirectory (shell page, no new package)</div>
+  <div class="grid" data-nav="frames">
+    <a href="01-portals-list.html" class="frame-link" data-frame-link="01-portals-list">
+      <div class="seam"></div><div class="step">Frame (a) · /portals</div>
+      <h3>Portals</h3>
+      <p>The directory: each portal shows name, primary domain, status, and a soft/hard tier badge, with an <b>"Open portal ↗"</b> action that opens the portal's own host in a new tab. Searchable, scannable.</p>
+    </a>
+    <a href="02-portals-list-states.html" class="frame-link" data-frame-link="02-portals-list-states">
+      <div class="seam"></div><div class="step">Frame (b) · /portals</div>
+      <h3>States</h3>
+      <p>Loading, empty (no portals yet), error + retry, suspended (no launch), and the fail-closed <b>permission-denied / read-only</b> case — no manage authority ⇒ zero launch affordances.</p>
+    </a>
+  </div>
+
+  <div class="inv" data-panel="build-inventory">
+    <h2>Build inventory</h2>
+    <p class="lead2">Approving this flow approves its component plan and its contract binding —
+      implementation cannot quietly invent a different architecture. Mirrored in
+      <code>manifest.json</code> → <code>build</code>. <b>PortalsDirectory is a shell page in
+      <code>frontend/src</code> — NOT a new npm package.</b></p>
+
+    <div class="flowcard" data-flow="portals-directory">
+      <h4><code>PortalsDirectory</code> <span class="muted">(page)</span></h4>
+      <div class="rt">route /portals · page in frontend/src · flag fuzefront.platform.portals-directory (default OFF) · approved: false</div>
+      <div class="rt">data: adminPortals list — GET /api/v1/admin/portals (S1 adds identity_mode + launchUrl) · REAL</div>
+      <div class="rt">launch: &lt;a target="_blank" rel="noopener noreferrer" href="{launchUrl}"&gt; — new tab, portal's own host</div>
+      <div class="comps">
+        <code>PortalsDirectoryShell</code><code>PortalsList</code><code>PortalRow</code><code>PortalCard</code>
+        <code>PortalTierBadge</code><code>PortalStatusBadge</code><code>OpenPortalLink</code>
+        <code>PermissionDeniedNotice</code><code>PortalsListLoading</code><code>PortalsListEmpty</code>
+        <code>PortalsListError</code>
+      </div>
+    </div>
+
+    <div class="inv-grid2">
+      <div class="inv-col" data-inv="packages">
+        <h4>npm packages</h4>
+        <ul>
+          <li><span class="muted">None new.</span> <code>PortalsDirectory</code> is a shell page in <code>frontend/src</code>.</li>
+          <li>Data client: <code>@fuzefront/portal-client</code> (existing, <code>adminPortals</code> list).</li>
+        </ul>
+      </div>
+      <div class="inv-col" data-inv="ds-primitives">
+        <h4>DS primitives (compose from tokens; flag missing)</h4>
+        <ul>
+          <li><code>StatusPill</code> — semantic lifecycle pill (reused; not in DS today)</li>
+          <li><code>Badge</code> — the soft/hard tier badge</li>
+          <li><code>DataList</code> / <code>DataTable</code> — the scannable directory</li>
+          <li><code>SearchField</code> — filter by name / domain</li>
+          <li><code>ExternalLink</code> — new-tab anchor with the ↗ affordance + <code>rel="noopener noreferrer"</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — flow portals-directory</span>
+
+  <p class="note">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only — all raw literals
+    confined to <code>tokens.css</code>).<br />
+    <b>Data (real):</b> the <code>adminPortals</code> list (<code>GET /api/v1/admin/portals</code>,
+    <code>backend/src/routes/adminPortals.ts</code>), extended in S1 to return
+    <code>identity_mode</code> (<code>soft</code>|<code>hard</code>) and <code>launchUrl</code> per
+    portal. The directory renders those directly — <code>identity_mode</code> → the tier badge,
+    <code>launchUrl</code> → the "Open portal" <code>href</code>. The client never composes a host
+    from client-held data; <code>launchUrl</code> is authoritative.<br />
+    <b>No switcher:</b> there is deliberately no in-app portal context switch. Choosing a portal is a
+    plain external navigation to its own host in a new tab; per-host tenant routing takes over there.<br />
+    <b>Fail-closed:</b> the list is Permit-ReBAC-scoped to portals the caller may manage; a caller
+    without manage authority sees the permission-denied / read-only state with <b>no</b> launch
+    affordance emitted, and a suspended portal is never launchable.<br />
+    <b>DS primitives</b> above are not all in <code>@fuzefront/design-system</code> today —
+    <code>frontend-engineer</code> (sole editor of <code>design-system/</code>) adds any missing
+    ones as foundation PRs; the frames compose them from tokens only in the meantime.<br />
+    Approve this flow by setting <code>approved: true</code> on it in <code>manifest.json</code>,
+    or reply <code>@claude approve portals-directory</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

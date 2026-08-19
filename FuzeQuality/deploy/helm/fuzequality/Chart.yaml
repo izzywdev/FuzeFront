@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fuzequality
+description: FuzeQuality repository, API, frontend, and Jira coverage intelligence
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

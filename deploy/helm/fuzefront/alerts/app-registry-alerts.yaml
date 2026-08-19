@@ -1,0 +1,60 @@
+# Prometheus alert rules for the FuzeFront app-registry slice (applications-service
+# /api/v1/app-registry + app.* Kafka events + the built-in clock remote). Shipped
+# as a ConfigMap labeled prometheus_rule: "1" (glob alerts/*.yaml in
+# observability.yaml) so the FuzeInfra Prometheus discovers + loads it. Plain
+# rule-group file (NOT a PrometheusRule CRD) — FuzeInfra runs vanilla Prometheus.
+#
+# These are app-registry DOMAIN signals layered on the generic fuzefront.* alerts
+# (crash-loop / not-ready / 5xx / latency / target-down already cover the
+# applications-service + clock-app pods via the fuzefront.* service label). The
+# metric names below are the EXPECTED applications-service emissions (prom-client);
+# they stay inert until the service exposes them, so shipping them early is
+# harmless. devops owns the alert wiring; backend owns the metric names — reconcile
+# names at integration if the implemented emissions differ.
+groups:
+  - name: fuzefront.app-registry.rules
+    rules:
+      # app.* event emission failures. The registry write path fans out app.*
+      # events to Kafka (fail-soft in code). A spike means downstream consumers
+      # (provisioning / search / audit) may miss registry changes.
+      - alert: AppRegistryEventEmitFailures
+        expr: |
+          increase(app_registry_event_emit_failed_total{namespace="fuzefront"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-applications
+        annotations:
+          summary: "applications-service is failing to emit app.* registry events"
+          description: "app_registry_event_emit_failed_total increased over 10m — downstream consumers may miss registry changes."
+
+      # Registry write errors (register/update/delete/activate/suspend). Elevated
+      # error ratio on the new /api/v1/app-registry surface degrades app onboarding.
+      - alert: AppRegistryWriteErrorRate
+        expr: |
+          100 * sum(rate(app_registry_write_errors_total{namespace="fuzefront"}[5m]))
+          / clamp_min(sum(rate(app_registry_write_requests_total{namespace="fuzefront"}[5m])), 1) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-applications
+        annotations:
+          summary: "Elevated app-registry write error rate"
+          description: ">5% of /api/v1/app-registry write requests are erroring over 10m."
+
+      # Built-in clock remote unreachable. The host shell loads the clock remote
+      # same-origin at /apps/clock/remoteEntry.js; a probe failure means the
+      # built-in reference app (and the MF demo path) is broken.
+      - alert: ClockAppRemoteDown
+        expr: |
+          sum(up{service="clock-app",namespace="fuzefront"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: clock-app
+        annotations:
+          summary: "clock-app remote is down"
+          description: "No healthy clock-app pod for 5m — /apps/clock/remoteEntry.js will 5xx and the built-in remote won't load."

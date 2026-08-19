@@ -1,0 +1,25 @@
+# Argo AppProject for {{REPO}} — the security boundary for a FuzeOne family member.
+#
+# Confined by default: a member may deploy ONLY namespaced resources into its OWN
+# namespace, from its OWN repo. No cluster-scoped resources (namespaces, CRDs,
+# ClusterRoles) — request those from FuzeInfra. This is what stops a merged Argo
+# manifest in a member repo from escalating to cluster-admin. (The hub/platform
+# repo may widen this; members should not.)
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{REPO}}
+  namespace: argocd
+spec:
+  description: {{REPO}} (FuzeOne family member) — namespace-confined
+  sourceRepos:
+    - https://github.com/{{OWNER}}/{{REPO}}.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: {{REPO}}
+  # Namespaced resources allowed within the member's own namespace only.
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  # Deny cluster-scoped resources by default — request them from FuzeInfra.
+  clusterResourceWhitelist: []

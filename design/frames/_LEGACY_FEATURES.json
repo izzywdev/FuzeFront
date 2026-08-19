@@ -1,0 +1,19 @@
+{
+  "$comment": "Frozen at the navigable-frames extraction (2026-08-10, see docs/planning/design-first-ui-pipeline.md's extraction addendum). These are the ONLY design/frames/<feature> directories this repo will ever have — they stay as-is under the local pipeline (stamp-frames.mjs / design-approval.yml / pages-frames.yml). Any new feature's frames belong in izzywdev/FuzeX's design-frames-service instead. gate-frames-external.yml enforces this: a PR adding a design/frames/<feature> directory not in this list fails.",
+  "legacyFeatures": [
+    "account-security",
+    "api-tokens",
+    "app-scopes-user-menu",
+    "auth-experience",
+    "authz-admin",
+    "billing-invoices",
+    "devices-sessions",
+    "federated-apps",
+    "locked-app-mode",
+    "mfa-management",
+    "password-reset",
+    "portal-admin-consoles",
+    "selection-lists",
+    "white-label-portal"
+  ]
+}

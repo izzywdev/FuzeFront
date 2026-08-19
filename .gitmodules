@@ -1,0 +1,3 @@
+[submodule "FuzeInfra"]
+	path = FuzeInfra
+	url = https://github.com/izzywdev/FuzeInfra.git

@@ -1,0 +1,51 @@
+<!-- @dsCard group="Spacing" viewport="720x220" name="Radii & shadows" subtitle="Soft deep elevation tuned for the dark shell" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: var(--space-6); font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
+  .section { margin-bottom: var(--space-6); }
+  .label { font-family: var(--font-display); font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-3); }
+
+  .row { display: flex; gap: var(--space-4); align-items: flex-end; }
+  .spec { flex: 1; text-align: center; }
+
+  /* radii — show the corner curve against a chip surface */
+  .radii .box { height: 56px; background: var(--bg-quaternary); border: 1px solid var(--border-color); margin-bottom: var(--space-2); }
+  .r-sm   { border-radius: var(--radius-sm); }
+  .r-md   { border-radius: var(--radius-md); }
+  .r-lg   { border-radius: var(--radius-lg); }
+  .r-xl   { border-radius: var(--radius-xl); }
+  .r-pill { border-radius: var(--radius-pill); }
+
+  /* shadows — cards floating off the canvas */
+  .shadows .card { height: 56px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin-bottom: var(--space-2); }
+  .s-sm     { box-shadow: var(--shadow-sm); }
+  .s-md     { box-shadow: var(--shadow-md); }
+  .s-lg     { box-shadow: var(--shadow-lg); }
+  .s-accent { box-shadow: var(--shadow-accent); border-color: var(--accent-color); }
+
+  .name { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); }
+  .val  { font-size: var(--text-2xs); color: var(--text-tertiary); font-family: var(--font-mono); }
+</style></head><body>
+  <div class="section radii">
+    <div class="label">Radii</div>
+    <div class="row">
+      <div class="spec"><div class="box r-sm"></div><div class="name">--radius-sm</div><div class="val">6px</div></div>
+      <div class="spec"><div class="box r-md"></div><div class="name">--radius-md</div><div class="val">8px</div></div>
+      <div class="spec"><div class="box r-lg"></div><div class="name">--radius-lg</div><div class="val">10px</div></div>
+      <div class="spec"><div class="box r-xl"></div><div class="name">--radius-xl</div><div class="val">16px</div></div>
+      <div class="spec"><div class="box r-pill"></div><div class="name">--radius-pill</div><div class="val">999px</div></div>
+    </div>
+  </div>
+
+  <div class="section shadows">
+    <div class="label">Shadows</div>
+    <div class="row">
+      <div class="spec"><div class="card s-sm"></div><div class="name">--shadow-sm</div><div class="val">0 4px 12px -6px ·shadow</div></div>
+      <div class="spec"><div class="card s-md"></div><div class="name">--shadow-md</div><div class="val">0 16px 40px -20px ·shadow</div></div>
+      <div class="spec"><div class="card s-lg"></div><div class="name">--shadow-lg</div><div class="val">0 24px 60px -24px ·shadow</div></div>
+      <div class="spec"><div class="card s-accent"></div><div class="name">--shadow-accent</div><div class="val">0 6px 18px -8px #6e5cff</div></div>
+    </div>
+  </div>
+</body></html>

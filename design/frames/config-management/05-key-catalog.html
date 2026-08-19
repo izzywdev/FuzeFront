@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Key catalog — Config Management Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="05-key-catalog" data-flow="key-catalog">
+  <a class="back" href="index.html">&larr; All config-management frames</a>
+  <div class="eyebrow">Flow 2 · Key catalog · Frame (e) · /admin/config/catalog</div>
+  <h1>Key catalog — what a setting <em>is</em></h1>
+  <p class="lead">The editor answers "what is this value?". The catalog answers "what is this <b>key</b>?" —
+    how it validates, where it may be set, who may change it, and whether it is system, hidden, secret or
+    deprecated. This is the <b>platform-admin</b> surface, and the only place hidden keys are ever visible.</p>
+
+  <div class="scopebar">
+    <span class="nsbadge" data-namespace-picker>namespace: notifications</span>
+    <span class="grow"></span>
+    <span class="mono muted">8 key definitions · 2 hidden</span>
+  </div>
+
+  <div class="toolbar">
+    <label class="search">
+      <span class="ico">&#9906;</span>
+      <input type="text" placeholder="Search keys, descriptions, tags…" data-catalog-search />
+    </label>
+    <button class="chip" aria-pressed="true" data-catalog-filter="all">All 8</button>
+    <button class="chip" aria-pressed="false" data-catalog-filter="system">System 3</button>
+    <button class="chip" aria-pressed="false" data-catalog-filter="hidden">Hidden 2</button>
+    <button class="chip" aria-pressed="false" data-catalog-filter="secret">Secret 1</button>
+    <button class="chip" aria-pressed="false" data-catalog-filter="deprecated">Deprecated 1</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>notifications</h2>
+      <span class="mono muted">GET /v1/namespaces/notifications/keys</span>
+    </div>
+    <table class="tbl" data-catalog-table>
+      <thead>
+        <tr><th>Key</th><th>Type</th><th>Settable at</th><th>Flags</th><th>Default</th></tr>
+      </thead>
+      <tbody>
+        <tr data-catalog-row="notifications.digest.frequency">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.digest.frequency">notifications.digest.frequency</a>
+            <span class="sub">Digest frequency — how often batched notifications are delivered.</span>
+          </td>
+          <td><span class="vtype">enum</span></td>
+          <td><span class="allowed">platform · portal · org · user</span></td>
+          <td><div class="flags"></div></td>
+          <td class="mono">daily</td>
+        </tr>
+        <tr data-catalog-row="notifications.digest.enabled">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.digest.enabled">notifications.digest.enabled</a>
+            <span class="sub">Batch notifications instead of sending each immediately.</span>
+          </td>
+          <td><span class="vtype">boolean</span></td>
+          <td><span class="allowed">platform · portal · org · user</span></td>
+          <td><div class="flags"></div></td>
+          <td class="mono">true</td>
+        </tr>
+        <tr data-catalog-row="notifications.sender.domain">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.sender.domain">notifications.sender.domain</a>
+            <span class="sub">Tenant sender domain used on outbound mail.</span>
+          </td>
+          <td><span class="vtype">url</span></td>
+          <td><span class="allowed">platform · portal</span></td>
+          <td><div class="flags"><span class="flag flag--restart">restart</span></div></td>
+          <td class="mono">mail.fuzefront.com</td>
+        </tr>
+        <tr data-catalog-row="notifications.provider.apiKey">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.provider.apiKey">notifications.provider.apiKey</a>
+            <span class="sub">Credential for the upstream delivery provider.</span>
+          </td>
+          <td><span class="vtype">secret</span></td>
+          <td><span class="allowed">platform · portal</span></td>
+          <td><div class="flags"><span class="flag flag--secret">secret</span></div></td>
+          <td class="muted">— never returned</td>
+        </tr>
+        <tr data-catalog-row="notifications.engine.id">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.engine.id">notifications.engine.id</a>
+            <span class="sub">Which delivery engine build serves this platform.</span>
+          </td>
+          <td><span class="vtype">string</span></td>
+          <td><span class="allowed">platform</span></td>
+          <td><div class="flags"><span class="flag flag--system">system</span><span class="flag flag--readonly">readonly</span></div></td>
+          <td class="mono">fuze-dispatch-v3</td>
+        </tr>
+        <tr data-catalog-row="notifications.digest.window" data-deprecated="true">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.digest.window">notifications.digest.window</a>
+            <span class="sub">Superseded by <b>notifications.digest.frequency</b> — still resolves.</span>
+          </td>
+          <td><span class="vtype">duration</span></td>
+          <td><span class="allowed">platform · portal · org</span></td>
+          <td><div class="flags"><span class="flag flag--deprecated">deprecated 2026-06-01</span></div></td>
+          <td class="mono">PT24H</td>
+        </tr>
+        <tr data-catalog-row="notifications.internal.shardKey" data-hidden-key="true">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.internal.shardKey">notifications.internal.shardKey</a>
+            <span class="sub">Internal routing shard. Never rendered in the editor at any scope.</span>
+          </td>
+          <td><span class="vtype">string</span></td>
+          <td><span class="allowed">platform</span></td>
+          <td><div class="flags"><span class="flag flag--system">system</span><span class="flag flag--hidden">hidden</span></div></td>
+          <td class="mono">shard-a</td>
+        </tr>
+        <tr data-catalog-row="notifications.internal.debugSink" data-hidden-key="true">
+          <td>
+            <a class="mono" href="06-key-definition.html" data-open-definition="notifications.internal.debugSink">notifications.internal.debugSink</a>
+            <span class="sub">Diagnostic sink target. Never rendered in the editor at any scope.</span>
+          </td>
+          <td><span class="vtype">url</span></td>
+          <td><span class="allowed">platform</span></td>
+          <td><div class="flags"><span class="flag flag--system">system</span><span class="flag flag--hidden">hidden</span></div></td>
+          <td class="mono">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="panel-foot">
+      <span class="muted mono">8 of 8</span>
+      <span class="rowflex"><button class="btn btn-sm" aria-disabled="true">Previous</button><button class="btn btn-sm" aria-disabled="true">Next</button></span>
+    </div>
+  </div>
+
+  <p class="banner banner-warn" data-note="hidden-visibility" style="margin-top: var(--space-6)">
+    <b>Hidden keys are visible on this screen and nowhere else.</b>
+    <span>Reaching this route requires a platform-admin grant. The two <code>isHidden</code> rows above are
+      absent from every <code>GET /v1/config</code> response the settings editor makes — see
+      <a href="03-editor-states.html">frame (c)</a>. If a non-platform-admin can load this table, that is a
+      disclosure bug, not a styling bug.</span>
+  </p>
+
+  <p class="note">
+    <b>Contract.</b> <code>GET /v1/namespaces</code> and
+    <code>GET /v1/namespaces/{namespace}/keys</code> → <code>PagedKeyDefinitions</code>; each row is one
+    <code>KeyDefinition</code> (<code>valueType</code>, <code>allowedScopes</code>, <code>isSystem</code>,
+    <code>isHidden</code>, <code>isSecret</code>, <code>isReadonly</code>, <code>requiresRestart</code>,
+    <code>deprecatedAt</code>, <code>replacedBy</code>, <code>defaultValue</code>).<br />
+    <b>Read-only surface.</b> This flow does not edit definitions — key-definition authoring is
+    FF-EPIC-18-S6 (declarative registration from an app manifest), not a console form.
+  </p>
+
+  <div class="pager">
+    <a href="04-save-conflict.html">&larr; Save failures</a>
+    <a href="06-key-definition.html">Next: definition detail &amp; diff-against-parent &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

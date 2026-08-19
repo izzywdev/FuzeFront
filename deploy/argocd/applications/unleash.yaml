@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unleash
+  namespace: argocd
+spec:
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    path: deploy/helm/unleash
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # Same namespace as the umbrella app — Unleash reads the umbrella chart's
+    # fuzefront-secrets (Postgres superuser password) and the existing
+    # unleash-secrets SealedSecret, both already living in `fuzefront`.
+    namespace: fuzefront
+  syncPolicy:
+    automated:
+      # Unleash itself is stateless (state lives in Postgres, not the pod) —
+      # safe to prune like the umbrella app. The bootstrap Job is a Helm hook
+      # with its own before-hook-creation,hook-succeeded delete-policy, so
+      # pruning here doesn't affect it.
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground

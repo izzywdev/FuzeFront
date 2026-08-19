@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Security hub — states &amp; fail-closed</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .maxw { max-width: 860px; }
+  .state-block { margin-bottom: var(--space-8); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--text-tertiary); margin: 0 0 var(--space-3); }
+  .panel { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-6); }
+
+  /* skeleton */
+  .sk-summary { display: flex; align-items: center; gap: var(--space-5); margin-bottom: var(--space-5); }
+  .sk-circle { width: 56px; height: 56px; border-radius: var(--radius-pill); flex: none; }
+  .sk { border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: sh 1.3s ease-in-out infinite; }
+  @keyframes sh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .sk{ animation: none; } }
+  .sk-cards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .sk-card { height: 92px; border-radius: var(--radius-md); }
+
+  /* StatusCallout primitive (named in inventory; drawn from tokens only) */
+  .callout { display: flex; gap: var(--space-4); align-items: flex-start; border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-5); border: 1px solid var(--border-color); }
+  .callout__ico { width: 28px; height: 28px; border-radius: var(--radius-pill); flex: none; display: grid;
+    place-items: center; font-size: var(--text-md); }
+  .callout__body { flex: 1; }
+  .callout__title { margin: 0 0 var(--space-1); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .callout__text { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+  .callout__actions { margin-top: var(--space-3); display: flex; gap: var(--space-3); }
+  .callout--warn { background: var(--warning-soft); border-color: rgba(245,185,80,0.4); }
+  .callout--warn .callout__ico { background: rgba(245,185,80,0.18); color: var(--warning-color); }
+  .callout--error { background: var(--error-soft); border-color: rgba(243,105,127,0.4); }
+  .callout--error .callout__ico { background: rgba(243,105,127,0.18); color: var(--error-color); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="avatar">JW</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">◔</span> Profile</a>
+      <a class="nav-item active" href="01-hub.html"><span class="ico">🛡</span> Security</a>
+      <a class="nav-item" href="#"><span class="ico">🔔</span> Notifications</a>
+    </nav>
+    <main class="content" data-frame="02-states">
+      <h1 class="page-title">Security — states</h1>
+      <p class="page-sub">Every state the hub must render is contract, not decoration.</p>
+
+      <div class="maxw">
+        <!-- LOADING -->
+        <div class="state-block" data-state="loading">
+          <p class="state-label">Loading · GET /identity/connections + /methods in flight</p>
+          <div class="panel">
+            <div class="sk-summary">
+              <div class="sk sk-circle"></div>
+              <div style="flex:1">
+                <div class="sk" style="height:14px;width:52%;margin-bottom:10px"></div>
+                <div class="sk" style="height:12px;width:70%"></div>
+              </div>
+            </div>
+            <div class="sk-cards">
+              <div class="sk sk-card"></div><div class="sk sk-card"></div>
+              <div class="sk sk-card"></div><div class="sk sk-card"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOAD ERROR -->
+        <div class="state-block" data-state="error">
+          <p class="state-label">Load error · the request failed</p>
+          <div class="panel">
+            <div class="callout callout--error" role="alert">
+              <span class="callout__ico" aria-hidden="true">!</span>
+              <div class="callout__body">
+                <p class="callout__title">Couldn't load your security settings</p>
+                <p class="callout__text">Something went wrong on our side. Your account is unaffected — try again.</p>
+                <div class="callout__actions">
+                  <button class="btn btn-primary" data-action="retry">Try again</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SOCIAL-ONLY: hasPassword false -->
+        <div class="state-block" data-state="no-password">
+          <p class="state-label">Fail-closed · social-only account · <code class="mono">hasPassword: false</code></p>
+          <div class="panel">
+            <div class="callout callout--warn" data-guard="set-password-first">
+              <span class="callout__ico" aria-hidden="true">🔑</span>
+              <div class="callout__body">
+                <p class="callout__title">Set a password first</p>
+                <p class="callout__text">You sign in with Google, so this account has no password yet.
+                  Add one to turn on password sign-in and unlock password change.</p>
+                <div class="callout__actions">
+                  <button class="btn btn-primary" data-action="set-password">Set a password</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LAST-METHOD GUARD: unlink 409 -->
+        <div class="state-block" data-state="last-method">
+          <p class="state-label">Fail-closed · unlink last sign-in method · <code class="mono">409 CONFLICT</code></p>
+          <div class="panel">
+            <div class="callout callout--warn" data-guard="last-sign-in-method">
+              <span class="callout__ico" aria-hidden="true">🔗</span>
+              <div class="callout__body">
+                <p class="callout__title">Keep at least one way to sign in</p>
+                <p class="callout__text">Google is your only sign-in method right now, so it can't be
+                  unlinked. Set a password or link another provider first, then unlink Google.</p>
+                <div class="callout__actions">
+                  <button class="btn btn-primary" data-action="set-password">Set a password</button>
+                  <button class="btn btn-ghost" data-action="link-provider">Link another account</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Frame (b)</b> · States &amp; fail-closed · loading · error · no-password · last-method</span>
+  <span>
+    <a href="01-hub.html" class="btn btn-ghost">← Security hub</a>
+    <a href="index.html" class="btn btn-primary">Overview ↩</a>
+  </span>
+</nav>
+</body>
+</html>

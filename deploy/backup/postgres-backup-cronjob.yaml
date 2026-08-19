@@ -1,0 +1,60 @@
+# Nightly pg_dump of the FuzeFront DB to Contabo Object Storage (S3-compatible).
+# initContainer dumps (postgres image), main container uploads (aws-cli).
+# Requires sealed secrets: fuzeinfra-secrets (POSTGRES_USER/PASSWORD) and
+# backup-s3 (AWS_ACCESS_KEY_ID/SECRET, S3_ENDPOINT, S3_BUCKET).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: fuzeinfra
+spec:
+  schedule: '0 2 * * *' # 02:00 daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            - name: dump
+              image: postgres:15
+              command: ['/bin/sh', '-c']
+              args:
+                - >
+                  set -e;
+                  TS=$(date +%Y%m%d-%H%M%S);
+                  PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h postgres -U "$POSTGRES_USER" fuzefront_platform
+                    | gzip > /dump/fuzefront_platform-$TS.sql.gz;
+                  ls -lh /dump
+              env:
+                - name: POSTGRES_USER
+                  valueFrom: { secretKeyRef: { name: fuzeinfra-secrets, key: POSTGRES_USER } }
+                - name: POSTGRES_PASSWORD
+                  valueFrom: { secretKeyRef: { name: fuzeinfra-secrets, key: POSTGRES_PASSWORD } }
+              volumeMounts:
+                - { name: dump, mountPath: /dump }
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.17.0
+              command: ['/bin/sh', '-c']
+              args:
+                - >
+                  set -e;
+                  aws --endpoint-url "$S3_ENDPOINT" s3 cp /dump/ "s3://$S3_BUCKET/postgres/" --recursive
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: backup-s3, key: AWS_ACCESS_KEY_ID } }
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: backup-s3, key: AWS_SECRET_ACCESS_KEY } }
+                - name: S3_ENDPOINT
+                  valueFrom: { secretKeyRef: { name: backup-s3, key: S3_ENDPOINT } }
+                - name: S3_BUCKET
+                  valueFrom: { secretKeyRef: { name: backup-s3, key: S3_BUCKET } }
+              volumeMounts:
+                - { name: dump, mountPath: /dump }

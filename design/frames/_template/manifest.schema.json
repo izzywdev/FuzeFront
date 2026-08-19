@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/izzywdev/FuzeFront/design/frames/_template/manifest.schema.json",
+  "title": "Design frames manifest",
+  "description": "The approval + build contract for one feature's design frames (design/frames/<feature>/manifest.json). Approving these frames approves BOTH the visual model and the build inventory (flows / components / packages), so an implementation cannot quietly invent a different architecture. NOTE: `additionalProperties` is deliberately permissive at every level — the 12 manifests on master carry feature-specific extras (`epics`, `plan`, `precedent`, `honestDegrade`, `commissionedByApproval`, `designSystemAdditions`, `missingDesignSystemPrimitives`, …). This schema pins the load-bearing shape that stamping, approval and QA depend on; it does not forbid a feature from saying more.",
+  "type": "object",
+  "required": ["name", "description", "designSystem", "entry", "frames"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable feature name. Shown as the card title on the frames index."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What these frames freeze, and what approving them commits to."
+    },
+    "designSystem": {
+      "type": "string",
+      "description": "The design system the frames are built in. Frames use tokens only — no raw hex/spacing/type.",
+      "default": "fuse-seam (@fuzefront/design-system)"
+    },
+    "plan": {
+      "type": "string",
+      "description": "Optional path/link to the planning doc this feature derives from."
+    },
+    "implementation": {
+      "type": "object",
+      "description": "Which source paths these frames cover. Read by gate-frames-first (scripts/check-frames-first.mjs) to map a changed UI file back to the flow that must be approved before it ships. DECLARED rather than inferred: feature slugs do not line up with directories (devices-sessions and mfa-management both build into packages/account-security-ui), so a filename heuristic would fire at random and be trivially bypassable. Feature-level paths apply to every flow; a flow narrows them via build.flows[].implementation.paths. Optional — a feature declaring nothing here has its UI reported as 'uncovered' (see governance/frames-first-policy.json for the ramp).",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "description": "Repo-root-relative globs matching the source these frames cover, e.g. ['packages/account-security-ui/**']. Supports **, *, ? and {a,b}.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "stamp": {
+      "type": "string",
+      "description": "Content stamp of design/frames/<feature>/**, DERIVED by scripts/stamp-frames.mjs — never hand-edited. Binds an approval to the exact frames the approver saw; gate-frames-stamped recomputes it, and design-approval refuses to bind to a stale stamp. Bare lowercase sha256 hex, no algorithm prefix.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "string",
+      "description": "The navigable entry point for the frame set, relative to the feature dir.",
+      "default": "index.html",
+      "pattern": "\\.html$"
+    },
+    "frames": {
+      "type": "array",
+      "description": "The ordered frame sequence. Each frame belongs to a flow; approval is PER FLOW (see build.flows), so one flow can be approved and implemented while its siblings still iterate.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "label", "summary", "testHooks"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable frame id, matching the file stem (e.g. '01-invoice-history')."
+          },
+          "file": {
+            "type": "string",
+            "pattern": "\\.html$",
+            "description": "Frame file, relative to the feature dir."
+          },
+          "label": { "type": "string", "minLength": 1, "description": "Short label, e.g. '(a) Invoice history'." },
+          "route": { "type": "string", "description": "The app route this frame lands on, e.g. '/billing'." },
+          "flow": { "type": "string", "description": "The build.flows[].id this frame belongs to, when a flow spans several frames." },
+          "summary": { "type": "string", "minLength": 1, "description": "What the frame shows." },
+          "acceptanceNotes": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The behavioural contract QA writes RED specs against. States are contract, not decoration — cover loading/empty/error and the real fail-closed cases, not just the happy path."
+          },
+          "testHooks": {
+            "type": "array",
+            "description": "The data-* selectors Playwright drives. These are the stable handles between frames and specs, and must match the frame HTML exactly.",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "description": "The API/type contract these frames render against — the seam to contract-first.",
+      "properties": {
+        "openapi": { "type": "string", "description": "Path to the OpenAPI spec, e.g. 'services/billing-service/openapi.yaml'." },
+        "client": { "type": "string", "description": "Generated client package, e.g. '@fuzefront/billing-client'." },
+        "schemas": {
+          "type": "array",
+          "description": "The OpenAPI schema components the frames bind to.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "endpoints": {
+          "type": "array",
+          "description": "Endpoints the flows call, e.g. 'GET /api/v1/billing/invoices'.",
+          "items": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /" }
+        },
+        "component": { "type": "string", "minLength": 1, "description": "Target component, e.g. '@fuzefront/billing-ui → InvoiceHistoryPanel'." },
+        "featureFlag": {
+          "type": "string",
+          "description": "Flag gating the feature, taxonomy '<repo>.<domain>.<flag>'. Default OFF; the builders audience must be targeted or prod-smoke can never see it.",
+          "pattern": "^[a-z0-9-]+\\.[a-z0-9-]+\\.[a-z0-9-]+$"
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "description": "The build inventory, rendered in index.html and mirrored here. Approving the frames approves this plan.",
+      "properties": {
+        "flows": {
+          "type": "array",
+          "description": "Flow orchestrators to be built. Per-flow approval bookkeeping lives on these entries.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "orchestrator", "route"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "description": "Flow id; frames[].flow references it." },
+              "orchestrator": { "type": "string", "minLength": 1, "description": "Component that orchestrates the flow, e.g. 'PasswordResetFlow'." },
+              "route": { "type": "string", "pattern": "^/", "description": "Route the flow mounts at." },
+              "implementation": {
+                "type": "object",
+                "description": "Source paths THIS flow covers, narrowing the feature-level `implementation.paths`. Set this when flows of one feature own different code, so an unapproved flow does not block its approved sibling's files (gate-frames-first resolves per flow).",
+                "properties": {
+                  "paths": {
+                    "type": "array",
+                    "description": "Repo-root-relative globs, e.g. ['packages/account-security-ui/src/totp/**'].",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
+              "approved": {
+                "type": "boolean",
+                "description": "Per-flow approval. Written by the design-approval workflow onto the frames PR head branch — never hand-set on master. Excluded from the stamp (see scripts/stamp-frames.mjs APPROVAL_KEYS) so approving does not invalidate the stamp it binds to."
+              },
+              "approvedBy": { "type": ["string", "null"], "description": "GitHub login of the approver (must be owner/CODEOWNER). null while unapproved." },
+              "approvedAt": {
+                "type": ["string", "null"],
+                "description": "ISO-8601 date (YYYY-MM-DD) or full timestamp of the approval. null while unapproved.",
+                "anyOf": [{ "format": "date" }, { "format": "date-time" }]
+              }
+            },
+            "dependencies": {
+              "approvedBy": ["approved"],
+              "approvedAt": ["approved"]
+            }
+          }
+        },
+        "components": {
+          "type": "array",
+          "description": "React components to be created. Design-system-first: missing primitives are added to the DS, not one-offed here.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "packages": {
+          "type": "array",
+          "description": "npm packages to be created/extended. Private: publishConfig → GitHub Packages, access restricted.",
+          "items": { "type": "string", "pattern": "^@fuzefront/" }
+        }
+      }
+    }
+  }
+}

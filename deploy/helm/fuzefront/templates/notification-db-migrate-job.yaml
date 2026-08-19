@@ -1,0 +1,67 @@
+{{- if and .Values.notificationService.enabled .Values.notificationService.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-notification-db-migrate
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: notification-db-migrate
+  annotations:
+    # Creates notifications / notification_preferences / notification_deliveries
+    # (knex migration 001) BEFORE notification-service starts. Nothing else in
+    # the chart runs these migrations and index.ts does not self-migrate, so
+    # without this the service boots against a schema-less database and every
+    # read fails on the first SELECT.
+    #
+    # Weight -3 puts it after the shared db-bootstrap (which ensures the
+    # database and role exist) and before the workload. Idempotent: knex tracks
+    # applied migrations in knex_migrations, so re-running on upgrade is a no-op.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: notification-db-migrate
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: notification-db-migrate
+          # Same image as the service, so the migrations run are exactly the ones
+          # the running code expects.
+          image: "{{ .Values.notificationService.image.repository }}:{{ .Values.notificationService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/db/migrate.js"]
+          env:
+            # NODE_ENV=production selects the knexfile's production block, whose
+            # migrations directory points at the compiled dist/db/migrations.
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              # Dedicated DB (see notificationService.dbName) — same override the
+              # notification-service Deployment uses, so migrations and runtime
+              # target one database and knex_migrations can't collide with backend.
+              value: {{ .Values.notificationService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+{{- end }}

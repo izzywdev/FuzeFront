@@ -1,0 +1,315 @@
+# External networks from shared infrastructure
+networks:
+  FuzeInfra:
+    external: true
+    name: FuzeInfra
+  fuzefront:
+    name: fuzefront
+    driver: bridge
+
+services:
+  # ================================
+  # BACKEND SERVICE
+  # ================================
+  fuzefront-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzefront-backend
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - USE_POSTGRES=true
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-fuzefront_platform}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=${BACKEND_PORT:-3002}
+      - FRONTEND_URL=http://fuzefront-frontend:${FRONTEND_PORT:-8080}
+      - PERMIT_API_KEY=${PERMIT_API_KEY}
+      - PERMIT_DEBUG=${PERMIT_DEBUG:-true}
+      - PERMIT_PDP_URL=http://permit-pdp:7000
+      # This local stack does not run the applications-service, so serve
+      # app-registry reads (GET /api/v1/app-registry/apps) from the backend's
+      # local `apps` table instead of delegating to the (absent) proxy. In prod
+      # this flag is unset, so reads delegate to fuzefront-applications — the
+      # same store writes land in (FuzeFront #533).
+      - APP_REGISTRY_LOCAL_ADAPTER=1
+      - AUTHENTIK_ISSUER_URL=${AUTHENTIK_ISSUER_URL}
+      - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID}
+      - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET}
+      - AUTHENTIK_REDIRECT_URI=${AUTHENTIK_REDIRECT_URI}
+    networks:
+      - FuzeInfra # Connect to shared infrastructure
+      - fuzefront # Connect to FuzeFront internal network
+    # Database initialization handled by backend startup process
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3002/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fuzefront-backend.rule=PathPrefix(`/api`)'
+      - 'traefik.http.services.fuzefront-backend.loadbalancer.server.port=3002'
+
+  # ================================
+  # EMAIL SERVICE
+  # ================================
+  email-service:
+    build:
+      context: .
+      dockerfile: services/email-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - KAFKA_BROKERS=fuzeinfra-kafka:9092
+      - EMAIL_PROVIDER=smtp
+      - SMTP_HOST=localhost
+      - SMTP_PORT=1025
+      - EMAIL_FROM=noreply@fuzefront.local
+    networks:
+      - FuzeInfra
+    depends_on:
+      - fuzefront-backend
+
+  # ================================
+  # SMS SERVICE (Twilio Verify MFA)
+  # ================================
+  sms-service:
+    build:
+      context: .
+      dockerfile: services/sms-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - TWILIO_MOCK=true
+      - SMS_AUTH_SECRET=${SMS_AUTH_SECRET:-dev-sms-secret}
+    networks:
+      - FuzeInfra
+    depends_on:
+      - fuzefront-backend
+
+  # ================================
+  # PAYMENT SERVICE (vendor-neutral payment gateway — SCAFFOLD, not the live
+  # money path yet). Runnable with zero secrets: without STRIPE_SECRET_KEY it
+  # serves /health only (degraded mode). Listens on 3007 (billing is 3006).
+  # ================================
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=development
+      - PORT=3007
+      - PAYMENT_PROVIDER=stripe
+      # STRIPE_SECRET_KEY intentionally unset locally → degraded mode (/health).
+      # PAYMENT_INTERNAL_TOKEN optional; unset leaves the neutral API open locally.
+    networks:
+      - FuzeInfra
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:3007/health',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ================================
+  # FRONTEND SERVICE
+  # ================================
+  fuzefront-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://fuzefront.dev.local
+        - VITE_APP_TITLE=FuzeFront Platform
+    container_name: fuzefront-frontend
+    environment:
+      - NGINX_HOST=localhost
+      - NGINX_PORT=8080
+    networks:
+      - FuzeInfra # Connect to shared infrastructure for nginx access
+      - fuzefront # Connect to FuzeFront internal network
+    depends_on:
+      - fuzefront-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fuzefront-frontend.rule=Host(`fuzefront.local`)'
+      - 'traefik.http.services.fuzefront-frontend.loadbalancer.server.port=8080'
+
+  # ================================
+  # AUTHENTIK OIDC/OAuth2 AUTHENTICATION
+  # ================================
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.5.5
+    container_name: fuzefront-authentik-server
+    command: server
+    environment:
+      # Use shared PostgreSQL from FuzeInfra with dedicated authentik user
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_REDIS__PORT: 6379
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-fuzefront.local}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: true
+      AUTHENTIK_ERROR_REPORTING__ENABLED: false
+      AUTHENTIK_DEFAULT_USER_CHANGE_EMAIL: true
+      AUTHENTIK_DEFAULT_USER_CHANGE_NAME: true
+      AUTHENTIK_DEFAULT_USER_CHANGE_USERNAME: true
+      AUTHENTIK_GDPR_COMPLIANCE: false
+      # Database bootstrap settings
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin123}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-bootstrap-token-change-me}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@fuzefront.local}
+      # Google OAuth2 source — leave empty to disable (source blueprint is inert when empty)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+      # Mount blueprints so Authentik auto-discovers and applies them on startup
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    ports:
+      - '${AUTHENTIK_PORT:-9000}:9000'
+      - '${AUTHENTIK_SSL_PORT:-9443}:9443'
+    networks:
+      - FuzeInfra # Connect to shared infrastructure for PostgreSQL, Redis, and Traefik
+      - fuzefront # Connect to FuzeFront internal network
+    depends_on:
+      authentik-worker:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.authentik.rule=Host(`auth.fuzefront.local`)'
+      - 'traefik.http.services.authentik.loadbalancer.server.port=9000'
+      - 'traefik.http.routers.authentik.tls=false'
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.5.5
+    container_name: fuzefront-authentik-worker
+    command: worker
+    environment:
+      # Use shared PostgreSQL and Redis from FuzeInfra with dedicated authentik user
+      AUTHENTIK_REDIS__HOST: fuzeinfra-redis
+      AUTHENTIK_REDIS__PORT: 6379
+      AUTHENTIK_POSTGRESQL__HOST: fuzeinfra-postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-fuzefront-dev-secret-key-change-in-production}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_ERROR_REPORTING__ENABLED: false
+      # Google OAuth2 source — leave empty to disable (source blueprint is inert when empty)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+      - authentik_certs:/certs
+      # Mount blueprints so Authentik auto-discovers and applies them on startup
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    networks:
+      - FuzeInfra # Connect to shared infrastructure
+      - fuzefront
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ================================
+  # PERMIT.IO AUTHORIZATION (PDP)
+  # ================================
+  permit-pdp:
+    image: permitio/pdp-v2:latest
+    container_name: fuzefront-permit-pdp
+    env_file:
+      - .env
+    environment:
+      PDP_API_KEY: ${PERMIT_API_KEY:-your-permit-api-key-here}
+      PDP_DEBUG: ${PERMIT_DEBUG:-True}
+      # Enable offline mode to avoid cloud connectivity issues
+      PDP_ENABLE_OFFLINE_MODE: true
+      OPAL_INLINE_OPA_ENABLED: true
+      # Disable cloud sync temporarily for development
+      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: false
+    ports:
+      - '${PERMIT_PDP_PORT:-7766}:7000' # Main PDP API
+      - '${PERMIT_OPA_PORT:-8181}:8181' # Direct OPA access (optional)
+    volumes:
+      - permit_pdp_backup:/app/backup # For offline mode backups
+    networks:
+      - fuzefront
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:7000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# Volumes for persistent data (if needed locally)
+volumes:
+  fuzefront_logs:
+    name: fuzefront_logs
+
+  # Authentik volumes
+  authentik_media:
+    name: fuzefront_authentik_media
+  authentik_custom_templates:
+    name: fuzefront_authentik_templates
+  authentik_certs:
+    name: fuzefront_authentik_certs
+
+  # Permit.io PDP volumes
+  permit_pdp_backup:
+    name: fuzefront_permit_pdp_backup

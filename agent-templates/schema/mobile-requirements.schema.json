@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izzywdev/FuzeSDLC/agent-templates/mobile-requirements.schema.json",
+  "title": "Mobile requirements contract",
+  "description": "Per-UI-package declaration of mobile scope + acceptance, read by the mobile-engineer on merge. Lives as `mobile.requirements.yaml` at the package root, or as a `mobile` block inside package.json / service.json / .fuze/manifest.json.",
+  "type": "object",
+  "required": ["required"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "product": { "type": "string", "description": "Package/product name this contract governs." },
+    "required": {
+      "type": "boolean",
+      "description": "Is a mobile experience in scope for this package? If false, the mobile-engineer only checks that it isn't accidentally shipped to mobile."
+    },
+    "strategy": {
+      "type": "string",
+      "enum": ["responsive-web", "pwa", "react-native", "flutter"],
+      "description": "How mobile is delivered. responsive-web = the web UI must work on phones; pwa = installable PWA; react-native/flutter = a native app."
+    },
+    "targets": {
+      "type": "array",
+      "items": { "enum": ["ios", "android", "mobile-web"] },
+      "description": "Platforms that must be covered."
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_width": { "type": "integer", "description": "Smallest viewport width (px) that must render without horizontal scroll (e.g. 320 or 375)." },
+        "breakpoints": { "type": "array", "items": { "type": "integer" }, "description": "Breakpoints (px) the design system uses; layout must be correct at each." },
+        "min_tap_target_px": { "type": "integer", "default": 44, "description": "Minimum interactive target size in px." }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "description": "Checks the mobile-engineer must verify on merge (free-form strings and/or thresholds).",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "check": { "type": "string" },
+              "min_score": { "type": "number", "description": "e.g. Lighthouse mobile score threshold (0-100)." },
+              "at_width": { "type": "integer" }
+            },
+            "required": ["check"]
+          }
+        ]
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "For an umbrella/monorepo: the sub-packages this contract applies to."
+    },
+    "owner": { "type": "string", "description": "Optional owning team/person." }
+  }
+}

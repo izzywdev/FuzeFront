@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>My orgs & sub-orgs</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body data-frame="04-my-orgs" data-context="personal">
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <button class="ctx-pill personal" data-context-pill data-context="personal" aria-haspopup="menu">
+      <span class="ctx-avatar">◎</span> Personal <span class="caret">▾</span>
+    </button>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Personal navigation">
+      <div class="section-label">You</div>
+      <a class="nav-item" href="01-personal-context.html"><span class="ico">◎</span> Personal home</a>
+      <a class="nav-item"><span class="ico">🧩</span> Your apps</a>
+      <div class="section-label">Tenancy</div>
+      <a class="nav-item active"><span class="ico">🗂️</span> Your organizations</a>
+    </nav>
+    <main class="content">
+      <div style="display:flex; align-items:center; gap: var(--space-4); margin-bottom: var(--space-2);">
+        <h1 class="page-title" style="margin:0">Your organizations</h1>
+        <div class="org-card__spacer"></div>
+        <button class="btn btn-primary" data-action="create-org">＋ Create organization</button>
+      </div>
+      <p class="page-sub">The orgs you own or belong to, each with your role and its sub-org tree.
+        This list shows your <b>direct memberships</b> only — access you hold through a parent/root org has no row here.</p>
+
+      <div class="org-list" data-panel="my-orgs" data-list="my-orgs">
+        <div class="org-card" data-org="00000000-0000-0000-0000-000000000010" data-role="member">
+          <div class="org-card__top">
+            <div class="org-card__avatar">F</div>
+            <div><div class="org-card__name">FuzeFront <span class="badge builtin" style="margin-left: var(--space-2)">root</span></div>
+              <div class="org-card__meta">The platform tenant — everyone is a member</div></div>
+            <div class="org-card__spacer"></div>
+            <span class="role-badge member" data-role="member">● member</span>
+            <a class="btn btn-ghost" href="02-org-context.html" style="margin-left: var(--space-3)">Open</a>
+          </div>
+        </div>
+
+        <div class="org-card" data-org="org_northwind" data-role="owner">
+          <div class="org-card__top">
+            <div class="org-card__avatar">N</div>
+            <div><div class="org-card__name">Northwind <span class="badge builtin" style="margin-left: var(--space-2)">portal</span></div>
+              <div class="org-card__meta">Custom domain · white-label · 2 sub-orgs</div></div>
+            <div class="org-card__spacer"></div>
+            <span class="role-badge owner" data-role="owner">● owner</span>
+            <a class="btn btn-ghost" style="margin-left: var(--space-3)">Open</a>
+          </div>
+          <div class="suborg" data-list="sub-orgs">
+            <div class="suborg-row" data-org="org_nw_sales" data-role="admin"><span class="branch">├─</span> Sales
+              <div class="org-card__spacer"></div><span class="role-badge admin" data-role="admin">admin</span></div>
+            <div class="suborg-row" data-org="org_nw_ops" data-role="viewer"><span class="branch">└─</span> Operations
+              <div class="org-card__spacer"></div><span class="role-badge viewer" data-role="viewer">viewer</span></div>
+          </div>
+        </div>
+
+        <div class="org-card" data-org="org_acme" data-role="viewer">
+          <div class="org-card__top">
+            <div class="org-card__avatar">A</div>
+            <div><div class="org-card__name">Acme Co</div>
+              <div class="org-card__meta">You joined by invitation</div></div>
+            <div class="org-card__spacer"></div>
+            <span class="role-badge viewer" data-role="viewer">● viewer</span>
+            <a class="btn btn-ghost" style="margin-left: var(--space-3)">Open</a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="frame-caption">
+  <span>Frame (d) · <b>My orgs &amp; sub-orgs</b> · route <code>/organizations</code> · direct memberships only</span>
+  <span><a href="03-switcher.html">← switcher</a> &nbsp;·&nbsp; <a href="05-states.html">states →</a></span>
+</div>
+</body>
+</html>

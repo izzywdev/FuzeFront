@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FuzeQuality — Planning, Coverage, and Execution Architecture</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --panel: #0e1c2f;
+        --panel-2: #13253d;
+        --line: #55708f;
+        --text: #edf5ff;
+        --muted: #a9bad0;
+        --intent: #69b7ff;
+        --graph: #b998ff;
+        --execution: #56dbc1;
+        --persist: #ffba69;
+        --gate: #ff718d;
+        --ok: #78e08f;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-width: 1100px;
+        background:
+          radial-gradient(circle at 10% 0%, #12375c 0, transparent 30%),
+          radial-gradient(circle at 95% 5%, #35245e 0, transparent 26%),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      main { width: 1440px; margin: 0 auto; padding: 44px 46px 64px; }
+      h1 { margin: 0; font-size: 34px; letter-spacing: -0.03em; }
+      .subtitle { color: var(--muted); max-width: 950px; line-height: 1.55; }
+      .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 24px 0; }
+      .legend span { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+      .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+
+      .canvas {
+        position: relative;
+        height: 1130px;
+        border: 1px solid #29425f;
+        border-radius: 24px;
+        overflow: hidden;
+        background: rgba(7, 17, 31, 0.72);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+      }
+
+      .lane {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        border: 1px solid #29425f;
+        border-radius: 18px;
+        background: rgba(14, 28, 47, 0.67);
+      }
+      .lane h2 {
+        position: absolute;
+        left: 18px;
+        top: 10px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .planning { top: 22px; height: 270px; }
+      .reconcile { top: 312px; height: 294px; }
+      .execution { top: 626px; height: 220px; }
+      .delivery { top: 866px; height: 238px; }
+
+      .node {
+        position: absolute;
+        z-index: 2;
+        width: 206px;
+        min-height: 82px;
+        padding: 14px 16px;
+        border: 1px solid color-mix(in srgb, var(--accent) 70%, white 8%);
+        border-radius: 14px;
+        background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 17%, #0d1b2e), #0b1728);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+      }
+      .node strong { display: block; font-size: 16px; margin-bottom: 6px; }
+      .node small { display: block; color: var(--muted); line-height: 1.38; }
+      .intent { --accent: var(--intent); }
+      .graph { --accent: var(--graph); }
+      .run { --accent: var(--execution); }
+      .store { --accent: var(--persist); }
+      .quality { --accent: var(--gate); }
+
+      svg.connections { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
+      path { fill: none; stroke: var(--line); stroke-width: 2; marker-end: url(#arrow); }
+      path.async { stroke-dasharray: 8 6; }
+      text { fill: var(--muted); font: 12px Inter, sans-serif; }
+
+      .note {
+        position: absolute;
+        z-index: 3;
+        border-radius: 12px;
+        padding: 10px 13px;
+        color: var(--muted);
+        background: #091523;
+        border: 1px dashed #3b5878;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .footer-grid article {
+        background: rgba(14, 28, 47, 0.75);
+        border: 1px solid #29425f;
+        border-radius: 16px;
+        padding: 18px;
+      }
+      .footer-grid h3 { margin: 0 0 9px; font-size: 15px; }
+      .footer-grid p { color: var(--muted); margin: 0; line-height: 1.48; font-size: 13px; }
+      code { color: #a9ddff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>FuzeQuality process architecture</h1>
+      <p class="subtitle">
+        A self-hosted, open-source quality graph joining Jira product intent, OpenAPI contracts,
+        modeled UI journeys, Kiwi TCMS plans, Playwright and Schemathesis executions, and
+        cross-run evidence. Solid arrows are synchronous or direct data paths; dashed arrows are
+        scheduled, webhook, or eventually consistent reconciliation.
+      </p>
+
+      <div class="legend" aria-label="Diagram legend">
+        <span><i class="dot" style="background:var(--intent)"></i>Product and test intent</span>
+        <span><i class="dot" style="background:var(--graph)"></i>Coverage graph</span>
+        <span><i class="dot" style="background:var(--execution)"></i>Ephemeral execution</span>
+        <span><i class="dot" style="background:var(--persist)"></i>Persistent evidence</span>
+        <span><i class="dot" style="background:var(--gate)"></i>Decision and gate</span>
+      </div>
+
+      <section class="canvas" aria-label="FuzeQuality process and deployment diagram">
+        <div class="lane planning"><h2>Planning and product intent</h2></div>
+        <div class="lane reconcile"><h2>FuzeQuality reconciliation and coverage</h2></div>
+        <div class="lane execution"><h2>Ephemeral CI execution</h2></div>
+        <div class="lane delivery"><h2>Persistent Contabo k3s and GitOps delivery</h2></div>
+
+        <svg class="connections" viewBox="0 0 1348 1130" role="img" aria-label="Data-flow arrows">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#55708f" stroke="none"></path>
+            </marker>
+          </defs>
+
+          <path class="async" d="M 245 126 C 335 126, 335 391, 420 391" />
+          <path class="async" d="M 245 225 C 340 225, 340 424, 420 424" />
+          <path d="M 528 191 C 590 191, 590 355, 656 355" />
+          <path d="M 783 191 C 790 270, 790 300, 790 355" />
+          <path d="M 625 430 L 690 430" />
+          <path d="M 896 430 L 970 430" />
+          <path d="M 1072 391 C 1140 391, 1140 192, 1095 192" />
+          <path d="M 1072 470 C 1160 470, 1160 532, 1072 532" />
+          <path d="M 790 506 L 790 670" />
+          <path d="M 490 716 L 610 716" />
+          <path d="M 814 716 L 932 716" />
+          <path d="M 490 790 C 650 790, 780 790, 932 790" />
+          <path class="async" d="M 1032 754 C 1115 754, 1115 524, 1072 524" />
+          <path d="M 1032 790 C 1090 790, 1090 944, 1032 944" />
+          <path d="M 245 953 L 370 953" />
+          <path class="async" d="M 575 953 L 690 953" />
+          <path d="M 896 953 L 955 953" />
+          <path d="M 790 995 L 790 1054" />
+          <path d="M 1070 995 L 1070 1054" />
+          <path d="M 790 995 C 620 1010, 420 1048, 258 1060" />
+
+          <text x="272" y="116">JQL + webhook</text>
+          <text x="274" y="218">spec revisions</text>
+          <text x="535" y="411">normalize</text>
+          <text x="904" y="419">evaluate</text>
+          <text x="1090" y="365">review proposals</text>
+          <text x="500" y="704">tests + metadata</text>
+          <text x="824" y="704">stream attempts</text>
+          <text x="642" y="781">schema evidence</text>
+          <text x="250" y="943">capacity request</text>
+          <text x="585" y="943">Git change</text>
+          <text x="901" y="943">sync</text>
+        </svg>
+
+        <div class="node intent" style="left:52px;top:78px">
+          <strong>Jira</strong><small>Epics, stories, criteria, release scope, ownership, revisions</small>
+        </div>
+        <div class="node intent" style="left:52px;top:178px">
+          <strong>OpenAPI sources</strong><small>Repository specs and configured service documents</small>
+        </div>
+        <div class="node intent" style="left:322px;top:139px">
+          <strong>UI flow catalog</strong><small>Versioned roles, states, transitions, risks, assertions</small>
+        </div>
+        <div class="node intent" style="left:676px;top:139px">
+          <strong>Kiwi TCMS</strong><small>OSS plans, cases, assignments, manual and automated runs</small>
+        </div>
+        <div class="node quality" style="left:1000px;top:139px">
+          <strong>Human review</strong><small>Confirm or reject inferred links, aliases, and suppressions</small>
+        </div>
+
+        <div class="node graph" style="left:420px;top:365px">
+          <strong>Adapters + worker</strong><small>Incremental ingestion, fingerprints, stable IDs, idempotent jobs</small>
+        </div>
+        <div class="node graph" style="left:690px;top:365px">
+          <strong>Coverage graph</strong><small>Requirements ↔ flows ↔ operations ↔ plans ↔ tests ↔ results</small>
+        </div>
+        <div class="node quality" style="left:970px;top:365px">
+          <strong>Rules and findings</strong><small>Orphaned, partial, stale, never-run, failing, flaky, ambiguous</small>
+        </div>
+        <div class="node quality" style="left:970px;top:490px">
+          <strong>Dashboard + API</strong><small>Coverage views, review queue, snapshots, quality-gate contract</small>
+        </div>
+        <div class="note" style="left:425px;top:521px;width:472px">
+          Deterministic links are authoritative. Semantic inference only proposes mappings;
+          unreviewed suggestions cannot fail CI.
+        </div>
+
+        <div class="node run" style="left:284px;top:670px">
+          <strong>Playwright</strong><small>UI/API projects, stable annotations, traces, video, screenshots</small>
+        </div>
+        <div class="node run" style="left:284px;top:754px">
+          <strong>Schemathesis</strong><small>Positive, negative, boundary, and stateful OpenAPI tests</small>
+        </div>
+        <div class="node run" style="left:610px;top:670px">
+          <strong>FuzeQuality CLI</strong><small>Discovery, validation, bundles, retries, quality-gate request</small>
+        </div>
+        <div class="node store" style="left:932px;top:670px">
+          <strong>ReportPortal</strong><small>OSS launches, attempts, logs, history, failure and flaky analytics</small>
+        </div>
+        <div class="node store" style="left:932px;top:754px">
+          <strong>TraceCov + artifacts</strong><small>Schema coverage and durable evidence manifests</small>
+        </div>
+
+        <div class="node intent" style="left:52px;top:910px">
+          <strong>Terraform request</strong><small>Declarative Contabo capacity; no credentials in FuzeFront</small>
+        </div>
+        <div class="node intent" style="left:370px;top:910px">
+          <strong>FuzeInfra</strong><small>Validates request, owns state and credentials, joins k3s node</small>
+        </div>
+        <div class="node graph" style="left:690px;top:910px">
+          <strong>Helm + Argo CD</strong><small>Pull-reconciled workloads, migrations, policies, pinned versions</small>
+        </div>
+        <div class="node store" style="left:955px;top:910px">
+          <strong>fuzequality namespace</strong><small>API, worker, web, Kiwi, ReportPortal, protected state</small>
+        </div>
+        <div class="node intent" style="left:52px;top:1030px">
+          <strong>Storybook</strong><small>Immutable static component and UI-state catalog, built and tested in CI</small>
+        </div>
+        <div class="node store" style="left:690px;top:1030px">
+          <strong>PostgreSQL</strong><small>Graph, revisions, mappings, findings, policies, audits, snapshots</small>
+        </div>
+        <div class="node store" style="left:955px;top:1030px">
+          <strong>Object storage</strong><small>Traces, screenshots, videos, coverage reports, release evidence</small>
+        </div>
+      </section>
+
+      <section class="footer-grid" aria-label="Architecture principles">
+        <article>
+          <h3>Planning truth</h3>
+          <p>Jira owns promised behavior. Kiwi TCMS owns planned cases and runs. Git owns reviewed UI-flow definitions and policy; Storybook exposes implemented component states.</p>
+        </article>
+        <article>
+          <h3>Execution truth</h3>
+          <p>Playwright and Schemathesis run ephemerally. ReportPortal and object storage preserve attempts and evidence across CI cycles.</p>
+        </article>
+        <article>
+          <h3>Coverage truth</h3>
+          <p>FuzeQuality owns cross-system identities, links, freshness, uncertainty, orphan findings, snapshots, and release decisions.</p>
+        </article>
+        <article>
+          <h3>Security truth</h3>
+          <p>FuzeFront's security microservice owns every human and machine identity and authorization decision. FuzeQuality consumes platform sessions, scoped service tokens, organization context, and the namespaced <code>fuzequality</code> product policy; Authentik and Permit remain behind that shared boundary.</p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

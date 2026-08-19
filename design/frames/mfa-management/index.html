@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MFA management — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; }
+  .crumb { font-size: var(--text-sm); color: var(--text-tertiary); margin: var(--space-4) 0 0; }
+  .crumb b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .frame-link .states { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .tag { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 1px var(--space-2);
+    border-radius: var(--radius-pill); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .tag.warn { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .tag.err { color: var(--error-color); border-color: rgba(243,105,127,0.4); }
+  .inv { margin-top: var(--space-6); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--text-tertiary); }
+  .inv dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-3) var(--space-5); margin: 0; }
+  @media (max-width: 640px){ .inv dl { grid-template-columns: 1fr; gap: var(--space-1) 0; } }
+  .inv dt { color: var(--text-tertiary); font-size: var(--text-sm); padding-top: var(--space-1); }
+  .inv dd { margin: 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    padding: 2px var(--space-2); margin: 0 var(--space-1) var(--space-1) 0; border-radius: var(--radius-sm);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .chip.flow { color: var(--cyan-400); border-color: rgba(41,211,230,0.4); }
+  .chip.pkg { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="index" data-feature="mfa-management">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Account security — Two-factor authentication · Approval Frames</h1>
+  <p class="lead">These frames demonstrate the <b>MFA management</b> experience before any feature UI is
+    implemented: enrolling an authenticator app (TOTP), adding a phone for text-message codes, one-time
+    recovery codes, removing a method, and the step-up challenge shown mid sign-in. Approving them freezes
+    the visual + interaction contract the implementation and <code>frontend-test-engineer</code>'s
+    Playwright checks are verified against. Built in the fuse-seam design system (tokens only). No provider
+    name appears anywhere in the UI.</p>
+  <p class="crumb">Reached from the <b>Account security</b> hub (sibling feature) → <b>Two-factor authentication</b>.
+    Route base <code>/account/security/mfa</code>. The sign-in step-up lives on the login path <code>/login/mfa</code>.</p>
+
+  <h2>Walk the flow</h2>
+  <div class="grid">
+    <a href="01-mfa-overview.html" class="frame-link" data-nav="01-mfa-overview">
+      <div class="seam"></div>
+      <div class="step">Frame 01 · /account/security/mfa</div>
+      <h3>Two-factor overview</h3>
+      <p>Enrolled methods list, add-a-method menu, recovery-codes status. Authenticator is available; text-message codes are offered only when the channel can deliver.</p>
+      <div class="states"><span class="tag">populated</span><span class="tag">empty (no MFA)</span><span class="tag warn">loading</span><span class="tag err">load error</span></div>
+    </a>
+    <a href="02-totp-enroll.html" class="frame-link" data-nav="02-totp-enroll">
+      <div class="seam"></div>
+      <div class="step">Frame 02 · …/mfa/add/authenticator</div>
+      <h3>Add an authenticator app</h3>
+      <p>Scan the QR (or copy the setup key), then confirm with a 6-digit code. Fail-closed on a wrong or expired code.</p>
+      <div class="states"><span class="tag">scan + verify</span><span class="tag err">invalid code</span><span class="tag err">expired</span></div>
+    </a>
+    <a href="03-sms-enroll.html" class="frame-link" data-nav="03-sms-enroll">
+      <div class="seam"></div>
+      <div class="step">Frame 03 · …/mfa/add/phone</div>
+      <h3>Add a phone (text message)</h3>
+      <p>Enter a phone, receive a code, confirm. <b>Honest degrade:</b> when text messages can't be delivered the option is disabled with a reason — never offered as if it works.</p>
+      <div class="states"><span class="tag">enter + confirm</span><span class="tag warn">channel unavailable</span><span class="tag err">invalid code</span></div>
+    </a>
+    <a href="04-recovery-codes.html" class="frame-link" data-nav="04-recovery-codes">
+      <div class="seam"></div>
+      <div class="step">Frame 04 · …/mfa/recovery-codes</div>
+      <h3>Recovery codes</h3>
+      <p>Shown once, never retrievable again. Copy/download, then regenerate (which invalidates the old set).</p>
+      <div class="states"><span class="tag">shown once</span><span class="tag">regenerate confirm</span></div>
+    </a>
+    <a href="05-step-up-challenge.html" class="frame-link" data-nav="05-step-up-challenge">
+      <div class="seam"></div>
+      <div class="step">Frame 05 · /login/mfa</div>
+      <h3>Step-up challenge (mid sign-in)</h3>
+      <p>Login returned <code>mfa_required</code>. Pick a factor, enter the code, complete sign-in. Fail-closed on bad/expired code; delivery failure is surfaced.</p>
+      <div class="states"><span class="tag">TOTP prompt</span><span class="tag">choose factor</span><span class="tag err">invalid / expired</span></div>
+    </a>
+    <a href="06-remove-factor.html" class="frame-link" data-nav="06-remove-factor">
+      <div class="seam"></div>
+      <div class="step">Frame 06 · /account/security/mfa</div>
+      <h3>Remove a method</h3>
+      <p>Confirm removal. <b>Fail-closed:</b> removing your only remaining factor while two-factor is required is blocked (409) — you can't lock yourself out.</p>
+      <div class="states"><span class="tag">confirm</span><span class="tag err">remove-last blocked (409)</span></div>
+    </a>
+  </div>
+
+  <div class="inv" data-build-inventory>
+    <h3>Build inventory — what approving these frames approves</h3>
+    <dl>
+      <dt>Flows</dt>
+      <dd>
+        <span class="chip flow">MfaOverviewFlow · /account/security/mfa</span>
+        <span class="chip flow">TotpEnrollFlow · /account/security/mfa/add/authenticator</span>
+        <span class="chip flow">SmsEnrollFlow · /account/security/mfa/add/phone</span>
+        <span class="chip flow">RecoveryCodesFlow · /account/security/mfa/recovery-codes</span>
+        <span class="chip flow">MfaStepUpFlow · /login/mfa</span>
+      </dd>
+      <dt>Components</dt>
+      <dd>
+        <span class="chip">MfaOverviewPanel</span><span class="chip">MfaFactorList</span><span class="chip">MfaFactorRow</span>
+        <span class="chip">AddFactorMenu</span><span class="chip">TotpEnrollPanel</span><span class="chip">QrProvisioning</span>
+        <span class="chip">OtpInput</span><span class="chip">SmsEnrollPanel</span><span class="chip">ChannelUnavailableNotice</span>
+        <span class="chip">RecoveryCodesPanel</span><span class="chip">RemoveFactorDialog</span><span class="chip">MfaChallengeCard</span>
+        <span class="chip">FactorPicker</span>
+      </dd>
+      <dt>Packages</dt>
+      <dd>
+        <span class="chip pkg">@fuzefront/account-security-ui</span>
+        <span class="chip pkg">@fuzefront/security-client (existing)</span>
+      </dd>
+      <dt>Missing DS primitive</dt>
+      <dd><span class="chip">OtpInput</span> — a segmented one-time-code field is not yet in
+        <code>@fuzefront/design-system</code>. Named here for <code>frontend-engineer</code> to add as a
+        foundation primitive; not styled one-off.</dd>
+    </dl>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
+    Package: <code>@fuzefront/account-security-ui</code> ·
+    Flag: <code>fuzefront.security.mfa-management</code> (default OFF).<br />
+    Honest-degrade signal: <code>GET /v1/security/methods</code> → <code>mfa.types</code> /
+    <code>verification.sms</code> gate whether text-message codes are offered. Per-flow approval lives in
+    <code>manifest.json</code>; approve by setting a flow's <code>approved: true</code> (+ approver + date)
+    or reply <code>@claude approve</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

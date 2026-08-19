@@ -1,0 +1,96 @@
+
+> @fuzefront/website-backend@1.0.0 dev
+> nodemon src/index.ts
+
+[33m[nodemon] 3.1.10[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: ts,json[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/routes/contact.ts(48,11): error TS7006: Parameter 'req' implicitly has an 'any' type.
+src/routes/contact.ts(48,16): error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+    at createTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:863:19)
+    at getOutput (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1077:36)
+    at Object.compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1433:41)
+    at Module.m._compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1895:10
+    at Object.require.extensions.<computed> [as .ts] (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 7006, 7006 ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+error TS5052: Option 'exactOptionalPropertyTypes' cannot be specified without specifying option 'strictNullChecks'.
+
+    at createTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:863:19)
+    at /mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1379:34
+    at Object.compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1458:13)
+    at Module.m._compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1895:10
+    at Object.require.extensions.<computed> [as .ts] (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 5052 ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/routes/contact.ts(48,11): error TS7006: Parameter 'req' implicitly has an 'any' type.
+src/routes/contact.ts(48,16): error TS7006: Parameter 'res' implicitly has an 'any' type.
+
+    at createTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:863:19)
+    at getOutput (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1077:36)
+    at Object.compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1433:41)
+    at Module.m._compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1895:10
+    at Object.require.extensions.<computed> [as .ts] (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 7006, 7006 ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `ts-node src/index.ts`[39m
+/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/routes/analytics.ts(96,17): error TS2345: Argument of type '{ timestamp: string; userAgent: any; referrer: any; ip: any; event?: string; page?: string; sessionId?: string; properties?: Record<string, unknown>; }' is not assignable to parameter of type '{ event: string; page: string; timestamp: string; userAgent?: string; referrer?: string; sessionId?: string; ip: string; properties?: Record<string, unknown>; }'.
+  Property 'event' is optional in type '{ timestamp: string; userAgent: any; referrer: any; ip: any; event?: string; page?: string; sessionId?: string; properties?: Record<string, unknown>; }' but required in type '{ event: string; page: string; timestamp: string; userAgent?: string; referrer?: string; sessionId?: string; ip: string; properties?: Record<string, unknown>; }'.
+
+    at createTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:859:12)
+    at reportTSError (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:863:19)
+    at getOutput (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1077:36)
+    at Object.compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1433:41)
+    at Module.m._compile (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1895:10
+    at Object.require.extensions.<computed> [as .ts] (/mnt/c/Users/izzyw/source/FuzeFront/fuzefront-website/backend/node_modules/ts-node/src/index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 2345 ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m

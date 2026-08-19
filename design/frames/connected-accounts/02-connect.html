@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Connect a provider — /account/security/connections</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher">⊞</div>
+    <div class="avatar">JW</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">◔</span> Profile</a>
+      <a class="nav-item active" href="#"><span class="ico">🛡</span> Security</a>
+      <a class="nav-item" href="#"><span class="ico">🔔</span> Notifications</a>
+      <a class="nav-item" href="#"><span class="ico">💳</span> Billing</a>
+    </nav>
+    <main class="content" data-frame="02-connect" data-panel="connected-accounts">
+      <a class="crumb" href="01-connections.html" data-route="/account/security/connections">← Connected accounts</a>
+      <h1 class="page-title">Connect Google</h1>
+      <p class="page-sub">The two steps of linking a provider — and how the return looks.</p>
+
+      <div class="maxw gallery">
+        <!-- STEP 1 — redirect intent (POST /social/google/link → { redirectUrl }) -->
+        <div class="state-card">
+          <h3>Step 1 · Redirect intent</h3>
+          <div class="callout callout--info" data-state="redirecting" data-provider="google">
+            <span class="callout__ico" aria-hidden="true">↗</span>
+            <div class="callout__body">
+              <p class="callout__title">You'll continue on Google</p>
+              <p class="callout__text">We'll take you to <code class="mono">accounts.google.com</code> to
+                confirm it's you, then bring you straight back here. Nothing links until you approve.</p>
+              <div class="callout__actions">
+                <a class="btn btn-primary btn-sm" href="#" data-action="connect" data-provider="google">Continue with Google</a>
+                <a class="btn btn-ghost btn-sm" href="01-connections.html" data-action="cancel">Cancel</a>
+              </div>
+            </div>
+          </div>
+          <p class="callout__text" style="margin-top:var(--space-3)">
+            The button posts to <code class="mono">POST /v1/security/social/google/link</code> and
+            follows the returned <code class="mono">redirectUrl</code>. No vendor UI is ever shown by
+            FuzeFront — only the browser's own trip to Google.
+          </p>
+        </div>
+
+        <!-- STEP 2 — successful return (?linked=google) -->
+        <div class="state-card">
+          <h3>Step 2 · Back on FuzeFront · <code class="mono">?linked=google</code></h3>
+          <div class="callout callout--info" data-state="linked" data-linked="google">
+            <span class="callout__ico" aria-hidden="true">✓</span>
+            <div class="callout__body">
+              <p class="callout__title">Google connected</p>
+              <p class="callout__text">You can now sign in with Google. It's been added to your ways to sign in.</p>
+              <div class="callout__actions">
+                <a class="btn btn-ghost btn-sm" href="01-connections.html" data-route="/account/security/connections">View connected accounts</a>
+              </div>
+            </div>
+          </div>
+          <div class="method" data-connection="google" data-provider="google" style="margin-top:var(--space-4)">
+            <span class="method__ico" aria-hidden="true">🇬</span>
+            <span class="method__name">Google<small>Just linked</small></span>
+            <span class="badge mf">● Linked</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption"><b>Frame (b)</b> · Connect flow · <code class="mono">/account/security/connections</code></span>
+  <span>
+    <a href="01-connections.html" class="btn btn-ghost">↩ Connections</a>
+    <a href="03-states.html" class="btn btn-primary">States &amp; fail-closed →</a>
+  </span>
+</nav>
+</body>
+</html>

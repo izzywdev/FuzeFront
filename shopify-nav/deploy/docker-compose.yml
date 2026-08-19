@@ -1,0 +1,42 @@
+# Run from the shopify-nav/deploy directory:  docker compose up -d --build
+# Requires a .env file next to this file (copy .env.example).
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SCAN_MODEL: ${SCAN_MODEL:-claude-sonnet-5}
+      # Optional tuning knobs — set in .env to override the server defaults.
+      SCAN_INTERVAL_MS: ${SCAN_INTERVAL_MS:-600000}
+      RATE_PER_MIN: ${RATE_PER_MIN:-30}
+      SCAN_RATE_PER_MIN: ${SCAN_RATE_PER_MIN:-6}
+      GLOBAL_RATE_PER_MIN: ${GLOBAL_RATE_PER_MIN:-300}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    volumes:
+      - app-data:/data
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,171 @@
+{
+  "name": "Personal identity & context switcher — approval frames",
+  "feature": "identity-context-switcher",
+  "description": "Contract-freeze UX artifacts for the reconciled identity/tenancy model: the user identity is the base principal, signup makes a user a member of the root FuzeFront org (the platform tenant), and orgs are opt-in tenants. Operating 'as yourself' is a first-class Personal (non-org) context; the root org shows a MEMBER badge, never GUEST; type='personal' orgs are dropped. Unifies the local <select> in OrganizationPage.tsx and the persisted setActiveOrganization in UserMenu.tsx into one ContextSwitcher. Approving a flow approves its visual + interaction model AND the component/package build inventory before UI implementation. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/context/**",
+      "packages/identity-ui/src/components/organizations/**"
+    ]
+  },
+  "plan": "docs/planning/design-first-ui-pipeline.md",
+  "entry": "index.html",
+  "reconciles": [
+    "frontend/src/pages/OrganizationPage.tsx (local <select> org switch)",
+    "frontend/src/components/UserMenu.tsx (canonical setActiveOrganization)",
+    "frontend/src/lib/shared.tsx (setActiveOrganization / active-org persistence)",
+    "frontend/src/components/WorkspaceProvisioningGate.tsx (provisioning gate state)"
+  ],
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": [
+      "Organization",
+      "OrganizationMembership",
+      "OrganizationListResponse"
+    ],
+    "endpoints": [
+      "GET /api/organizations",
+      "GET /api/organizations/{id}",
+      "POST /api/organizations"
+    ],
+    "commissionedByApproval": [
+      "A Personal (non-org) context as a first-class switcher target — not represented by a type='personal' org row (that type is dropped)",
+      "The root org resolving to user_role='member' so the root GUEST 'you're not a member' state is RETIRED in favour of a MEMBER badge — depends on the fuzefront.identity.root-membership backend slice writing the root membership row",
+      "Active-context selection persisted via setActiveOrganization (client-side), superseding the page-local <select> in OrganizationPage.tsx — no new server endpoint"
+    ],
+    "component": "@fuzefront/identity-ui → ContextSwitcherFlow",
+    "featureFlag": "fuzefront.identity.personal-context"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "context-switch",
+        "orchestrator": "ContextSwitcherFlow",
+        "route": "/",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "my-orgs",
+        "orchestrator": "MyOrganizationsFlow",
+        "route": "/organizations",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "ContextSwitcher",
+      "ContextPill",
+      "PersonalContextHome",
+      "OrgContextBadge",
+      "MembershipRoleBadge",
+      "MyOrganizationsList",
+      "OrgCard",
+      "SubOrgTree",
+      "CreateOrganizationDialog",
+      "ProvisioningGate",
+      "ContextSwitchErrorNotice",
+      "AccessLostNotice"
+    ],
+    "packages": [
+      "@fuzefront/identity-ui"
+    ],
+    "featureFlags": [
+      "fuzefront.identity.root-membership",
+      "fuzefront.identity.personal-context"
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-personal-context",
+      "file": "01-personal-context.html",
+      "label": "(a) Personal context",
+      "route": "/",
+      "flow": "context-switch",
+      "summary": "Operating 'as yourself': the non-org Personal home. Context pill reads 'Personal'; personal-scope app installs (keyed to userId) and a shortcut into your organizations. No tenant nav.",
+      "acceptanceNotes": "The Personal context is NOT backed by a type='personal' org — the identity is the principal. data-context='personal' on the root; the context pill carries data-context-pill and data-context='personal'. Personal app installs render regardless of active org because they key to userId. There is no owner/admin org chrome in this context.",
+      "testHooks": [
+        "[data-frame='01-personal-context']",
+        "[data-context='personal']",
+        "[data-context-pill]",
+        "[data-panel='personal-home']",
+        "[data-context-badge='personal']"
+      ]
+    },
+    {
+      "id": "02-org-context",
+      "file": "02-org-context.html",
+      "label": "(b) Org context — root MEMBER",
+      "route": "/organizations/{id}",
+      "flow": "context-switch",
+      "summary": "Inside the root FuzeFront org. The access badge is MEMBER (never GUEST) because signup wrote a real root membership row. Owner/admin actions do not appear for a member.",
+      "acceptanceNotes": "data-org is the pinned root id 00000000-0000-0000-0000-000000000010. data-role='member' and data-context-badge='member' MUST be present and the string 'GUEST'/'not a member' MUST NOT appear for root. This asserts the retirement of the #529 GUEST state once root-membership is on. Admin-only controls are absent for role=member.",
+      "testHooks": [
+        "[data-frame='02-org-context']",
+        "[data-context='org']",
+        "[data-org='00000000-0000-0000-0000-000000000010']",
+        "[data-role='member']",
+        "[data-context-badge='member']"
+      ]
+    },
+    {
+      "id": "03-switcher",
+      "file": "03-switcher.html",
+      "label": "(c) Context switcher",
+      "route": "/",
+      "flow": "context-switch",
+      "summary": "The unified switcher menu: Personal + your orgs and nested sub-orgs, each with your role pill, an active check on the current context, persisted via setActiveOrganization. Create-org entry at the foot.",
+      "acceptanceNotes": "One menu reconciling OrganizationPage's local <select> and UserMenu's setActiveOrganization — selection persists, it is not page-local. Personal is a menuitemradio with data-switch-target='personal', not an org row. Org rows carry data-switch-target=<orgId> and data-role; sub-orgs render nested (data-switch-target for the child org). The active row has aria-checked='true' and the check glyph. Role pills come from user_role, never hard-coded.",
+      "testHooks": [
+        "[data-frame='03-switcher']",
+        "[data-panel='context-switcher']",
+        "[data-switch-target='personal']",
+        "[data-switch-target='00000000-0000-0000-0000-000000000010']",
+        "[data-role='owner']",
+        "[data-action='create-org']"
+      ]
+    },
+    {
+      "id": "04-my-orgs",
+      "file": "04-my-orgs.html",
+      "label": "(d) My orgs & sub-orgs",
+      "route": "/organizations",
+      "flow": "my-orgs",
+      "summary": "Manage the orgs you own or belong to, each with your role pill and its sub-org tree; create a new org. Direct memberships only — access held through a parent/root org has no row.",
+      "acceptanceNotes": "Rows render from GET /api/organizations (each with user_role). data-list='my-orgs'; each org-card carries data-org and data-role. Sub-orgs render under their parent in data-list='sub-orgs'. The list shows DIRECT active memberships only — inherited (parent/root/reseller ReBAC) access has no card here, by omission. Create-org is POST /api/organizations.",
+      "testHooks": [
+        "[data-frame='04-my-orgs']",
+        "[data-panel='my-orgs']",
+        "[data-list='my-orgs']",
+        "[data-org='org_northwind']",
+        "[data-list='sub-orgs']",
+        "[data-action='create-org']"
+      ]
+    },
+    {
+      "id": "05-states",
+      "file": "05-states.html",
+      "label": "(e) States",
+      "route": "/",
+      "flow": "context-switch",
+      "summary": "Loading skeleton (aria-busy), empty (Personal + root only), provisioning gate, switch error+retry, fail-closed 403-in-place when switching into an org you no longer belong to, and inline create-org validation.",
+      "acceptanceNotes": "e1 loading = aria-busy skeleton for GET /api/organizations. e2 empty is REAL (a fresh user has Personal + root membership and no owned/joined orgs). e3 provisioning gate holds the switcher until user_role resolves — must never flash GUEST/empty mid-provision. e4 error keeps the previous active context and offers retry. e5: losing membership mid-session is a 403 ACCESS_LOST rendered IN PLACE — the row is dropped and the user returns to Personal; NEVER a sign-in redirect (only 401 re-authenticates). e6: create-org NAME_TAKEN renders inline on the field.",
+      "testHooks": [
+        "[data-frame='05-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='provisioning']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='forbidden']",
+        "[data-http='403']",
+        "[data-error-code='ACCESS_LOST']"
+      ]
+    }
+  ],
+  "stamp": "f0ceb3d95d359a1942157f67ef7294733b14cf29942a4e5bbbe1e02cb5c1ab6b"
+}

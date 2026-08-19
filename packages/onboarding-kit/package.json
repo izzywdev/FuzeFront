@@ -1,0 +1,49 @@
+{
+  "name": "@fuzefront/onboarding-kit",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "Drop-in self-registration kit for FuzeFront apps — registration script, manifest schema, policy/billing templates, and the Helm init-container snippet",
+  "files": [
+    "bin",
+    "templates",
+    "helm",
+    "manifest.schema.json",
+    "README.md"
+  ],
+  "bin": {
+    "fuzefront-register": "bin/register.sh",
+    "fuzefront-validate-policy": "bin/validate-policy.mjs",
+    "fuzefront-validate-registration": "bin/validate-registration.mjs",
+    "fuzefront-migrate-slug": "bin/migrate-slug.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/validate-policy.test.mjs && node --test tests/validate-registration.test.mjs && node --test tests/migrate-slug.test.mjs && sh tests/register.test.sh",
+    "test:policy": "node --test tests/validate-policy.test.mjs",
+    "build:schema": "node scripts/build-schema.mjs",
+    "check:schema": "node scripts/build-schema.mjs --check",
+    "lint": "shellcheck bin/register.sh",
+    "test:registration": "node --test tests/validate-registration.test.mjs",
+    "test:migrate": "node --test tests/migrate-slug.test.mjs"
+  },
+  "//devDependencies": "The zero-dependencies rule this kit lives by is about RUNTIME: bin/register.sh and bin/validate-policy.mjs run inside a product's init container, where no npm install is possible, and neither may ever require a module. scripts/build-schema.mjs is a CI/dev generator, is not in `files`, and never ships — so a devDependency here does not violate that rule. Pinned exactly because a generator that silently changes its output across a minor bump is worse than no generator. Do not move this to `dependencies`.",
+  "devDependencies": {
+    "js-yaml": "4.1.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/onboarding-kit"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
+}

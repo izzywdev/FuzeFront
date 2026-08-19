@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzefront-sealed
+  namespace: argocd
+spec:
+  # GitOps-applies the SealedSecrets in deploy/contabo/sealed/ so prod secrets
+  # are reconciled by Argo (not the off-label `argocd-register` kubectl apply),
+  # and survive a from-scratch cluster rebuild. The sealed-secrets CONTROLLER
+  # that decrypts these is FuzeInfra shared infra (their `sealed-secrets` Argo
+  # app, kube-system) — tracked in izzywdev/FuzeInfra#88.
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    path: deploy/contabo/sealed
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fuzefront
+  syncPolicy:
+    automated:
+      prune: false # never auto-prune secrets
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

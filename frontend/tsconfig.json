@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@fuzefront/identity-ui": ["../packages/identity-ui/dist/index.d.ts"],
+      "@fuzefront/auth-ui": ["../packages/auth-ui/dist/index.d.ts"],
+      "@fuzefront/account-security-ui": ["../packages/account-security-ui/src/index.ts"],
+      "@fuzefront/portal-admin-ui": ["../packages/portal-admin-ui/src/index.ts"],
+      "@fuzefront/i18n": ["../packages/i18n/dist/index.d.ts"],
+      "@fuzefront/chat-ui": ["../packages/chat-ui/dist/index.d.ts"],
+      "@fuzefront/chat-client": ["../packages/chat-client/dist/index.d.ts"],
+      "@fuzefront/billing-ui": ["../packages/billing-ui/src/index.ts"],
+      "@fuzefront/billing-client": ["../billing-client/src/index.ts"],
+      "@fuzefront/app-registry-client": ["../apps-client/src/index.ts"],
+      "@fuzefront/security-client": ["../packages/security/src/index.ts"],
+      "@fuzefront/portal-branding-ui": ["../packages/portal-branding-ui/src/index.ts"],
+      "@fuzefront/portal-client": ["../portal-client/src/index.ts"],
+      "@fuzefront/design-system": ["../design-system/index.d.ts"],
+      "@fuzeone/selection-lists-ui": ["../packages/selection-lists-ui/dist/index.d.ts"],
+      "@fuzefront/config-client": ["../config-client/src/index.ts"],
+      "@fuzefront/config-ui": ["../packages/config-ui/src/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

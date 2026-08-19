@@ -1,0 +1,47 @@
+{
+  "name": "@fuzefront/mcp-gateway",
+  "version": "0.1.0",
+  "description": "Generic OpenAPI -> MCP SSE gateway. One image, one pod per product: each pod is configured at runtime with a product's OpenAPI spec and API base URL, exposes every operation as an MCP tool with an explicit `mutates` classification, and forwards the caller's identity upstream so per-user authorization still applies.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "fuze-mcp-gateway": "dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/mcp-gateway"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "author": "FuzeFront Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
+  }
+}

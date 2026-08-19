@@ -1,0 +1,491 @@
+{
+  "name": "Selection Lists — management UI, translation workbench and embeddable picker",
+  "description": "Contract-freeze UX artifacts for FF-EPIC-17 (FFRNT-188). Approving these frames freezes the visual + interaction model AND the build inventory (4 flows, 8 components, 2 packages) for the org-admin management UI, the runtime-i18n translation workbench, per-list ReBAC access control, and the embeddable <SelectionListPicker>, before any feature UI exists. Approval is PER FLOW. Merging an approved flow dispatches UX QA to write ALL-RED Playwright specs against the data-* hooks below, then frontend-engineers implement components -> flow orchestrators -> the @fuzeone/selection-lists-ui package. S9, S10, S11 and S13 are blocked on approval here; gate-frames-first fails any frontend/src/** or packages/*-ui/** PR not covered by an approved flow in this manifest.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/selection-lists-ui/src/**"
+    ]
+  },
+  "plan": "docs/planning/epics/EPIC-17-selection-lists.md",
+  "jira": "FFRNT-188",
+  "epic": "FF-EPIC-17",
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/selection-list-service/openapi.yaml",
+    "client": "@fuzeone/selection-list-client",
+    "schemas": [
+      "components.schemas.SelectionList",
+      "components.schemas.SelectionListCreate",
+      "components.schemas.SelectionListItem",
+      "components.schemas.SelectionListItemCreate",
+      "components.schemas.SelectionListItemReorder",
+      "components.schemas.SelectionListTranslation",
+      "components.schemas.SelectionListItemTranslation",
+      "components.schemas.SelectionListAutofillRequest",
+      "components.schemas.SelectionListAutofillResult",
+      "components.schemas.SelectionListAccessRole",
+      "components.schemas.SelectionListAccessGrant",
+      "components.schemas.SelectionListQuotaStatus",
+      "components.schemas.SelectionListQuotaEntry",
+      "components.schemas.ResolveRequest",
+      "components.schemas.ResolveResponse",
+      "components.schemas.ResolvedSelectionListItem",
+      "components.schemas.Error",
+      "components.schemas.Page"
+    ],
+    "endpoints": [
+      "GET /v1/selection-lists",
+      "POST /v1/selection-lists",
+      "GET /v1/selection-lists/{listId}",
+      "PATCH /v1/selection-lists/{listId}",
+      "DELETE /v1/selection-lists/{listId}",
+      "POST /v1/selection-lists/{listId}/archive",
+      "GET /v1/selection-lists/{listId}/items",
+      "POST /v1/selection-lists/{listId}/items",
+      "PUT /v1/selection-lists/{listId}/items/reorder",
+      "PATCH /v1/selection-lists/{listId}/items/{itemId}",
+      "DELETE /v1/selection-lists/{listId}/items/{itemId}",
+      "POST /v1/selection-lists/{listId}/items/{itemId}/archive",
+      "PUT /v1/selection-lists/{listId}/translations/{locale}",
+      "PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}",
+      "POST /v1/selection-lists/{listId}/translations/{locale}/autofill",
+      "GET /v1/selection-lists/{listId}/access",
+      "PUT /v1/selection-lists/{listId}/access/{userId}",
+      "DELETE /v1/selection-lists/{listId}/access/{userId}",
+      "GET /v1/selection-lists/quota",
+      "POST /v1/resolve"
+    ],
+    "component": "@fuzeone/selection-lists-ui → SelectionListIndex, SelectionListDetail, ValueEditor, TranslationWorkbench, LocaleEditor, AccessPanel, SelectionListPicker, QuotaWarning",
+    "featureFlag": "fuzefront.selection-lists.service"
+  },
+  "frames": [
+    {
+      "id": "01-list-index",
+      "file": "01-list-index.html",
+      "label": "(1a) List index",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "Paginated index of the org's selection lists: name resolved in the viewer's locale (machine-translated names badged M), code slug, active item count, status, owner and last-updated. Status filter + search, cursor 'Load more', and a 'New list' CTA. Loading, empty and error states included.",
+      "acceptanceNotes": "Rows render from GET /v1/selection-lists with the org's lists only. `name` is the locale-resolved name and is never null; a row with is_machine true carries the M badge. Status filter maps to ?status=active|archived|all; 'Load more' sends page.nextCursor and appends. Loading shows skeleton rows with no layout shift on settle; empty shows the create CTA; error shows a retry and asserts nothing was changed. The shell's Selection Lists nav item is active.",
+      "testHooks": [
+        "[data-frame='01-list-index']",
+        "[data-panel='list-index']",
+        "[data-nav='selection-lists'].active",
+        "[data-list='countries']",
+        "[data-status='archived']",
+        "[data-machine='true']",
+        "[data-filter='status']",
+        "[data-action='new-list']",
+        "[data-action='load-more']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "02-new-list",
+      "file": "02-new-list.html",
+      "label": "(1b) New list",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "Create form: display name (source locale), immutable slug key with inline validation, optional description, source-locale picker across all 11 supported locales. Shows the 400 VALIDATION_ERROR field error, plus the 409 duplicate-key, 403 QUOTA_EXCEEDED, 403 FORBIDDEN and in-flight submitting states.",
+      "acceptanceNotes": "POST /v1/selection-lists carries NO id — the service mints sl_… and rejects unknown properties. A key failing ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ shows the field-level error and blocks submit. A duplicate key surfaces the 409 CONFLICT message. 403 QUOTA_EXCEEDED names the scope, current and limit and links to quota. 403 FORBIDDEN disables rather than hides the CTA. While submitting, the submit button and both identity fields are disabled so a double-submit cannot race two keys.",
+      "testHooks": [
+        "[data-frame='02-new-list']",
+        "[data-panel='new-list']",
+        "[data-field='key']",
+        "[data-field='source_locale']",
+        "[data-field-error='key']",
+        "[data-error='VALIDATION_ERROR']",
+        "[data-error='CONFLICT']",
+        "[data-error='QUOTA_EXCEEDED']",
+        "[data-error='FORBIDDEN']",
+        "[data-action='create-list']",
+        "[data-state='submitting']"
+      ]
+    },
+    {
+      "id": "03-list-detail",
+      "file": "03-list-detail.html",
+      "label": "(1c) List detail / value editor",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "List detail with Values / Translations / Access / Audit log tabs and the ordered value table (drag handle, label, immutable code, status, actions). Toolbar for add value, manage translations, manage access. Explains archive-vs-purge. Loading, empty, error and the 404-never-403 not-found state.",
+      "acceptanceNotes": "Values render in sort_order from GET …/items. Code is displayed but never editable here. Archived rows stay visible in the editor (Restore / Delete) while being excluded from every picker. Tabs navigate to translations and access without losing the list context. An unreadable or non-existent list renders the not-found state driven by 404 — asserting the service never answers 403, so the route is not a cross-org existence oracle.",
+      "testHooks": [
+        "[data-frame='03-list-detail']",
+        "[data-panel='value-editor']",
+        "[data-tabs='list-detail']",
+        "[data-tab='translations']",
+        "[data-tab='access']",
+        "[data-item='sli_01h455vb4pex5vsknk084sn02q']",
+        "[data-archived='true']",
+        "[data-drag-handle]",
+        "[data-action='add-value']",
+        "[data-action='archive-value']",
+        "[data-action='purge-value']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-state='not-found']",
+        "[data-error='NOT_FOUND']"
+      ]
+    },
+    {
+      "id": "04-value-modal",
+      "file": "04-value-modal.html",
+      "label": "(1d) Add / edit value",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "Add and edit variants of the value dialog. On add, code is editable; on edit, code is locked and the immutable service-minted id is revealed as the thing consumers persist. Purge is a separate destructive dialog behind typed confirmation with an \"archive instead\" escape. Duplicate-code 409, list_items 403 QUOTA_EXCEEDED and translator-403 states.",
+      "acceptanceNotes": "On add, code is editable and validated against ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$; on edit it is disabled and the immutable sli_… id is displayed as the value consumers persist. Archive is one click; Delete requires typing the code and offers \"archive instead\" first, and states that purged ids stop resolving. A duplicate code surfaces 409 CONFLICT; a full list surfaces 403 QUOTA_EXCEEDED naming list_items. For list-translator, add/archive/delete are disabled with the 403 reason shown, never hidden.",
+      "testHooks": [
+        "[data-frame='04-value-modal']",
+        "[data-modal='add-value']",
+        "[data-modal='edit-value']",
+        "[data-modal='purge-value']",
+        "[data-field='code']",
+        "[data-item-id]",
+        "[data-confirm-input]",
+        "[data-action='save-value']",
+        "[data-action='archive-instead']",
+        "[data-action='confirm-purge']",
+        "[data-error='CONFLICT']",
+        "[data-error='QUOTA_EXCEEDED']",
+        "[data-error='FORBIDDEN']"
+      ]
+    },
+    {
+      "id": "05-reorder",
+      "file": "05-reorder.html",
+      "label": "(1e) Reorder (drag in progress)",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "Drag-in-progress state: the lifted row, the drop-target indicator and the ghost gap it left. Documents the keyboard reorder contract (Space lift, arrows move, Esc cancel) so reorder is not pointer-only. Saving, rollback-on-failure, 400 non-permutation and read-only-role states.",
+      "acceptanceNotes": "The dragged row is visually lifted, the drop position is indicated, and the origin gap is ghosted. Dropping sends PUT …/items/reorder with the FULL permutation of item_ids. The new order is optimistic and further drags are blocked until it settles. On failure the rows are restored to their previous order — no rejected order is left on screen. A 400 VALIDATION_ERROR (not a full permutation, because the list changed mid-drag) reloads the list. Reorder is reachable by keyboard and announced in a live region; for roles without update_value the handles are not rendered.",
+      "testHooks": [
+        "[data-frame='05-reorder']",
+        "[data-reorderable='true']",
+        "[data-dragging='true']",
+        "[data-drop-target='true']",
+        "[data-drag-handle]",
+        "[data-state='saving']",
+        "[data-error='reorder-failed']",
+        "[data-error='VALIDATION_ERROR']",
+        "[data-error='FORBIDDEN']",
+        "[data-note='reorder-a11y']"
+      ]
+    },
+    {
+      "id": "06-quota",
+      "file": "06-quota.html",
+      "label": "(1f) Quota warning & wall",
+      "route": "/settings/selection-lists",
+      "flow": "list-management",
+      "summary": "All four quota scopes with usage meters; per-list scopes correctly show current: null. The >=80% warning banner keeps the action available; the at-limit banner pairs with a disabled CTA and a tooltip naming the scope, current and limit. Loading state, and a deliberate fail-OPEN when the advisory quota call itself fails.",
+      "acceptanceNotes": "GET /v1/selection-lists/quota returns exactly four scopes; org_lists and user_lists show current/limit meters while list_items and list_locales show the limit and current: null. At >=80% the warning banner appears and the action stays enabled. At the ceiling the CTA is disabled with aria-disabled and a tooltip naming scope, current and limit. If the quota call itself fails the meters hide and the CTA stays ENABLED — the server remains the authority and refuses with 403 QUOTA_EXCEEDED, so a failed advisory call must never lock out users nowhere near a limit.",
+      "testHooks": [
+        "[data-frame='06-quota']",
+        "[data-panel='quota']",
+        "[data-banner='quota-near']",
+        "[data-banner='quota-at']",
+        "[data-quota-scope='org_lists']",
+        "[data-quota-scope='user_lists']",
+        "[data-quota-scope='list_items']",
+        "[data-quota-scope='list_locales']",
+        "[data-quota-state='at-limit']",
+        "[data-tooltip='quota']",
+        "[data-action='new-list'][disabled]",
+        "[data-state='loading']",
+        "[data-state='error']"
+      ]
+    },
+    {
+      "id": "07-locale-index",
+      "file": "07-locale-index.html",
+      "label": "(2a) Translation index",
+      "route": "/settings/selection-lists/:listId/translations",
+      "flow": "translation-workbench",
+      "summary": "Grid of all 11 locales with per-locale completion, the source locale marked, machine-translated counts badged M, stale (source-changed) counts, and RTL locales flagged. Untranslated locales offer \"Start translation\" and \"Autofill with AI\". Explains that 0% means fallback-to-source, never a blank picker. Loading, empty, error and list_locales quota states.",
+      "acceptanceNotes": "Each of the 11 locales shows translated/total and a percentage; the source locale is marked and not editable as a translation. Locales with machine strings show the M count; locales with source_hash mismatches show a stale count. Untranslated locales offer Start translation and Autofill. Copy states explicitly that an untranslated locale falls back to the source locale and never renders blank. When list_locales is exhausted, both CTAs on untranslated locales are disabled with the 403 reason.",
+      "testHooks": [
+        "[data-frame='07-locale-index']",
+        "[data-panel='translation-index']",
+        "[data-locale='en'][data-source='true']",
+        "[data-locale='fr']",
+        "[data-locale='ar']",
+        "[data-locale='he']",
+        "[data-untranslated='true']",
+        "[data-machine='true']",
+        "[data-stale='true']",
+        "[data-action='start-translation']",
+        "[data-action='autofill']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-error='QUOTA_EXCEEDED']",
+        "[data-note='fallback']"
+      ]
+    },
+    {
+      "id": "08-locale-editor",
+      "file": "08-locale-editor.html",
+      "label": "(2b) Locale editor",
+      "route": "/settings/selection-lists/:listId/translations",
+      "flow": "translation-workbench",
+      "summary": "Two-column source/translation editor with a completion meter, per-row save and save-all. Machine rows badged M with a \"mark reviewed\" action; human rows marked as never-overwritten; a source_hash mismatch raises an inline \"Source changed\" warning; a missing translation explains fallback. Includes the RTL variant for ar and he where only the target column flips. Loading, empty, save-failure and read-only-role states.",
+      "acceptanceNotes": "Left column is the read-only source text; right column is the editable translation. Rows with is_machine true carry the M badge and a mark-reviewed action; human rows are marked as never overwritten by autofill. A row whose source_hash no longer matches shows the \"Source changed\" warning and offers save or keep-as-is. An empty translation input explains fallback rather than implying data loss. For ar and he the TARGET cell carries dir=\"rtl\" (right-aligned label and input) while the source cell stays dir=\"ltr\" — mirroring the whole page would misrender English source text. A failed save keeps the user's typed edit and marks the row unsaved. Without the translate action all inputs are disabled.",
+      "testHooks": [
+        "[data-frame='08-locale-editor']",
+        "[data-panel='locale-editor']",
+        "[data-progress='fr']",
+        "[data-translation-input='item']",
+        "[data-machine='true']",
+        "[data-machine='false']",
+        "[data-stale='true']",
+        "[data-warning='source-changed']",
+        "[data-missing='true']",
+        "[data-rtl='true']",
+        "[dir='rtl'][data-locale='ar']",
+        "[dir='rtl'][data-locale='he']",
+        "[data-action='save-row']",
+        "[data-action='save-all']",
+        "[data-error='save-failed']",
+        "[data-error='FORBIDDEN']",
+        "[data-state='empty']"
+      ]
+    },
+    {
+      "id": "09-autofill-modal",
+      "file": "09-autofill-modal.html",
+      "label": "(2c) Autofill confirmation",
+      "route": "/settings/selection-lists/:listId/translations",
+      "flow": "translation-workbench",
+      "summary": "Confirmation before machine translation: states the missing-string count and the source locale, and guarantees human-reviewed strings are never overwritten (enforced service-side, not by the checkbox). Optional overwrite-existing-machine toggle, default off. Running, success (translated/skipped counts from SelectionListAutofillResult), partial-failure, 403 and nothing-to-do states.",
+      "acceptanceNotes": "The dialog states the exact missing-string count and the source locale before running. It guarantees is_machine:false rows are never overwritten and attributes that guarantee to the service, not the checkbox. overwrite_machine defaults to false. While running both buttons are disabled and progress is determinate, not an indefinite spinner. On completion the result reports items_translated, items_skipped and list_translated, and every new row is badged M. A partial failure keeps what was written and offers retry-remaining — the run is not all-or-nothing. Without the translate action the CTA is disabled with the 403 reason.",
+      "testHooks": [
+        "[data-frame='09-autofill-modal']",
+        "[data-modal='autofill']",
+        "[data-autofill-count='60']",
+        "[data-source-locale='en']",
+        "[data-field='overwrite_machine']",
+        "[data-action='confirm-autofill']",
+        "[data-state='running']",
+        "[data-result='autofill']",
+        "[data-items-skipped='1']",
+        "[data-error='autofill-failed']",
+        "[data-error='FORBIDDEN']",
+        "[data-state='nothing-to-do']"
+      ]
+    },
+    {
+      "id": "10-access-panel",
+      "file": "10-access-panel.html",
+      "label": "(3a) Access panel",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "access-control",
+      "summary": "Per-list grants table (user, role select, granted by, granted at, remove) plus the role capability matrix. Carries the flow's fail-closed case: demoting or revoking the sole list-owner returns 409 CONFLICT inline on that row, with the select snapping back — the client never guesses who the last owner is. Loading, empty, error and manage_access-403 read-only states.",
+      "acceptanceNotes": "Grants render from GET …/access with role, granted_by and granted_at. Changing a role sends PUT …/access/{userId}; removing sends DELETE. Demoting or revoking the SOLE list-owner returns 409 CONFLICT: the error renders inline on that row, the role select reverts to list-owner and Remove is re-enabled. The control is NOT pre-emptively disabled — the server is the authority on last-ownership and a client-side guess races concurrent changes. The role matrix asserts list-translator can translate but cannot add/update/remove values. Without manage_access the table is visible but read-only, so governance stays legible.",
+      "testHooks": [
+        "[data-frame='10-access-panel']",
+        "[data-panel='access']",
+        "[data-panel='role-matrix']",
+        "[data-grant='usr_01h455vb4pex5vsknk084sn02q']",
+        "[data-sole-owner='true']",
+        "[data-role-select]",
+        "[data-role='list-translator']",
+        "[data-action='revoke-access']",
+        "[data-action='add-access']",
+        "[data-case='last-owner']",
+        "[data-error='CONFLICT']",
+        "[data-error='FORBIDDEN']",
+        "[data-state='empty']",
+        "[data-state='error']"
+      ]
+    },
+    {
+      "id": "11-add-access-modal",
+      "file": "11-add-access-modal.html",
+      "label": "(3b) Add access",
+      "route": "/settings/selection-lists/:listId/access",
+      "flow": "access-control",
+      "summary": "Member search scoped to the organization (cross-org grants are impossible), with already-granted users marked, and a role select whose options carry plain-language capability descriptions. Roles do not stack — choosing one replaces any existing role. Search loading, no-matches, 404 left-the-org, 403 and success states.",
+      "acceptanceNotes": "Search returns only members of the caller's organization; a user already holding a role is shown marked and not addable twice. The role select replaces any existing role — roles never stack. Confirm sends PUT …/access/{userId} with { role }. Search shows loading and no-matches states; a user who left the org mid-dialog surfaces 404 NOT_FOUND and is dropped from results; without manage_access the confirm is disabled with the 403 reason. On success the dialog closes and the new grant appears with the actor recorded as granted_by.",
+      "testHooks": [
+        "[data-frame='11-add-access-modal']",
+        "[data-modal='add-access']",
+        "[data-user-search]",
+        "[data-user-results]",
+        "[data-user='usr_05h455vb4pex5vsknk084sn02q']",
+        "[data-already-granted='true']",
+        "[data-role-select]",
+        "[data-action='confirm-add-access']",
+        "[data-panel='user-search'][data-state='loading']",
+        "[data-panel='user-search'][data-state='empty']",
+        "[data-error='NOT_FOUND']",
+        "[data-error='FORBIDDEN']"
+      ]
+    },
+    {
+      "id": "12-picker-single",
+      "file": "12-picker-single.html",
+      "label": "(4a) Picker — single select",
+      "route": "/embed/selection-list-picker",
+      "flow": "picker",
+      "summary": "The embeddable picker in a consuming product's own form (deliberately NOT the FuzeFront shell). Combobox bound by list key, showing active values in authored sort_order with locale-resolved labels and a filter. The persisted-value inspector shows the form submits the item id, never the label or code. Loading, empty (no active values), error-with-retry and 404 states.",
+      "acceptanceNotes": "Rendered inside a host form, NOT the FuzeFront shell. Options come from the list addressed by `key`, filtered to status=active and ordered by sort_order — never alphabetized and never ordered by id. The host form submits the item id only. Loading renders a skeleton inside the control at final height so the surrounding form does not reflow. A list with no active values disables the control with \"No options available\" rather than opening an empty menu. A load failure shows an in-place retry, keeps any existing selection, and must not throw into the host render tree. An unknown/unreadable key renders the 404 state.",
+      "testHooks": [
+        "[data-frame='12-picker-single']",
+        "[data-panel='picker']",
+        "[data-mode='single']",
+        "[data-picker='sales-regions']",
+        "[data-combo-control]",
+        "[data-combo-menu]",
+        "[data-combo-search]",
+        "[data-selected-label]",
+        "[data-item='sli_12h455vb4pex5vsknk084sn02q']",
+        "[data-persisted]",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-state='not-found']",
+        "[data-error='NOT_FOUND']",
+        "[data-note='embeddable']"
+      ]
+    },
+    {
+      "id": "13-picker-multi",
+      "file": "13-picker-multi.html",
+      "label": "(4b) Picker — multi select",
+      "route": "/embed/selection-list-picker",
+      "flow": "picker",
+      "summary": "Multi-select variant: selections as removable chips with clear-all, submitted as an array of ids ordered by sort_order rather than click order. No-selection placeholder, no-matches filter state that keeps existing chips, and a host-imposed max distinct from a service quota.",
+      "acceptanceNotes": "Selections render as individually removable chips with a clear-all that is absent when nothing is selected. The submitted array is ordered by the list's sort_order, not click order, so two users choosing the same set submit identical arrays. Filtering to no matches shows an explanatory state and preserves existing chips. A host-supplied max disables further options with a message that distinguishes it from a service quota. Large lists filter and virtualize rather than rendering every option into the host page.",
+      "testHooks": [
+        "[data-frame='13-picker-multi']",
+        "[data-mode='multi']",
+        "[data-picker='countries']",
+        "[data-chips]",
+        "[data-chip='sli_01h455vb4pex5vsknk084sn02q']",
+        "[data-action='clear-all']",
+        "[data-combo-search]",
+        "[data-state='empty-selection']",
+        "[data-state='no-matches']",
+        "[data-state='max-reached']",
+        "[data-error='max-selected']",
+        "[data-persisted]"
+      ]
+    },
+    {
+      "id": "14-picker-archived",
+      "file": "14-picker-archived.html",
+      "label": "(4c) Picker — archived value",
+      "route": "/embed/selection-list-picker",
+      "flow": "picker",
+      "summary": "The archive payoff: a stored id whose item is now archived still resolves and renders its real label, greyed with an \"(archived)\" badge — it does not vanish and the field does not silently blank. It is absent from the menu, so it can be read but not newly chosen. Contrasted with a purged id landing in `missing` as \"Unknown value\", and a locale-resolution matrix showing one id rendering in en/fr/ar plus ja falling back to source.",
+      "acceptanceNotes": "A stored id whose item is archived resolves via POST /v1/resolve to { label, locale, is_machine, status:\"archived\" } and renders its real label greyed with an archived badge — it never disappears and the field never silently blanks. The same value is ABSENT from the option menu, so it can be read but not newly selected. A purged id comes back in `missing` and renders \"Unknown value\" while keeping the id in the form, so re-saving does not silently drop data the user never chose to change. The resolution matrix asserts one id renders per viewer locale, with ja falling back to the source locale rather than an empty string.",
+      "testHooks": [
+        "[data-frame='14-picker-archived']",
+        "[data-state='archived-selected']",
+        "[data-selected-label][data-archived='true']",
+        "[data-status='archived']",
+        "[data-state='archived-not-offered']",
+        "[data-note='archived-not-offerable']",
+        "[data-state='missing']",
+        "[data-missing='true']",
+        "[data-error='missing']",
+        "[data-panel='resolve-matrix']",
+        "[data-locale='ja']",
+        "[data-persisted]"
+      ]
+    }
+  ],
+  "build": {
+    "flows": [
+      {
+        "id": "list-management",
+        "orchestrator": "SelectionListManagementFlow",
+        "route": "/settings/selection-lists",
+        "story": "S9 (FFRNT-195)",
+        "frames": [
+          "01-list-index",
+          "02-new-list",
+          "03-list-detail",
+          "04-value-modal",
+          "05-reorder",
+          "06-quota"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:10:06.026Z"
+      },
+      {
+        "id": "translation-workbench",
+        "orchestrator": "TranslationWorkbenchFlow",
+        "route": "/settings/selection-lists/:listId/translations",
+        "story": "S10 (FFRNT-196)",
+        "frames": [
+          "07-locale-index",
+          "08-locale-editor",
+          "09-autofill-modal"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:11:53.121Z"
+      },
+      {
+        "id": "access-control",
+        "orchestrator": "SelectionListAccessFlow",
+        "route": "/settings/selection-lists/:listId/access",
+        "story": "S7 + S9",
+        "frames": [
+          "10-access-panel",
+          "11-add-access-modal"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:11:38.689Z"
+      },
+      {
+        "id": "picker",
+        "orchestrator": "SelectionListPicker",
+        "route": "/embed/selection-list-picker",
+        "story": "S11 (FFRNT-197)",
+        "routeNote": "SelectionListPicker is an EMBEDDABLE component, not a routed page — it mounts inside a consuming product's own form. The route recorded here is the demo/e2e harness route the frames and Playwright specs drive it at; the shipped component is imported, not navigated to.",
+        "frames": [
+          "12-picker-single",
+          "13-picker-multi",
+          "14-picker-archived"
+        ],
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-18T12:12:59.463Z"
+      }
+    ],
+    "components": [
+      "SelectionListIndex",
+      "SelectionListDetail",
+      "ValueEditor",
+      "TranslationWorkbench",
+      "LocaleEditor",
+      "AccessPanel",
+      "SelectionListPicker",
+      "QuotaWarning"
+    ],
+    "packages": [
+      "@fuzeone/selection-list-client",
+      "@fuzeone/selection-lists-ui"
+    ],
+    "packagesNote": "Scope is @fuzeone/* by owner decision recorded in docs/planning/epics/EPIC-17-selection-lists.md (GitHub Packages requires the npm scope to equal the owning org, and the org is `fuzeone`). This deliberately does NOT match the ^@fuzefront/ pattern in design/frames/_template/manifest.schema.json, which predates that decision and is documentation only — no CI gate validates manifests against it. Flagged on the frames PR so the schema can be widened rather than the packages silently renamed.",
+    "designSystemAdditions": [
+      "Combobox / Listbox — single and multi select, typeahead filtering, full keyboard + ARIA. Used by SelectionListPicker.",
+      "SortableList — pointer AND keyboard reorder (Space lift, arrows move, Esc cancel) with live-region announcements. Used by ValueEditor.",
+      "Meter — bounded progress/usage bar with semantic ok/warn/full states. Used by QuotaWarning and TranslationWorkbench.",
+      "Tooltip — accessible popover that explains a disabled control. Used by the quota wall and permission-blocked CTAs.",
+      "Chip / TokenInput — removable selection tokens with clear-all. Used by the multi-select picker.",
+      "Skeleton — reduced-motion-aware loading placeholder at final content height. Used by every loading state."
+    ],
+    "designSystemAdditionsNote": "Composed locally in frame.css for the frames ONLY. frontend-engineer is the sole editor of design-system/ and adds these as a foundation PR before or alongside the feature UI — they must not be re-implemented as one-offs in feature code. product-designer specifies the primitives; it does not write them."
+  },
+  "stamp": "f4b4fadd27d792851f8c9e4169e2acdafd7cc5cd43042212839a06d5d930e388"
+}

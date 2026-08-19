@@ -1,0 +1,64 @@
+{
+  "name": "@fuzefront/design-system",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./tokens/*": "./tokens/*",
+    "./styles.css": "./styles.css"
+  },
+  "files": [
+    "components",
+    "tokens",
+    "index.js",
+    "index.d.ts",
+    "styles.css",
+    "_ds_manifest.json"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.5.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/izzywdev/FuzeFront.git",
+    "directory": "design-system"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
+}

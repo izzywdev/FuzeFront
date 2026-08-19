@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Two-factor overview — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 760px; }
+  .panel { background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); overflow: hidden; margin-bottom: var(--space-6); }
+  .panel__seam { height: 2px; background: var(--seam); }
+  .panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-5) var(--space-5) var(--space-3); }
+  .panel__title { margin: 0; font-family: var(--font-display); font-size: var(--text-lg);
+    font-weight: var(--weight-semibold); }
+  .panel__hint { color: var(--text-tertiary); font-size: var(--text-sm); }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+  .factor { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center;
+    padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color); }
+  .factor__ico { width: 38px; height: 38px; border-radius: var(--radius-md); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); font-size: var(--text-lg); }
+  .factor__main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+  .factor__name { font-weight: var(--weight-medium); color: var(--text-primary); }
+  .factor__sub { color: var(--text-secondary); font-size: var(--text-sm); }
+  .factor__actions { display: flex; gap: var(--space-2); }
+  .link-danger { background: transparent; border: 1px solid var(--border-color); color: var(--error-color);
+    font-family: var(--font-sans); font-size: var(--text-sm); border-radius: var(--radius-md);
+    padding: var(--space-1) var(--space-3); cursor: pointer; }
+  .link-danger:hover { border-color: var(--error-color); }
+  .add-menu { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color);
+    display: flex; flex-direction: column; gap: var(--space-3); }
+  .add-row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4); align-items: center;
+    padding: var(--space-3) var(--space-4); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: var(--bg-secondary); }
+  .add-row.is-disabled { opacity: 0.7; }
+  .add-row__ico { width: 32px; height: 32px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--bg-quaternary); color: var(--text-secondary); }
+  .add-row__txt small { display: block; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .unavail { color: var(--warning-color); font-size: var(--text-2xs); font-family: var(--font-mono);
+    border: 1px solid rgba(245,185,80,0.4); border-radius: var(--radius-pill); padding: 2px var(--space-2);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .skel-row { display: grid; grid-template-columns: 38px 1fr 80px; gap: var(--space-4); align-items: center;
+    padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color); }
+  .ffb-skel { height: 14px; border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: ffbsh 1.3s ease-in-out infinite; }
+  .ffb-skel.sq { height: 38px; width: 38px; border-radius: var(--radius-md); }
+  @keyframes ffbsh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .ffb-skel{ animation: none; } }
+  .msg { padding: var(--space-8) var(--space-5); text-align: center; color: var(--text-secondary); }
+  .msg h4 { margin: 0 0 var(--space-2); color: var(--text-primary); font-family: var(--font-display); }
+  .msg p { margin: 0 auto var(--space-4); max-width: 46ch; font-size: var(--text-sm); }
+  .banner { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4) var(--space-5);
+    background: var(--warning-soft); border-top: 1px solid rgba(245,185,80,0.3); color: var(--text-secondary);
+    font-size: var(--text-sm); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="01-mfa-overview" data-route="/account/security/mfa">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item active" href="#"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Two-factor authentication</h1>
+      <p class="page-sub">Add a second step to sign-in so a stolen password isn't enough. We'll ask for it
+        when you sign in on a new device.</p>
+
+      <!-- ═══ Populated ═══ -->
+      <div class="panel" data-panel="mfa-overview" data-state="loaded">
+        <div class="panel__seam"></div>
+        <div class="panel__head">
+          <h2 class="panel__title">Your methods</h2>
+          <span class="panel__hint">2 active</span>
+        </div>
+        <div class="factor" data-factor="totp" data-status="active">
+          <div class="factor__ico" aria-hidden="true">🔑</div>
+          <div class="factor__main">
+            <span class="factor__name">Authenticator app</span>
+            <span class="factor__sub">Added 12 Jun 2026 · 6-digit codes</span>
+          </div>
+          <div class="factor__actions">
+            <button class="link-danger" data-action="remove-factor" data-factor-id="fct_totp_1">Remove</button>
+          </div>
+        </div>
+        <div class="factor" data-factor="sms" data-status="active">
+          <div class="factor__ico" aria-hidden="true">💬</div>
+          <div class="factor__main">
+            <span class="factor__name">Text message</span>
+            <span class="factor__sub">Sent to •••• •• 4471</span>
+          </div>
+          <div class="factor__actions">
+            <button class="link-danger" data-action="remove-factor" data-factor-id="fct_sms_1">Remove</button>
+          </div>
+        </div>
+
+        <div class="add-menu" data-component="add-factor-menu">
+          <div class="panel__hint" style="color:var(--text-tertiary)">Add another method</div>
+          <a class="add-row" href="02-totp-enroll.html" data-add="totp" data-available="true">
+            <span class="add-row__ico" aria-hidden="true">🔑</span>
+            <span class="add-row__txt">Authenticator app
+              <small>Codes from an app on your phone — works offline. Recommended.</small></span>
+            <span class="btn btn-ghost" aria-hidden="true">Set up</span>
+          </a>
+          <!-- Honest degrade: SMS offered ONLY when methods.mfa.types includes 'sms' -->
+          <a class="add-row" href="03-sms-enroll.html" data-add="sms" data-available="true">
+            <span class="add-row__ico" aria-hidden="true">💬</span>
+            <span class="add-row__txt">Text message
+              <small>A code sent to your phone by text.</small></span>
+            <span class="btn btn-ghost" aria-hidden="true">Set up</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="recovery-status">
+        <div class="panel__head">
+          <h2 class="panel__title">Recovery codes</h2>
+          <span class="panel__hint">8 of 10 unused</span>
+        </div>
+        <div class="banner">
+          <span aria-hidden="true">🗝️</span>
+          <span>One-time codes to get in if you lose your phone. Keep them somewhere safe —
+            <a href="04-recovery-codes.html" data-action="view-recovery">view or regenerate</a>.</span>
+        </div>
+      </div>
+
+      <!-- ═══ Empty (no MFA yet) ═══ -->
+      <div class="state-label">State · no methods yet (empty)</div>
+      <div class="panel" data-panel="mfa-overview" data-state="empty">
+        <div class="panel__seam"></div>
+        <div class="msg">
+          <h4>Two-factor isn't on yet</h4>
+          <p>Turn it on to protect your account. An authenticator app is the quickest and works without signal.</p>
+          <a class="btn btn-primary" href="02-totp-enroll.html" data-action="enroll-first" style="text-decoration:none">Set up authenticator</a>
+        </div>
+      </div>
+
+      <!-- ═══ Loading ═══ -->
+      <div class="state-label">State · loading</div>
+      <div class="panel" data-panel="mfa-overview" data-state="loading" aria-busy="true">
+        <div class="panel__seam"></div>
+        <div class="skel-row"><span class="ffb-skel sq"></span><span class="ffb-skel" style="width:60%"></span><span class="ffb-skel" style="width:64px"></span></div>
+        <div class="skel-row"><span class="ffb-skel sq"></span><span class="ffb-skel" style="width:45%"></span><span class="ffb-skel" style="width:64px"></span></div>
+      </div>
+
+      <!-- ═══ Error ═══ -->
+      <div class="state-label">State · couldn't load</div>
+      <div class="panel" data-panel="mfa-overview" data-state="error">
+        <div class="panel__seam"></div>
+        <div class="msg">
+          <h4>We couldn't load your methods</h4>
+          <p>Something went wrong on our end. Your methods are unchanged.</p>
+          <button class="btn btn-ghost" data-action="retry">Try again</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>01 / 06</b> · Two-factor overview · <b>/account/security/mfa</b></span>
+    <span><a class="btn btn-ghost" href="index.html">All frames</a> <a class="btn btn-primary" href="02-totp-enroll.html" style="text-decoration:none">Next: add authenticator →</a></span>
+  </div>
+</div>
+</body>
+</html>

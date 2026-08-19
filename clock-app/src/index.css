@@ -1,0 +1,67 @@
+/* Clock remote styling — uses the @fuzefront/design-system "fuse seam" tokens
+   (CSS custom properties). When mounted in the host shell the host provides the
+   token values; the fallbacks keep it legible when opened standalone before the
+   DS stylesheet loads. No raw one-off hex/spacing/type in feature code. */
+.fuzeclock {
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  padding: var(--space-8, 32px);
+  text-align: center;
+  color: var(--text-primary, #e7ebf2);
+}
+.fuzeclock h2 {
+  margin: 0 0 var(--space-2, 8px);
+  font-family: var(--font-display, "Space Grotesk", Inter, sans-serif);
+  font-weight: var(--weight-semibold, 600);
+}
+.fuzeclock .time {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: var(--text-2xl, 26px);
+  font-weight: var(--weight-semibold, 600);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text-primary, #e7ebf2);
+}
+.fuzeclock .date {
+  color: var(--text-secondary, #aab3c2);
+  margin-bottom: var(--space-4, 16px);
+}
+.fuzeclock .note {
+  max-width: 46ch;
+  margin: var(--space-4, 16px) auto;
+  color: var(--text-tertiary, #6b7585);
+  font-size: var(--text-sm, 13px);
+  line-height: 1.4;
+}
+.fuzeclock .note code {
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  background: var(--bg-quaternary, #1b2230);
+  color: var(--accent-2, #29d3e6);
+  padding: 0 var(--space-1, 4px);
+  border-radius: var(--radius-sm, 6px);
+}
+.fuzeclock .ctx {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto var(--space-4, 16px);
+  color: var(--text-secondary, #aab3c2);
+  font-size: var(--text-sm, 13px);
+  display: inline-block;
+  text-align: left;
+}
+.fuzeclock .ctx li {
+  margin: var(--space-1, 4px) 0;
+}
+.fuzeclock .btn {
+  background: var(--accent-color, #6e5cff);
+  color: #0b0e15;
+  border: none;
+  border-radius: var(--radius-md, 10px);
+  padding: var(--space-2, 8px) var(--space-4, 16px);
+  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-size: var(--text-md, 14px);
+  font-weight: var(--weight-medium, 500);
+  cursor: pointer;
+}
+.fuzeclock .btn:hover {
+  background: var(--accent-hover, #5a48e6);
+}

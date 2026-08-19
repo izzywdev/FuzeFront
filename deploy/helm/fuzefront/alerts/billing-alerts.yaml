@@ -1,0 +1,72 @@
+# Prometheus alert rules for the FuzeFront billing-service (Stripe). Shipped as a
+# ConfigMap labeled prometheus_rule: "1" (glob alerts/*.yaml in observability.yaml)
+# so the FuzeInfra Prometheus discovers + loads it. Plain rule-group file (NOT a
+# PrometheusRule CRD) — FuzeInfra runs vanilla Prometheus.
+#
+# These are billing-DOMAIN signals on top of the generic fuzefront.* alerts
+# (crash-loop / not-ready / 5xx / latency / target-down already cover the billing
+# pod since its service label matches fuzefront.*). The metric names below are the
+# expected billing-service emissions (prom-client) — they stay inert until the
+# service exposes them, so shipping them early is harmless. If the implemented
+# metric names differ, reconcile here (devops owns the alert wiring; backend owns
+# the metric names — names to confirm at integration).
+groups:
+  - name: fuzefront.billing.rules
+    rules:
+      # Stripe webhook processing failures — billing correctness signal. A spike
+      # means subscription/usage state may diverge from Stripe.
+      - alert: BillingStripeWebhookFailures
+        expr: |
+          increase(billing_stripe_webhook_failed_total{namespace="fuzefront"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: fuzefront
+          service: fuzefront-billing-service
+        annotations:
+          summary: "billing-service is failing to process Stripe webhooks"
+          description: "billing_stripe_webhook_failed_total increased over the last 10m — subscription/usage state may drift from Stripe."
+
+      # Stripe API call errors (charges, subscriptions, customer/portal). Elevated
+      # error ratio degrades checkout/billing UX.
+      - alert: BillingStripeApiErrorRate
+        expr: |
+          100 * sum(rate(billing_stripe_api_errors_total{namespace="fuzefront"}[5m]))
+          / clamp_min(sum(rate(billing_stripe_api_requests_total{namespace="fuzefront"}[5m])), 1) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-billing-service
+        annotations:
+          summary: "Elevated Stripe API error rate from billing-service"
+          description: ">5% of Stripe API calls from billing-service are erroring over 10m."
+
+      # Usage-meter flush lag: metered/usage events not flushed to Stripe means
+      # under-billing. Alerts if the last successful flush is too old relative to
+      # the configured BILLING_METER_FLUSH_INTERVAL_SEC (default 60s).
+      - alert: BillingMeterFlushStalled
+        expr: |
+          time() - billing_meter_last_flush_timestamp_seconds{namespace="fuzefront"} > 600
+        for: 5m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-billing-service
+        annotations:
+          summary: "billing-service usage-meter flush stalled"
+          description: "No successful usage-meter flush to Stripe in >10m — metered usage may be unbilled."
+
+      # Billing Kafka consumer DLQ growth (billing.usage.recorded.dlq /
+      # billing events). Messages landing in the DLQ = unprocessed billing events.
+      - alert: BillingKafkaDLQGrowing
+        expr: |
+          increase(billing_kafka_dlq_messages_total{namespace="fuzefront"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: fuzefront
+          service: fuzefront-billing-service
+        annotations:
+          summary: "billing-service is routing events to the DLQ"
+          description: "billing_kafka_dlq_messages_total increased over 15m — billing events are failing processing."

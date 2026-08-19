@@ -1,0 +1,1436 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Billing Service API
+  version: 1.3.0
+  description: >-
+    REST API for the FuzeFront billing-service. Bridges platform entities
+    (users / organizations, referenced by `(entityType, entityId)` only) to
+    payment-provider customers, subscriptions, payment-method setup, usage metering, and
+    manual credits.
+
+    This contract is **derived from the real route handlers** in
+    `services/billing-service/src/routes/*` and `src/app.ts` and is the single
+    source of truth for `@fuzefront/billing-client`. Changing the API means
+    amending this file first (see the `api-contract-first` skill).
+
+    Card data never flows through this API — only provider ids and client secrets.
+
+    ### Async surface (events)
+    Beyond HTTP, the service emits Kafka events whose Zod schemas live in
+    `shared/src/kafka/schemas/`:
+      * `billing.subscription.changed` — `billingSubscriptionChangedSchemaV1`
+      * `billing.usage.recorded`       — `billingUsageRecordedSchemaV1`
+      * `billing.payment.completed`    — `billingPaymentCompletedSchemaV1`
+        (one-time payment-mode checkout outcome: paid / failed / expired)
+      * `billing.trial.ending`  / `billing.payment.failed` (raw notify envelopes)
+    Consumers (e.g. the backend plan-state projection) read
+    `billing.subscription.changed` rather than reading the billing DB directly.
+    Consumer products fulfilling one-time orders (e.g. `mendys-datasets`) read
+    `billing.payment.completed` and reconcile via
+    `GET /payments/sessions/{sessionId}`.
+  license:
+    name: UNLICENSED
+servers:
+  - url: '{baseUrl}/api/v1/billing'
+    description: billing-service, mounted under /api/v1/billing
+    variables:
+      baseUrl:
+        default: http://fuzefront-billing-service:3006
+        description: Cluster-internal base URL of the billing-service.
+
+tags:
+  - name: plans
+    description: Public plan catalogue (read cache of the provider product/price catalogue).
+  - name: subscriptions
+    description: Subscription lifecycle against the provider + local mirror.
+  - name: payment-methods
+    description: SetupIntent creation for collecting a payment method without an immediate charge.
+  - name: checkout
+    description: Hosted Checkout Session creation (subscription mode).
+  - name: payments
+    description: >-
+      Hosted Checkout Session creation in ONE-TIME `payment` mode for
+      consumer products (allowlisted `productKey`s), plus the local payment
+      mirror used for reconciliation polling.
+  - name: credits
+    description: Admin-only manual customer balance adjustments.
+  - name: invoices
+    description: Read-only invoice history for the authorized entity (provider-backed).
+  - name: portal
+    description: Customer Portal session creation (manage subscription / payment methods).
+  - name: webhooks
+    description: Payment-provider webhook receiver (public, provider-signature verified).
+  - name: health
+    description: Liveness / readiness.
+
+paths:
+  /plans:
+    get:
+      operationId: getPlans
+      tags: [plans]
+      summary: List active plans
+      description: >-
+        Public, cached list of active plans. No auth. Mirrors
+        `createPlansRouter` -> `GET /plans`.
+      security: []
+      responses:
+        '200':
+          description: The active plan catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [plans]
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plan'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /subscriptions:
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Create or upgrade a subscription
+      description: >-
+        Creates a provider subscription for the entity (creating the provider
+        customer if needed) and mirrors it locally. Returns a `clientSecret`
+        when the provider needs SCA/3DS confirmation on the client. Mirrors
+        `POST /subscriptions`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created (may require client-side action).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /subscriptions/{subscriptionId}:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    get:
+      operationId: getSubscription
+      tags: [subscriptions]
+      summary: Get the local mirror of a subscription
+      description: >-
+        Returns the locally-mirrored subscription by provider subscription id, or
+        404 if no mirror exists. Mirrors `GET /subscriptions/:id`.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The locally-mirrored subscription.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateSubscription
+      tags: [subscriptions]
+      summary: Change plan or seat quantity
+      description: >-
+        Upgrades prorate immediately (`create_prorations`); downgrades take
+        effect at period end (`none`). Mirrors `PATCH /subscriptions/:id`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubscriptionRequest'
+      responses:
+        '200':
+          description: The updated subscription mirror.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+    delete:
+      operationId: cancelSubscription
+      tags: [subscriptions]
+      summary: Cancel at period end (soft cancel)
+      description: >-
+        Sets `cancel_at_period_end=true`; the provider keeps the subscription active
+        until the period boundary. Mirrors `DELETE /subscriptions/:id`.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The subscription mirror with cancellation scheduled.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /setup-intent:
+    post:
+      operationId: createSetupIntent
+      tags: [payment-methods]
+      summary: Create a SetupIntent to collect a payment method
+      description: >-
+        Creates a provider SetupIntent (usage `off_session`) so the client can
+        collect a payment method without an immediate charge (e.g. add a card
+        during a no-card trial). Returns the `clientSecret` for the provider
+        Payment Element. Mirrors `POST /setup-intent`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityRef'
+      responses:
+        '200':
+          description: SetupIntent created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [clientSecret]
+                properties:
+                  clientSecret:
+                    type: string
+                    description: provider SetupIntent client secret for the Payment Element.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /checkout:
+    post:
+      operationId: createCheckoutSession
+      tags: [checkout]
+      summary: Create a hosted Checkout Session (subscription mode)
+      description: >-
+        Creates a hosted Checkout Session in `subscription` mode for the
+        given organization and plan, and returns the provider-hosted `url` to
+        redirect the customer to. the provider collects the card on its hosted page;
+        on completion the provider fires `checkout.session.completed`, which activates
+        the local subscription mirror. We use HOSTED Checkout (not in-app
+        Elements) so no raw card data touches our surface. Mirrors
+        `POST /checkout`.
+
+
+        Authorization (money path): the host proxy authenticates the platform
+        JWT, authorizes the caller against the target organization, and forwards
+        the SERVER-DERIVED actor + entity as trusted headers
+        (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`).
+        The service RE-VERIFIES that `organizationId` matches the authorized
+        entity before creating any provider object (rejects with 403 otherwise),
+        and validates `planId` against the active plan catalogue (rejects
+        unknown/inactive plans with 400). `planId: "basic"` resolves to the live
+        $9/mo price.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequest'
+      responses:
+        '200':
+          description: Checkout Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /payments/checkout:
+    post:
+      operationId: createPaymentCheckoutSession
+      tags: [payments]
+      summary: Create a hosted Checkout Session (one-time payment mode)
+      description: >-
+        Creates a hosted Checkout Session in `payment` mode for an
+        allowlisted consumer product (e.g. `mendys-datasets`) and returns the
+        provider-hosted `url` to redirect the buyer to. The caller supplies the
+        priced line items (name + unit amount in cents + quantity); the service
+        builds provider `price_data` from them — no provider price catalogue entry
+        is required. On completion the provider fires `checkout.session.completed`
+        (mode `payment`), which upserts the local `billing.payments` mirror and
+        emits `billing.payment.completed` on Kafka. Failure/expiry are mirrored
+        via `payment_intent.payment_failed` / `checkout.session.expired`.
+        Mirrors `POST /payments/checkout`.
+
+
+        Authorization (money path): identical to `/checkout` — the host proxy
+        authenticates the platform JWT, authorizes the caller against the
+        target entity, and forwards the SERVER-DERIVED actor + entity as
+        trusted headers (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; aliases `X-FF-Actor-Id` / `X-FF-Org-Id`). The
+        service RE-VERIFIES that the body's `entityType`/`entityId` match the
+        authorized entity before creating any provider object (mismatch → 403).
+        `productKey` must be in the server-side allowlist
+        (`BILLING_PRODUCT_KEYS`), `currency` in the configured allowlist
+        (default `usd`, `eur`), and each line amount plus the order total are
+        bounded server-side (`BILLING_PAYMENT_MAX_TOTAL_CENTS`, default
+        5,000,000 cents) — violations → 400.
+
+
+        Idempotency: retries with IDENTICAL parameters dedupe to one provider
+        session (param-fingerprint idempotency key, same scheme as
+        `/checkout`); any changed parameter yields a fresh session.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCheckoutRequest'
+      responses:
+        '200':
+          description: Payment-mode Checkout Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCheckoutResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Idempotency-key conflict (same key, different params).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderErrorBody'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /payments/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        description: The hosted Checkout Session id (`cs_...`).
+        schema:
+          type: string
+    get:
+      operationId: getPaymentSession
+      tags: [payments]
+      summary: Get the local payment mirror for a Checkout Session
+      x-pagination: exempt
+      description: >-
+        Returns the `billing.payments` mirror row for a payment-mode Checkout
+        Session — the reconciliation-polling surface for consumer services
+        that missed (or cannot receive) the `billing.payment.completed` event.
+        `status` is `pending` until a webhook lands, then `paid` / `failed` /
+        `expired`. 404 when the session is unknown. When the local row is
+        missing but the session exists at the provider AND its `productKey` metadata
+        is allowlisted, the service falls back to the live provider, re-mirrors the
+        row, and returns it (singleton resource — pagination exempt).
+
+
+        Authorization: same model as `/payments/checkout`; the proxy-authorized
+        entity must OWN the session (mismatch → 403).
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      responses:
+        '200':
+          description: The payment mirror row.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [payment]
+                properties:
+                  payment:
+                    $ref: '#/components/schemas/BillingPayment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /credits:
+    post:
+      operationId: addCredits
+      tags: [credits]
+      summary: Add a one-time customer balance adjustment (admin only)
+      description: >-
+        Adds a one-time customer balance adjustment (credit) via a provider
+        customer balance transaction. A positive `amount` (in cents, bounded)
+        credits the customer (reduces what they owe). Mirrors `POST /credits`.
+
+
+        ADMIN-ONLY: in addition to the internal token, the host proxy must
+        supply `X-Billing-Actor-Is-Admin: true` (it sets this only for callers
+        it has authorized as platform admins). Without it the service responds
+        403. `amount` must be a positive integer and is capped server-side.
+      security:
+        - internalToken: []
+      parameters:
+        - name: X-Billing-Actor-Is-Admin
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: ['true']
+          description: >-
+            Set to `true` by the proxy ONLY for platform-admin-authorized
+            callers. Required — absent/other values are rejected with 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCreditsRequest'
+      responses:
+        '201':
+          description: Balance transaction created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, endingBalance]
+                properties:
+                  id:
+                    type: string
+                    description: payment-provider customer balance transaction id.
+                  endingBalance:
+                    type: integer
+                    description: Resulting customer balance in cents (negative = credit).
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List the authorized entity's invoices
+      description: >-
+        Returns the invoice history for the proxy-authorized entity (user or
+        organization), most-recent first. Served from the local invoice store,
+        synced from the payment provider. Read-only.
+
+
+        Authorization: behind the internal-token guard; the entity is the
+        SERVER-DERIVED actor context the proxy injects
+        (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`; short aliases `X-FF-Actor-Id` / `X-FF-Org-Id`).
+        Identity is never taken from the query string. An entity that has never
+        had billing returns `{ invoices: [], nextCursor: null }` (200, not an
+        error).
+
+
+        Pagination is opaque-cursor based: pass the previous response's
+        `nextCursor` as `cursor` to fetch the next page. `nextCursor` is null on
+        the last page.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+        - name: limit
+          in: query
+          required: false
+          description: Page size, clamped server-side to 1..100. Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque cursor (previous `nextCursor`). Use the previous response's
+            `nextCursor` to fetch the next page.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of invoices for the entity (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /invoices/sync:
+    post:
+      operationId: syncInvoices
+      tags: [invoices]
+      summary: Force a provider→store resync of the authorized entity's invoices
+      description: >-
+        Forces a resync of the proxy-authorized entity's invoices from the
+        payment provider into the local invoice store, then returns the number
+        of invoices upserted. Idempotent — safe to call repeatedly.
+
+
+        Authorization is identical to `GET /invoices`: behind the internal-token
+        guard, with the entity taken from the SERVER-DERIVED actor context the
+        proxy injects (`X-Billing-Actor-User-Id`, `X-Billing-Entity-Type`,
+        `X-Billing-Entity-Id`). An entity that has never had billing returns
+        `{ synced: 0 }` (200, not an error).
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      responses:
+        '200':
+          description: The resync completed; reports how many invoices were upserted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [synced]
+                properties:
+                  synced:
+                    type: integer
+                    minimum: 0
+                    description: Number of invoices upserted into the local store.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /portal:
+    post:
+      operationId: createPortalSession
+      tags: [portal]
+      summary: Create a Customer Portal session
+      description: >-
+        Creates a Customer Portal session for the proxy-authorized
+        entity and returns the provider-hosted `url` to redirect the customer to,
+        where they can manage their subscription and payment methods. Mirrors
+        `POST /portal`.
+
+
+        Authorization: behind the internal-token guard; the entity is the
+        SERVER-DERIVED actor context the proxy injects (the entity is NEVER
+        taken from the request body). An entity that has never had a billing
+        customer cannot open a portal -> 409.
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ActorUserIdHeader'
+        - $ref: '#/components/parameters/EntityTypeHeader'
+        - $ref: '#/components/parameters/EntityIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalSessionRequest'
+      responses:
+        '200':
+          description: Portal session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSessionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '422':
+          $ref: '#/components/responses/IdentityError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The entity has no billing customer to manage.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    examples: ['no billing customer']
+                  message:
+                    type: string
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /webhooks/{provider}:
+    post:
+      operationId: receiveProviderWebhook
+      tags: [webhooks]
+      summary: Provider webhook receiver
+      description: >-
+        Provider webhook receiver; authenticity verified by the provider
+        signature. Receives events from the configured payment provider
+        (selected by the `provider` path slug). The body MUST be the raw signed
+        bytes (`application/json` consumed via `express.raw`) so signature
+        verification works. Public (no internal token) — authenticity is
+        established by the provider signature header. Idempotent: duplicate
+        deliveries of the same event id return 200 without re-processing.
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >-
+            Payment-provider slug identifying which provider sent the webhook
+            (e.g. the configured payment provider). Selects the signature
+            verifier + event decoder.
+        - name: X-Provider-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: >-
+            Provider webhook signature header used to verify the payload
+            authenticity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw provider Event object (not parsed by this service before verification).
+              additionalProperties: true
+      responses:
+        '200':
+          description: Event received (and processed, unless a duplicate).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [received]
+                properties:
+                  received:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                    description: True when the event id was already processed.
+        '400':
+          description: Missing/invalid signature header or payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness probe
+      description: >-
+        Always available, even in degraded mode (no DB / no provider key).
+        NOTE: mounted at the service root (`/health`), NOT under
+        `/api/v1/billing` -- call it on the bare server origin.
+      security: []
+      servers:
+        - url: '{baseUrl}'
+          variables:
+            baseUrl:
+              default: http://fuzefront-billing-service:3006
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    examples: [ok]
+                  service:
+                    type: string
+                    examples: [billing-service]
+
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      description: >-
+        `BILLING_INTERNAL_TOKEN` presented as a Bearer token by the backend /
+        `@fuzefront/billing-client` on all non-public routes. Verified by
+        `requireInternalToken`.
+
+  parameters:
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      description: The provider subscription id (e.g. `sub_...`).
+      schema:
+        type: string
+    ActorUserIdHeader:
+      name: X-Billing-Actor-User-Id
+      in: header
+      required: true
+      description: >-
+        Authenticated actor (the platform user id) — set by the host proxy
+        AFTER it authenticates + authorizes the caller. Short alias:
+        `X-FF-Actor-Id`.
+      schema:
+        type: string
+    EntityTypeHeader:
+      name: X-Billing-Entity-Type
+      in: header
+      required: true
+      description: >-
+        Server-derived authorized entity type (`user`|`organization`) set by the
+        proxy. When the `X-FF-Org-Id` alias is used this is implied to be
+        `organization`.
+      schema:
+        $ref: '#/components/schemas/EntityType'
+    EntityIdHeader:
+      name: X-Billing-Entity-Id
+      in: header
+      required: true
+      description: >-
+        Server-derived authorized entity id set by the proxy. The service
+        re-verifies the request target matches this. Short alias: `X-FF-Org-Id`.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    IdentityError:
+      description: >-
+        The create body violates the server-owned identifier standard — it
+        supplied an `id`, or its `lid` graph is malformed or reaches outside
+        billing's aggregate. Returned by the graph-create middleware mounted in
+        `src/app.ts`, before the route handler runs.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphCreateError'
+    Unauthorized:
+      description: Missing or invalid internal token, or missing actor context.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: >-
+        The authenticated/authorized caller may not act on the target object
+        (e.g. organizationId does not match the authorized entity, or the
+        operation requires platform-admin context).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorBody'
+    ProviderError:
+      description: Upstream provider error (bad gateway).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProviderErrorBody'
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    EntityType:
+      type: string
+      enum: [user, organization]
+      description: Which platform entity owns the billing relationship.
+
+    LocalId:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: >-
+        A document-scoped local id (`lid`) for an entity being created in this
+        request, so siblings can reference it before the server has minted the
+        real id. Reference it elsewhere in the same body as `"lid:<value>"`.
+
+        NEVER persisted, and NEVER the entity's `id` — the owning service mints
+        ids and a create body carrying an `id` is rejected 422
+        (governance/identifier-standard.md 1). Prior art: JSON:API 1.1 `lid`,
+        SCIM `bulkId` (RFC 7644 3.7.2), OData $batch Content-ID.
+
+        A `lid` may only declare an entity billing OWNS (customer, subscription,
+        payment, invoice, credit); anything else is 422 CROSS_AGGREGATE_LID,
+        because a graph spanning services cannot be created atomically.
+      examples: ['1', 'new-customer']
+
+    IdMap:
+      type: object
+      additionalProperties:
+        type: string
+      description: >-
+        Maps every `lid` in the request to the id the server minted for it, so
+        the creator never loses what it created. Added automatically to the JSON
+        response of any create that used `lid` — routes do not populate it.
+      examples:
+        - { '1': 'cus_01h455vb4pex5vsknk084sn02q', '2': 'inv_01h456wc5qfy6wtlom195to13r' }
+
+    GraphCreateError:
+      type: object
+      additionalProperties: false
+      required: [error, code, message, path]
+      description: 422 returned when a create graph violates the identifier standard.
+      properties:
+        error:
+          type: string
+          enum: [unprocessable_entity]
+        code:
+          type: string
+          enum:
+            - CLIENT_SUPPLIED_ID
+            - UNKNOWN_LID
+            - DUPLICATE_LID
+            - MALFORMED_LID
+            - MISSING_TYPE
+            - UNKNOWN_TYPE
+            - CROSS_AGGREGATE_LID
+            - GRAPH_TOO_LARGE
+            - GRAPH_TOO_DEEP
+        message:
+          type: string
+        path:
+          type: string
+          description: Location of the offending node; empty string is the document root.
+          examples: ['/invoices/0']
+
+    PlanTier:
+      type: string
+      description: >-
+        Plan tier name resolved from the provider price (free / starter / pro /
+        enterprise, or any custom tier). Open string by design.
+      examples: [free, starter, pro, enterprise]
+
+    SubscriptionStatus:
+      type: string
+      description: Mirrors provider subscription status values. Open string by design.
+      examples:
+        - trialing
+        - active
+        - past_due
+        - canceled
+        - unpaid
+        - incomplete
+        - incomplete_expired
+
+    EntityRef:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+          description: The id of the user or organization.
+
+    BillingSubscription:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - customerId
+        - subscriptionId
+        - priceId
+        - planTier
+        - status
+        - seatQuantity
+        - trialStart
+        - trialEnd
+        - currentPeriodStart
+        - currentPeriodEnd
+        - cancelAtPeriodEnd
+        - canceledAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Local billing.subscriptions primary key.
+        customerId:
+          type: string
+          format: uuid
+          description: Local billing.customers primary key.
+        subscriptionId:
+          type: string
+        priceId:
+          type: string
+        planTier:
+          $ref: '#/components/schemas/PlanTier'
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        seatQuantity:
+          type: integer
+          minimum: 0
+        trialStart:
+          type: [string, 'null']
+          format: date-time
+        trialEnd:
+          type: [string, 'null']
+          format: date-time
+        currentPeriodStart:
+          type: [string, 'null']
+          format: date-time
+        currentPeriodEnd:
+          type: [string, 'null']
+          format: date-time
+        cancelAtPeriodEnd:
+          type: boolean
+        canceledAt:
+          type: [string, 'null']
+          format: date-time
+
+    Plan:
+      type: object
+      additionalProperties: false
+      required:
+        - priceId
+        - productId
+        - tierName
+        - displayName
+        - billingInterval
+        - unitAmount
+        - currency
+        - seatBased
+        - meteredMeterName
+        - features
+        - isActive
+        - sortOrder
+      properties:
+        priceId:
+          type: string
+        productId:
+          type: string
+        tierName:
+          $ref: '#/components/schemas/PlanTier'
+        displayName:
+          type: string
+        billingInterval:
+          type: string
+          description: Billing cadence (`month` / `year`, or any provider interval).
+          examples: [month, year]
+        unitAmount:
+          type: integer
+          description: Unit amount in the currency's minor unit (cents).
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 currency code.
+          examples: [usd]
+        seatBased:
+          type: boolean
+        meteredMeterName:
+          type: [string, 'null']
+        features:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        sortOrder:
+          type: integer
+
+    CreateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId, priceId]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        priceId:
+          type: string
+          minLength: 1
+        trial:
+          type: boolean
+          description: Start a no-card trial (provider trial_period_days).
+        trialPeriodDays:
+          type: integer
+          minimum: 1
+        seatQuantity:
+          type: integer
+          minimum: 1
+          description: Seat quantity for per-seat plans. Defaults to 1.
+        paymentMethodId:
+          type: string
+          description: Existing provider payment method to attach (omit for no-card trials).
+
+    CreateSubscriptionResponse:
+      type: object
+      additionalProperties: false
+      required: [subscription, requiresAction]
+      properties:
+        subscription:
+          $ref: '#/components/schemas/BillingSubscription'
+        clientSecret:
+          type: string
+          description: Set when the provider needs SCA/3DS confirmation on the client.
+        requiresAction:
+          type: boolean
+          description: True when the client must confirm a PaymentIntent/SetupIntent.
+
+    UpdateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        priceId:
+          type: string
+          minLength: 1
+          description: New price (plan change).
+        seatQuantity:
+          type: integer
+          minimum: 1
+          description: New seat quantity.
+
+    AddCreditsRequest:
+      type: object
+      additionalProperties: false
+      required: [entityType, entityId, amount]
+      properties:
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 10000000
+          description: >-
+            Amount in cents; a positive value credits the customer. Bounded
+            server-side (1..10_000_000 cents) — MEDIUM-1.
+        note:
+          type: string
+          maxLength: 500
+
+    CheckoutSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [planId, organizationId, successUrl, cancelUrl]
+      properties:
+        planId:
+          type: string
+          minLength: 1
+          description: >-
+            Logical plan id (e.g. `basic`), a tier name, or a provider price id
+            present in the active catalogue. Validated against active plans;
+            `basic` resolves to the live $9/mo price.
+        organizationId:
+          type: string
+          format: uuid
+          description: >-
+            Target organization. MUST match the proxy-authorized entity
+            (re-verified server-side; mismatch → 403).
+        successUrl:
+          type: string
+          format: uri
+          description: Where the provider redirects after a completed checkout.
+        cancelUrl:
+          type: string
+          format: uri
+          description: Where the provider redirects if the customer cancels.
+
+    CheckoutSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [url, sessionId]
+      properties:
+        url:
+          type: [string, 'null']
+          description: provider-hosted Checkout URL to redirect the customer to.
+        sessionId:
+          type: string
+          description: The hosted Checkout Session id (`cs_...`).
+
+    PaymentStatus:
+      type: string
+      enum: [pending, paid, failed, expired]
+      description: >-
+        Lifecycle of a payment-mode Checkout Session mirror: `pending` from
+        session creation until a webhook lands; then `paid`
+        (checkout.session.completed, paid), `failed`
+        (payment_intent.payment_failed) or `expired`
+        (checkout.session.expired). `paid` is terminal and never downgraded.
+
+    PaymentLineItem:
+      type: object
+      additionalProperties: false
+      required: [name, unitAmountCents, quantity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 250
+          description: Line-item display name shown on the provider-hosted page.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Optional line-item description shown under the name.
+        unitAmountCents:
+          type: integer
+          minimum: 1
+          description: >-
+            Unit price in the currency's minor unit (cents). Bounded
+            server-side together with the order total
+            (`BILLING_PAYMENT_MAX_TOTAL_CENTS`).
+        quantity:
+          type: integer
+          minimum: 1
+          description: Units of this line item.
+
+    PaymentCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - productKey
+        - externalOrderId
+        - entityType
+        - entityId
+        - currency
+        - lineItems
+        - successUrl
+        - cancelUrl
+      properties:
+        productKey:
+          type: string
+          minLength: 1
+          description: >-
+            Consumer product key (e.g. `mendys-datasets`). MUST be in the
+            server-side allowlist (`BILLING_PRODUCT_KEYS`); unknown keys → 400.
+        externalOrderId:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: >-
+            The consumer product's own order id. Stamped on the session as
+            `client_reference_id` + metadata and echoed on
+            `billing.payment.completed` so the product can correlate.
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+          description: >-
+            Paying entity. MUST match the proxy-authorized entity (re-verified
+            server-side; mismatch → 403).
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: >-
+            ISO 4217 currency code (case-insensitive; lowercased server-side).
+            Must be in the configured allowlist (default `usd`, `eur`).
+          examples: [usd, eur]
+        lineItems:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PaymentLineItem'
+        successUrl:
+          type: string
+          format: uri
+          description: Where the provider redirects after a completed payment.
+        cancelUrl:
+          type: string
+          format: uri
+          description: Where the provider redirects if the buyer cancels.
+
+    PaymentCheckoutResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, url]
+      properties:
+        sessionId:
+          type: string
+          description: The hosted Checkout Session id (`cs_...`).
+        url:
+          type: [string, 'null']
+          description: provider-hosted Checkout URL to redirect the buyer to.
+
+    BillingPayment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - sessionId
+        - paymentIntentId
+        - productKey
+        - externalOrderId
+        - entityType
+        - entityId
+        - amountTotalCents
+        - currency
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Local billing.payments primary key.
+        sessionId:
+          type: string
+          description: hosted Checkout Session id (`cs_...`).
+        paymentIntentId:
+          type: [string, 'null']
+          description: >-
+            provider PaymentIntent id (`pi_...`); null until the provider creates the
+            intent (typically when the buyer reaches the payment page).
+        productKey:
+          type: string
+        externalOrderId:
+          type: string
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        amountTotalCents:
+          type: integer
+          minimum: 0
+          description: Order total in the currency's minor unit (cents).
+        currency:
+          type: string
+          description: ISO 4217 currency code, lowercased.
+          examples: [usd]
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BillingInvoice:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - number
+        - created
+        - amountDue
+        - amountPaid
+        - currency
+        - status
+        - hostedInvoiceUrl
+        - invoicePdf
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: FuzeFront invoice id (opaque, stable). A FuzeFront UUID, not a provider id.
+        number:
+          type: [string, 'null']
+          description: Human-facing invoice number; null for drafts without one.
+        created:
+          type: string
+          format: date-time
+          description: ISO-8601 issue timestamp.
+        amountDue:
+          type: integer
+          description: Amount due in the currency's minor unit (cents).
+          minimum: 0
+        amountPaid:
+          type: integer
+          description: Amount paid in the currency's minor unit (cents).
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 currency code, lowercased.
+          examples: [usd]
+        status:
+          type: string
+          description: 'Neutral invoice status: draft|open|paid|void|uncollectible.'
+          examples: [draft, open, paid, void, uncollectible]
+        hostedInvoiceUrl:
+          type: [string, 'null']
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
+        invoicePdf:
+          type: [string, 'null']
+          description: Provider-hosted document URL, opaque to consumers; null when unavailable.
+
+    InvoiceListResponse:
+      type: object
+      additionalProperties: false
+      required: [invoices, nextCursor]
+      properties:
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingInvoice'
+        nextCursor:
+          type: [string, 'null']
+          description: >-
+            Opaque cursor for the next page; null on the last page.
+
+    PortalSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [returnUrl]
+      properties:
+        returnUrl:
+          type: string
+          format: uri
+          description: Where the provider returns the customer after they leave the portal.
+
+    PortalSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: provider-hosted Customer Portal url to redirect the customer to.
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ProviderErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples: ['provider error']
+        message:
+          type: string
+
+    ValidationErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples: ['invalid request']
+        details:
+          description: Zod flatten() output describing the field errors.

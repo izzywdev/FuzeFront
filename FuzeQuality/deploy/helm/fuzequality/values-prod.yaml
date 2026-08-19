@@ -1,0 +1,25 @@
+global:
+  imagePullPolicy: Always
+  imagePullSecrets:
+    - name: ghcr-pull
+
+backendImage:
+  repository: ghcr.io/izzywdev/fuzequality-backend
+  tag: 6da67c73185a
+frontendImage:
+  repository: ghcr.io/izzywdev/fuzequality-frontend
+  tag: 6da67c73185a
+
+ingress:
+  enabled: true
+  className: traefik
+  host: quality.prod.fuzefront.com
+
+# The path the host shell actually loads the remote from. quality.prod.fuzefront.com
+# above stays for direct/admin access, but it sits behind the *.prod Cloudflare
+# Access wall, so it can never serve remoteEntry.js to a browser.
+federatedMount:
+  enabled: true
+  className: traefik
+  host: app.fuzefront.com
+  slug: fuzequality

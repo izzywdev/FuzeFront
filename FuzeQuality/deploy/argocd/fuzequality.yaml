@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzequality
+  namespace: argocd
+spec:
+  project: fuzefront
+  source:
+    repoURL: https://github.com/izzywdev/FuzeFront.git
+    targetRevision: master
+    path: FuzeQuality/deploy/helm/fuzequality
+    helm:
+      valueFiles: [values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fuzequality
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, PrunePropagationPolicy=foreground]

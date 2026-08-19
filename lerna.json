@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "1.0.0",
+  "npmClient": "npm",
+  "packages": ["backend", "backend/core", "backend/security", "backend/applications", "shared", "packages/identity", "billing-client", "custom-hostname-client", "packages/billing-ui", "packages/chat-client", "packages/chat-ui", "packages/identity-ui", "packages/auth-ui", "packages/account-security-ui", "packages/portal-branding-ui", "portal-client", "packages/i18n", "packages/i18n-translate", "packages/feature-flags", "packages/security", "design-system", "services/chat-service", "services/email-service", "services/notification-service"],
+  "command": {
+    "version": {
+      "allowBranch": ["main", "master", "develop"],
+      "conventionalCommits": true,
+      "message": "chore(release): publish %s",
+      "registry": "https://npm.pkg.github.com"
+    },
+    "publish": {
+      "conventionalCommits": true,
+      "message": "chore(release): publish %s",
+      "registry": "https://npm.pkg.github.com"
+    }
+  }
+}

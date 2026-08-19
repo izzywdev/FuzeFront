@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="720x200" name="Surfaces — Graphite shell" subtitle="Deep blue-graphite, layered shell -> canvas -> panel -> raised" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin: 0; padding: 24px; font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }
+  .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .sw { border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border-color); }
+  .chip { height: 64px; }
+  .meta { padding: 8px 10px; background: var(--bg-tertiary); }
+  .name { font-size: var(--text-xs); font-weight: 600; color: var(--text-primary); }
+  .role { font-size: var(--text-2xs); color: var(--text-tertiary); margin-top: 2px; }
+  .hex { font-size: var(--text-2xs); color: var(--text-secondary); font-family: var(--font-mono); text-transform: uppercase; margin-top: 4px; }
+  .border-chip { height: 64px; background: var(--bg-tertiary); }
+  .border-chip.muted { border-top: 4px solid var(--border-color); }
+  .border-chip.strong { border-top: 4px solid var(--border-strong); }
+</style></head><body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--bg-secondary)"></div><div class="meta"><div class="name">--bg-secondary</div><div class="role">shell / top bar</div><div class="hex">#0B0E15</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-primary)"></div><div class="meta"><div class="name">--bg-primary</div><div class="role">content canvas</div><div class="hex">#0F131C</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-tertiary)"></div><div class="meta"><div class="name">--bg-tertiary</div><div class="role">panels &amp; cards</div><div class="hex">#141A26</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-quaternary)"></div><div class="meta"><div class="name">--bg-quaternary</div><div class="role">raised / hover</div><div class="hex">#1C2433</div></div></div>
+    <div class="sw"><div class="border-chip muted"></div><div class="meta"><div class="name">--border-color</div><div class="role">default divider</div><div class="hex">#232C3D</div></div></div>
+    <div class="sw"><div class="border-chip strong"></div><div class="meta"><div class="name">--border-strong</div><div class="role">strong divider</div><div class="hex">#303B50</div></div></div>
+  </div>
+</body></html>

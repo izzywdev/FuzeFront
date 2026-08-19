@@ -1,0 +1,356 @@
+# Self-contained E2E stack for OIDC integration testing.
+# No dependency on FuzeInfra — runs its own Postgres and Redis.
+#
+# Two usage modes:
+#
+#   1. OIDC plumbing test (default — no secrets required)
+#      Tests the full OIDC stack with a local Authentik user.
+#      Add 127.0.0.1 authentik-server to /etc/hosts on the Playwright host.
+#      docker compose -f docker-compose.e2e.yml up -d --build
+#
+#   2. Google OAuth E2E test (requires tunnel + Google secrets)
+#      Activates cloudflared so real Google callbacks work.
+#      docker compose -f docker-compose.e2e.yml --profile tunnel up -d --build
+#
+# Environment variables:
+#   AUTHENTIK_EXTERNAL_URL     — how browsers reach Authentik
+#                                default: http://authentik-server:9000
+#                                tunnel mode: https://auth-dev.fuzefront.com
+#   AUTHENTIK_ISSUER_URL       — what the backend uses for OIDC discovery
+#                                default: http://authentik-server:9000/application/o/fuzefront/
+#                                tunnel mode: https://auth-dev.fuzefront.com/application/o/fuzefront/
+#   AUTHENTIK_COOKIE_DOMAIN    — cookie scope (default: authentik-server)
+#   CLOUDFLARE_TUNNEL_TOKEN    — tunnel profile only
+#   TUNNEL_HOSTNAME            — tunnel profile only (default: auth-dev.fuzefront.com)
+#   GOOGLE_DEV_CLIENT_ID       — tunnel profile only
+#   GOOGLE_DEV_CLIENT_SECRET   — tunnel profile only
+#   AUTHENTIK_OIDC_CLIENT_SECRET — OIDC provider shared secret (default: e2e-oidc-client-secret)
+#
+# Usage:
+#   docker compose -f docker-compose.e2e.yml up -d --build
+#   docker compose -f docker-compose.e2e.yml down -v   # tear down + wipe volumes
+
+name: fuzefront-e2e
+
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  e2e_postgres:
+  e2e_redis:
+  e2e_authentik_media:
+  e2e_authentik_templates:
+  e2e_authentik_certs:
+
+services:
+  # ── Postgres (shared by backend + Authentik) ──────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: e2e_pass
+      # postgres image runs *.sh scripts in /docker-entrypoint-initdb.d/ at first start
+    volumes:
+      - e2e_postgres:/var/lib/postgresql/data
+      - ./deploy/e2e/init-postgres.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - e2e
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U e2e']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Redis (for Authentik) ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    networks:
+      - e2e
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Authentik worker (applies blueprints, including Google source + OIDC provider) ─
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.5.5
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: e2e
+      AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
+      AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
+      AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
+      # External URL used in Authentik's OIDC metadata (authorization_endpoint etc.)
+      # Default: internal Docker hostname so both the browser (via /etc/hosts) and
+      # backend (via Docker DNS) reach the same URL and issuer validation passes.
+      # Tunnel mode: set to https://auth-dev.fuzefront.com
+      AUTHENTIK_HOST: ${AUTHENTIK_EXTERNAL_URL:-http://authentik-server:9000}
+      # Google OAuth source (inert when empty; populated by CI secrets for tunnel mode)
+      GOOGLE_CLIENT_ID: ${GOOGLE_DEV_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_DEV_CLIENT_SECRET:-}
+      # FuzeFront OIDC provider secret (must match backend AUTHENTIK_CLIENT_SECRET)
+      AUTHENTIK_OIDC_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+    volumes:
+      - e2e_authentik_media:/media
+      - e2e_authentik_templates:/templates
+      - e2e_authentik_certs:/certs
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Authentik server ──────────────────────────────────────────────────────
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.5.5
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__USER: e2e
+      AUTHENTIK_POSTGRESQL__PASSWORD: e2e_pass
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: e2e-authentik-secret-not-for-prod
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_UPDATE_CHECK: 'true'
+      AUTHENTIK_ERROR_REPORTING__ENABLED: 'false'
+      # External URL: controls the issuer + endpoint URLs in OIDC discovery metadata.
+      # Default (plumbing test, no tunnel): http://authentik-server:9000
+      #   → add 127.0.0.1 authentik-server to /etc/hosts on the Playwright host
+      # Tunnel mode: set AUTHENTIK_EXTERNAL_URL=https://auth-dev.fuzefront.com
+      AUTHENTIK_HOST: ${AUTHENTIK_EXTERNAL_URL:-http://authentik-server:9000}
+      # Cookie domain must match the hostname browsers use to reach Authentik.
+      # Default (no tunnel): authentik-server  Tunnel mode: auth-dev.fuzefront.com
+      AUTHENTIK_COOKIE_DOMAIN: ${AUTHENTIK_COOKIE_DOMAIN:-authentik-server}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: E2eAdmin123!
+      AUTHENTIK_BOOTSTRAP_TOKEN: e2e-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@e2e.local
+      GOOGLE_CLIENT_ID: ${GOOGLE_DEV_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_DEV_CLIENT_SECRET:-}
+      AUTHENTIK_OIDC_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+    volumes:
+      - e2e_authentik_media:/media
+      - e2e_authentik_templates:/templates
+      - ./deploy/helm/fuzefront/authentik/blueprints:/blueprints/fuzefront:ro
+    ports:
+      - '9000:9000'
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    healthcheck:
+      test: ['CMD-SHELL', 'ak healthcheck || exit 1']
+      interval: 10s
+      timeout: 15s
+      retries: 18
+      start_period: 120s
+
+  # ── Cloudflare tunnel (exposes authentik-server at TUNNEL_HOSTNAME) ───────
+  # Only activated with --profile tunnel (Google OAuth E2E only).
+  # Plumbing tests (local user) do NOT need the tunnel.
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2024.12.2
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - e2e
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+    restart: on-failure:5
+
+  # ── Backend ───────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: production
+      USE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: fuzefront_platform
+      DB_USER: e2e
+      DB_PASSWORD: e2e_pass
+      JWT_SECRET: e2e-jwt-secret-not-for-prod
+      PORT: '3001'
+      # Force the account-security hub release flag ON for this e2e run so the
+      # pre-prod specs can exercise the gated /account/security route. There is
+      # no Unleash in the e2e stack, so GET /api/flags would otherwise serve the
+      # fail-safe default (OFF). Honored only when NODE_ENV !== production.
+      FLAGS_FORCE_ON: fuzefront.account-security.hub
+      # No applications-service in the e2e stack, so serve app-registry reads
+      # from the backend's local `apps` table rather than delegating to the
+      # (absent) proxy. Prod leaves this unset and delegates (FuzeFront #533).
+      APP_REGISTRY_LOCAL_ADAPTER: '1'
+      # After the OIDC callback the backend redirects the browser here.
+      # Must be host-reachable so the browser (Playwright on the host) can follow.
+      FRONTEND_URL: http://localhost:4173
+      PERMIT_API_KEY: ci-noop
+      PERMIT_PDP_URL: http://localhost:7766
+      # Authentik OIDC client — matches provider-oidc.yaml blueprint
+      AUTHENTIK_CLIENT_ID: fuzefront-oidc-client
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+      # Issuer URL for OIDC discovery + token exchange.
+      # Default (plumbing test): http://authentik-server:9000/... — reachable from
+      # inside Docker via DNS, and from the Playwright host via /etc/hosts entry.
+      # Tunnel mode: set AUTHENTIK_ISSUER_URL=https://auth-dev.fuzefront.com/application/o/fuzefront/
+      AUTHENTIK_ISSUER_URL: ${AUTHENTIK_ISSUER_URL:-http://authentik-server:9000/application/o/fuzefront/}
+      # Authentik redirects the browser here after authentication.
+      # localhost:3001 maps to the published backend port — always host-reachable.
+      AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authentik-server:
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3001/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ── Security service ──────────────────────────────────────────────────────
+  # The SPA signs in through the provider-agnostic Security API
+  # (/api/v1/security/*), which ONLY this service serves — the monolith `backend`
+  # above mounts /api/auth, /api/apps, /api/organizations, /api/v1/app-registry
+  # and nothing else. Without this container the SPA's login POST 404s, so the
+  # sign-in e2e times out waiting for a response that can never arrive. nginx
+  # (see deploy/e2e/nginx.e2e.conf) path-routes /api/v1/security/ here, mirroring
+  # the prod Ingress which sends /api/v1/security → fuzefront-security.
+  security:
+    build:
+      context: .
+      dockerfile: backend/security/Dockerfile
+    ports:
+      - '3002:3002'
+    environment:
+      NODE_ENV: production
+      USE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: fuzefront_platform
+      DB_USER: e2e
+      DB_PASSWORD: e2e_pass
+      # Must match the monolith: both mint/validate the same platform JWT.
+      JWT_SECRET: e2e-jwt-secret-not-for-prod
+      PORT: '3002'
+      FRONTEND_URL: http://localhost:4173
+      PERMIT_API_KEY: ci-noop
+      PERMIT_PDP_URL: http://localhost:7766
+      # Password sign-in is brokered SERVER-side through Authentik's
+      # flow-executor (no browser redirect), so these are required even for the
+      # plain email/password e2e — not just the social flow.
+      AUTHENTIK_CLIENT_ID: fuzefront-oidc-client
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_OIDC_CLIENT_SECRET:-e2e-oidc-client-secret}
+      AUTHENTIK_ISSUER_URL: ${AUTHENTIK_ISSUER_URL:-http://authentik-server:9000/application/o/fuzefront/}
+      # Server-side calls (flow-executor, token, userinfo, jwks) go over the
+      # compose network rather than back out through a published port.
+      AUTHENTIK_BASE_URL: http://authentik-server:9000
+      # Native IdP paths — no reverse-proxy prefix (matches the prod ingress).
+      SECURITY_IDP_PROXY_PREFIX: ''
+      # MUST be a redirect_uri registered on the OIDC provider (matching_mode:
+      # strict), or Authentik rejects the authorize call and password login
+      # fails — password sign-in is a full authorize→code→exchange, not just a
+      # flow-executor call. It does NOT need to be browser-reachable: the server
+      # follows that 302 itself and lifts `code` out of the Location header.
+      # So we reuse the shared, registered /api/auth/oidc/callback — exactly what
+      # prod's security service does (values.authentik.oidc.redirectUri points at
+      # https://app.fuzefront.com/api/auth/oidc/callback). The registered set
+      # lives in authentik/blueprints/provider-oidc.yaml.
+      AUTHENTIK_REDIRECT_URI: http://localhost:3001/api/auth/oidc/callback
+    networks:
+      - e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authentik-server:
+        condition: service_started
+      # Serialise migrations. This service runs the SAME 001-009 chain against
+      # the SAME `knex_migrations` table as the monolith (see
+      # backend/security/src/index.ts). Started concurrently, the two race for
+      # the migration lock and one dies — which is exactly what happened when
+      # this container was first added: `backend exited (1)` took the whole
+      # stack down with it. Waiting for backend to be healthy means the chain is
+      # already applied and this service's run is a no-op.
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:3002/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  # Built from repo root (Dockerfile requires workspace context for @fuzefront/* aliases).
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # SAME-ORIGIN, deliberately empty → the SPA uses relative URLs and every
+        # API call goes through this container's nginx, which path-routes
+        # /api/v1/security/ → security:3002 and everything else → backend:3001.
+        #
+        # This previously hard-coded http://localhost:3001, which pointed the
+        # browser straight at the MONOLITH and bypassed nginx entirely. The
+        # monolith does not serve /api/v1/security/*, so GET /methods 404'd, the
+        # SPA saw no `social`, the Google button never rendered and sign-in was
+        # impossible — the e2e could not exercise auth at all. It also made the
+        # nginx routing dead code.
+        #
+        # Same-origin is also the documented contract (CLAUDE.md: "the frontend
+        # talks to the API on a same-origin API base (no cross-origin base URL)…
+        # never hard-code an absolute API host") and is what prod does, so this
+        # keeps the e2e faithful to prod instead of testing a shape we never ship.
+        VITE_API_URL: ''
+        # NOTE: the account-security hub flag is no longer a BUILD arg. Flags are
+        # now evaluated per-user by the backend (GET /api/flags); this run turns
+        # the flag on via the backend's FLAGS_FORCE_ON env (see the backend
+        # service below), which keeps the e2e faithful to how prod resolves flags.
+    ports:
+      - '4173:8080'
+    # Override the baked-in nginx.conf with the E2E variant that routes all
+    # /api/* to backend:3001 instead of the K8s service names
+    # (fuzefront-security / fuzefront-applications / fuzefront-backend) that
+    # only exist in the Kubernetes deployment and cause nginx to fail to start
+    # in the docker-compose E2E stack.
+    volumes:
+      - ./deploy/e2e/nginx.e2e.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - e2e
+    depends_on:
+      backend:
+        condition: service_healthy
+      # nginx resolves upstreams at startup, so it fails to boot if `security`
+      # is not up yet — and without it the SPA cannot sign in at all.
+      security:
+        condition: service_healthy

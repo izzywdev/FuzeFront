@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>States — FuzeFront auth-experience frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+<main class="states-wrap" data-frame="06-states" data-flow="states">
+  <p class="gallery__eyebrow">Every state a consumer must render — these are contract, not decoration</p>
+  <h1 class="gallery__title" style="margin-bottom:var(--space-2)">Auth states</h1>
+  <p class="gallery__lede">Email-availability, password-strength, Turnstile, submit-in-flight, and the
+    field/form errors. If it isn't a frame here, the implementation isn't required to handle it.</p>
+
+  <div class="states-grid">
+
+    <!-- Email availability: idle -->
+    <div class="state-card" data-state="email-idle">
+      <p class="state-card__label">Email availability · idle</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="e1"><span>Work email</span></label>
+        <div class="input-wrap"><input class="input" id="e1" type="email" placeholder="you@company.com" /></div>
+        <p class="field__help">We'll check availability as you type.</p>
+      </div>
+    </div>
+
+    <!-- Email availability: checking -->
+    <div class="state-card" data-state="email-checking">
+      <p class="state-card__label">Email availability · checking (debounced)</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="e2"><span>Work email</span>
+          <span class="avail avail--checking" data-avail="checking" role="status" aria-live="polite">
+            <span class="avail__spinner" aria-hidden="true"></span> Checking…</span></label>
+        <div class="input-wrap"><input class="input" id="e2" type="email" value="ada@lovelace.io" /></div>
+      </div>
+    </div>
+
+    <!-- Email availability: available -->
+    <div class="state-card" data-state="email-available">
+      <p class="state-card__label">Email availability · available</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="e3"><span>Work email</span>
+          <span class="avail avail--available" data-avail="available" role="status" aria-live="polite">
+            <svg viewBox="0 0 20 20" fill="none" width="14" height="14"><path d="M4 10.5 8 14.5 16 5.5"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Available</span></label>
+        <div class="input-wrap"><input class="input input--valid" id="e3" type="email" value="ada@lovelace.io" /></div>
+      </div>
+    </div>
+
+    <!-- Email availability: taken -->
+    <div class="state-card" data-state="email-taken">
+      <p class="state-card__label">Email availability · already registered</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="e4"><span>Work email</span>
+          <span class="avail avail--taken" data-avail="taken" role="status" aria-live="polite">
+            Already registered</span></label>
+        <div class="input-wrap"><input class="input" id="e4" type="email"
+          value="founder@fuzefront.com" aria-invalid="true" /></div>
+        <p class="field__help avail avail--taken" style="display:block">That email has an account.
+          <a href="02-signin.html" data-action="signin-instead">Sign in instead?</a></p>
+      </div>
+    </div>
+
+    <!-- Email availability: lookup errored (fail-open, don't block signup) -->
+    <div class="state-card" data-state="email-check-error">
+      <p class="state-card__label">Email availability · check unavailable</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="e5"><span>Work email</span>
+          <span class="avail avail--error" data-avail="error" role="status" aria-live="polite">
+            Couldn't check right now</span></label>
+        <div class="input-wrap"><input class="input" id="e5" type="email" value="ada@lovelace.io" /></div>
+        <p class="field__help">We'll confirm when you submit — this never blocks you from trying.</p>
+      </div>
+    </div>
+
+    <!-- Password strength: weak -->
+    <div class="state-card" data-state="pw-weak">
+      <p class="state-card__label">Password strength · weak</p>
+      <div class="pwmeter" data-strength="weak" data-pwmeter style="margin-top:0">
+        <div class="pwmeter__bars" aria-hidden="true">
+          <span class="pwmeter__bar pwmeter__bar--on"></span>
+          <span class="pwmeter__bar"></span><span class="pwmeter__bar"></span><span class="pwmeter__bar"></span>
+        </div>
+        <div class="pwmeter__label"><span>Password strength</span><b>Weak</b></div>
+        <ul class="pwreq">
+          <li data-met="false" data-req="length"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>12+ characters</li>
+          <li data-met="true" data-req="lower"><svg class="tick" viewBox="0 0 20 20" fill="none"><path d="M4 10.5 8 14.5 16 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Lowercase</li>
+          <li data-met="false" data-req="upper"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Uppercase</li>
+          <li data-met="false" data-req="digit"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Number</li>
+          <li data-met="false" data-req="symbol"><svg class="tick" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/></svg>Symbol</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Password strength: strong -->
+    <div class="state-card" data-state="pw-strong">
+      <p class="state-card__label">Password strength · strong</p>
+      <div class="pwmeter" data-strength="strong" data-pwmeter style="margin-top:0">
+        <div class="pwmeter__bars" aria-hidden="true">
+          <span class="pwmeter__bar pwmeter__bar--on"></span><span class="pwmeter__bar pwmeter__bar--on"></span>
+          <span class="pwmeter__bar pwmeter__bar--on"></span><span class="pwmeter__bar pwmeter__bar--on"></span>
+        </div>
+        <div class="pwmeter__label"><span>Password strength</span><b>Strong</b></div>
+      </div>
+    </div>
+
+    <!-- Confirm mismatch -->
+    <div class="state-card" data-state="confirm-mismatch">
+      <p class="state-card__label">Confirm password · mismatch</p>
+      <div class="field" style="margin:0">
+        <label class="field__label" for="c1">Confirm password</label>
+        <div class="input-wrap"><input class="input" id="c1" type="password" value="secret"
+          aria-invalid="true" data-match="false" /></div>
+        <p class="field__error"><svg viewBox="0 0 20 20" fill="none" width="13" height="13"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Passwords don't match yet.</p>
+      </div>
+    </div>
+
+    <!-- Turnstile: loading -->
+    <div class="state-card" data-state="turnstile-loading">
+      <p class="state-card__label">Turnstile · loading</p>
+      <div class="turnstile" data-state="loading" style="margin:0">
+        <div class="turnstile__box" data-state="loading">
+          <span class="turnstile__spinner" aria-hidden="true"></span>
+          <span class="turnstile__text">Loading challenge…</span>
+          <span class="turnstile__brand">Cloudflare Turnstile</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Turnstile: verified -->
+    <div class="state-card" data-state="turnstile-verified">
+      <p class="state-card__label">Turnstile · verified</p>
+      <div class="turnstile" data-state="verified" style="margin:0">
+        <div class="turnstile__box" data-state="verified">
+          <span class="turnstile__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none">
+            <circle cx="13" cy="13" r="12" fill="var(--success-soft)"/><path d="M8 13.5 11.5 17 18 9.5"
+              stroke="var(--success-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="turnstile__text"><b>Verified — you're human</b></span>
+          <span class="turnstile__brand">Cloudflare Turnstile</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Turnstile: failed -->
+    <div class="state-card" data-state="turnstile-failed">
+      <p class="state-card__label">Turnstile · failed / please retry</p>
+      <div class="turnstile" data-state="failed" style="margin:0">
+        <div class="turnstile__box" data-state="failed">
+          <span class="turnstile__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none">
+            <circle cx="13" cy="13" r="12" fill="var(--error-soft)"/><path d="M9 9l8 8M17 9l-8 8"
+              stroke="var(--error-color)" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="turnstile__text">Verification failed</span>
+          <span class="turnstile__brand">Cloudflare Turnstile</span>
+        </div>
+        <p class="turnstile__err" role="alert">Please complete the challenge to continue.</p>
+      </div>
+    </div>
+
+    <!-- Submit in-flight -->
+    <div class="state-card" data-state="submit-inflight">
+      <p class="state-card__label">Submit · in flight</p>
+      <button type="button" class="btn-ds btn-ds--primary" data-action="submit" disabled>
+        <span class="btn-spinner" aria-hidden="true"></span> Creating account…</button>
+      <p class="field__help">Button is disabled and shows a spinner until the request resolves.</p>
+    </div>
+
+    <!-- Form-level error: invalid credentials -->
+    <div class="state-card" data-state="form-error">
+      <p class="state-card__label">Form error · invalid credentials</p>
+      <div class="alert alert--error" style="margin:0">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span><b>We couldn't sign you in.</b> Check your email and password and try again.</span>
+      </div>
+    </div>
+
+    <!-- Signup conflict -->
+    <div class="state-card" data-state="signup-conflict">
+      <p class="state-card__label">Signup · 409 already exists</p>
+      <div class="alert alert--error" style="margin:0">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span><b>That account already exists.</b> <a href="02-signin.html" style="color:var(--accent-color)">Sign in</a>
+          or <a href="05-password-reset.html" style="color:var(--accent-color)">reset your password</a>.</span>
+      </div>
+    </div>
+
+    <!-- Provider unavailable -->
+    <div class="state-card" data-state="provider-unavailable">
+      <p class="state-card__label">Service · provider unavailable</p>
+      <div class="alert alert--error" style="margin:0">
+        <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor"
+          stroke-width="1.6"/><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round"/></svg>
+        <span><b>Sign-in is temporarily unavailable.</b> Please try again in a moment.</span>
+      </div>
+    </div>
+
+    <!-- MFA required handoff -->
+    <div class="state-card" data-state="mfa-required">
+      <p class="state-card__label">Sign in · MFA required (handoff)</p>
+      <div class="alert alert--info" style="margin:0">
+        <svg viewBox="0 0 20 20" fill="none"><rect x="4" y="9" width="12" height="8" rx="2"
+          stroke="currentColor" stroke-width="1.6"/><path d="M7 9V7a3 3 0 0 1 6 0v2" stroke="currentColor"
+          stroke-width="1.6"/></svg>
+        <span><b>One more step.</b> This account uses two-factor authentication — continues into the
+          MFA challenge flow (separate feature).</span>
+      </div>
+    </div>
+
+    <!-- Unverified gate -->
+    <div class="state-card" data-state="unverified-gate">
+      <p class="state-card__label">Gate · verify to continue</p>
+      <div class="gate-banner" style="margin:0">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 3l7 12H3l7-12Z" stroke="currentColor"
+          stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8v3M10 13h.01" stroke="currentColor"
+          stroke-width="1.8" stroke-linecap="round"/></svg>
+        <div><p class="gate-banner__title">Verify your email to continue</p>
+          <p class="gate-banner__text">Confirm <b>ada@lovelace.io</b> before inviting teammates or going live.
+            <button type="button" class="resend" data-action="resend"
+              style="padding:0">Resend link</button></p></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<nav class="frame-nav" aria-label="Frame navigation">
+  <span class="caption"><b>06 · States</b> — availability (idle/checking/available/taken/error) · strength · match · Turnstile · in-flight · errors · MFA · gate</span>
+  <span>
+    <a class="btn-ds btn-ds--secondary" href="index.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Index</a>
+    <a class="btn-ds btn-ds--primary" href="01-signup.html" style="min-height:36px;padding:0 var(--space-4);width:auto;display:inline-flex">Restart flow →</a>
+  </span>
+</nav>
+</body>
+</html>

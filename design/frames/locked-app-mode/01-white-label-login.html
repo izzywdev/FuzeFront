@@ -1,0 +1,89 @@
+<!-- @dsCard group="Locked App Mode" viewport="1180x760" name="(a) White-label login" subtitle="Locked domain sign-in — product brand only, FuzeFront hidden" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Locked App Mode — (a) White-label login</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  /* A locked product owns its OWN brand on its OWN domain. FuzeFront provides
+     the auth, but nothing here names or shows FuzeFront. Product accent is a
+     manifest.branding.accentColor override of the DS --accent-color token. */
+  :root { --brand-accent: #ff4d6d; --brand-accent-2: #ffb36b; }
+  .locked-login {
+    min-height: 100vh; display: grid; grid-template-columns: 1.1fr 0.9fr;
+    background:
+      radial-gradient(1000px 480px at 85% -10%, rgba(255,77,109,0.20), transparent 60%),
+      radial-gradient(820px 420px at 5% 110%, rgba(255,179,107,0.14), transparent 60%),
+      var(--bg-primary);
+  }
+  .pane-brand { display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-10) var(--space-12); }
+  .brand-lockup { display: flex; align-items: center; gap: var(--space-3); }
+  .brand-lockup .glyph { font-size: 34px; }
+  .brand-lockup .brand-name { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-xl); letter-spacing: var(--tracking-display); }
+  .pitch h1 { font-family: var(--font-display); font-size: 46px; line-height: 1.05; margin: 0 0 var(--space-4); max-width: 16ch; }
+  .pitch h1 .accent { color: var(--brand-accent); }
+  .pitch p { color: var(--text-secondary); font-size: var(--text-lg); max-width: 46ch; }
+  .brand-foot { display: flex; gap: var(--space-4); font-size: var(--text-xs); color: var(--text-tertiary); }
+  .brand-foot a { color: var(--text-tertiary); text-decoration: none; }
+  .pane-auth { display: flex; align-items: center; justify-content: center; padding: var(--space-10); border-left: 1px solid var(--border-color); }
+  .auth-card {
+    width: 100%; max-width: 380px; background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-8); box-shadow: var(--shadow-md);
+  }
+  .auth-card h2 { font-family: var(--font-display); font-size: var(--text-xl); margin: 0 0 var(--space-1); }
+  .auth-card .sub { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-6); }
+  .field { margin-bottom: var(--space-4); }
+  .field label { display: block; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); margin-bottom: 6px; }
+  .field input {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: var(--radius-md);
+    background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-primary); font-size: var(--text-sm);
+  }
+  .btn-brand {
+    width: 100%; padding: 11px 14px; border: none; border-radius: var(--radius-md); cursor: pointer;
+    background: linear-gradient(90deg, var(--brand-accent), var(--brand-accent-2));
+    color: #fff; font-weight: var(--weight-semibold); font-size: var(--text-sm); margin-top: var(--space-2);
+  }
+  .divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; color: var(--text-tertiary); font-size: var(--text-2xs); }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border-color); }
+  .btn-social {
+    width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer;
+    background: var(--bg-primary); color: var(--text-primary); font-size: var(--text-sm); display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .url-chip { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-pill); padding: 4px 10px; }
+  .reviewer-note { position: fixed; bottom: 10px; left: 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); opacity: 0.6; }
+</style>
+</head>
+<body data-frame="01-white-label-login">
+<div class="locked-login" data-mode="locked" data-whitelabel="true" data-app="fuzesocial">
+  <div class="pane-brand" data-owner="app">
+    <div class="brand-lockup">
+      <span class="glyph">💬</span>
+      <span class="brand-name">FuzeSocial</span>
+    </div>
+    <div class="pitch">
+      <h1>Where your world stays <span class="accent">connected</span>.</h1>
+      <p>Sign in to your FuzeSocial account. One place for your feed, messages, and communities.</p>
+    </div>
+    <div class="brand-foot">
+      <span class="url-chip">www.fuzesocial.com · mode=locked</span>
+      <a href="#">Terms</a><a href="#">Privacy</a><a href="#">Support</a>
+    </div>
+  </div>
+  <div class="pane-auth">
+    <div class="auth-card">
+      <h2>Sign in</h2>
+      <p class="sub">Welcome back to FuzeSocial.</p>
+      <div class="field"><label>Email</label><input type="email" value="you@fuzesocial.com" /></div>
+      <div class="field"><label>Password</label><input type="password" value="••••••••••" /></div>
+      <button class="btn-brand" data-action="login">Sign in to FuzeSocial</button>
+      <div class="divider">or</div>
+      <button class="btn-social" data-action="social-google"><span>🔵</span> Continue with Google</button>
+    </div>
+  </div>
+</div>
+<!-- Design-review annotation (NOT part of the shipped product surface): auth is
+     served by the FuzeFront platform same-origin, but is invisible to the user. -->
+<div class="reviewer-note">design-review note · auth via hidden FuzeFront platform (same-origin) · not shown to end users</div>
+</body>
+</html>

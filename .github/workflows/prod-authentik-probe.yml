@@ -1,0 +1,60 @@
+name: Prod Authentik probe (tokenless, read-only)
+
+# Black-box inspection of the PUBLIC Authentik login surface — no secrets.
+# Prints the identification challenge JSON (sources / enroll_url /
+# recovery_url / flow_info) plus existence checks for the FuzeFront flows,
+# so a failed in-cluster config-apply can be diagnosed from runner logs
+# without cluster access. Also fingerprints the deployed app bundle to tell
+# "Argo never synced" apart from "synced but the hook Job failed".
+on:
+  workflow_dispatch:
+    inputs:
+      auth_origin:
+        description: 'Authentik origin'
+        required: false
+        default: 'https://auth.fuzefront.com'
+      app_origin:
+        description: 'App origin'
+        required: false
+        default: 'https://app.fuzefront.com'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe login surface
+        env:
+          AK: ${{ inputs.auth_origin || 'https://auth.fuzefront.com' }}
+          APP: ${{ inputs.app_origin || 'https://app.fuzefront.com' }}
+        run: |
+          set -uo pipefail
+          jar=$(mktemp)
+          echo '=== identification challenge (default-authentication-flow) ==='
+          curl -sSL -c "$jar" -b "$jar" -H 'Accept: application/json' \
+            "$AK/api/v3/flows/executor/default-authentication-flow/?query=" | python3 -m json.tool || true
+          echo
+          echo '=== flow existence (HTTP codes; 404 = flow not created) ==='
+          for slug in fuzefront-enrollment fuzefront-recovery default-authentication-flow; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -L "$AK/if/flow/$slug/")
+            echo "  /if/flow/$slug/ -> $code"
+          done
+          echo
+          echo '=== root page <title> (brand check) ==='
+          curl -sSL "$AK/" | grep -o '<title>[^<]*</title>' | head -1 || true
+          echo
+          echo '=== deployed frontend bundle fingerprint ==='
+          idx=$(curl -sSL "$APP/")
+          echo "$idx" | grep -o 'src="[^"]*\.js"' | head -5
+          entry=$(echo "$idx" | grep -o 'src="[^"]*\.js"' | head -1 | sed 's/src="//; s/"$//')
+          if [ -n "$entry" ]; then
+            echo "entry: $entry"
+            js=$(curl -sSL "$APP$entry")
+            echo "  contains 'Redirecting to Google' (new bundle marker): $(echo "$js" | grep -c 'Redirecting to Google' || true)"
+            echo "  contains 'oidc/signup' (new signup endpoint marker):  $(echo "$js" | grep -c 'oidc/signup' || true)"
+          else
+            echo '  (no entry script found in index.html)'
+          fi

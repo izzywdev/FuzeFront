@@ -1,0 +1,576 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Payment Provider API
+  version: 0.1.0
+  description: >-
+    The vendor-AGNOSTIC payment gateway for FuzeFront. This service is the single
+    seam through which ALL payment-vendor interaction (customers, checkout,
+    invoices, payment-method setup, webhooks) is routed. Consumers —
+    billing-service and other products — speak ONLY this neutral API and never a
+    vendor SDK, so the underlying vendor can be swapped (or run in parallel) by
+    adding a sibling adapter behind the port, and pre/post hooks can be inserted
+    centrally.
+
+    NO vendor names appear in these paths or schemas by design. The active vendor
+    is selected server-side (`PAYMENT_PROVIDER`, default `stripe`) and confined to
+    its adapter (`src/providers/<vendor>/`).
+
+    SCAFFOLD STATUS (v0.1.0): this is the runnable gateway contract + adapter
+    skeleton. The adapter methods are not yet wired to the vendor and return
+    `501 Not Implemented`; the live money path is being absorbed from
+    billing-service progressively. This is NOT yet the live money path.
+
+    Card data never flows through this API — only provider ids and client
+    secrets.
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: '{baseUrl}/api/v1/payments'
+    description: payment-service, mounted under /api/v1/payments
+    variables:
+      baseUrl:
+        default: http://fuzefront-payment-service:3007
+        description: Cluster-internal base URL of the payment-service.
+
+tags:
+  - name: customers
+    description: Vendor-neutral payment customers, keyed by the provider's customer id.
+  - name: invoices
+    description: Read-only invoice history for a customer (provider-backed).
+  - name: checkout
+    description: Hosted checkout session creation (subscription / payment / setup modes).
+  - name: payment-methods
+    description: Collect a payment method without an immediate charge.
+  - name: webhooks
+    description: Provider webhook receiver (public, signature-verified).
+  - name: health
+    description: Liveness / readiness.
+
+paths:
+  /customers:
+    post:
+      operationId: createCustomer
+      tags: [customers]
+      summary: Create (or upsert) a payment customer
+      description: >-
+        Creates a neutral payment customer for a FuzeFront entity. The response
+        is vendor-agnostic — only the neutral `providerCustomerId` is exposed.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+      responses:
+        '201':
+          description: Customer created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [customer]
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /customers/{customerId}:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      operationId: getCustomer
+      tags: [customers]
+      summary: Retrieve a payment customer
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [customer]
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /customers/{customerId}/invoices:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List a customer's invoices
+      description: >-
+        Returns a page of the customer's invoices, most-recent first, from the
+        active provider. Opaque-cursor pagination.
+      security:
+        - internalToken: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size, clamped server-side to 1..100. Defaults to 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor (the provider paging token) for the next page.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of invoices (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoicePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /checkout-sessions:
+    post:
+      operationId: createCheckoutSession
+      tags: [checkout]
+      summary: Create a hosted checkout session
+      description: >-
+        Opens a provider-hosted checkout session in `subscription`, `payment`, or
+        `setup` mode and returns the hosted `url` to redirect the customer to. No
+        raw card data touches this surface.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutSessionRequest'
+      responses:
+        '201':
+          description: Checkout session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [session]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/CheckoutSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /payment-methods/setup:
+    post:
+      operationId: setupPaymentMethod
+      tags: [payment-methods]
+      summary: Begin collecting a payment method (no immediate charge)
+      description: >-
+        Starts a payment-method setup for the customer and returns the
+        `clientSecret` the front-end payment element needs. No charge is made.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentMethodSetupRequest'
+      responses:
+        '201':
+          description: Payment-method setup started.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [setup]
+                properties:
+                  setup:
+                    $ref: '#/components/schemas/PaymentMethodSetup'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /webhooks/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: The vendor whose webhook is being delivered (e.g. `stripe`).
+        schema:
+          type: string
+    post:
+      operationId: receiveWebhook
+      tags: [webhooks]
+      summary: Receive a provider webhook
+      description: >-
+        Receives a vendor webhook. The body MUST be the raw signed bytes
+        (consumed via a raw-body parser) so signature verification works. Public
+        (no internal token) — authenticity is the provider signature. The gateway
+        neutralises the event before any consumer sees it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw provider event (not parsed before signature verification).
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook received (and handled, when understood).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '400':
+          description: Missing/invalid signature or payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness / readiness probe
+      description: >-
+        Always available, even in degraded mode (no vendor key). Mounted at the
+        service root (`/health`), NOT under `/api/v1/payments`.
+      security: []
+      servers:
+        - url: '{baseUrl}'
+          variables:
+            baseUrl:
+              default: http://fuzefront-payment-service:3007
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    examples: [ok]
+                  service:
+                    type: string
+                    examples: [payment-service]
+
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      description: >-
+        `PAYMENT_INTERNAL_TOKEN` presented as a Bearer token by internal
+        consumers (billing-service / the host proxy). Verified by
+        `requireInternalToken`.
+
+  parameters:
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      description: The neutral payment customer id (the active provider's customer id).
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid internal token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotImplemented:
+      description: >-
+        Gateway scaffold — this call is not yet wired to the vendor. The path,
+        shapes, and auth are frozen; the live path is being absorbed from
+        billing-service.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProviderError:
+      description: Upstream payment-provider error (bad gateway).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    EntityType:
+      type: string
+      enum: [user, organization]
+      description: Which FuzeFront entity owns the payment relationship.
+
+    Customer:
+      type: object
+      additionalProperties: false
+      required: [providerCustomerId, email, name, metadata]
+      properties:
+        providerCustomerId:
+          type: string
+          description: The active provider's customer id (opaque to consumers).
+        email:
+          type: [string, 'null']
+        name:
+          type: [string, 'null']
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    CreateCustomerRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        entityType:
+          $ref: '#/components/schemas/EntityType'
+        entityId:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    Invoice:
+      type: object
+      additionalProperties: false
+      required:
+        - providerInvoiceId
+        - number
+        - status
+        - amountDueCents
+        - amountPaidCents
+        - currency
+        - hostedInvoiceUrl
+        - invoicePdfUrl
+        - issuedAt
+      properties:
+        providerInvoiceId:
+          type: string
+        number:
+          type: [string, 'null']
+          description: Human-facing invoice number; null for drafts without one.
+        status:
+          type: string
+          description: 'Neutral invoice status: draft|open|paid|void|uncollectible.'
+          examples: [draft, open, paid, void, uncollectible]
+        amountDueCents:
+          type: integer
+          minimum: 0
+        amountPaidCents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          description: ISO 4217 code, lowercased.
+          examples: [usd]
+        hostedInvoiceUrl:
+          type: [string, 'null']
+        invoicePdfUrl:
+          type: [string, 'null']
+        issuedAt:
+          type: string
+          format: date-time
+
+    InvoicePage:
+      type: object
+      additionalProperties: false
+      required: [invoices, hasMore]
+      properties:
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+        hasMore:
+          type: boolean
+          description: True when another page is available (fetch with the last cursor).
+
+    CheckoutMode:
+      type: string
+      enum: [subscription, payment, setup]
+
+    CheckoutLineItem:
+      type: object
+      additionalProperties: false
+      required: [name, unitAmountCents, quantity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 250
+        description:
+          type: string
+          maxLength: 500
+        unitAmountCents:
+          type: integer
+          minimum: 1
+        quantity:
+          type: integer
+          minimum: 1
+
+    CreateCheckoutSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, successUrl, cancelUrl]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CheckoutMode'
+        providerCustomerId:
+          type: string
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: ISO 4217 code (required for `payment` mode).
+        lineItems:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CheckoutLineItem'
+        priceId:
+          type: string
+          description: Provider price id (for `subscription` mode).
+        successUrl:
+          type: string
+          format: uri
+        cancelUrl:
+          type: string
+          format: uri
+        clientReferenceId:
+          type: string
+          description: Opaque correlation id echoed on the resulting webhook.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    CheckoutSession:
+      type: object
+      additionalProperties: false
+      required: [providerSessionId, url, mode]
+      properties:
+        providerSessionId:
+          type: string
+        url:
+          type: [string, 'null']
+          description: Provider-hosted checkout URL to redirect the customer to.
+        mode:
+          $ref: '#/components/schemas/CheckoutMode'
+
+    PaymentMethodSetupRequest:
+      type: object
+      additionalProperties: false
+      required: [providerCustomerId]
+      properties:
+        providerCustomerId:
+          type: string
+        usage:
+          type: string
+          enum: [on_session, off_session]
+          default: off_session
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    PaymentMethodSetup:
+      type: object
+      additionalProperties: false
+      required: [clientSecret, providerSetupId]
+      properties:
+        clientSecret:
+          type: string
+          description: Client secret for the provider's payment element.
+        providerSetupId:
+          type: string
+
+    WebhookAck:
+      type: object
+      additionalProperties: false
+      required: [received]
+      properties:
+        received:
+          type: boolean
+        handled:
+          type: boolean
+          description: True when the gateway understood and neutralised the event.
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string

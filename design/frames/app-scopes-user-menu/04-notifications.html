@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notifications — Frame (d)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-10) var(--space-8) var(--space-16); }
+  .crumb { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin-bottom: var(--space-4); }
+  .crumb a { color: var(--cyan-400); text-decoration: none; }
+  h1 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  .lead { color: var(--text-secondary); margin: 0 0 var(--space-8); max-width: 68ch; }
+  h2.sec { font-family: var(--font-display); font-size: var(--text-lg); margin: var(--space-10) 0 var(--space-4); }
+  .notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); max-width: 78ch; }
+  .notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .notes li { margin-bottom: var(--space-2); }
+  table.api { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  table.api th, table.api td { text-align: left; padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-color); vertical-align: top; }
+  table.api th { font-family: var(--font-mono); font-size: var(--text-2xs);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
+  table.api code { font-family: var(--font-mono); color: var(--cyan-400); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="04-notifications">
+  <div class="crumb"><a href="index.html">← All frames</a> · Frame (d)</div>
+  <h1>The notification bell, backed by a real inbox</h1>
+  <p class="lead">The bell stops being a stub. Unread count, an inbox with per-item read/archive,
+    “mark all read”, and a live SSE stream that prepends arrivals without a refetch.</p>
+
+  <div class="ffs-grid">
+
+    <div class="ffs-case" data-case="populated">
+      <div class="ffs-case__label">Populated inbox — 3 unread</div>
+      <div class="ffn-panel" data-panel="notifications" data-state="ready">
+        <div class="ffn-panel__seam"></div>
+        <div class="ffn-panel__head">
+          <span class="ffn-panel__title">Notifications</span>
+          <button class="ffn-link" data-action="mark-all-read">Mark all read</button>
+        </div>
+
+        <div class="ffn-item" data-read="false" data-notification="n-1" data-category="billing">
+          <span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffn-item__title">Invoice INV-2043 paid</div>
+            <div class="ffn-item__body">$480.00 for Northwind Labs was charged successfully.</div>
+            <div class="ffn-item__meta">
+              <span class="badge">billing</span><span>2m ago</span>
+              <button class="ffn-link" data-action="archive" data-notification-id="n-1">Archive</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ffn-item" data-read="false" data-notification="n-2" data-category="security">
+          <span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffn-item__title">New sign-in from Lisbon</div>
+            <div class="ffn-item__body">Chrome on macOS. If this wasn't you, review your sessions.</div>
+            <div class="ffn-item__meta">
+              <span class="badge">security</span><span>1h ago</span>
+              <button class="ffn-link" data-action="archive" data-notification-id="n-2">Archive</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ffn-item" data-read="false" data-notification="n-3" data-category="app">
+          <span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffn-item__title">Timesheets installed for everyone</div>
+            <div class="ffn-item__body">Ada Rivera installed Timesheets across Northwind Labs.</div>
+            <div class="ffn-item__meta">
+              <span class="badge">app</span><span>3h ago</span>
+              <button class="ffn-link" data-action="archive" data-notification-id="n-3">Archive</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ffn-item" data-read="true" data-notification="n-4" data-category="system">
+          <span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffn-item__title">Workspace provisioning complete</div>
+            <div class="ffn-item__body">Northwind Labs is ready to use.</div>
+            <div class="ffn-item__meta">
+              <span class="badge">system</span><span>Yesterday</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">Read and unread are visually distinct without relying on color alone —
+        the unread rows also carry the leading dot and a tinted surface.</p>
+    </div>
+
+    <div class="ffs-case" data-case="states">
+      <div class="ffs-case__label">Loading · empty · error</div>
+
+      <div class="ffn-panel" data-panel="notifications" data-state="loading" style="margin-bottom: var(--space-5);">
+        <div class="ffn-panel__seam"></div>
+        <div class="ffn-panel__head"><span class="ffn-panel__title">Notifications</span></div>
+        <div class="ffn-item"><span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffs-skel" style="width: 60%;"></div>
+            <div class="ffs-skel" style="width: 85%; margin-top: var(--space-2);"></div>
+          </div></div>
+        <div class="ffn-item"><span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffs-skel" style="width: 45%;"></div>
+            <div class="ffs-skel" style="width: 70%; margin-top: var(--space-2);"></div>
+          </div></div>
+      </div>
+
+      <div class="ffn-panel" data-panel="notifications" data-state="empty" style="margin-bottom: var(--space-5);">
+        <div class="ffn-panel__seam"></div>
+        <div class="ffn-panel__head"><span class="ffn-panel__title">Notifications</span></div>
+        <div class="ffs-empty" data-empty>You're all caught up.</div>
+      </div>
+
+      <div class="ffn-panel" data-panel="notifications" data-state="error">
+        <div class="ffn-panel__seam"></div>
+        <div class="ffn-panel__head"><span class="ffn-panel__title">Notifications</span></div>
+        <div style="padding: var(--space-4);">
+          <div class="ffs-callout ffs-callout--error">
+            <div>
+              Couldn't load notifications.
+              <div style="margin-top: var(--space-2);">
+                <button class="btn btn-ghost" data-action="retry">Retry</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="ffs-case__note">Degrades quiet: when the service is unreachable the bell shows
+        <b>no badge</b> and the panel shows the error — a notification outage must never break the shell.</p>
+    </div>
+
+    <div class="ffs-case" data-case="badge">
+      <div class="ffs-case__label">Badge states</div>
+      <div style="display: flex; gap: var(--space-6); align-items: center; padding: var(--space-4) 0;">
+        <div class="ffn-bell" data-bell data-unread="3">
+          <span aria-hidden="true">🔔</span><span class="ffn-bell__badge" data-badge>3</span>
+        </div>
+        <div class="ffn-bell" data-bell data-unread="0"><span aria-hidden="true">🔔</span></div>
+        <div class="ffn-bell" data-bell data-unread="127">
+          <span aria-hidden="true">🔔</span><span class="ffn-bell__badge" data-badge>99+</span>
+        </div>
+        <div class="ffn-bell" data-bell data-unread="unknown" data-degraded="true">
+          <span aria-hidden="true">🔔</span>
+        </div>
+      </div>
+      <p class="ffs-case__note">Left to right: unread, none, capped at <code>99+</code>, and service
+        unreachable. The degraded bell is indistinguishable from “no unread” on purpose — a phantom
+        badge the user can never clear is worse than a missing one.</p>
+    </div>
+
+    <div class="ffs-case" data-case="live">
+      <div class="ffs-case__label">Live arrival over SSE</div>
+      <div class="ffn-panel" data-panel="notifications" data-state="ready">
+        <div class="ffn-panel__seam"></div>
+        <div class="ffn-panel__head">
+          <span class="ffn-panel__title">Notifications</span>
+          <button class="ffn-link" data-action="mark-all-read">Mark all read</button>
+        </div>
+        <div class="ffn-item" data-read="false" data-notification="n-live" data-arrival="live">
+          <span class="ffn-item__dot" aria-hidden="true"></span>
+          <div class="ffn-item__main">
+            <div class="ffn-item__title">Deployment finished</div>
+            <div class="ffn-item__body">fuzefront-backend rolled out to production.</div>
+            <div class="ffn-item__meta"><span class="badge">system</span><span>just now</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="ffs-case__note">Arrivals prepend and bump the badge. On reconnect the client re-fetches
+        the unread count, so an event missed during a drop self-heals rather than under-counting forever.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Service surface</h2>
+  <table class="api">
+    <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/v1/notifications</code></td><td>Paginated inbox; <code>status</code>, <code>category</code>, <code>organizationId</code> filters.</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/v1/notifications/unread-count</code></td><td>The badge.</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/v1/notifications/stream</code></td><td>SSE, heartbeat-kept.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/v1/notifications/{id}/read</code></td><td>Also <code>/read-all</code>, <code>/{id}/unread</code>, <code>/seen</code>.</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/v1/notifications/{id}</code></td><td>Archive.</td></tr>
+      <tr><td><code>GET</code>/<code>PUT</code></td><td><code>/api/v1/notifications/preferences</code></td><td>Per category × channel.</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/v1/notifications/internal/publish</code></td><td>Service-to-service only; internal token; fans out to recipients.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <ul>
+      <li>Every user-facing route derives <code>user_id</code> from the verified JWT and never from
+        the request, so there is no id to tamper into someone else's mailbox.</li>
+      <li>One row per recipient — fan-out happens at write time so the read path is a single indexed
+        scan and the badge is a partial-index count.</li>
+      <li>A <code>dedupe_key</code>, unique per user among live rows, means a retried producer cannot
+        double-post the same event.</li>
+    </ul>
+    Test hooks: <code>[data-panel='notifications']</code> ·
+    <code>[data-state='loading'|'empty'|'error'|'ready']</code> · <code>[data-bell]</code> ·
+    <code>[data-badge]</code> · <code>[data-notification]</code> · <code>[data-read]</code> ·
+    <code>[data-action='mark-all-read'|'archive'|'retry']</code> · <code>[data-arrival='live']</code>.
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption"><b>Frame (d)</b> — notifications</span>
+  <a href="05-states.html" class="btn btn-primary">Next: cross-cutting states →</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Billing — Invoice history states</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .states-grid { display: grid; gap: var(--space-6); grid-template-columns: 1fr;
+    max-width: 720px; }
+  @media (min-width: 720px){ .states-grid { grid-template-columns: 1fr 1fr; } }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase;
+    color: var(--text-tertiary); margin: 0 0 var(--space-2); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="02-states">
+  <div class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" aria-hidden="true">▦</div>
+    <div class="avatar">IZ</div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Organization</div>
+      <a class="nav-item"><span class="ico">📊</span> Overview</a>
+      <a class="nav-item"><span class="ico">👥</span> Members</a>
+      <a class="nav-item active" data-nav="billing"><span class="ico">🧾</span> Billing</a>
+      <a class="nav-item"><span class="ico">⚙️</span> Settings</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Invoices — states</h1>
+      <p class="page-sub">Loading, empty and error states for the InvoiceHistoryPanel.</p>
+
+      <div class="states-grid">
+        <div>
+          <p class="state-label">Loading (skeleton)</p>
+          <section class="ffb-invoices" data-panel="invoice-history" data-state="loading">
+            <div class="ffb-invoices__seam"></div>
+            <div class="ffb-invoices__head"><h2 class="ffb-invoices__title">Invoices</h2></div>
+            <div class="ffb-invoices__list">
+              <div class="ffb-invoice-row"><div class="ffb-invoice-row__main"><div class="ffb-skel" style="width:58%"></div><div class="ffb-skel" style="width:34%;margin-top:6px"></div></div><div class="ffb-skel" style="width:54px;height:20px"></div></div>
+              <div class="ffb-invoice-row"><div class="ffb-invoice-row__main"><div class="ffb-skel" style="width:50%"></div><div class="ffb-skel" style="width:30%;margin-top:6px"></div></div><div class="ffb-skel" style="width:54px;height:20px"></div></div>
+              <div class="ffb-invoice-row"><div class="ffb-invoice-row__main"><div class="ffb-skel" style="width:54%"></div><div class="ffb-skel" style="width:28%;margin-top:6px"></div></div><div class="ffb-skel" style="width:54px;height:20px"></div></div>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <p class="state-label">Empty</p>
+          <section class="ffb-invoices" data-panel="invoice-history" data-state="empty">
+            <div class="ffb-invoices__seam"></div>
+            <div class="ffb-invoices__head"><h2 class="ffb-invoices__title">Invoices</h2></div>
+            <div class="ffb-empty" data-empty>
+              <svg class="ffb-empty__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M6 3h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M9 13h6M9 17h4"/></svg>
+              <p style="margin:0 0 var(--space-1);color:var(--text-primary);font-weight:var(--weight-medium)">No invoices yet</p>
+              <p class="ffb-note" style="margin:0">Invoices appear here after your first billed period.</p>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <p class="state-label">Error</p>
+          <section class="ffb-invoices" data-panel="invoice-history" data-state="error">
+            <div class="ffb-invoices__seam"></div>
+            <div class="ffb-invoices__head"><h2 class="ffb-invoices__title">Invoices</h2></div>
+            <div class="ffb-empty" data-error>
+              <svg class="ffb-empty__icon" style="color:var(--error-color)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+              <p style="margin:0 0 var(--space-1);color:var(--text-primary);font-weight:var(--weight-medium)">Couldn't load invoices</p>
+              <p class="ffb-note" style="margin:0 0 var(--space-3)">Something went wrong on our end.</p>
+              <button class="btn btn-ghost" data-action="retry">Try again</button>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <p class="state-label">Uncollectible (status variant)</p>
+          <section class="ffb-invoices" data-panel="invoice-history">
+            <div class="ffb-invoices__seam"></div>
+            <div class="ffb-invoices__head"><h2 class="ffb-invoices__title">Invoices</h2></div>
+            <div class="ffb-invoices__list">
+              <div class="ffb-invoice-row" data-invoice="FF-2026-0009" data-status="uncollectible">
+                <div class="ffb-invoice-row__main"><div class="ffb-invoice-row__top">
+                  <span class="ffb-invoice-row__num">FF-2026-0009</span>
+                  <span class="ffb-invoice-row__date">· Mar 1, 2026</span></div></div>
+                <div class="ffb-invoice-row__side">
+                  <span class="ffb-pill ffb-pill--uncollectible"><span class="ffb-pill__dot"></span>Uncollectible</span>
+                  <span class="ffb-invoice-row__amount">$49.00</span>
+                  <a class="ffb-dl" href="#" data-download="hosted" aria-label="View invoice FF-2026-0009">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M8 13h8M8 17h5M6 3h9l5 5v11a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/></svg>View</a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (b) · <b>States</b> — loading / empty / error / status variants</span>
+  <a href="01-invoice-history.html" class="btn btn-ghost">← Back to list</a>
+</div>
+</body>
+</html>

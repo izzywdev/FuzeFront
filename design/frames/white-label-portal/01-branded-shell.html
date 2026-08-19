@@ -1,0 +1,100 @@
+<!-- @dsCard group="White-label portal" viewport="1280x800" name="(1) Branded tenant shell" subtitle="CorpABC portal — topbar + side panel + app grid, reskinned by portal context" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>White-label portal — (1) Branded tenant shell (CorpABC)</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<!-- data-portal="corpabc" is the ONLY difference vs. the root shell (frame 2).
+     It re-points --accent-* at CorpABC's brand tokens (tokens.css). branding.name
+     / branding.logo come from GET /api/v1/portal/context and fill the lockup. -->
+<body data-frame="01-branded-shell" data-portal="corpabc">
+<div class="shell" data-shell="branded" data-portal-name="CorpABC">
+  <!-- ================= TOPBAR ================= -->
+  <header class="topbar" data-region="topbar">
+    <div class="brand-lockup" data-branding="topbar">
+      <span class="brand-glyph" data-branding-logo aria-hidden="true">CA</span>
+      <span class="brand-name" data-branding-name>CorpABC</span>
+    </div>
+    <div class="search"><span>🔎</span><span>Search CorpABC…</span></div>
+    <div class="spacer"></div>
+    <div class="icon-btn" title="Apps">▦</div>
+    <div class="icon-btn" title="Notifications">🔔</div>
+    <div class="avatar" data-user-initials title="Jordan Rivera">JR</div>
+  </header>
+
+  <div class="body">
+    <!-- ================= SIDE PANEL ================= -->
+    <nav class="side" data-region="side-panel">
+      <a class="nav-item active" href="#"><span class="ico">🏠</span> Home</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Apps</a>
+      <a class="nav-item" href="#"><span class="ico">👥</span> Team</a>
+      <a class="nav-item" href="#"><span class="ico">📊</span> Reports</a>
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">⚙️</span> Settings</a>
+      <a class="nav-item" href="#"><span class="ico">🎨</span> Branding</a>
+      <a class="nav-item" href="#"><span class="ico">🔒</span> Security</a>
+    </nav>
+
+    <!-- ================= CONTENT: APP GRID ================= -->
+    <main class="content" data-region="content">
+      <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-2)">
+        <h1 class="page-title" style="margin:0">Welcome back to CorpABC</h1>
+        <span class="badge accent" data-portal-badge>portal · corpabc</span>
+      </div>
+      <p class="page-sub">Your team's apps, all in one branded workspace.</p>
+
+      <section class="app-grid" data-region="app-grid" aria-label="Portal apps">
+        <div class="app-card" data-app="crm">
+          <div class="app-ico">📇</div>
+          <div class="app-name">CorpABC CRM</div>
+          <p class="app-desc">Pipeline, contacts &amp; deals.</p>
+        </div>
+        <div class="app-card" data-app="docs">
+          <div class="app-ico">📄</div>
+          <div class="app-name">Docs</div>
+          <p class="app-desc">Shared team documents.</p>
+        </div>
+        <div class="app-card" data-app="analytics">
+          <div class="app-ico">📈</div>
+          <div class="app-name">Analytics</div>
+          <p class="app-desc">Dashboards &amp; metrics.</p>
+        </div>
+        <div class="app-card" data-app="inbox">
+          <div class="app-ico">✉️</div>
+          <div class="app-name">Inbox</div>
+          <p class="app-desc">Unified messages.</p>
+        </div>
+        <div class="app-card" data-app="billing">
+          <div class="app-ico">💳</div>
+          <div class="app-name">Billing</div>
+          <p class="app-desc">Invoices &amp; plans.</p>
+        </div>
+        <div class="app-card" data-app="add">
+          <div class="app-ico">＋</div>
+          <div class="app-name">Add app</div>
+          <p class="app-desc">Browse the catalog.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Design-review annotation (NOT part of the shipped product surface) -->
+  <div class="reviewer-note">
+    design-review note · every accent surface (logo tile, active nav, avatar, seam, badge, app-icon tint)
+    resolves to <code>var(--accent-color)</code> → CorpABC brand token via <code>[data-portal="corpabc"]</code>.
+    No FuzeFront wordmark. Branding sourced from <code>GET /api/v1/portal/context</code> (FF-EPIC-10-S2).
+  </div>
+</div>
+
+<nav class="frame-nav">
+  <span class="caption">Frame <b>1 / 5</b> · Branded tenant shell (CorpABC)</span>
+  <span>
+    <a class="btn btn-ghost" href="index.html">Index</a>
+    <a class="btn btn-primary" href="02-root-shell.html" data-nav="02-root-shell">Same shell, root branding →</a>
+  </span>
+</nav>
+</body>
+</html>

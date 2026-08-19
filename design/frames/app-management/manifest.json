@@ -1,0 +1,320 @@
+{
+  "name": "App Management Console — approval frames",
+  "feature": "app-management",
+  "description": "Contract-freeze UX artifacts for the App Management Console (FF-EPIC-20) — the management surface FuzeFront has never had. Three flows: (1) list every registered app (searchable/filterable/paginated) with lifecycle state, visibility and owning org; (2) open one app to view/edit its settings & attributes and run its lifecycle (activate/suspend), built-ins non-deletable; (3) manage where an app is installed and at what scope (org/portal/user). Distinct from federated-apps (the register→activate add-app flow). Approving a flow approves its visual + interaction model AND its component/package/contract build inventory before any UI is written. Flows 1 & 2 bind to the REAL @fuzefront/app-registry-client; flow 3 (installations/scopes) is anticipated and commissioned by these frames. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/app-management-ui/**"
+    ]
+  },
+  "entry": "index.html",
+  "plan": "docs/planning/epics/EPIC-20-app-management-console.md",
+  "epics": [
+    "FF-EPIC-20"
+  ],
+  "contracts": {
+    "real": [
+      {
+        "client": "@fuzefront/app-registry-client",
+        "openapi": "services/app-registry-service/openapi.yaml",
+        "usedFor": "List all apps; read/edit one app's manifest (display, visibility, routing/entry, config attributes); delete (non-builtin); lifecycle transitions activate/suspend; health via heartbeat. Base path /api/v1/app-registry.",
+        "endpoints": [
+          "GET /apps",
+          "GET /apps/{slug}",
+          "PUT /apps/{slug}",
+          "DELETE /apps/{slug}",
+          "POST /apps/{slug}/activate",
+          "POST /apps/{slug}/suspend",
+          "GET /apps/{slug}/heartbeat"
+        ]
+      }
+    ],
+    "anticipated": [
+      {
+        "client": "@fuzefront/app-registry-client (extension)",
+        "openapi": "app installations/scopes surface (NOT frozen — commissioned by these frames, modelled on the portal precedent's portal_apps)",
+        "usedFor": "View/add/remove where an app is installed and at what scope level (organization/portal/user). Every reference carries its type (targetType), never a bare id (identifier-standard). Targets authorized via Permit.",
+        "endpoints": [
+          "GET /apps/{slug}/installations",
+          "POST /apps/{slug}/installations",
+          "DELETE /apps/{slug}/installations/{installationId}"
+        ]
+      }
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "app-list",
+        "orchestrator": "AppManagementListFlow",
+        "route": "/apps",
+        "story": "FF-EPIC-20",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "GET /apps"
+          ],
+          "component": "@fuzefront/app-management-ui → AppManagementListFlow",
+          "featureFlag": "fuzefront.apps.management-console"
+        },
+        "frames": [
+          "01-app-list",
+          "05-app-list-states"
+        ]
+      },
+      {
+        "id": "app-detail",
+        "orchestrator": "AppDetailFlow",
+        "route": "/apps/:appId",
+        "story": "FF-EPIC-20",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "GET /apps/{slug}",
+            "PUT /apps/{slug}",
+            "DELETE /apps/{slug}",
+            "POST /apps/{slug}/activate",
+            "POST /apps/{slug}/suspend"
+          ],
+          "component": "@fuzefront/app-management-ui → AppDetailFlow",
+          "featureFlag": "fuzefront.apps.management-console"
+        },
+        "frames": [
+          "02-app-detail",
+          "03-app-settings",
+          "06-editor-states"
+        ]
+      },
+      {
+        "id": "installations",
+        "orchestrator": "AppInstallationsFlow",
+        "route": "/apps/:appId/installations",
+        "story": "FF-EPIC-20",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "contract": {
+          "client": "@fuzefront/app-registry-client (extension — anticipated)",
+          "status": "anticipated",
+          "openapi": "app installations/scopes surface (NOT frozen — commissioned by these frames)",
+          "endpoints": [
+            "GET /apps/{slug}/installations",
+            "POST /apps/{slug}/installations",
+            "DELETE /apps/{slug}/installations/{installationId}"
+          ],
+          "component": "@fuzefront/app-management-ui → AppInstallationsFlow",
+          "featureFlag": "fuzefront.apps.installations"
+        },
+        "frames": [
+          "04-installations",
+          "07-installation-states"
+        ]
+      }
+    ],
+    "components": [
+      "AppConsoleShell",
+      "AppsToolbar",
+      "AppSearchInput",
+      "AppFilters",
+      "AppsTable",
+      "AppRow",
+      "AppGrid",
+      "AppCard",
+      "AppStateBadge",
+      "VisibilityBadge",
+      "OwningOrgCell",
+      "AppsPagination",
+      "AppsEmptyState",
+      "ReadOnlyNotice",
+      "AppDetailHeader",
+      "AppDetailTabs",
+      "AppLifecycleActions",
+      "AppSettingsForm",
+      "AppIconUploader",
+      "VisibilitySelect",
+      "RoutingFields",
+      "AppAttributesEditor",
+      "AttributeRow",
+      "BuiltInLockNotice",
+      "SuspendAppDialog",
+      "ActivateAppDialog",
+      "SaveBar",
+      "InstallationsTable",
+      "InstallationRow",
+      "ScopeLevelBadge",
+      "InstallationStatusBadge",
+      "AddInstallationDialog",
+      "ScopeTargetPicker",
+      "RemoveInstallationDialog",
+      "OrphanedTargetNotice",
+      "PermissionDeniedNotice"
+    ],
+    "packages": [
+      "@fuzefront/app-management-ui"
+    ],
+    "dsPrimitivesNeeded": [
+      "Tabs — app-detail tab strip; not in @fuzefront/design-system today",
+      "StatusPill — semantic lifecycle / visibility / installation state pill",
+      "DataTable — sortable, cursor-paginated collection table",
+      "SearchInput — debounced search field",
+      "KeyValueEditor — attribute key/value rows",
+      "FileDrop — icon uploader"
+    ]
+  },
+  "commissionedByApproval": [
+    "App installations/scopes surface (GET/POST/DELETE /apps/{slug}/installations) — does not exist in the app-registry contract today; commissioned by these frames, modelled on the portal precedent's portal_apps.",
+    "409 CONFLICT on concurrent manifest edit (PUT /apps/{slug}) — proposed optimistic-concurrency guard rendered inline (frame f, f6).",
+    "422 VALIDATION on an invalid manifest field (e.g. entry URL) rendered inline on the field, never a toast (frame f, f6).",
+    "403 FORBIDDEN_TARGET on adding an installation to a target outside the caller's authority (frame g, g7); read-only fail-closed surfaces on missing apps:write / apps:activate (frames e5, f1, g4)."
+  ],
+  "frames": [
+    {
+      "id": "01-app-list",
+      "file": "01-app-list.html",
+      "label": "(a) All applications",
+      "route": "/apps",
+      "flow": "app-list",
+      "summary": "Searchable, filterable, paginated table (with grid toggle) of every registered app: icon+name, slug, lifecycle state (registered/activated/suspended), visibility (private/organization/public/marketplace), owning org, integration. Row → detail. Built-ins tagged.",
+      "acceptanceNotes": "Rows render from GET /api/v1/app-registry/apps (cursor-paginated — data-action='load-more' fetches the next page, never an unbounded fetch). Search filters by name/slug; filter chips narrow by status, visibility and owning org, applied server-side as query params and reflected in the URL. State pill maps status: registered=warning, activated=success, suspended=error. A row is a link to /apps/{slug}. builtin apps are tagged (data-builtin='true'). Loading/empty/no-results/error/read-only are contract — see frame (e).",
+      "testHooks": [
+        "[data-frame='01-app-list']",
+        "[data-panel='app-list']",
+        "[data-input='search']",
+        "[data-filter='state']",
+        "[data-app='crm']",
+        "[data-app-state='suspended']",
+        "[data-action='view-grid']",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "02-app-detail",
+      "file": "02-app-detail.html",
+      "label": "(b) App detail",
+      "route": "/apps/:appId",
+      "flow": "app-detail",
+      "summary": "One app at a glance: header (icon/name/state/visibility), lifecycle actions (Suspend when activated / Activate when suspended), and an overview definition list (display name, immutable slug, owning org, integration, entry/route, menu chrome, health, installation count). Tabs into settings and installations.",
+      "acceptanceNotes": "Header + overview bind to GET /api/v1/app-registry/apps/{slug} (AppManifest). Lifecycle is state-driven and mutually exclusive: an activated app shows Suspend (POST /apps/{slug}/suspend), a registered/suspended app shows Activate (POST /apps/{slug}/activate) — never both; requires apps:activate. A caller without the scope sees no lifecycle control (fail-closed, frame f). builtin apps hide Delete entirely. Health derives from GET /apps/{slug}/heartbeat.",
+      "testHooks": [
+        "[data-frame='02-app-detail']",
+        "[data-panel='app-detail-header']",
+        "[data-panel='lifecycle-actions']",
+        "[data-app-state='activated']",
+        "[data-action='suspend-app']",
+        "[data-action='edit-settings']",
+        "[data-action='view-installations']"
+      ]
+    },
+    {
+      "id": "03-app-settings",
+      "file": "03-app-settings.html",
+      "label": "(c) Settings & attributes",
+      "route": "/apps/:appId/settings",
+      "flow": "app-detail",
+      "summary": "Settings/attributes editor: display name, icon uploader, visibility select, entry/remote URL, route/mount path, and configuration attributes as key/value rows (add/remove). Slug rendered read-only (immutable). Sticky save bar with dirty indicator.",
+      "acceptanceNotes": "Save is PUT /api/v1/app-registry/apps/{slug} replacing the AppManifest; requires apps:write. Slug and builtin are immutable — rendered read-only, and a changed slug is rejected server-side. Visibility options are the contract enum (private/organization/public/marketplace). Attributes edit manifest config keys (menuLabel, chrome.menu, mode, …). A 422 renders inline on the offending field; a 409 concurrent-edit and a 403 denial are contract (frame f). A caller without apps:write sees the whole form read-only with no Save affordance.",
+      "testHooks": [
+        "[data-frame='03-app-settings']",
+        "[data-panel='settings-form']",
+        "[data-input='displayName']",
+        "[data-input='slug']",
+        "[data-input='visibility']",
+        "[data-input='attributes']",
+        "[data-action='add-attr']",
+        "[data-action='save-settings']"
+      ]
+    },
+    {
+      "id": "04-installations",
+      "file": "04-installations.html",
+      "label": "(d) Installations & scopes",
+      "route": "/apps/:appId/installations",
+      "flow": "installations",
+      "summary": "Table of where the app is installed: target (org/portal/user), scope level, installed-by, status. Add-installation dialog (scope level + target picker) and per-row remove. An installation whose target was removed/suspended shows an orphaned status.",
+      "acceptanceNotes": "ANTICIPATED surface. Rows from GET /api/v1/app-registry/apps/{slug}/installations. Add is POST …/installations { scopeLevel, targetId, targetType } — every reference carries its type (organization/portal/user), never a bare id. Remove is DELETE …/installations/{id} behind a confirm. Only targets the caller administers are selectable; a cross-tenant target is 403 (frame g, g7). An installation whose target portal was removed/suspended renders data-installation-status='orphaned' and stays removable — it never crashes the table (frame g, g5).",
+      "testHooks": [
+        "[data-frame='04-installations']",
+        "[data-panel='installations']",
+        "[data-installation='inst_org_nw']",
+        "[data-scope='portal']",
+        "[data-installation-status='orphaned']",
+        "[data-action='add-installation']",
+        "[data-action='remove-installation']",
+        "[data-action='submit-installation']"
+      ]
+    },
+    {
+      "id": "05-app-list-states",
+      "file": "05-app-list-states.html",
+      "label": "(e) App-list states",
+      "route": "/apps",
+      "flow": "app-list",
+      "summary": "The app list's contract states: loading skeleton, empty registry, no-results (search/filter matched nothing), load error+retry, and the fail-closed read-only/permission-denied list with every management affordance absent.",
+      "acceptanceNotes": "e1 loading = aria-busy skeleton for GET /apps. e2 empty is a truly empty registry (distinct copy + register CTA). e3 no-results is a non-empty registry with a search/filter that matched nothing (distinct state + clear-filters). e4 error shows data-action='retry'. e5 is the rule: a 403 renders the list READ-ONLY (no create/edit/suspend/install controls rendered — not disabled-on-click), shown in place, NEVER a sign-in redirect (only 401 re-authenticates).",
+      "testHooks": [
+        "[data-frame='05-app-list-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='no-results']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='read-only']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-http='403']"
+      ]
+    },
+    {
+      "id": "06-editor-states",
+      "file": "06-editor-states.html",
+      "label": "(f) Detail & editor states",
+      "route": "/apps/:appId",
+      "flow": "app-detail",
+      "summary": "Detail/editor contract states: read-only (fail-closed) detail, suspended app with limited actions (Activate not Suspend), built-in immutable (Delete disabled), app with no editable settings (disabled Save, not a broken form), suspend confirm, and save failures (422 inline / 409 preserves form / 403 in place).",
+      "acceptanceNotes": "f1 read-only is fail-closed: no management affordance rendered on a 403, never shown-then-403'd. f2 a suspended app offers Activate (not Suspend) and pauses installation targeting. f3 builtin=true disables Delete client-side and the API refuses it (BUILTIN_IMMUTABLE). f4 an app with no editable settings shows a disabled Save with an explanatory empty state, not an empty broken form. f5 suspend is POST /apps/{slug}/suspend behind a confirm. f6: 422 VALIDATION renders inline on the field, 409 CONFLICT preserves the form, 403 FORBIDDEN is shown in place.",
+      "testHooks": [
+        "[data-frame='06-editor-states']",
+        "[data-state='read-only']",
+        "[data-app-state='suspended']",
+        "[data-builtin='true']",
+        "[data-state='no-editable-settings']",
+        "[data-action='confirm-suspend-app']",
+        "[data-error-code='VALIDATION']",
+        "[data-error-code='CONFLICT']",
+        "[data-error-code='BUILTIN_IMMUTABLE']",
+        "[data-http='403']"
+      ]
+    },
+    {
+      "id": "07-installation-states",
+      "file": "07-installation-states.html",
+      "label": "(g) Installation states",
+      "route": "/apps/:appId/installations",
+      "flow": "installations",
+      "summary": "The installations surface's contract states: loading, no installations, load error, read-only (fail-closed), orphaned target (removed/suspended portal → status, not crash), remove confirm, and cross-tenant add denied (403).",
+      "acceptanceNotes": "g1 loading skeleton for GET …/installations. g2 empty is an app installed nowhere. g3 non-2xx with retry. g4 read-only fail-closed: no Add/Remove rendered. g5 is the epic's edge case: an installation whose target portal was removed/suspended renders data-installation-status='orphaned' from its own record and stays removable — it must NOT crash or blank the list. g6 remove is DELETE …/installations/{id} behind a confirm. g7 add authorizes the target via Permit; a target outside the caller's authority is 403 FORBIDDEN_TARGET, shown in place.",
+      "testHooks": [
+        "[data-frame='07-installation-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-state='read-only']",
+        "[data-installation-status='orphaned']",
+        "[data-action='confirm-remove-installation']",
+        "[data-error-code='FORBIDDEN_TARGET']",
+        "[data-http='403']"
+      ]
+    }
+  ],
+  "stamp": "57b824eff6788b372e3f62ccbc287205ca7df8e2f3424a40bdc2eddc088ec199"
+}

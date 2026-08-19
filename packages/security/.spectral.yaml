@@ -1,0 +1,9 @@
+# Spectral ruleset for the FuzeFront Security API contract. Mirrors the repo
+# root ruleset used by CI for internal, cluster-only microservice specs.
+extends: ['spectral:oas']
+
+rules:
+  info-contact: off
+  license-url: off
+  operation-description: warn
+  oas3-valid-schema-example: warn

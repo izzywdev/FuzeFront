@@ -1,0 +1,77 @@
+# Authentik Blueprint TEMPLATE — per-portal brand (FF-EPIC-11-S4 AC2)
+#
+# THIS FILE IS NOT APPLIED BY ANYTHING, AND MUST NEVER LIVE UNDER
+# `../blueprints/`. `templates/authentik-blueprints.yaml` builds the live
+# ConfigMap via `.Files.Glob "authentik/blueprints/*.yaml"` and Authentik's
+# worker auto-applies EVERY file that glob picks up on pod start — so if this
+# template (with its literal, un-substituted `{{PLACEHOLDER}}` tokens) sat in
+# that directory, the next deploy would try to create a real brand with a
+# domain literally named "{{PORTAL_DOMAIN}}". This `blueprint-templates/`
+# sibling directory is deliberately outside that glob for exactly that
+# reason — do not move this file into `../blueprints/`, ever, without also
+# rendering out its placeholders first.
+#
+# It documents the shape of a per-portal `authentik_brands.brand` —
+# following the `brand-mendys.yaml` precedent exactly (`state: present`,
+# `identifiers: { domain }`, `default: false`) — for the rare case a portal
+# needs a hand-applied / GitOps-rendered brand (e.g. a dedicated-instance
+# tenant analogous to MendysRobotics, or a break-glass fix while the live
+# Admin API is down).
+#
+# The path EVERY ordinary portal actually goes through is automatic and
+# runtime: `backend/src/authentik/portalBrand.ts`'s `createAuthentikBrandRegistrar`,
+# invoked from `backend/src/services/portalProvisioning.ts`'s
+# `authentik_brand_register` step at portal-creation time. That module talks
+# to the SAME `POST`/`PATCH /api/v3/core/brands/` Admin API a blueprint apply
+# would ultimately drive — it is the "provisioning artifact" alternative to a
+# static file, chosen because portals (and therefore their domains/branding)
+# are created on demand through the admin API, long after this chart last
+# deployed. A blueprint is a ConfigMap rendered once at Helm-chart deploy
+# time; it cannot know about a portal created five minutes ago.
+#
+# To hand-render one for a specific portal, copy this file, replace every
+# {{PLACEHOLDER}}, and apply it the same way `brand-fuseseam.yaml` is applied
+# (FuzeInfra/GitOps territory — never `kubectl`/`helm apply` from this repo).
+#
+# Placeholders:
+#   {{PORTAL_SLUG}}    — the portal's slug (used only in the blueprint's own
+#                         `metadata.name` for readability in the Authentik UI)
+#   {{PORTAL_DOMAIN}}  — the domain Authentik matches the login Host header
+#                         against (the portal's PRIMARY `portal_domains` row —
+#                         see AC3: a portal with more than one domain needs one
+#                         brand entry per additional domain it wants themed,
+#                         each a copy of this template with its own `domain`)
+#   {{PORTAL_NAME}}    — `portals.branding.name` (falls back to `portals.name`)
+#   {{ACCENT_HEX}}     — `portals.branding.accent`, a `#rrggbb`/`#rgb` value;
+#                         omit the whole `branding_custom_css` key entirely if
+#                         the portal set no accent (an empty/missing accent is
+#                         NOT the same as an empty string here)
+#
+# Schema: version 1, entries[]
+# Model: authentik_brands.brand
+# Idempotent: state: present + unique domain "{{PORTAL_DOMAIN}}"
+version: 1
+metadata:
+  name: "Portal Brand — {{PORTAL_SLUG}}"
+entries:
+  - model: authentik_brands.brand
+    state: present
+    identifiers:
+      domain: "{{PORTAL_DOMAIN}}"
+    attrs:
+      domain: "{{PORTAL_DOMAIN}}"
+      branding_title: "{{PORTAL_NAME}}"
+      # NEVER true — that flag is reserved for the platform brand
+      # (`brand-fuseseam.yaml`'s `fuzefront.com` entry). A per-portal brand is
+      # selected purely by its own `domain` match.
+      default: false
+      # Minimal accent-color override — a portal only overrides its accent,
+      # not the whole fuse-seam sheet (that stays the platform default's).
+      # Mirrors `authentik/portalBrand.ts`'s `customCss()` exactly; keep the
+      # two in sync if either changes.
+      branding_custom_css: |
+        :root { --fuse-accent: {{ACCENT_HEX}}; }
+        .pf-v5-c-login__main::before { background: {{ACCENT_HEX}} !important; }
+        .pf-v5-c-button.pf-m-primary, button[type="submit"] { background: {{ACCENT_HEX}} !important; }
+        .pf-v5-c-form-control:focus, input:focus { border-color: {{ACCENT_HEX}} !important; }
+        a, .pf-v5-c-button.pf-m-link { color: {{ACCENT_HEX}} !important; }

@@ -1,0 +1,54 @@
+{
+  "name": "@fuzefront/config-client",
+  "version": "1.0.0",
+  "description": "Typed HTTP client for the FuzeFront config-service REST API",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "clean": "rimraf dist",
+    "type-check": "tsc --noEmit",
+    "lint:contract": "spectral lint ../services/config-service/openapi.yaml --ruleset ../services/config-service/.spectral.yaml --fail-severity=hint",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "config-client"
+  },
+  "keywords": [
+    "fuzefront",
+    "configuration",
+    "settings",
+    "multi-tenant"
+  ],
+  "author": "FuzeFront Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.11.0",
+    "@types/node": "^24.13.3",
+    "rimraf": "^5.0.1",
+    "tsup": "^8.0.2",
+    "typescript": "^5.9.0"
+  }
+}

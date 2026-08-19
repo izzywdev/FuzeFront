@@ -1,0 +1,25 @@
+{
+  "manifestVersion": "1",
+  "slug": "fuzeagent",
+  "name": "FuzeAgent",
+  "menuLabel": "FuzeAgent",
+  "description": "AI team orchestration platform",
+  "icon": { "kind": "emoji", "value": "🤖" },
+  "mode": "portal",
+  "builtin": false,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "https://fuzeagent.prod.fuzefront.com/remoteEntry.js",
+    "scope": "fuzeagentApp",
+    "module": "./FuzeAgentApp"
+  },
+  "chrome": {
+    "menu": "substitute",
+    "topbar": "host"
+  },
+  "routing": {
+    "path": "/app/fuzeagent"
+  },
+  "visibility": "organization",
+  "roles": []
+}

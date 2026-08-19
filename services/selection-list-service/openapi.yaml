@@ -1,0 +1,2017 @@
+openapi: 3.1.0
+info:
+  title: FuzeFront Selection List Service API
+  version: 1.0.0
+  summary: Org-scoped, translatable selection lists (reference data) for the Fuze family.
+  description: >-
+    **FROZEN CONTRACT — FFRNT-187 (S1).** This file is the single source of truth
+    for the `selection-list-service` HTTP surface and for the generated/derived
+    client `@fuzeone/selection-list-client`. Nothing downstream (backend routes,
+    migrations, UI, acceptance tests, docs) may diverge from it; a change to the
+    API means amending **this file first**, bumping `info.version`, re-linting,
+    and re-issuing the client (see the `api-contract-first` skill and
+    `governance/`).
+
+
+    ### What the service is
+
+    A selection list is a named, org-scoped set of ordered, translatable choices
+    (`countries`, `industries`, `ticket-priorities`, ...) that consuming
+    applications render in dropdowns/pickers and persist by **item id**. The
+    service owns three things and nothing else: the list/item structure, the
+    per-locale translations of both, and the per-list access grants.
+
+
+    ### The two identifiers, and why there are two
+
+    Every item carries both an `id` and a `code`, and they are not
+    interchangeable:
+
+    * **`id`** — the service-minted, permanently immutable identifier consumers
+      **persist** in their own rows. It is opaque and never displayed. Consumers
+      store this and nothing else, which is what makes an item's label and its
+      `code` safe to change later.
+    * **`code`** — a human-meaningful interop key (`US`, `HIGH`) that is
+      **immutable after create** and unique within its list. It exists for
+      integrations that must map to an external system's vocabulary. It is a
+      key, never a label: it is not translated and not shown to end users.
+
+    Persisting a `code` instead of an `id` is the classic reference-data defect —
+    it welds a display/interop concern to a foreign key. The contract makes the
+    right choice the easy one: `POST /v1/resolve` takes ids.
+
+
+    ### Archive is the default; purge is explicit
+
+    Reference data is referenced. Deleting a row that thousands of consumer rows
+    point at turns their stored id into a dangling reference, so the default
+    destructive operation is **archive** (`status: archived`): the item stops
+    being offered for new selections but still **resolves**, so existing rows
+    keep rendering a real label. `DELETE` therefore archives unless the caller
+    passes `?purge=true`, which is irreversible and permitted only to a
+    `list-owner`. `POST /v1/resolve` deliberately resolves archived ids.
+
+
+    ### Translations and the locale fallback
+
+    List `name`/`description` and item `label`/`description` live in
+    `*_translations` rows keyed by locale, never on the entity itself. Every
+    representation of a list or an item therefore carries the resolved text plus
+    `resolved_locale` (the locale the text actually came from) and `is_machine`
+    (whether that text was machine-translated). The resolution order is fixed:
+
+      1. the `locale` query parameter, if supplied and supported;
+      2. the first supported language in the `Accept-Language` header;
+      3. the list's `source_locale`;
+      4. `en`.
+
+    **A label is never `null`.** A missing translation falls through the chain
+    rather than returning an empty string — a picker rendering blank rows is a
+    worse failure than one rendering the source-locale text.
+
+    `source_hash` on a translation row is the hash of the **source-locale** text
+    the translation was produced from; when the source text changes the hash no
+    longer matches and the translation is known-stale, which is what lets
+    `POST /v1/selection-lists/{listId}/translations/{locale}/autofill` refresh
+    only what actually drifted.
+
+
+    ### Field casing
+
+    Resource representations use `snake_case`, mirroring storage. The pagination
+    envelope (`page.nextCursor`, `page.hasMore`, `page.total`) is `camelCase`
+    because it is fixed verbatim by the family pagination standard
+    (`governance/pagination-standard.md` §1) and is identical across every Fuze
+    service. This split is intentional and load-bearing: the envelope is shared
+    infrastructure, the payload is this service's own.
+
+
+    ### Identifiers (governance/identifier-standard.md)
+
+    Ids are **TypeID**-shaped — a registered type prefix, an underscore, and a
+    UUIDv7 in base32 — minted exclusively by this service via `mintId()` from
+    `@izzywdev/fuzefront-identity`. No create body accepts an `id`, and every
+    create schema sets `additionalProperties: false`, so a client-supplied id
+    cannot bind. On the wire ids are `type: string` and **opaque past the
+    prefix**: validate the prefix, never parse further, never assume a length.
+
+    | Entity | Prefix | Example |
+    |---|---|---|
+    | selection list | `front_sl_` | `front_sl_01h455vb4pex5vsknk084sn02q` |
+    | selection list item | `front_sli_` | `front_sli_01h455vb4pex5vsknk084sn02q` |
+
+    Referenced spine ids keep their own prefixes (`org_`, `usr_`).
+
+    **Registry note (S3 amendment):** prefixes `front_sl` and `front_sli` are
+    registered in `packages/identity/src/registry.ts` (keys `selectionList` and
+    `selectionListItem`). They are product-local types namespaced as `front_*`
+    per the namespace gate (`gate_identifier.py --namespace`).
+
+
+    ### Authorization
+
+    Resource `SelectionList` in Permit, with actions `read`, `add_value`,
+    `update_value`, `remove_value`, `translate`, `update`, `delete`,
+    `manage_access`. Grants are ReBAC resource-instance roles on the list
+    instance, mirroring `Organization.roles['org-admin']` in
+    `backend/src/permit/schema.ts`.
+
+    | role | read | add_value | update_value | remove_value | translate | update | delete | manage_access |
+    |---|---|---|---|---|---|---|---|---|
+    | `list-owner`       | x | x | x | x | x | x | x | x |
+    | `list-editor`      | x | x | x | x | x | x |   |   |
+    | `list-contributor` | x | x | x |   | x |   |   |   |
+    | `list-translator`  | x |   |   |   | x |   |   |   |
+    | `list-viewer`      | x |   |   |   |   |   |   |   |
+
+    Each operation declares the action it requires in `x-permit-action`.
+    **An id is never a capability** — knowing a list id grants nothing; every
+    route re-checks the caller against Permit, and a read the caller is not
+    entitled to returns `404`, not `403`, so the API is not an existence oracle
+    across orgs.
+  contact:
+    name: FuzeFront Platform Team
+    url: https://github.com/izzywdev/FuzeFront
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: '{baseUrl}'
+    description: >-
+      Cluster-internal base URL. In the browser the shell always calls this
+      service on a **same-origin** API base through the ingress — never a
+      hard-coded absolute host (see CLAUDE.md).
+    variables:
+      baseUrl:
+        default: http://fuzefront-selection-list-service:3011
+        description: Base URL of the selection-list-service.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: lists
+    description: Selection lists — create, read, update, archive, purge.
+  - name: items
+    description: Items within a list — create, update, archive, purge, reorder.
+  - name: translations
+    description: Per-locale translations of lists and items, including machine autofill.
+  - name: access
+    description: Per-list access grants (ReBAC roles on the list instance).
+  - name: quota
+    description: Current quota usage and ceilings for the caller's organization.
+  - name: resolve
+    description: Hot path — cacheable bulk resolution of item ids to labels.
+
+paths:
+  /v1/selection-lists:
+    get:
+      operationId: listSelectionLists
+      summary: List selection lists in the caller's organization
+      description: >-
+        Cursor-paginated. Scoped to the caller's organization and further
+        filtered to the lists the caller can `read`; a list the caller has no
+        grant on is simply absent, never a `403`. Each row carries its
+        source-locale-resolved (or `locale`-resolved) `name`.
+      tags: [lists]
+      x-permit-action: read
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
+        - name: status
+          in: query
+          required: false
+          description: Filter lists by lifecycle status. Defaults to `active`.
+          schema:
+            type: string
+            description: Lifecycle status filter.
+            enum: [active, archived, all]
+            default: active
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
+        - name: key
+          in: query
+          required: false
+          description: >-
+            Exact-match filter on the org-unique list `key`. Returns a page of at
+            most one row; present so a consumer can look a list up by its stable
+            slug without knowing its id.
+          schema:
+            $ref: '#/components/schemas/SelectionListKey'
+      responses:
+        '200':
+          description: A page of selection lists.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A cursor-paginated page of selection lists.
+                required: [items, page]
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    description: The selection lists on this page, newest first.
+                    items:
+                      $ref: '#/components/schemas/SelectionList'
+                  page:
+                    $ref: '#/components/schemas/Page'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createSelectionList
+      summary: Create a selection list
+      description: >-
+        Mints a `front_sl_`-prefixed id server-side; the body must not contain one.
+        `key` must be unique within the organization (`409 CONFLICT` otherwise)
+        and `name` seeds the `source_locale` translation. The caller is granted
+        `list-owner` on the new list. Subject to the `org_lists` and `user_lists`
+        quotas.
+      tags: [lists]
+      x-permit-action: add_value
+      requestBody:
+        required: true
+        description: The list to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListCreate'
+      responses:
+        '201':
+          description: The created selection list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/selection-lists/{listId}:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    get:
+      operationId: getSelectionList
+      summary: Get one selection list
+      description: >-
+        Returns the list with its translation resolved through the locale
+        fallback chain. Returns `404` — never `403` — when the caller cannot
+        `read` it, so the endpoint is not a cross-org existence oracle.
+      tags: [lists]
+      x-permit-action: read
+      parameters:
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
+      responses:
+        '200':
+          description: The selection list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateSelectionList
+      summary: Update a selection list
+      description: >-
+        Partial update. Supplying `name`/`description` upserts the
+        **`source_locale`** translation (marked `is_machine: false`) and
+        invalidates the `source_hash` of every other locale, marking those
+        translations stale for the next autofill. Changing `source_locale` does
+        not re-translate anything.
+      tags: [lists]
+      x-permit-action: update
+      requestBody:
+        required: true
+        description: The fields to change. Omitted fields are left untouched.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListUpdate'
+      responses:
+        '200':
+          description: The updated selection list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: deleteSelectionList
+      summary: Archive (default) or purge a selection list
+      description: >-
+        Archives the list unless `purge=true`. Archiving is idempotent and
+        reversible via `PATCH { "status": "active" }`; its items keep resolving.
+        **Purging is irreversible**, cascades to every item, translation and
+        access grant, and permanently breaks any consumer row still holding one
+        of the purged item ids — which is why it requires `delete` (owner only)
+        and an explicit opt-in rather than being the default verb.
+      tags: [lists]
+      x-permit-action: delete
+      parameters:
+        - name: purge
+          in: query
+          required: false
+          description: >-
+            When `true`, permanently delete instead of archiving. Irreversible;
+            breaks every consumer reference to the purged ids.
+          schema:
+            type: boolean
+            description: Permanently delete rather than archive.
+            default: false
+      responses:
+        '200':
+          description: The archived list (only returned when `purge` is false/absent).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '204':
+          description: The list was permanently purged. No body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    post:
+      operationId: archiveSelectionList
+      summary: Archive a selection list
+      description: >-
+        Sets `status` to `archived`. Idempotent — archiving an already-archived
+        list returns `200` with the unchanged resource. The explicit verb exists
+        so a UI need never call `DELETE` for the non-destructive outcome.
+      tags: [lists]
+      x-permit-action: delete
+      responses:
+        '200':
+          description: The archived selection list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    get:
+      operationId: listSelectionListItems
+      summary: List the items of a selection list
+      description: >-
+        Cursor-paginated, ordered by `sort_order` then `id`. Defaults to
+        `status=active` — the set a picker should offer — so rendering a
+        dropdown never accidentally offers archived choices. Pass
+        `status=archived` or `status=all` to see the rest.
+      tags: [items]
+      x-permit-action: read
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
+        - name: status
+          in: query
+          required: false
+          description: >-
+            Filter items by lifecycle status. Defaults to `active` so a picker
+            never offers a retired choice by accident.
+          schema:
+            type: string
+            description: Lifecycle status filter.
+            enum: [active, archived, all]
+            default: active
+        - name: locale
+          in: query
+          required: false
+          description: >-
+            Preferred locale for resolved text. Highest priority in the fallback
+            chain; an unsupported value is a `400 VALIDATION_ERROR` rather than a
+            silent fallback, so a client bug does not masquerade as missing
+            translations.
+          schema:
+            $ref: '#/components/schemas/Locale'
+      responses:
+        '200':
+          description: A page of items, in `sort_order`.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A cursor-paginated page of selection-list items.
+                required: [items, page]
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    description: The items on this page, ordered by `sort_order`.
+                    items:
+                      $ref: '#/components/schemas/SelectionListItem'
+                  page:
+                    $ref: '#/components/schemas/Page'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createSelectionListItem
+      summary: Add an item to a selection list
+      description: >-
+        Mints a `front_sli_`-prefixed id server-side. `code` must be unique within the
+        list and is **immutable afterwards** (`409 CONFLICT` on a duplicate).
+        `label` seeds the `source_locale` translation. Omitting `sort_order`
+        appends the item at `max(sort_order) + 100`. Subject to the `list_items`
+        quota.
+      tags: [items]
+      x-permit-action: add_value
+      requestBody:
+        required: true
+        description: The item to add.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListItemCreate'
+      responses:
+        '201':
+          description: The created item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/selection-lists/{listId}/items/reorder:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    put:
+      operationId: reorderSelectionListItems
+      summary: Set the order of every item in a list
+      description: >-
+        Whole-collection replace: `item_ids` must contain **every** non-archived
+        item of the list exactly once, and nothing else (`400 VALIDATION_ERROR`
+        otherwise). The server rewrites `sort_order` to a gapped sequence
+        (100, 200, 300, ...) so a later single-item insert needs no rewrite of
+        its neighbours. Requiring the complete set — rather than accepting a
+        sparse patch — is what makes the operation a single atomic statement
+        with no ambiguous interleaving when two editors reorder concurrently.
+      tags: [items]
+      x-permit-action: update_value
+      requestBody:
+        required: true
+        description: The complete, ordered list of non-archived item ids.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListItemReorder'
+      responses:
+        '200':
+          description: The full reordered set of non-archived items.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: The reordered items, in their new order.
+                required: [items]
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    description: Every non-archived item, in its new `sort_order`.
+                    items:
+                      $ref: '#/components/schemas/SelectionListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/ItemIdParam'
+    patch:
+      operationId: updateSelectionListItem
+      summary: Update an item
+      description: >-
+        Partial update. `code` is **absent from this schema by design** — it is
+        immutable after create because integrations key off it; sending it is
+        rejected by `additionalProperties: false` as a `400 VALIDATION_ERROR`.
+        Supplying `label`/`description` upserts the `source_locale` translation
+        and marks every other locale's translation stale.
+      tags: [items]
+      x-permit-action: update_value
+      requestBody:
+        required: true
+        description: The fields to change. Omitted fields are left untouched.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListItemUpdate'
+      responses:
+        '200':
+          description: The updated item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteSelectionListItem
+      summary: Archive (default) or purge an item
+      description: >-
+        Archives the item unless `purge=true`; an archived item stops being
+        offered but keeps resolving through `POST /v1/resolve`, so consumer rows
+        holding its id still render a label. **Purging is irreversible** and
+        turns every stored reference to this id into a `missing` entry on
+        resolve — hence `remove_value` plus an explicit opt-in.
+      tags: [items]
+      x-permit-action: remove_value
+      parameters:
+        - name: purge
+          in: query
+          required: false
+          description: >-
+            When `true`, permanently delete instead of archiving. Irreversible;
+            breaks every consumer reference to the purged ids.
+          schema:
+            type: boolean
+            description: Permanently delete rather than archive.
+            default: false
+      responses:
+        '200':
+          description: The archived item (only returned when `purge` is false/absent).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListItem'
+        '204':
+          description: The item was permanently purged. No body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items/{itemId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/ItemIdParam'
+    post:
+      operationId: archiveSelectionListItem
+      summary: Archive an item
+      description: >-
+        Sets the item's `status` to `archived`. Idempotent. Archived items keep
+        their `sort_order` so un-archiving restores their original position.
+      tags: [items]
+      x-permit-action: remove_value
+      responses:
+        '200':
+          description: The archived item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/translations:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    get:
+      operationId: listSelectionListTranslations
+      summary: List all translated locales for a selection list
+      description: >-
+        Returns one status entry per locale that has a list-level translation,
+        including completeness (list + items), machine-translation status, and
+        whether the translation is stale relative to the current source text
+        (`source_changed`). The source locale itself is never returned here —
+        its text lives on `PATCH /v1/selection-lists/{listId}`.
+
+        This endpoint is the primary read for the translation workbench UI.
+      tags: [translations]
+      x-permit-action: read
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded by the supported locale count (max 11). Not a user-data
+        collection; no cursor required (pagination-standard.md §3).
+      responses:
+        '200':
+          description: Translation status per locale.
+          content:
+            application/json:
+              schema:
+                type: array
+                description: >-
+                  One entry per locale that has a list-level translation
+                  (excluding source_locale).
+                items:
+                  $ref: '#/components/schemas/TranslationLocaleStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/translations/{locale}:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/LocalePathParam'
+    put:
+      operationId: upsertSelectionListTranslation
+      summary: Create or replace a list's translation for one locale
+      description: >-
+        Idempotent upsert of the list's `name`/`description` in `locale`. A
+        human edit through this route always sets `is_machine: false` and stamps
+        `source_hash` from the current `source_locale` text, which is what marks
+        the translation fresh and protects it from being overwritten by a later
+        autofill. Writing the `source_locale` itself is equivalent to
+        `PATCH /v1/selection-lists/{listId}` with `name`/`description`. Subject
+        to the `list_locales` quota.
+      tags: [translations]
+      x-permit-action: translate
+      requestBody:
+        required: true
+        description: The translated list text for this locale.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListTranslationUpsert'
+      responses:
+        '200':
+          description: The stored translation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListTranslation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteSelectionListTranslation
+      summary: Remove a list's translation for one locale
+      description: >-
+        Deletes the list-level translation row for `locale`. The source locale
+        (`source_locale` on the list) cannot be deleted — a `400
+        VALIDATION_ERROR` is returned instead. Item-level translations in this
+        locale are not touched; delete them individually if needed. Idempotent:
+        deleting a translation that does not exist returns `204`.
+      tags: [translations]
+      x-permit-action: translate
+      responses:
+        '204':
+          description: Translation deleted (or never existed). No body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items/{itemId}/translations:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/ItemIdParam'
+    get:
+      operationId: listSelectionListItemTranslations
+      summary: List all translated locales for one item
+      description: >-
+        Returns one status entry per locale that has an item-level translation,
+        with machine-translation status and staleness relative to the current
+        source text. The source locale itself is excluded.
+      tags: [translations]
+      x-permit-action: read
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Bounded by the supported locale count (max 11).
+      responses:
+        '200':
+          description: Item translation status per locale.
+          content:
+            application/json:
+              schema:
+                type: array
+                description: >-
+                  One entry per locale that has an item-level translation
+                  (excluding source_locale).
+                items:
+                  $ref: '#/components/schemas/ItemTranslationLocaleStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/ItemIdParam'
+      - $ref: '#/components/parameters/LocalePathParam'
+    put:
+      operationId: upsertSelectionListItemTranslation
+      summary: Create or replace an item's translation for one locale
+      description: >-
+        Idempotent upsert of the item's `label`/`description` in `locale`, with
+        the same `is_machine: false` / `source_hash` semantics as the list-level
+        route. Does not consume `list_locales` quota beyond the locale already
+        being open on the parent list.
+      tags: [translations]
+      x-permit-action: translate
+      requestBody:
+        required: true
+        description: The translated item text for this locale.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListItemTranslationUpsert'
+      responses:
+        '200':
+          description: The stored translation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListItemTranslation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteSelectionListItemTranslation
+      summary: Remove an item's translation for one locale
+      description: >-
+        Deletes the item-level translation row for `locale`. The source locale
+        cannot be deleted. Idempotent: deleting a translation that does not
+        exist returns `204`.
+      tags: [translations]
+      x-permit-action: translate
+      responses:
+        '204':
+          description: Translation deleted (or never existed). No body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/translations/{locale}/autofill:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/LocalePathParam'
+    post:
+      operationId: autofillSelectionListTranslations
+      summary: Machine-translate every missing or stale translation for one locale
+      description: >-
+        Translates the list and all of its items from `source_locale` into
+        `locale` and stores the results with `is_machine: true`.
+
+        **Human translations are never overwritten by default.** Only rows that
+        are missing, or whose `source_hash` no longer matches the current source
+        text, are filled; a fresh human translation is skipped. Pass
+        `overwrite_machine: true` to additionally refresh existing *machine*
+        rows — it still never touches `is_machine: false` rows, because the one
+        thing an autofill must not do is silently discard work a human did.
+
+        Requires the `translate` action; `locale` must differ from the list's
+        `source_locale` (`400 VALIDATION_ERROR` otherwise). Synchronous;
+        responds `200` once every row is written.
+      tags: [translations]
+      x-permit-action: translate
+      requestBody:
+        required: false
+        description: Optional scoping and overwrite behaviour for the autofill run.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListAutofillRequest'
+      responses:
+        '200':
+          description: Summary of what the autofill run wrote and skipped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListAutofillResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/access:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    get:
+      operationId: listSelectionListAccess
+      summary: List the access grants on a selection list
+      description: >-
+        Cursor-paginated. Grants are ReBAC role assignments on this list
+        instance; the list's creator appears as `list-owner`. Requires
+        `manage_access` — who can see a list is itself sensitive.
+      tags: [access]
+      x-permit-action: manage_access
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum rows to return. Clamped to `maximum` server-side — an
+            over-max request is never honoured unbounded.
+          schema:
+            type: integer
+            description: Page size.
+            minimum: 1
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: >-
+            Opaque, server-issued cursor from the previous page's
+            `page.nextCursor`. Echo it back unmodified; never construct or parse
+            one. A malformed or expired cursor is a `400 VALIDATION_ERROR`,
+            never a silent reset to page 1.
+          schema:
+            type: string
+            description: Opaque pagination cursor.
+            maxLength: 2048
+      responses:
+        '200':
+          description: A page of access grants.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A cursor-paginated page of access grants.
+                required: [items, page]
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    description: The access grants on this page.
+                    items:
+                      $ref: '#/components/schemas/SelectionListAccessGrant'
+                  page:
+                    $ref: '#/components/schemas/Page'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/selection-lists/{listId}/access/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+      - $ref: '#/components/parameters/UserIdParam'
+    put:
+      operationId: setSelectionListAccess
+      summary: Grant or change a user's role on a selection list
+      description: >-
+        Idempotent upsert of exactly one role for one user — roles do not stack.
+        The user must already be a member of the list's organization
+        (`400 VALIDATION_ERROR` otherwise). **Demoting the last `list-owner` is
+        refused with `409 CONFLICT`**, so a list can never become unadministrable.
+      tags: [access]
+      x-permit-action: manage_access
+      requestBody:
+        required: true
+        description: The role to grant.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListAccessUpsert'
+      responses:
+        '200':
+          description: The stored access grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListAccessGrant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      operationId: revokeSelectionListAccess
+      summary: Revoke a user's access to a selection list
+      description: >-
+        Idempotent — revoking a grant that does not exist returns `204`.
+        Revoking the **last** `list-owner` is refused with `409 CONFLICT`, for
+        the same reason demotion is.
+      tags: [access]
+      x-permit-action: manage_access
+      responses:
+        '204':
+          description: The grant is gone (or never existed). No body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/selection-lists/quota:
+    get:
+      operationId: getSelectionListQuota
+      summary: Get quota usage and ceilings for the caller's organization
+      description: >-
+        Returns a fixed, closed set of four quota scopes with the caller's
+        current usage against each ceiling. Intended for a UI to warn *before* a
+        create fails, rather than surfacing `403 QUOTA_EXCEEDED` as a surprise.
+      tags: [quota]
+      x-permit-action: read
+      x-pagination: exempt
+      x-pagination-reason: >-
+        Aggregate/scalar response — a fixed, closed set of four quota scopes for
+        one organization. It does not grow with user data, so there is nothing
+        to page through (pagination-standard.md §3).
+      responses:
+        '200':
+          description: Quota usage and ceilings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionListQuotaStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/resolve:
+    post:
+      operationId: resolveSelectionListItems
+      summary: Bulk-resolve item ids to their labels
+      description: >-
+        **The hot path.** Consumers persist item ids; this turns a batch of them
+        back into display labels in one round trip, so rendering a table of 200
+        rows is one call rather than 200.
+
+        It is `POST` because the id batch does not fit a URL, not because it
+        mutates anything — the operation is read-only, side-effect-free and
+        **cacheable**. Responses carry `Cache-Control` and an `ETag`; the
+        response varies by `locale`/`Accept-Language`, so caches must key on
+        those.
+
+        **Archived items resolve normally** (with `status: "archived"`), which is
+        the entire reason archive is the default destructive verb — a consumer
+        row pointing at a retired choice still renders real text, and the caller
+        can style it as retired using `status`. Only *purged* or never-existent
+        ids come back in `missing`; ids are never silently dropped, so a caller
+        can always tell "no label" from "no such item".
+
+        Unlike every other route this one is caller-authenticated at the service
+        level: it may be called with a Bearer token, or unauthenticated from a
+        trusted in-cluster caller that has already authorized its own end user.
+        It is therefore deliberately minimal — it returns a label, a locale and a
+        status, and never reveals a list key, an organization, or anything else
+        an id alone should not unlock.
+      tags: [resolve]
+      x-permit-action: read
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        description: The item ids to resolve, and the locale to resolve them in.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+      responses:
+        '200':
+          description: Resolved labels, plus the ids that could not be resolved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Authentik-issued JWT. `organization_id` and the acting user are derived
+        from the token claims and **never** from the request body or a query
+        parameter, so no caller can act outside its own org by editing a payload.
+
+  parameters:
+    ListIdParam:
+      name: listId
+      in: path
+      required: true
+      description: The `front_sl_`-prefixed selection-list id.
+      schema:
+        $ref: '#/components/schemas/SelectionListId'
+    ItemIdParam:
+      name: itemId
+      in: path
+      required: true
+      description: The `front_sli_`-prefixed selection-list-item id.
+      schema:
+        $ref: '#/components/schemas/SelectionListItemId'
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      description: The `usr_`-prefixed id of the user whose grant is addressed.
+      schema:
+        $ref: '#/components/schemas/UserId'
+    LocalePathParam:
+      name: locale
+      in: path
+      required: true
+      description: The target locale, from the supported set.
+      schema:
+        $ref: '#/components/schemas/Locale'
+
+  schemas:
+    SelectionListId:
+      type: string
+      description: >-
+        TypeID for a selection list — the `front_sl_` prefix plus an opaque,
+        service-minted suffix. Validate the prefix; never parse past it and never
+        assume a length.
+      pattern: '^front_sl_[0-9a-z]+$'
+      maxLength: 255
+      examples: ['front_sl_01h455vb4pex5vsknk084sn02q']
+    SelectionListItemId:
+      type: string
+      description: >-
+        TypeID for a selection-list item — the `front_sli_` prefix plus an opaque,
+        service-minted suffix. This is the value consumers persist.
+      pattern: '^front_sli_[0-9a-z]+$'
+      maxLength: 255
+      examples: ['front_sli_01h455vb4pex5vsknk084sn02q']
+    OrganizationId:
+      type: string
+      description: TypeID of the owning organization (spine prefix `org_`).
+      pattern: '^org_[0-9a-z]+$'
+      maxLength: 255
+      examples: ['org_01h455vb4pex5vsknk084sn02q']
+    UserId:
+      type: string
+      description: TypeID of a user (spine prefix `usr_`).
+      pattern: '^usr_[0-9a-z]+$'
+      maxLength: 255
+      examples: ['usr_01h455vb4pex5vsknk084sn02q']
+
+    Locale:
+      type: string
+      description: >-
+        A supported BCP-47 language code. The set is fixed by
+        `i18n.languages.json` / `packages/i18n/src/languages.ts`; adding a
+        language there is what widens this enum, and the two must not drift.
+      enum: [en, es, fr, de, pt, ru, zh, ja, hi, ar, he]
+      examples: ['en']
+
+    LifecycleStatus:
+      type: string
+      description: >-
+        Lifecycle state. `archived` rows are hidden from pickers but still
+        resolve, so existing consumer references keep rendering a label.
+      enum: [active, archived]
+      examples: ['active']
+
+    SelectionListKey:
+      type: string
+      description: >-
+        Org-unique, stable slug identifying the list to integrations
+        (`countries`, `ticket-priorities`). Lowercase alphanumerics and hyphens.
+      pattern: '^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$'
+      minLength: 2
+      maxLength: 64
+      examples: ['countries']
+
+    SelectionListItemCode:
+      type: string
+      description: >-
+        List-unique interop key (`US`, `HIGH`). **Immutable after create** and
+        never translated — it is a key, not a label, and must never be rendered
+        to an end user.
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$'
+      minLength: 1
+      maxLength: 63
+      examples: ['US']
+
+    Page:
+      type: object
+      description: >-
+        Cursor pagination envelope, identical across every Fuze service
+        (`governance/pagination-standard.md` §1).
+      required: [nextCursor, hasMore]
+      additionalProperties: false
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: >-
+            Opaque cursor for the next page, or `null` when this is the last
+            page. Pass it back as the `cursor` query parameter.
+          maxLength: 2048
+          examples: ['eyJsYXN0SWQiOiJzbGlfMDFoNDU1In0']
+        hasMore:
+          type: boolean
+          description: Whether a further page exists.
+          examples: [false]
+        total:
+          type: integer
+          description: >-
+            Total rows matching the filter across all pages. Optional — omitted
+            when counting the full set would be expensive.
+          minimum: 0
+          examples: [12]
+
+    SelectionList:
+      type: object
+      description: >-
+        A selection list with its text resolved for one locale. The resolved
+        text is not stored on this row — it comes from
+        `selection_list_translations` through the fallback chain.
+      required:
+        - id
+        - organization_id
+        - key
+        - source_locale
+        - status
+        - name
+        - resolved_locale
+        - is_machine
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/SelectionListId'
+        organization_id:
+          $ref: '#/components/schemas/OrganizationId'
+        key:
+          $ref: '#/components/schemas/SelectionListKey'
+        source_locale:
+          $ref: '#/components/schemas/Locale'
+        status:
+          $ref: '#/components/schemas/LifecycleStatus'
+        name:
+          type: string
+          description: >-
+            Human-readable list name in the resolved locale. **Never `null`** —
+            the fallback chain always yields text.
+          minLength: 1
+          maxLength: 200
+          examples: ['Countries']
+        description:
+          type: [string, 'null']
+          description: Optional longer description in the resolved locale.
+          maxLength: 2000
+          examples: ['ISO 3166-1 countries offered in the address picker.']
+        resolved_locale:
+          $ref: '#/components/schemas/Locale'
+        is_machine:
+          type: boolean
+          description: >-
+            Whether the resolved `name`/`description` was machine-translated. A
+            UI should badge machine text so a reviewer can find what still needs
+            a human pass.
+          examples: [false]
+        item_count:
+          type: integer
+          description: Number of non-archived items in the list.
+          minimum: 0
+          examples: [249]
+        created_by:
+          $ref: '#/components/schemas/UserId'
+        created_at:
+          type: string
+          format: date-time
+          description: When the list was created (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+        updated_at:
+          type: string
+          format: date-time
+          description: When the list row was last modified (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+
+    SelectionListCreate:
+      type: object
+      description: >-
+        Body for creating a list. Carries **no `id`** — the service mints it —
+        and rejects unknown properties so a client-supplied id cannot bind
+        (`governance/identifier-standard.md` §1).
+      required: [key, name]
+      additionalProperties: false
+      properties:
+        key:
+          $ref: '#/components/schemas/SelectionListKey'
+        source_locale:
+          $ref: '#/components/schemas/Locale'
+        name:
+          type: string
+          description: The list name in `source_locale`. Seeds the source translation.
+          minLength: 1
+          maxLength: 200
+          examples: ['Countries']
+        description:
+          type: string
+          description: Optional list description in `source_locale`.
+          maxLength: 2000
+          examples: ['ISO 3166-1 countries offered in the address picker.']
+
+    SelectionListUpdate:
+      type: object
+      description: >-
+        Partial update of a list. Every field is optional; an empty body is a
+        `400 VALIDATION_ERROR`.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        key:
+          $ref: '#/components/schemas/SelectionListKey'
+        source_locale:
+          $ref: '#/components/schemas/Locale'
+        status:
+          $ref: '#/components/schemas/LifecycleStatus'
+        name:
+          type: string
+          description: New list name, written to the `source_locale` translation.
+          minLength: 1
+          maxLength: 200
+          examples: ['Countries (EMEA)']
+        description:
+          type: [string, 'null']
+          description: >-
+            New description for the `source_locale` translation; `null` clears
+            it.
+          maxLength: 2000
+          examples: ['Countries offered in the EMEA address picker.']
+
+    SelectionListItem:
+      type: object
+      description: >-
+        One item of a selection list, with its text resolved for one locale.
+      required:
+        - id
+        - list_id
+        - code
+        - sort_order
+        - status
+        - label
+        - resolved_locale
+        - is_machine
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/SelectionListItemId'
+        list_id:
+          $ref: '#/components/schemas/SelectionListId'
+        code:
+          $ref: '#/components/schemas/SelectionListItemCode'
+        sort_order:
+          type: integer
+          description: >-
+            Display position within the list, ascending. Gapped by 100 so a
+            single insert does not rewrite its neighbours.
+          minimum: 0
+          examples: [100]
+        status:
+          $ref: '#/components/schemas/LifecycleStatus'
+        label:
+          type: string
+          description: >-
+            The display text in the resolved locale. **Never `null`** — the
+            fallback chain always yields text.
+          minLength: 1
+          maxLength: 200
+          examples: ['United States']
+        description:
+          type: [string, 'null']
+          description: Optional helper text for the item, in the resolved locale.
+          maxLength: 2000
+          examples: ['United States of America']
+        resolved_locale:
+          $ref: '#/components/schemas/Locale'
+        is_machine:
+          type: boolean
+          description: Whether the resolved text was machine-translated.
+          examples: [false]
+        created_by:
+          $ref: '#/components/schemas/UserId'
+        created_at:
+          type: string
+          format: date-time
+          description: When the item was created (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+        updated_at:
+          type: string
+          format: date-time
+          description: When the item row was last modified (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+
+    SelectionListItemCreate:
+      type: object
+      description: >-
+        Body for adding an item. Carries **no `id`** — the service mints it —
+        and rejects unknown properties.
+      required: [code, label]
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/SelectionListItemCode'
+        label:
+          type: string
+          description: The item label in the list's `source_locale`.
+          minLength: 1
+          maxLength: 200
+          examples: ['United States']
+        description:
+          type: string
+          description: Optional helper text in the list's `source_locale`.
+          maxLength: 2000
+          examples: ['United States of America']
+        sort_order:
+          type: integer
+          description: >-
+            Explicit position. Omit to append at `max(sort_order) + 100`.
+          minimum: 0
+          examples: [100]
+
+    SelectionListItemUpdate:
+      type: object
+      description: >-
+        Partial update of an item. `code` is deliberately **not** a member —
+        it is immutable after create, and `additionalProperties: false` turns an
+        attempt to change it into a `400` instead of a silent no-op.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        label:
+          type: string
+          description: New label, written to the `source_locale` translation.
+          minLength: 1
+          maxLength: 200
+          examples: ['United States of America']
+        description:
+          type: [string, 'null']
+          description: New helper text for the `source_locale`; `null` clears it.
+          maxLength: 2000
+          examples: ['Includes overseas territories.']
+        sort_order:
+          type: integer
+          description: New display position. Prefer the reorder route for bulk moves.
+          minimum: 0
+          examples: [250]
+        status:
+          $ref: '#/components/schemas/LifecycleStatus'
+
+    SelectionListItemReorder:
+      type: object
+      description: >-
+        Whole-collection reorder. `item_ids` must be a permutation of exactly the
+        list's non-archived item ids.
+      required: [item_ids]
+      additionalProperties: false
+      properties:
+        item_ids:
+          type: array
+          description: >-
+            Every non-archived item id of the list, exactly once, in the desired
+            display order.
+          minItems: 1
+          maxItems: 5000
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SelectionListItemId'
+
+    TranslationLocaleStatus:
+      type: object
+      description: >-
+        Translation workbench summary for one locale of a selection list.
+        Returned by `GET /v1/selection-lists/{listId}/translations`.
+      required: [locale, completeness_pct, machine_translated, source_changed]
+      additionalProperties: false
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        completeness_pct:
+          type: integer
+          description: >-
+            Percentage of translatable entities (list + active items) that have
+            a translation in this locale. 0–100.
+          minimum: 0
+          maximum: 100
+          examples: [75]
+        machine_translated:
+          type: boolean
+          description: Whether the list-level translation in this locale was machine-produced.
+          examples: [true]
+        source_changed:
+          type: boolean
+          description: >-
+            Whether the source-locale text has changed since this translation
+            was written (i.e. the stored `source_hash` no longer matches the
+            current source). A `true` value means the translation is stale and
+            should be reviewed or regenerated.
+          examples: [false]
+
+    ItemTranslationLocaleStatus:
+      type: object
+      description: >-
+        Translation workbench summary for one locale of a selection-list item.
+        Returned by `GET /v1/selection-lists/{listId}/items/{itemId}/translations`.
+      required: [locale, machine_translated, source_changed]
+      additionalProperties: false
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        machine_translated:
+          type: boolean
+          description: Whether this item's translation in this locale was machine-produced.
+          examples: [true]
+        source_changed:
+          type: boolean
+          description: >-
+            Whether the source-locale text for this item has changed since the
+            translation was written.
+          examples: [false]
+
+    SelectionListTranslation:
+      type: object
+      description: A stored list translation for one locale.
+      required: [list_id, locale, name, is_machine, updated_at]
+      additionalProperties: false
+      properties:
+        list_id:
+          $ref: '#/components/schemas/SelectionListId'
+        locale:
+          $ref: '#/components/schemas/Locale'
+        name:
+          type: string
+          description: The translated list name.
+          minLength: 1
+          maxLength: 200
+          examples: ['Pays']
+        description:
+          type: [string, 'null']
+          description: The translated list description, if any.
+          maxLength: 2000
+          examples: ['Pays proposés dans le sélecteur d''adresse.']
+        source_hash:
+          type: [string, 'null']
+          description: >-
+            Hash of the `source_locale` text this translation was produced from.
+            When it no longer matches the current source text the translation is
+            stale and eligible for autofill. `null` for the source locale itself.
+          maxLength: 128
+          examples: ['9f2c1a7b5e3d4088']
+        is_machine:
+          type: boolean
+          description: Whether this row was machine-translated.
+          examples: [true]
+        updated_at:
+          type: string
+          format: date-time
+          description: When this translation was last written (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+
+    SelectionListItemTranslation:
+      type: object
+      description: A stored item translation for one locale.
+      required: [item_id, locale, label, is_machine, updated_at]
+      additionalProperties: false
+      properties:
+        item_id:
+          $ref: '#/components/schemas/SelectionListItemId'
+        locale:
+          $ref: '#/components/schemas/Locale'
+        label:
+          type: string
+          description: The translated item label.
+          minLength: 1
+          maxLength: 200
+          examples: ['États-Unis']
+        description:
+          type: [string, 'null']
+          description: The translated item helper text, if any.
+          maxLength: 2000
+          examples: ['États-Unis d''Amérique']
+        source_hash:
+          type: [string, 'null']
+          description: >-
+            Hash of the source-locale label this translation came from; a
+            mismatch marks it stale.
+          maxLength: 128
+          examples: ['9f2c1a7b5e3d4088']
+        is_machine:
+          type: boolean
+          description: Whether this row was machine-translated.
+          examples: [true]
+        updated_at:
+          type: string
+          format: date-time
+          description: When this translation was last written (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+
+    SelectionListTranslationUpsert:
+      type: object
+      description: Human-authored list text for one locale.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The translated list name.
+          minLength: 1
+          maxLength: 200
+          examples: ['Pays']
+        description:
+          type: [string, 'null']
+          description: The translated description; `null` clears it.
+          maxLength: 2000
+          examples: ['Pays proposés dans le sélecteur d''adresse.']
+
+    SelectionListItemTranslationUpsert:
+      type: object
+      description: Human-authored item text for one locale.
+      required: [label]
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          description: The translated item label.
+          minLength: 1
+          maxLength: 200
+          examples: ['États-Unis']
+        description:
+          type: [string, 'null']
+          description: The translated helper text; `null` clears it.
+          maxLength: 2000
+          examples: ['États-Unis d''Amérique']
+
+    SelectionListAutofillRequest:
+      type: object
+      description: Optional scoping for a machine-translation run.
+      additionalProperties: false
+      properties:
+        overwrite_machine:
+          type: boolean
+          description: >-
+            Also refresh translations that already exist and were themselves
+            machine-produced. Human translations (`is_machine: false`) are never
+            overwritten regardless of this flag.
+          default: false
+          examples: [false]
+        item_ids:
+          type: array
+          description: >-
+            Restrict the run to these items. Omit to cover the list and all of
+            its non-archived items.
+          maxItems: 5000
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SelectionListItemId'
+
+    SelectionListAutofillResult:
+      type: object
+      description: What a machine-translation run wrote and what it left alone.
+      required:
+        - locale
+        - source_locale
+        - list_translated
+        - items_translated
+        - items_skipped
+      additionalProperties: false
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        source_locale:
+          $ref: '#/components/schemas/Locale'
+        list_translated:
+          type: boolean
+          description: Whether the list's own name/description was written.
+          examples: [true]
+        items_translated:
+          type: integer
+          description: Count of item translations written by this run.
+          minimum: 0
+          examples: [248]
+        items_skipped:
+          type: integer
+          description: >-
+            Count of items left untouched because a fresh human translation
+            already existed.
+          minimum: 0
+          examples: [1]
+
+    SelectionListAccessRole:
+      type: string
+      description: >-
+        A ReBAC role held on one selection-list instance. Roles do not stack — a
+        user holds exactly one per list.
+      enum:
+        - list-owner
+        - list-editor
+        - list-contributor
+        - list-translator
+        - list-viewer
+      examples: ['list-editor']
+
+    SelectionListAccessGrant:
+      type: object
+      description: One user's role on one selection list.
+      required: [list_id, user_id, role, granted_by, granted_at, updated_at]
+      additionalProperties: false
+      properties:
+        list_id:
+          $ref: '#/components/schemas/SelectionListId'
+        user_id:
+          $ref: '#/components/schemas/UserId'
+        role:
+          $ref: '#/components/schemas/SelectionListAccessRole'
+        granted_by:
+          $ref: '#/components/schemas/UserId'
+        granted_at:
+          type: string
+          format: date-time
+          description: When the grant was first created (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+        updated_at:
+          type: string
+          format: date-time
+          description: When the role was last changed (RFC 3339, UTC).
+          examples: ['2026-08-10T12:00:00Z']
+
+    SelectionListAccessUpsert:
+      type: object
+      description: The single role to grant a user on this list.
+      required: [role]
+      additionalProperties: false
+      properties:
+        role:
+          $ref: '#/components/schemas/SelectionListAccessRole'
+
+    QuotaScope:
+      type: string
+      description: >-
+        The ceiling a quota decision was made against. `org_lists` and
+        `user_lists` cap how many lists exist; `list_items` and `list_locales`
+        cap the size of one list.
+      enum: [org_lists, user_lists, list_items, list_locales]
+      examples: ['org_lists']
+
+    SelectionListQuotaEntry:
+      type: object
+      description: Current usage against one ceiling.
+      required: [scope, applies_to, limit, current]
+      additionalProperties: false
+      properties:
+        scope:
+          $ref: '#/components/schemas/QuotaScope'
+        applies_to:
+          type: string
+          description: What the ceiling is counted per.
+          enum: [organization, user, list]
+          examples: ['organization']
+        limit:
+          type: integer
+          description: The ceiling. A create at or above this is refused `403`.
+          minimum: 0
+          examples: [100]
+        current:
+          type: [integer, 'null']
+          description: >-
+            Current usage. `null` for per-list ceilings, where usage depends on
+            which list you ask about rather than on the org as a whole.
+          minimum: 0
+          examples: [12]
+
+    SelectionListQuotaStatus:
+      type: object
+      description: Quota ceilings and usage for the caller's organization.
+      required: [organization_id, quotas]
+      additionalProperties: false
+      properties:
+        organization_id:
+          $ref: '#/components/schemas/OrganizationId'
+        quotas:
+          type: array
+          description: >-
+            One entry per quota scope. Fixed set of four; not paginated.
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/SelectionListQuotaEntry'
+
+    ResolveRequest:
+      type: object
+      description: A batch of item ids to resolve to labels.
+      required: [ids]
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          description: >-
+            The item ids to resolve. Bounded at 500 per call — the cap is what
+            keeps this route a fixed-cost hot path rather than an unbounded
+            fan-out.
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SelectionListItemId'
+        locale:
+          $ref: '#/components/schemas/Locale'
+
+    ResolvedSelectionListItem:
+      type: object
+      description: >-
+        The minimal resolution of one item id. Deliberately narrow: an id alone
+        buys a label, a locale and a status, and nothing else.
+      required: [label, locale, is_machine, status]
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          description: Display text in the resolved locale. Never `null`.
+          minLength: 1
+          maxLength: 200
+          examples: ['United States']
+        locale:
+          $ref: '#/components/schemas/Locale'
+        is_machine:
+          type: boolean
+          description: Whether the label was machine-translated.
+          examples: [false]
+        status:
+          $ref: '#/components/schemas/LifecycleStatus'
+
+    ResolveResponse:
+      type: object
+      description: >-
+        Resolutions keyed by the id that was asked for, plus every id that could
+        not be resolved. The two together always account for the whole request —
+        an id is never silently dropped.
+      required: [results, missing]
+      additionalProperties: false
+      properties:
+        results:
+          type: object
+          description: >-
+            Map of item id to its resolution. Keys are exactly the requested ids
+            that resolved.
+          propertyNames:
+            $ref: '#/components/schemas/SelectionListItemId'
+          additionalProperties:
+            $ref: '#/components/schemas/ResolvedSelectionListItem'
+        missing:
+          type: array
+          description: >-
+            Requested ids that do not exist (never created, or purged). Distinct
+            from an archived id, which resolves normally.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SelectionListItemId'
+
+    ErrorCode:
+      type: string
+      description: >-
+        Stable, machine-readable error code. Clients branch on this, never on
+        `message`, which is human-facing and may change without a version bump.
+      enum:
+        - VALIDATION_ERROR
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - QUOTA_EXCEEDED
+      examples: ['NOT_FOUND']
+
+    Error:
+      type: object
+      description: >-
+        The single error shape for every non-2xx response. `scope`, `limit` and
+        `current` are populated only for `QUOTA_EXCEEDED`, where the client
+        needs to know *which* ceiling it hit to say anything useful.
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          description: Human-readable explanation. Not for programmatic branching.
+          examples: ['Organization list quota exhausted.']
+        scope:
+          $ref: '#/components/schemas/QuotaScope'
+        limit:
+          type: integer
+          description: The ceiling that was hit. Present only on `QUOTA_EXCEEDED`.
+          minimum: 0
+          examples: [100]
+        current:
+          type: integer
+          description: Usage at the time of refusal. Present only on `QUOTA_EXCEEDED`.
+          minimum: 0
+          examples: [100]
+        details:
+          type: array
+          description: >-
+            Per-field validation problems. Present only on `VALIDATION_ERROR`.
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      description: One field-level validation problem.
+      required: [field, message]
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+          description: JSON pointer to the offending property.
+          examples: ['/code']
+        message:
+          type: string
+          description: What is wrong with it.
+          examples: ['code is immutable after create']
+
+  responses:
+    BadRequest:
+      description: >-
+        `VALIDATION_ERROR` — malformed body, unknown property, unsupported
+        locale, or a bad cursor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: '`UNAUTHENTICATED` — missing, expired or invalid Bearer token.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: >-
+        `FORBIDDEN` — the caller is authenticated but lacks the required Permit
+        action — or `QUOTA_EXCEEDED`, which shares this status because both are
+        "you may not, and retrying identically will not help".
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: >-
+        `NOT_FOUND` — no such list/item, **or** the caller may not `read` it.
+        The two are deliberately indistinguishable so the API is not a
+        cross-org existence oracle.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: >-
+        `CONFLICT` — duplicate list `key`, duplicate item `code`, or an
+        operation that would remove the last `list-owner`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

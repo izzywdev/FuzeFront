@@ -1,0 +1,58 @@
+{
+  "name": "@fuzefront/custom-hostname-client",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "Typed HTTP client + types for FuzeInfra's cluster-internal Custom Hostname API (Cloudflare for SaaS custom-domain provisioning)",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "test": "vitest run",
+    "gen:types": "openapi-typescript ../services/custom-hostname-api/openapi.yaml -o src/schema.ts",
+    "lint:contract": "spectral lint ../services/custom-hostname-api/openapi.yaml --ruleset ../services/custom-hostname-api/.spectral.yaml",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "custom-hostname-client"
+  },
+  "author": "FuzeFront Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.11.0",
+    "@types/node": "^24.13.3",
+    "openapi-typescript": "^7.4.0",
+    "rimraf": "^6.0.0",
+    "tsup": "^8.0.2",
+    "typescript": "^5.9.0",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
+}

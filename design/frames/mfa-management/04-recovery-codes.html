@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Recovery codes — MFA frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .content { max-width: 720px; }
+  .card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: var(--space-6); }
+  .card__seam { height: 2px; background: var(--seam); }
+  .card__body { padding: var(--space-6); }
+  .warn-banner { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4) var(--space-6);
+    background: var(--warning-soft); color: var(--text-secondary); font-size: var(--text-sm); }
+  .warn-banner b { color: var(--text-primary); }
+  .codes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin: var(--space-2) 0 var(--space-5); }
+  @media (max-width: 480px){ .codes { grid-template-columns: 1fr; } }
+  .codes code { font-family: var(--font-mono); font-size: var(--text-md); letter-spacing: 0.1em;
+    color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); text-align: center; }
+  .codes code.used { color: var(--text-tertiary); text-decoration: line-through; }
+  .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+  .state-label { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: var(--space-8) 0 var(--space-2); }
+  .dialog { max-width: 460px; }
+  .dialog h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); }
+  .dialog p { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--text-md); line-height: 1.6; }
+  .ack { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-5); font-size: var(--text-sm); color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="shell" data-frame="04-recovery-codes" data-route="/account/security/mfa/recovery-codes">
+  <header class="topbar">
+    <span class="wordmark">Fuze<span class="fuse">Front</span></span>
+    <span class="spacer"></span>
+    <div class="launch-btn" aria-hidden="true">⋮⋮</div>
+    <div class="avatar">AR</div>
+  </header>
+  <div class="body">
+    <nav class="side">
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#">Profile</a>
+      <a class="nav-item active" href="01-mfa-overview.html"><span class="ico">🛡️</span> Security</a>
+      <a class="nav-item" href="#">Sessions &amp; devices</a>
+      <a class="nav-item" href="#">Billing</a>
+    </nav>
+    <main class="content">
+      <h1 class="page-title">Recovery codes</h1>
+      <p class="page-sub">If you lose your phone, a recovery code gets you back in. Each one works once.</p>
+
+      <!-- ═══ Shown once (just generated) ═══ -->
+      <div class="card" data-component="recovery-codes" data-state="shown-once">
+        <div class="card__seam"></div>
+        <div class="warn-banner">
+          <span aria-hidden="true">⚠</span>
+          <span><b>Save these now — this is the only time you'll see them.</b> Store them in a password
+            manager or print them. We can't show them again.</span>
+        </div>
+        <div class="card__body">
+          <div class="codes" data-codes>
+            <code>4f2a-9c11</code><code>8b7d-1e04</code>
+            <code>2a6f-77bc</code><code>c390-4de1</code>
+            <code>9e15-6a02</code><code>0b84-3f7a</code>
+            <code>7d21-e9c8</code><code>5c60-12ab</code>
+            <code>a1f9-84d3</code><code>3e77-b520</code>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="download-codes">Download</button>
+            <button class="btn btn-ghost" data-action="copy-codes">Copy</button>
+            <button class="btn btn-ghost" data-action="print-codes">Print</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Status (returning; codes hidden, only counts) ═══ -->
+      <div class="state-label">State · returning · codes hidden</div>
+      <div class="card" data-component="recovery-codes" data-state="status">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <p style="margin:0 0 var(--space-4); color:var(--text-secondary)">You have <b style="color:var(--text-primary)">8 of 10</b>
+            recovery codes left. For your safety we don't show used or existing codes — regenerate to get a fresh set.</p>
+          <div class="codes" aria-hidden="true">
+            <code class="used">•••• ••••</code><code class="used">•••• ••••</code>
+            <code>•••• ••••</code><code>•••• ••••</code>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost" data-action="regenerate-open">Regenerate codes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Regenerate confirm ═══ -->
+      <div class="state-label">State · regenerate confirm</div>
+      <div class="card dialog" data-component="recovery-codes" data-state="regenerate-confirm" role="alertdialog" aria-labelledby="rgt">
+        <div class="card__seam"></div>
+        <div class="card__body">
+          <h3 id="rgt">Regenerate recovery codes?</h3>
+          <p>This creates 10 new codes and <b>immediately invalidates your current set</b>. Any old codes
+            you saved will stop working.</p>
+          <label class="ack"><input type="checkbox" data-field="ack-invalidate" /> I understand my old codes will stop working.</label>
+          <div class="actions">
+            <button class="btn btn-primary" data-action="regenerate-confirm">Regenerate</button>
+            <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="frame-nav">
+    <span class="caption">Frame <b>04 / 06</b> · Recovery codes · <b>…/mfa/recovery-codes</b></span>
+    <span><a class="btn btn-ghost" href="03-sms-enroll.html">← Add phone</a> <a class="btn btn-primary" href="05-step-up-challenge.html" style="text-decoration:none">Next: step-up →</a></span>
+  </div>
+</div>
+</body>
+</html>

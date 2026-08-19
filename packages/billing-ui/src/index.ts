@@ -1,0 +1,130 @@
+/**
+ * @fuzefront/billing-ui — design-system-first React billing UI for the
+ * FuzeFront billing-service.
+ *
+ * Consumers must also import the stylesheet once:
+ *   import '@fuzefront/billing-ui/styles.css';
+ * and wrap the tree (or the FuzeFront shell already does) so the
+ * @fuzefront/design-system token CSS variables are in scope.
+ *
+ * All request/response shapes come from the generated @fuzefront/billing-client
+ * (source of truth: services/billing-service/openapi.yaml) — never hand-written.
+ */
+
+// i18n / direction
+export {
+  BillingI18nProvider,
+  useBillingI18n,
+  defaultStrings,
+  type BillingStrings,
+  type Direction,
+  type I18nContextValue,
+  type BillingI18nProviderProps,
+} from './i18n';
+
+// Status helpers (re-exported for consumers building custom chrome)
+export {
+  statusTone,
+  statusLabel,
+  isEntitled,
+  invoiceStatusTone,
+  invoiceStatusLabel,
+  type StatusTone,
+} from './lib/status';
+
+// Primitives
+export {
+  Button,
+  Spinner,
+  StatusPill,
+  Notice,
+  type ButtonProps,
+  type ButtonVariant,
+} from './components/primitives';
+
+// Dialog
+export { Modal, type ModalProps } from './components/Modal';
+
+// Plan selection
+export { PlanCard, type PlanCardProps } from './components/PlanCard';
+export {
+  PlanPicker,
+  type PlanPickerProps,
+  type BillingInterval,
+} from './components/PlanPicker';
+
+// Checkout (Stripe Payment Element)
+export {
+  CheckoutModal,
+  type CheckoutModalProps,
+  type CheckoutMode,
+} from './components/CheckoutModal';
+
+// Subscription management
+export {
+  SubscriptionManager,
+  type SubscriptionManagerProps,
+} from './components/SubscriptionManager';
+
+// Usage / credits
+export { UsagePanel, type UsagePanelProps } from './components/UsagePanel';
+
+// Payment methods
+export {
+  PaymentMethodPanel,
+  type PaymentMethodPanelProps,
+  type CardSummary,
+} from './components/PaymentMethodPanel';
+
+// Invoice history
+export {
+  InvoiceHistoryPanel,
+  type InvoiceHistoryPanelProps,
+  type ListInvoices,
+} from './components/InvoiceHistoryPanel';
+
+// Re-export the contract types consumers will need alongside the components.
+export type {
+  Plan,
+  BillingSubscription,
+  SubscriptionStatus,
+  PlanTier,
+  EntityType,
+  BillingInvoice,
+  InvoiceListResponse,
+} from '@fuzefront/billing-client';
+
+// Portal-admin billing console (PortalBillingFlow, FF-EPIC-14-S4)
+export { PortalBillingFlow, type PortalBillingFlowProps } from './flows/PortalBillingFlow';
+export {
+  createPortalBillingClient,
+  deriveConnectStatus,
+  type PortalBillingClient,
+  type ConnectStatus,
+  type ConnectOnboardingStatus,
+  type ConnectStepState,
+  type PriceBookEntry,
+  type CreatePriceInput,
+} from './api/portalBillingClient';
+export { HttpClient, HttpError, type HttpClientOptions } from './api/http';
+export { BillingConsolePanel, type BillingConsolePanelProps } from './components/portal/BillingConsolePanel';
+export {
+  PlatformSubscriptionCard,
+  type PlatformSubscriptionCardProps,
+  type PlatformSubscriptionLoadState,
+} from './components/portal/PlatformSubscriptionCard';
+export {
+  ConnectOnboardingCard,
+  type ConnectOnboardingCardProps,
+  type ConnectLoadState,
+} from './components/portal/ConnectOnboardingCard';
+export { ConnectStatusStepper, type ConnectStatusStepperProps } from './components/portal/ConnectStatusStepper';
+export { ConnectErrorNotice, type ConnectErrorNoticeProps } from './components/portal/ConnectErrorNotice';
+export {
+  PriceBookTable,
+  type PriceBookTableProps,
+  type PriceBookLoadState,
+} from './components/portal/PriceBookTable';
+export { AddPriceModal, type AddPriceModalProps } from './components/portal/AddPriceModal';
+export { AccessDeniedNotice } from './components/portal/AccessDeniedNotice';
+export { ResellerNotEnabledNotice } from './components/portal/ResellerNotEnabledNotice';

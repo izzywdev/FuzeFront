@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portal admin consoles — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .grouplabel { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin: var(--space-8) 0 var(--space-3); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-10); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h2 { font-family: var(--font-display); font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+  .inv .lead2 { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-5); }
+  .flowcard { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-5);
+    margin-bottom: var(--space-4); }
+  .flowcard h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+  .flowcard .rt { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+  .flowcard .comps { margin: var(--space-3) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .flowcard .comps code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    padding: 0 var(--space-2); }
+  .inv-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-5); }
+  @media (max-width: 720px){ .inv-grid2 { grid-template-columns: 1fr; } }
+  .inv-col h4 { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin: 0 0 var(--space-3); }
+  .inv-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .inv-col li { font-size: var(--text-sm); color: var(--text-secondary); }
+  .inv-col code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid var(--border-color); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval</div>
+  <h1>Portal admin consoles · Approval Frames</h1>
+  <p class="lead">Two admin surfaces the multi-tenant platform has never had a UI for — a
+    <b>master-admin</b> console to run the portal fleet, and a <b>portal-admin</b> console for a
+    tenant to run their own users, app catalog, and billing. Every capability from FF-EPIC-09
+    (portal CRUD), FF-EPIC-11 (scoped identity), FF-EPIC-12 (catalog), and FF-EPIC-15 (reseller
+    billing) gets a reviewable frame here before any UI is written. These frames freeze the flows,
+    their states, and the build inventory. Walk each frame; approve <b>per flow</b>.</p>
+
+  <div class="grouplabel">Master-admin console · route /admin/portals · story FF-EPIC-14-S2</div>
+  <div class="grid" data-nav="frames">
+    <a href="01-portals-list.html" class="frame-link" data-frame-link="01-portals-list">
+      <div class="seam"></div><div class="step">Frame (a) · /admin/portals</div>
+      <h3>Portals</h3>
+      <p>The fleet list: name, slug, status, primary domain, plan. Create, suspend, resume. Root-portal guard.</p>
+    </a>
+    <a href="02-create-portal.html" class="frame-link" data-frame-link="02-create-portal">
+      <div class="seam"></div><div class="step">Frame (b) · /admin/portals/new</div>
+      <h3>Create portal</h3>
+      <p>Name, slug, owner email, plan / billing-mode. Reseller mode unlocks the Connect billing console.</p>
+    </a>
+    <a href="03-portal-detail.html" class="frame-link" data-frame-link="03-portal-detail">
+      <div class="seam"></div><div class="step">Frame (c) · /admin/portals/:id</div>
+      <h3>Portal detail</h3>
+      <p>Branding summary, domains + verification status (read-only), user &amp; app counts, suspend/resume.</p>
+    </a>
+    <a href="04-master-states.html" class="frame-link" data-frame-link="04-master-states">
+      <div class="seam"></div><div class="step">Frame (d) · /admin/portals</div>
+      <h3>States</h3>
+      <p>Loading, fresh-install empty, error, suspend confirm, root-portal refusal, slug conflict, 403 (never a login redirect).</p>
+    </a>
+  </div>
+
+  <div class="grouplabel">Portal-admin console · route /portal/admin · stories FF-EPIC-14-S3 / S4</div>
+  <div class="grid" data-nav="frames">
+    <a href="05-overview.html" class="frame-link" data-frame-link="05-overview">
+      <div class="seam"></div><div class="step">Frame (e) · /portal/admin</div>
+      <h3>Overview</h3>
+      <p>The portal-scoped home: user / app / billing / plan summary, domain, and setup tasks. Tabbed shell.</p>
+    </a>
+    <a href="06-users.html" class="frame-link" data-frame-link="06-users">
+      <div class="seam"></div><div class="step">Frame (f) · /portal/admin/users</div>
+      <h3>Users</h3>
+      <p>Portal-scoped users + roles, invite dialog, resend/revoke. Self-role-change guard.</p>
+    </a>
+    <a href="07-catalog.html" class="frame-link" data-frame-link="07-catalog">
+      <div class="seam"></div><div class="step">Frame (g) · /portal/admin/catalog</div>
+      <h3>App catalog</h3>
+      <p>Enabled apps with drag + ▲▼ reorder, and add-app from the FuzeFront catalog.</p>
+    </a>
+    <a href="08-billing.html" class="frame-link" data-frame-link="08-billing">
+      <div class="seam"></div><div class="step">Frame (h) · /portal/admin/billing</div>
+      <h3>Billing</h3>
+      <p>Connect onboarding status (onboarded), price book, and the portal's own platform subscription.</p>
+    </a>
+    <a href="09-portal-states.html" class="frame-link" data-frame-link="09-portal-states">
+      <div class="seam"></div><div class="step">Frame (i) · /portal/admin/*</div>
+      <h3>States</h3>
+      <p>Users/catalog loading+empty+error, <b>suspended portal (403)</b>, <b>cross-tenant invite (403)</b>, and the Connect not-started / in-progress / restricted state machine.</p>
+    </a>
+  </div>
+
+  <div class="inv" data-panel="build-inventory">
+    <h2>Build inventory</h2>
+    <p class="lead2">Approving a flow approves its component/package plan and its contract binding —
+      implementation cannot quietly invent a different architecture. Mirrored in
+      <code>manifest.json</code> → <code>build</code>. Approval is <b>per flow</b>: the master-admin
+      console (S2) can be approved independently of the portal console (S3) and billing (S4).</p>
+
+    <div class="flowcard" data-flow="master-admin-portals">
+      <h4><code>MasterAdminPortalsFlow</code></h4>
+      <div class="rt">route /admin/portals · story FF-EPIC-14-S2 · flag fuzefront.platform.multi-tenant-portals · approved: false</div>
+      <div class="rt">contract: @fuzefront/portal-client (ANTICIPATED — not frozen today) → @fuzefront/portal-admin-ui</div>
+      <div class="comps">
+        <code>PortalsTable</code><code>PortalRow</code><code>PortalStatusPill</code><code>PlanBadge</code>
+        <code>CreatePortalDialog</code><code>PortalDetailPanel</code><code>DomainStatusList</code>
+        <code>SuspendPortalDialog</code><code>MasterAdminGuard</code>
+      </div>
+    </div>
+
+    <div class="flowcard" data-flow="portal-console">
+      <h4><code>PortalAdminConsoleFlow</code></h4>
+      <div class="rt">route /portal/admin · story FF-EPIC-14-S3 · flags fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog · approved: false</div>
+      <div class="rt">contract: @fuzefront/security-client (REAL, members/roles) + @fuzefront/app-registry-client (REAL, app display) + anticipated portal-scoped invitation &amp; portal_apps routes → @fuzefront/portal-admin-ui</div>
+      <div class="comps">
+        <code>PortalConsoleShell</code><code>PortalTabs</code><code>PortalOverviewCards</code>
+        <code>PortalUsersTable</code><code>InviteUserDialog</code><code>PortalRolePicker</code>
+        <code>AppCatalogList</code><code>CatalogItemRow</code><code>AddAppDialog</code>
+        <code>ReorderControls</code><code>PortalSuspendedNotice</code><code>CrossTenantDeniedNotice</code>
+      </div>
+    </div>
+
+    <div class="flowcard" data-flow="portal-billing">
+      <h4><code>PortalBillingFlow</code></h4>
+      <div class="rt">route /portal/admin/billing · story FF-EPIC-14-S4 · flag fuzefront.billing.reseller-connect · approved: false</div>
+      <div class="rt">contract: @fuzefront/billing-client (REAL, platform subscription) + anticipated Connect / price-book routes → @fuzefront/billing-ui</div>
+      <div class="comps">
+        <code>BillingConsolePanel</code><code>ConnectOnboardingCard</code><code>ConnectStatusStepper</code>
+        <code>PriceBookTable</code><code>PlatformSubscriptionCard</code><code>ConnectErrorNotice</code>
+      </div>
+    </div>
+
+    <div class="inv-grid2">
+      <div class="inv-col" data-inv="packages">
+        <h4>npm packages</h4>
+        <ul>
+          <li><code>@fuzefront/portal-admin-ui</code> <span class="muted">(new)</span></li>
+          <li><code>@fuzefront/billing-ui</code> <span class="muted">(extended)</span></li>
+        </ul>
+      </div>
+      <div class="inv-col" data-inv="ds-primitives">
+        <h4>DS primitives needed</h4>
+        <ul>
+          <li><code>Tabs</code> — flagged, not in DS today</li>
+          <li><code>StatusPill</code> — semantic lifecycle pill</li>
+          <li><code>StatCard</code> — summary metric card</li>
+          <li><code>Stepper</code> — Connect onboarding steps</li>
+          <li><code>SortableList</code> — catalog reorder</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — per flow (S2 / S3 / S4)</span>
+
+  <p class="note">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only) ·
+    Epics: FF-EPIC-14 (UI) consuming FF-EPIC-09 / 11 / 12 / 15.<br />
+    <b>Anticipated contracts:</b> the <code>@fuzefront/portal-client</code> (all <code>/portals*</code>),
+    the portal-scoped invitation route, the per-portal catalog (<code>portal_apps</code>), and the
+    Stripe Connect / price-book surface do <b>not</b> exist in the contracts today — these frames
+    commission them, exactly as an approved frame can commission a new endpoint. Members/roles bind to
+    the real <code>@fuzefront/security-client</code>; app display to the real
+    <code>@fuzefront/app-registry-client</code>; the portal's own subscription to the real
+    <code>@fuzefront/billing-client</code>.<br />
+    <b>DS primitives:</b> <code>Tabs</code>, <code>StatusPill</code>, <code>StatCard</code>,
+    <code>Stepper</code>, and <code>SortableList</code> are not in <code>@fuzefront/design-system</code>
+    today — <code>frontend-engineer</code> (sole editor of <code>design-system/</code>) adds them as
+    foundation PRs; the frames compose them from tokens only in the meantime.<br />
+    Approve per-flow by setting <code>approved: true</code> on the flow in <code>manifest.json</code>,
+    or reply <code>@claude approve &lt;flow&gt;</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>

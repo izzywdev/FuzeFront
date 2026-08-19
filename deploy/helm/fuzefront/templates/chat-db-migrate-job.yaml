@@ -1,0 +1,76 @@
+{{- if and .Values.chatService.enabled .Values.chatService.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-chat-db-migrate
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-db-migrate
+  annotations:
+    # Creates the chat_conversations / chat_messages / chat_audit_log /
+    # chat_feedback tables (knex migrations 001, 002) BEFORE chat-service starts.
+    # Without this the service boots against a schema-less database and every
+    # turn fails on the first INSERT — nothing else in the chart ran these
+    # migrations, and index.ts does not self-migrate.
+    #
+    # Weight -3 puts it after the shared db-bootstrap (which ensures the
+    # dedicated `fuzefront_chat` database — see chatService.dbName — and the
+    # runtime role exist) and before the workload. Idempotent: knex tracks
+    # applied migrations in knex_migrations, so re-running on upgrade is a
+    # no-op.
+    #
+    # #499: this Job used to run against the SHARED backend database
+    # (database.name = fuzefront_platform). Its knex ledger then collided with
+    # the backend's ~18-migration `knex_migrations` row set in the same DB —
+    # validateMigrationList found the backend's files "missing" from this
+    # image and aborted, crash-looping the Job and leaving the whole
+    # `fuzefront` Argo Application stuck Degraded/OutOfSync. Pointing this Job
+    # at its own database (chatService.dbName) removes the collision entirely.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: chat-db-migrate
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: chat-db-migrate
+          # Same image as the service, so the migrations run are exactly the ones
+          # the running code expects.
+          image: "{{ .Values.chatService.image.repository }}:{{ .Values.chatService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["node", "dist/db/migrate.js"]
+          env:
+            # NODE_ENV=production selects the knexfile's production block, whose
+            # migrations directory points at the compiled dist/db/migrations.
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            # Dedicated DB (#499) — NOT database.name (the shared backend
+            # fuzefront_platform). Must match chat-service.yaml's DB_NAME.
+            - name: DB_NAME
+              value: {{ .Values.chatService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+{{- end }}
