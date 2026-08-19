@@ -142,6 +142,10 @@ describe('app-registry manifest validation', () => {
   it('accepts a same-origin absolute path as remoteEntry', () => {
     expect(accepts('/apps/fuzequality/assets/remoteEntry.js')).toBe(true)
     expect(accepts('/apps/clock/assets/remoteEntry.js')).toBe(true)
+    // FuzeX's design-frames Module-Federation remote (scope `fuzex`, module
+    // `./DesignFramesApp`) — proxied same-origin by the host ingress at
+    // /apps/fuzex/*, exactly like fuzequality/clock above.
+    expect(accepts('/apps/fuzex/remoteEntry.js')).toBe(true)
   })
 
   it('still accepts an absolute http(s) remoteEntry (externally hosted remotes)', () => {
@@ -171,6 +175,9 @@ describe('app-registry manifest validation', () => {
   it('rejects a bare relative remoteEntry (ambiguous base)', () => {
     expect(accepts('apps/x/remoteEntry.js')).toBe(false)
     expect(accepts('')).toBe(false)
+    // No scheme, no leading slash — neither an absolute URL nor a same-origin
+    // path, so there is no unambiguous base to resolve it against.
+    expect(accepts('foo')).toBe(false)
   })
 
   it('applies the same URL rules to integration.url (iframe/spa)', () => {
