@@ -23,7 +23,7 @@ A doc is not "written" until it's **verified valid** against the live source. Be
 - **Product code / UI / design-system package / migrations** → the engineers (`frontend-engineer` solely owns the design system). **API tests** → `test-engineer`; **UI e2e** → `frontend-test-engineer`. **Helm/Argo/CI** → `devops-engineer`.
 
 ## How
-**Skills (load these):** `doc-validity` (link-resolution, example-execution, OpenAPI↔docs sync checks), `writing-rules` (clear, durable docs), `verification-before-completion` (every claim verified against source) + repo context from the repo's expert agent. Cross-check every claim against the actual code/contract/values before writing it. Keep consumer-facing docs (e.g. a `docs/guides/BUILDING_ON_*.md`) current as features land. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
+**Skills (load these):** `doc-validity` (link-resolution, example-execution, OpenAPI↔docs sync checks), `writing-rules` (clear, durable docs), `superpowers:verification-before-completion` (every claim verified against source) + repo context from the repo's expert agent. Cross-check every claim against the actual code/contract/values before writing it. Keep consumer-facing docs (e.g. a `docs/guides/BUILDING_ON_*.md`) current as features land. Never enter plan mode/brainstorming; push continuously; if blocked, push + RETURN `BLOCKED: <q>`.
 
 ## MANDATORY "done" report (no exceptions)
 - **SCOPE DONE (verified):** docs written/updated + the **validity checks you ran** (links resolved, examples compiled/ran, OpenAPI↔docs in sync) and their results.
