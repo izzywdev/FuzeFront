@@ -156,7 +156,7 @@ describe('PgKeyDefinitionRepository.update — FFRNT-158 manifest reconciliation
       allowedScopes: ['user', 'org'],
     });
 
-    expect(capturedSql).toMatch(/UPDATE config_key_definitions SET/);
+    expect(capturedSql).toMatch(/UPDATE config\.config_key_definitions SET/);
     expect(capturedSql).toMatch(/deprecated_at = NULL/);
     expect(capturedSql).toMatch(/WHERE id = \$1/);
     expect(capturedParams[0]).toBeDefined(); // toUuid(DEFINITION_ID) — the native storage form, not the TypeID itself
@@ -188,7 +188,7 @@ describe('PgKeyDefinitionRepository.deprecate', () => {
     const idB = 'ckd_01kzrds7mdfwsscregja4h3qjq' as KeyDefinitionEntityId;
     await repo.deprecate([idA, idB]);
 
-    expect(capturedSql).toMatch(/UPDATE config_key_definitions SET deprecated_at = now\(\)/);
+    expect(capturedSql).toMatch(/UPDATE config\.config_key_definitions SET deprecated_at = now\(\)/);
     expect(capturedSql).toMatch(/AND deprecated_at IS NULL/);
     expect((capturedParams[0] as string[])).toHaveLength(2);
   });

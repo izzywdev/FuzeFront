@@ -66,8 +66,11 @@ spec:
               # (src/middleware/authz.ts) instead of an embedded Permit.io SDK.
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
           readinessProbe:
+            # /health/ready pings the DB; /health (liveness, below) does not.
+            # Splitting them means a database outage takes this pod OUT OF THE
+            # SERVICE without restarting an otherwise-healthy process.
             httpGet:
-              path: /health
+              path: /health/ready
               port: {{ .Values.configService.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
