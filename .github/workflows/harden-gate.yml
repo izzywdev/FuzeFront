@@ -317,7 +317,27 @@ jobs:
     # to ignore it — see the a2a-maintain/mcp-maintain actor-gate failure, where
     # red meant only "an agent opened this PR".
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # THE ONLY JOB IN THIS FILE ON A SELF-HOSTED RUNNER, deliberately. The
+    # LiteLLM gateway is a Kubernetes service DNS name, so this job cannot route
+    # from a GitHub-hosted runner (see the long comment above for why the
+    # external, Access-gated host is not an acceptable substitute).
+    #
+    # `fuzefront` is the scale set that ACTUALLY EXISTS. Verified live against
+    # `kubectl -n arc-runners get autoscalingrunnersets`: 22 sets, every one
+    # named after its repo, and NO `fuze-runner`. governance/ci-runners.md
+    # mandates the uniform `fuze-runner` name, but that rename has not happened
+    # yet — and a runs-on naming a set that does not exist does not fail, it
+    # QUEUES FOREVER with no error. Change this to `fuze-runner` in the same
+    # change that renames the set, never before.
+    #
+    # NOT declaring `ci.runner` in .fuze/manifest.json, which would re-stamp all
+    # 107 jobs in this repo onto the self-hosted runner. FuzeFront is PUBLIC, so
+    # GitHub-hosted minutes are free and unmetered here — the budget argument in
+    # ci-runners.md is about PRIVATE repos and does not apply. Moving everything
+    # onto a scale set that shares one 4-vCPU node with 21 others would trade
+    # free, fast CI for a saturated queue. Only the job that needs in-cluster
+    # reachability moves.
+    runs-on: fuzefront
     permissions:
       contents: read
       pull-requests: write
