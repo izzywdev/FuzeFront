@@ -126,6 +126,30 @@ export class SubscriptionService {
     );
   }
 
+  /**
+   * Cancel immediately (hard cancel); Stripe ends the subscription now rather
+   * than at period end. Used when the owning entity is being purged (e.g. an
+   * `identity.org.deleted` with `cascade: 'hard'`) and there is nothing left to
+   * bill for.
+   */
+  async cancelImmediately(stripeSubscriptionId: string): Promise<BillingSubscription> {
+    const existing = await this.repo.findByStripeId(stripeSubscriptionId);
+    if (!existing) {
+      throw new Error(`Subscription not found: ${stripeSubscriptionId}`);
+    }
+    const canceled = await this.stripe.subscriptions.cancel(
+      stripeSubscriptionId,
+      undefined,
+      { idempotencyKey: `sub-cancel-now-${stripeSubscriptionId}` },
+    );
+    return this.repo.upsert(
+      mapStripeSubscription(canceled, {
+        customerId: existing.customerId,
+        planTier: existing.planTier,
+      }),
+    );
+  }
+
   private async resolvePlanTier(priceId: string): Promise<string> {
     const plans = await this.plans.getActivePlans();
     return plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown';
