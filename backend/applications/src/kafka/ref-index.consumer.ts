@@ -2,8 +2,17 @@ import { z } from 'zod'
 // Dynamic require so the path resolves against the dist output without a
 // tsconfig `paths` alias (applications-service follows this pattern for all
 // shared/kafka imports — see app-registry/events.ts).
+//
+// The subpath MUST be the one @fuzefront/shared declares in its `exports` map.
+// `./dist/kafka` is not exported, and an `exports` field makes every
+// undeclared subpath unreachable — so requiring it throws
+// ERR_PACKAGE_PATH_NOT_EXPORTED. This require is top-level and unguarded, so
+// that threw at module load and crash-looped the whole service in prod. The
+// pattern was copied from app-registry/events.ts, where the identical deep
+// path has always been broken too — its require just sits inside a try/catch
+// that silently swallowed the failure.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { createKafkaClient, TypedConsumer } = require('@fuzefront/shared/dist/kafka')
+const { createKafkaClient, TypedConsumer } = require('@fuzefront/shared/kafka')
 import {
   applyEventToRefIndex,
   REF_INDEX_TOPICS,
