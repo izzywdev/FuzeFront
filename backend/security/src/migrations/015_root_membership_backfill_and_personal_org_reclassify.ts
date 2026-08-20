@@ -37,27 +37,67 @@ import { ROOT_ORG_ID } from './014_seed_root_platform_organization'
  * on a scratch DB).
  *
  * DEPLOY NOTE: `master` is deploy-on-push and this migration runs on deploy —
+ * PRECONDITION on (a): the `ROOT_ORG_ID` row must exist. It is a hard-coded
+ * constant, not a lookup, and migration 014 has two paths that legitimately
+ * leave it absent (adopt-a-differently-identified platform org; defer when no
+ * user exists). (a) verifies the row before inserting anything that references
+ * it — an unverified reference is a 23503 that aborts the migration chain and
+ * crash-loops the service on boot, which is exactly what happened in prod on
+ * 2026-08-20 (#750). The pre-existing tests only ever ran against a database
+ * where 014 had succeeded, so this path was never exercised.
+ *
+ * DEPLOY NOTE: `master` is deploy-on-push and this migration runs on deploy —
  * land in a deploy window (`deploy-window` label, FF-EPIC-17-S2 DoD).
  */
 export async function up(knex: Knex): Promise<void> {
   // (a) Backfill root membership for every user lacking one.
-  const backfillResult = await knex.raw(
-    `INSERT INTO organization_memberships
-       (id, user_id, organization_id, role, status, joined_at, permissions, metadata)
-     SELECT gen_random_uuid(), u.id, ?, 'member', 'active', NOW(), '{}'::jsonb, '{}'::jsonb
-     FROM users u
-     WHERE NOT EXISTS (
-       SELECT 1 FROM organization_memberships om
-       WHERE om.user_id = u.id AND om.organization_id = ?
-     )
-     ON CONFLICT (user_id, organization_id) DO NOTHING`,
-    [ROOT_ORG_ID, ROOT_ORG_ID]
-  )
-  console.log(
-    `[015] root-membership backfill: inserted ${backfillResult.rowCount ?? 0} row(s)`
-  )
+  //
+  // PRECONDITION: the root org row must actually exist. `ROOT_ORG_ID` is a
+  // hard-coded constant, not a lookup, and migration 014 has two paths that
+  // legitimately leave the row ABSENT — it adopts a pre-existing platform org
+  // under a different id, and it defers entirely when there is no user yet.
+  // Neither is an error there, but inserting memberships that reference a
+  // missing organization is a foreign-key violation (23503) that aborts the
+  // migration chain and crash-loops the service on boot. Verify, don't assume:
+  // a step that cannot tell "nothing to do" from "the thing I need is missing"
+  // eventually reports success for the wrong reason.
+  const rootOrg = await knex('organizations').where({ id: ROOT_ORG_ID }).first()
+  if (!rootOrg) {
+    const platform = await knex('organizations')
+      .where({ type: 'platform' })
+      .orderBy('created_at', 'asc')
+      .first()
+    console.error(
+      `[015] SKIPPING root-membership backfill: organization ${ROOT_ORG_ID} does ` +
+        'not exist. ' +
+        (platform
+          ? `The platform organization in this database is ${platform.id}, which ` +
+            'migration 014 adopted rather than repointed. Resolve that first — ' +
+            'until then every ROOT_ORG_ID call site misses.'
+          : 'No platform organization exists at all; migration 014 deferred.') +
+      ' Not inserting memberships that would violate' +
+      ' organization_memberships_organization_id_foreign.'
+    )
+  } else {
+    const backfillResult = await knex.raw(
+      `INSERT INTO organization_memberships
+         (id, user_id, organization_id, role, status, joined_at, permissions, metadata)
+       SELECT gen_random_uuid(), u.id, ?, 'member', 'active', NOW(), '{}'::jsonb, '{}'::jsonb
+       FROM users u
+       WHERE NOT EXISTS (
+         SELECT 1 FROM organization_memberships om
+         WHERE om.user_id = u.id AND om.organization_id = ?
+       )
+       ON CONFLICT (user_id, organization_id) DO NOTHING`,
+      [ROOT_ORG_ID, ROOT_ORG_ID]
+    )
+    console.log(
+      `[015] root-membership backfill: inserted ${backfillResult.rowCount ?? 0} row(s)`
+    )
+  }
 
   // (b) Reclassify type='personal' -> type='organization'. Nothing deleted.
+  // Independent of (a) and of the root org, so it runs either way.
   const reclassifyResult = await knex.raw(
     `UPDATE organizations
        SET type = 'organization', updated_at = NOW()

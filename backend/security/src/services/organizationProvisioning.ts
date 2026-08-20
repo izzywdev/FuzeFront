@@ -350,6 +350,22 @@ export async function ensureRootMembership(
   userId: string,
   deps: { db: Knex }
 ): Promise<void> {
+  // Same discipline as migrations 014/015: never insert a reference to a row
+  // you have not verified exists. `ROOT_ORG_ID` is a constant, not a lookup,
+  // and migration 014 has paths that legitimately leave the row absent — in
+  // which case this insert raises 23503 and fails provisioning for the user.
+  // Skipping is equivalent to the feature flag being OFF, which is strictly
+  // better than a failed signup, but it must be loud: it means the root org
+  // is missing, not that this user needed no membership.
+  const rootOrg = await deps.db('organizations').where({ id: ROOT_ORG_ID }).first()
+  if (!rootOrg) {
+    logger.error(
+      { userId, rootOrgId: ROOT_ORG_ID },
+      'ensureRootMembership: root organization does not exist — skipping (see migration 014)'
+    )
+    return
+  }
+
   await deps.db('organization_memberships')
     .insert({
       id: toUuid(mintId('membership')),
