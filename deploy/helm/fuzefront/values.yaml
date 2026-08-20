@@ -79,17 +79,40 @@ database:
 # (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
 # kubectl, so it uses Kubernetes' own community-published image.
 #
-# DO NOT put a bitnami/* image here. This field exists because the Job was pinned to
-# `bitnami/kubectl:1.29`, and in Aug 2025 Broadcom removed the free bitnami/* images
-# from Docker Hub (old tags moved to docker.io/bitnamilegacy/*). The tag stopped
-# pulling, the Job pod ImagePullBackOff'd, and Secret/fuzefront-registration was never
-# published -- which is what broke FuzeInfra's credential handoff for eight days
-# (FuzeFront#688, FuzeInfra#552). registry.k8s.io is auth-free and not rate-limited.
+# THE IMAGE MUST CONTAIN A SHELL. The Job runs `command: ["/bin/sh","-c", …]`.
+#
+# DO NOT put a bitnami/* image here. The Job was pinned to `bitnami/kubectl:1.29`,
+# and in Aug 2025 Broadcom removed the free bitnami/* images from Docker Hub (old
+# tags moved to docker.io/bitnamilegacy/*). The tag stopped pulling, the pod
+# ImagePullBackOff'd, and Secret/fuzefront-registration was never published --
+# which broke FuzeInfra's credential handoff for eight days (FuzeFront#688,
+# FuzeInfra#552).
+#
+# DO NOT put a DISTROLESS image here either -- that was the replacement, and it
+# failed differently and more quietly. `registry.k8s.io/kubectl` ships the kubectl
+# binary and NO shell, so on 2026-08-20 every pod died at runc init with
+# `exec: "/bin/sh": stat /bin/sh: no such file or directory`. It never ran one line
+# of the script, so none of its FATAL diagnostics printed and `kubectl logs` was
+# empty. The CI guard added after #688 asserted the tag RESOLVED -- which it did --
+# so CI was green the whole time. Resolving is not the same as being able to run.
+# `deploy/scripts/check-job-interpreters.sh` now executes the interpreter instead.
+#
+# alpine/k8s = kubectl + busybox sh. FuzeInfra already runs this exact image in
+# this cluster (runners/arc/gitops/controller-selfheal.yaml) for the same reason.
+# The tag TRACKS THE K3S SERVER VERSION: the server is v1.36.2+k3s1 and reports
+# minCompatibilityMinor "35", so the previous v1.29.10 pin was seven minors below
+# the server's own stated minimum, well outside the kubectl skew policy.
+# Re-check this tag whenever the cluster is upgraded.
+#
+# Tradeoff, stated rather than buried: this is Docker Hub, which rate-limits
+# anonymous pulls, where registry.k8s.io did not. It is accepted because the image
+# is already resident on the nodes and the tag is not `latest`, so pulls are rare
+# -- and an image that cannot start is worse than one that occasionally throttles.
 #
 # The default is declared HERE, visibly, rather than only as a `| default` at the
 # render site -- per this repo's Helm values-hygiene rule.
 consumerRegistrationSeed:
-  image: "registry.k8s.io/kubectl:v1.29.10"
+  image: "alpine/k8s:1.36.2"
 
 # Secret handling. Either let the chart create a Secret from the values here
 # (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
