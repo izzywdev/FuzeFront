@@ -9,7 +9,8 @@
       "packages/billing-ui/src/i18n/**",
       "packages/billing-ui/src/lib/**",
       "packages/billing-ui/src/styles/**",
-      "packages/billing-ui/src/index.ts"
+      "packages/billing-ui/src/index.ts",
+      "frontend/src/pages/BillingPage.tsx"
     ]
   },
   "approved": true,
@@ -64,7 +65,7 @@
       ]
     }
   ],
-  "stamp": "3b0d054d3fdaf90aba3790b4d57160b498c29b7322ba9a252319cd1683ed9b70",
+  "stamp": "670c83221a4138174ed74744231356667c07ca163286accb91e2cb02ca542ef8",
   "build": {
     "packages": [
       "@fuzefront/billing-ui"

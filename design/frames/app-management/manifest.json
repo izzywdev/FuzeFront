@@ -5,7 +5,9 @@
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
-      "packages/app-management-ui/**"
+      "packages/app-management-ui/**",
+      "frontend/src/pages/ApplicationsPage.tsx",
+      "frontend/src/pages/AddApplicationPage.tsx"
     ]
   },
   "entry": "index.html",
@@ -316,5 +318,5 @@
       ]
     }
   ],
-  "stamp": "57b824eff6788b372e3f62ccbc287205ca7df8e2f3424a40bdc2eddc088ec199"
+  "stamp": "92c4bcf22ff5ccbd1af53ed8ea6e239f7cf55a43da04b01972343b53fab7b32f"
 }

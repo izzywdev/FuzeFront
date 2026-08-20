@@ -6,7 +6,8 @@
   "implementation": {
     "paths": [
       "packages/identity-ui/src/components/directory/**",
-      "packages/identity-ui/src/components/members/**"
+      "packages/identity-ui/src/components/members/**",
+      "frontend/src/pages/MemberDirectoryPage.tsx"
     ]
   },
   "plan": "docs/planning/design-first-ui-pipeline.md",
@@ -98,5 +99,5 @@
       ]
     }
   ],
-  "stamp": "4806ce131d11e3fc86298851042d42fcc174a2e22fc4936fc3ca7035924c7d8d"
+  "stamp": "02333ae705a6156b7901d132055ff7ca7ecd5842c007ecb20994196324d084c5"
 }
