@@ -26,9 +26,15 @@ export default defineConfig({
       // `singleton: true`, or on a different major range, this remote loads its
       // own React copy across the federation boundary and dies at runtime on
       // "Invalid hook call" — in the browser, with nothing in CI to catch it.
+      //
+      // The `as any` casts mirror the host verbatim: @originjs/vite-plugin-
+      // federation@1.4.1 types `shared` as `Shared`, which does not admit this
+      // per-package object form even though the plugin consumes it at runtime.
+      // Dropping the casts fails `tsc --noEmit` with TS2322 and takes the whole
+      // image build down at the Dockerfile's type-check step.
       shared: {
-        react: { singleton: true, requiredVersion: '^19.0.0' },
-        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+        react: { singleton: true, requiredVersion: '^19.0.0' } as any,
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' } as any,
       },
     }),
   ],
