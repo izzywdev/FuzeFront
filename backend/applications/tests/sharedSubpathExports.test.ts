@@ -34,7 +34,13 @@ const SHARED_PKG = path.join(REPO_ROOT, 'shared', 'package.json')
  */
 const KNOWN_UNMIGRATED = ['services/billing-service/']
 
-const IMPORT_RE = /['"`]@fuzefront\/shared(\/[^'"`]+)?['"`]/g
+// Matches only real import syntax — `from '...'` / `require('...')` — not any
+// quoted occurrence. An earlier version matched backtick-delimited text too and
+// so flagged the specifier written inside THIS file's own comments. It passed
+// locally purely because `git ls-files` does not list an untracked file, then
+// failed the moment it was committed: the scanner could not see itself until it
+// could, and then it was its own first offender.
+const IMPORT_RE = /(?:from|require\()\s*['"]@fuzefront\/shared(\/[^'"]+)?['"]/g
 
 function trackedSourceFiles(): string[] {
   const out = execFileSync('git', ['ls-files', '-z', '*.ts', '*.tsx', '*.js', '*.mjs', '*.cjs'], {
@@ -61,11 +67,13 @@ describe('@fuzefront/shared subpath imports resolve against its exports map', ()
 
   it('has no import naming an undeclared subpath', () => {
     const offenders: string[] = []
+    let seen = 0
 
     for (const file of trackedSourceFiles()) {
-      if (KNOWN_UNMIGRATED.some(prefix => file.startsWith(prefix))) continue
       const text = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8')
       for (const m of text.matchAll(IMPORT_RE)) {
+        seen++
+        if (KNOWN_UNMIGRATED.some(prefix => file.startsWith(prefix))) continue
         const subpath = m[1] ? `.${m[1]}` : '.'
         // A wildcard entry ("./dist/*") would cover a family of subpaths.
         const covered =
@@ -75,6 +83,10 @@ describe('@fuzefront/shared subpath imports resolve against its exports map', ()
       }
     }
 
+    // A scan that matched nothing would pass for the wrong reason — a broken
+    // regex or an empty file list is indistinguishable from a clean tree unless
+    // the check asserts it actually looked at something.
+    expect(seen).toBeGreaterThan(0)
     expect(offenders).toEqual([])
   })
 })
