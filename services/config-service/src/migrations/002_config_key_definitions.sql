@@ -13,9 +13,9 @@
 -- cross-service reference, which never gets one — see CLAUDE.md "reference
 -- cross-service entities by ID, no cross-service FK").
 
-CREATE TABLE IF NOT EXISTS config_key_definitions (
+CREATE TABLE IF NOT EXISTS config.config_key_definitions (
   id                UUID        PRIMARY KEY,
-  namespace_id      UUID        NOT NULL REFERENCES config_namespaces(id) ON DELETE CASCADE,
+  namespace_id      UUID        NOT NULL REFERENCES config.config_namespaces(id) ON DELETE CASCADE,
   key               TEXT        NOT NULL,
   display_name      TEXT        NOT NULL,
   description       TEXT,
@@ -56,4 +56,4 @@ CREATE TABLE IF NOT EXISTS config_key_definitions (
 );
 
 CREATE INDEX IF NOT EXISTS config_key_definitions_namespace_category_idx
-  ON config_key_definitions (namespace_id, category);
+  ON config.config_key_definitions (namespace_id, category);

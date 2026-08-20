@@ -149,7 +149,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
 
   async listByNamespace(namespaceId: NamespaceEntityId): Promise<KeyDefinition[]> {
     const res = await this.pool.query<KeyDefinitionRow>(
-      `SELECT ${SELECT_COLUMNS} FROM config_key_definitions
+      `SELECT ${SELECT_COLUMNS} FROM config.config_key_definitions
         WHERE namespace_id = $1
         ORDER BY category NULLS FIRST, sort_order, key`,
       [toUuid(namespaceId)],
@@ -159,7 +159,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
 
   async findByKey(namespaceId: NamespaceEntityId, key: string): Promise<KeyDefinition | null> {
     const res = await this.pool.query<KeyDefinitionRow>(
-      `SELECT ${SELECT_COLUMNS} FROM config_key_definitions
+      `SELECT ${SELECT_COLUMNS} FROM config.config_key_definitions
         WHERE namespace_id = $1 AND key = $2`,
       [toUuid(namespaceId), key],
     );
@@ -179,7 +179,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
 
     const id = toUuid(mintId('keyDefinition'));
     const res = await this.pool.query<KeyDefinitionRow>(
-      `INSERT INTO config_key_definitions (
+      `INSERT INTO config.config_key_definitions (
          id, namespace_id, key, display_name, description, help_url, category, sort_order, tags,
          value_type, schema, enum_values, default_value, allowed_scopes,
          is_system, is_hidden, is_secret, is_readonly, precedence, requires_restart, replaced_by
@@ -228,7 +228,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
     }
 
     const res = await this.pool.query<KeyDefinitionRow>(
-      `UPDATE config_key_definitions SET
+      `UPDATE config.config_key_definitions SET
          display_name = $2, description = $3, help_url = $4, category = $5, sort_order = $6, tags = $7::jsonb,
          value_type = $8, schema = $9::jsonb, enum_values = $10::jsonb, default_value = $11::jsonb, allowed_scopes = $12,
          is_system = $13, is_hidden = $14, is_secret = $15, is_readonly = $16, precedence = $17,
@@ -263,7 +263,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
   async deprecate(ids: KeyDefinitionEntityId[]): Promise<void> {
     if (ids.length === 0) return;
     await this.pool.query(
-      `UPDATE config_key_definitions SET deprecated_at = now(), updated_at = now()
+      `UPDATE config.config_key_definitions SET deprecated_at = now(), updated_at = now()
         WHERE id = ANY($1::uuid[]) AND deprecated_at IS NULL`,
       [ids.map((id) => toUuid(id))],
     );
@@ -295,7 +295,7 @@ export class PgKeyDefinitionRepository implements KeyDefinitionRepository {
     const limitParamIdx = params.length;
 
     const res = await this.pool.query<KeyDefinitionRow>(
-      `SELECT ${SELECT_COLUMNS} FROM config_key_definitions
+      `SELECT ${SELECT_COLUMNS} FROM config.config_key_definitions
         WHERE ${conds.join(' AND ')}
         ORDER BY key ASC
         LIMIT $${limitParamIdx}`,
