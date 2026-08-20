@@ -47,6 +47,18 @@
 # while unrelated blueprints (the Google source binding) apply fine, so it looks
 # like the blueprint ran when it only half-did. That is exactly how this broke
 # the first time. Do not "tidy" these lines away.
+# SECRET ROTATION LOG — this file is deliberately touched on every rotation.
+#
+# The client_secret values below arrive as env from the fuzefront-secrets
+# SealedSecret, and Kubernetes does NOT restart a pod when a Secret changes: env
+# is read once at startup. The only automatic roll trigger for the Authentik
+# deployments is checksum/blueprints, which hashes THIS ConfigMap. So a reseal
+# that does not touch a blueprint file leaves Authentik applying the OLD secret
+# while the consumer already has the new one — the two halves diverge silently
+# and the token exchange fails with an error that implicates neither side.
+#
+#   2026-08-19  kafka-ui resealed
+#   2026-08-20  airflow + litellm secrets sealed for the first time
 version: 1
 metadata:
   name: FuzeInfra Admin OIDC Providers

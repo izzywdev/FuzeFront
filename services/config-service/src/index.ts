@@ -27,19 +27,26 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console
       console.log('[config-service] DB migrations complete');
     } catch (err) {
+      // FAIL FAST. Continuing here produced the worst possible outcome: the
+      // process listened, `/health` answered 200 unconditionally, both probes
+      // went green, and every `/v1/*` route 500'd on a missing relation — a
+      // rollout that LOOKS healthy while serving nothing. A crash-loop is
+      // strictly better: it is visible, it blocks the rollout, and it names
+      // the cause in the pod logs.
       // eslint-disable-next-line no-console
-      console.error('[config-service] DB migration failed:', err);
+      console.error('[config-service] DB migration failed — refusing to start:', err);
+      throw err;
     }
   } else {
     // eslint-disable-next-line no-console
     console.warn('[config-service] DATABASE_URL missing — serving /health only');
   }
 
-  // A DB-unreachable start (config.databaseUrl set but runMigrations threw
-  // above) still wires the /v1/* routes — EPIC-17-S7 AC3 ("the health probe
-  // reports unhealthy rather than serving requests that would resolve every
-  // key to its default") is that story's concern for /health itself; this PR
-  // does not change /health's behaviour, only whether /v1/* exists at all.
+  // Reaching here means migrations succeeded (the catch above rethrows), so
+  // the /v1/* routes are only ever wired over a schema that actually exists.
+  // Liveness stays on the shallow `/health`; readiness uses `/health/ready`,
+  // which pings the DB — so a database that disappears LATER takes the pod
+  // out of the Service without triggering a liveness restart loop.
   const app = createApp(pool ? { pool } : undefined);
   const server = app.listen(config.port, () => {
     // eslint-disable-next-line no-console
