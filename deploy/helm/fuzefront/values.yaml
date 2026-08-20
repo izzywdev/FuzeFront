@@ -550,11 +550,12 @@ selectionListService:
 # resolution engine (FF-EPIC-17-S7, FFRNT-159). Ships dark by default here —
 # every other optional service in this file (securityService, chatService,
 # billingService, ...) defaults to `enabled: false` in the base/local values
-# too, and this base file has no config-service-secrets to point at (local
-# dev clusters don't seal against the prod cert). values-prod.yaml is the
-# only overlay that flips it, and only once config-service-secrets is sealed
-# there — see the comment on configService in values-prod.yaml for the exact
-# go-live sequence and why the flip there still isn't safe to merge yet.
+# too, and this base file has no CONFIG_DB_PASSWORD to point at (local dev
+# clusters don't seal against the prod cert). See the comment on configService
+# in values-prod.yaml for the exact two-step go-live sequence — seal the key,
+# let it sync, THEN flip enabled. The steps cannot be combined, because the
+# bootstrap Job is a pre-upgrade hook and runs before the SealedSecret is
+# applied.
 #
 # Port 3011: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
 # 3005=provisioning, 3006=chat/billing, 3008=selection-list, 3009=notification,
@@ -574,6 +575,20 @@ configService:
   enabled: false
   replicas: 1
   port: 3011
+  # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
+  # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
+  # billing-service's billing_svc — no separate database is provisioned.
+  dbUser: config_svc
+  # Key in the platform Secret holding config_svc's password. Only the PASSWORD is
+  # sealed; DATABASE_URL is composed in the Deployment from host/port/db/user so
+  # none of those are buried in ciphertext. JWT_SECRET is read from the SAME
+  # Secret's existing key rather than sealed a second time — see the Deployment.
+  dbPasswordKey: CONFIG_DB_PASSWORD
+  dbBootstrap:
+    # Declared explicitly rather than left to default. A `.Values.` lookup that is
+    # undefined renders as nil, and the repo has already shipped one outage from a
+    # missing default being silently absorbed at the render site (FuzeInfra#501).
+    enabled: true
   image:
     repository: fuzefront/config-service
     tag: local

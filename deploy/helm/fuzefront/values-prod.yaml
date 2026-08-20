@@ -638,25 +638,35 @@ selectionListService:
 # here. The image is now built by release.yml (tag below is a real, pinned
 # release SHA, not the placeholder "" this comment used to describe).
 #
-# `enabled: true` is flipped here AHEAD of go-live, but this is deliberately
-# NOT deployable yet — the PR that flips it (see PR description) is opened
-# `hold`/`blocked`, not `auto-merge`, and must stay unmerged until FuzeInfra
-# has completed BOTH of the following (config-service runs its DB migrations
-# at startup with no `optional: true` on either secretKeyRef, so skipping
-# either step is a crashloop / CreateContainerConfigError in prod, not a
-# graceful degrade):
-#   1. Provision the Postgres database + least-privilege role for
-#      config-service on the FuzeInfra Postgres instance.
-#   2. Seal DATABASE_URL (pointed at that database/role) and JWT_SECRET (same
-#      value as fuzefront-secrets' JWT_SECRET) into the `config-service-secrets`
-#      SealedSecret in the `fuzefront` namespace — replace
-#      deploy/contabo/sealed/config-service-secrets.yaml.template with real
-#      kubeseal output at deploy/contabo/sealed/config-service-secrets.yaml,
-#      per that template's own instructions.
-# Once both land, merge this PR in a deploy window; Argo syncs `enabled: true`
-# against a Secret that already exists and the Deployment comes up clean.
+# DISABLED, deliberately — this restores the state this file's own comment said
+# must hold. `enabled: true` was merged ahead of its preconditions and the result
+# was exactly what the comment predicted: two pods stuck in
+# CreateContainerConfigError, the oldest for 12h (see #752). A `hold`/`blocked`
+# label was the only thing preventing it, and a label is not a mechanism.
+#
+# GO-LIVE, in this order — each step must SYNC before the next is merged:
+#   1. Seal config_svc's password. Dispatch `rotate-sealed-secret` with
+#        scope    = fuzefront/fuzefront-secrets
+#        key      = CONFIG_DB_PASSWORD
+#        manifest = deploy/contabo/sealed/fuzefront-secrets.yaml
+#      It generates the value in-run, seals it offline against the published
+#      public cert, and opens a ciphertext-only PR. Merge that in a deploy window.
+#   2. Flip `enabled: true` here, in its own PR, in a deploy window.
+#      templates/config-service-db-bootstrap-job.yaml then provisions the
+#      config_svc role + `config` schema in the SHARED database, exactly as
+#      billing-db-bootstrap-job.yaml does for billing_svc.
+#
+# Steps 1 and 2 CANNOT be combined. The bootstrap Job is a pre-upgrade hook, so it
+# runs BEFORE the sync wave that would apply the SealedSecret; in one change it
+# would read an absent key, fail, and fail the whole sync with it.
+#
+# There is no longer a `config-service-secrets` Secret. Only the PASSWORD is
+# sealed; DATABASE_URL is composed in the Deployment, and JWT_SECRET is read from
+# the platform Secret that already holds it instead of being sealed a second time
+# — a value that must be identical in two places is stored once, or it drifts on
+# the first rotation.
 configService:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
     tag: 1107482f0948
