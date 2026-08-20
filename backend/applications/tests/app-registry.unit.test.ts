@@ -203,3 +203,61 @@ describe('app-registry manifest validation', () => {
     if (r.success) expect(r.data.status).toBe('online')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Contract with @fuzefront/onboarding-kit.
+//
+// These two schemas describe the SAME object from opposite ends: the kit's
+// manifest.schema.json is what consumers author against, this Zod schema is
+// what the registry accepts. They drifted, and because this schema is
+// .strict(), the drift was fatal rather than cosmetic -- the kit added a
+// multi-valued `modes` alongside `mode`, its templates emitted both, and every
+// manifest built from them was rejected:
+//
+//   HTTP 400 {"error":"validation_error","fields":[{"path":"manifest",
+//     "message":"Unrecognized key(s) in object: 'modes'"}]}
+//
+// Seen live in fuzefinance: the register init container POSTed, got the 400,
+// and CrashLoopBackOff'd, so the pod never went Ready and the product never
+// reached the portal. Nothing upstream was wrong.
+//
+// Parsing the kit's OWN template through this schema is the check that would
+// have caught it, and is the point of these tests: it fails the moment the two
+// definitions disagree again, instead of waiting for a pod to crash in prod.
+describe('onboarding-kit manifest template', () => {
+  const templatePath = require('path').resolve(
+    __dirname,
+    '../../../packages/onboarding-kit/templates/manifest.json'
+  )
+
+  it('the kit template exists (guards against a silent path change)', () => {
+    // Without this, a moved template turns the test below into a vacuous pass.
+    expect(require('fs').existsSync(templatePath)).toBe(true)
+  })
+
+  it('parses cleanly through the registry schema', () => {
+    const template = JSON.parse(require('fs').readFileSync(templatePath, 'utf8'))
+    const result = appManifestSchema.safeParse(template)
+    expect(result.success ? null : result.error.issues).toBeNull()
+  })
+
+  it('accepts `modes` alongside `mode`, which is what consumers actually send', () => {
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      modes: ['portal', 'standalone'],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('still rejects a genuinely unknown key — .strict() is not weakened', () => {
+    // The fix must not become "accept anything". This is the half that proves
+    // the schema is still closed.
+    const result = appManifestSchema.safeParse({ ...baseManifest, notAThing: true })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects an empty modes array and an invalid mode value', () => {
+    expect(appManifestSchema.safeParse({ ...baseManifest, modes: [] }).success).toBe(false)
+    expect(appManifestSchema.safeParse({ ...baseManifest, modes: ['nope'] }).success).toBe(false)
+  })
+})
