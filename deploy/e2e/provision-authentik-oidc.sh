@@ -200,10 +200,42 @@ if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
     -o /tmp/provider_create.json -w "%{http_code}" -d "$PROVIDER_BODY")
   PROVIDER_RAW=$(cat /tmp/provider_create.json)
   echo "Provider create HTTP $PROVIDER_HTTP: $PROVIDER_RAW"
-  [ "$PROVIDER_HTTP" = "201" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP)"; exit 1; }
-  PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
-  [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response"; exit 1; }
-  echo "Created OAuth2 provider pk=$PROVIDER_PK"
+  if [ "$PROVIDER_HTTP" = "201" ]; then
+    PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response"; exit 1; }
+    echo "Created OAuth2 provider pk=$PROVIDER_PK"
+  else
+    # We are not the only writer. Authentik's blueprint worker provisions this
+    # same provider from blueprints/provider-oidc.yaml, and the ORM lookup above
+    # and this POST are not atomic, so a blueprint apply landing in the gap turns
+    # the create into
+    #   400 {"client_id":["OAuth2/OpenID Provider with this Client ID already exists."]}
+    # which is not a failure: the object we wanted now exists.
+    #
+    # The comment above the lookup already anticipated the blueprint racing the
+    # READ (that is why it uses the ORM instead of REST search). This is the same
+    # race on the WRITE, which was left unhandled.
+    #
+    # Re-resolve instead of aborting. This is NOT a blanket suppression and not
+    # `|| true`: any other failure leaves the pk unresolved and still aborts
+    # below, with the HTTP code in the message. The only behaviour that changes
+    # is losing a race we were always able to lose.
+    echo "Create returned HTTP $PROVIDER_HTTP; re-resolving in case the blueprint worker won the race"
+    PROVIDER_RETRY_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYORM'
+import os
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+import django
+django.setup()
+from authentik.providers.oauth2.models import OAuth2Provider
+
+p = OAuth2Provider.objects.filter(client_id="fuzefront-oidc-client").first()
+print("PROVIDER_PK=" + (str(p.pk) if p else ""))
+PYORM
+)
+    PROVIDER_PK=$(echo "$PROVIDER_RETRY_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP) and no existing provider resolved for client_id=fuzefront-oidc-client"; exit 1; }
+    echo "Resolved existing OAuth2 provider pk=$PROVIDER_PK"
+  fi
 else
   echo "OAuth2 provider already exists pk=$PROVIDER_PK"
 fi
