@@ -58,7 +58,10 @@ This repo enables `required_signatures` on `master`, and **`master` is deploy-on
   - commit via the **GitHub API / `gh api`** (server-side commits are Verified), or
   - run the workflow under an **admin / GitHub App identity** whose commits are signed.
 - Human/agent commits are signed via SSH signing (baseline §8 / `governance/hardening-convention.md` §3). Feature-branch commits may be unsigned; the **squash-merge is signed**.
-- Because `master` deploys/publishes on push, **never bot-merge here** — merge in a **deploy window** (`hardening.deployOnPush: true`). Hand-deploying to prod is forbidden; prod is GitOps.
+- Because `master` deploys/publishes on push, a merge here **is** a production deploy. Hand-deploying to prod is forbidden; prod is GitOps — the deploy happens by merging, never by a human touching the cluster.
+- **Auto-merge IS the intended path, and bot-merging here is expected.** `auto-merge.yml` arms `gh pr merge --auto --squash` for any PR opened by the repo owner or labelled `auto-merge`, and its `dispatch-release` job then explicitly `workflow_dispatch`es `release.yml` on merge. That second job is not incidental: a squash-merge pushes under `GITHUB_TOKEN`, GitHub deliberately does not fire push-triggered workflows for those pushes, and a squash commit body can also carry a CI-suppression token inherited from any WIP commit in the PR. Either alone yields a PR that merges green and ships nothing — the failure that left the flag client unbuilt in prod after #400. Dispatching survives both.
+
+> **CORRECTION (2026-08-20).** This section previously read *"never bot-merge here — merge in a deploy window"*. That contradicted the mechanism this repo actually runs, and the contradiction cost real time: auto-merge re-arms on **every push**, so following the written rule meant disabling it by hand over and over on the same PR (twice in ten minutes on #769) while the workflow put it straight back. Recorded rather than quietly deleted, because the failure mode is the one this file keeps finding elsewhere — a stated standard and its enforcement disagreeing, with the mechanism winning silently. If bot-merging should ever actually be blocked here, block it in `auto-merge.yml`; a rule that only lives in prose loses to the workflow every time.
 
 ## Feature flags — FuzeFront HOSTS the family flag service
 
@@ -193,4 +196,4 @@ Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold
 
 ## Done
 
-Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
+Finish work as a **merged PR**, not local commits — merging is how this repo deploys, see the hardening section above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
