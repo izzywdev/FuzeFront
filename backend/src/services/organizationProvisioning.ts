@@ -441,9 +441,14 @@ export async function ensureRootMembership(
   // is missing, not that this user needed no membership.
   const rootOrg = await db('organizations').where({ id: ROOT_ORG_ID }).first()
   if (!rootOrg) {
+    // `userId` is request-derived, so it never goes into the message string:
+    // an unescaped CR/LF there lets a caller forge log lines (CodeQL
+    // js/log-injection). JSON.stringify escapes them, and it matches the
+    // structured shape the security-service copy logs via pino.
     console.error(
-      `ensureRootMembership: organization ${ROOT_ORG_ID} does not exist — ` +
-        `skipping root membership for user ${userId}. See migration 015.`
+      'ensureRootMembership: root organization does not exist — skipping root ' +
+        'membership. See migration 015.',
+      JSON.stringify({ rootOrgId: ROOT_ORG_ID, userId })
     )
     return
   }
