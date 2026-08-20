@@ -283,7 +283,14 @@ export async function loadRegisteredPolicyResult(
     //
     // initializeDatabaseConnection() is idempotent (`if (!db)`), so this is a
     // no-op in the server, where the connection already exists.
-    database.initializeDatabaseConnection()
+    // Guarded on BOTH sides deliberately. `permit-sync-registry.test.ts` stubs
+    // this module as `{ db }` with no initializer — that mock is the documented
+    // way the registry read is made testable without a DB, so calling the
+    // initializer unconditionally breaks it. And re-initializing when a handle
+    // already exists would be wrong regardless of tests.
+    if (!database.db && typeof database.initializeDatabaseConnection === 'function') {
+      database.initializeDatabaseConnection()
+    }
     const db = database.db
     /* eslint-enable @typescript-eslint/no-var-requires */
 
