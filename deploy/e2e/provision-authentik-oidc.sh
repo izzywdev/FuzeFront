@@ -232,8 +232,7 @@ p = OAuth2Provider.objects.filter(client_id="fuzefront-oidc-client").first()
 print("PROVIDER_PK=" + (str(p.pk) if p else ""))
 PYORM
 )
-    PROVIDER_PK=$(echo "$PROVIDER_RETRY_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '
- ')
+    PROVIDER_PK=$(echo "$PROVIDER_RETRY_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
     [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP) and no existing provider resolved for client_id=fuzefront-oidc-client"; exit 1; }
     echo "Resolved existing OAuth2 provider pk=$PROVIDER_PK"
   fi
