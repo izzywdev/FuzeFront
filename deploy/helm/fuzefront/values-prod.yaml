@@ -666,7 +666,7 @@ selectionListService:
 # — a value that must be identical in two places is stored once, or it drifts on
 # the first rotation.
 configService:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
     tag: 11d2e53b7f70
