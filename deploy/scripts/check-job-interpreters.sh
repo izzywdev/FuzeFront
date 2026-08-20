@@ -26,9 +26,19 @@
 # that actually proves it — it runs the interpreter.
 #
 # Usage: check-job-interpreters.sh <rendered-templates-dir>
+#        check-job-interpreters.sh --self-test
 set -euo pipefail
 
-DIR="${1:?usage: check-job-interpreters.sh <rendered-templates-dir>}"
+# The image that caused the outage. Used as the self-test's negative control --
+# it is genuinely distroless, so the probe MUST fail against it.
+SELF_TEST_DISTROLESS="registry.k8s.io/kubectl:v1.29.10"
+
+MODE="check"
+case "${1:-}" in
+  --self-test) MODE="self-test" ;;
+  "") echo "usage: check-job-interpreters.sh <rendered-templates-dir> | --self-test" >&2; exit 2 ;;
+  *) DIR="$1" ;;
+esac
 
 # Probe the DAEMON, not the CLI. `command -v docker` succeeds in plenty of
 # environments that cannot run a container (the CLI is installed but no daemon is
@@ -42,6 +52,32 @@ if ! docker info >/dev/null 2>&1; then
        "The CLI alone is not enough — this check runs each image. If you are running" \
        "this locally without a daemon, run it in CI instead." >&2
   exit 1
+fi
+
+# SELF-TEST. A gate that has only ever been observed passing is not evidence of
+# anything -- the guard this replaces was green for the entire life of the bug.
+# So prove the probe can still FAIL, using the exact image that caused the
+# outage as a negative control. If this ever starts passing, the probe has been
+# broken (or upstream added a shell) and the whole check is worthless.
+#
+# Only the negative case needs a dedicated control: every real run exercises the
+# positive case against the chart's own images and would fail loudly if the probe
+# stopped succeeding on a shell-bearing image.
+if [ "$MODE" = "self-test" ]; then
+  echo "SELF-TEST: $SELF_TEST_DISTROLESS must NOT be able to exec /bin/sh"
+  if ! docker pull --quiet "$SELF_TEST_DISTROLESS" >/dev/null 2>&1; then
+    echo "::error::self-test could not pull $SELF_TEST_DISTROLESS — cannot prove the probe still detects a shell-less image." >&2
+    exit 1
+  fi
+  if docker run --rm --entrypoint /bin/sh "$SELF_TEST_DISTROLESS" -c '' >/dev/null 2>&1; then
+    echo "::error::SELF-TEST FAILED: $SELF_TEST_DISTROLESS executed /bin/sh." \
+         "This image is distroless and must not have a shell, so the probe is no" \
+         "longer detecting the failure it exists to catch. Do not trust a green" \
+         "run of this gate until this is understood." >&2
+    exit 1
+  fi
+  echo "SELF-TEST OK: the probe correctly rejects a distroless image."
+  exit 0
 fi
 
 # Emit "image<TAB>interpreter" for every container/initContainer whose command[0]
