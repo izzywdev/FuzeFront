@@ -238,7 +238,24 @@ describe('onboarding-kit manifest template', () => {
   it('parses cleanly through the registry schema', () => {
     const template = JSON.parse(require('fs').readFileSync(templatePath, 'utf8'))
     const result = appManifestSchema.safeParse(template)
-    expect(result.success ? null : result.error.issues).toBeNull()
+    if (!result.success) {
+      // Same explicit cast as the validation test above, and for the same reason
+      // documented there: this service compiles with `strict: false`, so tsc will
+      // not discriminate zod's SafeParseSuccess | SafeParseError union on its
+      // `success` literal and rejects `.error` even inside this guard (TS2339).
+      // The runtime guard is what makes it safe; the cast just tells tsc what the
+      // guard already proved.
+      //
+      // Reporting the issues rather than asserting a bare boolean is the point:
+      // a failure here must say WHICH key drifted, or the next person gets
+      // "expected true, received false" and has to rediscover all of this.
+      const issues = (result as z.SafeParseError<unknown>).error.issues
+      throw new Error(
+        'onboarding-kit template no longer validates against the registry schema:\n' +
+          JSON.stringify(issues, null, 2)
+      )
+    }
+    expect(result.success).toBe(true)
   })
 
   it('accepts `modes` alongside `mode`, which is what consumers actually send', () => {
