@@ -68,9 +68,19 @@ export async function up(knex: Knex): Promise<void> {
     .first()
 
   if (existing && existing.id !== ROOT_ORG_ID) {
-    console.log(
-      `[015] adopting existing platform organization ${existing.id} as root ` +
-        `(NOT repointing it to ${ROOT_ORG_ID} — rows already reference its id)`
+    // NOT a benign no-op. ~30 call sites — `portals.ts`, `security.ts`'s org-tree
+    // walk, `employeeRole.ts`'s ReBAC check, `scopeToPortal.ts`, migration 022's
+    // backfill — reference the LITERAL `ROOT_ORG_ID`, so a root org living under
+    // some other id is a state the rest of the codebase cannot honour. Repointing
+    // is not safe to do unattended (rows already reference the old id), so this
+    // returns, but it must be VISIBLE rather than an info-level log that reads
+    // like success. Resolving it is a deliberate data migration.
+    console.error(
+      `[015] UNSUPPORTED STATE: platform organization ${existing.id} exists but ` +
+        `${ROOT_ORG_ID} does not. Every ROOT_ORG_ID call site will miss it. ` +
+        `NOT repointing automatically — rows already reference ${existing.id}. ` +
+        `Root-org-dependent migrations will skip; resolve with a deliberate ` +
+        `repoint-or-reparent migration.`
     )
     return
   }
@@ -85,10 +95,31 @@ export async function up(knex: Knex): Promise<void> {
     [ROOT_ORG_ID, ROOT_ORG_SLUG, owner.id, JSON.stringify({ root: true })]
   )
 
+  // `rowCount === 0` means "I inserted nothing", NOT "the row I wanted is
+  // there". The untargeted conflict clause above also swallows a conflict on
+  // the `slug` unique index, which a DIFFERENT organization can hold — in which
+  // case no row with ROOT_ORG_ID was created and the membership insert below
+  // would violate `organization_memberships_organization_id_foreign` (23503).
+  // Assert the postcondition instead of inferring it from the conflict.
+  const root = await knex('organizations').where({ id: ROOT_ORG_ID }).first()
+  if (!root) {
+    const slugHolder = await knex('organizations').where({ slug: ROOT_ORG_SLUG }).first()
+    console.error(
+      `[015] FAILED to seed root platform organization ${ROOT_ORG_ID}: ` +
+        (slugHolder
+          ? `slug '${ROOT_ORG_SLUG}' is held by organization ${slugHolder.id} ` +
+            `(type=${slugHolder.type}), so the INSERT was a no-op.`
+          : 'the INSERT was a no-op and the row is still absent.') +
+        ' Skipping the owner-membership insert, which would otherwise violate' +
+        ' organization_memberships_organization_id_foreign.'
+    )
+    return
+  }
+
   if (result.rowCount > 0) {
     console.log(`[015] created root platform organization ${ROOT_ORG_ID}`)
   } else {
-    console.log('[015] root platform organization already present — nothing to do')
+    console.log(`[015] root platform organization ${ROOT_ORG_ID} already present`)
   }
 
   // Owner membership, so the root org is reachable through the same membership
