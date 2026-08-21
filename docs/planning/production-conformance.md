@@ -83,7 +83,7 @@ probe, not a fix.
 
 ## 4. Plan
 
-### Step 1 — `prod-conformance` probe (FuzeInfra) — **prerequisite for everything else**
+### Step 1 — `prod-conformance` probe (FuzeInfra) — **SHIPPED: FuzeInfra#614**
 A scheduled + dispatchable workflow on the `staging` runner (in-cluster, so it can reach
 ClusterIP Services directly and needs no public hostname and no Cloudflare Access bypass):
 
@@ -154,15 +154,60 @@ should not be copied as the fix.
    `runAsUser`. This class fails at admission, not at lint or kubeconform — the same gap
    documented for NetworkPolicy ports in FuzeInfra#501.
 
-### Step 2b — the remaining `CreateContainerConfigError` pods
-`fuzebi`, `fuzekeys-frontend` (third replica) and `fuzeplan-backend` (third replica) still
-show `Init:CreateContainerConfigError`. These were NOT diagnosed and may or may not share
-the cause above — the ones examined were the MCP pods. `describe` each before acting.
+### Step 2b — the remaining `CreateContainerConfigError` pods — RESOLVED into Step 3b
+`fuzekeys-frontend` and `fuzeplan-backend` are `secret "fuzefront-registration" not found`
+(see Step 3b). `fuzebi` produced no event in the window and remains undiagnosed.
 
-### Step 3 — resolve `ImagePullBackOff` (FuzeExecutive, FuzeFinance, FuzeSocial, FuzeBI-fe, FuzeSales-api)
-Tag never published, or the tag in the chart was never bumped. Related to the fleet-wide
-`GH_RELEASE_PAT` gap (images publish, tags never bump). Confirm per repo which of the two
-it is before touching charts.
+### Step 3 — `ImagePullBackOff` is NOT a missing tag — it is IPv6 egress to GHCR
+
+> **Second correction.** This plan first said "tag never published, or never bumped".
+> `get events -A --field-selector reason=Failed`
+> ([run 32476193949](https://github.com/izzywdev/FuzeInfra/actions/runs/32476193949))
+> disproved that too. Both of this document's initial guesses about production were wrong,
+> and both were wrong in the same direction — assuming the familiar cause.
+
+The dominant message is not `manifest unknown` or `unauthorized`. It is:
+
+```
+Failed to pull image "ghcr.io/izzywdev/fuzefront-applications-service:c6a3e7121f91":
+  failed to copy: read tcp [2a02:c207:2345:8548::1]:46540
+                        -> [2606:50c0:8000::154]:443: read: connection reset by peer
+```
+
+`2606:50c0:8000::154` is GitHub's package CDN over **IPv6**. The nodes resolve GHCR to an
+IPv6 address, start the transfer, and the connection is reset mid-copy. The image exists
+and is authorised — the pull begins and then dies on the wire.
+
+**This is a cluster egress defect, and it is hitting FuzeFront itself**, not only the
+products listed in §1: `fuzefront-applications`, `fuzefront-frontend` and
+`fuzefront-db-bootstrap` all have replicas stuck this way, alongside `fuzeplan-backend`,
+`fuzequality-migrations`, `mendys-mcp-server` and `mendys-wp`. Running pods are unaffected
+because their layers are already on the node — which is why the fleet looks healthier than
+it is, and why every NEW rollout is the thing that fails.
+
+Fix belongs to FuzeInfra, not to any product repo: prefer IPv4 for registry egress on the
+nodes (or fix the tunnel/NAT path for IPv6 to `pkg-containers.githubusercontent.com`).
+Until that lands, no amount of chart or tag work in a product repo will help, and doing
+that work would look like progress while changing nothing.
+
+### Step 3b — the genuinely missing secrets, now named
+
+Two failures in the same event dump are real config gaps, and they are NOT the pull problem:
+
+| Pod | Event |
+|---|---|
+| `fuzekeys-frontend`, `fuzeplan-backend` | `Error: secret "fuzefront-registration" not found` |
+| `fuzesocial-ui` | `Error: couldn't find key FUZEFRONT_API_URL in Secret fuzesocial/fuzesocial-secrets` |
+
+The first **is** the registration-token hand-off gap — the hypothesis that was wrong for
+the MCP pods is correct here. FuzeInfra's `governance/credential-handoff.json` carries 18
+entries and `publish-sealed-handoff` has never been dispatched for the full set. The second
+is a single missing key in an existing Secret, which the hand-off does not cover.
+
+Not diagnosed, deliberately: FuzeExecutive, FuzeFinance and FuzeBI's `ImagePullBackOff`
+pods produced no events in the window (Kubernetes events expire in about an hour), so
+whether they share the IPv6 cause is **unknown**. Re-run the events query while they are
+backing off before assuming they do.
 
 ### Step 4 — resolve the crash loops (FuzeAgent `hierarchy-api`/`orchestrator`, FuzeService `-api`, FuzeMarket init)
 Real application failures; each needs its own log read and its own fix in its own repo.
