@@ -104,11 +104,60 @@ ClusterIP Services directly and needs no public hostname and no Cloudflare Acces
 
 Output: this document's table, regenerated on every run instead of by hand.
 
-### Step 2 — resolve `CreateContainerConfigError` (FuzeBI, FuzeKeys-mcp, FuzeMarket-mcp, FuzeKeys-fe, FuzePlan-be)
-A missing Secret/ConfigMap key. The registration-token hand-off registry
-(FuzeInfra `governance/credential-handoff.json`, 18 entries) exists and
-`publish-sealed-handoff` has never been dispatched for the full set. `describe pod` on one
-example first to confirm the exact missing key — do not assume it is the registration token.
+### Step 2 — the MCP `CreateContainerConfigError` — ROOT CAUSE FOUND, not a missing secret
+
+> **Correction.** An earlier draft of this plan assumed a missing registration-token
+> Secret key. `describe pod` disproved it. The doc's own rule — confirm before assuming —
+> is the only reason this was caught, and it is recorded rather than quietly edited away.
+
+`kubectl describe pod -n fuzekeys fuzekeys-mcp-664cf448b5-wjc2h`
+([run 32475665961](https://github.com/izzywdev/FuzeInfra/actions/runs/32475665961)):
+
+```
+Warning  Failed  17s (x12357 over 47h)  kubelet
+  Error: container has runAsNonRoot and image has non-numeric user (mcp),
+  cannot verify user is non-root
+Normal   Pulling 18s (x14836 over 10d)
+```
+
+The image `ghcr.io/izzywdev/fuze-mcp-gateway` declares `USER mcp` — a **name**. Kubernetes
+cannot resolve a username to a UID without running the image, so when the pod sets
+`runAsNonRoot: true` and no numeric `runAsUser`, the kubelet refuses to start the container.
+It is not a secret, not a config key, and not a pull failure — the image pulls fine, 14,836
+times over 10 days.
+
+Deployment-level evidence ([run 32475767386](https://github.com/izzywdev/FuzeInfra/actions/runs/32475767386))
+explains why some MCP gateways run and two do not:
+
+| Deployment | image tag | pod `runAsUser` | state |
+|---|---|---|---|
+| `fuzehub-mcp` | `12cb4f787248` | none | **Running** |
+| `fuzeservice-…-mcp` | `12cb4f787248` | none | **Running** |
+| `fuzepicker-mcp` | `0.1.0` | **1000** | **Running** |
+| `fuzesales-mcp` | `0.1.0` | none | **Running** (chart does not set `runAsNonRoot`) |
+| `fuzekeys-mcp` | `0.1.0` | none | **BROKEN** |
+| `fuzemarket-mcp` | `0.1.0` | none | **BROKEN** |
+
+So the trigger is the *combination* `runAsNonRoot: true` + no numeric `runAsUser` + an image
+with a named `USER`. Charts that pin a UID (FuzePicker) or that omit `runAsNonRoot`
+(FuzeSales) survive — the second by accident, and it is a weaker security posture, so it
+should not be copied as the fix.
+
+**Fix, in this order:**
+1. *Immediate, per-repo:* add `runAsUser: 1000` to the MCP container's `securityContext` in
+   FuzeKeys' and FuzeMarket's charts, matching FuzePicker — already proven in production.
+2. *Durable, fleet-wide:* rebuild `fuze-mcp-gateway` with a **numeric** `USER 65532` and
+   publish, so the failure cannot recur in the next repo that adopts the gateway. The image
+   is owned by FuzeService (FuzeService#37). Tag `12cb4f787248` may already do this —
+   confirm against its Dockerfile before assuming, then repoint the `0.1.0` consumers.
+3. *Prevent recurrence:* a chart-lint rule rejecting `runAsNonRoot: true` without a numeric
+   `runAsUser`. This class fails at admission, not at lint or kubeconform — the same gap
+   documented for NetworkPolicy ports in FuzeInfra#501.
+
+### Step 2b — the remaining `CreateContainerConfigError` pods
+`fuzebi`, `fuzekeys-frontend` (third replica) and `fuzeplan-backend` (third replica) still
+show `Init:CreateContainerConfigError`. These were NOT diagnosed and may or may not share
+the cause above — the ones examined were the MCP pods. `describe` each before acting.
 
 ### Step 3 — resolve `ImagePullBackOff` (FuzeExecutive, FuzeFinance, FuzeSocial, FuzeBI-fe, FuzeSales-api)
 Tag never published, or the tag in the chart was never bumped. Related to the fleet-wide
