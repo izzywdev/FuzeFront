@@ -139,7 +139,7 @@ It enforces four things:
 
 | Rule | Why |
 |---|---|
-| **`slug` and `name` must NOT start with `Fuze`** | Family convention: register as `service` / `Service`, not `fuzeservice` / `FuzeService`. `slug` is **immutable**, so getting it wrong is not a one-line edit — it costs a register-then-delete migration that orphans Permit grants and CASCADE-deletes install rows. See below. |
+| **`name`/`menuLabel` must NOT start with `Fuze`** (`slug` is never checked, in either direction) | Family convention: the prefix comes off the **display string**, not the slug — register as `name: "Service"`, `menuLabel: "Service"` alongside `slug: "fuzeservice"` (prefix kept). See below for why the asymmetry is deliberate and why an earlier version of this rule (and this table row) had it backwards. |
 | Effective modes include `portal` **and** `standalone` | `standalone` is the only surface a mobile TWA/APK can wrap, because an app store needs a URL that stands on its own. |
 | `standalone` implies a non-empty `routing.host` | A standalone surface with no host has no URL to serve or to wrap. |
 | `policy.json` exists, and a vendored `register.sh` actually submits it | A pre-kit script that skips the policy step leaves the product with no roles. |
@@ -153,10 +153,15 @@ gate can.
 
 ### The naming convention: prefix ON the slug, OFF the display string
 
-> **CORRECTED 2026-08-19 by owner ruling.** This section previously said the opposite —
-> register as `service`, not `fuzeservice` — and the gate enforced it. That was wrong,
-> and the correction is recorded rather than quietly swapped, because the old rule was
-> shipped, cited, and acted on.
+> **The canonical statement of this rule lives in the root
+> [`CLAUDE.md`](../../CLAUDE.md) § "`slug`, display name, and the federated serve
+> path are THREE INDEPENDENT questions".** This section documents only what
+> `validate-registration.mjs` in *this package* mechanically enforces; read the
+> root doc for the full reasoning, the owner's ruling, and the fleet-wide state.
+> **CORRECTED 2026-08-19 by owner ruling** — this section previously said the
+> opposite (register as `service`, not `fuzeservice`, and the gate enforced it).
+> That was wrong; the correction is recorded rather than quietly swapped, because
+> the old rule was shipped, cited, and acted on.
 
 ```jsonc
 "slug": "fuzeservice",    // keeps the prefix
@@ -164,18 +169,12 @@ gate can.
 "menuLabel": "Service"    // drops it
 ```
 
-The convention was never really about the URL. It was that a launcher listing fifteen
-products all beginning "Fuze" is unreadable — and that is a property of the **rendered
-label**, so that is where the rule belongs. The slug keeps the prefix, where it is doing
-useful work: `fuzeservice` is unambiguous in a Permit key (`<slug>_<Resource>`), a billing
-product key, and an `/app/<slug>` path, in a family where `deploy`, `market` and `call`
-are generic enough to collide with something else one day.
+**Only the display fields are gated by this package's validator, and the asymmetry
+is the whole point.**
 
-**Only the display fields are gated, and the asymmetry is the whole point.**
-
-| field | mutable? | gated? |
+| field | mutable? | gated by `validate-registration.mjs`? |
 |---|---|---|
-| `name`, `menuLabel` | yes — `register.sh` re-`PUT`s them on every pod start | **error** |
+| `name`, `menuLabel` | yes — `register.sh` re-`PUT`s them on every pod start | **error** if `Fuze`-prefixed |
 | `slug` | **no** — immutable, no rename operation | not checked, in either direction |
 
 A slug error has no cheap fix. The only "correction" is to register a second app and
@@ -183,6 +182,14 @@ delete the first, which orphans the product's Permit grants and CASCADE-deletes 
 `app_installations` rows. Failing a build over a value nobody can safely change does not
 prevent the mistake — it pressures someone into a destructive migration. That is exactly
 what the previous version of this gate did.
+
+**Known gap: the validator has no FuzeBI/FuzeX carve-out.** The owner's stated
+intent keeps the `Fuze` prefix on a display name only where the remainder is
+meaningless alone — named exceptions **FuzeBI** and **FuzeX** — but
+`validateSlugConvention()` in `bin/validate-registration.mjs` flags *any*
+`Fuze`-prefixed `name`/`menuLabel` unconditionally today, with no exception list.
+Until the validator is updated to encode the carve-out, this is a known
+policy/code gap, not evidence that the exception doesn't apply.
 
 The field is also already split across the fleet, and all of it is live. Measured on
 default branches 2026-08-19:

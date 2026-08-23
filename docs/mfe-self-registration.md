@@ -38,7 +38,7 @@ See `services/app-registry-service/openapi.yaml`. Key fields for an MF app:
 {
   "manifestVersion": "1",
   "slug": "fuzesales",
-  "name": "FuzeSales",
+  "name": "Sales",
   "menuLabel": "Sales",
   "mode": "portal",
   "integration": {
@@ -52,6 +52,12 @@ See `services/app-registry-service/openapi.yaml`. Key fields for an MF app:
   "visibility": "organization"
 }
 ```
+
+Note `slug` keeps the `fuze` prefix above while `name`/`menuLabel` drop it — that
+is not an inconsistency. `slug` is free-form and immutable once registered;
+`name`/`menuLabel` are mutable and, by convention, prefix-free. See the canonical
+rule in the root `CLAUDE.md` § "`slug`, display name, and the federated serve path
+are THREE INDEPENDENT questions" before changing any of the three.
 
 ### `nav` — where the app lands in the side menu
 

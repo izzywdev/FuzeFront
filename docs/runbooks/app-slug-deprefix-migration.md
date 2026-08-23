@@ -14,7 +14,11 @@
 > why the gate that used to demand this migration was wrong. It is kept as the record of
 > what such a migration costs, should a genuine one ever be needed.
 >
-> The current rule, and why only the display fields are gated, is in
+> **The canonical statement of the current rule** — the owner's own words on why
+> the prefix question was always about the menu label, not the slug — is in the
+> root [`CLAUDE.md`](../../CLAUDE.md) § "`slug`, display name, and the federated
+> serve path are THREE INDEPENDENT questions". The package-level enforcement
+> detail (what the validator actually checks) is in
 > [`packages/onboarding-kit/README.md`](../../packages/onboarding-kit/README.md).
 >
 > **The measured state table below is a snapshot from when this was written. It is
