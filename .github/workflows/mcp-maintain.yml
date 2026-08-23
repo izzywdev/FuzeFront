@@ -14,7 +14,16 @@ name: MCP Maintain
 # data directly. Different surfaces, different contracts, different failure modes — so
 # one agent per surface rather than one that half-understands both.
 #
-# Requires repo secret ANTHROPIC_API_KEY. No key -> SKIPS (never red).
+# Requires repo secret LITELLM_FUZE_KEY (a LiteLLM VIRTUAL key, not a provider key —
+# the family routes every agent call through the gateway so no repo is bound to one
+# vendor, and a key can be revoked centrally).
+#
+# CONTRACT, and it changed. It used to be "no key -> SKIPS (never red)", which made a
+# check that passes by not running. The rule now keys off the MANIFEST:
+#
+#   mcp.enabled not declared  -> skip. There is no surface; that is the truth.
+#   mcp.enabled true, no key   -> FAIL. A declared surface nobody can maintain.
+#   mcp.enabled true, key set  -> run.
 
 on:
   pull_request:
@@ -30,19 +39,86 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Runs on a HOSTED runner and always reports. Split out from the maintainer on
+  # purpose: the maintainer itself needs in-cluster access to reach LiteLLM, and a
+  # job on a self-hosted pool that is not serving QUEUES FOREVER with no red X, no
+  # log and no timeout — measured 2026-08-23, 175 jobs queued on `fuzesdlc` with
+  # zero running for 36 hours. A misconfiguration that produces no signal at all is
+  # worse than one that produces a red, so the check that must never be silent runs
+  # where it cannot be silenced.
+  preflight:
+    name: mcp-maintain preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      declared: ${{ steps.check.outputs.declared }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Is mcp-maintain declared, and can it actually be maintained?
+        id: check
+        env:
+          KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          declared=$(python3 -c "import json;print(str((json.load(open('.fuze/manifest.json')).get('mcp') or {}).get('enabled', False)).lower())" 2>/dev/null || echo false)
+          echo "declared=$declared" >> "$GITHUB_OUTPUT"
+
+          if [ "$declared" != "true" ]; then
+            echo "::notice title=mcp-maintain::.fuze/manifest.json does not declare mcp.enabled — nothing to maintain. Skipping is correct here: there is no surface."
+            exit 0
+          fi
+
+          # Declared. From here a missing key is a MISCONFIGURATION, not an
+          # environmental gap, and it fails.
+          #
+          # This workflow used to skip when the key was absent, under a "no key ->
+          # skip, never red" contract. That contract is the vacuous-gate pattern
+          # this repo has spent a sweep removing: it made a check that passes by not
+          # running, so a repo declaring an A2A/MCP surface could go indefinitely
+          # with that surface unmaintained while the check sat green. `gate-authz`
+          # ended in `|| true` and `gate-identifier` shipped an opt-in flag nobody
+          # set; both reached the same place — a check that cannot fail.
+          #
+          # Skipping stays correct for the undeclared case above, because there the
+          # absence of a surface is the truth, not a gap.
+          if [ -z "${KEY:-}" ]; then
+            echo "::error title=mcp-maintain::.fuze/manifest.json declares mcp.enabled=true, but LITELLM_FUZE_KEY is not set — the mcp-maintain surface cannot be maintained and this repo has no way to know it has drifted. Mint a key with FuzeInfra scripts/mint-litellm-fuze-key.sh and add it as the LITELLM_FUZE_KEY repo secret."
+            exit 1
+          fi
+          echo "::notice title=mcp-maintain::mcp declared and LITELLM_FUZE_KEY present."
+
   mcp-maintain:
+    needs: preflight
     # Loop guard: never run on our own maintenance branches.
-    if: ${{ !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/') }}
+    # Two conditions, one key (a duplicate `if:` is a YAML syntax error, not an AND):
+    #   - preflight said the surface is declared. When it is not, there is nothing to
+    #     maintain and the maintainer must not run at all.
+    #   - not our own follow-up branch, or the maintainer re-triggers on its own push.
+    if: >-
+      needs.preflight.outputs.declared == 'true' &&
+      !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/')
     runs-on: ubuntu-latest
     steps:
       - name: Skip if key absent
         id: guard
         env:
-          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+          # FUZE_LLM_BASE_URL is the FAMILY-facing name — vendor-agnostic, and the
+          # one knob to change if the gateway ever moves or is replaced. Declared as
+          # a repo/org variable; the LiteLLM address is only the default.
+          GATEWAY: ${{ vars.FUZE_LLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
         run: |
+          # preflight already proved the key exists and the surface is declared, so
+          # anything that fails here is a RUNNER placement problem, not a secrets one.
+          if ! curl -fsS --max-time 10 -o /dev/null "${GATEWAY}/health/liveliness" 2>/dev/null; then
+            echo "::error::LiteLLM gateway ${GATEWAY} is unreachable from this runner. This job must run on a self-hosted in-cluster runner — declare ci.runner in .fuze/manifest.json and re-stamp. The external host is Access-gated on purpose and must not be bypassed."
+            exit 1
+          fi
           if [ -z "$KEY" ]; then
-            echo "::notice::ANTHROPIC_API_KEY not set — MCP maintain skipped (set it to enable)."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error::LITELLM_FUZE_KEY vanished between preflight and here."
+            exit 1
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
@@ -73,15 +149,49 @@ jobs:
       - name: Run mcp-maintainer
         if: steps.guard.outputs.ok == 'true' && steps.marker.outputs.run == 'true'
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        env:
+          # Vendor independence: every agent call leaves through LiteLLM. Set here
+          # rather than relying on the action's default provider resolution, which
+          # would silently reach api.anthropic.com with a virtual key and 401.
+          # NAMING: FUZE_LLM_BASE_URL is what this family declares; ANTHROPIC_BASE_URL
+          # is what the SDK inside claude-code-action actually reads. This is a
+          # mapping, not a rename — renaming the right-hand side would leave the SDK
+          # reading nothing, silently resolving to api.anthropic.com, and 401ing on a
+          # virtual key. The vendor-agnostic name lives on the side we control.
+          ANTHROPIC_BASE_URL: ${{ vars.FUZE_LLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.LITELLM_FUZE_KEY }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Every FuzeFront agent PR is authored by the `claude` bot; dependabot and
-          # github-actions[bot] (governance-sync commit-back) also open/push PRs. Without
-          # this, claude-code-action's actor check hard-fails those runs with
-          # "Workflow initiated by non-human actor ... Add bot to allowed_bots list or use
-          # '*'", turning mcp-maintain red on every bot-authored PR. Allow all bots so the
-          # MCP upkeep stream runs (or no-ops) instead of blocking the PR — mirrors a2a-maintain.
-          allowed_bots: "*"
+          # Routed through LiteLLM for cross-provider failover — this repo holds no
+          # provider key. Same shape as gate-code-review in harden-gate.yml: the CLI
+          # reads ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY,
+          # so both are set to the virtual key.
+          anthropic_api_key: ${{ secrets.LITELLM_FUZE_KEY }}
+          # allowed_bots: scoped to `claude`, deliberately NOT `*`.
+          #
+          # The gate exists because claude-code-action hard-fails a Bot actor:
+          #   "Workflow initiated by non-human actor: claude (type: Bot).
+          #    Add bot to allowed_bots list or use '*' to allow all bots."
+          # Nearly every PR here is pushed by the `claude` bot (governance-sync's
+          # commit-back flips the triggering actor User -> Bot), so the gate fired on
+          # almost all of them -- and it fires LATE, after the prompt is printed and
+          # "Trigger result: true", so a skimmed log looks like the maintainer ran.
+          #
+          # `*` allows EVERY bot, and this repo runs dependabot (.github/dependabot.yml,
+          # package-ecosystem: github-actions). Under `*`, a dependabot PR -- whose body
+          # carries upstream release notes this repo does not author -- can start an
+          # agent run holding ANTHROPIC_API_KEY and repo write. That is the exact
+          # arbitrary-bot-drives-an-agent case the actor gate is for, so widening it to
+          # `*` defeats the gate rather than configuring it.
+          #
+          # `claude` is a LOGIN allowlist matched against the actor with `[bot]` stripped
+          # -- not a vendor or product name. This family's other bot is `fuzeone-bot`,
+          # which triggers only scheduled workflows (governance-nightly, nightly-*), none
+          # of which call this action; adding it here would grant an unused permission.
+          #
+          # The fork case stays closed independently: the trigger is `pull_request` (not
+          # `pull_request_target`), so a fork PR gets no secrets, ANTHROPIC_API_KEY is
+          # empty, and the guard step above skips the run entirely.
+          allowed_bots: "claude"
           prompt: |
             You are the **mcp-maintainer** for this repo (follow `.claude/agents/mcp-maintainer.md`
             exactly — same scope, boundaries, and done-contract). This is an automated CI run on

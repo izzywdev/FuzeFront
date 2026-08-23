@@ -421,14 +421,45 @@ export async function buildHealthPayload() {
   }
 }
 
-// Main health check endpoint (without /api prefix)
-app.get('/health', async (req, res) => {
+// ── LIVENESS: /health. Always 200 while the process is alive. ───────────────
+//
+// Deliberately does NOT reflect `status: 'degraded'` in its HTTP code, and that
+// is the whole point of the split below. This path backs the LIVENESS probe, and
+// a liveness probe that fails on a downstream dependency turns a database blip
+// into a restart loop: the kubelet kills a process that was working fine, the
+// replacement cannot reach the database either, and the pod crashloops while the
+// actual fault is elsewhere. Restarting never fixes a dependency.
+//
+// The payload still carries the real verdict for humans and dashboards.
+app.get('/health', async (_req, res) => {
   res.json(await buildHealthPayload())
 })
 
-// Add /api/health endpoint to match frontend expectations
-app.get('/api/health', async (req, res) => {
+app.get('/api/health', async (_req, res) => {
   res.json(await buildHealthPayload())
+})
+
+// ── READINESS: /ready. 503 when a dependency is down. ───────────────────────
+//
+// THE BUG THIS FIXES. `buildHealthPayload()` computes `status: 'ok' | 'degraded'`
+// from the database and the Permit sync — and then `res.json()` returned HTTP 200
+// either way. Both the readiness AND liveness probes pointed at /health, so the
+// kubelet saw 200, marked the pod Ready, the ReplicaSet reported fully available,
+// and **Argo CD reported the Application Healthy while the database was
+// disconnected.** The check computed the right answer and discarded it.
+//
+// Argo has no HTTP health polling and no `healthPath` property — its built-in
+// Deployment assessment reads Kubernetes resource status, which comes from these
+// probes. So the probe IS the Argo health signal, and the only way to make Argo
+// report Degraded is to make readiness fail. No Lua and no custom resource
+// health check is required for this; both would be the wrong tool.
+//
+// Readiness failing removes the pod from the Service endpoints, which is correct:
+// a backend that cannot reach its database cannot serve requests, and should not
+// receive them.
+app.get(['/ready', '/api/ready'], async (_req, res) => {
+  const payload = await buildHealthPayload()
+  res.status(payload.status === 'ok' ? 200 : 503).json(payload)
 })
 
 // Error handling middleware
