@@ -11,10 +11,13 @@ which asserts the script REFUSES rather than shrugs. A test that only confirmed
 it reports correctly on a healthy fleet would pass just as happily against a
 watchdog wired to nothing.
 """
+import datetime
+import http.server
 import json
 import os
 import subprocess
 import sys
+import threading
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -152,6 +155,150 @@ class RequestSurface(unittest.TestCase):
         for bad in ("../../etc/passwd", "izzywdev/Fuze Front", "no-slash",
                     "a/b/c", "izzywdev/x?y=1", ""):
             self.assertFalse(self.m._valid_repo(bad), bad)
+
+
+def run_token_gate(event_name, token=None, gh_output_path=None):
+    """Invoke the workflow-facing `--token-gate` mode exactly as the
+    `Check for a fleet-scoped token` step does: FLEET_READ_PAT and
+    GITHUB_EVENT_NAME come from the environment, nothing touches the
+    network. GITHUB_OUTPUT is pointed at a temp file when the caller wants
+    to assert on the `ok=` step output, mirroring what Actions sets up."""
+    env = dict(os.environ)
+    env.pop("FLEET_READ_PAT", None)
+    env["GITHUB_EVENT_NAME"] = event_name
+    if token is not None:
+        env["FLEET_READ_PAT"] = token
+    if gh_output_path is not None:
+        env["GITHUB_OUTPUT"] = gh_output_path
+    else:
+        env.pop("GITHUB_OUTPUT", None)
+    env["CI_QUEUE_WATCH_API"] = "http://127.0.0.1:9"
+    return subprocess.run([sys.executable, SCRIPT, "--token-gate"],
+                          capture_output=True, text=True, env=env, timeout=30)
+
+
+class ScheduledRunWithNoTokenMustFail(unittest.TestCase):
+    """THE regression under test: the watchdog ran green, twice, 15 minutes
+    apart, while the fleet it watches was 40 hours into a total ARC outage --
+    because FLEET_READ_PAT was unset and the old "no token -> warn, exit 0"
+    rule applied unconditionally, including on `schedule`, where there is no
+    legitimate transient reason for the token to be missing. A scheduled run
+    with no token must FAIL loudly; every other trigger keeps warning and
+    exiting 0, because there an absent secret is a real environmental gap
+    (a fork PR, a contributor with no repo secrets) and must not look like an
+    outage -- the same inversion that made the a2a-maintain actor gate
+    meaningless in the opposite direction."""
+
+    def test_scheduled_run_with_no_token_is_a_hard_failure(self):
+        r = run_token_gate("schedule")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("::error::", r.stderr)
+        self.assertIn("FLEET_READ_PAT", r.stderr)
+        self.assertIn("SCHEDULED", r.stderr)
+
+    def test_pull_request_run_with_no_token_still_skips_cleanly(self):
+        r = run_token_gate("pull_request")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("::warning::", r.stderr)
+        self.assertNotIn("::error::", r.stderr)
+
+    def test_workflow_dispatch_with_no_token_still_skips_cleanly(self):
+        r = run_token_gate("workflow_dispatch")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("::warning::", r.stderr)
+        self.assertNotIn("::error::", r.stderr)
+
+    def test_scheduled_run_with_a_token_proceeds(self):
+        r = run_token_gate("schedule", token="pretend-token")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("::error::", r.stderr)
+
+    def test_ok_output_reflects_token_presence_not_trigger(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "gh_output")
+            open(out, "w").close()
+            r = run_token_gate("schedule", token="pretend-token", gh_output_path=out)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(out) as fh:
+                self.assertIn("ok=true", fh.read())
+
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "gh_output")
+            open(out, "w").close()
+            r = run_token_gate("pull_request", gh_output_path=out)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(out) as fh:
+                self.assertIn("ok=false", fh.read())
+
+
+class _FakeFleetHandler(http.server.BaseHTTPRequestHandler):
+    """A minimal stand-in for the GitHub API, just enough of it to make one
+    pool STALLED: a job queued 60 minutes ago (past the 30-minute default
+    threshold), nothing in_progress, and no completed run in the lookback
+    window -- so `verdict()` takes the "no start seen in the lookback
+    window" branch. Used to prove end-to-end (not just verdict()'s pure
+    logic) that a token-present, pool-stalled scheduled run exits non-zero,
+    which is the second half of the defect this PR was asked to rule out."""
+
+    OLD_TS = (datetime.datetime.now(datetime.timezone.utc)
+              - datetime.timedelta(minutes=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def log_message(self, *a):
+        pass
+
+    def _reply(self, body):
+        data = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if "/actions/runs" in self.path and "status=queued" in self.path:
+            self._reply({"workflow_runs": [{"id": 1, "created_at": self.OLD_TS}]})
+        elif "/actions/runs" in self.path and "status=in_progress" in self.path:
+            self._reply({"workflow_runs": []})
+        elif "/actions/runs" in self.path and "status=completed" in self.path:
+            self._reply({"workflow_runs": []})
+        elif "/actions/runs/1/jobs" in self.path:
+            self._reply({"jobs": [{"status": "queued", "labels": ["ubuntu-latest"],
+                                   "created_at": self.OLD_TS, "started_at": None,
+                                   "runner_id": None}]})
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+class TokenPresentAndPoolStalledMustAlsoFail(unittest.TestCase):
+    """The other half of the same question: with FLEET_READ_PAT set, does a
+    genuinely stalled pool make the scheduled run exit non-zero, or does it
+    just print and exit 0 (which would make the token-gate fix necessary but
+    not sufficient)? This runs the real CLI end-to-end (not just verdict())
+    against a fake GitHub API so the answer is verified, not assumed."""
+
+    def test_stalled_pool_with_token_present_fails(self):
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeFleetHandler)
+        port = server.server_address[1]
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        try:
+            env = dict(os.environ)
+            env["CI_QUEUE_WATCH_API"] = f"http://127.0.0.1:{port}"
+            env["GITHUB_TOKEN"] = "pretend-token"
+            r = subprocess.run(
+                [sys.executable, SCRIPT, "--repos", "izzywdev/fuzefake",
+                 "--stall-minutes", "30", "--fail-on-stall"],
+                capture_output=True, text=True, env=env, timeout=30,
+            )
+        finally:
+            server.shutdown()
+            t.join(timeout=5)
+            server.server_close()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("STALLED", r.stdout)
+        self.assertIn("::error::", r.stderr)
 
 
 class StartsThatNeverHappened(unittest.TestCase):

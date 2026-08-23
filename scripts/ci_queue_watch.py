@@ -222,6 +222,50 @@ def verdict(p, stall_minutes):
     return "HEALTHY", False
 
 
+def token_gate(token, event_name):
+    """Decide what a missing FLEET_READ_PAT means, given how the run was triggered.
+
+    A `schedule` run has no legitimate transient reason to lack its token --
+    either the secret is configured in this repository, or the watchdog is
+    permanently inert. Skipping quietly there is the exact vacuous-pass shape
+    this whole script exists to detect in the fleet it watches: it stayed
+    green through a 40-hour ARC outage by never looking. So a missing token
+    on `schedule` is a HARD FAILURE.
+
+    A `pull_request` or manually-triggered `workflow_dispatch` run may
+    legitimately lack org secrets (a fork PR, a contributor without repo
+    secrets), so there a missing token is an environmental gap, not an
+    outage, and must not render red -- that inversion is the same mistake
+    that made the a2a-maintain actor gate meaningless.
+
+    Returns (exit_code, ok, level, message). `ok` mirrors the `tok.outputs.ok`
+    step output the workflow gates the observe step on.
+    """
+    if token:
+        return 0, True, "notice", "FLEET_READ_PAT is set."
+    if event_name == "schedule":
+        return (
+            1,
+            False,
+            "error",
+            "FLEET_READ_PAT is not set on a SCHEDULED run. A scheduled watchdog has no "
+            "legitimate transient reason to lack its token -- either the secret is "
+            "configured or the tool is permanently inert, and reporting success while "
+            "silently skipping is exactly the vacuous-pass failure this watchdog exists "
+            "to catch elsewhere. Set a PAT with read access to Actions across the fleet "
+            "(scope: repo, or fine-grained Actions:read on the Fuze* repos) as the "
+            "FLEET_READ_PAT repository secret.",
+        )
+    return (
+        0,
+        False,
+        "warning",
+        "FLEET_READ_PAT is not set — the watchdog can only see this repo, so it is "
+        "skipping. Set a PAT with read access to Actions across the fleet (scope: repo, "
+        "or fine-grained Actions:read on the Fuze* repos).",
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -240,7 +284,23 @@ def main():
                     help="with a token present, discovering fewer than this many repos is a "
                          "misconfiguration and exits 2 — a watchdog that silently watches "
                          "nothing is worse than no watchdog")
+    ap.add_argument("--token-gate", action="store_true",
+                    help="decide only whether FLEET_READ_PAT's absence is tolerable for this "
+                         "trigger (reads FLEET_READ_PAT / GITHUB_EVENT_NAME, writes ok=<bool> "
+                         "to $GITHUB_OUTPUT if set) and exit; does not touch the network")
     args = ap.parse_args()
+
+    if args.token_gate:
+        code, ok, level, message = token_gate(
+            os.environ.get("FLEET_READ_PAT", ""),
+            os.environ.get("GITHUB_EVENT_NAME", ""),
+        )
+        print(f"::{level}::{message}", file=sys.stderr)
+        gh_output = os.environ.get("GITHUB_OUTPUT")
+        if gh_output:
+            with open(gh_output, "a", encoding="utf-8") as fh:
+                fh.write(f"ok={'true' if ok else 'false'}\n")
+        return code
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
 
