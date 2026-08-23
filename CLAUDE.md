@@ -147,6 +147,67 @@ This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_mo
 
 **This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
 
+## `slug` and the federated serve path are INDEPENDENT — stop deriving one from the other
+
+This has been re-litigated four times across the fleet, each time by someone reasoning
+from a document instead of from the code, and each round mutated live manifests. The
+code settles it in one line.
+
+**`frontend/src/utils/loadFederatedApp.ts:71` is the entire mechanism:**
+
+```ts
+const resolved = new URL(remoteEntry, origin)
+```
+
+The host resolves `integration.remoteEntry` against its own origin and loads it. **The
+slug is not an input.** No code path anywhere derives a serve path from a slug, and none
+derives a slug from a path. The `/apps/<slug>/…` phrasing in that file's doc comment is
+describing a habit, not a contract — reading it as a contract is what started this.
+
+### The two rules that follow
+
+**1. `slug` is immutable and is never edited by any PR, in either direction.** Owner
+ruling 2026-08-19 (`packages/onboarding-kit/README.md` §"prefix ON the slug, OFF the
+display string"): the field is *"not checked, in either direction"*, and *"None of these
+are to be migrated"* — naming `deploy`, `call`, `executive`, `finance`, `keys`, `market`,
+`picker` as de-prefixed slugs to leave alone and `fuzex`, `fuzebi` as prefixed ones not to
+be "corrected". Editing a slug does not rename an app: `PUT /apps/{slug}` has no rename
+operation, so a redeploy **registers a second app** and strands the first — orphaned
+Permit grants, CASCADE-deleted `app_installations` rows, a ghost tile in the launcher.
+The guidance to prefix applies to a **genuinely new** product only, and is guidance, not
+a gate. `docs/runbooks/app-slug-deprefix-migration.md` is RETIRED; its tables are a
+historical snapshot, not a worklist.
+
+**2. The serve path is free-form, and must agree with itself across four layers.** A
+mismatch at any one of them yields the signature failure — `remoteEntry.js` returns 200
+and every chunk it references 404s, so the panel is blank while the healthcheck is green:
+
+| Layer | File |
+|---|---|
+| `integration.remoteEntry` | `registration/manifest.json` **and** its vendored Helm copy (kept byte-identical) |
+| Vite/webpack `base` | the remote's `vite.config.*` (with `assetsDir: ''`) |
+| Ingress `path` | the chart's federated-mount Ingress |
+| nginx `location` / `alias` | the chart's nginx ConfigMap, or the baked `nginx.conf` |
+
+**Convention, to keep one mental model: use `/apps/<the repo's existing slug>/`** —
+whatever that slug already is, prefixed or not. It is derivable, needs no judgement, and
+matches what most repos already assume. It is a naming convention for a free variable,
+**not** evidence about the slug: never edit a slug to make it match a path. Fix the path.
+
+### Two things that are NOT evidence of a slug error
+
+- **`routing.path` differing from `slug`** (e.g. slug `plan`, path `/app/fuzeplan`).
+  Independent fields; this is normal and was misread as a contradiction.
+- **`backend/src/routes/appRegistry.ts` deriving a slug from a name.** That is the
+  CI/local-only fallback, gated on `APP_REGISTRY_LOCAL_ADAPTER=1`, default off. Production
+  is `backend/applications/src/app-registry/service.ts`, which stores `slug: row.slug`
+  verbatim. Citing the fallback as the production mechanism caused three wrong migrations.
+
+Also unconsumed, and inconsistent with `builtins.ts`: `services/app-registry-service/seed/*.manifest.json`
+is a documentation fixture (grep finds only comments referencing it). Only the four entries
+in `BUILTIN_MANIFESTS` take their slug from FuzeFront's seed — `fuzesocial`, `fuzeagent`,
+`clock`, `fuzequality`. Every other product self-registers and owns its own slug.
+
 ## Entity identifiers — the owning service mints them, and references carry their type
 
 Full standard: **`governance/identifier-standard.md`** (enforced by `gate-identifier`).
