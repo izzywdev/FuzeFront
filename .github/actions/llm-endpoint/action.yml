@@ -1,0 +1,181 @@
+name: 'Resolve LLM endpoint (LiteLLM + vendor fallback)'
+description: >-
+  SINGLE POINT OF CHANGE for every workflow that calls claude-code-action (or
+  the Claude Code CLI directly). Probes the in-cluster LiteLLM gateway with a
+  bounded-timeout readiness check; if it answers, routes through it — the
+  anthropic/openai/gemini mapping lives in LiteLLM's config, not here, so this
+  is the genuinely vendor-agnostic path. If it does not answer (cluster down,
+  or the caller is a GitHub-hosted runner that can never route to a
+  cluster-internal DNS name — both are the SAME case from here), falls back to
+  a directly-configured vendor.
+  .
+  THE FALLBACK EXISTS ON PURPOSE, NOT AS A CONVENIENCE: recovering the cluster
+  may itself require an agent run (e.g. governance-nightly diagnosing why
+  LiteLLM is down), so the fallback path must not itself depend on the
+  cluster being up. A design where every agent run needs LiteLLM is a design
+  that cannot repair LiteLLM.
+  .
+  Every run emits an `::notice::` naming the mode it selected — a degraded run
+  must never be silently indistinguishable from a good one. Never prints a
+  key: the resolved credential only ever leaves this action as a masked
+  output, consumed the same way `secrets.*` already flows through this repo's
+  workflows (`with:` / `env:` on the very next step).
+
+inputs:
+  litellm-base-url:
+    description: 'In-cluster LiteLLM base URL (Anthropic-shape endpoint).'
+    required: false
+    default: 'http://litellm.fuzeinfra.svc.cluster.local:4000'
+  litellm-key:
+    description: >-
+      LiteLLM virtual key. Callers pass `secrets.LITELLM_FUZE_KEY` — mint one
+      with FuzeInfra `scripts/mint-litellm-fuze-key.sh`.
+    required: false
+    default: ''
+  probe-timeout-seconds:
+    description: >-
+      Bounded timeout for the LiteLLM readiness probe. Kept short deliberately
+      — a hung probe on every job that calls this action would be its own new
+      failure mode, worse than the one this action exists to route around.
+    required: false
+    default: '3'
+  fallback-vendor:
+    description: >-
+      Vendor to use when LiteLLM is unreachable: anthropic | openai | gemini.
+      Callers pass `vars.FUZE_LLM_FALLBACK_VENDOR` (org/repo variable);
+      defaults to anthropic, the only vendor actually wired end-to-end today.
+    required: false
+    default: 'anthropic'
+  fallback-anthropic-key:
+    description: 'Direct Anthropic API key. Callers pass secrets.ANTHROPIC_API_KEY.'
+    required: false
+    default: ''
+  fallback-openai-key:
+    description: >-
+      Direct OpenAI API key. Structurally supported only — claude-code-action
+      / the Claude Code CLI speak the Anthropic API shape, so this vendor
+      needs fallback-shim-base-url pointed at an Anthropic-compatible
+      translator, or it fails closed with an explanatory error rather than
+      silently no-op'ing.
+    required: false
+    default: ''
+  fallback-gemini-key:
+    description: 'Direct Gemini API key. Same structural-support-only caveat as fallback-openai-key.'
+    required: false
+    default: ''
+  fallback-shim-base-url:
+    description: >-
+      An Anthropic-compatible endpoint that translates for the openai/gemini
+      fallback (e.g. a self-hosted LiteLLM/proxy reachable from this runner).
+      Only consulted when fallback-vendor is openai or gemini.
+    required: false
+    default: ''
+
+outputs:
+  mode:
+    description: 'litellm | fallback-anthropic | fallback-openai | fallback-gemini'
+    value: ${{ steps.resolve.outputs.mode }}
+  vendor:
+    description: 'litellm (opaque mapping, owned by LiteLLM config) | anthropic | openai | gemini'
+    value: ${{ steps.resolve.outputs.vendor }}
+  base-url:
+    description: 'ANTHROPIC_BASE_URL to set. Always a valid, non-empty URL.'
+    value: ${{ steps.resolve.outputs.base-url }}
+  auth-token:
+    description: >-
+      Resolved credential, pre-masked. Feed to `anthropic_api_key:` /
+      ANTHROPIC_AUTH_TOKEN on the very next step; never echo it.
+    value: ${{ steps.resolve.outputs.auth-token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Probe LiteLLM readiness, resolve endpoint + credential
+      id: resolve
+      shell: bash
+      env:
+        LITELLM_BASE_URL: ${{ inputs.litellm-base-url }}
+        LITELLM_KEY: ${{ inputs.litellm-key }}
+        PROBE_TIMEOUT: ${{ inputs.probe-timeout-seconds }}
+        FALLBACK_VENDOR: ${{ inputs.fallback-vendor }}
+        FALLBACK_ANTHROPIC_KEY: ${{ inputs.fallback-anthropic-key }}
+        FALLBACK_OPENAI_KEY: ${{ inputs.fallback-openai-key }}
+        FALLBACK_GEMINI_KEY: ${{ inputs.fallback-gemini-key }}
+        FALLBACK_SHIM_BASE_URL: ${{ inputs.fallback-shim-base-url }}
+      run: |
+        set -uo pipefail
+        VENDOR="${FALLBACK_VENDOR:-anthropic}"
+
+        reachable=false
+        if [ -n "${LITELLM_BASE_URL:-}" ]; then
+          # A REAL READINESS PATH, NOT A TCP CONNECT. /health/readiness is
+          # LiteLLM's own "can this proxy actually accept traffic" endpoint —
+          # unauthenticated by design (safe low-detail payload), distinct from
+          # /health/liveliness which only proves the process didn't crash.
+          # Bounded timeout: a hung probe on every job that consumes this
+          # action would be a new failure mode, worse than the one routed
+          # around here.
+          if curl -fsS --max-time "${PROBE_TIMEOUT:-3}" -o /dev/null \
+               "${LITELLM_BASE_URL%/}/health/readiness" 2>/dev/null; then
+            reachable=true
+          fi
+        fi
+
+        if [ "$reachable" = true ] && [ -n "${LITELLM_KEY:-}" ]; then
+          echo "::notice title=llm-endpoint::mode=litellm — routing through in-cluster LiteLLM (${LITELLM_BASE_URL}). Vendor mapping is opaque here by design; it lives in LiteLLM's config, not this workflow."
+          echo "::add-mask::${LITELLM_KEY}"
+          {
+            echo "mode=litellm"
+            echo "vendor=litellm"
+            echo "base-url=${LITELLM_BASE_URL}"
+            echo "auth-token=${LITELLM_KEY}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "$reachable" = false ]; then
+          echo "::notice title=llm-endpoint::LiteLLM unreachable from this runner (probed ${LITELLM_BASE_URL:-<unset>}/health/readiness, ${PROBE_TIMEOUT:-3}s timeout) — falling back to vendor=${VENDOR}. Expected on ubuntu-latest (no route to the cluster-internal DNS name) and this IS the deliberate bootstrap path: recovering the cluster may itself need an agent run, so the fallback must not depend on the cluster being up."
+        else
+          echo "::notice title=llm-endpoint::LiteLLM reachable but no litellm-key provided (LITELLM_FUZE_KEY secret unset) — falling back to vendor=${VENDOR}."
+        fi
+
+        case "$VENDOR" in
+          anthropic)
+            if [ -z "${FALLBACK_ANTHROPIC_KEY:-}" ]; then
+              echo "::error title=llm-endpoint::fallback-vendor=anthropic but fallback-anthropic-key is empty (ANTHROPIC_API_KEY secret unset) — nothing to fall back to. Set the secret, or mint LITELLM_FUZE_KEY and fix LiteLLM reachability instead."
+              exit 1
+            fi
+            echo "::notice title=llm-endpoint::mode=fallback-anthropic — direct api.anthropic.com. Genuinely vendor-agnostic only up to this point; this leg is single-vendor by construction (claude-code-action speaks the Anthropic shape) and exists purely as the bootstrap path."
+            echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+            {
+              echo "mode=fallback-anthropic"
+              echo "vendor=anthropic"
+              echo "base-url=https://api.anthropic.com"
+              echo "auth-token=${FALLBACK_ANTHROPIC_KEY}"
+            } >> "$GITHUB_OUTPUT"
+            ;;
+          openai|gemini)
+            if [ -z "${FALLBACK_SHIM_BASE_URL:-}" ]; then
+              echo "::error title=llm-endpoint::fallback-vendor=${VENDOR} is structurally supported but NOT wired here: claude-code-action / the Claude Code CLI speak the Anthropic API shape only, and no fallback-shim-base-url (an Anthropic-compatible translator) is configured. Either set FUZE_LLM_FALLBACK_VENDOR=anthropic, provide a shim, or fix LiteLLM reachability."
+              exit 1
+            fi
+            KEY_VAR="FALLBACK_$(echo "$VENDOR" | tr '[:lower:]' '[:upper:]')_KEY"
+            KEY="${!KEY_VAR:-}"
+            if [ -z "$KEY" ]; then
+              echo "::error title=llm-endpoint::fallback-vendor=${VENDOR} but its key input is empty."
+              exit 1
+            fi
+            echo "::notice title=llm-endpoint::mode=fallback-${VENDOR} — via configured Anthropic-compatible shim (${FALLBACK_SHIM_BASE_URL})."
+            echo "::add-mask::${KEY}"
+            {
+              echo "mode=fallback-${VENDOR}"
+              echo "vendor=${VENDOR}"
+              echo "base-url=${FALLBACK_SHIM_BASE_URL}"
+              echo "auth-token=${KEY}"
+            } >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "::error title=llm-endpoint::Unknown fallback-vendor '${VENDOR}' — expected anthropic|openai|gemini."
+            exit 1
+            ;;
+        esac
