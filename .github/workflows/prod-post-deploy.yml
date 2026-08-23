@@ -67,37 +67,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  diag-probe:
-    name: TMP diag probe (to be removed)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Probe candidate paths with full headers+body
-        run: |
-          set -x
-          probe() {
-            echo "=== $1 ==="
-            curl -sS -D - --max-time 15 "$1" -o /tmp/body.txt || true
-            echo "--- body (first 800 bytes) ---"
-            head -c 800 /tmp/body.txt || true
-            echo
-            echo "--- body wc ---"
-            wc -c /tmp/body.txt || true
-          }
-          probe "https://app.fuzefront.com/api/v3/core/"
-          probe "https://app.fuzefront.com/api/v3/providers/"
-          probe "https://app.fuzefront.com/api/v3/policies/"
-          probe "https://app.fuzefront.com/api/organizations"
-          probe "https://app.fuzefront.com/api/does-not-exist-xyz"
-          probe "https://app.fuzefront.com/if/admin/"
-          probe "https://app.fuzefront.com/if/user/"
-          probe "https://app.fuzefront.com/applications"
-          probe "https://app.fuzefront.com/sources"
-          probe "https://app.fuzefront.com/__fuzefront-boundary-control-test__"
-          probe "https://auth.fuzefront.com/api/v3/core/"
-          probe "https://auth.fuzefront.com/if/admin/"
-          probe "https://auth.fuzefront.com/api/v3/flows/executor/"
-
   announce:
     name: What is being verified
     runs-on: ubuntu-latest
