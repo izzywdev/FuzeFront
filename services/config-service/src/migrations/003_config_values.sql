@@ -27,9 +27,9 @@
 -- write — the L0 layer of governance/identifier-standard.md §5. Existence
 -- verification (L1+) is not built in this PR.
 
-CREATE TABLE IF NOT EXISTS config_values (
+CREATE TABLE IF NOT EXISTS config.config_values (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  definition_id   UUID        NOT NULL REFERENCES config_key_definitions(id) ON DELETE CASCADE,
+  definition_id   UUID        NOT NULL REFERENCES config.config_key_definitions(id) ON DELETE CASCADE,
   scope_type      TEXT        NOT NULL CHECK (scope_type IN ('platform', 'portal', 'org', 'user')),
   -- NULL exactly when scope_type = 'platform' (a singleton tier).
   scope_id        UUID,
@@ -51,19 +51,19 @@ CREATE TABLE IF NOT EXISTS config_values (
 -- let the 'platform' singleton tier (scope_id always NULL) acquire unlimited
 -- rows per definition instead of at most one.
 CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_platform
-  ON config_values (definition_id)
+  ON config.config_values (definition_id)
   WHERE scope_type = 'platform';
 
 CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_scoped
-  ON config_values (definition_id, scope_type, scope_id)
+  ON config.config_values (definition_id, scope_type, scope_id)
   WHERE scope_type <> 'platform';
 
 -- The resolution engine's hot-path lookup: "every value at any tier in the
 -- caller's chain, for this namespace's definitions" — fetched per definition,
 -- so an index on the FK is the one that matters most.
 CREATE INDEX IF NOT EXISTS config_values_definition_idx
-  ON config_values (definition_id);
+  ON config.config_values (definition_id);
 
 -- Supports "every value at a given scope" (e.g. an org's settings page).
 CREATE INDEX IF NOT EXISTS config_values_scope_idx
-  ON config_values (scope_type, scope_id);
+  ON config.config_values (scope_type, scope_id);

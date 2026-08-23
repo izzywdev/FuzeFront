@@ -153,3 +153,24 @@ jobs:
             done < <(grep -E '^\s*port:\s*' "$f")
           done
           exit $fail
+
+      - name: Guard Authentik public Ingress paths (${{ matrix.values }})
+        run: |
+          # Same class of gap as the NetworkPolicy port guard above: kubeconform
+          # validates SHAPE against the Kubernetes API schema, not the CONTROLLER's
+          # actual matching semantics. Production runs Traefik, whose Kubernetes
+          # Ingress provider implements `pathType: Prefix` as a plain STRING prefix
+          # (its PathPrefix matcher) rather than the spec's element-wise segment
+          # match. That gap let `- /application` (no trailing slash) in
+          # fuzefront.authentikPublicPaths string-prefix-match `/applications`,
+          # routing Authentik's application-list surface to the public internet —
+          # live, unnoticed, for an unknown period. helm lint and kubeconform both
+          # stayed green throughout.
+          #
+          # Self-test FIRST: prove the probe still fails on the exact regression
+          # (a bare "/application" that matches "/applications") before trusting it
+          # to pass on this chart's actual rendered output. A check only ever
+          # observed passing is not evidence of anything.
+          set -euo pipefail
+          ./deploy/scripts/check-authentik-public-paths.sh --self-test
+          ./deploy/scripts/check-authentik-public-paths.sh rendered/fuzefront/templates

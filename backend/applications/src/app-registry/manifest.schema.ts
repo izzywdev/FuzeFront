@@ -191,6 +191,29 @@ export const appManifestSchema = z
     description: z.string().max(1024).optional(),
     icon: iconSchema.optional(),
     mode: appModeSchema,
+    // `modes` is the MULTI-VALUED form of `mode`, and accepting it is what makes
+    // registration work at all for every consumer built with @fuzefront/onboarding-kit.
+    //
+    // The kit's manifest.schema.json defines `modes` ("Every surface this app
+    // supports, in preference order") and its templates/manifest.json emits BOTH
+    // keys -- `mode: "portal"` and `modes: ["portal","standalone"]`. This schema is
+    // .strict() and knew only the singular, so every such manifest was rejected:
+    //
+    //   HTTP 400 {"error":"validation_error","fields":[{"path":"manifest",
+    //     "message":"Unrecognized key(s) in object: 'modes'"}]}
+    //
+    // Observed live in fuzefinance: the `fuzefront-register` init container reached
+    // this API, POSTed, got the 400, and went CrashLoopBackOff -- so the pod never
+    // became Ready and the app never appeared in the portal. Argo Application,
+    // image, namespace and registration token were all fine; only this key stood
+    // between a deployed product and a listed one. It is fail-closed by design, so
+    // one unrecognised key is enough to stop the whole thing.
+    //
+    // Additive on purpose: `mode` stays REQUIRED and unchanged, so nothing that
+    // registers today can break. Consumers already send both, so this only stops
+    // rejecting what they have been sending all along. Same enum on both sides
+    // (portal | standalone), checked rather than assumed.
+    modes: z.array(appModeSchema).min(1).optional(),
     builtin: z.boolean().optional(),
     integration: integrationSchema,
     chrome: chromeSchema.optional(),

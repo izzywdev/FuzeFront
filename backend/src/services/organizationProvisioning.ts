@@ -199,8 +199,66 @@ export async function ensurePersonalOrg(
         .ignore()
     })
   } catch (error: any) {
-    // Safety net for any remaining error (e.g. slug conflict from a concurrent
-    // create that hits a different index than the owner_id partial index).
+    // The `slug` unique constraint (`organizations_slug_unique`) is a
+    // DIFFERENT index than the `onConflict` arbiter above (the partial
+    // `uq_personal_org_per_owner` index, which only fires when the existing
+    // row's type is already 'personal'). Postgres only suppresses a conflict
+    // that matches the arbiter you named, so a 23505 on `slug` still throws
+    // out of the transaction above and lands here.
+    //
+    // Because `baseSlug` is fully deterministic (`personal-${userId}`), a
+    // slug collision here can only be THIS user's own row, already present
+    // under a DIFFERENT `type` — exactly the 2026-08-23 personal-org
+    // over-reclassification incident (migration 022's unconditional
+    // reclassify step; see `025_repair_personal_org_over_reclassification.ts`).
+    // Self-heal it here too, at login time, rather than surfacing a raw
+    // constraint violation and leaving the user's workspace looking "gone":
+    // flip that row back to `type='personal'` and ensure its owner
+    // membership exists, instead of blindly re-selecting by
+    // `type='personal'` (which would keep missing) and rethrowing.
+    if (error?.code === '23505' && String(error?.constraint) === 'organizations_slug_unique') {
+      const bySlug = await db('organizations').where({ slug: baseSlug }).first()
+      if (bySlug && bySlug.owner_id === userId) {
+        if (bySlug.type !== 'personal') {
+          console.warn(
+            `ensurePersonalOrg: self-healing mis-typed personal org ${bySlug.id} ` +
+              `for user ${userId} (was type='${bySlug.type}', restoring to 'personal')`
+          )
+          await db('organizations')
+            .where({ id: bySlug.id })
+            .update({ type: 'personal', updated_at: db.fn.now() })
+        }
+        // Ensure the owner membership exists too — reclassify never touched
+        // memberships, but this keeps the self-heal path idempotent even if
+        // it did not.
+        await db('organization_memberships')
+          .insert({
+            id: toUuid(mintId('membership')),
+            user_id: userId,
+            organization_id: bySlug.id,
+            role: 'owner',
+            status: 'active',
+            joined_at: new Date(),
+            permissions: JSON.stringify({}),
+            metadata: JSON.stringify({}),
+          })
+          .onConflict(['user_id', 'organization_id'])
+          .ignore()
+        const healed = await db('organizations').where({ id: bySlug.id }).first()
+        return rowToOrganization(healed)
+      }
+      // A slug collision NOT owned by this user should be unreachable (the
+      // slug is derived from userId), but never silently adopt someone
+      // else's organization — surface a clear diagnostic instead of the raw
+      // pg error.
+      throw new Error(
+        `ensurePersonalOrg: slug '${baseSlug}' already used by a different owner ` +
+          `(${bySlug?.owner_id ?? 'unknown'}) — refusing to proceed`
+      )
+    }
+
+    // Safety net for any remaining error (e.g. a genuine race on the
+    // owner_id partial index that this process lost).
     const raced = await db('organizations')
       .where({ owner_id: userId, type: 'personal' })
       .first()

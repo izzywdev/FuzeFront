@@ -36,6 +36,31 @@ describe('migrations directory', () => {
     }
   });
 
+  // REGRESSION GUARD. Unqualified DDL is why config-service could never start
+  // in prod: config_svc's search_path resolves to "$user", public; no config_svc
+  // schema exists; so DDL targeted `public`, where a non-owner has no CREATE on
+  // PG15 -> "permission denied for schema public". The `config` schema the
+  // bootstrap Job provisions was never used. Every table reference must carry
+  // the schema, exactly as billing-service does (billing.customers).
+  it('schema-qualifies every table reference (config.<table>) — never bare', () => {
+    const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+    const tables = ['config_namespaces', 'config_key_definitions', 'config_values'];
+    for (const file of files) {
+      const code = withoutComments(readMigration(file));
+      for (const table of tables) {
+        // A bare reference is the table name NOT preceded by "config."
+        const bare = new RegExp(`(?<!config\\.)\\b${table}\\b`);
+        const offending = code
+          .split('\n')
+          .filter((l) => bare.test(l))
+          // index NAMES legitimately embed the table name (config_values_scope_idx)
+          .filter((l) => !/^\s*CREATE\s+(UNIQUE\s+)?INDEX/i.test(l))
+          .filter((l) => !/CONSTRAINT\s+config_/i.test(l));
+        expect({ file, offending }).toEqual({ file, offending: [] });
+      }
+    }
+  });
+
   it('does NOT run CREATE EXTENSION or CREATE SCHEMA (least-privilege runtime role cannot)', () => {
     const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
     for (const file of files) {
@@ -50,7 +75,7 @@ describe('001_config_namespaces.sql — S2 AC1 shape', () => {
   const sql = readMigration('001_config_namespaces.sql');
 
   it('creates config_namespaces idempotently', () => {
-    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config_namespaces/i);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config\.config_namespaces/i);
   });
 
   it('has no id DEFAULT (ids are app-minted via mintId, never gen_random_uuid())', () => {
@@ -67,7 +92,7 @@ describe('002_config_key_definitions.sql — S2 AC1 shape', () => {
   const sql = readMigration('002_config_key_definitions.sql');
 
   it('creates config_key_definitions idempotently', () => {
-    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config_key_definitions/i);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config\.config_key_definitions/i);
   });
 
   it('has every column required by S2 AC1', () => {
@@ -112,7 +137,7 @@ describe('002_config_key_definitions.sql — S2 AC1 shape', () => {
   });
 
   it('references config_namespaces(id) with ON DELETE CASCADE (intra-service FK)', () => {
-    expect(sql).toMatch(/REFERENCES config_namespaces\(id\) ON DELETE CASCADE/);
+    expect(sql).toMatch(/REFERENCES config\.config_namespaces\(id\) ON DELETE CASCADE/);
   });
 });
 
@@ -120,7 +145,7 @@ describe('003_config_values.sql — S3 AC1 shape', () => {
   const sql = readMigration('003_config_values.sql');
 
   it('creates config_values idempotently', () => {
-    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config_values/i);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config\.config_values/i);
   });
 
   it('has every column required by S3 AC1', () => {
@@ -131,7 +156,7 @@ describe('003_config_values.sql — S3 AC1 shape', () => {
   });
 
   it('references config_key_definitions(id) — intra-service FK', () => {
-    expect(sql).toMatch(/REFERENCES config_key_definitions\(id\) ON DELETE CASCADE/);
+    expect(sql).toMatch(/REFERENCES config\.config_key_definitions\(id\) ON DELETE CASCADE/);
   });
 
   it('has NO real FK on scope_id (polymorphic, cross-table — S3 risk note)', () => {
@@ -149,7 +174,7 @@ describe('003_config_values.sql — S3 AC1 shape', () => {
     // A plain UNIQUE(...) would not stop the platform singleton tier
     // (scope_id always NULL) from acquiring multiple rows per definition —
     // Postgres treats NULL <> NULL for uniqueness. Two partial indexes fix that.
-    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_platform\s*\n\s*ON config_values \(definition_id\)\s*\n\s*WHERE scope_type = 'platform'/);
-    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_scoped\s*\n\s*ON config_values \(definition_id, scope_type, scope_id\)\s*\n\s*WHERE scope_type <> 'platform'/);
+    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_platform\s*\n\s*ON config\.config_values \(definition_id\)\s*\n\s*WHERE scope_type = 'platform'/);
+    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_scoped\s*\n\s*ON config\.config_values \(definition_id, scope_type, scope_id\)\s*\n\s*WHERE scope_type <> 'platform'/);
   });
 });

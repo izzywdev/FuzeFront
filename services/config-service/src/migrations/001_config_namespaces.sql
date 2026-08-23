@@ -14,7 +14,7 @@
 -- default would let a row be inserted without going through mintId(), which
 -- is the only sanctioned id constructor.
 
-CREATE TABLE IF NOT EXISTS config_namespaces (
+CREATE TABLE IF NOT EXISTS config.config_namespaces (
   id            UUID        PRIMARY KEY,
   namespace     TEXT        NOT NULL UNIQUE,
   display_name  TEXT        NOT NULL,

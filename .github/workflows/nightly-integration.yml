@@ -7,7 +7,9 @@ name: Nightly Integration
 # (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
 # and files ONE idempotent @claude issue to build it (self-propagating adoption).
 #
-# Requires repo secret ANTHROPIC_API_KEY. Reuses the gate-localup mechanism
+# LLM credential (autofix job): routed through .github/actions/llm-endpoint (LiteLLM
+# in-cluster with automatic fallback to a direct vendor). Requires repo secret
+# LITELLM_FUZE_KEY and/or ANTHROPIC_API_KEY (at least one). Reuses the gate-localup mechanism
 # (governance/local-environment.md). Install with a per-repo staggered cron minute.
 
 on:
@@ -129,10 +131,23 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
+        with:
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
       - name: Auto-fix → DRAFT PR (never auto-merge)
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
+          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
           prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED
             (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).

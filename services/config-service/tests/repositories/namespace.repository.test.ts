@@ -42,7 +42,7 @@ describe('PgNamespaceRepository.upsert', () => {
     expect(namespace.displayName).toBe('Chat');
     // Server-minted, wire-typed: cns_ prefix, never the raw uuid.
     expect(namespace.id).toMatch(/^cns_[0-9a-hjkmnp-tv-z]{26}$/);
-    expect(capturedSql).toMatch(/INSERT INTO config_namespaces/);
+    expect(capturedSql).toMatch(/INSERT INTO config\.config_namespaces/);
     expect(capturedSql).toMatch(/ON CONFLICT \(namespace\) DO UPDATE/);
     // The create body never lets a caller choose the id — it is minted here,
     // not read off `input`.

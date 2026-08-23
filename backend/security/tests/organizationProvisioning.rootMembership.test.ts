@@ -284,4 +284,51 @@ describe('organizationProvisioning — root membership (FF-EPIC-17-S1, integrati
       expect(personal.type).toBe('personal')
     })
   })
+
+  describe('ensurePersonalOrg self-heal — 2026-08-23 personal-org over-reclassification incident', () => {
+    it('self-heals a reclassified personal org on slug conflict instead of throwing', async () => {
+      if (!reachable) return console.warn('Postgres unreachable — skipping')
+
+      const userId = await createUser()
+      const damagedOrgId = uuidv4()
+      const baseSlug = `personal-${userId}`
+
+      // Simulate the DAMAGED state migration 015's unconditional reclassify
+      // step used to produce: type='organization' but still at this user's
+      // deterministic slug, still carrying the metadata stamp only
+      // ensurePersonalOrg ever writes.
+      await db('organizations').insert({
+        id: damagedOrgId,
+        name: 'Personal',
+        slug: baseSlug,
+        owner_id: userId,
+        type: 'organization',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({ personal: true }),
+        is_active: true,
+        provisioning_state: 'pending',
+      })
+
+      // Must NOT throw — the pre-fix behavior surfaced a raw 23505 here (this
+      // service previously had no `onConflict` at all, so even the owner_id
+      // partial-index race threw uncaught).
+      const healed = await ensurePersonalOrg(userId, { db })
+
+      expect(healed.id).toBe(damagedOrgId)
+      expect(healed.type).toBe('personal')
+
+      const row = await db('organizations').where({ id: damagedOrgId }).first()
+      expect(row.type).toBe('personal')
+
+      const membership = await db('organization_memberships')
+        .where({ organization_id: damagedOrgId, user_id: userId, role: 'owner' })
+        .first()
+      expect(membership).toBeTruthy()
+
+      // Idempotent: calling it again is a plain no-op via the ordinary `existing` check.
+      const second = await ensurePersonalOrg(userId, { db })
+      expect(second.id).toBe(damagedOrgId)
+      expect(second.type).toBe('personal')
+    })
+  })
 })

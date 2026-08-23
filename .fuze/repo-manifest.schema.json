@@ -172,6 +172,10 @@
           "type": "string",
           "minLength": 1,
           "description": "The runner every stamped workflow targets, written verbatim as runs-on. DECLARED, never derived \u2014 the same rule identity.namespace follows. This is a gha-runner-scale-set NAME, not a label: those runners register with no labels at all, so `self-hosted` and `[self-hosted, x]` match nothing. Omit the block entirely to keep the template's ubuntu-latest, which is the correct default for a repo with no scale set \u2014 a runs-on naming a set that does not exist does not fail fast, it queues forever."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text rationale for this repo's runner choice. Every sibling block that carries hard-won operational reasoning allows one (a2a, mcp, identity, toolchain, platformAuth); `ci` was the only one that did not \u2014 and it is the block whose reasoning is least guessable from its value. `runner: fuzecall` reads like a label until the note tells you it is a gha-runner-scale-set NAME, that those runners register with no labels at all so `self-hosted` matches nothing, and that naming a set which does not exist does not fail fast but queues forever. All 8 `ci` blocks in the fleet were written with a note, so under additionalProperties:false every real instance was invalid: the schema forbade the one field the block has always been used with."
         }
       }
     },
@@ -199,6 +203,10 @@
               "description": "e.g. 'fuzefront-identity' \u2014 installed from a tagged GitHub Release wheel, because GitHub Packages has no PyPI registry."
             }
           }
+        },
+        "enforceUsage": {
+          "type": "boolean",
+          "description": "Ratchet. --adoption A1 only asks whether the identity package is DECLARED, which an inert dependency line satisfies \u2014 measured 2026-08-19, thirteen repos declared it and none imported it. With this true, A2 also requires a tracked source file to IMPORT the package, and a declaration with no call site becomes a failure instead of a warning. Deliberately opt-in per repo and NOT reconciled by governance_sync: flipping it family-wide on arrival would be enforcement ahead of adoption, which is what produced the inert declarations."
         },
         "note": {
           "type": "string"

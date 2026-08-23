@@ -116,20 +116,21 @@ test('a `Fuze`-prefixed NAME is rejected, and the message names the replacement'
   assert.match(errors[0], /use "Service"/)
 })
 
-test('menuLabel is checked too — FuzeBI is the live half-fix this catches', () => {
-  // Measured on FuzeBI's default branch: menuLabel "BI" (already right) with name
-  // "FuzeBI" (not). Checking only one display field would call that conformant.
-  const errors = validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI', menuLabel: 'BI' })
+test('menuLabel is checked too — a half-fixed prefix is still flagged', () => {
+  // Same shape as FuzeBI's old half-fix (menuLabel right, name not), but with a name
+  // that is NOT on the named carve-out list, so this must still be caught.
+  const errors = validateSlugConvention({ slug: 'fuzesales', name: 'FuzeSales', menuLabel: 'Sales' })
   assert.equal(errors.length, 1, errors.join('\n'))
-  assert.match(errors[0], /name "FuzeBI"/)
+  assert.match(errors[0], /name "FuzeSales"/)
 })
 
 test('both display fields prefixed produces BOTH violations, not just the first', () => {
-  // FuzeX's measured shape. Reporting one at a time costs two build cycles for one file.
-  const errors = validateSlugConvention({ slug: 'fuzex', name: 'FuzeX', menuLabel: 'FuzeX' })
+  // FuzeSales is not on the named carve-out (FuzeBI/FuzeX), so both fields are flagged.
+  // Reporting one at a time would cost two build cycles for one file.
+  const errors = validateSlugConvention({ slug: 'fuzesales', name: 'FuzeSales', menuLabel: 'FuzeSales' })
   assert.equal(errors.length, 2, errors.join('\n'))
-  assert.match(errors.join('\n'), /name "FuzeX"/)
-  assert.match(errors.join('\n'), /menuLabel "FuzeX"/)
+  assert.match(errors.join('\n'), /name "FuzeSales"/)
+  assert.match(errors.join('\n'), /menuLabel "FuzeSales"/)
 })
 
 // ---- the slug is NOT checked, in either direction -----------------------------------
@@ -253,23 +254,40 @@ test('malformed manifest JSON is reported, not thrown', () => {
   assert.match(errors[0], /not valid JSON/)
 })
 
-// The SHORT-NAME EXEMPTION that used to live here is GONE, and its absence is the
-// correction. It existed because the contract's Slug pattern needs 3+ characters, so
-// `fuzebi` -> `bi` and `fuzex` -> `x` had no conformant slug to move to and the prefix
-// was load-bearing. With the slug no longer checked at all, there is nothing to exempt.
-//
-// It does not transfer to the display fields either: `name` and `menuLabel` are free
-// text with no length floor, so "BI" and "X" are perfectly good labels. The two repos
-// the exemption was written for are exactly the two the display rule now catches.
+// The SHORT-NAME "exemption" that previously lived here checked the SLUG, which is now
+// unchecked in both directions (see above) — so there is nothing left to exempt there.
+// What replaces it is a narrower, NAMED carve-out on the DISPLAY fields themselves, per
+// owner ruling: "the fuze prefix ... unless necessary like for fuzebi, and fuzeX". "BI"
+// and "X" do not identify a product on their own, so those two — and only those two —
+// keep the prefix on `name`/`menuLabel` too. Everything else (e.g. FuzeSales, where
+// "Sales" is a perfectly good name on its own) is still caught; see the tests above.
 
-test('the retired short-name exemption does NOT protect a prefixed display name', () => {
-  // `fuzebi`/`fuzex` were the exemption's whole reason to exist. Both are flagged now —
-  // on the name, which is mutable, not the slug, which is not.
-  assert.match(validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI' })[0], /use "BI"/)
-  assert.match(validateSlugConvention({ slug: 'fuzex', name: 'FuzeX' })[0], /use "X"/)
+test('FuzeBI is explicitly allow-listed — owner-named carve-out', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzebi', name: 'FuzeBI', menuLabel: 'BI' }), [])
 })
 
-test('their slugs stay accepted — the exemption is retired, not inverted', () => {
+test('FuzeX is explicitly allow-listed — owner-named carve-out', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzex', name: 'FuzeX', menuLabel: 'X' }), [])
+})
+
+test('the carve-out does not widen into a blanket allow for any Fuze* name', () => {
+  // FuzeSales is exactly the case the rule exists for: "Sales" identifies a product on
+  // its own, so the prefix is not "necessary" and must still be rejected.
+  const errors = validateSlugConvention({ name: 'FuzeSales', menuLabel: 'Sales' })
+  assert.equal(errors.length, 1, errors.join('\n'))
+  assert.match(errors[0], /name "FuzeSales"/)
+  assert.match(errors[0], /use "Sales"/)
+})
+
+test('a clean display name is unaffected, unchanged', () => {
+  assert.deepEqual(validateSlugConvention({ name: 'Sales', menuLabel: 'Sales' }), [])
+})
+
+test('a Fuze-prefixed SLUG with a clean display name still passes — the owner\'s preferred shape', () => {
+  assert.deepEqual(validateSlugConvention({ slug: 'fuzepicker', name: 'Picker', menuLabel: 'Picker' }), [])
+})
+
+test('their slugs stay accepted regardless — slug is never checked here', () => {
   assert.deepEqual(validateSlugConvention({ slug: 'fuzebi', name: 'BI' }), [])
   assert.deepEqual(validateSlugConvention({ slug: 'fuzex', name: 'X' }), [])
 })
