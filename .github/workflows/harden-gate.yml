@@ -102,10 +102,67 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
+
+      # Runs the gitleaks BINARY, not gitleaks-action. Adopted from the FuzeSDLC canonical
+      # (workflow-templates/harden-gate.yml); 18 of 20 repos already run this form.
+      #
+      # This gate is REQUIRED on master, and it is the only one of FuzeFront's eleven
+      # required contexts whose verdict anyone should act on immediately. The action put
+      # two availability failures in front of that verdict, and both fired:
+      #
+      #   1. Its pull_request path calls GET /repos/:o/:r/pulls/:n/commits to work out what
+      #      to scan, and throws rather than degrading when the call fails. Measured
+      #      repo-wide 2026-08-11..17: 403 "Resource not accessible by integration" while
+      #      the job's own token summary printed "PullRequests: read".
+      #   2. It uploads a SARIF artifact AFTER scanning, and a failed upload fails the job.
+      #      Measured on FuzePlan 2026-08-23T16:15:03Z, on the identical action pin:
+      #
+      #          INF 3 commits scanned.
+      #          INF no leaks found
+      #          Error: Failed to CreateArtifact: Artifact storage quota has been hit.
+      #
+      #      A clean scan, reported as a failed secret gate. That is worse than a vacuous
+      #      check: vacuous passes when it should fail, this FAILS WHEN IT SHOULD PASS, and
+      #      being required it blocks every PR in the repo on an account-level storage quota
+      #      that has nothing to do with secrets. It also trains people to ignore the one
+      #      red that must never be ignored.
+      #
+      # git already knows the commit range and the scan needs no artifact, so neither
+      # dependency buys anything. The scan's own exit code is the verdict, and nothing
+      # runs after it that can overturn it.
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=8.24.3
+          SHA256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          TARBALL=gitleaks_${VERSION}_linux_x64.tar.gz
+
+          # Pinned + checksummed. A security gate that curls an unverified binary is worse
+          # than the problem it is solving; the digest is the upstream one from
+          # gitleaks_${VERSION}_checksums.txt.
+          curl -sSfL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$TARBALL" gitleaks
+
+          # On a PR, scan exactly the commits the PR adds. Anywhere else, scan all history:
+          # a wider scan can only find MORE, so the fallback is the safe direction. There is
+          # deliberately no path that scans nothing — "no range, so skip" is how a gate ends
+          # up green while enforcing nothing.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            echo "::notice title=gate-secret-scan::scanning ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner .
+          else
+            echo "::notice title=gate-secret-scan::no PR range — scanning full history"
+            gitleaks git --redact --no-banner .
+          fi
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
