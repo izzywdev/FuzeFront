@@ -8,9 +8,22 @@ name: A2A Maintain
 # can't (fork PR / first-time build), it opens a separate `auto-merge`-labelled follow-up
 # PR. It never fabricates a role's product behaviour, never handles creds, never deploys.
 #
-# Requires repo secret ANTHROPIC_API_KEY. No key -> SKIPS (never red). The `a2a-maintainer`
-# agent def is stamped by sdlc-bootstrap into .claude/agents/ and reconciled by
-# governance-sync; this workflow just invokes it.
+# LLM credential: routed through .github/actions/llm-endpoint (LiteLLM in-cluster with
+# automatic fallback to a direct vendor — see that action for the design). Requires repo
+# secret LITELLM_FUZE_KEY and/or ANTHROPIC_API_KEY (at least one).
+#
+# CONTRACT: it used to be "no key -> SKIPS (never red)". That made a check which passes
+# by not running — a repo declaring an A2A surface could go indefinitely with that
+# surface unmaintained while the check sat green. The rule now keys off the MANIFEST,
+# because that is what distinguishes an absence from a gap:
+#
+#   a2a.enabled not declared  -> skip. There is no surface; that is the truth.
+#   a2a.enabled true, no usable credential (neither LiteLLM nor the fallback vendor)
+#                              -> FAIL. A declared surface nobody can maintain.
+#   a2a.enabled true, credential available (LiteLLM OR fallback) -> run.
+#
+# The `a2a-maintainer` agent def is stamped by sdlc-bootstrap into .claude/agents/ and
+# reconciled by governance-sync; this workflow just invokes it.
 
 on:
   pull_request:
@@ -26,35 +39,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  a2a-maintain:
-    # Loop guard: never run on our own maintenance branches.
-    if: ${{ !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/') }}
+  # Runs on a HOSTED runner and always reports. Split out from the maintainer on
+  # purpose: a job on a self-hosted pool that is not serving QUEUES FOREVER with no
+  # red X, no log and no timeout (measured against this fleet: 175+ jobs queued on
+  # `fuzesdlc` with zero running for 36h, FuzeInfra#623). A misconfiguration that
+  # produces no signal at all is worse than one that produces a red, so the check
+  # that must never be silent runs where it cannot be silenced — and per the
+  # llm-endpoint fallback design, the maintainer job below no longer NEEDS a
+  # self-hosted/in-cluster runner at all, so this split is now purely about signal
+  # placement, not reachability.
+  preflight:
+    name: a2a-maintain preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      declared: ${{ steps.check.outputs.declared }}
     steps:
-      - name: Skip if key absent or repo not onboarded
-        id: guard
-        env:
-          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Is a2a-maintain declared?
+        id: check
+        shell: bash
         run: |
-          if [ ! -f .fuze/manifest.json ] 2>/dev/null; then :; fi
-          if [ -z "$KEY" ]; then
-            echo "::notice::ANTHROPIC_API_KEY not set — A2A maintain skipped (set it to enable)."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          declared=$(python3 -c "import json;print(str((json.load(open('.fuze/manifest.json')).get('a2a') or {}).get('enabled', False)).lower())" 2>/dev/null || echo false)
+          echo "declared=$declared" >> "$GITHUB_OUTPUT"
+          if [ "$declared" != "true" ]; then
+            echo "::notice title=a2a-maintain::.fuze/manifest.json does not declare a2a.enabled — nothing to maintain. Skipping is correct here: there is no surface."
           fi
 
+      # Declared. From here, having NO usable credential (neither LiteLLM nor the
+      # configured fallback vendor) is a MISCONFIGURATION, not an environmental gap,
+      # and must fail — that is the whole point of keying this off the manifest
+      # instead of "no key -> skip". This step's own ::error:: names the exact
+      # remedy when it fails, so the job doesn't need to duplicate that message.
+      - name: Resolve LLM endpoint — proves a usable credential exists
+        if: steps.check.outputs.declared == 'true'
+        uses: ./.github/actions/llm-endpoint
+        with:
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-vendor: ${{ vars.FUZE_LLM_FALLBACK_VENDOR || 'anthropic' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  a2a-maintain:
+    needs: preflight
+    # Two conditions, one key (a duplicate `if:` is a YAML syntax error, not an AND):
+    #   - preflight said the surface is declared AND a credential is usable (preflight
+    #     job fails outright otherwise, so `needs.preflight` never reaches here with a
+    #     declared surface and no credential).
+    #   - not our own follow-up branch, or the maintainer re-triggers on its own push.
+    if: >-
+      needs.preflight.outputs.declared == 'true' &&
+      !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout PR head (writable, same-repo only)
-        if: steps.guard.outputs.ok == 'true'
+        # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
+        # repointed by the action owner (cf. the trivy-action / kics-github-action
+        # compromises). This workflow has `contents: write` on the PR branch, so a
+        # repointed checkout would run attacker code with push access.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
+        with:
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-vendor: ${{ vars.FUZE_LLM_FALLBACK_VENDOR || 'anthropic' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
       - name: Skip on last-commit marker
         id: marker
-        if: steps.guard.outputs.ok == 'true'
         run: |
           if git log -1 --pretty=%B | grep -q '\[skip a2a\]'; then
             echo "::notice::last commit marked [skip a2a] — skipping to avoid a self-trigger loop."
@@ -64,10 +123,13 @@ jobs:
           fi
 
       - name: Run a2a-maintainer
-        if: steps.guard.outputs.ok == 'true' && steps.marker.outputs.run == 'true'
+        if: steps.marker.outputs.run == 'true'
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
+          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
           # Every FuzeFront agent PR is authored by the `claude` bot; dependabot and
           # github-actions[bot] (governance-sync commit-back) also open/push PRs. Without
           # this, claude-code-action's actor check hard-fails those runs with
