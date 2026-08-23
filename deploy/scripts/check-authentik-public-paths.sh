@@ -62,8 +62,21 @@ check_dir() {
   # (mirrors check-job-interpreters.sh / the networkpolicy-ports guard, both
   # of which use plain grep on rendered YAML), so pull every Ingress `path:`
   # value that is followed within a few lines by `name: authentik-server`.
-  local excluded_pattern
-  excluded_pattern=$(IFS='|'; echo "${EXCLUDED_INGRESS_NAMES[*]}")
+  # Join EXCLUDED_INGRESS_NAMES with "|" for the awk alternation below.
+  # Deliberately NOT `IFS='|'; echo "${arr[*]}"` — that tampers with the
+  # special IFS variable, which affects unquoted-expansion word-splitting for
+  # the rest of the shell it runs in (Semgrep bash.lang.security.ifs-tampering).
+  # It happened to be scoped to a `$(...)` subshell here, but a mechanical
+  # join loop has the identical result with none of that class of risk.
+  local excluded_pattern=""
+  local name
+  for name in "${EXCLUDED_INGRESS_NAMES[@]}"; do
+    if [ -z "$excluded_pattern" ]; then
+      excluded_pattern="$name"
+    else
+      excluded_pattern="${excluded_pattern}|${name}"
+    fi
+  done
 
   allowed_paths=$(
     for f in "$dir"/*.yaml; do
