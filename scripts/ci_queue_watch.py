@@ -48,7 +48,10 @@ import sys
 import urllib.error
 import urllib.request
 
-API = "https://api.github.com"
+# Overridable so the self-tests can point discovery at a dead port and stay
+# hermetic — they must not depend on the fleet's live state, which is the very
+# thing this script measures.
+API = os.environ.get("CI_QUEUE_WATCH_API", "https://api.github.com")
 NOW = datetime.datetime.now(datetime.timezone.utc)
 
 
@@ -172,7 +175,9 @@ def aggregate(rows, last_starts):
 def verdict(p, stall_minutes):
     """STALLED is the only state that warrants waking anyone up."""
     if p["queued"] == 0:
-        return "IDLE", False
+        # Nothing waiting. Running jobs with an empty queue is the healthiest
+        # state there is; labelling it IDLE reads as "this pool does nothing".
+        return ("HEALTHY" if p["running"] else "IDLE"), False
     if p["running"] > 0:
         # Moving. Depth is a capacity fact, not an incident.
         return ("SATURATED" if p["queued"] > p["running"] * 2 else "HEALTHY"), False
@@ -206,6 +211,10 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--fail-on-stall", action="store_true",
                     help="exit 1 when any pool is STALLED (for the scheduled watchdog)")
+    ap.add_argument("--min-repos", type=int, default=5,
+                    help="with a token present, discovering fewer than this many repos is a "
+                         "misconfiguration and exits 2 — a watchdog that silently watches "
+                         "nothing is worse than no watchdog")
     args = ap.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
@@ -215,10 +224,25 @@ def main():
         derr = None
     else:
         targets, derr = discover_repos(args.owner, token, args.prefix)
-    if not targets:
-        print(f"::warning::no repositories discovered ({derr or 'empty result'}) — "
-              f"pass --repos to scan an explicit list", file=sys.stderr)
-        return 0
+    # A watchdog that quietly watches nothing is the failure mode this whole
+    # script exists to argue against: it stays green forever and everyone reads
+    # green as "the fleet is fine". So an under-sized fleet is only tolerated
+    # when there is no token to look with -- an environmental condition, which
+    # must never masquerade as an outage. With a token in hand, too few repos
+    # means the token's scope is wrong, and that is a hard failure.
+    if not args.repos and len(targets) < args.min_repos:
+        detail = f"discovered {len(targets)} repo(s), expected at least {args.min_repos}"
+        if derr:
+            detail += f" (last error: {derr})"
+        if not token:
+            print(f"::warning::{detail} and no token is set — skipping rather than "
+                  f"reporting a fleet of one.", file=sys.stderr)
+            return 0
+        print(f"::error::{detail}. A token IS set, so this is a scope problem, not an "
+              f"empty fleet — the token needs read access to the {args.owner}/{args.prefix}* "
+              f"repositories. Refusing to report on a fleet this small: a watchdog that "
+              f"watches nothing looks identical to a healthy one.", file=sys.stderr)
+        return 2
 
     rows, last_starts, errors = [], {}, []
     work = [(full, vis, token, args.lookback_runs) for full, vis in targets]

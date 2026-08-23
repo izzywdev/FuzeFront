@@ -13,6 +13,11 @@ name: CI Queue Watchdog
 on:
   schedule:
     - cron: '*/15 * * * *'
+  pull_request:
+    paths:
+      - 'scripts/ci_queue_watch.py'
+      - 'scripts/__tests__/test_ci_queue_watch.py'
+      - '.github/workflows/ci-queue-watch.yml'
   workflow_dispatch:
     inputs:
       stall_minutes:
@@ -28,7 +33,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Self-tests run on any PR touching the watchdog, and they assert the script
+  # REFUSES when it cannot see the fleet -- not merely that it reports correctly
+  # when it can. A watchdog wired to nothing passes every "does it work" test
+  # ever written, which is exactly how the vacuous gates in this family survived.
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run watchdog self-tests
+        run: |
+          test -f scripts/__tests__/test_ci_queue_watch.py || {
+            echo "::error::watchdog self-tests are missing — refusing to ship the watchdog without them"
+            exit 1
+          }
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_ci_queue_watch*.py' -v
+
   watch:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
