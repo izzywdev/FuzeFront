@@ -114,6 +114,15 @@ loads the remote on demand using `@originjs/vite-plugin-federation`. React /
 React-DOM are shared singletons for performance, so keep your React major in step
 with the host.
 
+> **This `POST /api/apps/register` flow has no `slug` field** — it is a separate,
+> older registration path (`backend/src/routes/apps.ts`) from the manifest-based
+> app registry (`registration/manifest.json` + `@fuzefront/onboarding-kit`) that
+> owns the `slug`/`name`/`menuLabel` naming convention. If your product needs menu
+> placement, an authz policy, or a billing profile, register via the kit instead —
+> see [`docs/mfe-self-registration.md`](../mfe-self-registration.md) — and read the
+> naming rule in the root `CLAUDE.md` § "`slug`, display name, and the federated
+> serve path are THREE INDEPENDENT questions" before choosing your `slug` or `name`.
+
 **The host is on React 19 and Node 24 (Active LTS). These are minimums, not targets:**
 
 - Your federation `shared` block must declare `requiredVersion: '^19.0.0'` for both
