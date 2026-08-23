@@ -95,15 +95,20 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
       expect(membershipInserts(raws)).toHaveLength(0)
     })
 
-    it('still runs the personal-org reclassify when the backfill is skipped', async () => {
+    it('2026-08-23 AMENDMENT: also SKIPS the personal-org reclassify when the backfill is skipped', async () => {
+      // Pre-2026-08-23 this ran the UPDATE anyway — that was the #750/#751
+      // prod incident: reclassifying every type='personal' org away while
+      // the root org (and therefore the fallback root membership) doesn't
+      // exist strands every affected user with neither. (b) is now gated on
+      // the SAME precondition as (a).
       const { knex, raws } = makeKnex({ users: [], organizations: [] })
 
       await migration015.up(knex)
 
-      expect(raws.filter(r => /UPDATE organizations/i.test(r.sql))).toHaveLength(1)
+      expect(raws.filter(r => /UPDATE organizations/i.test(r.sql))).toHaveLength(0)
     })
 
-    it('backfills when the root organization is present', async () => {
+    it('backfills AND reclassifies when the root organization is present', async () => {
       const { knex, raws } = makeKnex({
         users: [{ id: 'user-1' }],
         organizations: [{ id: ROOT_ORG_ID, slug: ROOT_ORG_SLUG, type: 'platform' }],
@@ -112,6 +117,7 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
       await migration015.up(knex)
 
       expect(membershipInserts(raws)).toHaveLength(1)
+      expect(raws.filter(r => /UPDATE organizations/i.test(r.sql))).toHaveLength(1)
     })
   })
 })
