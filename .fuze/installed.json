@@ -1018,20 +1018,6 @@
       "sourceSha256": "48e22f036c75f77be3ef1bb84fae36ec5429eb9c3ab445b42dba01d1a79d2a23",
       "renderedSha256": "48e22f036c75f77be3ef1bb84fae36ec5429eb9c3ab445b42dba01d1a79d2a23"
     },
-    "mcp/.npmrc": {
-      "capability": "npm-registry",
-      "mode": "seeded",
-      "sourcePath": "community-templates/npmrc",
-      "sourceSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc",
-      "renderedSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc"
-    },
-    "mcp/package.json": {
-      "capability": "node-toolchain",
-      "mode": "derived",
-      "sourcePath": "",
-      "sourceSha256": "cea76de271eca634b5e6a7bcc3564e94d0d35564f5d46efb6cf263c74e2c612c",
-      "renderedSha256": "cea76de271eca634b5e6a7bcc3564e94d0d35564f5d46efb6cf263c74e2c612c"
-    },
     "package.json": {
       "capability": "node-toolchain",
       "mode": "derived",
