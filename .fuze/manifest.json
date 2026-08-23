@@ -79,17 +79,30 @@
     "entryRole": "app-shell-platform"
   },
   "mcp": {
-    "enabled": false,
+    "enabled": true,
     "servers": [
       {
-        "name": "fuzefront-platform",
-        "transport": "stdio",
-        "entry": "mcp/server.ts"
+        "name": "fuzefront-mcp",
+        "transport": "sse",
+        "kind": "openapi-gateway",
+        "image": "ghcr.io/izzywdev/fuze-mcp-gateway",
+        "implementation": "packages/mcp-gateway",
+        "spec": "services/app-registry-service/openapi.yaml",
+        "overrides": "deploy/helm/fuzefront/files/mcp-tools.overrides.yaml",
+        "deployment": "deploy/helm/fuzefront/templates/mcp-gateway.yaml",
+        "endpoints": {
+          "sse": "/sse",
+          "messages": "/messages",
+          "health": "/healthz",
+          "tools": "/tools.json"
+        }
       }
     ],
-    "entryServer": "fuzefront-platform",
+    "entryServer": "fuzefront-mcp",
     "protocolVersion": "2025-06-18",
-    "note": "Scaffold — mcp/server.ts starts, completes the MCP handshake, and advertises mcp/tools.json (currently empty). enabled:false until the server exposes a working tool. Intended surface: query the app registry (which apps are registered, their manifest/nav placement, health) and the org/user/portal context — see mcp/README.md for the TODO tool inventory. Owned by mcp-maintainer for upkeep; tool behaviour is backend-engineer's."
+    "toolCount": 11,
+    "irreversibleTools": ["deleteApp"],
+    "note": "GATEWAY dialect — the shared @fuzefront/mcp-gateway image (packages/mcp-gateway, published by this repo), not per-repo server code. Deployed in-cluster by deploy/helm/fuzefront/templates/mcp-gateway.yaml (mcp.enabled=true in every values overlay, pinned image tag), fronting the app-registry contract at services/app-registry-service/openapi.yaml with mutation overrides in deploy/helm/fuzefront/files/mcp-tools.overrides.yaml. ClusterIP only, not exposed through ingress — the gateway forwards the caller's bearer token upstream and holds no credential of its own. This block previously declared a stdio scaffold (mcp/server.ts, enabled:false) that had already been superseded by the gateway in production; the scaffold is deleted (see mcp/ removal) rather than kept as a second, dead implementation. Owned by mcp-maintainer for upkeep of this block/deployment wiring; tool behaviour is the app-registry-service contract, owned by backend-engineer."
   },
   "providesTo": [
     "FuzeAgent",
