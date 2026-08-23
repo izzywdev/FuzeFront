@@ -147,11 +147,75 @@ This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_mo
 
 **This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
 
-## `slug` and the federated serve path are INDEPENDENT — stop deriving one from the other
+## `slug`, display name, and the federated serve path are THREE INDEPENDENT questions
 
-This has been re-litigated four times across the fleet, each time by someone reasoning
-from a document instead of from the code, and each round mutated live manifests. The
-code settles it in one line.
+**This is the canonical statement of the naming/addressing rule for the whole
+FuzeFront app registry.** Every other doc that touches `slug`, `name`/`menuLabel`
+prefixing, or the federated serve path is a pointer to this section, not a second
+copy of it — see "Where else this is referenced" below. It has been re-litigated
+four times across the fleet, each time by someone reasoning from a document instead
+of from the code or the owner's own words, and each round mutated live manifests.
+
+**Root cause, stated directly by the owner, 2026-08-19:**
+
+> "the intention was that the slug could be whatever like fuzepicker or fuzeagent. I
+> actually liked keeping the fuze prefix to distinguish from other apps. what I was
+> trying to do is that the display name in the menu won't repeat the Fuze prefix to
+> 16 or more products unless necessary like for fuzebi, and fuzeX. that's all"
+
+**The prefix question was always about the menu label. It got misapplied to the
+slug, four times.** That single conflation is the whole root cause of every
+mutation below. The three facts that follow are independent — none of them implies
+another, and no evidence about one is evidence about a different one.
+
+### 1. `slug` — free at creation, immutable thereafter
+
+Prefixed (`fuzepicker`, `fuzeagent`) or unprefixed (`picker`, `plan`) are **both
+fine at registration**. The owner *likes* the prefix for distinguishing apps; there
+is no correct form and no migration path from one to the other.
+
+Once registered, `slug` is **immutable and never edited by any PR, in either
+direction.** `PUT /apps/{slug}` has no rename operation, so a redeploy under a
+changed slug **registers a second app and strands the first** — orphaned Permit
+grants, CASCADE-deleted `app_installations` rows, a ghost tile in the launcher.
+
+Owner ruling 2026-08-19 (also recorded in `packages/onboarding-kit/README.md`
+§"prefix ON the slug, OFF the display string"): the field is *"not checked, in
+either direction"*, and *"None of these are to be migrated"* — naming `deploy`,
+`call`, `executive`, `finance`, `keys`, `market`, `picker` as unprefixed slugs to
+leave alone and `fuzex`, `fuzebi` as prefixed ones not to be "corrected". The
+guidance to prefix applies to a **genuinely new** product only, and is guidance,
+not a gate.
+
+`docs/runbooks/app-slug-deprefix-migration.md` is **RETIRED** — it implements
+exactly the migration this rule forbids. Its tables are a historical snapshot of
+measured state on 2026-08-19, not a worklist; do not act on them.
+
+### 2. Display name / `menuLabel` — drop the `Fuze` prefix, with two named exceptions
+
+Sixteen-plus products all reading "Fuze…" in one menu is noise — the prefix
+carries no information when everything shares it. So `name` and `menuLabel` drop
+it: register `"Sales"` / `"Sales"`, not `"FuzeSales"`, alongside `"slug":
+"fuzesales"` which keeps it.
+
+**Keep the prefix only where the remainder is meaningless or ambiguous on its
+own** — the owner named exactly two: **FuzeBI** and **FuzeX**. "BI" and "X" alone
+do not identify a product. This is guidance for the menu string only; it says
+nothing about the slug, which follows rule 1 above regardless.
+
+This is enforced in code by `validateSlugConvention()` in
+`packages/onboarding-kit/bin/validate-registration.mjs` — but **that check has no
+FuzeBI/FuzeX carve-out today**; it flags any `Fuze`-prefixed `name`/`menuLabel`
+unconditionally, with no exception list. Until the validator is updated, treat the
+FuzeBI/FuzeX exception as owner guidance the automated gate does not yet encode —
+a known code/policy gap, not license to strip the prefix from those two products'
+display strings, and not a reason to add a prefix back to any other product's.
+
+`slug` is never gated by this check in either direction — only `name`/`menuLabel`
+are, and both are ordinary mutable fields `register.sh` re-`PUT`s on every pod
+start, so fixing one is a one-line edit, unlike a slug.
+
+### 3. Serve path — independent of both
 
 **`frontend/src/utils/loadFederatedApp.ts:71` is the entire mechanism:**
 
@@ -159,28 +223,16 @@ code settles it in one line.
 const resolved = new URL(remoteEntry, origin)
 ```
 
-The host resolves `integration.remoteEntry` against its own origin and loads it. **The
-slug is not an input.** No code path anywhere derives a serve path from a slug, and none
-derives a slug from a path. The `/apps/<slug>/…` phrasing in that file's doc comment is
-describing a habit, not a contract — reading it as a contract is what started this.
+The host resolves `integration.remoteEntry` against its own origin and loads it.
+**The slug is not an input.** No code path anywhere derives a serve path from a
+slug, and none derives a slug from a path. The `/apps/<slug>/…` phrasing in that
+file's doc comment is describing a habit, not a contract — reading it as a
+contract is what started this.
 
-### The two rules that follow
-
-**1. `slug` is immutable and is never edited by any PR, in either direction.** Owner
-ruling 2026-08-19 (`packages/onboarding-kit/README.md` §"prefix ON the slug, OFF the
-display string"): the field is *"not checked, in either direction"*, and *"None of these
-are to be migrated"* — naming `deploy`, `call`, `executive`, `finance`, `keys`, `market`,
-`picker` as de-prefixed slugs to leave alone and `fuzex`, `fuzebi` as prefixed ones not to
-be "corrected". Editing a slug does not rename an app: `PUT /apps/{slug}` has no rename
-operation, so a redeploy **registers a second app** and strands the first — orphaned
-Permit grants, CASCADE-deleted `app_installations` rows, a ghost tile in the launcher.
-The guidance to prefix applies to a **genuinely new** product only, and is guidance, not
-a gate. `docs/runbooks/app-slug-deprefix-migration.md` is RETIRED; its tables are a
-historical snapshot, not a worklist.
-
-**2. The serve path is free-form, and must agree with itself across four layers.** A
-mismatch at any one of them yields the signature failure — `remoteEntry.js` returns 200
-and every chunk it references 404s, so the panel is blank while the healthcheck is green:
+The serve path is free-form, and must agree with itself across four layers. A
+mismatch at any one of them yields the signature failure — `remoteEntry.js`
+returns 200 and every chunk it references 404s, so the panel is blank while the
+healthcheck is green:
 
 | Layer | File |
 |---|---|
@@ -190,23 +242,34 @@ and every chunk it references 404s, so the panel is blank while the healthcheck 
 | nginx `location` / `alias` | the chart's nginx ConfigMap, or the baked `nginx.conf` |
 
 **Convention, to keep one mental model: use `/apps/<the repo's existing slug>/`** —
-whatever that slug already is, prefixed or not. It is derivable, needs no judgement, and
-matches what most repos already assume. It is a naming convention for a free variable,
-**not** evidence about the slug: never edit a slug to make it match a path. Fix the path.
+whatever that slug already is, prefixed or not. It is derivable, needs no
+judgement, and matches what most repos already assume. It is a naming convention
+for a free variable, **not** evidence about the slug: never edit a slug to make it
+match a path. Fix the path.
 
 ### Two things that are NOT evidence of a slug error
 
 - **`routing.path` differing from `slug`** (e.g. slug `plan`, path `/app/fuzeplan`).
   Independent fields; this is normal and was misread as a contradiction.
 - **`backend/src/routes/appRegistry.ts` deriving a slug from a name.** That is the
-  CI/local-only fallback, gated on `APP_REGISTRY_LOCAL_ADAPTER=1`, default off. Production
-  is `backend/applications/src/app-registry/service.ts`, which stores `slug: row.slug`
-  verbatim. Citing the fallback as the production mechanism caused three wrong migrations.
+  CI/local-only fallback, gated on `APP_REGISTRY_LOCAL_ADAPTER=1`, default off.
+  Production is `backend/applications/src/app-registry/service.ts`, which stores
+  `slug: row.slug` verbatim. Citing the fallback as the production mechanism has
+  now caused **five** wrong changes.
 
 Also unconsumed, and inconsistent with `builtins.ts`: `services/app-registry-service/seed/*.manifest.json`
 is a documentation fixture (grep finds only comments referencing it). Only the four entries
 in `BUILTIN_MANIFESTS` take their slug from FuzeFront's seed — `fuzesocial`, `fuzeagent`,
 `clock`, `fuzequality`. Every other product self-registers and owns its own slug.
+
+### Where else this is referenced
+
+`packages/onboarding-kit/README.md`, `docs/mfe-self-registration.md`,
+`docs/guides/BUILDING_ON_FUZEFRONT.md`, `docs/planning/app-suites-and-modes.md`,
+and `docs/runbooks/app-slug-deprefix-migration.md` (retired) all point back here
+rather than restating the rule. If you find one of them describing the rule
+differently, this section is correct and the other doc is stale — fix the other
+doc in place.
 
 ## Entity identifiers — the owning service mints them, and references carry their type
 
