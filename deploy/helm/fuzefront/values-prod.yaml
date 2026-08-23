@@ -486,8 +486,10 @@ authentik:
     # App-hosted, reverse-proxied issuer at Authentik's NATIVE root path. Authentik
     # ignores X-Forwarded-Prefix, so it advertises discovery/authorize URLs at
     # /application/o/... (using the forwarded Host app.fuzefront.com); the app
-    # Ingress routes those native Authentik paths (/application,/if,/source,...)
-    # straight to authentik-server (no prefix, no strip), so the browser stays on
+    # Ingress routes those native Authentik paths (/application/o/, /if/flow/,
+    # /source/, ... — the narrowed, trailing-slashed set in
+    # fuzefront.authentikPublicPaths, NOT a bare /application or /if) straight to
+    # authentik-server (no prefix, no strip), so the browser stays on
     # app.fuzefront.com and never sees the IdP host. Callback (redirectUri) is the
     # FuzeFront security-service route, unchanged.
     issuerUrl: "https://app.fuzefront.com/application/o/fuzefront/"
