@@ -104,8 +104,15 @@ jobs:
       - name: Skip if key absent
         id: guard
         env:
-          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+          GATEWAY: http://litellm.fuzeinfra.svc.cluster.local:4000
         run: |
+          # preflight already proved the key exists and the surface is declared, so
+          # anything that fails here is a RUNNER placement problem, not a secrets one.
+          if ! curl -fsS --max-time 10 -o /dev/null "${GATEWAY}/health/liveliness" 2>/dev/null; then
+            echo "::error::LiteLLM gateway ${GATEWAY} is unreachable from this runner. This job must run on a self-hosted in-cluster runner — declare ci.runner in .fuze/manifest.json and re-stamp. The external host is Access-gated on purpose and must not be bypassed."
+            exit 1
+          fi
           if [ -z "$KEY" ]; then
             echo "::error::LITELLM_FUZE_KEY vanished between preflight and here."
             exit 1
