@@ -105,7 +105,10 @@ jobs:
         id: guard
         env:
           KEY: ${{ secrets.LITELLM_FUZE_KEY }}
-          GATEWAY: http://litellm.fuzeinfra.svc.cluster.local:4000
+          # FUZE_LLM_BASE_URL is the FAMILY-facing name — vendor-agnostic, and the
+          # one knob to change if the gateway ever moves or is replaced. Declared as
+          # a repo/org variable; the LiteLLM address is only the default.
+          GATEWAY: ${{ vars.FUZE_LLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
         run: |
           # preflight already proved the key exists and the surface is declared, so
           # anything that fails here is a RUNNER placement problem, not a secrets one.
@@ -146,7 +149,12 @@ jobs:
           # Vendor independence: every agent call leaves through LiteLLM. Set here
           # rather than relying on the action's default provider resolution, which
           # would silently reach api.anthropic.com with a virtual key and 401.
-          ANTHROPIC_BASE_URL: http://litellm.fuzeinfra.svc.cluster.local:4000
+          # NAMING: FUZE_LLM_BASE_URL is what this family declares; ANTHROPIC_BASE_URL
+          # is what the SDK inside claude-code-action actually reads. This is a
+          # mapping, not a rename — renaming the right-hand side would leave the SDK
+          # reading nothing, silently resolving to api.anthropic.com, and 401ing on a
+          # virtual key. The vendor-agnostic name lives on the side we control.
+          ANTHROPIC_BASE_URL: ${{ vars.FUZE_LLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.LITELLM_FUZE_KEY }}
         with:
           # Routed through LiteLLM for cross-provider failover — this repo holds no
