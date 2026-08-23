@@ -1,0 +1,76 @@
+# =============================================================================
+# Argo CD AppProject — fuzefront
+# =============================================================================
+# MOVED HERE FROM FuzeInfra (argocd/projects/fuzefront.yaml) as part of the
+# family's decentralisation: a repo owns its own deploy/** — Helm, Argo
+# Applications, SealedSecrets, and now its AppProject. FuzeInfra's
+# `argocd-register` workflow applies this directory once (its `path` input is
+# documented as holding "Argo Application/AppProject manifests" and it runs
+# `kubectl apply -f "$DIR/"`), after which Argo polls and self-syncs from here.
+#
+# FuzeInfra's copy MUST BE DELETED once this lands. Until then both exist and
+# registration is last-write-wins, so whichever ran most recently is what the
+# cluster holds. Tracked in FuzeInfra#625.
+#
+# ── THE ONE RULE THAT IS NOT NEGOTIABLE ─────────────────────────────────────
+# `fuzeinfra` IS DELIBERATELY NOT A DESTINATION, and this is the whole reason
+# the project was centralised in the first place. FuzeFront previously
+# self-created a `fuzefront` project that granted itself the `fuzeinfra`
+# namespace, and used it to redeploy a DUPLICATE FuzeInfra: split-brain
+# Postgres/Kafka, control-plane saturation, cluster-wide 502
+# (FuzeFront#95 / FuzeInfra#93, boundary added in FuzeInfra#99).
+#
+# Owning this file again does not re-open that door — the boundary travels with
+# the file. A consumer that needs an infra service reaches it over in-cluster
+# service DNS (`<svc>.fuzeinfra.svc.cluster.local`); cross-namespace networking
+# needs no Argo destination. If you ever find yourself wanting `fuzeinfra` here,
+# the thing you actually want is a DNS name.
+#
+# ── LEAST PRIVILEGE, DERIVED FROM THIS REPO'S OWN CHARTS ────────────────────
+# FuzeInfra's copy carried `clusterResourceWhitelist: {group: "*", kind: "*"}`,
+# which let an Application in this project create ClusterRoles,
+# ClusterRoleBindings and CRDs — and, combined with the `argocd` destination
+# below, modify AppProjects, including this one. The object whose sole purpose
+# is to BE the security boundary could be used to rewrite that boundary.
+#
+# Measured instead: every `kind:` rendered by this repo's three charts
+# (deploy/helm/fuzefront, deploy/helm/unleash,
+# FuzeQuality/deploy/helm/fuzequality). The only cluster-scoped one is
+# Namespace. Role and RoleBinding are namespaced, not cluster-scoped.
+# So the whitelist is exactly Namespace. Re-derive it if a chart starts
+# rendering something new — do not widen it back to a wildcard.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fuzefront
+  namespace: argocd
+spec:
+  description: FuzeFront products (consumers of FuzeInfra) — may deploy ONLY into their assigned namespaces.
+  sourceRepos:
+    - https://github.com/izzywdev/FuzeFront.git
+  destinations:
+    # The product's workloads.
+    - namespace: fuzefront
+      server: https://kubernetes.default.svc
+    # FuzeQuality is maintained in this repository but has an isolated workload
+    # namespace and consumes shared infrastructure over service DNS.
+    - namespace: fuzequality
+      server: https://kubernetes.default.svc
+    # JUSTIFIED, and only because this repo genuinely has an app-of-apps:
+    # deploy/argocd/app-of-apps.yaml is an Application whose destination
+    # namespace is `argocd` and which creates the child Applications under
+    # deploy/argocd/applications/. A repo WITHOUT an app-of-apps must not list
+    # this — it is write access to the namespace where AppProjects live.
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    # NOTE: `fuzeinfra` is deliberately absent. See the rule above.
+  clusterResourceWhitelist:
+    # Narrowed from `*/*`. FuzeQuality's chart renders a Namespace; nothing in
+    # this repo renders any other cluster-scoped kind.
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    # Unrestricted is fine here — it is already scoped to the destinations above.
+    - group: '*'
+      kind: '*'
