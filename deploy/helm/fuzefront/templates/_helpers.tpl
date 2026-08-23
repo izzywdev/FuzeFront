@@ -96,18 +96,45 @@ by application authz alone, with no network boundary behind it.
 
 Do NOT widen this back to a bare /api/v3. If a login flow breaks, capture the
 browser's network log and add the ONE specific prefix it needs.
+
+EVERY entry below carries a trailing slash. This is not cosmetic: Traefik's
+Kubernetes Ingress provider implements `pathType: Prefix` as its `PathPrefix`
+matcher — a plain STRING prefix, not the Kubernetes spec's element-wise
+segment match. `/application` (no slash) therefore string-prefix-matches
+`/applications` too, and routed the ENTIRE Authentik application-list API
+(GET /applications, no auth challenge on the list itself) to the public
+internet — live for an unknown period until caught. `/source` matched
+`/sources`, `/flows` matched anything starting `/flows`, `/-` matched any
+path starting with a bare hyphen, and so on for every entry that lacked a
+trailing slash. The manifest was correct against the Kubernetes spec and
+wrong against the controller that actually serves it.
+
+`- /application` MUST NOT be re-added: narrow to `/application/o/` (the OIDC
+provider's authorize/token/userinfo/jwks/end-session endpoints — verified
+against every provider blueprint under authentik/blueprints/, all
+authentik_providers_oauth2; there is no SAML provider configured, so
+`/application/saml/` is not needed). If a SAML provider is ever added, add
+`/application/saml/` explicitly then — do not widen back to a bare prefix.
+
+`gate-authentik-public-paths` (helm-validate.yml, backed by
+deploy/scripts/check-authentik-public-paths.sh) renders both overlays and
+fails the build if any Authentik-backed path here is a STRING PREFIX (i.e.
+would traefik-match) of a known-forbidden path — /applications, /if/admin,
+/if/user, /api/v3/core, /api/v3/providers, /api/v3/policies, /sources. Keep
+that forbidden list current if a new sensitive Authentik surface is ever
+identified.
 */}}
 {{- define "fuzefront.authentikPublicPaths" -}}
-- /application
-- /if/flow
-- /if/session-end
-- /source
-- /flows
-- /ws
-- /-
-- /outpost.goauthentik.io
-- /api/v3/flows/executor
-- /api/v3/root/config
-- /static/dist
-- /static/authentik
+- /application/o/
+- /if/flow/
+- /if/session-end/
+- /source/
+- /flows/
+- /ws/
+- /-/
+- /outpost.goauthentik.io/
+- /api/v3/flows/executor/
+- /api/v3/root/config/
+- /static/dist/
+- /static/authentik/
 {{- end -}}
