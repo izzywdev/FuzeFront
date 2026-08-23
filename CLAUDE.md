@@ -191,6 +191,41 @@ Every agent-created branch must reach one of these terminal states — never lef
 
 Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold`, or `blocked`.
 
+## FIX is the rule — reporting a defect is not addressing it
+
+**Finding a problem obliges you to fix it, not to describe it.** Pinning a
+regression test, filing an issue, adding a `::warning::`, writing it into a
+table, or telling the user about it are all ways of *recording* a defect. None
+of them is a fix, and a repo full of well-documented known-broken things is the
+state this rule exists to prevent.
+
+This is not a style preference — it is the difference between the two halves of
+every failure this codebase has accumulated. A vacuous gitleaks config, a
+`gate-authz` ending in `|| true`, a `gate-identifier` flag nobody set, an
+`a2a-maintain` that skipped when unkeyed: every one of them was *known*. What
+was missing was not knowledge, it was the fix.
+
+**So: when you find a defect, fix it — however many agents and however many
+branches that takes.** Fan out one agent per repo if the defect is fleet-wide.
+Branch sub-branches off sub-branches, merge them upward, and PR the result to
+master. Scale is not a reason to downgrade a fix into a report.
+
+The narrow, honest exceptions, and they must be *stated* rather than assumed:
+
+- **You genuinely cannot** — the fix needs a credential, a cluster, or an
+  approval this session does not hold. Then produce the exact commands or PR
+  that someone with those rights can apply, and name what is blocked. "I filed
+  an issue" is only acceptable when the issue is addressed to someone who *can*
+  act and the action is named precisely.
+- **The fix is out of the requested scope and would change behaviour the user
+  did not ask about.** Say so in one sentence and offer it; do not silently
+  widen the blast radius of a task.
+- **You are not the owner.** FuzeInfra is never edited from a consuming repo.
+  Delegate via `@claude`, with the concrete change spelled out.
+
+Everything else gets fixed. A finding without a fix or one of those three
+statements attached is unfinished work, not a deliverable.
+
 ## Done
 
 Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
