@@ -85,7 +85,41 @@ separately and marked as such.
 > remotes in the first place; the same-origin requirement applies to those and to
 > nothing else.
 
-### 1a. The integration model is MIXED — the same-origin rule applies to MF only
+### 1a. Integration model — OWNER DECISION 2026-08-23: module-federation everywhere
+
+**The mixed model below is now history, not target state.** The owner has decided
+that every product integrates as `module-federation`. No `iframe`, no `spa`. The
+survey that follows is retained because it is the measurement of where the fleet
+actually stands against that decision — 8 of 17 products must convert.
+
+This also settles the FuzeSocial disagreement recorded at the end of this section:
+FuzeSocial's own `registration/manifest.json` said `module-federation` while
+FuzeFront's seed copy said `iframe` with `builtin: true`. **The manifest was
+right.** FuzeFront's seed has been corrected, and its entry moved to the
+same-origin form `/apps/fuzesocial/remoteEntry.js` at the same time.
+
+**Converting is NOT a manifest string change.** Measured against `origin` at the
+time of the decision, the 8 repos split into three very different tiers:
+
+| tier | repos | what conversion actually needs |
+|---|---|---|
+| **Has MF config already** | FuzeHub, FuzePlan | flip the type, move the entry to `/apps/<slug>/`, align React. FuzeHub is already on React `^19.0.0`; FuzePlan is on `^18.2.0` and needs the bump. |
+| **Has a frontend, no MF config** | FuzeDeploy, FuzeFinance | add federation build config and expose a module. FuzeFinance is already React `^19.2.0`; FuzeDeploy is `^18.2.0`. |
+| **No frontend package at all** | FuzeBI, FuzeExecutive, FuzeMerchandize, FuzeCall | there is nothing to federate yet. These need a frontend built — at minimum a real stub remote — before the type is anything but aspirational. |
+
+Flipping the manifest string ahead of the build would produce a portal entry that
+resolves to nothing, which is worse than an honest `iframe`: the menu would list a
+product that white-screens. The type changes when the remote exists.
+
+**The same-origin requirement now applies to all 17**, not to a subset. Of the 9
+products that already declare `module-federation`, only FuzeX declares a
+same-origin entry and only FuzeQuality has the mount Ingress live; the other 8
+hand the browser an absolute cross-origin URL.
+
+---
+
+#### The original survey (retained as the measurement)
+
 
 Read from each repo's `registration/manifest.json` at `HEAD` on its default branch
 (repository contents, **not** cluster state — labelled as such deliberately; the
