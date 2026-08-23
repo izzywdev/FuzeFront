@@ -1,0 +1,39 @@
+{
+  "$comment": [
+    "vacuous-check policy — the ratchet + allowlist contract for scripts/gate_vacuous_check.py",
+    "(gate-vacuous-check, harden-gate.yml). Same shape as governance/frames-first-policy.json:",
+    "a per-entry `reason` + `owner`, and — critically — a MISSING policy file is NOT",
+    "'no policy configured, skip'. The gate treats absence as {mode: \"fail\", allowlist: []},",
+    "the strictest posture there is. Only editing THIS file down to mode:\"fail\" (or an empty",
+    "allowlist) retires an entry; deleting the file cannot silence the gate.",
+    "",
+    "mode:\"ramp\"  — allowlist entries below suppress their named finding. New violations not",
+    "               matching an entry still fail.",
+    "mode:\"fail\"  — the allowlist is INERT regardless of its contents; every finding fails.",
+    "               Flipping to this is how an entry is proven fully retired.",
+    "",
+    "Both entries below are pre-existing, already-documented ramps discovered when this gate",
+    "landed (2026-08-23) — not new debt this gate introduced. Fixing either for real is out of",
+    "devops-engineer's CI-wiring scope: gate-pagination needs contract-designer's pagination",
+    "annotations (governance/pagination-standard.md §5), and the AuthN boundary smoke needs the",
+    "AuthN provider deploy it is gated on (contract PR #243). Flipping either to enforcing here",
+    "would break CI for work this PR did not do."
+  ],
+
+  "mode": "ramp",
+
+  "allowlist": [
+    {
+      "file": ".github/workflows/harden-gate.yml",
+      "match": "gate_pagination.py",
+      "reason": "Pre-existing, already-documented report-only ramp (see the job's own comment: \"Report-only first pass; ratchet to enforcing per repo once the billing-service contract annotates/allowlists its collection GETs\"). governance/pagination-standard.md §5 names contract-designer as the owner of the annotation work that unblocks flipping this to enforcing; not a devops-engineer CI-wiring task.",
+      "owner": "contract-designer (tracked by izzywdev)"
+    },
+    {
+      "file": ".github/workflows/post-prod-e2e.yml",
+      "match": "AuthN boundary smoke",
+      "reason": "Explicitly time-boxed by the step's own comment (contract PR #243): the AuthN provider-boundary tests self-skip pre-deploy (gated on /api/v1/security/methods == 200), and continue-on-error exists precisely so a pre-deploy run does not turn the job red. The comment states the retirement trigger directly: \"After the deploy, dispatch with run_authn_boundary=true to make it the AuthN gate\" — remove continue-on-error at that point, not before.",
+      "owner": "backend-engineer / AuthN deploy owner (tracked by izzywdev)"
+    }
+  ]
+}

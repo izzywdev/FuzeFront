@@ -178,42 +178,42 @@ jobs:
 
           if [ "$PAT_OUTCOME" != "success" ]; then
             SECTION_PAT="**GH_RELEASE_PAT in FuzeFront is missing or expired.**
-Mint a new classic PAT (repo scope) → GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic).
-Add it to FuzeFront **and** each fleet repo listed below."
+          Mint a new classic PAT (repo scope) → GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic).
+          Add it to FuzeFront **and** each fleet repo listed below."
           else
             SECTION_PAT=""
           fi
 
           if [ -n "${CRED_FAILURES:-}" ]; then
             SECTION_CRED="**Repos whose last release failed at \`Require the release credential\`** (PAT expired or missing in that repo's secrets):
-\`\`\`
-${CRED_FAILURES}
-\`\`\`
-Fix: add/update \`GH_RELEASE_PAT\` in each repo's Settings → Secrets and variables → Actions."
+          \`\`\`
+          ${CRED_FAILURES}
+          \`\`\`
+          Fix: add/update \`GH_RELEASE_PAT\` in each repo's Settings → Secrets and variables → Actions."
           else
             SECTION_CRED=""
           fi
 
           if [ -n "${OTHER_FAILURES:-}" ]; then
             SECTION_OTHER="**Repos whose last release failed for an unrelated reason** (check run logs):
-\`\`\`
-${OTHER_FAILURES}
-\`\`\`"
+          \`\`\`
+          ${OTHER_FAILURES}
+          \`\`\`"
           else
             SECTION_OTHER=""
           fi
 
           BODY="## Fleet PAT health alert
 
-$SECTION_PAT
-$SECTION_CRED
-$SECTION_OTHER
+          $SECTION_PAT
+          $SECTION_CRED
+          $SECTION_OTHER
 
-**Fleet repos checked:** \`${FLEET_REPOS}\`
-**Failing check run:** ${RUN_URL}
+          **Fleet repos checked:** \`${FLEET_REPOS}\`
+          **Failing check run:** ${RUN_URL}
 
----
-*Filed by fleet-pat-health.yml. Will auto-close when the check passes.*"
+          ---
+          *Filed by fleet-pat-health.yml. Will auto-close when the check passes.*"
 
           TITLE="Fleet PAT health: release credential failure detected"
           OPEN_ISSUE=$(gh issue list \
@@ -227,7 +227,7 @@ $SECTION_OTHER
               --repo "${{ github.repository }}" \
               --body "**Updated $(date -u +%Y-%m-%dT%H:%MZ):**
 
-${BODY}"
+          ${BODY}"
             echo "Updated existing alert issue #${OPEN_ISSUE}"
           else
             # Ensure the label exists before creating the issue
