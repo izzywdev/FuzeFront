@@ -127,6 +127,18 @@ def _tool_token(line: str) -> str | None:
     return m.group(1).lower() if m else None
 
 
+def _tool_phrase_re(tool: str) -> re.Pattern:
+    """Build a bare-invocation regex from the FULL tool phrase, not just its first
+    word. Using only `tool.split()[0]` let a two-word tool's bare-invocation search
+    false-positive on any OTHER command sharing that first word — e.g. a `tool="npm
+    audit"` finding would count an unrelated `npm run build` line elsewhere in the same
+    job as its enforcing sibling, because both merely contain "npm". Matching the whole
+    phrase (spaces tolerant of extra whitespace) is precise the same way CHECK_TOOL_RE
+    itself is."""
+    words = [re.escape(w) for w in tool.split()]
+    return re.compile(r"(?<![\w./-])" + r"\s+".join(words) + r"(?![\w-])", re.IGNORECASE)
+
+
 def _is_diagnostic_or_teardown(line: str) -> bool:
     return bool(DIAGNOSTIC_RE.search(line))
 
@@ -264,8 +276,7 @@ def _analyze_yaml(path: str, text: str) -> list[dict]:
 def _has_later_bare_invocation(all_runs: list[tuple[str, bool]], this_run: str, tool: str) -> bool:
     """True if some OTHER run text in the same job invokes `tool` without a trailing
     `|| true` on the line that invokes it — the record-then-gate enforcing step."""
-    tool_word = re.escape(tool.split()[0])
-    bare_re = re.compile(r"(?<![\w./-])" + tool_word + r"(?![\w-])", re.IGNORECASE)
+    bare_re = _tool_phrase_re(tool)
     for run_text, _coe in all_runs:
         if run_text is this_run:
             continue
@@ -368,8 +379,7 @@ def _analyze_fallback(path: str, text: str) -> list[dict]:
             if not _is_diagnostic_or_teardown(last):
                 tool = _tool_token(last)
                 if tool:
-                    tool_word = re.escape(tool.split()[0])
-                    bare_re = re.compile(r"(?<![\w./-])" + tool_word + r"(?![\w-])", re.IGNORECASE)
+                    bare_re = _tool_phrase_re(tool)
                     later_bare = False
                     for other in all_run_texts:
                         if other is run:

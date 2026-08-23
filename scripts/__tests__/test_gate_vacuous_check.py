@@ -232,6 +232,47 @@ class TestKnownOffenderShapes(unittest.TestCase):
             result = run_gate(repo.root)
         self.assertEqual(result.returncode, 1, result.stdout)
 
+    def test_unrelated_command_sharing_the_tools_first_word_is_not_a_false_sibling(self):
+        """Regression: a two-word tool's bare-invocation search used to key off only
+        `tool.split()[0]` — so a `tool="npm audit"` finding could be wrongly exempted by
+        an unrelated `npm run build` line elsewhere in the same job, since both merely
+        contain "npm". Caught wiring FuzePlan's record-then-gate npm-audit pair."""
+        with SyntheticRepo() as repo:
+            repo.workflow("ci.yml", """
+                on: push
+                jobs:
+                  frontend:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - name: build
+                        run: npm run build
+                      - name: audit
+                        run: npm audit --audit-level=moderate || true
+            """)
+            repo.commit()
+            result = run_gate(repo.root)
+        self.assertEqual(result.returncode, 1, result.stdout)
+
+    def test_full_phrase_enforcing_sibling_still_exempts_correctly(self):
+        """The positive control for the regression above: a genuine bare `npm audit`
+        invocation (matching the FULL phrase, not just "npm") still counts as the
+        record-then-gate enforcing sibling."""
+        with SyntheticRepo() as repo:
+            repo.workflow("ci.yml", """
+                on: push
+                jobs:
+                  frontend:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - name: audit-record
+                        run: npm audit --audit-level=moderate || true
+                      - name: audit-gate
+                        run: npm audit --audit-level=critical
+            """)
+            repo.commit()
+            result = run_gate(repo.root)
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_bandit_json_report_alone_is_a_violation_without_its_enforcing_sibling(self):
         """fuzeplan:ci-cd.yml:54 shape in isolation — this is what makes it a violation
         (no bare bandit run elsewhere in the job). Paired with
