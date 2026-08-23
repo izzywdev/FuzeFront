@@ -1,0 +1,76 @@
+name: CI Queue Watchdog
+
+# Answers one question, every 15 minutes, for every runner pool in the fleet:
+# is it PROGRESSING? See scripts/ci_queue_watch.py for why that is the measure
+# and not "how long has this job been waiting".
+#
+# RUNS ON ubuntu-latest, DELIBERATELY. A watchdog scheduled onto the runner
+# fleet it monitors cannot report that fleet being down -- it just queues with
+# everything else and stays silent, which is the exact failure it exists to
+# catch. This repo is public, so GitHub-hosted minutes are unmetered and this
+# job is independent of ARC and of the account's Actions budget.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      stall_minutes:
+        description: 'Queued work plus no start within this many minutes = STALLED'
+        required: false
+        default: '30'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-queue-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Reading another repository's Actions queue needs a token with fleet
+      # scope; the job's own GITHUB_TOKEN is scoped to this repository alone and
+      # would report a fleet of one. No token means this watchdog cannot do its
+      # job -- say so loudly and exit 0. Never red a scheduled run on a missing
+      # secret: an environmental condition must not look like a fleet outage,
+      # which is the same inversion the actor gate caused in a2a-maintain.
+      - name: Check for a fleet-scoped token
+        id: tok
+        env:
+          FLEET_READ_PAT: ${{ secrets.FLEET_READ_PAT }}
+        run: |
+          if [ -z "$FLEET_READ_PAT" ]; then
+            echo "::warning::FLEET_READ_PAT is not set — the watchdog can only see this repo, so it is skipping. Set a PAT with read access to Actions across the fleet (scope: repo, or fine-grained Actions:read on the Fuze* repos)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Observe the fleet CI queue
+        if: steps.tok.outputs.ok == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.FLEET_READ_PAT }}
+          STALL: ${{ inputs.stall_minutes || '30' }}
+        run: |
+          set -o pipefail
+          python3 scripts/ci_queue_watch.py \
+            --stall-minutes "$STALL" \
+            --fail-on-stall \
+            | tee queue.txt
+          {
+            echo '## Fleet CI queue'
+            echo
+            echo '```'
+            cat queue.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
