@@ -7,8 +7,9 @@ name: Claude autofix — post-prod E2E failure
 # Also fires when the post-prod E2E is triggered DIRECTLY via workflow_dispatch
 # and fails (e.g. manual re-runs outside the release pipeline).
 #
-# Required secrets:
-#   ANTHROPIC_API_KEY  — Claude API key for the claude-code-action
+# LLM credential: routed through .github/actions/llm-endpoint (LiteLLM in-cluster
+# with automatic fallback to a direct vendor). Requires repo secret LITELLM_FUZE_KEY
+# and/or ANTHROPIC_API_KEY (at least one).
 on:
   workflow_run:
     # Primary trigger: the automated pipeline (post-prod E2E runs reusably inside
@@ -76,10 +77,23 @@ jobs:
           echo "snippet_file=${SNIPPET_FILE}" >> "$GITHUB_OUTPUT"
           echo "Snippet written ($(wc -c < "$SNIPPET_FILE") bytes)"
 
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
+        with:
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
       - name: Run Claude Code autofix
         uses: anthropics/claude-code-action@28f83620103c48a57093dcc2837eec89e036bb9f # beta (pinned snapshot)
+        env:
+          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
+          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
           allowed_tools: 'Bash,Read,Edit,Write,Glob,Grep'
           direct_prompt: |
             The post-production E2E smoke suite just failed on master.
