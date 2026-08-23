@@ -66,6 +66,16 @@ const REQUIRED_SURFACES = ['portal', 'standalone']
 // validateSlugConvention below for why the slug is now unchecked in BOTH directions.
 const FUZE_PREFIX_RE = /^fuze/i
 
+// The narrow, NAMED carve-out to the display-name rule below. Owner ruling (verbatim):
+// the prefix should come off the display string "unless necessary like for fuzebi, and
+// fuzeX". The test for "necessary" is that the remainder left after stripping `Fuze` does
+// not identify a product on its own — "BI" and "X" are not names, they are letters; "Sales"
+// or "Picker" are. That is a judgment call the owner made for exactly these two products,
+// so it is encoded as an explicit list rather than a length/shape heuristic (e.g. "under
+// three characters") that would silently make the same call for some future product nobody
+// actually decided on. To exempt another product, add it here, by name, deliberately.
+const FUZE_PREFIX_EXEMPT_DISPLAY_NAMES = new Set(['FuzeBI', 'FuzeX'])
+
 /**
  * WHY THE SLUG IS NOT CHECKED HERE, IN EITHER DIRECTION.
  *
@@ -105,20 +115,23 @@ export function validateSlugConvention(manifest) {
 
   // Both display fields, because they are rendered in different places — `menuLabel`
   // in the side menu, `name` in the launcher and app switcher — and fixing one while
-  // leaving the other is the shape the fleet is actually in. FuzeBI today reads
-  // menuLabel "BI" (correct) with name "FuzeBI" (not), which is exactly the half-fix
-  // that checking only one field would bless.
+  // leaving the other is the shape the fleet is actually in.
   for (const [field, value] of [['name', name], ['menuLabel', menuLabel]]) {
-    if (typeof value === 'string' && FUZE_PREFIX_RE.test(value)) {
-      const stripped = value.replace(FUZE_PREFIX_RE, '')
-      errors.push(
-        `${field} ${JSON.stringify(value)} starts with "Fuze" — use ` +
-          `${JSON.stringify(stripped || '<Product>')}. Every product in the launcher ` +
-          'already sits inside FuzeFront, so prefixing each tile makes the list ' +
-          'unscannable. Unlike `slug`, this is a plain edit: the field is mutable and ' +
-          'register.sh re-sends it on the next pod start.'
-      )
-    }
+    if (typeof value !== 'string' || !FUZE_PREFIX_RE.test(value)) continue
+
+    // The named carve-out: FuzeBI/FuzeX keep the prefix on EITHER field because the
+    // remainder left after stripping it ("BI"/"X") does not identify a product on its
+    // own. See the Set's definition above for why this is a fixed list, not a heuristic.
+    if (FUZE_PREFIX_EXEMPT_DISPLAY_NAMES.has(value)) continue
+
+    const stripped = value.replace(FUZE_PREFIX_RE, '')
+    errors.push(
+      `${field} ${JSON.stringify(value)} starts with "Fuze" — use ` +
+        `${JSON.stringify(stripped || '<Product>')}. Every product in the launcher ` +
+        'already sits inside FuzeFront, so prefixing each tile makes the list ' +
+        'unscannable. Unlike `slug`, this is a plain edit: the field is mutable and ' +
+        'register.sh re-sends it on the next pod start.'
+    )
   }
 
   return errors
