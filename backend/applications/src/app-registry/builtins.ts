@@ -42,7 +42,11 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://fuzeagent.prod.fuzefront.com/remoteEntry.js',
+      // Same-origin path, not an absolute app-host URL: identical value works
+      // on app.fuzefront.com, a tenant wildcard host, and localhost. Existing
+      // rows are re-pointed by migration 009 (upsertBuiltin never touches an
+      // already-registered row, so this seed alone is inert on prod).
+      remoteEntry: '/apps/fuzeagent/remoteEntry.js',
       scope: 'fuzeagentApp',
       module: './FuzeAgentApp',
     },
