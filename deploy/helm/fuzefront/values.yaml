@@ -347,6 +347,79 @@ mcp:
   affinity: {}
   tolerations: []
 
+# FuzeFront's own per-product A2A (agent-to-agent) pod. Runs the EXISTING shared
+# ghcr.io/izzywdev/fuzeagent-a2a image (izzywdev/FuzeAgent CI builds/publishes
+# it; this chart never builds it) configured, via the mounted values.json, to
+# serve exactly one tenant: this repo's `app-shell-platform` role. See
+# docs/a2a/README.md (the investigation that produced this exact shape) and
+# izzywdev/FuzeAgent's docs/a2a/per-product-pod.md (the canonical recipe — do
+# not re-derive it). Deliberately NOT a second A2A server implementation and
+# NOT onboarded onto the shared a2a-shared/fuzeagent server: the owner decision
+# is one pod per product for blast-radius isolation.
+# `a2a:` is serialised VERBATIM into the ConfigMap the server reads
+# (A2A_VALUES_FILE) — see templates/a2a.yaml. It mirrors EXACTLY the frozen
+# contract interface (izzywdev/FuzeAgent's
+# agent-templates/contracts/a2a/v1/schema/values-interface.schema.json),
+# additionalProperties:false at every level: no invented keys here. Pure
+# deployment mechanics (replicas, resources, scheduling, the git-clone
+# sidecar, secret plumbing) deliberately live in the separate `a2aDeploy:`
+# block below instead — a key added under `a2a` that the server doesn't
+# recognize is a validation failure, not a silently-ignored value.
+a2a:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzeagent-a2a
+    # Immutable; never `latest` in prod (values-prod.yaml pins by digest,
+    # encoded as `tag@digest` — see that file's comment). Left empty here
+    # (local/dev default; server disabled) so `helm template` with the base
+    # values alone never renders an unpinned image reference.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    # MUST be ClusterIP — ingress is Cloudflare-tunnel-only, and `inClusterUrl`
+    # below must resolve to exactly this Service.
+    type: ClusterIP
+    port: 8080
+  protocolVersion: "1.0"
+  # THE ONE VALUE A PER-PRODUCT POD MUST NOT GET WRONG (per-product-pod.md).
+  # Unset would default to the SHARED server's card URL and this pod would be
+  # unreachable through its own card despite passing every probe.
+  inClusterUrl: ""
+  auth:
+    oidcIssuerUrl: ""
+    oidcDiscoveryUrl: ""
+    audience: a2a
+    callerClaim: repo
+  cardSigning:
+    keySecretRef: { name: "", key: "" }
+    keyId: a2a-v1
+  # A per-product pod serves ONE tenant. Exactly one entry, empty by default.
+  tenants: []
+
+# Chart-internal A2A deployment mechanics — devops slice, NOT part of the
+# frozen contract interface (kept out of `a2a:` above so that block stays
+# byte-conformant to the schema the server validates).
+a2aDeploy:
+  replicas: 1
+  # GitOps repo-sync: shallow-clones each enabled tenant's repo at `ref` into
+  # A2A_REPOS_DIR/<tenant> so the server can project a card + provision agent
+  # sessions from THIS repo's own .fuze/manifest.json + agent-templates/roles/.
+  # null = anonymous clone (only correct for a PUBLIC tenant repo).
+  reposGitTokenSecretRef: null
+  providerApiKeySecretRef: null
+  gitImage: alpine/git:latest
+  agentProvider: anthropic
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+
 # Service and exposed SAME-ORIGIN under the app host at /apps/clock/ (see
