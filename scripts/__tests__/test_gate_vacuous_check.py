@@ -211,6 +211,27 @@ class TestKnownOffenderShapes(unittest.TestCase):
             result = run_gate(repo.root)
         self.assertEqual(result.returncode, 1, result.stdout)
 
+    def test_install_line_mentioning_the_tool_is_not_mistaken_for_its_enforcing_sibling(self):
+        """Regression: FuzeAgent's test.yml `performance-tests` job — `pip install pytest
+        pytest-benchmark` mentions "pytest" but never RUNS it, so it must not exempt the
+        job's only real pytest invocation (the benchmark run, guarded by `|| true`) as
+        record-then-gate. Caught by mutation-testing this gate against a real repo."""
+        with SyntheticRepo() as repo:
+            repo.workflow("test.yml", """
+                on: push
+                jobs:
+                  performance-tests:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - name: install
+                        run: pip install pytest pytest-benchmark
+                      - name: benchmark
+                        run: python -m pytest tests/ -m "not slow" --benchmark-only --benchmark-json=benchmark.json || true
+            """)
+            repo.commit()
+            result = run_gate(repo.root)
+        self.assertEqual(result.returncode, 1, result.stdout)
+
     def test_bandit_json_report_alone_is_a_violation_without_its_enforcing_sibling(self):
         """fuzeplan:ci-cd.yml:54 shape in isolation — this is what makes it a violation
         (no bare bandit run elsewhere in the job). Paired with
@@ -370,6 +391,35 @@ class TestRatchet(unittest.TestCase):
                 "file": ".github/workflows/test.yml",
                 "match": "black",
                 "reason": "pre-existing, ticket JIRA-1 to fix",
+                "owner": "someone",
+            }])
+            repo.commit()
+            result = run_gate(repo.root)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ALLOWLISTED", result.stdout)
+
+    def test_allowlist_entry_can_match_a_continue_on_error_finding_by_command_text(self):
+        """Regression: a continue-on-error finding's `match` field used to be only the
+        descriptor string ("continue-on-error: true (job=..., step=...)"), never the
+        actual command — so an allowlist entry written against the real command text
+        (the only thing a human would ever write) could never match it. Caught wiring
+        FuzeAgent's ratchet: entries written against `pytest --cov=. --cov-report=xml`
+        and `npm audit --audit-level=high` silently failed to suppress their findings."""
+        with SyntheticRepo() as repo:
+            repo.workflow("ci.yml", """
+                on: push
+                jobs:
+                  dependency-check:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - name: Frontend dependency audit
+                        run: npm audit --audit-level=high
+                        continue-on-error: true
+            """)
+            repo.policy(mode="ramp", allowlist=[{
+                "file": ".github/workflows/ci.yml",
+                "match": "npm audit --audit-level=high",
+                "reason": "pre-existing, tracked",
                 "owner": "someone",
             }])
             repo.commit()

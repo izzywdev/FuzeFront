@@ -105,8 +105,24 @@ TRAILING_TRUE_RE = re.compile(r"\|\|\s*true\s*;?\s*(#.*)?$")
 
 SARIF_EXEMPT_RE = re.compile(r"sarif|code-scanning|report-only", re.IGNORECASE)
 
+# A tool name appearing as the ARGUMENT to a package-manager install command is not an
+# invocation of that tool — `pip install pytest pytest-benchmark` mentions "pytest" but
+# never runs it. Measured false negative: without this guard, a standalone
+# performance-tests job whose ONLY pytest invocation was
+# `pytest ... --benchmark-only || true` was wrongly exempted as "record-then-gate"
+# because an EARLIER `pip install pytest pytest-benchmark` line in the same job also
+# contains the word "pytest". Applied both when picking the tool token off the last
+# effective line and when searching for a later bare invocation, so an install line can
+# never itself satisfy either.
+INSTALL_LINE_RE = re.compile(
+    r"\b(pip3?|npm|yarn|pnpm|apt(?:-get)?|brew|conda|gem)\s+(?:install|add|ci)\b",
+    re.IGNORECASE,
+)
+
 
 def _tool_token(line: str) -> str | None:
+    if INSTALL_LINE_RE.search(line):
+        return None
     m = CHECK_TOOL_RE.search(line)
     return m.group(1).lower() if m else None
 
@@ -222,17 +238,24 @@ def _analyze_yaml(path: str, text: str) -> list[dict]:
             # continue-on-error on a step/job whose run text is itself a gating check.
             if step_coe and isinstance(run, str):
                 tool = None
+                matched_line = None
                 for line in run.splitlines():
                     if _is_diagnostic_or_teardown(line):
                         continue
                     tool = _tool_token(line)
                     if tool:
+                        matched_line = line.strip()
                         break
                 if tool and not SARIF_EXEMPT_RE.search(run) and not SARIF_EXEMPT_RE.search(str(name)):
                     findings.append({
                         "file": path, "kind": "continue-on-error", "job": job_id,
                         "step": name, "tool": tool,
-                        "match": f"continue-on-error: true (job={job_continue}, step={bool(step.get('continue-on-error'))})",
+                        # Includes the actual matched command line (not just the
+                        # continue-on-error descriptor) so a ratchet allowlist entry can
+                        # key off the real command text, same as a trailing-or-true
+                        # finding's `match` — otherwise an allowlist entry written
+                        # against the command never matches a continue-on-error finding.
+                        "match": f"{matched_line} — continue-on-error: true (job={job_continue}, step={bool(step.get('continue-on-error'))})",
                         "fatal": True,
                     })
     return findings
@@ -247,6 +270,8 @@ def _has_later_bare_invocation(all_runs: list[tuple[str, bool]], this_run: str, 
         if run_text is this_run:
             continue
         for line in run_text.splitlines():
+            if INSTALL_LINE_RE.search(line):
+                continue  # mentions the tool as an install argument, not an invocation
             if not bare_re.search(line):
                 continue
             if TRAILING_TRUE_RE.search(line) and not _is_inline_substitution(line):
@@ -350,6 +375,8 @@ def _analyze_fallback(path: str, text: str) -> list[dict]:
                         if other is run:
                             continue
                         for line in other.splitlines():
+                            if INSTALL_LINE_RE.search(line):
+                                continue
                             if bare_re.search(line) and not (
                                 TRAILING_TRUE_RE.search(line) and not _is_inline_substitution(line)
                             ):
@@ -366,17 +393,19 @@ def _analyze_fallback(path: str, text: str) -> list[dict]:
 
         if b["continue_on_error"]:
             tool = None
+            matched_line = None
             for line in run.splitlines():
                 if _is_diagnostic_or_teardown(line):
                     continue
                 tool = _tool_token(line)
                 if tool:
+                    matched_line = line.strip()
                     break
             if tool and not SARIF_EXEMPT_RE.search(run) and not SARIF_EXEMPT_RE.search(b["name"]):
                 findings.append({
                     "file": path, "kind": "continue-on-error", "job": "?",
                     "step": b["name"], "tool": tool,
-                    "match": "continue-on-error: true", "fatal": True,
+                    "match": f"{matched_line} — continue-on-error: true", "fatal": True,
                 })
     return findings
 
