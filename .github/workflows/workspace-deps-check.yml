@@ -6,12 +6,18 @@ name: Workspace deps
 # not a resolvable workspace, so `npm ci` 404'd against the registry. The check is
 # dependency-free and needs no install, so it gates every PR cheaply. See the
 # fuzefront-ui-package skill, non-negotiable #7.
+#
+# NO path filter, deliberately. This is a REQUIRED status check
+# (governance/ruleset.json), and the script validates the WHOLE repo's
+# workspace wiring at HEAD, not a diff — it is not scoped to files a given PR
+# touched. A `paths:` filter here means GitHub never creates a check run for
+# a PR that doesn't touch a listed path, so the required check sits at
+# "Expected — waiting for status to be reported" forever and blocks merge
+# indefinitely (found via FuzeFront#792, a Helm-only PR that touches no
+# package.json). Every other required `gate-*` workflow in this repo runs
+# unconditionally for exactly this reason; this one was the one exception.
 on:
   pull_request:
-    paths:
-      - '**/package.json'
-      - 'scripts/check-workspace-deps.mjs'
-      - '.github/workflows/workspace-deps-check.yml'
 
 permissions:
   contents: read
