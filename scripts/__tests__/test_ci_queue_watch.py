@@ -119,6 +119,41 @@ class VerdictLogic(unittest.TestCase):
             self.assertFalse(self.v(queued=0, running=0, oldest=0, last=last)[1])
 
 
+class RequestSurface(unittest.TestCase):
+    """urllib speaks more than HTTP, and repo names reach request paths.
+
+    Neither is a live vulnerability here -- the base URL comes from env and the
+    names come from the API -- but "it came from an API" is precisely the
+    assumption that produces traversal bugs, so both are enforced rather than
+    reasoned about.
+    """
+
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ciqw", SCRIPT)
+        self.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.m)
+
+    def test_non_http_scheme_is_refused(self):
+        r = run(["--repos", "izzywdev/FuzeFront"], token="pretend-token")
+        # the harness points the API at http://127.0.0.1:9, so this asserts the
+        # allowed scheme still gets through to a (failed) connection
+        self.assertNotIn("refusing non-HTTP scheme", r.stdout + r.stderr)
+
+    def test_file_scheme_never_reaches_urlopen(self):
+        env = dict(os.environ, CI_QUEUE_WATCH_API="file:///etc", GITHUB_TOKEN="x")
+        r = subprocess.run([sys.executable, SCRIPT, "--repos", "izzywdev/FuzeFront"],
+                           capture_output=True, text=True, env=env, timeout=120)
+        self.assertIn("refusing non-HTTP scheme", r.stderr + r.stdout)
+
+    def test_repo_name_shape_is_enforced(self):
+        self.assertTrue(self.m._valid_repo("izzywdev/FuzeFront"))
+        self.assertTrue(self.m._valid_repo("izzywdev/fuze-market.v2"))
+        for bad in ("../../etc/passwd", "izzywdev/Fuze Front", "no-slash",
+                    "a/b/c", "izzywdev/x?y=1", ""):
+            self.assertFalse(self.m._valid_repo(bad), bad)
+
+
 class StartsThatNeverHappened(unittest.TestCase):
     """runner_id 0 == the job was never picked up. Counting those as starts is
     how a dead pool reads as alive, so the filter is asserted directly."""

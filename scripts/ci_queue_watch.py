@@ -44,8 +44,10 @@ import concurrent.futures as cf
 import datetime
 import json
 import os
+import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Overridable so the self-tests can point discovery at a dead port and stay
@@ -55,8 +57,29 @@ API = os.environ.get("CI_QUEUE_WATCH_API", "https://api.github.com")
 NOW = datetime.datetime.now(datetime.timezone.utc)
 
 
+# urllib speaks file://, ftp:// and more, so an unchecked base URL is an
+# arbitrary-file read waiting to happen -- CI_QUEUE_WATCH_API is an env var, and
+# env vars get set by things other than the person reading this. The scheme is
+# checked at the one place every request funnels through rather than trusted at
+# the point it was configured.
+_ALLOWED_SCHEMES = ("http", "https")
+
+# Repository full names are interpolated into request paths. They arrive from
+# the API rather than from a user, but "it came from an API" is the assumption
+# that makes traversal bugs, so the shape is enforced instead of assumed.
+_REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
+
+def _valid_repo(full):
+    return bool(_REPO_RE.match(full))
+
+
 def _get(path, token):
-    req = urllib.request.Request(API + path)
+    url = API + path
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        return None, f"refusing non-HTTP scheme {scheme!r}"
+    req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github+json")
     if token:
         req.add_header("Authorization", "Bearer " + token)
@@ -104,6 +127,8 @@ def scan_repo(args):
     """Every queued/running job in one repo, keyed by (visibility, runs-on)."""
     full, visibility, token, lookback = args
     rows, errors = [], []
+    if not _valid_repo(full):
+        return rows, {}, [f"{full!r}: not a valid owner/repo name — skipped"]
 
     for status in ("queued", "in_progress"):
         runs, err = _get(f"/repos/{full}/actions/runs?status={status}&per_page=100", token)
