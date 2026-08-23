@@ -68,13 +68,32 @@ jobs:
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Every FuzeFront agent PR is authored by the `claude` bot; dependabot and
-          # github-actions[bot] (governance-sync commit-back) also open/push PRs. Without
-          # this, claude-code-action's actor check hard-fails those runs with
-          # "Workflow initiated by non-human actor ... Add bot to allowed_bots list or use
-          # '*'", turning a2a-maintain red on every bot-authored PR. Allow all bots so the
-          # A2A upkeep stream runs (or no-ops) instead of blocking the PR.
-          allowed_bots: "*"
+          # allowed_bots: scoped to `claude`, deliberately NOT `*`.
+          #
+          # The gate exists because claude-code-action hard-fails a Bot actor:
+          #   "Workflow initiated by non-human actor: claude (type: Bot).
+          #    Add bot to allowed_bots list or use '*' to allow all bots."
+          # Nearly every PR here is pushed by the `claude` bot (governance-sync's
+          # commit-back flips the triggering actor User -> Bot), so the gate fired on
+          # almost all of them -- and it fires LATE, after the prompt is printed and
+          # "Trigger result: true", so a skimmed log looks like the maintainer ran.
+          #
+          # `*` allows EVERY bot, and this repo runs dependabot (.github/dependabot.yml,
+          # package-ecosystem: github-actions). Under `*`, a dependabot PR -- whose body
+          # carries upstream release notes this repo does not author -- can start an
+          # agent run holding ANTHROPIC_API_KEY and repo write. That is the exact
+          # arbitrary-bot-drives-an-agent case the actor gate is for, so widening it to
+          # `*` defeats the gate rather than configuring it.
+          #
+          # `claude` is a LOGIN allowlist matched against the actor with `[bot]` stripped
+          # -- not a vendor or product name. This family's other bot is `fuzeone-bot`,
+          # which triggers only scheduled workflows (governance-nightly, nightly-*), none
+          # of which call this action; adding it here would grant an unused permission.
+          #
+          # The fork case stays closed independently: the trigger is `pull_request` (not
+          # `pull_request_target`), so a fork PR gets no secrets, ANTHROPIC_API_KEY is
+          # empty, and the guard step above skips the run entirely.
+          allowed_bots: "claude"
           prompt: |
             You are the **a2a-maintainer** for this repo (follow `.claude/agents/a2a-maintainer.md`
             exactly — same scope, boundaries, and done-contract). This is an automated CI run on
