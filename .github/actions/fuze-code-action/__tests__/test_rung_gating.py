@@ -37,22 +37,139 @@ def _norm(x):
     return re.sub(r"\s+", " ", x or "").strip()
 
 
-def _evaluate(expr, ctx):
-    """Evaluate a GitHub `if:` expression for the subset of syntax used here.
+_TOKENS = re.compile(
+    r"""\s*(?:
+          (?P<lparen>\()
+        | (?P<rparen>\))
+        | (?P<and>&&)
+        | (?P<or>\|\|)
+        | (?P<eq>==)
+        | (?P<ne>!=)
+        | (?P<not>!)
+        | (?P<string>'(?:[^']|'')*')
+        | (?P<ident>[A-Za-z_][A-Za-z0-9_.\-]*(?:\(\))?)
+      )""",
+    re.VERBOSE,
+)
 
-    Deliberately a small literal evaluator rather than a regex over the text: the
-    point is to test the SEMANTICS of the gate, so a future edit that changes the
-    logic is caught even if it keeps the same words.
+
+class GateSyntaxError(Exception):
+    """The gate used syntax this evaluator does not implement.
+
+    Raised, never swallowed: an `if:` this file cannot parse is an UNCHECKED
+    gate, and a test suite that quietly treats one as False would report the
+    invariants hold over combinations it never actually evaluated.
     """
+
+
+def _tokenize(expr):
+    pos, out = 0, []
+    while pos < len(expr):
+        m = _TOKENS.match(expr, pos)
+        if not m:
+            if expr[pos:].strip() == "":
+                break
+            raise GateSyntaxError(f"unparseable at offset {pos}: {expr[pos:]!r}")
+        pos = m.end()
+        kind = m.lastgroup
+        out.append((kind, m.group(kind)))
+    return out
+
+
+def _truthy(v):
+    # GitHub expression truthiness: booleans are themselves, strings are true
+    # when non-empty. Matches how a bare `inputs.x` reads as a gate.
+    return v if isinstance(v, bool) else bool(v)
+
+
+class _Parser:
+    """Recursive-descent parser for the `if:` subset this action uses.
+
+    Deliberately a real parser rather than a regex over the text or a handoff to
+    `eval`: the point is to test the SEMANTICS of the gate, so a future edit that
+    changes the logic is caught even if it keeps the same words — and anything
+    outside the implemented grammar raises instead of being silently reinterpreted
+    by a different language's operator rules.
+    """
+
+    def __init__(self, tokens, ctx):
+        self.toks, self.i, self.ctx = tokens, 0, ctx
+
+    def peek(self):
+        return self.toks[self.i][0] if self.i < len(self.toks) else None
+
+    def take(self):
+        if self.i >= len(self.toks):
+            raise GateSyntaxError("expression ended unexpectedly")
+        tok = self.toks[self.i]
+        self.i += 1
+        return tok
+
+    def parse(self):
+        v = self.parse_or()
+        if self.i != len(self.toks):
+            raise GateSyntaxError(f"trailing tokens: {self.toks[self.i:]!r}")
+        return v
+
+    def parse_or(self):
+        v = self.parse_and()
+        while self.peek() == "or":
+            self.take()
+            # No short-circuit: the right side must parse too, so an unsupported
+            # gate cannot hide behind a left operand that happens to be true.
+            v = _truthy(self.parse_and()) or _truthy(v)
+        return v
+
+    def parse_and(self):
+        v = self.parse_cmp()
+        while self.peek() == "and":
+            self.take()
+            v = _truthy(self.parse_cmp()) and _truthy(v)
+        return v
+
+    def parse_cmp(self):
+        left = self.parse_unary()
+        if self.peek() in ("eq", "ne"):
+            op, _ = self.take()
+            right = self.parse_unary()
+            return (left == right) if op == "eq" else (left != right)
+        return left
+
+    def parse_unary(self):
+        if self.peek() == "not":
+            self.take()
+            return not _truthy(self.parse_unary())
+        return self.parse_atom()
+
+    def parse_atom(self):
+        kind, text = self.take()
+        if kind == "lparen":
+            v = self.parse_or()
+            if self.peek() != "rparen":
+                raise GateSyntaxError("unbalanced '('")
+            self.take()
+            return v
+        if kind == "string":
+            return text[1:-1].replace("''", "'")
+        if kind == "ident":
+            if text == "always()":
+                return True
+            if text in ("true", "false"):
+                return text == "true"
+            if text not in self.ctx:
+                # A context key the test never supplied is an unexercised gate,
+                # not a false one.
+                raise GateSyntaxError(f"gate reads {text!r}, absent from the test context")
+            return self.ctx[text]
+        raise GateSyntaxError(f"unexpected token {text!r}")
+
+
+def _evaluate(expr, ctx):
+    """Evaluate a GitHub `if:` expression for the subset of syntax used here."""
     e = _norm(expr)
     if not e:
         return True
-    e = e.replace("always()", "True")
-    # Longest key first so `steps.codex.outcome` is not clipped by a shorter key.
-    for key in sorted(ctx, key=len, reverse=True):
-        e = e.replace(key, repr(ctx[key]))
-    e = e.replace("&&", " and ").replace("||", " or ")
-    return bool(eval(e))  # noqa: S307 - inputs are this file's own literals
+    return _truthy(_Parser(_tokenize(e), ctx).parse())
 
 
 class TestRungGating(unittest.TestCase):
@@ -118,6 +235,45 @@ class TestRungGating(unittest.TestCase):
         }
         self.assertTrue(_evaluate(self.steps["codex"]["if"], base))
         self.assertTrue(_evaluate(self.steps["gemini"]["if"], base))
+
+
+class TestEvaluator(unittest.TestCase):
+    """The evaluator is now the thing the invariants are measured with, so it is
+    tested too. A permissive evaluator would pass every invariant above while
+    proving nothing about the real gates."""
+
+    CTX = {"a": "x", "b": "", "steps.s.outcome": "failure"}
+
+    def test_comparisons(self):
+        self.assertTrue(_evaluate("a == 'x'", self.CTX))
+        self.assertFalse(_evaluate("a == 'y'", self.CTX))
+        self.assertTrue(_evaluate("b != 'x'", self.CTX))
+
+    def test_boolean_operators_and_precedence(self):
+        self.assertFalse(_evaluate("a == 'x' && b != ''", self.CTX))
+        self.assertTrue(_evaluate("a == 'x' || b != ''", self.CTX))
+        # && binds tighter than ||, as in GitHub expressions.
+        self.assertTrue(_evaluate("a == 'y' && a == 'z' || a == 'x'", self.CTX))
+        self.assertTrue(_evaluate("(a == 'y' || a == 'x') && steps.s.outcome != 'success'", self.CTX))
+
+    def test_bare_operand_truthiness(self):
+        self.assertTrue(_evaluate("a", self.CTX))
+        self.assertFalse(_evaluate("b", self.CTX))
+        self.assertTrue(_evaluate("!b", self.CTX))
+        self.assertTrue(_evaluate("always()", self.CTX))
+
+    def test_unsupported_syntax_raises_rather_than_returning_false(self):
+        # An `if:` this evaluator cannot parse is an UNCHECKED gate. Returning
+        # False there would report the invariants hold over combinations that
+        # were never evaluated — the exact vacuous-pass this suite exists to
+        # prevent.
+        for bad in ["contains(a, 'x')", "a =~ 'x'", "a == 'x' &&", "(a == 'x'"]:
+            with self.assertRaises(GateSyntaxError, msg=bad):
+                _evaluate(bad, self.CTX)
+
+    def test_unknown_context_key_raises(self):
+        with self.assertRaises(GateSyntaxError):
+            _evaluate("inputs.not-supplied == ''", self.CTX)
 
 
 if __name__ == "__main__":
