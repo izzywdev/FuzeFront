@@ -230,6 +230,25 @@ runs:
           exit 1
         fi
 
+        # ---- A single-vendor chain does not need a container --------------
+        # A runner-local LiteLLM whose model_list has ONE entry and whose
+        # router_settings has no `fallbacks:` provides nothing a direct vendor
+        # call does not — it only adds a docker dependency the runner may not
+        # have. Anthropic is the one vendor claude-code-action can be pointed at
+        # directly (it speaks the Anthropic API shape); openai/gemini still need
+        # LiteLLM as the translating shim, so they do not take this path.
+        if [ "${#AVAILABLE[@]}" -eq 1 ] && [ "${AVAILABLE[0]}" = "anthropic" ]; then
+          echo "::notice title=llm-endpoint::mode=fallback-anthropic vendor=anthropic — chain resolved to a single vendor (skipped-no-key=[${SKIPPED[*]:-none}]), so this routes DIRECT to api.anthropic.com instead of starting a runner-local LiteLLM. A one-entry LiteLLM has no fallbacks to walk; the container would be pure overhead and a second thing that can fail."
+          echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+          {
+            echo "mode=fallback-anthropic"
+            echo "vendor=anthropic"
+            echo "base-url=https://api.anthropic.com"
+            echo "auth-token=${FALLBACK_ANTHROPIC_KEY}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
         # ---- Write vendor keys to a mode-600 env-file, never the command line -
         WORKDIR="${RUNNER_TEMP:-/tmp}/llm-endpoint-fallback"
         mkdir -p "$WORKDIR"
@@ -294,16 +313,6 @@ runs:
         # runner is torn down after the job anyway; no persistence needed.
         PORT="${LOCAL_LITELLM_PORT:-4000}"
         t_start=$(date +%s)
-        docker run -d --rm \
-          --name fuze-llm-fallback \
-          -p "127.0.0.1:${PORT}:4000" \
-          --env-file "$ENV_FILE" \
-          -v "${CONFIG_FILE}:/app/config.yaml:ro" \
-          "${LOCAL_LITELLM_IMAGE}" \
-          --config /app/config.yaml --port 4000 --host 0.0.0.0 \
-          > "${WORKDIR}/docker-run.log" 2>&1
-        run_rc=$?
-
         # Redact any known secret value out of anything we might print below —
         # belt-and-braces on top of ::add-mask:: and the env-file-not-argv choice.
         redact() {
@@ -314,10 +323,58 @@ runs:
           printf '%s\n' "$out"
         }
 
-        if [ $run_rc -ne 0 ]; then
-          echo "::error title=llm-endpoint::docker run failed to start the runner-local LiteLLM fallback container (rc=${run_rc})."
-          while IFS= read -r line; do redact "$line"; done < "${WORKDIR}/docker-run.log"
+        # `if cmd; then ... else rc=$?; fi`, NOT `cmd; rc=$?`. The runner invokes
+        # `shell: bash` steps with `-e` already on and `set -uo pipefail` above
+        # does not turn it off, so a bare failing `docker run` aborts the step
+        # before rc is ever assigned — the diagnostic below then never prints.
+        # That is exactly what happened in the field: the step died with a bare
+        # "Process completed with exit code 125" and no docker-run.log, leaving
+        # the actual cause invisible. A tested context is the one place errexit
+        # is defined not to apply.
+        if docker run -d --rm \
+          --name fuze-llm-fallback \
+          -p "127.0.0.1:${PORT}:4000" \
+          --env-file "$ENV_FILE" \
+          -v "${CONFIG_FILE}:/app/config.yaml:ro" \
+          "${LOCAL_LITELLM_IMAGE}" \
+          --config /app/config.yaml --port 4000 --host 0.0.0.0 \
+          > "${WORKDIR}/docker-run.log" 2>&1; then
+          run_rc=0
+        else
+          run_rc=$?
+        fi
+
+        # Degrade to the direct-Anthropic leg rather than killing the chain when
+        # the container cannot start (no docker daemon on the runner, image pull
+        # blocked, port already bound). This is a REAL working path — the one
+        # this action used before the multi-vendor chain existed — not a mask:
+        # what is lost is LiteLLM's automatic mid-run advance to the next
+        # vendor, and the warning says so, so a degraded run stays
+        # distinguishable from a good one. If anthropic is not in the chain
+        # there is no Anthropic-shape path at all, and it fails.
+        degrade_to_anthropic() {
+          local why="$1"
+          for v in "${AVAILABLE[@]}"; do
+            if [ "$v" = "anthropic" ]; then
+              echo "::warning title=llm-endpoint::${why} — DEGRADING to mode=fallback-anthropic (direct api.anthropic.com). The chain [${AVAILABLE[*]}] is NOT active for this run: without LiteLLM there is no automatic advance past anthropic on a quota/rate-limit/auth error, so an exhausted anthropic key now fails the run instead of rolling over."
+              echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+              {
+                echo "mode=fallback-anthropic"
+                echo "vendor=anthropic"
+                echo "base-url=https://api.anthropic.com"
+                echo "auth-token=${FALLBACK_ANTHROPIC_KEY}"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error title=llm-endpoint::${why} — and anthropic is not in the available chain [${AVAILABLE[*]}], so there is no Anthropic-shape endpoint to degrade to (claude-code-action speaks that shape only; openai/gemini reach it exclusively through LiteLLM). Failing closed."
           exit 1
+        }
+
+        if [ $run_rc -ne 0 ]; then
+          echo "::error title=llm-endpoint::docker run failed to start the runner-local LiteLLM fallback container (rc=${run_rc}). Log (redacted):"
+          while IFS= read -r line; do redact "$line"; done < "${WORKDIR}/docker-run.log"
+          degrade_to_anthropic "runner-local LiteLLM could not be started (docker rc=${run_rc})"
         fi
 
         ready=false
@@ -335,7 +392,7 @@ runs:
           echo "::error title=llm-endpoint::runner-local LiteLLM fallback container did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s (waited ${elapsed}s). Container logs (redacted):"
           docker logs fuze-llm-fallback 2>&1 | while IFS= read -r line; do redact "$line"; done
           docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
-          exit 1
+          degrade_to_anthropic "runner-local LiteLLM did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s"
         fi
 
         primary_vendor="${AVAILABLE[0]}"
