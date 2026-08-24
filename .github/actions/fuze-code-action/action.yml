@@ -95,13 +95,26 @@ inputs:
     required: false
     default: ''
   codex-sandbox:
-    description: 'codex-action `sandbox` input for the OpenAI rung.'
+    description: >-
+      codex-action `sandbox` input for the OpenAI rung. `workspace-write`, not
+      `read-only`: rung 2 is the fallover for work rung 1 would have COMMITTED
+      (the a2a/mcp maintainers edit files and push). A read-only Codex runs to
+      completion having changed nothing and reports success — a vacuous green,
+      the exact failure mode this action exists to prevent.
     required: false
-    default: 'read-only'
+    default: 'workspace-write'
   codex-safety-strategy:
-    description: 'codex-action `safety-strategy` input for the OpenAI rung.'
+    description: >-
+      codex-action `safety-strategy` input for the OpenAI rung. MUST NOT be
+      empty. A `with:` value that evaluates to '' OVERRIDES the callee's own
+      `default:` rather than falling back to it, and codex-action rejects an
+      empty safety-strategy outright ("Invalid safety strategy: ."). This
+      defaulted to '', so rung 2 aborted in codex-action's `resolve-codex-home`
+      step on EVERY run — the fallover rung had never once executed, and the
+      chain always reported itself exhausted. 'drop-sudo' is codex-action's own
+      documented default.
     required: false
-    default: ''
+    default: 'drop-sudo'
   codex-args:
     description: 'Passed through verbatim as codex-action `codex-args`.'
     required: false
