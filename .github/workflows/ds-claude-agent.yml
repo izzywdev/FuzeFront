@@ -42,11 +42,11 @@ jobs:
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Run Claude Code Action
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
-        env:
-          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
-          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+        uses: ./.github/actions/fuze-code-action
         with:
-          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
-          prompt: ${{ inputs.prompt }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          task-prompt: ${{ inputs.prompt }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
