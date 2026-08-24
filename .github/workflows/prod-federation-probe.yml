@@ -1,0 +1,56 @@
+name: Prod federation probe
+
+# Answers, against the LIVE host, the one question no other check in this repo
+# asks: for each registered remote, would the browser actually get a working
+# module? prod-smoke.yml polls a health endpoint, post-prod-e2e.yml drives
+# flows, and e2e.yml checks federated assets only against a locally built
+# preview — so a remote that 404s in production had no detector.
+#
+# It is deliberately UNAUTHENTICATED: it probes the static asset paths, not
+# GET /api/apps (which requires a token and is scoped by org membership and
+# visibility, so it could not enumerate every app anyway).
+#
+# runs-on: ubuntu-latest, NOT the fuzefront ARC pool. This is a diagnostic that
+# has to be runnable exactly when the self-hosted pool is saturated — which is
+# when a prod incident is most likely to be under investigation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Host origin to probe'
+        required: false
+        default: 'https://app.fuzefront.com'
+      slugs:
+        description: 'Comma-separated app slugs to probe'
+        required: false
+        # Derived from each product repo's registration/manifest.json `slug`.
+        # module-federation apps only — fuzehub and fuzeplan register as iframe
+        # and have no remoteEntry to probe.
+        default: 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex'
+  schedule:
+    # Daily. A remote can stop loading without any commit here — a product repo
+    # redeploys, an ingress changes, a chart bumps an image. Catching that needs
+    # a clock, not a PR.
+    - cron: '17 7 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe federated remotes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Probe every federated remote
+        env:
+          BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+          SLUGS: ${{ inputs.slugs || 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex' }}
+        run: |
+          node scripts/probe-prod-federation.mjs --base "$BASE_URL" --slugs "$SLUGS"
