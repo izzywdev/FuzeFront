@@ -29,6 +29,9 @@
  *
  *   node scripts/probe-prod-federation.mjs --base <url> --slugs a,b,c
  *
+ * Each entry is either `slug` (probe the same-origin layouts) or
+ * `slug=<absolute url>` (probe the off-origin entry a manifest declares).
+ *
  * Exits non-zero if ANY app fails, or if ZERO apps were probed — a probe that
  * checks nothing must never report success.
  */
@@ -98,19 +101,35 @@ function runChecker(entryUrl) {
 const rows = []
 let failures = 0
 
-for (const slug of slugs) {
-  // Both layouts are legitimate; discover which one this app uses.
-  const candidates = [
-    `${base}/apps/${slug}/remoteEntry.js`,
-    `${base}/apps/${slug}/assets/remoteEntry.js`,
-  ]
+for (const spec of slugs) {
+  // `slug` probes the two same-origin layouts. `slug=<absolute url>` probes the
+  // entry the app's manifest actually declares.
+  //
+  // This second form is not a convenience — omitting it made the probe LIE. The
+  // frozen contract allows an absolute http(s) remoteEntry for remotes hosted
+  // outside the cluster, and fuzekeys uses one
+  // (https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js). The first
+  // version of this probe tried only /apps/keys/... on the host origin, got a
+  // 404 that was CORRECT — nothing is supposed to be there — and reported
+  // fuzekeys as broken. A probe that fabricates a failure is as harmful as one
+  // that hides a real one; both make the report untrustworthy.
+  const eq = spec.indexOf('=')
+  const slug = eq >= 0 ? spec.slice(0, eq) : spec
+  const declared = eq >= 0 ? spec.slice(eq + 1) : null
+
+  const candidates = declared
+    ? [declared]
+    : [
+        `${base}/apps/${slug}/remoteEntry.js`,
+        `${base}/apps/${slug}/assets/remoteEntry.js`,
+      ]
 
   let served = null
   const attempts = []
   for (const url of candidates) {
     const res = await head(url)
     const v = verdictFor(res)
-    attempts.push(`${url.replace(base, '')} -> ${v.why}`)
+    attempts.push(`${url.startsWith(base) ? url.replace(base, '') : url} -> ${v.why}`)
     if (v.ok) {
       served = url
       break
@@ -126,12 +145,12 @@ for (const slug of slugs) {
 
   const { code, out } = await runChecker(served)
   if (code === 0) {
-    rows.push({ slug, entry: served.replace(base, ''), chunks: 'all 200 + JS', status: '✅', detail: '' })
+    rows.push({ slug, entry: served.startsWith(base) ? served.replace(base, '') : served, chunks: 'all 200 + JS', status: '✅', detail: '' })
   } else {
     failures++
     rows.push({
       slug,
-      entry: served.replace(base, ''),
+      entry: served.startsWith(base) ? served.replace(base, '') : served,
       chunks: 'BROKEN',
       status: '❌ chunks',
       detail: out.split('\n').slice(0, 4).join(' ; '),

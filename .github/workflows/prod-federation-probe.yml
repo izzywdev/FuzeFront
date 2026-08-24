@@ -24,10 +24,13 @@ on:
       slugs:
         description: 'Comma-separated app slugs to probe'
         required: false
-        # Derived from each product repo's registration/manifest.json `slug`.
+        # Derived from each product repo's registration/manifest.json.
         # module-federation apps only — fuzehub and fuzeplan register as iframe
         # and have no remoteEntry to probe.
-        default: 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex'
+        # `slug` probes the same-origin layouts; `slug=<url>` probes the absolute
+        # entry a manifest declares (fuzekeys hosts its remote off-origin, so
+        # probing /apps/keys/ on the host would fabricate a 404).
+        default: 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys=https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex'
   pull_request:
     # Path-scoped on purpose: this runs against LIVE production, so it must not
     # fire on every PR. It fires when the probe ITSELF changes, so a change to
@@ -60,6 +63,6 @@ jobs:
       - name: Probe every federated remote
         env:
           BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
-          SLUGS: ${{ inputs.slugs || 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex' }}
+          SLUGS: ${{ inputs.slugs || 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys=https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex' }}
         run: |
           node scripts/probe-prod-federation.mjs --base "$BASE_URL" --slugs "$SLUGS"
