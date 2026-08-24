@@ -28,6 +28,15 @@ on:
         # module-federation apps only — fuzehub and fuzeplan register as iframe
         # and have no remoteEntry to probe.
         default: 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex'
+  pull_request:
+    # Path-scoped on purpose: this runs against LIVE production, so it must not
+    # fire on every PR. It fires when the probe ITSELF changes, so a change to
+    # the instrument is validated by using it — the alternative is shipping a
+    # detector whose first real execution is after it merges.
+    paths:
+      - 'scripts/probe-prod-federation.mjs'
+      - 'scripts/check-federated-assets.mjs'
+      - '.github/workflows/prod-federation-probe.yml'
   schedule:
     # Daily. A remote can stop loading without any commit here — a product repo
     # redeploys, an ingress changes, a chart bumps an image. Catching that needs
