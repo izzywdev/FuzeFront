@@ -60,9 +60,11 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
           SHA="${{ github.event.workflow_run.head_sha }}"
           SHORT_SHA="${SHA:0:8}"
-          echo "run_url=${RUN_URL}" >> "$GITHUB_OUTPUT"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "run_url=${RUN_URL}"
+            echo "sha=${SHA}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
 
           # Collect first ~200 lines of text output from the downloaded report.
           # Written to a file in the workspace so Claude can read it directly —
@@ -88,14 +90,27 @@ jobs:
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Run Claude Code autofix
-        uses: anthropics/claude-code-action@28f83620103c48a57093dcc2837eec89e036bb9f # beta (pinned snapshot)
-        env:
-          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
-          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+        uses: ./.github/actions/fuze-code-action
         with:
-          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
-          allowed_tools: 'Bash,Read,Edit,Write,Glob,Grep'
-          direct_prompt: |
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          # Was `allowed_tools: 'Bash,Read,Edit,Write,Glob,Grep'` on the BETA
+          # (v0) action. v1 removed that input and folded it into claude_args as
+          # --allowedTools, so this is a rename of the mechanism, not of a value.
+          # The automated migrator deliberately REFUSED this file: carrying
+          # `allowed_tools` onto a v1 input that no longer exists would silently
+          # drop the tool allowlist, and an agent that quietly loses Write is an
+          # agent that reports success having changed nothing. Done by hand.
+          claude-args: '--allowedTools "Bash,Read,Edit,Write,Glob,Grep"'
+          # Was `direct_prompt` — the v0 spelling of v1's `prompt`.
+          #
+          # ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN are no longer set as step
+          # env: this action runs ./llm-endpoint itself and sets both on the rung
+          # it executes, from its own probe. Passing the pre-resolved literals
+          # would pin a stale endpoint ahead of a live one.
+          task-prompt: |
             The post-production E2E smoke suite just failed on master.
 
             Failed workflow run: ${{ steps.ctx.outputs.run_url }}

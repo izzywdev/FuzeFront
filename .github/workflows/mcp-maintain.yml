@@ -152,25 +152,12 @@ jobs:
 
       - name: Run mcp-maintainer
         if: steps.marker.outputs.run == 'true'
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
-        env:
-          # Both come from the llm-endpoint step, never straight from a secret: that
-          # is what makes LiteLLM-vs-fallback a single decision made in one place.
-          # Set explicitly rather than relying on the action's default provider
-          # resolution, which would silently reach api.anthropic.com with a LiteLLM
-          # virtual key and 401.
-          # NAMING: FUZE_LLM_* is what this family declares; ANTHROPIC_BASE_URL is
-          # what the SDK inside claude-code-action actually reads. That is a mapping,
-          # not a rename — renaming the right-hand side would leave the SDK reading
-          # nothing, silently resolving to api.anthropic.com, and 401ing on a virtual
-          # key. The vendor-agnostic name lives on the side we control.
-          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
-          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+        uses: ./.github/actions/fuze-code-action
         with:
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
-          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           # allowed_bots: scoped to `claude`, deliberately NOT `*`.
           #
           # The gate exists because claude-code-action hard-fails a Bot actor:
@@ -197,8 +184,8 @@ jobs:
           # `pull_request_target`), so a fork PR gets no secrets at all — neither
           # LITELLM_FUZE_KEY nor ANTHROPIC_API_KEY — so llm-endpoint resolves nothing,
           # preflight fails closed, and this job never starts.
-          allowed_bots: "claude"
-          prompt: |
+          allowed-bots: "claude"
+          task-prompt: |
             You are the **mcp-maintainer** for this repo (follow `.claude/agents/mcp-maintainer.md`
             exactly — same scope, boundaries, and done-contract). This is an automated CI run on
             PR #${{ github.event.pull_request.number }} (head `${{ github.event.pull_request.head.ref }}`).
@@ -228,4 +215,7 @@ jobs:
 
             End with the done-contract line from your agent def
             (`MCP SURFACE: <in-sync|scaffolded|reconciled>` + what landed + `NEEDS PRODUCT/OPERATOR:` if any).
-          claude_args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'
+          claude-args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
