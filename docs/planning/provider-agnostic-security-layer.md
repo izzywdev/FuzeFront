@@ -31,7 +31,7 @@ reverse proxy necessarily serves the upstream's own paths.
 
 | Layer | Abstracted? | What that means concretely |
 |---|---|---|
-| **Consumer / SDK API** | **Yes, fully.** | Products and the SPA call `/v1/security/*` via `@fuzefront/security-client` and never name a vendor. Verifiable: there is no Authentik path anywhere in `frontend/src`. |
+| **Consumer / SDK API** | **Yes, for routing.** | Products and the SPA call `/v1/security/*` via `@fuzefront/security-client`. Verifiable: `frontend/src` contains **no Authentik path** — no `/if/flow`, `/application/o`, `/api/v3`, or `goauthentik` anywhere. The auth calls it does make are `/api/v1/security/session`, `/v1/security/session/exchange`, `/api/v1/security/employee/*`. |
 | **IdP hostname** | **Yes, fully.** | The browser only ever sees `app.fuzefront.com`. `auth.fuzefront.com` is named in no consumer contract. This is the "one hard constraint" above. |
 | **Server-to-IdP calls** | **Yes, fully.** | Token/userinfo/JWKS/discovery and the server-brokered password + enrollment flows are pinned to the in-cluster Service via `AUTHENTIK_BASE_URL`; none of them transits the public edge. |
 | **Browser-transited OIDC paths** | **No — and cannot be.** | OIDC is a *front-channel* protocol: the user agent itself must reach the authorization endpoint and render the login/consent UI. A backend cannot proxy that leg away without becoming a credential interceptor. `backend/security/src/services/oidc.ts` encodes exactly this split — it rewrites `token_endpoint`, `userinfo_endpoint` and `jwks_uri` onto the in-cluster host while leaving `authorization_endpoint` **EXTERNAL**, commented *"it is browser-facing"*. |
@@ -50,7 +50,20 @@ Two consequences worth stating explicitly, because both have been misread:
   element-wise segment match, so a bare `- /application` silently also matched
   `/applications`. That was a controller-semantics bug, not a design decision,
   and the fact that it was *possible to ship green* is the real finding.
-- **The naming rule above is not fully satisfiable at the path layer.**
+- **The naming rule is violated in a second, unrelated place, and it is a real
+  finding rather than a protocol necessity.** The rule binds "any consumer-facing
+  path, type, field, config key, **or doc**" — and the portals-directory UI ships
+  user-visible strings naming the vendor:
+  `frontend/src/components/portalsDirectory/PortalTierBadge.tsx:8-9`
+  (*"Shares the root Authentik"*, *"Its own Authentik instance"*) and
+  `PortalCard.tsx:58` (*"Authenticates against its own Authentik instance"*),
+  with the same wording mirrored in `adminPortalsService.ts:33`. These are
+  admin-facing rather than product-facing, and they are cosmetic strings that
+  nothing routes on — but they are not required by any protocol and could be
+  neutralised ("shared identity provider" / "dedicated identity provider")
+  without touching behaviour. Tracked here rather than fixed in the same PR as
+  the Ingress guard, since it is a separate surface with a separate owner.
+- **At the path layer the naming rule is not fully satisfiable.**
   `/static/authentik/` and `/outpost.goauthentik.io/` literally contain the
   vendor name, and cannot be renamed without breaking the reverse proxy —
   Authentik ignores `X-Forwarded-Prefix` and builds absolute URLs at its own
