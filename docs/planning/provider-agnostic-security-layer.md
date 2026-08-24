@@ -21,6 +21,54 @@
 
 **Naming rule for the whole effort:** no `authentik` or `permit` in any consumer-facing path, type, field, config key, or doc. Open-standard protocol terms (OIDC/OAuth2/JWKS/PKCE) are acceptable but kept internal/server-side where practical. Provider names live only inside the adapter implementations and server-only env.
 
+### What "abstracted" means at each layer — read this before calling a routed IdP path a bug
+
+This plan's abstraction is **host-level and API-level. It is deliberately not
+path-level**, and conflating the three has now twice produced a report that the
+Ingress "contradicts" the design. Decision 1 above says so directly — *"IdP
+hiding = Model 1 (**reverse-proxy Authentik under the app host**)"* — and a
+reverse proxy necessarily serves the upstream's own paths.
+
+| Layer | Abstracted? | What that means concretely |
+|---|---|---|
+| **Consumer / SDK API** | **Yes, fully.** | Products and the SPA call `/v1/security/*` via `@fuzefront/security-client` and never name a vendor. Verifiable: there is no Authentik path anywhere in `frontend/src`. |
+| **IdP hostname** | **Yes, fully.** | The browser only ever sees `app.fuzefront.com`. `auth.fuzefront.com` is named in no consumer contract. This is the "one hard constraint" above. |
+| **Server-to-IdP calls** | **Yes, fully.** | Token/userinfo/JWKS/discovery and the server-brokered password + enrollment flows are pinned to the in-cluster Service via `AUTHENTIK_BASE_URL`; none of them transits the public edge. |
+| **Browser-transited OIDC paths** | **No — and cannot be.** | OIDC is a *front-channel* protocol: the user agent itself must reach the authorization endpoint and render the login/consent UI. A backend cannot proxy that leg away without becoming a credential interceptor. `backend/security/src/services/oidc.ts` encodes exactly this split — it rewrites `token_endpoint`, `userinfo_endpoint` and `jwks_uri` onto the in-cluster host while leaving `authorization_endpoint` **EXTERNAL**, commented *"it is browser-facing"*. |
+
+So a **small, closed set** of Authentik-native paths (`/application/o/`,
+`/if/flow/`, `/source/`, the flow-executor API and its static assets) is
+reverse-proxied under `app.fuzefront.com`. Those paths are the protocol
+minimum, not a leak, and their presence is what *implements* Model 1 rather
+than violating it.
+
+Two consequences worth stating explicitly, because both have been misread:
+
+- **`/applications` was never part of that set and was never intended to be
+  public.** It reached the internet because Traefik implements `pathType:
+  Prefix` as a plain *string* prefix rather than the Kubernetes spec's
+  element-wise segment match, so a bare `- /application` silently also matched
+  `/applications`. That was a controller-semantics bug, not a design decision,
+  and the fact that it was *possible to ship green* is the real finding.
+- **The naming rule above is not fully satisfiable at the path layer.**
+  `/static/authentik/` and `/outpost.goauthentik.io/` literally contain the
+  vendor name, and cannot be renamed without breaking the reverse proxy —
+  Authentik ignores `X-Forwarded-Prefix` and builds absolute URLs at its own
+  root paths. Treat the naming rule as binding on paths **we** design
+  (`/v1/security/*`), not on an upstream's native routes that we merely proxy.
+
+**The closed set is enforced, not documented.**
+`deploy/scripts/authentik-path-policy.sh` is the machine-readable source of
+truth: it carries each approved path with its justification and whether a
+browser is actually *proven* to need it, plus the denylist of surfaces that
+must never be routed. Both guards source it —
+`check-authentik-public-paths.sh` (pre-merge, models Traefik's string-prefix
+matcher against the rendered chart and asserts the routed set equals the
+approved set exactly) and `check-authentik-live-boundary.sh` (post-deploy,
+black-box probe of the real edge). Adding any Authentik path to
+`fuzefront.authentikPublicPaths` now fails CI until it is approved there with
+a justification.
+
 ---
 
 ## Target architecture
