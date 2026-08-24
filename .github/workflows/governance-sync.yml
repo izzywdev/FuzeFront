@@ -107,9 +107,18 @@ jobs:
             # cannot push after the retries, that is a real failure and it fails.
             pushed=false
             for attempt in 1 2 3; do
-              if git push origin "HEAD:${HEAD_REF}"; then
+              if git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log; then
                 pushed=true
                 break
+              fi
+              # A 403 is NOT a race, and must not be retried or described as one.
+              # The first version of this loop retried a permission failure three
+              # times while printing "the branch moved under us" — with `Current
+              # branch is up to date` on the very next line contradicting it. A
+              # diagnostic that names the wrong cause is worse than none.
+              if grep -qE "Write access to repository not granted|Permission to .* denied|error: 403" /tmp/gs-push.log; then
+                echo "::error::Cannot push the governance reconciliation to ${HEAD_REF}: the token has NO WRITE ACCESS (HTTP 403). This is a permission problem, not a race — retrying cannot help. Check this workflow's \`permissions:\` block declares \`contents: write\`; a repo that declares \`contents: read\` here can never commit back, and any reconciliation it computes is silently discarded."
+                exit 1
               fi
               echo "::notice::push to ${HEAD_REF} rejected (attempt ${attempt}/3) — the branch moved under us; rebasing onto it and retrying."
               if ! git pull --rebase origin "${HEAD_REF}"; then
