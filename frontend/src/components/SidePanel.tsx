@@ -169,6 +169,18 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
       data-open={isOpen}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
+      {/* SCROLL CONTAINER.
+          Everything above the pinned Help/Status footer scrolls. Without this the
+          panel is a flex column at height:100% in which NOTHING scrolls, so once
+          Apps + Portal + the app menu exceed the viewport the tail is simply
+          clipped — Billing and the footer were off-screen with no way to reach them.
+
+          `minHeight: 0` is not optional and is the part that is easy to drop: a
+          flex child defaults to `min-height: auto`, which means "at least as tall
+          as my content". Under that default the container grows to fit instead of
+          shrinking, and `overflowY: auto` never has an overflow to act on — the
+          scrollbar simply never appears. Both properties or neither. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {/* Apps section — activated apps from the registry (manifest-driven). */}
       {apps.length > 0 && (
         <div className="menu-section">
@@ -305,7 +317,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
 
       {/* App-Specific (runtime bridge) Menu Section — backward compatible. */}
       {appMenuItems.length > 0 && (
-        <div className="menu-section" style={{ flex: 1 }}>
+        <div className="menu-section">
           <div
             className="menu-section-header"
             style={{
@@ -336,6 +348,8 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           ))}
         </div>
       )}
+
+      </div>
 
       {/* Bottom section with Help and Status */}
       <div
