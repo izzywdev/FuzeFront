@@ -322,7 +322,7 @@ runs:
           echo "::error title=fuze-code-action::claude-code-action failed with a TASK failure (or an unclassifiable one) — refusing to fall through to the OpenAI rung. Fix the underlying issue; this is not a vendor-availability problem."
         fi
         if [ "$CODE" = "3" ]; then
-          echo "::warning title=fuze-code-action::rung=claude DECLINED to run and NO WORK WAS PERFORMED by this job. The usual cause is claude-code-action'"'"'s workflow-validation guard: it refuses to run when the pull request modifies the workflow file that invokes it, which every workflow-migration PR does by construction. This is not a failure and the other rungs are deliberately not attempted — they would run exactly the task the guard exists to prevent. The job reports neutral; whatever this workflow maintains was NOT checked on this commit and will be on the next run against the default branch."
+          echo "::warning title=fuze-code-action::rung=claude DECLINED to run and NO WORK WAS PERFORMED by this job. The usual cause is claude-code-action's own workflow-validation guard: it refuses to run when the pull request modifies the workflow file that invokes it, which every workflow-migration PR does by construction. This is not a failure and the other rungs are deliberately not attempted — they would run exactly the task the guard exists to prevent. The job reports neutral; whatever this workflow maintains was NOT checked on this commit and will be on the next run against the default branch."
         fi
 
     # RUNG 2 — openai/codex-action. Reached ONLY when rung 1 was classified as an

@@ -1,0 +1,57 @@
+name: gate-fuze-code-action
+
+# Runs the self-tests that ship beside .github/actions/fuze-code-action.
+#
+# They existed before this workflow did, and NOTHING RAN THEM. Four test files —
+# the classify decision table, the 96-combination rung-gating sweep, the
+# passthrough-default check, and the bash-parse check — all green on a developer's
+# machine and never once executed by CI. That is the same vacuous shape as a gate
+# that exits 0 without looking: the tests could not fail a PR, so they did not
+# protect anything. A shell-quoting bug shipped straight through them.
+#
+# Path-filtered because these tests only describe the two actions. A PR that does
+# not touch them does not need the job, and a required check that runs on every
+# PR to assert something unrelated is noise.
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/fuze-code-action/**'
+      - '.github/actions/llm-endpoint/**'
+      - '.github/workflows/gate-fuze-code-action.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gate-fuze-code-action:
+    name: gate-fuze-code-action
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The python tests import yaml and EXIT 1 when it is absent rather than
+      # skipping, so a runner without it reports a gap instead of a pass. Install
+      # it here so that path is never taken in CI.
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: classify.sh decision table
+        run: bash .github/actions/fuze-code-action/__tests__/test_classify.sh
+
+      - name: Rung gating over every reachable combination
+        run: python3 .github/actions/fuze-code-action/__tests__/test_rung_gating.py
+
+      - name: Passthrough defaults vs pinned callee defaults
+        run: python3 .github/actions/fuze-code-action/__tests__/test_passthrough_defaults.py
+
+      - name: extra-env handling
+        run: python3 .github/actions/fuze-code-action/__tests__/test_extra_env.py
+
+      - name: Every run block is parseable bash
+        run: python3 .github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py
