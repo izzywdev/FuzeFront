@@ -58,7 +58,8 @@ This repo enables `required_signatures` on `master`, and **`master` is deploy-on
   - commit via the **GitHub API / `gh api`** (server-side commits are Verified), or
   - run the workflow under an **admin / GitHub App identity** whose commits are signed.
 - Human/agent commits are signed via SSH signing (baseline §8 / `governance/hardening-convention.md` §3). Feature-branch commits may be unsigned; the **squash-merge is signed**.
-- Because `master` deploys/publishes on push, **never bot-merge here** — merge in a **deploy window** (`hardening.deployOnPush: true`). Hand-deploying to prod is forbidden; prod is GitOps.
+- Because `master` deploys/publishes on push, **a merge here IS a production deploy.** Hand-deploying to prod is forbidden either way — prod is GitOps, so the deploy happens by merging, never by a human touching the cluster.
+- **Auto-merge is the intended path here; bot-merging is expected.** `auto-merge.yml` arms the merge and its `dispatch-release` job then dispatches `release.yml`. The policy, the reasoning, and where a real block would have to live are in the canonical **`governance/hardening-convention.md` §6** — not restated here, because an overlay that restates canonical policy drifts from it silently (`governance_sync` does not reconcile a consuming repo's `CLAUDE.md`). See FuzeSDLC#139 for the correction that established this.
 
 ## Feature flags — FuzeFront HOSTS the family flag service
 
@@ -352,4 +353,4 @@ statements attached is unfinished work, not a deliverable.
 
 ## Done
 
-Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
+Finish work as a **merged PR**, not local commits — merging is how this repo deploys, see the hardening section above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.

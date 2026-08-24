@@ -7,17 +7,22 @@ name: Workspace deps
 # dependency-free and needs no install, so it gates every PR cheaply. See the
 # fuzefront-ui-package skill, non-negotiable #7.
 #
-# NO path filter, deliberately. This is a REQUIRED status check
-# (governance/ruleset.json), and the script validates the WHOLE repo's
-# workspace wiring at HEAD, not a diff — it is not scoped to files a given PR
-# touched. A `paths:` filter here means GitHub never creates a check run for
-# a PR that doesn't touch a listed path, so the required check sits at
-# "Expected — waiting for status to be reported" forever and blocks merge
-# indefinitely (found via FuzeFront#792, a Helm-only PR that touches no
-# package.json). Every other required `gate-*` workflow in this repo runs
-# unconditionally for exactly this reason; this one was the one exception.
+# NO `paths:` FILTER, and that is load-bearing rather than an oversight. This context
+# is REQUIRED on master. A path-filtered workflow does not run at all on a PR that
+# touches none of its paths, so the check run is never CREATED — and a required
+# context that is never created leaves the PR permanently at "Expected — waiting for
+# status to be reported", with no red to look at and nothing to re-run. Measured
+# 2026-08-23: it reported on none of four sampled PR heads, so every Helm-only,
+# docs-only or workflow-only PR was unmergeable for that reason alone.
+#
+# The check is dependency-free and scans 49 manifests in under a second, so running
+# it unconditionally costs nothing. gate-sealed-keys in this repo already states the
+# same rule for the same reason ("Runs on every PR (no path filter) so it is safe to
+# add to the branch ruleset's required checks"); filter INSIDE a job, never on the
+# trigger, for anything the ruleset requires.
 on:
   pull_request:
+    branches: [master]
 
 permissions:
   contents: read

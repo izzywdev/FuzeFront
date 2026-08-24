@@ -59,6 +59,67 @@ jobs:
         working-directory: packages/mcp-gateway
         run: npx vitest run
 
+      # ── Gate the ARTIFACT, not just the source ────────────────────────────
+      # Everything above tests the code. None of it proves the thing we are
+      # about to publish actually serves tools: tsc and vitest both pass on a
+      # gateway that boots and enumerates nothing, which is precisely the state
+      # a bad spec, a bad overrides file or a broken build produces. This repo
+      # already had the right instrument for that — scripts/smoke.mjs, which
+      # speaks the real MCP SSE transport — and it was referenced only in the
+      # package README. Its own header calls it "what proves a product's gateway
+      # actually works before anyone flips mcp.enabled to true"; publishing an
+      # image without running it is publishing on an untested claim.
+      - name: Boot the built gateway against the committed spec
+        working-directory: packages/mcp-gateway
+        env:
+          MCP_PRODUCT: fuzefront
+          MCP_UPSTREAM_BASE_URL: http://127.0.0.1:9/unused
+          MCP_OPENAPI_SPEC: ../../services/app-registry-service/openapi.yaml
+          MCP_TOOL_OVERRIDES: ../../deploy/helm/fuzefront/files/mcp-tools.overrides.yaml
+          PORT: '8099'
+        run: |
+          npm run build
+          node dist/main.js > /tmp/gateway.log 2>&1 &
+          echo $! > /tmp/gateway.pid
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8099/healthz >/dev/null 2>&1; then
+            echo "::error title=MCP gateway::the gateway never became healthy on the committed spec"
+            cat /tmp/gateway.log
+            exit 1
+          fi
+
+      - name: Gateway serves a non-empty tool surface
+        run: |
+          health=$(curl -fsS http://127.0.0.1:8099/healthz)
+          echo "$health"
+          # A gateway that boots but enumerates zero tools is the vacuous case:
+          # every check above is green and the published image is useless. Assert
+          # a surface exists rather than assuming a 200 implies one.
+          # `tools` is the field /healthz actually emits (server.ts:115) — read it
+          # by its real name rather than probing aliases, so a rename breaks this
+          # loudly instead of silently defaulting to a number that passes.
+          count=$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tools"])')
+          mode=$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin)["descriptions"])')
+          echo "tool count: $count   descriptions mode: $mode"
+          if [ -z "$count" ] || [ "$count" -le 0 ] 2>/dev/null; then
+            echo "::error title=MCP gateway::/healthz reports $count tools. The image would publish a gateway that serves nothing."
+            cat /tmp/gateway.log
+            exit 1
+          fi
+
+      - name: MCP smoke over the real SSE transport
+        working-directory: packages/mcp-gateway
+        run: node scripts/smoke.mjs http://127.0.0.1:8099
+
+      - name: Stop the gateway
+        if: always()
+        run: |
+          [ -f /tmp/gateway.pid ] && kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
+          echo '--- gateway log ---'; cat /tmp/gateway.log 2>/dev/null || true
+
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v3
 
       # NOT pinned to a SHA, deliberately. Semgrep flags this and it is right in
