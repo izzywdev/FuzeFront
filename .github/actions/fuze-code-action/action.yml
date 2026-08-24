@@ -194,13 +194,16 @@ inputs:
 
 outputs:
   mode:
-    description: 'Which rung produced the result: claude | openai | gemini | failed'
+    description: 'Which rung produced the result: claude | openai | gemini | declined | failed'
     value: ${{ steps.finish.outputs.mode }}
   vendor:
     description: 'litellm | anthropic | openai | gemini | none'
     value: ${{ steps.finish.outputs.vendor }}
   conclusion:
-    description: 'success | failure — the OVERALL conclusion of the whole fallover chain.'
+    description: >-
+      success | failure | neutral — the OVERALL conclusion of the whole fallover
+      chain. `neutral` means a rung ran and DECLINED to do any work (see mode
+      =declined); it is neither a pass nor a fail and must not be read as either.
     value: ${{ steps.finish.outputs.conclusion }}
   result-text:
     description: 'Best-effort textual result from whichever rung succeeded.'
@@ -295,6 +298,10 @@ runs:
         CONCLUSION: ${{ steps.claude.outputs.conclusion }}
         LOG_FILE: ${{ steps.claude.outputs.execution_file }}
         VENDOR: ${{ steps.llm.outputs.vendor }}
+        # The runner's own outcome for the rung-1 step. Needed to tell "the action
+        # could not start" from "the action ran and declined to do anything" —
+        # both report an empty conclusion, and only the first is a failure.
+        OUTCOME: ${{ steps.claude.outcome }}
       run: |
         set -uo pipefail
         # NOTE: the runner invokes `shell: bash` steps with `-e` already on, so a
@@ -303,7 +310,7 @@ runs:
         # substitution assignment) before the outputs below get written. The
         # `if cmd; then ... else CODE=$?; fi` form is a TESTED context, which is
         # the one place -e is defined to not apply.
-        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "${CONCLUSION:-}" "${LOG_FILE:-}")"; then
+        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "${CONCLUSION:-}" "${LOG_FILE:-}" "${OUTCOME:-}")"; then
           CODE=0
         else
           CODE=$?
@@ -313,6 +320,9 @@ runs:
         echo "::notice title=fuze-code-action::rung=claude vendor=${VENDOR:-} verdict: ${VERDICT}"
         if [ "$CODE" = "2" ]; then
           echo "::error title=fuze-code-action::claude-code-action failed with a TASK failure (or an unclassifiable one) — refusing to fall through to the OpenAI rung. Fix the underlying issue; this is not a vendor-availability problem."
+        fi
+        if [ "$CODE" = "3" ]; then
+          echo "::warning title=fuze-code-action::rung=claude DECLINED to run and NO WORK WAS PERFORMED by this job. The usual cause is claude-code-action'"'"'s workflow-validation guard: it refuses to run when the pull request modifies the workflow file that invokes it, which every workflow-migration PR does by construction. This is not a failure and the other rungs are deliberately not attempted — they would run exactly the task the guard exists to prevent. The job reports neutral; whatever this workflow maintains was NOT checked on this commit and will be on the next run against the default branch."
         fi
 
     # RUNG 2 — openai/codex-action. Reached ONLY when rung 1 was classified as an
@@ -466,6 +476,19 @@ runs:
         # delimiter verbatim, and CLAUDE_RESULT/CODEX_RESULT are arbitrary
         # LLM-generated text that this action does not control the content of.
         DELIM="FUZE_EOF_$(date +%s%N)_$$"
+        if [ "${CLAUDE_CODE:-}" = "3" ]; then
+          # Declined, not failed, and NOT success either: no work was performed.
+          # mode/conclusion say so explicitly so a caller can branch on it and a
+          # reader cannot mistake this for a run that did the job.
+          {
+            echo "mode=declined"
+            echo "vendor=${LLM_VENDOR:-}"
+            echo "conclusion=neutral"
+            echo "result-text="
+          } >> "$GITHUB_OUTPUT"
+          echo "::warning title=fuze-code-action::conclusion=neutral mode=declined — the chain performed no work (see the rung=claude notice above). Exiting 0: there is no failure to report and nothing another vendor could retry."
+          exit 0
+        fi
         if [ "${CLAUDE_CODE:-}" = "0" ]; then
           {
             echo "mode=claude"

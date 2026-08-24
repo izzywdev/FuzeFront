@@ -6,6 +6,9 @@ one, if broken, converts an honest red into a green — which is the defect this
 action was written to prevent, so they are asserted over EVERY reachable
 combination rather than spot-checked.
 
+  0. ONLY an availability failure (classify code=1) reaches rung 2 or 3. Success
+     (0), a task failure (2) and a decline (3) each have nothing another vendor
+     could usefully retry.
   1. Mention mode (no task-prompt) never reaches rung 2 or 3. codex-action and
      run-gemini-cli receive no GitHub event context, so with an empty prompt they
      cannot see the task; a rung that "succeeds" there reports success for work
@@ -185,7 +188,10 @@ class TestRungGating(unittest.TestCase):
         self.assertFalse(self.inputs["task-prompt"].get("required", False))
 
     def test_gate_invariants_over_every_combination(self):
-        codes = ["0", "1", "2"]
+        # "3" = declined: the rung ran and did no work. Like success and like a
+        # task failure, it must NOT reach rungs 2 or 3 — there is nothing for
+        # another vendor to retry.
+        codes = ["0", "1", "2", "3"]
         prompts = ["", "do the thing"]
         okeys = ["", "sk-openai"]
         gkeys = ["", "sk-gemini"]
@@ -216,12 +222,15 @@ class TestRungGating(unittest.TestCase):
             if code == "0":
                 self.assertFalse(r2, f"success reached rung 2: {where}")
                 self.assertFalse(r3, f"success reached rung 3: {where}")
+            if code == "3":
+                self.assertFalse(r2, f"declined reached rung 2: {where}")
+                self.assertFalse(r3, f"declined reached rung 3: {where}")
             if not okey:
                 self.assertFalse(r2, f"rung 2 ran with no openai key: {where}")
             if not gkey:
                 self.assertFalse(r3, f"rung 3 ran with no gemini key: {where}")
 
-        self.assertEqual(checked, 72)
+        self.assertEqual(checked, 96)
 
     def test_the_gates_are_not_vacuous(self):
         # A suite that only proves "never fires" would pass on `if: false`.

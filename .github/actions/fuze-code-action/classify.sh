@@ -9,16 +9,21 @@
 # script is deliberately conservative — see the "indeterminate" and "task" branches
 # below, both of which exit 2 (do NOT fall through) rather than guess.
 #
-# Usage: classify.sh <conclusion> [log-file]
-#   conclusion  "success" | "failure" | "" (empty = the rung never reported a
-#               conclusion at all, e.g. it crashed before running / could not start)
+# Usage: classify.sh <conclusion> [log-file] [step-outcome]
+#   conclusion  "success" | "failure" | "" (empty = the rung reported no conclusion)
 #   log-file    optional path to whatever diagnostic text the rung produced (e.g.
 #               claude-code-action's execution_file). May be absent or empty.
+#   step-outcome the RUNNER's own outcome for that step ("success" | "failure" |
+#               "skipped" | ""). Only consulted when `conclusion` is empty, to tell
+#               "could not start" from "ran and declined" — see below.
 #
 # Exit codes — the ONLY contract callers rely on:
 #   0 = success             — no fallthrough needed
 #   1 = availability-failure — safe to fall through to the next rung
 #   2 = task-failure / indeterminate — do NOT fall through, fail closed
+#   3 = declined             — the rung RAN and deliberately did no work. Do NOT
+#                              fall through and do NOT fail: nothing is broken and
+#                              there is nothing for another vendor to retry.
 #
 # Prints one line naming the verdict (and, on an availability match, which pattern
 # fired) to stdout. NEVER prints the raw log text itself — it may carry a
@@ -28,10 +33,28 @@ set -euo pipefail
 
 CONCLUSION="${1:-}"
 LOG_FILE="${2:-}"
+OUTCOME="${3:-}"
 
 if [ "$CONCLUSION" = "success" ]; then
   echo "success"
   exit 0
+fi
+
+# No conclusion reported, but the STEP ITSELF SUCCEEDED. The action ran to
+# completion and chose to do nothing — it did not fail. The case that forced this
+# distinction: claude-code-action refuses to run when the pull request modifies the
+# workflow file that invokes it ("Skipping action due to workflow validation: the
+# workflow file must ... have identical content to the version on the default
+# branch"), exits 0, and emits no conclusion. Every workflow-migration PR trips it.
+#
+# Falling through there is pointless — the other vendors would run the same task
+# the guard exists to prevent — and failing is a lie: nothing is broken. So this is
+# its own verdict. It is deliberately keyed on the runner's own report that the
+# step SUCCEEDED, so a rung that genuinely could not start (outcome=failure, or no
+# outcome at all) still classifies as availability and still falls through.
+if [ -z "$CONCLUSION" ] && [ "$OUTCOME" = "success" ]; then
+  echo "declined: the rung ran, reported no conclusion, and its step succeeded — it did no work and did not fail"
+  exit 3
 fi
 
 # No conclusion reported at all = the rung could not even start (action resolution

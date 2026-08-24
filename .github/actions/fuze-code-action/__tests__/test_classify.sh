@@ -36,6 +36,26 @@ expect() {
   fi
 }
 
+# expect_outcome <want-code> <description> <conclusion> <step-outcome> [log-body]
+# Same as expect(), but also supplies the runner's own outcome for the step —
+# the third argument, consulted only when <conclusion> is empty.
+expect_outcome() {
+  local want="$1" desc="$2" conclusion="$3" outcome="$4" body="${5-}" logfile="" got out
+  if [ $# -ge 5 ]; then
+    logfile="${TMP}/log.$RANDOM"
+    printf '%s' "$body" > "$logfile"
+  fi
+  if out="$("$CLASSIFY" "$conclusion" "$logfile" "$outcome" 2>&1)"; then got=0; else got=$?; fi
+  if [ "$got" = "$want" ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: ${desc}"
+    echo "      want exit ${want}, got ${got}"
+    echo "      output: ${out}"
+  fi
+}
+
 # ── success ──────────────────────────────────────────────────────────────────
 expect 0 "success conclusion is success"                       "success"
 expect 0 "success wins even with scary log text"               "success" "credit balance is too low"
@@ -91,5 +111,23 @@ else
 fi
 
 echo
+# ── declined: ran, did nothing, did NOT fail ─────────────────────────────────
+# claude-code-action refuses to run when the PR modifies the workflow file that
+# invokes it, exits 0, and reports no conclusion. Falling through would run the
+# very task that guard exists to prevent; failing would report a break that did
+# not happen. Both are wrong, so this is its own verdict.
+expect_outcome 3 "empty conclusion + step succeeded = declined"        "" "success"
+expect_outcome 3 "declined even with scary log text present"           "" "success" "credit balance is too low"
+
+# The distinction is load-bearing: ONLY a succeeded step declines. Anything else
+# with an empty conclusion is still could-not-start, and still falls through.
+expect_outcome 1 "empty conclusion + step FAILED is still availability"  "" "failure"
+expect_outcome 1 "empty conclusion + step skipped is still availability" "" "skipped"
+expect_outcome 1 "empty conclusion + no outcome at all is availability"  "" ""
+
+# A real failure is never reclassified by the outcome argument.
+expect_outcome 2 "failure conclusion is unaffected by outcome=success"  "failure" "success"
+expect_outcome 0 "success conclusion is unaffected by outcome=failure"  "success" "failure"
+
 echo "classify.sh self-test: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" = "0" ]
