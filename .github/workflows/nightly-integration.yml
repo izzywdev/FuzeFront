@@ -53,8 +53,12 @@ jobs:
             echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
             echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @claude build issue."
           else
-            echo "ran=true" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=true" >> "$GITHUB_ENV"
-            echo "CT=$CT" >> "$GITHUB_ENV"; echo "SUITE=$SUITE" >> "$GITHUB_ENV"
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "SUITE_PRESENT=true"
+              echo "CT=$CT"
+              echo "SUITE=$SUITE"
+            } >> "$GITHUB_ENV"
             echo "::notice title=nightly-integration::Detected suite=$SUITE, local-up=$CT"
           fi
 
@@ -62,10 +66,10 @@ jobs:
         if: env.SUITE_PRESENT == 'true'
         shell: bash
         run: |
-          dir=$(dirname "$CT"); envf=""
-          [ -f "$dir/versions.env" ] && envf="--env-file $dir/versions.env"
+          dir=$(dirname "$CT"); envf=()
+          [ -f "$dir/versions.env" ] && envf=(--env-file "$dir/versions.env")
           echo "::group::consumer-test up"
-          docker compose $envf -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
+          docker compose "${envf[@]}" -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
           echo "::endgroup::"
 
       - name: Run integration/contract suite (mocks only — no real external egress)

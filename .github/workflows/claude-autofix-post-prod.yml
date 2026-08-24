@@ -60,9 +60,11 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
           SHA="${{ github.event.workflow_run.head_sha }}"
           SHORT_SHA="${SHA:0:8}"
-          echo "run_url=${RUN_URL}" >> "$GITHUB_OUTPUT"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "run_url=${RUN_URL}"
+            echo "sha=${SHA}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
 
           # Collect first ~200 lines of text output from the downloaded report.
           # Written to a file in the workspace so Claude can read it directly —
