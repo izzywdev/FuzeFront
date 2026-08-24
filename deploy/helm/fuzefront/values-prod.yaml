@@ -165,6 +165,102 @@ mcp:
     tag: "12cb4f787248"
     pullPolicy: IfNotPresent
 
+# FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
+# tenant row on the shared izzywdev/FuzeAgent `a2a-shared` server — see
+# docs/a2a/README.md and FuzeAgent's docs/a2a/per-product-pod.md, transcribed
+# here verbatim per that investigation's exact recipe). Runs the EXISTING
+# shared ghcr.io/izzywdev/fuzeagent-a2a image; this repo builds nothing new.
+#
+# Image is pinned by digest (see the `image.tag` comment below) — verified
+# anonymously pullable 2026-08-23. Re-pin when FuzeAgent's CI publishes a new
+# build.
+#
+# BLOCKED ON TWO SEALED SECRETS this session could not produce (see
+# deploy/contabo/sealed/a2a-fuzefront-secrets.yaml — scaffolded with EMPTY
+# encryptedData, valid SealedSecret shape, zero secret material):
+#   - a2a-provider-anthropic/api-key — a real Anthropic API key. Not
+#     self-generatable; needs an operator with the actual credential.
+#   - a2a-card-signing/jws.key — a random signing key (self-generatable via
+#     rotate-sealed-secret.yml: `scope=fuzefront/a2a-card-signing
+#     key=jws.key manifest=deploy/contabo/sealed/a2a-fuzefront-secrets.yaml`),
+#     but sealing needs kubeseal + the published public cert
+#     (https://sealed-secrets.prod.fuzefront.com/v1/cert.pem), which this
+#     session's network egress cannot reach (blocked at the outbound proxy,
+#     same restriction documented for app.fuzefront.com). CI's runner may
+#     have a different network path to that Cloudflare-Access-gated URL; if it
+#     doesn't, commit the real controller cert to
+#     deploy/sealed-secrets/sealing-cert.pem first (fetched via
+#     `kubeseal --fetch-cert` by whoever holds cluster access — the PUBLIC
+#     half only, safe to publish) so the offline fallback in
+#     scripts/seal-secret.sh has something to fall back to.
+# Until both are sealed for real, this Deployment's pod will not reach Ready
+# (env `valueFrom.secretKeyRef` on a key that does not exist yet — a visible,
+# self-explanatory ContainerCreating/CreateContainerConfigError state, not a
+# silent failure).
+#
+# `a2a-repos-git` is NOT needed: FuzeFront is a PUBLIC repo (verified via the
+# GitHub API), so the repo-sync init container clones anonymously.
+# `ghcr-pull` is NOT needed either: ghcr.io/izzywdev/fuzeagent-a2a is a public
+# GHCR package (verified — anonymous token exchange + manifest GET succeeded).
+a2a:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzeagent-a2a
+    # `tag` alone would be a mutable moving target (image reference grammar
+    # allows `tag@digest` together — kubelet/containerd resolve via the
+    # digest, so this is fully immutable regardless of what `latest` is
+    # repointed to later; the `tag` half is cosmetic/readable only). Digest
+    # verified anonymously pullable 2026-08-23 (what
+    # ghcr.io/izzywdev/fuzeagent-a2a:latest resolved to at verification time
+    # — `latest` itself is never dereferenced at deploy time, only used to
+    # locate this digest). Re-pin when FuzeAgent's CI publishes a new build.
+    tag: "latest@sha256:c233bb47409300e769c68f84c12077e3a74db132f287fa218929742fbe48ccf6"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  protocolVersion: "1.0"
+  # MUST equal what the a2a-fuzefront Service resolves to (a2a.yaml). Unset
+  # would default to the SHARED server's card URL and this pod would be
+  # unreachable through its own signed card despite passing every probe.
+  inClusterUrl: http://a2a-fuzefront.fuzefront.svc.cluster.local:8080/rpc
+  auth:
+    oidcIssuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+    # In-cluster discovery avoids the Cloudflare-tunnel hairpin (17-34s
+    # timeouts) — see authentik-networkpolicy.yaml, which already allows
+    # same-namespace traffic to authentik-server:9000 (this pod lives in the
+    # fuzefront namespace, so no NetworkPolicy change was needed for this).
+    oidcDiscoveryUrl: http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/fuzefront/.well-known/openid-configuration
+    audience: a2a
+    callerClaim: repo
+  cardSigning:
+    keySecretRef: { name: a2a-card-signing, key: jws.key }
+    keyId: a2a-v1
+  tenants:
+    - tenant: FuzeFront
+      repo: izzywdev/FuzeFront
+      ref: master   # NOT main — FuzeFront's default branch is master
+      enabled: true
+      entryRole: app-shell-platform
+      external: false
+      provider:
+        name: anthropic
+        apiKeySecretRef: { name: a2a-provider-anthropic, key: api-key }
+
+a2aDeploy:
+  replicas: 1
+  reposGitTokenSecretRef: null   # public repo — anonymous clone
+  providerApiKeySecretRef: { name: a2a-provider-anthropic, key: api-key }
+  gitImage: alpine/git:latest
+  agentProvider: anthropic
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
