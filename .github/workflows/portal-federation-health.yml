@@ -50,13 +50,25 @@ on:
         description: 'Portal origin to probe (remoteEntry URLs resolve against this, matching frontend/src/utils/loadFederatedApp.ts)'
         required: false
         default: 'https://app.fuzefront.com'
+  # A PR touching the checker or its roster runs the (secret-free, prod-free)
+  # self-test as ordinary CI, so a regression is caught before merge instead
+  # of at the next scheduled prod run. probe-production stays schedule/
+  # workflow_dispatch-only below — a PR must never spend the prod credentials
+  # or hit the live site.
+  pull_request:
+    paths:
+      - 'scripts/check-portal-federation-health.mjs'
+      - 'scripts/check-portal-federation-health.selftest.mjs'
+      - 'scripts/expected-portal-apps.json'
+      - 'scripts/check-federated-assets.mjs'
+      - '.github/workflows/portal-federation-health.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: portal-federation-health
-  cancel-in-progress: false
+  group: portal-federation-health-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Runs FIRST and gates the production probe. Proves check-portal-federation-
@@ -83,6 +95,10 @@ jobs:
   probe-production:
     name: Census against production
     needs: selftest
+    # Never on pull_request: this job spends the POST_PROD_* credentials
+    # against the live site, which a PR (including one from a fork) must
+    # never be able to trigger.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
