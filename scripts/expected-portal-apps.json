@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "purpose": "The checked-in roster scripts/check-portal-federation-health.mjs diffs the live registry against, so a product that silently drops out of /api/v1/app-registry/apps (the '13 of 18' symptom) fails loudly instead of producing a shorter-but-still-green table.",
+    "notASlugMigrationWorklist": "This file is NOT authority to edit any product's registered `slug`. Per CLAUDE.md §'slug, display name, and the federated serve path are THREE INDEPENDENT questions', slug is free at registration and immutable after. If a live registry slug genuinely differs from an entry below, FIX THIS FILE to match the registry — never the other way around. This list exists only to notice disappearance, not to prescribe naming.",
+    "maintainedBy": "owner (izzywdev) — add an entry when a new product joins the family, remove one when a product is formally retired, correct the slug if a `confidence` below turns out wrong.",
+    "lastReviewed": "2026-08-25",
+    "countRationale": "18 entries = the 20-repo fleet in docs/planning/production-conformance.md §1, minus FuzeInfra and FuzeSDLC (platform/governance repos with no portal tile), minus FuzeFront itself (the host shell, not a listed app), plus FuzeQuality ('in prod, not in the 20' per that doc, but builtin and portal-visible). Matches the owner's own '18 products' count.",
+    "confidenceLevels": {
+      "verified": "slug read directly from code in THIS repo (backend/applications/src/app-registry/builtins.ts BUILTIN_MANIFESTS, or FuzeQuality/registration/manifest.json) — cannot be stale without this repo's own tests catching it.",
+      "owner-ruling": "slug is one of the exact values the owner named on 2026-08-19 (quoted verbatim in CLAUDE.md §'slug, display name, and the federated serve path') as either a prefixed exception to keep (fuzex, fuzebi) or an already-correct unprefixed slug not to be migrated.",
+      "documented": "slug taken from a specific named FuzeFront doc that is not itself flagged RETIRED/historical-snapshot for this purpose, but was not independently re-measured for this file.",
+      "inferred": "no direct citation found; slug is a best guess by family naming convention. Treat a MISSING result for one of these as 'go verify the real slug', not as proof the product is down."
+    },
+    "sources": [
+      "backend/applications/src/app-registry/builtins.ts (BUILTIN_MANIFESTS)",
+      "FuzeQuality/registration/manifest.json",
+      "CLAUDE.md §'slug, display name, and the federated serve path are THREE INDEPENDENT questions' (owner ruling, 2026-08-19, quoted verbatim)",
+      "docs/planning/app-suites-and-modes.md (FuzeHub suite example)",
+      "packages/onboarding-kit/README.md (FuzeService used as the running naming-convention example)",
+      "docs/runbooks/app-slug-deprefix-migration.md — RETIRED; its measured-state table was read only as a last-resort snapshot for products no other source names, and is called out per-entry below"
+    ]
+  },
+  "apps": [
+    { "slug": "fuzeagent",       "name": "FuzeAgent",     "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS" },
+    { "slug": "fuzesocial",      "name": "FuzeSocial",    "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS" },
+    { "slug": "fuzequality",     "name": "FuzeQuality",   "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS + FuzeQuality/registration/manifest.json" },
+    { "slug": "fuzex",           "name": "FuzeX",         "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)" },
+    { "slug": "fuzebi",          "name": "FuzeBI",        "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)" },
+    { "slug": "deploy",          "name": "FuzeDeploy",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "call",            "name": "FuzeCall",      "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "executive",       "name": "FuzeExecutive", "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "finance",         "name": "FuzeFinance",   "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "keys",            "name": "FuzeKeys",      "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "market",          "name": "FuzeMarket",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
+    { "slug": "picker",          "name": "FuzePicker",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone; corroborated by docs/runbooks/app-slug-deprefix-migration.md ('name only — already correct')" },
+    { "slug": "fuzecontact",     "name": "Contact",       "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
+    { "slug": "fuzehub-ventures","name": "FuzeHub",       "confidence": "documented",  "source": "docs/planning/app-suites-and-modes.md — worked example: 'manifest.json slug: fuzehub-ventures (primary; owns policy + billing)'" },
+    { "slug": "fuzeplan",        "name": "FuzePlan",      "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
+    { "slug": "fuzesales",       "name": "Sales",         "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
+    { "slug": "fuzeservice",     "name": "FuzeService",   "confidence": "documented",  "source": "packages/onboarding-kit/README.md — used verbatim as the naming-convention's running example: \"slug\": \"fuzeservice\"" },
+    { "slug": "merchandize",     "name": "FuzeMerchandize", "confidence": "inferred", "source": "no direct citation found anywhere in this repo; guessed by family convention (unprefixed, matches the 'deploy/call/executive/finance/keys/market/picker' pattern). VERIFY before trusting a MISSING result for this one." }
+  ]
+}
