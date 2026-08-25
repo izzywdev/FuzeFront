@@ -55,6 +55,23 @@ on:
   # of at the next scheduled prod run. probe-production stays schedule/
   # workflow_dispatch-only below — a PR must never spend the prod credentials
   # or hit the live site.
+  # An ON-DEMAND census that automation can actually trigger. `workflow_dispatch`
+  # above is the human lever; it is NOT reachable from an agent session, where
+  # POST /actions/workflows/{id}/dispatches returns 403 "Resource not accessible
+  # by integration" — as do /approve and /rerun. Without this, the only way to
+  # get a live answer was to wait up to 6h for the cron.
+  #
+  # Deliberately a dedicated throwaway branch prefix and NOT `pull_request`: the
+  # rule that a PR must never spend the prod credentials or hit the live site
+  # still holds. Pushing `ci/probe-prod` is an explicit, auditable act by
+  # whoever wants a census right now; opening a PR is not.
+  #
+  # probe-production needs no change to honour this -- its `if:` is
+  # `github.event_name != 'pull_request'`, so a push already qualifies.
+  push:
+    branches:
+      - 'ci/probe-prod**'
+
   pull_request:
     paths:
       - 'scripts/check-portal-federation-health.mjs'
