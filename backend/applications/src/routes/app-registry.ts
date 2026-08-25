@@ -20,7 +20,7 @@ import {
   billingProfileSchema,
   toValidationErrorBody,
 } from '../app-registry/manifest.schema'
-import { appRegistryService, canRead, canMutate } from '../app-registry/service'
+import { appRegistryService, canRead, canMutate, ROOT_ORG_ID } from '../app-registry/service'
 import { resolveCaller } from '../app-registry/caller'
 import { checkAppRegistryPermission } from '../app-registry/permit'
 import { getAppRegistryEmitter } from '../app-registry/events'
@@ -124,9 +124,18 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
       return res.status(400).json(toValidationErrorBody((parsed as any).error))
     }
     const { manifest, organizationId } = parsed.data
-    const orgId = organizationId ?? null
-
     const caller = await resolveCaller(req.user)
+    // organization_id is NEVER null on `apps` (owner ruling 2026-08-25 — see
+    // ROOT_ORG_ID's doc comment in ../app-registry/service.ts). A platform
+    // admin (register.sh's service-account token, i.e. every first-party
+    // FuzeFront product self-registering) that omits organizationId is
+    // registering a first-party app and is attributed to the platform root
+    // org, never left org-less — this was the actual mechanism that put
+    // every builtin/self-registered product into the `organization_id IS
+    // NULL` state the visibility query used to special-case. A non-admin
+    // caller omitting it is still rejected below; they must name a real org
+    // they belong to.
+    const orgId = organizationId ?? (caller.isPlatformAdmin ? ROOT_ORG_ID : null)
     // release flag (default OFF): the new write surface is dark until released.
     if (!(await v1WriteGate(caller, orgId, res))) return
 
