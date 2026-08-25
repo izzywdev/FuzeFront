@@ -134,6 +134,13 @@ jobs:
           # step writes for what that means for a MISSING row.
           POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
           POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+          # 10s (the script's default) was not enough for a cold prod sign-in
+          # from a GitHub-hosted runner -- the first two census runs both aborted
+          # there. 30s is not an attempt to paper over a slow API: if the portal
+          # genuinely takes >10s to authenticate that is worth knowing, and the
+          # reachability probe below is what separates "slow" from "down". A
+          # timeout is never scored as healthy either way.
+          PORTAL_HEALTH_TIMEOUT_MS: '30000'
         run: |
           set -o pipefail
           {
@@ -141,6 +148,17 @@ jobs:
             echo
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # Reachability first, and deliberately BEFORE the census. A sign-in
+          # timeout alone cannot tell you whether the host is unreachable from
+          # a GitHub-hosted runner (Cloudflare tunnel down, egress blocked) or
+          # simply slow to authenticate. These two lines settle it, cost a
+          # second, and print into the summary next to the census result.
+          # `|| true` here is NOT suppression of a verdict: curl's exit code is
+          # not the check -- the census below is -- and this line exists purely
+          # to record what the host said before that runs.
+          echo "reachability: $(curl -sS -o /dev/null -w 'HTTP %{http_code} in %{time_total}s' \
+            --max-time 30 "$BASE_URL/" 2>&1 || echo 'no answer')" | tee -a "$GITHUB_STEP_SUMMARY"
+
           node scripts/check-portal-federation-health.mjs --base-url "$BASE_URL" | tee -a "$GITHUB_STEP_SUMMARY"
           status=$?
           echo '```' >> "$GITHUB_STEP_SUMMARY"
