@@ -94,7 +94,11 @@ const JS_CONTENT_TYPE = /\b(?:java|ecma)script\b/i
 const HTML_CONTENT_TYPE = /text\/html/i
 const LOOKS_LIKE_HTML = /^\s*(?:<!doctype\s+html|<html\b)/i
 const MAX_CHUNKS_PER_APP = 20
-const FETCH_TIMEOUT_MS = 10_000
+// Mutable, set once from --timeout-ms/PORTAL_HEALTH_TIMEOUT_MS in main().
+// 10s is tight for a cold prod login over GitHub-hosted egress, and being
+// able to raise it is how an operator tells "slow" apart from "down" --
+// which is exactly what the sign-in failure message tells them to do.
+let FETCH_TIMEOUT_MS = 10_000
 
 function fail(msg) {
   console.error(`::error title=Portal federation health::${msg}`)
@@ -114,6 +118,7 @@ function parseArgs(argv) {
     password:
       process.env.PORTAL_HEALTH_PASSWORD || process.env.POST_PROD_PASSWORD || null,
     token: process.env.PORTAL_HEALTH_TOKEN || null,
+    timeoutMs: Number(process.env.PORTAL_HEALTH_TIMEOUT_MS) || 10_000,
   }
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i]
@@ -124,9 +129,10 @@ function parseArgs(argv) {
     else if (v === '--email') a.email = next()
     else if (v === '--password') a.password = next()
     else if (v === '--token') a.token = next()
+    else if (v === '--timeout-ms') a.timeoutMs = Number(next())
     else if (v === '--help' || v === '-h') {
       console.log(
-        'usage: check-portal-federation-health.mjs --base-url <url> [--api-url <url>] [--expected <path>] [--email <e> --password <p> | --token <bearer>]'
+        'usage: check-portal-federation-health.mjs --base-url <url> [--api-url <url>] [--expected <path>] [--email <e> --password <p> | --token <bearer>] [--timeout-ms <n>]'
       )
       process.exit(0)
     }
@@ -434,6 +440,9 @@ function printTable(rows) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  if (Number.isFinite(args.timeoutMs) && args.timeoutMs > 0) {
+    FETCH_TIMEOUT_MS = args.timeoutMs
+  }
   const expected = loadExpected(args.expectedPath)
 
   let token = args.token
@@ -446,9 +455,28 @@ async function main() {
       process.exitCode = 1
       return
     }
-    const loggedIn = await login(args.apiUrl, args.email, args.password)
-    token = loggedIn.token
-    whoami = loggedIn.whoami
+    // Wrapped for the same reason listAllApps below is. An unwrapped failure
+    // here reaches the bottom-of-file catch, which can only say
+    // "AbortError: This operation was aborted" -- no phase, no URL, no timeout
+    // value. That is what the first production run of this census actually
+    // printed: it failed honestly, which is right, but told nobody WHAT failed,
+    // which defeats the point of building it.
+    try {
+      const loggedIn = await login(args.apiUrl, args.email, args.password)
+      token = loggedIn.token
+      whoami = loggedIn.whoami
+    } catch (err) {
+      const aborted = err?.name === 'AbortError'
+      fail(
+        aborted
+          ? `could not sign in to ${args.apiUrl}: no response within ${FETCH_TIMEOUT_MS}ms. ` +
+            'The portal API did not answer in time -- it is unreachable, or slower than the timeout. ' +
+            'Raise --timeout-ms to distinguish "slow" from "down"; do not assume the apps are healthy.'
+          : `could not sign in to ${args.apiUrl}: ${err.message}`
+      )
+      process.exitCode = 1
+      return
+    }
   }
 
   let apps
@@ -533,6 +561,16 @@ async function main() {
 }
 
 main().catch(err => {
-  fail(`unhandled error: ${err.stack || err.message}`)
+  // Last resort only. Every EXPECTED failure path above reports its own phase,
+  // URL and cause; reaching here means something genuinely unanticipated
+  // happened, so print the stack rather than a one-line message.
+  const aborted = err?.name === 'AbortError'
+  fail(
+    aborted
+      ? `timed out with no phase reported (${FETCH_TIMEOUT_MS}ms). This is a gap in this script's own ` +
+        'error handling -- whichever call aborted should be wrapped with a diagnostic naming it.\n' +
+        (err.stack || '')
+      : `unhandled error: ${err.stack || err.message}`
+  )
   process.exitCode = 1
 })
