@@ -80,27 +80,27 @@ const BUILTIN_MANIFESTS: unknown[] = [
     visibility: 'public',
     roles: [],
   },
-  {
-    manifestVersion: '1',
-    slug: 'fuzequality',
-    name: 'FuzeQuality',
-    menuLabel: 'Quality',
-    description:
-      'API, frontend, test, and requirement coverage intelligence across the FuzeFront product family.',
-    icon: { kind: 'emoji', value: '🧪' },
-    mode: 'portal',
-    builtin: true,
-    integration: {
-      type: 'module-federation',
-      remoteEntry: '/apps/fuzequality/assets/remoteEntry.js',
-      scope: 'fuzequality',
-      module: './App',
-    },
-    chrome: { menu: 'host', topbar: 'host' },
-    routing: { path: '/app/fuzequality' },
-    visibility: 'organization',
-    roles: [],
-  },
+  // REMOVED 2026-08-25: the `fuzequality` built-in was a PHANTOM TILE.
+  //
+  // It seeded an activated, menu-visible app pointing at
+  // /apps/fuzequality/assets/remoteEntry.js for a product that DOES NOT EXIST.
+  // There is no `FuzeQuality` repository under any account this platform can
+  // reach — verified against the full repo listing (24 repos across izzywdev,
+  // FuzeOne and fuzeone2026; none is FuzeQuality). Nothing builds that bundle,
+  // nothing serves that path, and no chart mounts it. The tile appeared in
+  // every user's menu and white-screened on click.
+  //
+  // It also outlived its own evidence: migration 010's comment reasons about
+  // "fuzequality/apps/web/vite.config.ts" having no assetsDir override. That
+  // file is not reachable either. The `/assets/` segment in the removed entry
+  // came from that same assumption — 008 applied one path shape to both `clock`
+  // and `fuzequality`, 010 corrected `clock`, and nobody could correct this one
+  // because there was nothing to check it against.
+  //
+  // DO NOT RE-ADD without a repository that builds and serves the bundle. A
+  // built-in is seeded `activated` on every boot, so an entry here is a
+  // user-visible promise; make it only for something that exists. If FuzeQuality
+  // is built later, re-add the entry AND revert migration 011.
 ]
 
 /**
