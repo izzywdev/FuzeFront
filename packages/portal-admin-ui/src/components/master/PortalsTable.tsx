@@ -1,19 +1,13 @@
 import { Button, DataTable, StatusPill } from '@fuzefront/design-system'
 import { PlanBadge } from './PlanBadge'
 import { portalStatusPill } from '../../utils/statusMap'
-import type { Portal, PortalDomain } from '../../types'
+import type { AdminPortal } from '../../types'
 
 export interface PortalsTableProps {
-  portals: Portal[]
-  onOpen: (portal: Portal) => void
-  onSuspend: (portal: Portal) => void
-  onResume: (portal: Portal) => void
-}
-
-function primaryDomain(portal: Portal): string | null {
-  const domains: PortalDomain[] = portal.domains ?? []
-  const primary = domains.find((d: PortalDomain) => d.isPrimary) ?? domains[0]
-  return primary?.domain ?? null
+  portals: AdminPortal[]
+  onOpen: (portal: AdminPortal) => void
+  onSuspend: (portal: AdminPortal) => void
+  onResume: (portal: AdminPortal) => void
 }
 
 const COLUMNS = [
@@ -24,31 +18,21 @@ const COLUMNS = [
   { key: 'actions', header: 'Actions', align: 'right' as const },
 ]
 
-/** The master-admin fleet table (frame 01-portals-list). */
+/**
+ * The master-admin fleet table (frame 01-portals-list). The platform root
+ * org is never returned by `GET /api/v1/security/portals`, so every row
+ * here is a real, suspendable tenant portal — no root-row guard is needed
+ * (see `MasterAdminPortalsFlow`'s module doc for the frame deviation).
+ */
 export function PortalsTable({ portals, onOpen, onSuspend, onResume }: PortalsTableProps) {
   return (
     <DataTable columns={COLUMNS}>
       <tbody>
         {portals.map(portal => (
-          <tr key={portal.id} data-portal={portal.id} data-root={portal.isRoot ? 'true' : 'false'}>
+          <tr key={portal.orgId} data-portal={portal.orgId}>
             <td style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--weight-medium)' }}>
-                  {portal.name}
-                  {portal.isRoot && (
-                    <span
-                      style={{
-                        marginInlineStart: 'var(--space-2)',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 'var(--text-2xs)',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      root
-                    </span>
-                  )}
-                </span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--weight-medium)' }}>{portal.name}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                   {portal.slug}
                 </span>
@@ -63,10 +47,10 @@ export function PortalsTable({ portals, onOpen, onSuspend, onResume }: PortalsTa
                 borderBottom: '1px solid var(--border-color)',
                 fontFamily: 'var(--font-mono)',
                 fontSize: 'var(--text-xs)',
-                color: primaryDomain(portal) ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                color: portal.customDomain ? 'var(--text-secondary)' : 'var(--text-tertiary)',
               }}
             >
-              {primaryDomain(portal) ?? 'no custom domain'}
+              {portal.customDomain ?? 'no custom domain'}
             </td>
             <td style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-color)' }}>
               <PlanBadge billingMode={portal.billingMode} />
@@ -79,23 +63,15 @@ export function PortalsTable({ portals, onOpen, onSuspend, onResume }: PortalsTa
               }}
             >
               <div style={{ display: 'inline-flex', gap: 'var(--space-2)' }}>
-                <Button variant="ghost" size="sm" data-action="view-portal" data-target={portal.id} onClick={() => onOpen(portal)}>
+                <Button variant="ghost" size="sm" data-action="view-portal" data-target={portal.orgId} onClick={() => onOpen(portal)}>
                   Open
                 </Button>
                 {portal.status === 'suspended' ? (
-                  <Button variant="ghost" size="sm" data-action="resume-portal" data-target={portal.id} onClick={() => onResume(portal)}>
+                  <Button variant="ghost" size="sm" data-action="resume-portal" data-target={portal.orgId} onClick={() => onResume(portal)}>
                     Resume
                   </Button>
                 ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    data-action="suspend-portal"
-                    data-target={portal.id}
-                    disabled={portal.isRoot}
-                    title={portal.isRoot ? 'The root portal cannot be suspended' : undefined}
-                    onClick={() => onSuspend(portal)}
-                  >
+                  <Button variant="ghost" size="sm" data-action="suspend-portal" data-target={portal.orgId} onClick={() => onSuspend(portal)}>
                     Suspend
                   </Button>
                 )}

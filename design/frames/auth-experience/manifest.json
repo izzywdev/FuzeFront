@@ -4,7 +4,9 @@
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
-      "packages/auth-experience-ui/**"
+      "packages/auth-experience-ui/**",
+      "packages/auth-ui/src/**",
+      "frontend/src/pages/LoginPage.tsx"
     ]
   },
   "approved": false,
@@ -94,7 +96,7 @@
       "Alert info/success variants — add if not already present"
     ],
     "packages": [
-      "@fuzefront/auth-experience-ui"
+      "@fuzefront/auth-ui"
     ],
     "externalPackages": [
       "@marsidev/react-turnstile (Cloudflare Turnstile React wrapper; keys owner-gated)"
@@ -235,5 +237,5 @@
       ]
     }
   ],
-  "stamp": "456ae00cb0c00235bd5c1d8a5309ab8f15435aea4afbec81f31c57afb867f022"
+  "stamp": "f37ab8e824256a9946d3c676f2a1e701f06189851b5d66aa621d93e363daeac3"
 }

@@ -24,6 +24,7 @@ import { MeteringService } from './services/metering.service';
 import { KafkaBillingEmitter } from './kafka/producer';
 import { startUsageConsumer } from './kafka/consumer';
 import { startRefIndexConsumer } from './kafka/ref-index.consumer';
+import { startOrgDeletedConsumer } from './kafka/org-deleted.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
@@ -100,6 +101,18 @@ async function main() {
     console.error('[billing-service] ref-index consumer failed to start:', err),
   );
 
+  // --- identity.org.deleted -> cancel the org's Stripe subscription ---
+  // Its OWN consumer group: TypedConsumer.run binds a single schema per loop,
+  // and this reaction must not share offsets with the usage/ref-index consumers.
+  const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
+  startOrgDeletedConsumer(
+    orgDeletedConsumer,
+    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+    producer,
+  ).catch((err) =>
+    console.error('[billing-service] org-deleted consumer failed to start:', err),
+  );
+
   // --- Metering flush loop ---
   const flushTimer = setInterval(() => {
     metering.flush().catch((err) => console.error('[billing-service] meter flush error:', err));
@@ -156,6 +169,7 @@ async function main() {
     try {
       await consumer.disconnect();
       await refIndexConsumer.disconnect();
+      await orgDeletedConsumer.disconnect();
       await producer.disconnect();
       await pool!.end();
     } catch (err) {

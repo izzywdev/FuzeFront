@@ -60,6 +60,34 @@ chroma:
   database: fuzequality
   readyCollection: fuzequality_ready
 
+# FuzeFront self-registration — what puts FuzeQuality in the portal's
+# applications list. See templates/registration.yaml for why this is a
+# post-install Job rather than an initContainer, and why it defaults OFF here
+# while every sibling defaults it ON.
+#
+# SHORT VERSION: this chart is live and Argo-synced with prune + selfHeal.
+# Turning registration on before the `fuzefront-registration` Secret and the two
+# ConfigMaps exist in this namespace produces a failing Job. Turning it on as an
+# initContainer would have produced a CrashLoopBackOff on the RUNNING frontend.
+# Flip this to true in the same change that provisions the prerequisites —
+# registration/README.md has both commands.
+registration:
+  enabled: false
+  # Any image with a shell; curl + jq are installed at start. Kept as a value so
+  # an air-gapped cluster can point at an internal mirror instead.
+  image: alpine:3.20
+  # Cluster-internal DNS for the applications-service that owns /api/v1/app-registry.
+  apiUrl: http://fuzefront-applications.fuzefront.svc.cluster.local:3003
+  # Sealed Secret holding the apps:register bearer token under key `token`.
+  secretName: fuzefront-registration
+  # ConfigMap built from ../../registration/ (manifest.json, policy.json).
+  configMapName: fuzequality-registration
+  # ConfigMap holding register.sh from @fuzefront/onboarding-kit.
+  kitConfigMapName: fuzefront-onboarding-kit
+  # Retries are cheap and the platform may still be starting; register.sh
+  # already retries transient 5xx/connection failures internally.
+  backoffLimit: 3
+
 ingress:
   enabled: false
   className: nginx

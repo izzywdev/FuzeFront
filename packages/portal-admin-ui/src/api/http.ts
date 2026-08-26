@@ -29,8 +29,13 @@ export class HttpError extends Error {
     this.status = status
     this.body = body
     if (body && typeof body === 'object') {
+      // The family `ErrorBody` contract (`@fuzefront/security-client`'s
+      // `ErrorBody`) is `{ error: <human message>, code: <stable enum> }` —
+      // `code` is the machine-readable field callers branch on (e.g.
+      // `CONFLICT`, `FORBIDDEN`); `error` is prose. Prefer `code`, falling
+      // back to `error` only for a body that doesn't carry one.
       const record = body as Record<string, unknown>
-      const code = record.error ?? record.code
+      const code = record.code ?? record.error
       if (typeof code === 'string') this.code = code
     }
   }
@@ -44,7 +49,13 @@ export class HttpClient {
   constructor(opts: HttpClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? ''
     this.getToken = opts.getToken
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch
+    // The global `fetch` is a native method that MUST be invoked with `this`
+    // bound to the global object. Storing the bare reference and later calling
+    // `this.fetchImpl(...)` re-binds `this` to the HttpClient instance, which
+    // browsers reject with "Failed to execute 'fetch' on 'Window': Illegal
+    // invocation" — breaking every real-browser request. Bind the fallback to
+    // `globalThis`; an injected `fetchImpl` (tests) is left as-is.
+    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
   }
 
   async request<T>(method: string, path: string, body?: unknown, params?: Record<string, string | number | undefined>): Promise<T> {

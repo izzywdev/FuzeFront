@@ -26,6 +26,7 @@ import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
+import { createOpenApiSurface } from './openapi'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -161,6 +162,23 @@ app.use((request, response, next) => {
   }
   response.status(401).json({ error: 'Authentication required' })
 })
+
+// Platform operational surface: GET /health and the two representations of the
+// OpenAPI document. Mounted here — after the API-token guard, which
+// isPublicRequest() lets these three past — and BEFORE any product route, so a
+// probe never depends on the catalog store being reachable.
+//
+// /health/live and /health/ready below predate it and are what the chart's
+// kubelet probes use; they are left exactly as they were. /health is the
+// platform-wide convention every Fuze service answers, and additionally reports
+// whether this build shipped with its own contract.
+const openapi = createOpenApiSurface()
+if (!openapi.available) {
+  // Not fatal — /health reports it and the spec routes answer 503 — but it must
+  // not be silent, because the pod otherwise looks entirely healthy.
+  console.error(`FuzeQuality OpenAPI document unavailable: ${openapi.error}`)
+}
+app.use(openapi.router)
 
 app.get('/health/live', (_request, response) => response.json({ status: 'ok' }))
 app.get('/health/ready', (_request, response) => response.json({ status: 'ready' }))

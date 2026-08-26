@@ -6,7 +6,11 @@
   "implementation": {
     "paths": [
       "packages/identity-ui/src/components/context/**",
-      "packages/identity-ui/src/components/organizations/**"
+      "packages/identity-ui/src/components/organizations/**",
+      "frontend/src/pages/MyOrganizationsPage.tsx",
+      "frontend/src/pages/OrganizationDetailPage.tsx",
+      "frontend/src/pages/OrganizationPage.tsx",
+      "frontend/src/pages/CreateOrganizationPage.tsx"
     ]
   },
   "plan": "docs/planning/design-first-ui-pipeline.md",
@@ -167,5 +171,5 @@
       ]
     }
   ],
-  "stamp": "f0ceb3d95d359a1942157f67ef7294733b14cf29942a4e5bbbe1e02cb5c1ab6b"
+  "stamp": "369316f584f9d7302adac5def681f22c434f2b965720a8a20fa00dfbf349f86d"
 }

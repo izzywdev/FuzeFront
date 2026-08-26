@@ -74,8 +74,15 @@ describe('app-registry BOLA visibility (canRead)', () => {
     expect(canRead(appWith({ visibility: 'private', organizationId: 'org-z' }), platformAdmin)).toBe(true)
   })
 
-  it('platform-global (org-less) apps are readable', () => {
-    expect(canRead(appWith({ visibility: 'private', organizationId: null }), memberOfOrgA)).toBe(true)
+  // Owner ruling 2026-08-25: "there should be no app without orgid ...
+  // fuzefront itself [is] the orgid for our own apps" — `organization_id`
+  // is NOT NULL on `apps` (migration 011_apps_organization_id_not_null.ts),
+  // so this state should be unreachable. It used to be treated as "readable
+  // by anyone" (a first-party app landed here because nothing ever set its
+  // org, not by design); canRead now fails CLOSED for it instead, so a
+  // future regression on the DB constraint denies rather than leaks.
+  it('an org-less app (should be unreachable — see the NOT NULL constraint) is denied, not universally readable', () => {
+    expect(canRead(appWith({ visibility: 'private', organizationId: null }), memberOfOrgA)).toBe(false)
   })
 })
 

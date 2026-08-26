@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Lint (adaptive, report-only)
         shell: bash
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
         shell: bash
@@ -90,9 +90,28 @@ jobs:
           pip install -q semgrep
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
-        if: always()
+      # Upload is ENFORCED on public repos and SKIPPED BY CONDITION on private ones.
+      #
+      # This step used to carry `continue-on-error: true` with the note "private repos lack
+      # code-scanning; report-only must stay green". The premise was true; the mechanism was
+      # wrong. A blanket continue-on-error swallows EVERY failure, so "this repo has no code
+      # scanning" (expected, benign) and "the SARIF we produced is malformed / the action
+      # rejected it" (a security gate that is publishing nothing) collapsed into the same
+      # green tick — exactly the state described in the gate-dependency-scan note below,
+      # where a broken upload stayed green while the data never landed.
+      #
+      # So the benign case is a CONDITION now, and the step names itself as skipped. On a
+      # public repo the upload must succeed, and a genuine upload failure is a real red.
+      # FuzeFront is public, so here the condition is always true and the effect is simply
+      # that the upload can no longer fail silently.
+      #
+      # The condition is `!...private`, not `... == false`, deliberately: if the payload ever
+      # lacks `repository` the expression is truthy and the step RUNS. An absent field then
+      # fails loudly on a private repo rather than silently skipping on a public one — the
+      # safe direction for a security gate is to run and go red, never to quietly not run.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -206,8 +225,13 @@ jobs:
       # hid the broken upload, so the job stayed green while the data never
       # landed. Keep this step failing loudly: a dependency scan that silently
       # does not report is worse than one that is visibly broken.
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
+      # Same private-repo condition as the other two uploads, for one behaviour only:
+      # on a private repo without code scanning this now skips explicitly instead of
+      # hard-failing. FuzeFront is public, so the condition is true and the "fail loudly"
+      # intent described above is unchanged here.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: trivy.sarif
           category: trivy
@@ -236,9 +260,11 @@ jobs:
           [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
           semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
-        continue-on-error: true
+      # Enforced on public repos, skipped by condition on private ones — see the
+      # long note on the same step in gate-sast above for why this is not continue-on-error.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: authz.sarif
           category: authz
@@ -334,7 +360,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
         shell: bash
@@ -468,7 +494,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Pagination gate (report-only)
         shell: bash
@@ -500,7 +526,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Identifier gate — self-tests (the gate must be known to FIRE)
         shell: bash
@@ -508,7 +534,14 @@ jobs:
         # clean tree. `claude-auto-pr.yml` was green for its whole life because
         # every run took its early-exit path; the one time it had real work it
         # failed. Passing is not evidence.
-        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
       - name: Identifier gate — contracts, parity, namespace, adoption (enforcing)
         shell: bash
         run: |
@@ -550,13 +583,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Vacuous-check gate — self-tests (the gate must be known to FIRE)
         shell: bash
         # Same convention as gate-identifier's self-test step above: asserts the gate
         # FAILS on each known-offender shape, not merely that it passes on a clean tree.
-        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
       - name: Vacuous-check gate (enforcing)
         shell: bash
         run: |

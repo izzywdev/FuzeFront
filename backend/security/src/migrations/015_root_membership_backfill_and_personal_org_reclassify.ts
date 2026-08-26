@@ -11,15 +11,36 @@ import { ROOT_ORG_ID } from './014_seed_root_platform_organization'
  * amendment below — they are NOT independent):
  *
  *  (a) BACKFILL — every user without an existing `organization_memberships`
- *      row in the root org (ROOT_ORG_ID, any role) gets one with
- *      `role='member', status='active'`. A user who already has a row (most
- *      commonly the root org's own owner, seeded by migration 014) is left
- *      untouched — this is a "fill the gap", not a "reset everyone to
- *      member" migration. Runs even if `organizations` has no root row yet
- *      (defers to 0 rows matched, self-heals on a later boot once 014/015 or
- *      the monolith's chain seeds it) — a user whose org can't be resolved
- *      still isn't skipped outright, they simply pick up their root row the
- *      next time this migration (or the provisioning self-heal path) runs.
+ *      row in the root org gets one with `role='member', status='active'`.
+ *      A user who already has a row (most commonly the root org's own owner,
+ *      seeded by migration 014) is left untouched — this is a "fill the gap",
+ *      not a "reset everyone to member" migration. Runs even if
+ *      `organizations` has no root row yet (skips outright, self-heals on a
+ *      later boot once 014/015 or the monolith's chain seeds it) — a user
+ *      whose org can't be resolved still isn't skipped outright, they simply
+ *      pick up their root row the next time this migration (or the
+ *      provisioning self-heal path) runs.
+ *
+ *      ROOT ORG RESOLUTION (2026-08-16 P1 fix): this step does NOT hardcode
+ *      `ROOT_ORG_ID` into the INSERT. It resolves the actual root org row the
+ *      SAME WAY `portalRepository.ensureRootPortal()` does — prefer the row
+ *      whose id is `ROOT_ORG_ID`, else fall back to the oldest
+ *      `organizations` row of `type='platform'`. That fallback is required
+ *      because migration 014's own "adopt a pre-existing platform org rather
+ *      than creating a second one" branch can leave a prod DB with a real
+ *      platform-root org under a DIFFERENT id and NO `ROOT_ORG_ID` row at
+ *      all — exactly what happened on the 2026-07-29 rebuild (the adopted
+ *      org is `92f2020b-2bdb-41f0-98ff-1ef759b41741`, slug `fuzefront`,
+ *      which also means a second platform org can never be created under
+ *      `ROOT_ORG_ID` — that slug is taken). Hardcoding `ROOT_ORG_ID` here
+ *      made every INSERT violate `organization_memberships_organization_id_
+ *      foreign` (23503) on such a DB, which is NOT caught by
+ *      `ON CONFLICT DO NOTHING` (that only dedupes committed conflicts, it
+ *      does not catch a failed insert), and knex propagated the error out of
+ *      `initializeDatabase()` on every boot — the fuzefront-backend /
+ *      fuzefront-security 2026-08-16 P1 crashloop. If NO platform org exists
+ *      at all yet (fresh/schema-only DB), this step is skipped outright and
+ *      self-heals once one exists.
  *
  *  (b) RECLASSIFY — every `organizations` row with `type='personal'` becomes
  *      `type='organization'`. Non-destructive: nothing is deleted, no other
@@ -28,14 +49,16 @@ import { ROOT_ORG_ID } from './014_seed_root_platform_organization'
  *      enum value is kept for back-compat (Postgres cannot drop an enum
  *      value) but is no longer written once the flag is ON.
  *
- * IDEMPOTENT: (a) is an INSERT..SELECT guarded by NOT EXISTS on the unique
- * (user_id, organization_id) pair, PLUS `ON CONFLICT DO NOTHING` as a second
- * belt-and-braces guard against a concurrent insert of the same pair between
- * the SELECT and the INSERT. (b) is a plain UPDATE whose WHERE clause matches
- * zero rows once every personal org has already been reclassified. Both are
- * safe to run any number of times with no diff after the first successful run
- * — verified by `tests/migrations.rootMembershipBackfill.test.ts` (run + re-run
- * on a scratch DB).
+ * IDEMPOTENT: (a) is a root-org lookup (safe to repeat; re-resolves the same
+ * row every run) followed by an INSERT..SELECT guarded by NOT EXISTS on the
+ * unique (user_id, organization_id) pair, PLUS `ON CONFLICT DO NOTHING` as a
+ * second belt-and-braces guard against a concurrent insert of the same pair
+ * between the SELECT and the INSERT. (b) is a plain UPDATE whose WHERE clause
+ * matches zero rows once every personal org has already been reclassified.
+ * Both are safe to run any number of times with no diff after the first
+ * successful run — verified by `tests/migrations.rootMembershipBackfill.test.ts`
+ * (run + re-run on a scratch DB, PLUS a dedicated "ROOT_ORG_ID row absent,
+ * only an adopted platform org exists" regression case for the P1 above).
  *
  * PRECONDITION on BOTH (a) and (b): the `ROOT_ORG_ID` row must exist. It is a
  * hard-coded constant, not a lookup, and migration 014 has two paths that
@@ -68,33 +91,21 @@ import { ROOT_ORG_ID } from './014_seed_root_platform_organization'
  * land in a deploy window (`deploy-window` label, FF-EPIC-17-S2 DoD).
  */
 export async function up(knex: Knex): Promise<void> {
-  // (a) Backfill root membership for every user lacking one.
-  //
-  // PRECONDITION: the root org row must actually exist. `ROOT_ORG_ID` is a
-  // hard-coded constant, not a lookup, and migration 014 has two paths that
-  // legitimately leave the row ABSENT — it adopts a pre-existing platform org
-  // under a different id, and it defers entirely when there is no user yet.
-  // Neither is an error there, but inserting memberships that reference a
-  // missing organization is a foreign-key violation (23503) that aborts the
-  // migration chain and crash-loops the service on boot. Verify, don't assume:
-  // a step that cannot tell "nothing to do" from "the thing I need is missing"
-  // eventually reports success for the wrong reason.
-  const rootOrg = await knex('organizations').where({ id: ROOT_ORG_ID }).first()
-  if (!rootOrg) {
-    const platform = await knex('organizations')
+  // (a) Resolve the ACTUAL root org row (see the P1 note above), then
+  // backfill root membership for every user lacking one against ITS id —
+  // never the bare ROOT_ORG_ID constant, which may have no `organizations`
+  // row at all on a DB that adopted a pre-existing platform org.
+  const rootOrg =
+    (await knex('organizations').where({ id: ROOT_ORG_ID }).first()) ??
+    (await knex('organizations')
       .where({ type: 'platform' })
       .orderBy('created_at', 'asc')
-      .first()
-    console.error(
-      `[015] SKIPPING root-membership backfill: organization ${ROOT_ORG_ID} does ` +
-        'not exist. ' +
-        (platform
-          ? `The platform organization in this database is ${platform.id}, which ` +
-            'migration 014 adopted rather than repointed. Resolve that first — ' +
-            'until then every ROOT_ORG_ID call site misses.'
-          : 'No platform organization exists at all; migration 014 deferred.') +
-      ' Not inserting memberships that would violate' +
-      ' organization_memberships_organization_id_foreign.'
+      .first())
+
+  if (!rootOrg) {
+    console.log(
+      '[015] no platform root organization exists yet — skipping root-membership ' +
+        'backfill (self-heals on a later boot once 014/ensureRootPortal() seeds one)'
     )
   } else {
     const backfillResult = await knex.raw(
@@ -107,10 +118,12 @@ export async function up(knex: Knex): Promise<void> {
          WHERE om.user_id = u.id AND om.organization_id = ?
        )
        ON CONFLICT (user_id, organization_id) DO NOTHING`,
-      [ROOT_ORG_ID, ROOT_ORG_ID]
+      [rootOrg.id, rootOrg.id]
     )
     console.log(
-      `[015] root-membership backfill: inserted ${backfillResult.rowCount ?? 0} row(s)`
+      `[015] root-membership backfill: inserted ${backfillResult.rowCount ?? 0} row(s) ` +
+        `against root org ${rootOrg.id}` +
+        (rootOrg.id === ROOT_ORG_ID ? '' : ' (adopted platform org, not the canonical ROOT_ORG_ID)')
     )
   }
 

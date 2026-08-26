@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
       - name: Run watchdog self-tests
@@ -60,30 +60,48 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
 
       # Reading another repository's Actions queue needs a token with fleet
       # scope; the job's own GITHUB_TOKEN is scoped to this repository alone and
-      # would report a fleet of one. No token means this watchdog cannot do its
-      # job -- say so loudly and exit 0. Never red a scheduled run on a missing
-      # secret: an environmental condition must not look like a fleet outage,
-      # which is the same inversion the actor gate caused in a2a-maintain.
-      - name: Check for a fleet-scoped token
-        id: tok
+      # would report a fleet of one.
+      #
+      # THIS STEP USED TO WARN AND EXIT 0, AND THAT WAS THE DEFECT. The job below
+      # was gated on its output, so a scheduled run with no token skipped the
+      # observation and the job went GREEN. It did that ten times, every one
+      # green, including runs at 07:20Z and 07:57Z while the fleet was 40 hours
+      # into an outage. Green read as "the fleet is fine"; it actually meant "I
+      # looked at nothing" -- the exact vacuous pass this watchdog exists to
+      # detect, reproduced inside the detector.
+      #
+      # The original reasoning was half right, and that half is preserved: an
+      # environmental gap must not masquerade as a FLEET OUTAGE. The resolution
+      # is not to go green, it is to fail with a DIFFERENT SIGNAL. This error
+      # says the watchdog is blind. ci_queue_watch.py's stall error says the
+      # fleet is stuck. If those two were confusable the red would be as
+      # uninformative as the green was -- hence the distinct title and wording.
+      #
+      # There is no legitimate no-token run of this job. The job-level `if`
+      # excludes pull_request, leaving schedule (always the default branch, full
+      # secrets) and workflow_dispatch (requires write access). A missing secret
+      # here is misconfiguration, never a transient.
+      #
+      # scripts/ci_queue_watch.py deliberately still exits 0 with no token, and
+      # test_no_token_skips_cleanly pins that: for a CLI run by hand, no
+      # credential means nothing to misconfigure. The difference is RUN CONTEXT,
+      # which only this workflow knows. Do not "align" them.
+      - name: Require a fleet-scoped token
         env:
           FLEET_READ_PAT: ${{ secrets.FLEET_READ_PAT }}
         run: |
           if [ -z "$FLEET_READ_PAT" ]; then
-            echo "::warning::FLEET_READ_PAT is not set — the watchdog can only see this repo, so it is skipping. Set a PAT with read access to Actions across the fleet (scope: repo, or fine-grained Actions:read on the Fuze* repos)."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "::error title=Watchdog not configured::FLEET_READ_PAT is unset, so this watchdog can see only its own repository and cannot observe the fleet at all. This is a CONFIGURATION failure and NOT a fleet outage — do not read it as one. Fix: add a PAT with Actions:read across the Fuze* repos as the FLEET_READ_PAT secret on this repository."
+            exit 1
           fi
 
       - name: Observe the fleet CI queue
-        if: steps.tok.outputs.ok == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.FLEET_READ_PAT }}
           STALL: ${{ inputs.stall_minutes || '30' }}

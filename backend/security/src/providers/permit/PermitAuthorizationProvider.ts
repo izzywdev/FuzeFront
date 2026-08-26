@@ -145,7 +145,19 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
     }
     // Idempotent: the helper returns false (not throws) if the assignment is
     // already gone, which we treat as success.
-    await unassignRoleInPermit({ user: subject, role, tenant })
+    //
+    // resource_instance MUST be forwarded when req.resource is present: Permit
+    // keys a role assignment by the full (user, role, tenant, resource_instance)
+    // tuple, so an instance-scoped grant (ReBAC — e.g. one list) is a distinct
+    // record from a tenant-wide one. Omitting it here would revoke nothing for
+    // a caller that only ever held the scoped assignment, while this call
+    // still resolves successfully — a silent no-op revoke.
+    await unassignRoleInPermit({
+      user: subject,
+      role,
+      tenant,
+      resource_instance: resourceInstance(req.resource),
+    })
   }
 
   async listGrants(query: GrantQuery): Promise<Page<Grant>> {

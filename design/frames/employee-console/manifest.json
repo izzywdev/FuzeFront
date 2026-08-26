@@ -5,7 +5,9 @@
   "designSystem": "fuse-seam (@fuzefront/design-system)",
   "implementation": {
     "paths": [
-      "packages/identity-ui/src/components/employee/**"
+      "packages/identity-ui/src/components/employee/**",
+      "frontend/src/pages/EmployeeConsolePage.tsx",
+      "frontend/src/pages/EmployeeOrgDrilldownPage.tsx"
     ]
   },
   "plan": "docs/planning/design-first-ui-pipeline.md",
@@ -116,5 +118,5 @@
       ]
     }
   ],
-  "stamp": "3b08b1061044c2a54f76db7dc9169602bde3023d078e0c41d022084e1668120a"
+  "stamp": "f5aed2b446cae71b4033ee119a3459d943dfcff10c1b9005d027eadff2caae8c"
 }

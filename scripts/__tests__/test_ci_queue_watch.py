@@ -175,5 +175,66 @@ class StartsThatNeverHappened(unittest.TestCase):
                       "never picked anything up reports recent starts and reads healthy")
 
 
+class BlindWatchdogMustBeRedNotGreen(unittest.TestCase):
+    """The WORKFLOW-level half of the same defect, invisible to the tests above.
+
+    scripts/ci_queue_watch.py exiting 0 with no token is correct, and
+    test_no_token_skips_cleanly pins it. The bug lived one layer up: the workflow
+    warned, set an output, and gated the observation step on it — so a scheduled
+    run with no token skipped the work and the JOB went green. Ten consecutive
+    green runs observed nothing, two of them while the fleet was 40 hours into an
+    outage.
+
+    These assertions read the REAL workflow file, not a fixture. A fixture would
+    have to encode the structure under test and could therefore agree with the
+    bug — the failure mode that let a hardcoded default_branch survive twelve
+    green tests elsewhere in this repo.
+    """
+
+    WORKFLOW = os.path.join(REPO, ".github", "workflows", "ci-queue-watch.yml")
+
+    def _watch_job(self):
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML unavailable")
+        with open(self.WORKFLOW, encoding="utf-8") as fh:
+            return yaml.safe_load(fh)["jobs"]["watch"]
+
+    def _guard(self):
+        steps = self._watch_job()["steps"]
+        g = [s for s in steps if "token" in (s.get("name") or "").lower()]
+        self.assertEqual(len(g), 1, "expected exactly one token guard step")
+        return g[0]
+
+    def test_missing_token_fails_the_job_rather_than_skipping_it(self):
+        """The regression: the guard must exit non-zero, not set a flag."""
+        run = self._guard().get("run", "")
+        self.assertIn("exit 1", run,
+                      "the token guard must FAIL when FLEET_READ_PAT is unset — "
+                      "warning and continuing is what produced ten green runs "
+                      "that had observed nothing")
+        self.assertNotIn("GITHUB_OUTPUT", run,
+                         "the guard must not export a skip flag; that flag is how "
+                         "the observation step got bypassed silently")
+
+    def test_no_step_is_gated_on_token_presence(self):
+        """A leftover `if:` would re-open the hole even with the guard failing."""
+        for s in self._watch_job()["steps"]:
+            self.assertNotIn("steps.tok", str(s.get("if", "")),
+                             f"step {s.get('name')!r} is still gated on a token "
+                             f"output — the observation must be unconditional "
+                             f"once the guard has passed")
+
+    def test_blindness_and_stall_are_distinguishable_signals(self):
+        """A red indistinguishable from a fleet stall is as useless as the green
+        was. The guard must name itself a CONFIGURATION failure."""
+        run = self._guard().get("run", "")
+        self.assertIn("::error", run)
+        self.assertIn("NOT a fleet outage", run,
+                      "the error must explicitly disclaim the fleet-outage "
+                      "reading, or an operator acts on the wrong incident")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

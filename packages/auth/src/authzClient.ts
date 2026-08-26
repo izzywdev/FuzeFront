@@ -13,12 +13,19 @@ import {
   AuthzDecision,
   AuthzError,
   FetchLike,
+  Grant,
+  GrantRequest,
+  GrantRevokeRequest,
+  GrantPage,
+  GrantListQuery,
 } from './authzTypes';
 
 /** Path of the single-decision endpoint, relative to `baseUrl`. */
 const CHECK_PATH = '/api/v1/security/authz/check';
 /** Path of the batch-decision endpoint, relative to `baseUrl`. */
 const BULK_CHECK_PATH = '/api/v1/security/authz/bulk-check';
+/** Path of the grants endpoint, relative to `baseUrl`. */
+const GRANTS_PATH = '/api/v1/security/authz/grants';
 
 const DEFAULT_TIMEOUT_MS = 3000;
 const DEFAULT_CACHE_MAX_ENTRIES = 1000;
@@ -126,6 +133,55 @@ export function createAuthzClient(options: AuthzClientOptions): AuthzClient {
     }
   }
 
+  /**
+   * Make an HTTP request (POST, DELETE, GET) to the Security API.
+   * Distinguishes MALFORMED (400) from PROVIDER_ERROR (502).
+   * Returns status code and parsed JSON body (if applicable).
+   */
+  async function request(
+    method: string,
+    path: string,
+    body: unknown | undefined,
+    token: string,
+  ): Promise<{ status: number; body: unknown }> {
+    const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+    try {
+      const reqInit: any = {
+        method,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        signal: controller?.signal,
+      };
+      if (body !== undefined) {
+        reqInit.body = JSON.stringify(body);
+      }
+      const res = await resolvedFetch!(`${base}${path}`, reqInit);
+      let responseBody: unknown = undefined;
+      if (res.status !== 204) {
+        // 204 No Content has no body
+        try {
+          responseBody = await res.json();
+        } catch {
+          responseBody = null;
+        }
+      }
+      return { status: res.status, body: responseBody };
+    } catch (err) {
+      // Timeout or transport error — treat as 502 (provider error)
+      throw new AuthzError(
+        'PROVIDER_ERROR',
+        `Security API request to ${path} failed: ${(err as Error)?.message ?? 'unknown error'}`,
+      );
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   /** Read `{ allow: boolean }` strictly. Anything else is not a decision. */
   function readDecision(value: unknown): AuthzDecision {
     const allow = (value as { allow?: unknown } | null)?.allow;
@@ -193,6 +249,95 @@ export function createAuthzClient(options: AuthzClientOptions): AuthzClient {
         if (decision.allow) rememberAllow(cacheKey(checks[i], token));
       });
       return decisions;
+    },
+
+    async grant(req: GrantRequest, token: string): Promise<Grant> {
+      const { status, body } = await request('POST', GRANTS_PATH, req, token);
+      if (status === 201) {
+        // Success — body should be the created Grant
+        const grant = body as Grant;
+        if (!grant?.id) {
+          throw new AuthzError('PROVIDER_ERROR', 'Security API returned 201 but no grant id');
+        }
+        return grant;
+      }
+      if (status === 400) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'grant request malformed';
+        throw new AuthzError('MALFORMED', msg);
+      }
+      if (status === 502) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'provider error';
+        throw new AuthzError('PROVIDER_ERROR', msg);
+      }
+      // Any other status is unexpected
+      throw new AuthzError(
+        'PROVIDER_ERROR',
+        `Security API returned ${status} for grant; treating as transient error`,
+      );
+    },
+
+    async revoke(req: GrantRevokeRequest, token: string): Promise<void> {
+      const { status, body } = await request('DELETE', GRANTS_PATH, req, token);
+      if (status === 204) {
+        // Success
+        return;
+      }
+      if (status === 400) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'revoke request malformed';
+        throw new AuthzError('MALFORMED', msg);
+      }
+      // 502 or other error
+      if (status === 502) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'provider error';
+        throw new AuthzError('PROVIDER_ERROR', msg);
+      }
+      throw new AuthzError(
+        'PROVIDER_ERROR',
+        `Security API returned ${status} for revoke; treating as transient error`,
+      );
+    },
+
+    async listGrants(query: GrantListQuery, token: string): Promise<GrantPage> {
+      if (!query.tenant) {
+        throw new AuthzError('MALFORMED', 'tenant is required for listGrants');
+      }
+      const params = new URLSearchParams();
+      params.set('tenant', query.tenant);
+      if (query.subject) params.set('subject', query.subject);
+      if (query.limit !== undefined) params.set('limit', String(query.limit));
+      if (query.cursor) params.set('cursor', query.cursor);
+      const { status, body } = await request(
+        'GET',
+        `${GRANTS_PATH}?${params.toString()}`,
+        undefined,
+        token,
+      );
+      if (status === 200) {
+        // Success — body should be the page
+        const page = body as GrantPage;
+        if (!page?.items || !page?.page) {
+          throw new AuthzError('PROVIDER_ERROR', 'Security API returned 200 but malformed page');
+        }
+        return page;
+      }
+      if (status === 400) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'listGrants request malformed';
+        throw new AuthzError('MALFORMED', msg);
+      }
+      if (status === 502) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'provider error';
+        throw new AuthzError('PROVIDER_ERROR', msg);
+      }
+      throw new AuthzError(
+        'PROVIDER_ERROR',
+        `Security API returned ${status} for listGrants; treating as transient error`,
+      );
     },
   };
 }
