@@ -102,10 +102,46 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
   })
 
   describe('migration 022 (root-membership backfill + personal-org reclassify)', () => {
-    it('skips the backfill when the root organization does not exist', async () => {
+    it('2026-08-26 AMENDMENT (#680): ADOPTS a platform org under a different id and backfills against ITS id', async () => {
+      // This assertion was inverted until #680 (73c30aae): it required a SKIP
+      // for this fixture. That was the contract which crashlooped
+      // fuzefront-backend and fuzefront-security on 2026-08-16 — migration
+      // 015's "adopt a pre-existing platform org rather than creating a
+      // second one" branch can leave a prod DB whose real platform-root org
+      // has an id other than ROOT_ORG_ID and NO ROOT_ORG_ID row at all (the
+      // 2026-07-29 rebuild: 92f2020b-…, slug `fuzefront`). Hardcoding
+      // ROOT_ORG_ID then made every INSERT violate
+      // organization_memberships_organization_id_foreign on every boot.
+      //
+      // 022 now resolves the root org exactly as ensureRootPortal() does —
+      // prefer ROOT_ORG_ID, else the oldest type='platform' row — so a
+      // divergent platform org IS the root org, and the backfill must run
+      // against ITS id. #680 changed the migration and left this guard
+      // asserting the old behaviour, which is why Backend Tests went red at
+      // 05:15Z on 2026-08-26.
       const { knex, raws } = makeKnex({
         users: [{ id: PLATFORM_REGISTRAR_ID }],
         organizations: [{ id: 'legacy-platform-id', slug: 'legacy', type: 'platform' }],
+      })
+
+      await migration022.up(knex)
+
+      const inserts = membershipInserts(raws)
+      expect(inserts).toHaveLength(1)
+      // The crux: bound to the ADOPTED org, never to the hardcoded constant.
+      // This is the exact regression #680 fixed.
+      expect(inserts[0].bindings).toContain('legacy-platform-id')
+      expect(inserts[0].bindings).not.toContain(ROOT_ORG_ID)
+    })
+
+    it('skips the backfill when NO platform org exists at all, even with users present', async () => {
+      // The genuine "root organization does not exist" case post-#680, and the
+      // coverage the inverted assertion above was standing in for. Users are
+      // present deliberately: the empty-fixture test below has none, so it
+      // cannot distinguish "skipped the backfill" from "had nobody to backfill".
+      const { knex, raws } = makeKnex({
+        users: [{ id: PLATFORM_REGISTRAR_ID }],
+        organizations: [{ id: 'some-org', slug: 'some-org', type: 'organization' }],
       })
 
       await migration022.up(knex)
