@@ -98,7 +98,38 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
             git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }} [skip ci]"
-            git push origin "HEAD:${HEAD_REF}"
+            # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR
+            # branch, so any push the author makes between this job's checkout and
+            # its push wins the race and the push is rejected "(fetch first)" —
+            # observed three times in one afternoon on a fleet-wide migration. The
+            # old bare push turned that ordinary race into a red check that said
+            # nothing about governance. Deliberately NOT `|| true`: if it still
+            # cannot push after the retries, that is a real failure and it fails.
+            pushed=false
+            for attempt in 1 2 3; do
+              if git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log; then
+                pushed=true
+                break
+              fi
+              # A 403 is NOT a race, and must not be retried or described as one.
+              # The first version of this loop retried a permission failure three
+              # times while printing "the branch moved under us" — with `Current
+              # branch is up to date` on the very next line contradicting it. A
+              # diagnostic that names the wrong cause is worse than none.
+              if grep -qE "Write access to repository not granted|Permission to .* denied|error: 403" /tmp/gs-push.log; then
+                echo "::error::Cannot push the governance reconciliation to ${HEAD_REF}: the token has NO WRITE ACCESS (HTTP 403). This is a permission problem, not a race — retrying cannot help. Check this workflow's \`permissions:\` block declares \`contents: write\`; a repo that declares \`contents: read\` here can never commit back, and any reconciliation it computes is silently discarded."
+                exit 1
+              fi
+              echo "::notice::push to ${HEAD_REF} rejected (attempt ${attempt}/3) — the branch moved under us; rebasing onto it and retrying."
+              if ! git pull --rebase origin "${HEAD_REF}"; then
+                echo "::error::Could not rebase the governance commit onto ${HEAD_REF} — the reconciliation conflicts with a change on the branch. Resolve by hand or re-run scripts/sdlc-bootstrap.sh on the current head."
+                exit 1
+              fi
+            done
+            if [ "$pushed" != "true" ]; then
+              echo "::error::Failed to push the governance reconciliation to ${HEAD_REF} after 3 attempts."
+              exit 1
+            fi
             echo "::notice::Reconciled and pushed $committable managed file(s) to ${HEAD_REF}."
           fi
           # Workflow drift is ADVISORY, not blocking. The default GITHUB_TOKEN cannot push

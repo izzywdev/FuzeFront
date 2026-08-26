@@ -1,0 +1,131 @@
+name: MCP descriptions refresh
+
+# Regenerate the build-time LLM tool descriptions AFTER the spec lands, and open
+# a follow-up PR with the refreshed cache.
+#
+# WHY POST-MERGE AND NOT ON THE PR. Generation calls an LLM through LiteLLM, so
+# it needs LITELLM_FUZE_KEY and costs tokens. Secrets are not exposed to
+# pull_request runs from forks, and a PR-triggered generator would be both
+# unrunnable there and, on same-repo PRs, a way for any branch to spend the key
+# on every push. Checking is free and deterministic, so gate-mcp-contract.yml
+# does that on every PR; SPENDING happens once, here, on the merged result.
+#
+# WHY A PR AND NOT A DIRECT PUSH. `master` is deploy-on-push in this repo. A
+# workflow committing straight to master would deploy without review, and
+# required_signatures would reject an unsigned bot commit anyway. So this opens
+# a normal PR that goes through the same gates as anything else — including
+# gate-mcp-contract, which will now find the cache fresh.
+#
+# The generator degrades honestly: with no key, or an unreachable gateway, it
+# exits non-zero and writes NOTHING rather than emitting a cache that claims LLM
+# prose it does not have. That behaviour is load-bearing here — a partial or
+# fabricated cache committed by automation would be worse than no cache, because
+# gate-mcp-contract would then certify it as fresh.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'services/app-registry-service/openapi.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tools.overrides.yaml'
+      - 'packages/mcp-gateway/src/**'
+      - 'packages/mcp-gateway/scripts/generate-descriptions.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mcp-descriptions-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '24' }
+
+      - name: Require the LLM key
+        env:
+          LITELLM_FUZE_KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+        run: |
+          if [ -z "$LITELLM_FUZE_KEY" ]; then
+            echo "::error title=MCP descriptions::LITELLM_FUZE_KEY is unset, so descriptions cannot be regenerated and the committed cache will go stale against the spec that just landed. This is a CONFIGURATION failure, not a spec problem — do not read it as one. Set the secret on this repository."
+            exit 1
+          fi
+
+      - name: Install & build
+        working-directory: packages/mcp-gateway
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Regenerate descriptions
+        working-directory: packages/mcp-gateway
+        env:
+          LITELLM_FUZE_KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+        run: |
+          # Incremental: only tools whose spec/overrides content actually changed
+          # are sent to the LLM. Exits non-zero and writes nothing if it cannot
+          # do the job honestly.
+          node scripts/generate-descriptions.mjs \
+            --spec ../../services/app-registry-service/openapi.yaml \
+            --overrides ../../deploy/helm/fuzefront/files/mcp-tools.overrides.yaml \
+            --out ../../deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json
+
+      - name: Verify what was generated is actually fresh
+        run: |
+          # Do not take the generator's word for it. The gate that will run on
+          # the PR is the same one that runs here — if the artifact it produced
+          # would not pass, that is a bug to surface now, not a red PR later.
+          node packages/mcp-gateway/scripts/check-descriptions-fresh.mjs \
+            --spec services/app-registry-service/openapi.yaml \
+            --overrides deploy/helm/fuzefront/files/mcp-tools.overrides.yaml \
+            --cache deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json \
+            --require-cache
+
+      - name: Open a follow-up PR if the cache moved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CACHE=deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json
+          if git diff --quiet -- "$CACHE"; then
+            echo "cache unchanged — nothing to propose"
+            exit 0
+          fi
+          SHORT="${GITHUB_SHA::12}"
+          BRANCH="chore/mcp-descriptions-${SHORT}"
+          git config user.name  "fuzeone-bot"
+          git config user.email "bot@fuzefront.com"
+          git checkout -b "$BRANCH"
+          git add "$CACHE"
+
+          cat > /tmp/body.md <<'BODY'
+          The OpenAPI spec changed and the committed MCP description cache no longer
+          matched it. `gate-mcp-contract` fails on that mismatch, which is the point:
+          a cache asserting reviewed prose about a contract that has moved is drift,
+          not a cosmetic lag.
+
+          This regenerates it. Generation is incremental — only tools whose spec or
+          overrides content actually changed were sent to the LLM.
+
+          **Review the prose itself.** These strings are what an agent reads when
+          deciding which tool to call. They carry no safety or `mutates` claim —
+          classification comes from `classify.ts` and nothing in this file can
+          override it — but wrong prose still misroutes an agent.
+
+          ---
+          _Generated by [Claude Code](https://claude.ai/code)_
+          BODY
+          sed -i 's/^          //' /tmp/body.md
+          printf 'chore(mcp): refresh tool descriptions for %s\n\n' "$SHORT" > /tmp/msg.txt
+          cat /tmp/body.md >> /tmp/msg.txt
+
+          git commit -F /tmp/msg.txt
+          git push -u origin "$BRANCH"
+          gh pr create --base master --head "$BRANCH" \
+            --title "chore(mcp): refresh tool descriptions for ${SHORT}" \
+            --body-file /tmp/body.md

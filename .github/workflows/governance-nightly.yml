@@ -43,13 +43,10 @@ jobs:
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Run platform-governance reconciliation
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
-        env:
-          ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
-          ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+        uses: ./.github/actions/fuze-code-action
         with:
-          anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
-          prompt: |
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          task-prompt: |
             You are the **platform-governance** agent running the nightly **governance-reconciliation**
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
 
@@ -94,3 +91,6 @@ jobs:
             comment/label, update-branch). Never force-push, never auto-merge (use --auto only),
             never delete branches with unique unmerged commits, never close an issue you cannot prove
             resolved.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

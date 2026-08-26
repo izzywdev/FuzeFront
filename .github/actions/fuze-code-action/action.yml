@@ -1,0 +1,538 @@
+name: 'Fuze Code Action (multi-provider LLM fallover)'
+description: >-
+  SINGLE POINT OF CHANGE for every workflow that hands an agentic coding task to an
+  LLM provider action. Tries providers in order and falls through ONLY on an
+  AVAILABILITY failure (credit/quota exhausted, auth failure, rate limit,
+  network/5xx, or the provider action could not start) — NEVER on a task failure (a
+  real review finding, a failed build, a genuine non-zero from the work itself).
+  Retrying an honest failure against a second vendor would convert it into a green,
+  which this fleet has spent real effort removing elsewhere (`|| true`, jobless
+  gates, retry-masked prod failures) — this action exists to add resilience without
+  reintroducing that exact defect.
+  .
+  Order: (1) claude-code-action, credentialed through ./.github/actions/llm-endpoint
+  — which itself probes the in-cluster LiteLLM gateway with a bounded-timeout
+  readiness check and falls back to a direct Anthropic key if LiteLLM is
+  unreachable; LiteLLM is NEVER run on the runner itself, only probed over HTTP —
+  (2) on an availability failure from claude-code-action, openai/codex-action as the
+  OpenAI-equivalent rung — (3) on a further availability failure,
+  `google-github-actions/run-gemini-cli` as the Gemini rung. The Gemini rung IS
+  implemented and wired to that action's real interface (`gemini_api_key`,
+  `prompt`, `gemini_model` inputs; `summary` / `error` outputs), pinned by commit
+  SHA. It is reached only on the availability cascade, and it fails closed when
+  `gemini-api-key` is empty rather than silently skipping.
+  .
+  If every configured rung fails, THIS ACTION FAILS (non-zero). It never exits 0
+  because the chain is exhausted — a caller relying on this action's success must be
+  able to trust that signal.
+  .
+  Classification of "availability vs task" happens in ./classify.sh against
+  claude-code-action's own `conclusion` + `execution_file` outputs (the only rung
+  with fine-grained diagnostics). codex-action exposes no equivalent structured
+  error output, so a codex-action failure is classified on `conclusion` alone with
+  no log text — classify.sh's documented indeterminate case. run-gemini-cli is the
+  same: it surfaces an `error` string but no availability-vs-task discriminator.
+  That is SAFE for both, and for a specific reason rather than by luck: each is
+  only ever the terminal rung of the cascade below it, so an unclassifiable failure
+  there has nothing further to wrongly fall through INTO. It can only make the
+  action fail, which is the fail-closed direction. Per the standing rule — where
+  availability and task failure cannot be reliably distinguished, do not fail over
+  and say so — neither rung's failure is ever treated as a licence to retry
+  elsewhere. Every run emits an
+  `::notice::` naming the rung and mode it used, so a degraded run is never silently
+  indistinguishable from a clean one. Secrets are never printed, echoed, or written
+  to a log or artifact — only ever passed through masked action inputs/outputs, same
+  as `secrets.*` already flows through this repo's workflows.
+
+inputs:
+  task-prompt:
+    description: >-
+      The instruction for the agent to carry out. Passed as `prompt` to
+      claude-code-action, codex-action and run-gemini-cli.
+      .
+      OPTIONAL, and leaving it empty is a MEANINGFUL choice, not an omission: it
+      selects MENTION MODE, where claude-code-action derives the task from the
+      triggering GitHub event (an `@claude` comment, a review, an issue) instead
+      of from an instruction supplied here. That is how every `claude.yml` in
+      this family invokes it.
+      .
+      In mention mode the fallover chain is DELIBERATELY DISABLED — see the
+      `Rung 2`/`Rung 3` gates below. codex-action and run-gemini-cli have no
+      GitHub event context at all: handed an empty prompt they cannot see the
+      task, and a rung that "succeeds" at doing nothing would report
+      conclusion=success for work nobody performed. Retrying into a provider
+      that cannot perceive the request is not resilience, it is a manufactured
+      green — the exact defect this action exists to prevent. So with no
+      task-prompt there is exactly one rung, and if it fails the action fails.
+    required: false
+    default: ''
+  github-token:
+    description: 'GitHub token with repo/PR permissions. Passed to claude-code-action as github_token.'
+    required: false
+    default: ''
+  claude-args:
+    description: 'Passed through verbatim as claude-code-action `claude_args` (e.g. --model, --allowedTools).'
+    required: false
+    default: ''
+  litellm-base-url:
+    description: 'In-cluster LiteLLM base URL. Forwarded to ./llm-endpoint.'
+    required: false
+    default: 'http://litellm.fuzeinfra.svc.cluster.local:4000'
+  litellm-key:
+    description: 'LiteLLM virtual key. Forwarded to ./llm-endpoint as litellm-key.'
+    required: false
+    default: ''
+  anthropic-api-key:
+    description: 'Direct Anthropic API key. Forwarded to ./llm-endpoint as fallback-anthropic-key.'
+    required: false
+    default: ''
+  openai-api-key:
+    description: >-
+      OpenAI API key for the codex-action rung. Empty means the OpenAI rung fails
+      closed with an explanatory error if it is ever reached, rather than silently
+      skipping — same "structurally supported only, fails closed" convention
+      ./llm-endpoint already uses for its own openai/gemini vendor legs.
+    required: false
+    default: ''
+  codex-sandbox:
+    description: >-
+      codex-action `sandbox` input for the OpenAI rung. `workspace-write`, not
+      `read-only`: rung 2 is the fallover for work rung 1 would have COMMITTED
+      (the a2a/mcp maintainers edit files and push). A read-only Codex runs to
+      completion having changed nothing and reports success — a vacuous green,
+      the exact failure mode this action exists to prevent.
+    required: false
+    default: 'workspace-write'
+  codex-safety-strategy:
+    description: >-
+      codex-action `safety-strategy` input for the OpenAI rung. MUST NOT be
+      empty. A `with:` value that evaluates to '' OVERRIDES the callee's own
+      `default:` rather than falling back to it, and codex-action rejects an
+      empty safety-strategy outright ("Invalid safety strategy: ."). This
+      defaulted to '', so rung 2 aborted in codex-action's `resolve-codex-home`
+      step on EVERY run — the fallover rung had never once executed, and the
+      chain always reported itself exhausted. 'drop-sudo' is codex-action's own
+      documented default.
+    required: false
+    default: 'drop-sudo'
+  codex-args:
+    description: 'Passed through verbatim as codex-action `codex-args`.'
+    required: false
+    default: ''
+  allowed-bots:
+    description: >-
+      Passed through verbatim as claude-code-action `allowed_bots`. Claude-only:
+      codex-action and run-gemini-cli have no notion of which bot actors may
+      trigger a run — they are never triggered BY a GitHub actor here; the
+      workflow decides whether to run and this action only carries out the task.
+    required: false
+    default: ''
+  additional-permissions:
+    description: >-
+      Passed through verbatim as claude-code-action `additional_permissions`
+      (multi-line). Claude-only, same reasoning as allowed-bots.
+    required: false
+    default: ''
+  settings:
+    description: >-
+      Passed through verbatim as claude-code-action `settings` — the JSON blob
+      that carries MCP server config. Claude-only: the MCP wiring belongs to
+      claude-code-action and neither fallover rung can consume it. A call site
+      whose task DEPENDS on an MCP server therefore cannot be satisfied by a
+      fallover, and should be left claude-only (openai/gemini keys unset) rather
+      than silently degraded to a provider that cannot reach those tools.
+    required: false
+    default: ''
+  show-full-output:
+    description: >-
+      Passed through as claude-code-action `show_full_output`. Defaults to
+      'true', which is what this action previously hard-coded.
+    required: false
+    default: 'true'
+  extra-env:
+    description: >-
+      Newline-separated KEY=VALUE lines exported before the agent runs, for
+      environment the TASK needs — a KUBECONFIG the agent will kubectl with, a
+      GH_TOKEN its tooling reads, model/feature pins like ANTHROPIC_MODEL or
+      CLAUDE_CODE_DISABLE_1M_CONTEXT.
+      .
+      WHY THIS EXISTS, rather than just leaving `env:` on the calling step.
+      claude-code-action is a node action, so step-level `env:` on its `uses:`
+      lands directly in its process. This action is a COMPOSITE, and whether a
+      caller's step `env:` reaches a composite's inner steps is a semantics this
+      repo has not verified — and 30 of the fleet's call sites carry step env,
+      including a KUBECONFIG and six model/feature pins. Migrating them on an
+      assumption would, if the assumption were wrong, silently drop a cluster
+      credential and the entire model selection while every run still reported
+      success. So the values are passed explicitly and exported here, which
+      behaves identically under either semantics.
+      .
+      Do NOT pass ANTHROPIC_BASE_URL or ANTHROPIC_AUTH_TOKEN: this action resolves
+      the endpoint itself via ./llm-endpoint and sets both on the rung it runs.
+      Passing them would override a probed, working endpoint with a stale literal.
+      .
+      SCOPE: exported via $GITHUB_ENV, so unlike a step-scoped `env:` these are
+      visible to later steps in the same job. Values are never echoed.
+    required: false
+    default: ''
+  gemini-api-key:
+    description: >-
+      Gemini API key for the run-gemini-cli rung. Passed through as that action's
+      `gemini_api_key`. Empty means the Gemini rung fails closed with an
+      explanatory error if it is ever reached, rather than silently skipping —
+      the same "structurally supported only, fails closed" convention used for
+      openai-api-key above.
+    required: false
+    default: ''
+  gemini-model:
+    description: >-
+      Passed through verbatim as run-gemini-cli's `gemini_model`. Empty leaves that
+      action on its own default rather than pinning a model this repo would then
+      have to track.
+    required: false
+    default: ''
+
+outputs:
+  mode:
+    description: 'Which rung produced the result: claude | openai | gemini | declined | failed'
+    value: ${{ steps.finish.outputs.mode }}
+  vendor:
+    description: 'litellm | anthropic | openai | gemini | none'
+    value: ${{ steps.finish.outputs.vendor }}
+  conclusion:
+    description: >-
+      success | failure | neutral — the OVERALL conclusion of the whole fallover
+      chain. `neutral` means a rung ran and DECLINED to do any work (see mode
+      =declined); it is neither a pass nor a fail and must not be read as either.
+    value: ${{ steps.finish.outputs.conclusion }}
+  result-text:
+    description: 'Best-effort textual result from whichever rung succeeded.'
+    value: ${{ steps.finish.outputs.result-text }}
+
+runs:
+  using: composite
+  steps:
+    # Export caller-supplied task environment BEFORE any rung runs, so every
+    # provider sees the same environment. Values are written to $GITHUB_ENV and
+    # never echoed: EXTRA_ENV can legitimately carry a KUBECONFIG or a token, and
+    # this fleet's rule is that secrets are never printed, logged or written to an
+    # artifact. `printf '%s'` on the raw line, no `echo` of the value.
+    - name: Export caller-supplied task environment
+      if: inputs.extra-env != ''
+      shell: bash
+      env:
+        EXTRA_ENV: ${{ inputs.extra-env }}
+      run: |
+        set -uo pipefail
+        n=0
+        while IFS= read -r line; do
+          [ -z "${line//[[:space:]]/}" ] && continue
+          case "$line" in \#*) continue ;; esac
+          case "$line" in
+            *=*) : ;;
+            *) echo "::error title=fuze-code-action::extra-env line is not KEY=VALUE; refusing to guess. Offending key omitted from this message deliberately (the line may carry a secret)."; exit 1 ;;
+          esac
+          key="${line%%=*}"
+          case "$key" in
+            ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN)
+              echo "::error title=fuze-code-action::extra-env must not set ${key}. This action resolves the endpoint itself via ./llm-endpoint; overriding it with a literal would defeat the LiteLLM probe and its Anthropic fallback."
+              exit 1 ;;
+          esac
+          printf '%s\n' "$line" >> "$GITHUB_ENV"
+          n=$((n+1))
+        done <<< "$EXTRA_ENV"
+        echo "::notice title=fuze-code-action::exported ${n} caller-supplied environment variable(s) for the task (names and values not printed)."
+
+    # continue-on-error: llm-endpoint itself hard-fails (exit 1) when NEITHER a
+    # reachable LiteLLM key NOR a direct Anthropic key resolves to a usable
+    # credential ("nothing to fall back to"). Without continue-on-error here, that
+    # failure would abort this ENTIRE action before ever trying the OpenAI rung —
+    # exactly the design this action exists to prevent. Credential-resolution
+    # failure at rung 1 is itself an availability failure, handled identically to
+    # any other: claude gets skipped below and classify-claude's "no conclusion
+    # reported" branch treats it as availability, falling through to codex.
+    - name: Resolve LiteLLM / direct-Anthropic endpoint
+      id: llm
+      continue-on-error: true
+      uses: ./.github/actions/llm-endpoint
+      with:
+        litellm-base-url: ${{ inputs.litellm-base-url }}
+        litellm-key: ${{ inputs.litellm-key }}
+        fallback-vendor: anthropic
+        fallback-anthropic-key: ${{ inputs.anthropic-api-key }}
+
+    # RUNG 1 — claude-code-action, credentialed via LiteLLM-or-direct-Anthropic
+    # (see llm step above). Gated on the llm step's own outcome, not on raw input
+    # presence: llm-endpoint is the sole authority on whether a usable credential
+    # actually resolved. continue-on-error so we can classify the failure ourselves
+    # instead of letting it red the whole job before deciding whether a
+    # fallthrough is even warranted.
+    - name: 'Rung 1: claude-code-action'
+      id: claude
+      if: steps.llm.outcome == 'success'
+      continue-on-error: true
+      uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
+      env:
+        ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
+        ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+      with:
+        anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
+        github_token: ${{ inputs.github-token }}
+        prompt: ${{ inputs.task-prompt }}
+        claude_args: ${{ inputs.claude-args }}
+        show_full_output: ${{ inputs.show-full-output }}
+        allowed_bots: ${{ inputs.allowed-bots }}
+        additional_permissions: ${{ inputs.additional-permissions }}
+        settings: ${{ inputs.settings }}
+
+    - name: 'Classify rung 1'
+      id: classify-claude
+      shell: bash
+      # Every value that ultimately comes from outside this file (another action's
+      # output) reaches the shell through env:, never interpolated via `${{ }}`
+      # inside run: — same rule this repo's workflows already apply to `github.*`
+      # context values, extended here to action outputs since `structured_output`
+      # in particular can contain arbitrary LLM-generated text (quotes, backticks,
+      # `$()`), not just enum-like strings.
+      env:
+        CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+        LOG_FILE: ${{ steps.claude.outputs.execution_file }}
+        VENDOR: ${{ steps.llm.outputs.vendor }}
+        # The runner's own outcome for the rung-1 step. Needed to tell "the action
+        # could not start" from "the action ran and declined to do anything" —
+        # both report an empty conclusion, and only the first is a failure.
+        OUTCOME: ${{ steps.claude.outcome }}
+      run: |
+        set -uo pipefail
+        # NOTE: the runner invokes `shell: bash` steps with `-e` already on, so a
+        # bare `VERDICT=$(cmd); CODE=$?` would abort THIS step the instant
+        # classify.sh returns non-zero (bash's errexit fires on a failing command
+        # substitution assignment) before the outputs below get written. The
+        # `if cmd; then ... else CODE=$?; fi` form is a TESTED context, which is
+        # the one place -e is defined to not apply.
+        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "${CONCLUSION:-}" "${LOG_FILE:-}" "${OUTCOME:-}")"; then
+          CODE=0
+        else
+          CODE=$?
+        fi
+        echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+        echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+        echo "::notice title=fuze-code-action::rung=claude vendor=${VENDOR:-} verdict: ${VERDICT}"
+        if [ "$CODE" = "2" ]; then
+          echo "::error title=fuze-code-action::claude-code-action failed with a TASK failure (or an unclassifiable one) — refusing to fall through to the OpenAI rung. Fix the underlying issue; this is not a vendor-availability problem."
+        fi
+        if [ "$CODE" = "3" ]; then
+          echo "::warning title=fuze-code-action::rung=claude DECLINED to run and NO WORK WAS PERFORMED by this job. The usual cause is claude-code-action's own workflow-validation guard: it refuses to run when the pull request modifies the workflow file that invokes it, which every workflow-migration PR does by construction. This is not a failure and the other rungs are deliberately not attempted — they would run exactly the task the guard exists to prevent. The job reports neutral; whatever this workflow maintains was NOT checked on this commit and will be on the next run against the default branch."
+        fi
+
+    # RUNG 2 — openai/codex-action. Reached ONLY when rung 1 was classified as an
+    # AVAILABILITY failure (code=1) — which classify.sh also assigns when claude was
+    # skipped outright for lack of any Anthropic/LiteLLM credential (empty
+    # `conclusion` = "action-could-not-start", itself an availability gap). A task
+    # failure (code=2) or success (code=0) never reaches here.
+    - name: 'Rung 2: openai/codex-action'
+      id: codex
+      # inputs.task-prompt != '' — mention mode has no fallover (see task-prompt).
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        inputs.openai-api-key != ''
+      continue-on-error: true
+      uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
+      with:
+        openai-api-key: ${{ inputs.openai-api-key }}
+        prompt: ${{ inputs.task-prompt }}
+        sandbox: ${{ inputs.codex-sandbox }}
+        safety-strategy: ${{ inputs.codex-safety-strategy }}
+        codex-args: ${{ inputs.codex-args }}
+        output-file: ${{ runner.temp }}/fuze-code-action-codex-output.txt
+
+    - name: 'Rung 2 skipped — no openai-api-key'
+      id: codex-no-key
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        inputs.openai-api-key == ''
+      shell: bash
+      run: |
+        echo "::notice title=fuze-code-action::rung=openai skipped — openai-api-key input is empty. Same 'structurally supported only, fails closed' convention as ./llm-endpoint's own openai/gemini legs."
+
+    - name: 'Classify rung 2'
+      id: classify-codex
+      if: steps.codex.outcome != 'skipped'
+      shell: bash
+      # codex-action exposes no `conclusion`/error-detail output (unlike
+      # claude-code-action), only its own step outcome. classify.sh's documented
+      # "indeterminate, fail closed" path handles that honestly — safe here because
+      # codex is the LAST real rung: nothing wrongly falls through past it, only
+      # the always-fails-closed Gemini stub below.
+      env:
+        CODEX_OUTCOME: ${{ steps.codex.outcome }}
+      run: |
+        set -uo pipefail
+        CONCLUSION="failure"
+        if [ "${CODEX_OUTCOME:-}" = "success" ]; then CONCLUSION="success"; fi
+        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "$CONCLUSION" "")"; then
+          CODE=0
+        else
+          CODE=$?
+        fi
+        echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+        echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+        echo "::notice title=fuze-code-action::rung=openai vendor=openai verdict: ${VERDICT}"
+
+    # RUNG 3 — Gemini, via google-github-actions/run-gemini-cli. Reached only when
+    # BOTH real rungs failed on the AVAILABILITY cascade.
+    #
+    # The `if` is deliberately narrower than "codex did not succeed": a code=2 TASK
+    # failure at rung 1 must fail the whole action right there (see classify-claude's
+    # ::error above) and never reach here — codex.outcome would also read 'skipped'
+    # in that case (codex's own `if` requires code=='1'), which would otherwise fire
+    # this rung for the wrong reason and retry an honest red against a third vendor.
+    # That is precisely the failure this action exists to avoid, so the gate stays
+    # anchored on classify-claude.outputs.code == '1'.
+    - name: 'Rung 3: google-github-actions/run-gemini-cli'
+      id: gemini
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        steps.codex.outcome != 'success' &&
+        inputs.gemini-api-key != ''
+      continue-on-error: true
+      uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+      with:
+        gemini_api_key: ${{ inputs.gemini-api-key }}
+        gemini_model: ${{ inputs.gemini-model }}
+        prompt: ${{ inputs.task-prompt }}
+
+    - name: 'Rung 3 skipped — no gemini-api-key'
+      id: gemini-no-key
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        steps.codex.outcome != 'success' &&
+        inputs.gemini-api-key == ''
+      shell: bash
+      run: |
+        echo "::notice title=fuze-code-action::rung=gemini skipped — gemini-api-key input is empty. Same 'structurally supported only, fails closed' convention as the openai rung; the Finish step below still fails the action, since the chain is exhausted."
+
+    - name: 'Classify rung 3'
+      id: classify-gemini
+      if: steps.gemini.outcome != 'skipped'
+      shell: bash
+      # run-gemini-cli surfaces `summary` and `error` strings but NO
+      # availability-vs-task discriminator, so this is classify.sh's documented
+      # indeterminate case — same as codex. That is safe here for a structural
+      # reason, not a lucky one: gemini is the LAST rung, so an unclassifiable
+      # failure has nothing to wrongly fall through into. It can only fail the
+      # action, which is the fail-closed direction.
+      #
+      # GEMINI_ERROR is arbitrary model/CLI-generated text and reaches the shell
+      # through env:, never interpolated into run: via ${{ }}.
+      env:
+        GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+        GEMINI_ERROR: ${{ steps.gemini.outputs.error }}
+      run: |
+        set -uo pipefail
+        CONCLUSION="failure"
+        if [ "${GEMINI_OUTCOME:-}" = "success" ]; then CONCLUSION="success"; fi
+        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "$CONCLUSION" "")"; then
+          CODE=0
+        else
+          CODE=$?
+        fi
+        echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+        echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+        echo "::notice title=fuze-code-action::rung=gemini vendor=gemini verdict: ${VERDICT}"
+        if [ "${GEMINI_OUTCOME:-}" != "success" ] && [ -n "${GEMINI_ERROR:-}" ]; then
+          echo "::warning title=fuze-code-action::gemini rung reported an error (not classified — see above): ${GEMINI_ERROR}"
+        fi
+
+    - name: 'Mention mode — fallover deliberately not attempted'
+      if: |
+        always() &&
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt == ''
+      shell: bash
+      run: |
+        echo "::warning title=fuze-code-action::rung=claude failed on an AVAILABILITY error, but no task-prompt was supplied (mention mode) so the OpenAI and Gemini rungs were NOT attempted. Those providers receive no GitHub event context, so they cannot see the task this run was asked to do; retrying into them would report success for work nobody performed. Re-run this job once the provider recovers."
+
+    - name: Finish
+      id: finish
+      if: always()
+      shell: bash
+      env:
+        CLAUDE_CODE: ${{ steps.classify-claude.outputs.code }}
+        CLAUDE_RESULT: ${{ steps.claude.outputs.structured_output }}
+        LLM_VENDOR: ${{ steps.llm.outputs.vendor }}
+        CODEX_OUTCOME: ${{ steps.codex.outcome }}
+        CODEX_RESULT: ${{ steps.codex.outputs.final-message }}
+        GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+        GEMINI_RESULT: ${{ steps.gemini.outputs.summary }}
+      run: |
+        set -uo pipefail
+        # Random per-run delimiter, not a fixed string: the GITHUB_OUTPUT multiline
+        # heredoc format breaks if the body happens to contain a line matching the
+        # delimiter verbatim, and CLAUDE_RESULT/CODEX_RESULT are arbitrary
+        # LLM-generated text that this action does not control the content of.
+        DELIM="FUZE_EOF_$(date +%s%N)_$$"
+        if [ "${CLAUDE_CODE:-}" = "3" ]; then
+          # Declined, not failed, and NOT success either: no work was performed.
+          # mode/conclusion say so explicitly so a caller can branch on it and a
+          # reader cannot mistake this for a run that did the job.
+          {
+            echo "mode=declined"
+            echo "vendor=${LLM_VENDOR:-}"
+            echo "conclusion=neutral"
+            echo "result-text="
+          } >> "$GITHUB_OUTPUT"
+          echo "::warning title=fuze-code-action::conclusion=neutral mode=declined — the chain performed no work (see the rung=claude notice above). Exiting 0: there is no failure to report and nothing another vendor could retry."
+          exit 0
+        fi
+        if [ "${CLAUDE_CODE:-}" = "0" ]; then
+          {
+            echo "mode=claude"
+            echo "vendor=${LLM_VENDOR:-}"
+            echo "conclusion=success"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "result-text<<${DELIM}"
+            echo "${CLAUDE_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "${CODEX_OUTCOME:-}" = "success" ]; then
+          {
+            echo "mode=openai"
+            echo "vendor=openai"
+            echo "conclusion=success"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "result-text<<${DELIM}"
+            echo "${CODEX_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "${GEMINI_OUTCOME:-}" = "success" ]; then
+          {
+            echo "mode=gemini"
+            echo "vendor=gemini"
+            echo "conclusion=success"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "result-text<<${DELIM}"
+            echo "${GEMINI_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        {
+          echo "mode=failed"
+          echo "vendor=none"
+          echo "conclusion=failure"
+          echo "result-text="
+        } >> "$GITHUB_OUTPUT"
+        echo "::error title=fuze-code-action::All configured rungs failed or were unreachable. See the per-rung notices above for which classification (availability vs task) applied at each step."
+        exit 1
