@@ -70,7 +70,12 @@ const BUILTIN_MANIFESTS: unknown[] = [
       type: 'module-federation',
       // Same-origin path, not an absolute app-host URL: identical value works on
       // app.fuzefront.com, a tenant wildcard host, and localhost.
-      remoteEntry: '/apps/clock/assets/remoteEntry.js',
+      // NO `assets/` segment: clock-app/vite.config.ts sets `assetsDir: ''`
+      // (flat build output), so remoteEntry.js is served at the root of
+      // `/apps/clock/`, matching clock-app/nginx.conf's `location = /remoteEntry.js`.
+      // Existing rows are re-pointed by migration 010 (upsertBuiltin never
+      // touches an already-registered row, so this seed alone is inert on prod).
+      remoteEntry: '/apps/clock/remoteEntry.js',
       scope: 'clockApp',
       module: './ClockApp',
     },
