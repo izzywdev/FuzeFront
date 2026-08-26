@@ -89,6 +89,12 @@
       "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)"
     },
     {
+      "slug": "fuzequality",
+      "name": "FuzeQuality",
+      "confidence": "verified",
+      "source": "builtins.ts BUILTIN_MANIFESTS + census run 32960147607 (2026-08-26 10:49Z): live registry returns it, status 'activated'. RESTORED — an earlier revision of this file removed it on the false premise that it was not registered; the census disproves that."
+    },
+    {
       "slug": "fuzesales",
       "name": "Sales",
       "confidence": "documented",
