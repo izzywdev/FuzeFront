@@ -6,6 +6,9 @@ import { requireAppPermission } from '../middleware/permissions'
 import { App } from '../types/shared'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+// Health probing lives in its own module so it can be unit-tested without a
+// database — see appHealth.ts for why a 404 is no longer 'healthy'.
+import { checkAppHealth, probeOrigin } from './appHealth'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
@@ -221,95 +224,6 @@ function scopeAppsQuery(query: any, memberOrgIds: string[]) {
   })
 }
 
-// Health check function for individual apps.
-//
-// This previously ended in `return response.status < 500`, with the comment
-// "Consider 2xx, 3xx, 4xx as healthy". That reported an app whose assets 404 as
-// HEALTHY, so the only thing it actually proved was that SOME server answered
-// on that host — which, for every app mounted behind the shell's own ingress,
-// is true even when nothing is deployed behind the route.
-//
-// That is not a missing check, it is a check asserting the opposite of the
-// truth, and it is why federated remotes could serve nothing in production
-// while the portal showed them green. Measured 2026-08-24 by the prod
-// federation probe: of 16 remotes, 12 answered 404, 3 answered 503, and 1
-// answered 200 with the shell's own HTML. Only the three 503s would have been
-// reported unhealthy by the old rule.
-//
-// A 4xx now means unhealthy. For a module-federation app the meaningful signal
-// is stronger still: the remote entry must serve a JAVASCRIPT MODULE. An SPA
-// fallback answering 200 with HTML satisfies any status-code check while the
-// browser gets markup where it expected a module and the panel dies — that is
-// exactly the `fuzequality` case, and a status-only check cannot see it.
-const HEALTH_JS_CONTENT_TYPE = /(javascript|ecmascript)/i
-const HEALTH_HTML_CONTENT_TYPE = /text\/html/i
-
-async function checkAppHealth(app: AppRow): Promise<boolean> {
-  try {
-    // A module-federation remote entry may be declared as a same-origin PATH
-    // (`/apps/<slug>/remoteEntry.js`). The browser resolves that against the
-    // page origin; this process has no reliable public origin to resolve it
-    // against, so the entry is only probed when the manifest declares an
-    // absolute URL. The relative case is covered by
-    // scripts/probe-prod-federation.mjs, which runs where a real origin is
-    // known. Deliberately NOT reconstructed from a request header — a spoofable
-    // Host would make the health of every app caller-controlled.
-    const isFederated = app.integration_type === 'module-federation'
-    const entryIsAbsolute =
-      typeof app.remote_url === 'string' && /^https?:\/\//i.test(app.remote_url)
-    const checkEntry = isFederated && entryIsAbsolute
-    const healthUrl = checkEntry ? app.remote_url : app.url
-
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-    const response = await fetch(healthUrl, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        Accept: checkEntry
-          ? 'application/javascript,text/javascript'
-          : 'text/html,application/json',
-      },
-    })
-
-    clearTimeout(timeoutId)
-
-    // 4xx is NOT healthy. A 404 means the route resolves to nothing.
-    if (!response.ok) {
-      console.log(
-        `Health check failed for ${app.name} (${healthUrl}): HTTP ${response.status}`
-      )
-      return false
-    }
-
-    if (checkEntry) {
-      const contentType = response.headers.get('content-type') || ''
-      if (
-        HEALTH_HTML_CONTENT_TYPE.test(contentType) ||
-        !HEALTH_JS_CONTENT_TYPE.test(contentType)
-      ) {
-        console.log(
-          `Health check failed for ${app.name} (${healthUrl}): remote entry ` +
-            `returned 200 with content-type '${contentType || 'none'}' — an SPA ` +
-            `fallback, not a JavaScript module`
-        )
-        return false
-      }
-    }
-
-    return true
-  } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error'
-    console.log(
-      `Health check failed for ${app.name} (${app.url}):`,
-      errorMessage
-    )
-    return false
-  }
-}
-
 // GET /api/apps/health - Check health of apps the caller is entitled to see
 router.get('/health', authenticateToken, async (req: any, res) => {
   try {
@@ -321,14 +235,24 @@ router.get('/health', authenticateToken, async (req: any, res) => {
       memberOrgIds
     ).orderBy('name')
 
+    // Resolve same-origin remote entries against the origin this request
+    // arrived on, the same way the browser does.
+    const origin = probeOrigin(req)
+
     const healthChecks = await Promise.all(
       apps.map(async (app: AppRow) => {
-        const isHealthy = await checkAppHealth(app)
+        const result = await checkAppHealth(app, origin)
         return {
           id: app.id,
           name: app.name,
           url: app.url,
-          isHealthy,
+          isHealthy: result.isHealthy,
+          // `reason` and `httpStatus` are additive. An unhealthy app used to be
+          // an unexplained false; naming WHY is what makes 404 (no route) vs 503
+          // (route up, backend down) vs 200-with-HTML actionable, and those three
+          // have different owners.
+          httpStatus: result.httpStatus,
+          reason: result.reason,
           lastChecked: new Date().toISOString(),
         }
       })
@@ -390,17 +314,28 @@ router.get('/', authenticateToken, async (req: any, res) => {
       memberOrgIds
     ).orderBy('name')
 
-    // Get health status for all apps
+    // Get health status for all apps.
+    //
+    // NOTE for whoever touches `healthyOnly` next: nothing in frontend/ or sdk/
+    // passes it today (verified), so the portal lists apps regardless of health
+    // and this correctness fix cannot shrink what users see. If a caller ever
+    // does start passing it, be aware that it now means "actually serving a
+    // module" rather than "the server answered with anything at all", and with
+    // production currently at 0 of 16 remotes serving, it would filter the list
+    // to nothing. That would be the check telling the truth, not a regression —
+    // but it should be a deliberate choice, not a surprise.
+    const origin = probeOrigin(req)
     const appsWithHealth = await Promise.all(
       apps.map(async (app: AppRow) => {
-        const isHealthy = await checkAppHealth(app)
+        const health = await checkAppHealth(app, origin)
         return {
           id: app.id,
           name: app.name,
           url: app.url,
           iconUrl: app.icon_url,
           isActive: Boolean(app.is_active),
-          isHealthy: isHealthy,
+          isHealthy: health.isHealthy,
+          healthReason: health.reason,
           integrationType: app.integration_type as
             | 'module-federation'
             | 'iframe'
