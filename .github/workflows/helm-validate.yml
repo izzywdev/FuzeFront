@@ -167,10 +167,21 @@ jobs:
           # live, unnoticed, for an unknown period. helm lint and kubeconform both
           # stayed green throughout.
           #
+          # TWO layers, both from deploy/scripts/authentik-path-policy.sh (the
+          # single source of truth this and the post-deploy live probe share):
+          #   1. denylist  — no routed path may string-prefix-match a forbidden
+          #      Authentik surface under Traefik's matcher.
+          #   2. CLOSED SET — the routed set must equal the approved set EXACTLY.
+          #      A denylist can only object to surfaces someone remembered to
+          #      enumerate, which is precisely why /applications shipped green.
+          #      Any new Authentik path now fails here until it is approved in
+          #      the policy file with a justification.
+          #
           # Self-test FIRST: prove the probe still fails on the exact regression
-          # (a bare "/application" that matches "/applications") before trusting it
-          # to pass on this chart's actual rendered output. A check only ever
-          # observed passing is not evidence of anything.
+          # (a bare "/application" that matches "/applications") and on an
+          # unapproved extra path, before trusting it to pass on this chart's
+          # actual rendered output. A check only ever observed passing is not
+          # evidence of anything.
           set -euo pipefail
           ./deploy/scripts/check-authentik-public-paths.sh --self-test
           ./deploy/scripts/check-authentik-public-paths.sh rendered/fuzefront/templates

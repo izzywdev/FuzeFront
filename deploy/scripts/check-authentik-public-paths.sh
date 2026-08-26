@@ -36,26 +36,23 @@ EXCLUDED_INGRESS_NAMES=(
   "fuzefront-authentik-admin"
 )
 
-# Every path that must NEVER be reachable through an Authentik-backed Ingress
-# path in this chart. Extend this list if a new sensitive Authentik surface
-# is identified — see the comment above fuzefront.authentikPublicPaths for
-# the full rationale (admin UI, admin REST API, application-list API).
-FORBIDDEN_PATHS=(
-  "/applications"
-  "/if/admin"
-  "/if/user"
-  "/api/v3/core"
-  "/api/v3/providers"
-  "/api/v3/policies"
-  "/sources"
-)
+# The forbidden list AND the approved closed set both come from the shared
+# policy file, which both this guard and the live post-deploy probe source.
+# They used to be duplicated under a "keep the two lists in sync" comment;
+# nothing enforced that, so the two could drift silently in opposite
+# directions with both jobs green. See authentik-path-policy.sh for the full
+# rationale, including why the closed set (an ALLOWLIST) was added: a denylist
+# alone can only forbid a surface somebody remembered to enumerate, which is
+# exactly how /applications reached the internet unlisted and unnoticed.
+# shellcheck source=deploy/scripts/authentik-path-policy.sh
+. "$(dirname "${BASH_SOURCE[0]}")/authentik-path-policy.sh"
 
-# --- core check: does any allowed path string-prefix-match a forbidden one? ---
-# $1 = directory of rendered YAML templates to scan
-check_dir() {
+# --- extraction: which paths does the rendered chart route to authentik? ---
+# $1 = directory of rendered YAML templates to scan.
+# Prints one path per line, sorted+deduped. Shared by BOTH checks below so they
+# can never disagree about what the chart actually renders.
+extract_paths() {
   local dir="$1"
-  local fail=0
-  local allowed_paths
   # Pull every `path: <value>` that immediately follows a
   # `- path:` line whose sibling backend targets authentik-server, across all
   # rendered Ingress manifests. We don't have a YAML parser dependency here
@@ -78,35 +75,42 @@ check_dir() {
     fi
   done
 
-  allowed_paths=$(
-    for f in "$dir"/*.yaml; do
-      [ -f "$f" ] || continue
-      grep -q '^kind: Ingress$' "$f" || continue
-      awk -v excluded="$excluded_pattern" '
-        BEGIN { in_ingress = 0; skip = 0; pending = "" }
-        /^---[ \t]*$/ { pending = ""; next }
-        /^kind:[ \t]*Ingress[ \t]*$/ { in_ingress = 1; skip = 0; pending = ""; next }
-        /^kind:[ \t]*/ && !/Ingress/ { in_ingress = 0; skip = 0; pending = ""; next }
-        in_ingress && /^  name:[ \t]*/ {
-          name = $0
-          sub(/^  name:[ \t]*/, "", name)
-          skip = (excluded != "" && name ~ ("^(" excluded ")$")) ? 1 : 0
-          next
-        }
-        skip { next }
-        /^[ \t]*-[ \t]*path:[ \t]*/ {
-          split($0, a, "path:")
-          gsub(/^[ \t]+|[ \t]+$/, "", a[2])
-          pending = a[2]
-          next
-        }
-        /name: authentik-server/ && pending != "" {
-          print pending
-          pending = ""
-        }
-      ' "$f"
-    done | sort -u
-  )
+  for f in "$dir"/*.yaml; do
+    [ -f "$f" ] || continue
+    grep -q '^kind: Ingress$' "$f" || continue
+    awk -v excluded="$excluded_pattern" '
+      BEGIN { in_ingress = 0; skip = 0; pending = "" }
+      /^---[ \t]*$/ { pending = ""; next }
+      /^kind:[ \t]*Ingress[ \t]*$/ { in_ingress = 1; skip = 0; pending = ""; next }
+      /^kind:[ \t]*/ && !/Ingress/ { in_ingress = 0; skip = 0; pending = ""; next }
+      in_ingress && /^  name:[ \t]*/ {
+        name = $0
+        sub(/^  name:[ \t]*/, "", name)
+        skip = (excluded != "" && name ~ ("^(" excluded ")$")) ? 1 : 0
+        next
+      }
+      skip { next }
+      /^[ \t]*-[ \t]*path:[ \t]*/ {
+        split($0, a, "path:")
+        gsub(/^[ \t]+|[ \t]+$/, "", a[2])
+        pending = a[2]
+        next
+      }
+      /name: authentik-server/ && pending != "" {
+        print pending
+        pending = ""
+      }
+    ' "$f"
+  done | sort -u
+}
+
+# --- check 1 (denylist): does any routed path string-prefix-match a forbidden one? ---
+# $1 = directory of rendered YAML templates to scan
+check_dir() {
+  local dir="$1"
+  local fail=0
+  local allowed_paths
+  allowed_paths="$(extract_paths "$dir")"
 
   if [ -z "$allowed_paths" ]; then
     echo "::error::no Authentik-backed Ingress paths found in $dir — the extraction regex" \
@@ -119,7 +123,7 @@ check_dir() {
     printf '  %s\n' "$p"
   done <<< "$allowed_paths"
 
-  for forbidden in "${FORBIDDEN_PATHS[@]}"; do
+  for forbidden in "${AUTHENTIK_FORBIDDEN_PATHS[@]}"; do
     for allowed in $allowed_paths; do
       # Traefik's PathPrefix: does $forbidden start with the literal string
       # $allowed? (bash prefix match, exactly what PathPrefix does — no
@@ -137,6 +141,109 @@ check_dir() {
   done
 
   return $fail
+}
+
+# --- check 2 (closed set): is the routed set EXACTLY the approved set? ---
+# The denylist above can only object to a surface somebody remembered to
+# enumerate — which is why `/applications`, unlisted, reached the internet
+# with every check green. This asserts set EQUALITY against
+# APPROVED_PUBLIC_PATHS instead, so a path nobody anticipated still fails.
+# $1 = directory of rendered YAML templates to scan
+check_closed_set() {
+  local dir="$1"
+  local fail=0
+  local rendered approved extra missing entry path verified why
+  rendered="$(extract_paths "$dir")"
+
+  if [ -z "$rendered" ]; then
+    echo "::error::no Authentik-backed Ingress paths found in $dir — the extraction regex" \
+         "itself may be broken (this check must never silently pass on nothing to check)." >&2
+    return 1
+  fi
+
+  approved="$(
+    for entry in "${APPROVED_PUBLIC_PATHS[@]}"; do
+      printf '%s\n' "${entry%%|*}"
+    done | sort -u
+  )"
+
+  # Rendered but NOT approved — a newly exposed Authentik surface.
+  extra="$(comm -23 <(printf '%s\n' "$rendered") <(printf '%s\n' "$approved") || true)"
+  # Approved but NOT rendered — the chart dropped a path, or the policy file is
+  # stale. Either way the two disagree and a human must reconcile them.
+  missing="$(comm -13 <(printf '%s\n' "$rendered") <(printf '%s\n' "$approved") || true)"
+
+  if [ -n "$extra" ]; then
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      echo "::error::Authentik Ingress path '$path' is routed to authentik-server but is NOT in" \
+           "APPROVED_PUBLIC_PATHS (deploy/scripts/authentik-path-policy.sh). Every publicly" \
+           "routed IdP surface must be explicitly approved with a justification — a denylist" \
+           "only ever catches surfaces someone thought to enumerate, which is how /applications" \
+           "shipped. If this path is genuinely required by the browser OIDC flow, add it there" \
+           "with the network capture that proves it; otherwise remove it from" \
+           "fuzefront.authentikPublicPaths in _helpers.tpl." >&2
+    done <<< "$extra"
+    fail=1
+  fi
+
+  if [ -n "$missing" ]; then
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      echo "::error::'$path' is approved in deploy/scripts/authentik-path-policy.sh but the chart" \
+           "no longer routes it. The policy and the chart have drifted — either restore it in" \
+           "fuzefront.authentikPublicPaths (_helpers.tpl) or drop it from APPROVED_PUBLIC_PATHS." >&2
+    done <<< "$missing"
+    fail=1
+  fi
+
+  if [ "$fail" -eq 0 ]; then
+    echo "Closed set OK: the ${#APPROVED_PUBLIC_PATHS[@]} routed Authentik paths are exactly the approved set."
+  fi
+
+  # Surface the approved-but-unproven entries. These are NOT a failure: removing
+  # a path that a live login turns out to need is an outage, and this session
+  # has no cluster or browser capture to settle it. Printing them each run keeps
+  # the debt visible instead of letting it sit silently in a list forever.
+  local unverified_count=0
+  for entry in "${APPROVED_PUBLIC_PATHS[@]}"; do
+    path="${entry%%|*}"
+    verified="${entry#*|}"; verified="${verified%%|*}"
+    why="${entry##*|}"
+    if [ "$verified" = "unverified" ]; then
+      unverified_count=$((unverified_count + 1))
+      echo "::warning::Authentik public path '$path' is approved but UNVERIFIED: $why"
+    fi
+  done
+  if [ "$unverified_count" -gt 0 ]; then
+    echo "$unverified_count of ${#APPROVED_PUBLIC_PATHS[@]} approved paths lack evidence that a browser needs them." \
+         "Each is a candidate for removal once a network capture of a live login settles it."
+  fi
+
+  return $fail
+}
+
+# Build a rendered-Ingress fixture routing exactly the given paths to
+# authentik-server. Used by the self-test to construct both the known-broken
+# and the known-good inputs from real data rather than hand-copied YAML.
+#   $1 = target directory, remaining args = paths
+write_fixture() {
+  local dir="$1"; shift
+  {
+    printf 'apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: fuzefront\nspec:\n  rules:\n    - host: app.fuzefront.com\n      http:\n        paths:\n'
+    local p
+    for p in "$@"; do
+      printf '          - path: %s\n            pathType: Prefix\n            backend:\n              service:\n                name: authentik-server\n                port:\n                  number: 9000\n' "$p"
+    done
+  } > "$dir/ingress.yaml"
+}
+
+# Every approved path, as a plain array — the "correct" fixture input.
+approved_path_list() {
+  local entry
+  for entry in "${APPROVED_PUBLIC_PATHS[@]}"; do
+    printf '%s\n' "${entry%%|*}"
+  done
 }
 
 self_test() {
@@ -213,6 +320,48 @@ EOF
   fi
   echo "Self-test OK: probe correctly passed on narrowed '/application/o/'."
   rm -rf "$tmp"
+
+  # ── Closed-set check ────────────────────────────────────────────────────
+  # The denylist above only objects to enumerated surfaces. These three cases
+  # prove the set-equality check fires on the two ways the chart and the
+  # policy can disagree, and stays quiet when they agree.
+  local -a approved
+  mapfile -t approved < <(approved_path_list)
+
+  # (a) RED: an EXTRA path nobody approved. Deliberately NOT one of the
+  #     enumerated forbidden prefixes — the whole point is catching a surface
+  #     the denylist has never heard of.
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  write_fixture "$tmp" "${approved[@]}" "/api/v3/some-future-authentik-surface/"
+  if check_closed_set "$tmp" >/dev/null 2>&1; then
+    echo "::error::self-test FAILED — the closed-set check passed on a manifest routing an" \
+         "unapproved Authentik path. It would not have caught /applications either." >&2
+    exit 1
+  fi
+  echo "Self-test OK: closed-set check correctly failed on an unapproved extra path."
+
+  # (b) RED: an approved path silently dropped from the chart.
+  rm -rf "$tmp"; tmp="$(mktemp -d)"
+  write_fixture "$tmp" "${approved[@]:1}"
+  if check_closed_set "$tmp" >/dev/null 2>&1; then
+    echo "::error::self-test FAILED — the closed-set check passed while the chart was missing" \
+         "an approved path, so policy/chart drift would go unreported." >&2
+    exit 1
+  fi
+  echo "Self-test OK: closed-set check correctly failed on a missing approved path."
+
+  # (c) GREEN: exactly the approved set.
+  rm -rf "$tmp"; tmp="$(mktemp -d)"
+  write_fixture "$tmp" "${approved[@]}"
+  if ! check_closed_set "$tmp" >/dev/null 2>&1; then
+    echo "::error::self-test FAILED — the closed-set check rejected exactly the approved set." \
+         "It must pass on the correct shape." >&2
+    exit 1
+  fi
+  echo "Self-test OK: closed-set check correctly passed on exactly the approved set."
+
+  rm -rf "$tmp"
   trap - EXIT
 }
 
@@ -225,6 +374,11 @@ case "${1:-}" in
     exit 2
     ;;
   *)
-    check_dir "$1"
+    # Both layers, and report both before exiting so one failure does not mask
+    # the other.
+    rc=0
+    check_dir "$1" || rc=1
+    check_closed_set "$1" || rc=1
+    exit $rc
     ;;
 esac

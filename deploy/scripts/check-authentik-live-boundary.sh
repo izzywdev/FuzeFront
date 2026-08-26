@@ -62,19 +62,31 @@ set -euo pipefail
 APP_ORIGIN_DEFAULT="https://app.fuzefront.com"
 AUTH_ORIGIN_DEFAULT="https://auth.fuzefront.com"
 
-# Every path that must respond IDENTICALLY (status + content-type) to a
-# guaranteed-unmatched, SAME-TIER control path — i.e. must NOT be specially
-# routed to authentik-server. Mirrors FORBIDDEN_PATHS in
-# check-authentik-public-paths.sh; keep the two lists in sync.
-FORBIDDEN_PATHS=(
-  "/applications"
-  "/if/admin/"
-  "/if/user/"
-  "/api/v3/core/"
-  "/api/v3/providers/"
-  "/api/v3/policies/"
-  "/sources"
-)
+# The forbidden list comes from the SHARED policy file that the static
+# pre-merge guard (check-authentik-public-paths.sh) also sources. The two
+# scripts used to carry separate copies under a "keep the two lists in sync"
+# comment — a comment is not a mechanism, and a surface added to one list but
+# not the other would be guarded in exactly one of the two places with both
+# jobs green. Deduplicating removes that drift by construction.
+#
+# The static guard also enforces a CLOSED SET (an allowlist) which this probe
+# structurally cannot: a black-box prober can confirm a named path is not
+# routed, but it cannot enumerate every path an edge does NOT route. So the
+# two layers are complementary — the closed set catches unanticipated
+# surfaces pre-merge, this catches controller/edge behaviour post-deploy.
+# shellcheck source=deploy/scripts/authentik-path-policy.sh
+. "$(dirname "${BASH_SOURCE[0]}")/authentik-path-policy.sh"
+
+# Probe each forbidden surface in BOTH its bare and trailing-slash form. The
+# canonical policy list is slash-free, but Authentik/Traefik can treat
+# `/if/admin` and `/if/admin/` differently, and the original incident path was
+# the bare `/applications`. A correctly-unrouted path falls through to the same
+# tier control either way, so probing both only widens coverage.
+FORBIDDEN_PATHS=()
+for _p in "${AUTHENTIK_FORBIDDEN_PATHS[@]}"; do
+  FORBIDDEN_PATHS+=("$_p" "${_p}/")
+done
+unset _p
 
 # fetch STATUS and CONTENT-TYPE for a URL. Loud on network failure (curl exit
 # != 0) rather than treating it as a silent pass — a probe that can't reach

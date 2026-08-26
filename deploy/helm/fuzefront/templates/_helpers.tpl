@@ -116,13 +116,43 @@ authentik_providers_oauth2; there is no SAML provider configured, so
 `/application/saml/` is not needed). If a SAML provider is ever added, add
 `/application/saml/` explicitly then — do not widen back to a bare prefix.
 
-`gate-authentik-public-paths` (helm-validate.yml, backed by
-deploy/scripts/check-authentik-public-paths.sh) renders both overlays and
-fails the build if any Authentik-backed path here is a STRING PREFIX (i.e.
-would traefik-match) of a known-forbidden path — /applications, /if/admin,
-/if/user, /api/v3/core, /api/v3/providers, /api/v3/policies, /sources. Keep
-that forbidden list current if a new sensitive Authentik surface is ever
-identified.
+THIS LIST IS A CLOSED SET, AND IT IS ENFORCED. Every entry below must also
+appear in APPROVED_PUBLIC_PATHS in deploy/scripts/authentik-path-policy.sh
+with a written justification. Adding a path here without adding it there
+FAILS THE BUILD, and vice versa. That is deliberate: this list used to be
+guarded only by a denylist, which by construction can object only to
+surfaces somebody remembered to enumerate — which is exactly how
+/applications reached the public internet unlisted, unnoticed, and green.
+Do not "fix" a closed-set failure by pasting the path into the policy file;
+add the browser network capture that proves the OIDC flow needs it, or
+remove it from here.
+
+The policy file is the single source of truth for BOTH guards, which check
+it from opposite ends:
+
+  - `gate-authentik-public-paths` (helm-validate.yml, backed by
+    deploy/scripts/check-authentik-public-paths.sh) renders both overlays
+    and fails if (1) any Authentik-backed path here is a STRING PREFIX (i.e.
+    would traefik-match) of a known-forbidden path, or (2) the rendered set
+    is not EXACTLY the approved set.
+  - `check-authentik-live-boundary.sh` (prod-post-deploy.yml) black-box
+    probes the real public edge, catching what a static check cannot: a
+    Traefik upgrade that changes matcher semantics, or an Ingress applied
+    outside this chart.
+
+Both carry a --self-test that must go red on the known-broken input before
+the real check is trusted.
+
+NOTE on the entries below: 5 of the 12 — /if/session-end/, /flows/, /ws/,
+/-/ and /outpost.goauthentik.io/ — have NO evidence in this repo
+that a browser needs them — they were inherited from the pre-incident list.
+They are marked `unverified` in the policy file, which prints a warning for
+each on every CI run. /-/ in particular serves only Authentik's health
+endpoints, whose sole in-repo consumer is the kubelet probe hitting the pod
+directly on port 9000 (authentik.yaml) — which never transits this Ingress.
+Settle each with a network capture of a live login and delete the ones that
+turn out to be unnecessary; do not delete them blind, since a path a real
+login needs is an outage.
 */}}
 {{- define "fuzefront.authentikPublicPaths" -}}
 - /application/o/
