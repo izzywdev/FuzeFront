@@ -1,20 +1,20 @@
 import { Badge } from '@fuzefront/design-system'
-import type { BillingMode } from '../../types'
+import type { AdminPortalBillingMode } from '../../types'
 
-const LABELS: Record<BillingMode, string> = {
+const LABELS: Record<AdminPortalBillingMode, string> = {
   free: 'Free',
   platform: 'Platform-billed',
   reseller: 'Reseller · Connect',
 }
 
-const TONES: Record<BillingMode, 'neutral' | 'accent' | 'info'> = {
+const TONES: Record<AdminPortalBillingMode, 'neutral' | 'accent' | 'info'> = {
   free: 'neutral',
   platform: 'accent',
   reseller: 'info',
 }
 
 export interface PlanBadgeProps {
-  billingMode: BillingMode
+  billingMode: AdminPortalBillingMode
 }
 
 /**

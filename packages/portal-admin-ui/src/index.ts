@@ -29,7 +29,7 @@ export { CatalogTab, AddAppDialog } from './components/console/CatalogTab'
 export type { CatalogTabProps, AddAppDialogProps, CatalogItem } from './components/console/CatalogTab'
 
 // ---- API clients --------------------------------------------------------------
-export { createAdminPortalsClient } from './api/adminPortalsClient'
+export { createAdminPortalsClient, isPortalsForbidden, isSlugConflict } from './api/adminPortalsClient'
 export type { AdminPortalsClient, AdminPortalsClientOptions } from './api/adminPortalsClient'
 export { createPortalConsoleClient } from './api/portalConsoleClient'
 export type { PortalConsoleClient, PortalConsoleClientOptions } from './api/portalConsoleClient'
@@ -46,6 +46,18 @@ export type {
   AdminPortalsPage,
   ListAdminPortalsParams,
   CreatePortalInput,
+  // Master-admin portal fleet — real org-tree contract (FF-EPIC-17-S7,
+  // @fuzefront/security-client 0.7.0). See types.ts's doc comment for why
+  // these are deliberately distinct from `Portal`/`PortalStatus`/`BillingMode`
+  // above (the OTHER, still-anticipated portal-console flow).
+  AdminPortal,
+  AdminPortalCreate,
+  AdminPortalPageEnvelope,
+  AdminPortalStatus,
+  AdminPortalBranding,
+  AdminPortalBillingMode,
+  AdminPortalAppCatalogMode,
+  ListAdminPortalFleetParams,
   UserSummary,
   UsersPage,
   MemberRole,
