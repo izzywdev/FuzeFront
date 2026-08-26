@@ -36,8 +36,8 @@
     "ts-node": "10.9.2",
     "typescript": "5.1.6"
   },
-  "engines": {
-    "node": ">=24.0.0",
-    "npm": ">=10.0.0"
+  "overrides": {
+    "body-parser": ">=1.20.6 <2",
+    "brace-expansion": ">=5.0.9"
   }
 }
