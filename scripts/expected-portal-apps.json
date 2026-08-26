@@ -3,8 +3,8 @@
     "purpose": "The checked-in roster scripts/check-portal-federation-health.mjs diffs the live registry against, so a product that silently drops out of /api/v1/app-registry/apps (the '13 of 18' symptom) fails loudly instead of producing a shorter-but-still-green table.",
     "notASlugMigrationWorklist": "This file is NOT authority to edit any product's registered `slug`. Per CLAUDE.md §'slug, display name, and the federated serve path are THREE INDEPENDENT questions', slug is free at registration and immutable after. If a live registry slug genuinely differs from an entry below, FIX THIS FILE to match the registry — never the other way around. This list exists only to notice disappearance, not to prescribe naming.",
     "maintainedBy": "owner (izzywdev) — add an entry when a new product joins the family, remove one when a product is formally retired, correct the slug if a `confidence` below turns out wrong.",
-    "lastReviewed": "2026-08-25",
-    "countRationale": "18 entries = the 20-repo fleet in docs/planning/production-conformance.md §1, minus FuzeInfra and FuzeSDLC (platform/governance repos with no portal tile), minus FuzeFront itself (the host shell, not a listed app), plus FuzeQuality ('in prod, not in the 20' per that doc, but builtin and portal-visible). Matches the owner's own '18 products' count.",
+    "lastReviewed": "2026-08-26",
+    "countRationale": "18 entries. Reconciled against the live registry by census run 32949523555 (2026-08-26), which reported 4 roster defects as its own warnings: three entries whose slug the registry has never served (keys->fuzekeys, fuzecontact->contact, fuzehub-ventures->fuzehub), and 'clock' returned by the registry but absent here. Each produced a spurious MISSING row, which is the exact false signal this roster exists to avoid -- a MISSING that means 'the roster is wrong' is indistinguishable from one that means 'a product dropped out'. FuzeQuality was REMOVED: PR #810 (merged 2026-08-26) deleted it from builtins.ts and added migration 011_suspend_phantom_fuzequality_builtin because the product has NO repository. It is deliberately not expected. Note the same census still found it activated in prod, so its migration has not yet run -- that now surfaces as an 'in the registry but not expected' warning, which is the correct signal.",
     "confidenceLevels": {
       "verified": "slug read directly from code in THIS repo (backend/applications/src/app-registry/builtins.ts BUILTIN_MANIFESTS, or FuzeQuality/registration/manifest.json) — cannot be stale without this repo's own tests catching it.",
       "owner-ruling": "slug is one of the exact values the owner named on 2026-08-19 (quoted verbatim in CLAUDE.md §'slug, display name, and the federated serve path') as either a prefixed exception to keep (fuzex, fuzebi) or an already-correct unprefixed slug not to be migrated.",
@@ -18,26 +18,123 @@
       "docs/planning/app-suites-and-modes.md (FuzeHub suite example)",
       "packages/onboarding-kit/README.md (FuzeService used as the running naming-convention example)",
       "docs/runbooks/app-slug-deprefix-migration.md — RETIRED; its measured-state table was read only as a last-resort snapshot for products no other source names, and is called out per-entry below"
-    ]
+    ],
+    "genuinelyAbsentAtLastReview": "After these corrections, census 32949523555's MISSING set reduces from 9 to 6 genuinely unregistered products: fuzex, fuzebi, deploy, call, fuzeplan, merchandize."
   },
   "apps": [
-    { "slug": "fuzeagent",       "name": "FuzeAgent",     "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS" },
-    { "slug": "fuzesocial",      "name": "FuzeSocial",    "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS" },
-    { "slug": "fuzequality",     "name": "FuzeQuality",   "confidence": "verified",    "source": "builtins.ts BUILTIN_MANIFESTS + FuzeQuality/registration/manifest.json" },
-    { "slug": "fuzex",           "name": "FuzeX",         "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)" },
-    { "slug": "fuzebi",          "name": "FuzeBI",        "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)" },
-    { "slug": "deploy",          "name": "FuzeDeploy",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "call",            "name": "FuzeCall",      "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "executive",       "name": "FuzeExecutive", "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "finance",         "name": "FuzeFinance",   "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "keys",            "name": "FuzeKeys",      "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "market",          "name": "FuzeMarket",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone" },
-    { "slug": "picker",          "name": "FuzePicker",    "confidence": "owner-ruling", "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone; corroborated by docs/runbooks/app-slug-deprefix-migration.md ('name only — already correct')" },
-    { "slug": "fuzecontact",     "name": "Contact",       "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
-    { "slug": "fuzehub-ventures","name": "FuzeHub",       "confidence": "documented",  "source": "docs/planning/app-suites-and-modes.md — worked example: 'manifest.json slug: fuzehub-ventures (primary; owns policy + billing)'" },
-    { "slug": "fuzeplan",        "name": "FuzePlan",      "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
-    { "slug": "fuzesales",       "name": "Sales",         "confidence": "documented",  "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)" },
-    { "slug": "fuzeservice",     "name": "FuzeService",   "confidence": "documented",  "source": "packages/onboarding-kit/README.md — used verbatim as the naming-convention's running example: \"slug\": \"fuzeservice\"" },
-    { "slug": "merchandize",     "name": "FuzeMerchandize", "confidence": "inferred", "source": "no direct citation found anywhere in this repo; guessed by family convention (unprefixed, matches the 'deploy/call/executive/finance/keys/market/picker' pattern). VERIFY before trusting a MISSING result for this one." }
+    {
+      "slug": "call",
+      "name": "FuzeCall",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
+    },
+    {
+      "slug": "clock",
+      "name": "Clock",
+      "confidence": "verified",
+      "source": "builtins.ts BUILTIN_MANIFESTS + census run 32949523555 (2026-08-26): live registry slug, corrected per _meta.notASlugMigrationWorklist"
+    },
+    {
+      "slug": "contact",
+      "name": "Contact",
+      "confidence": "verified",
+      "source": "census run 32949523555 (2026-08-26): live registry slug, corrected per _meta.notASlugMigrationWorklist (was 'fuzecontact' — never registered under that slug)"
+    },
+    {
+      "slug": "deploy",
+      "name": "FuzeDeploy",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
+    },
+    {
+      "slug": "executive",
+      "name": "FuzeExecutive",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
+    },
+    {
+      "slug": "finance",
+      "name": "FuzeFinance",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
+    },
+    {
+      "slug": "fuzeagent",
+      "name": "FuzeAgent",
+      "confidence": "verified",
+      "source": "builtins.ts BUILTIN_MANIFESTS"
+    },
+    {
+      "slug": "fuzebi",
+      "name": "FuzeBI",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)"
+    },
+    {
+      "slug": "fuzehub",
+      "name": "FuzeHub",
+      "confidence": "verified",
+      "source": "census run 32949523555 (2026-08-26): live registry slug, corrected per _meta.notASlugMigrationWorklist (was 'fuzehub-ventures' — never registered under that slug)"
+    },
+    {
+      "slug": "fuzekeys",
+      "name": "Keys",
+      "confidence": "verified",
+      "source": "census run 32949523555 (2026-08-26): live registry slug, corrected per _meta.notASlugMigrationWorklist (was 'keys' — never registered under that slug)"
+    },
+    {
+      "slug": "fuzeplan",
+      "name": "FuzePlan",
+      "confidence": "documented",
+      "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)"
+    },
+    {
+      "slug": "fuzequality",
+      "name": "FuzeQuality",
+      "confidence": "verified",
+      "source": "builtins.ts BUILTIN_MANIFESTS + census run 32960147607 (2026-08-26 10:49Z): live registry returns it, status 'activated'. RESTORED — an earlier revision of this file removed it on the false premise that it was not registered; the census disproves that."
+    },
+    {
+      "slug": "fuzesales",
+      "name": "Sales",
+      "confidence": "documented",
+      "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)"
+    },
+    {
+      "slug": "fuzeservice",
+      "name": "FuzeService",
+      "confidence": "documented",
+      "source": "packages/onboarding-kit/README.md — used verbatim as the naming-convention's running example: \"slug\": \"fuzeservice\""
+    },
+    {
+      "slug": "fuzesocial",
+      "name": "FuzeSocial",
+      "confidence": "verified",
+      "source": "builtins.ts BUILTIN_MANIFESTS"
+    },
+    {
+      "slug": "fuzex",
+      "name": "FuzeX",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — kept prefixed, one of the two named display-name exceptions (FuzeBI/FuzeX)"
+    },
+    {
+      "slug": "market",
+      "name": "FuzeMarket",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
+    },
+    {
+      "slug": "merchandize",
+      "name": "FuzeMerchandize",
+      "confidence": "inferred",
+      "source": "no direct citation found anywhere in this repo; guessed by family convention (unprefixed, matches the 'deploy/call/executive/finance/keys/market/picker' pattern). VERIFY before trusting a MISSING result for this one."
+    },
+    {
+      "slug": "picker",
+      "name": "FuzePicker",
+      "confidence": "owner-ruling",
+      "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone; corroborated by docs/runbooks/app-slug-deprefix-migration.md ('name only — already correct')"
+    }
   ]
 }

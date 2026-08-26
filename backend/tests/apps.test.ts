@@ -675,7 +675,22 @@ describe('Apps Registration Routes', () => {
       })
 
       // An org NEITHER caller belongs to, for the BOLA-exclusion assertion.
+      // The row must EXIST: `apps.organization_id` carries the FK
+      // `apps_organization_id_foreign`, so referencing an org that was never
+      // inserted aborts this beforeAll and fails every test in the block. What
+      // makes it a "does not belong" org is the absence of an
+      // organization_memberships row below, not the absence of the org itself.
       otherOrgId = uuidv4()
+      await db('organizations').insert({
+        id: otherOrgId,
+        name: 'Visibility Parity Other Org',
+        slug: `visibility-parity-other-org-${otherOrgId.slice(0, 8)}`,
+        owner_id: ADMIN_USER_ID,
+        type: 'organization',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+        is_active: true,
+      })
 
       // Case 1: 'organization' visibility, owned by an org the admin belongs to.
       ownOrgAppId = uuidv4()
@@ -710,7 +725,9 @@ describe('Apps Registration Routes', () => {
         .where('organization_id', scopedOrgId)
         .del()
       await db('apps').whereIn('id', [ownOrgAppId, otherOrgAppId]).del()
-      await db('organizations').where('id', scopedOrgId).del()
+      // Both orgs, and only after the apps that reference them are gone —
+      // apps.organization_id has no ON DELETE, so the reverse order fails.
+      await db('organizations').whereIn('id', [scopedOrgId, otherOrgId]).del()
     })
 
     it("shows an 'organization'-visibility app to a member of that org", async () => {

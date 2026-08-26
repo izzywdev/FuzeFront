@@ -55,10 +55,50 @@ export async function up(knex: Knex): Promise<void> {
   // with a clear cause instead of a mysterious later FK violation.
   const root = await knex('organizations').where({ id: ROOT_ORG_ID }).first()
   if (!root) {
-    throw new Error(
-      `organizations.${ROOT_ORG_ID} (the platform root org) does not exist yet — ` +
-        'backend/src migration 015_seed_root_platform_organization must run before this one.'
+    // 2026-08-26: this used to throw UNCONDITIONALLY. The reasoning above is
+    // right for the case it describes — backfilling to a still-absent id would
+    // violate apps_organization_id_foreign, and a clear error beats a mystery
+    // FK stack trace. But it fired even when there was NOTHING TO BACKFILL,
+    // and a migration that throws is a boot crashloop, not a warning: this
+    // service's tree must stay runnable on its own (see
+    // tests/migrations.idempotency.integration.test.ts, which runs exactly
+    // this tree against a bare schema and asserts a clean no-op). Since the
+    // root org is seeded by a DIFFERENT deployable's tree, any environment
+    // where applications-service migrates first hit this — the same shape as
+    // the 2026-08-16 P1 that migration 022 in backend/src was fixed for.
+    //
+    // So the throw is narrowed to the case that genuinely warrants it.
+    //
+    // What closes the gap is NOT a re-run of this migration: knex records it
+    // as applied and never executes it again, so "self-heals on the next boot"
+    // would be false here. It is the SIBLING migration against the same shared
+    // table — backend/src's 026_apps_organization_id_not_null, in the tree that
+    // also owns 015 and therefore always has the root org by the time it runs.
+    // That sibling sets the DEFAULT and NOT NULL, exactly as its own header
+    // describes: "whichever service's migrations happen to run first against a
+    // given database does the real work, and the other is a no-op".
+    //
+    // The invariant the query-side half depends on still holds in this branch:
+    // service.ts's list() may drop its `organization_id IS NULL` arm only once
+    // no row can be null, and we skip precisely when there are ZERO org-less
+    // rows — so there is nothing that could silently disappear.
+    const orphans = await knex('apps').whereNull('organization_id').count({ n: '*' }).first()
+    const orphanCount = Number(orphans?.n ?? 0)
+    if (orphanCount > 0) {
+      throw new Error(
+        `organizations.${ROOT_ORG_ID} (the platform root org) does not exist yet, and ` +
+          `${orphanCount} org-less app(s) need backfilling to it — ` +
+          'backend/src migration 015_seed_root_platform_organization must run before this one.'
+      )
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[011] platform root org ${ROOT_ORG_ID} not seeded yet and no org-less apps to backfill — ` +
+        "skipping; backend/src's sibling migration 026 applies DEFAULT + NOT NULL once 015 has " +
+        'seeded it. Neither is set here: the DEFAULT would point at a non-existent org and ' +
+        'reintroduce the very FK hazard this guard exists to prevent.'
     )
+    return
   }
 
   const backfilled = await knex('apps')

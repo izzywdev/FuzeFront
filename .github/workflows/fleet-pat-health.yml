@@ -26,9 +26,27 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Space-separated list of owner/repo pairs to check.
-  # Add new fleet repos here when they receive GH_RELEASE_PAT.
-  FLEET_REPOS: "izzywdev/FuzeX izzywdev/FuzeFinance izzywdev/FuzeExecutive"
+  # Space-separated list of `owner/repo`, or `owner/repo=workflow.yml` where the release job
+  # is not in release.yml. Add new fleet repos here when they receive GH_RELEASE_PAT.
+  #
+  # These are exactly the repos whose OWN workflows reference `secrets.GH_RELEASE_PAT` to bump
+  # a prod tag — derived from the fleet-wide survey in FuzeSDLC's provision_secrets.py, not
+  # hand-listed. FuzeCall, FuzeDeploy and FuzeMerchandize were provisioned the credential on
+  # 2026-08-26 and are added here in the same change: a repo that holds the PAT but is absent
+  # from this list has NO expiry detection at all, which is the gap this workflow exists to
+  # close and the one it had for six of its nine repos.
+  #
+  # FuzeFront and FuzeSDLC deliberately excluded: both hold GH_RELEASE_PAT, but neither uses
+  # it to cut a release — FuzeFront for this health check itself, FuzeSDLC for fleet secret
+  # provisioning. Listing them would check a release workflow that does not exist.
+  FLEET_REPOS: >-
+    izzywdev/FuzeX
+    izzywdev/FuzeFinance
+    izzywdev/FuzeExecutive
+    izzywdev/FuzePlan
+    izzywdev/FuzeCall
+    izzywdev/FuzeDeploy
+    izzywdev/FuzeMerchandize=build-and-push.yml
   WORKFLOW_FILE: "release.yml"
   CRED_STEP_NAME: "Require the release credential"
 
@@ -79,13 +97,23 @@ jobs:
           CRED_FAILURES=""
           OTHER_FAILURES=""
 
-          for REPO in $FLEET_REPOS; do
+          for ENTRY in $FLEET_REPOS; do
+            # Each entry is `owner/repo`, or `owner/repo=workflow.yml` when the repo's
+            # release job does not live in release.yml. FuzeMerchandize is the reason this
+            # exists: it references GH_RELEASE_PAT from build-and-push.yml, and querying a
+            # workflow file a repo does not have returns the same "could not query" error as
+            # a genuinely broken credential — a false alarm that trains people to ignore the
+            # alert this whole workflow exists to raise.
+            REPO="${ENTRY%%=*}"
+            WF="${ENTRY#*=}"
+            [ "$WF" = "$ENTRY" ] && WF="$WORKFLOW_FILE"
+
             echo ""
-            echo "==> ${REPO}"
+            echo "==> ${REPO} (${WF})"
 
             # Fetch the latest completed run for this repo's release workflow.
             RUN_JSON=$(gh api \
-              "repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1&status=completed" \
+              "repos/${REPO}/actions/workflows/${WF}/runs?per_page=1&status=completed" \
               --jq '.workflow_runs[0] | {id: .id, conclusion: .conclusion, created_at: .created_at, html_url: .html_url}' \
               2>&1) || {
               echo "::warning::Could not query ${REPO} — PAT may lack repo scope or workflow not found"
